@@ -1,0 +1,1906 @@
+﻿2026-01-03T02:30:40.1765023Z Current runner version: '2.330.0'
+2026-01-03T02:30:40.1788420Z ##[group]Runner Image Provisioner
+2026-01-03T02:30:40.1789245Z Hosted Compute Agent
+2026-01-03T02:30:40.1789968Z Version: 20251211.462
+2026-01-03T02:30:40.1790624Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2026-01-03T02:30:40.1791424Z Build Date: 2025-12-11T16:28:49Z
+2026-01-03T02:30:40.1792205Z Worker ID: {a0f0ea45-e729-4e41-9a30-44fe6aa07e81}
+2026-01-03T02:30:40.1792900Z ##[endgroup]
+2026-01-03T02:30:40.1793489Z ##[group]Operating System
+2026-01-03T02:30:40.1794109Z Ubuntu
+2026-01-03T02:30:40.1794710Z 24.04.3
+2026-01-03T02:30:40.1795235Z LTS
+2026-01-03T02:30:40.1795784Z ##[endgroup]
+2026-01-03T02:30:40.1796327Z ##[group]Runner Image
+2026-01-03T02:30:40.1797323Z Image: ubuntu-24.04
+2026-01-03T02:30:40.1798037Z Version: 20251215.174.1
+2026-01-03T02:30:40.1799122Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251215.174/images/ubuntu/Ubuntu2404-Readme.md
+2026-01-03T02:30:40.1800738Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251215.174
+2026-01-03T02:30:40.1801840Z ##[endgroup]
+2026-01-03T02:30:40.1802945Z ##[group]GITHUB_TOKEN Permissions
+2026-01-03T02:30:40.1804857Z Contents: read
+2026-01-03T02:30:40.1805473Z Metadata: read
+2026-01-03T02:30:40.1806020Z Packages: read
+2026-01-03T02:30:40.1806647Z ##[endgroup]
+2026-01-03T02:30:40.1808854Z Secret source: Actions
+2026-01-03T02:30:40.1809572Z Prepare workflow directory
+2026-01-03T02:30:40.2262471Z Prepare all required actions
+2026-01-03T02:30:40.2300659Z Getting action download info
+2026-01-03T02:30:40.6503908Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-01-03T02:30:40.7577907Z Download action repository 'shivammathur/setup-php@v2' (SHA:44454db4f0199b8b9685a5d763dc37cbf79108e1)
+2026-01-03T02:30:41.3457653Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-01-03T02:30:41.4342179Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-01-03T02:30:41.5860646Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-01-03T02:30:41.8955555Z Complete job name: build-and-test
+2026-01-03T02:30:41.9622133Z ##[group]Checking docker version
+2026-01-03T02:30:41.9635930Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-01-03T02:30:42.0505162Z '1.48'
+2026-01-03T02:30:42.0520528Z Docker daemon API version: '1.48'
+2026-01-03T02:30:42.0521881Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-01-03T02:30:42.0754876Z '1.48'
+2026-01-03T02:30:42.0769103Z Docker client API version: '1.48'
+2026-01-03T02:30:42.0775301Z ##[endgroup]
+2026-01-03T02:30:42.0778907Z ##[group]Clean up resources from previous jobs
+2026-01-03T02:30:42.0784836Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=ae28cd"
+2026-01-03T02:30:42.0928463Z ##[command]/usr/bin/docker network prune --force --filter "label=ae28cd"
+2026-01-03T02:30:42.1058135Z ##[endgroup]
+2026-01-03T02:30:42.1059013Z ##[group]Create local container network
+2026-01-03T02:30:42.1069971Z ##[command]/usr/bin/docker network create --label ae28cd github_network_8b7ff9dd22204c5084932abdf00a5d9b
+2026-01-03T02:30:42.1640202Z 6850d23b5fff53fd98dc7137c8049a52be382e8cfa0ddb291dcb7166a6dcc155
+2026-01-03T02:30:42.1660027Z ##[endgroup]
+2026-01-03T02:30:42.1684681Z ##[group]Starting postgres service container
+2026-01-03T02:30:42.1704645Z ##[command]/usr/bin/docker pull timescale/timescaledb:2.13.0-pg15
+2026-01-03T02:30:42.9139892Z 2.13.0-pg15: Pulling from timescale/timescaledb
+2026-01-03T02:30:43.1210314Z 96526aa774ef: Pulling fs layer
+2026-01-03T02:30:43.1215511Z f3836ccc9a67: Pulling fs layer
+2026-01-03T02:30:43.1217140Z 3625732fb368: Pulling fs layer
+2026-01-03T02:30:43.1218053Z db2cf8153bfe: Pulling fs layer
+2026-01-03T02:30:43.1218972Z 57d1e4d158ff: Pulling fs layer
+2026-01-03T02:30:43.1219886Z d4b037398667: Pulling fs layer
+2026-01-03T02:30:43.1220784Z fffdf7fd1f65: Pulling fs layer
+2026-01-03T02:30:43.1222056Z 6fbe9502899e: Pulling fs layer
+2026-01-03T02:30:43.1222944Z 8c78b9aebfc8: Pulling fs layer
+2026-01-03T02:30:43.1223817Z 70f2ee7b92e9: Pulling fs layer
+2026-01-03T02:30:43.1224721Z 1840d5f2638e: Pulling fs layer
+2026-01-03T02:30:43.1225596Z 67d7ab323107: Pulling fs layer
+2026-01-03T02:30:43.1226466Z 386cd7b21069: Pulling fs layer
+2026-01-03T02:30:43.1227664Z d4b037398667: Waiting
+2026-01-03T02:30:43.1228415Z fffdf7fd1f65: Waiting
+2026-01-03T02:30:43.1229185Z 6fbe9502899e: Waiting
+2026-01-03T02:30:43.1229978Z 8c78b9aebfc8: Waiting
+2026-01-03T02:30:43.1230729Z 70f2ee7b92e9: Waiting
+2026-01-03T02:30:43.1231462Z 1840d5f2638e: Waiting
+2026-01-03T02:30:43.1232195Z 67d7ab323107: Waiting
+2026-01-03T02:30:43.1232919Z 386cd7b21069: Waiting
+2026-01-03T02:30:43.1233666Z db2cf8153bfe: Waiting
+2026-01-03T02:30:43.1234421Z 57d1e4d158ff: Waiting
+2026-01-03T02:30:43.3823360Z 3625732fb368: Verifying Checksum
+2026-01-03T02:30:43.3824019Z 3625732fb368: Download complete
+2026-01-03T02:30:43.3848438Z f3836ccc9a67: Verifying Checksum
+2026-01-03T02:30:43.3852671Z f3836ccc9a67: Download complete
+2026-01-03T02:30:43.4826668Z 96526aa774ef: Verifying Checksum
+2026-01-03T02:30:43.4827477Z 96526aa774ef: Download complete
+2026-01-03T02:30:43.6137595Z 96526aa774ef: Pull complete
+2026-01-03T02:30:43.6306472Z 57d1e4d158ff: Verifying Checksum
+2026-01-03T02:30:43.6310819Z 57d1e4d158ff: Download complete
+2026-01-03T02:30:43.7401828Z d4b037398667: Verifying Checksum
+2026-01-03T02:30:43.7402456Z d4b037398667: Download complete
+2026-01-03T02:30:43.8898694Z fffdf7fd1f65: Verifying Checksum
+2026-01-03T02:30:43.8899324Z fffdf7fd1f65: Download complete
+2026-01-03T02:30:44.0326064Z 6fbe9502899e: Verifying Checksum
+2026-01-03T02:30:44.0327465Z 6fbe9502899e: Download complete
+2026-01-03T02:30:44.1472175Z 8c78b9aebfc8: Verifying Checksum
+2026-01-03T02:30:44.1472739Z 8c78b9aebfc8: Download complete
+2026-01-03T02:30:44.4319795Z 70f2ee7b92e9: Verifying Checksum
+2026-01-03T02:30:44.4324670Z 70f2ee7b92e9: Download complete
+2026-01-03T02:30:44.5434648Z db2cf8153bfe: Download complete
+2026-01-03T02:30:44.9007839Z 1840d5f2638e: Verifying Checksum
+2026-01-03T02:30:44.9008334Z 1840d5f2638e: Download complete
+2026-01-03T02:30:44.9075332Z 67d7ab323107: Download complete
+2026-01-03T02:30:45.0351493Z 386cd7b21069: Verifying Checksum
+2026-01-03T02:30:45.0352006Z 386cd7b21069: Download complete
+2026-01-03T02:30:45.9011163Z f3836ccc9a67: Pull complete
+2026-01-03T02:30:46.3867644Z 3625732fb368: Pull complete
+2026-01-03T02:30:48.6050290Z db2cf8153bfe: Pull complete
+2026-01-03T02:30:48.6207511Z 57d1e4d158ff: Pull complete
+2026-01-03T02:30:48.6316990Z d4b037398667: Pull complete
+2026-01-03T02:30:48.6424338Z fffdf7fd1f65: Pull complete
+2026-01-03T02:30:48.6540001Z 6fbe9502899e: Pull complete
+2026-01-03T02:30:48.6652235Z 8c78b9aebfc8: Pull complete
+2026-01-03T02:30:48.7274209Z 70f2ee7b92e9: Pull complete
+2026-01-03T02:30:49.5693701Z 1840d5f2638e: Pull complete
+2026-01-03T02:30:50.2544606Z 67d7ab323107: Pull complete
+2026-01-03T02:30:50.4450094Z 386cd7b21069: Pull complete
+2026-01-03T02:30:50.4494333Z Digest: sha256:6c0bb004b53a00ad4422b18123bce5fe7bf33c37b017b055338d07719be76730
+2026-01-03T02:30:50.4508610Z Status: Downloaded newer image for timescale/timescaledb:2.13.0-pg15
+2026-01-03T02:30:50.4520414Z docker.io/timescale/timescaledb:2.13.0-pg15
+2026-01-03T02:30:50.4582524Z ##[command]/usr/bin/docker create --name 3d758394e1cf41efa02968937eb0f972_timescaletimescaledb2130pg15_6ffdc2 --label ae28cd --network github_network_8b7ff9dd22204c5084932abdf00a5d9b --network-alias postgres -p 5432:5432 --health-cmd="pg_isready -U hydro -d hydro_test" --health-interval=10s --health-timeout=5s --health-retries=5 -e "POSTGRES_DB=hydro_test" -e "POSTGRES_USER=hydro" -e "POSTGRES_PASSWORD=hydro" -e GITHUB_ACTIONS=true -e CI=true timescale/timescaledb:2.13.0-pg15
+2026-01-03T02:30:50.4858743Z b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:50.4883868Z ##[command]/usr/bin/docker start b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:50.6772705Z b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:50.6794199Z ##[command]/usr/bin/docker ps --all --filter id=b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-01-03T02:30:50.6923468Z b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77 Up Less than a second (health: starting)
+2026-01-03T02:30:50.6943376Z ##[command]/usr/bin/docker port b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:50.7073704Z 5432/tcp -> 0.0.0.0:5432
+2026-01-03T02:30:50.7074619Z 5432/tcp -> [::]:5432
+2026-01-03T02:30:50.7122551Z ##[endgroup]
+2026-01-03T02:30:50.7130889Z ##[group]Waiting for all services to be ready
+2026-01-03T02:30:50.7144608Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:50.7275489Z starting
+2026-01-03T02:30:50.7297720Z postgres service is starting, waiting 2 seconds before checking again.
+2026-01-03T02:30:52.7304564Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:52.7439769Z starting
+2026-01-03T02:30:52.7453759Z postgres service is starting, waiting 4 seconds before checking again.
+2026-01-03T02:30:56.8028061Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:30:56.8148564Z starting
+2026-01-03T02:30:56.8166174Z postgres service is starting, waiting 7 seconds before checking again.
+2026-01-03T02:31:04.5548959Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:31:04.5671906Z healthy
+2026-01-03T02:31:04.5688223Z postgres service is healthy.
+2026-01-03T02:31:04.5688927Z ##[endgroup]
+2026-01-03T02:31:04.5949714Z ##[group]Run actions/checkout@v4
+2026-01-03T02:31:04.5950250Z with:
+2026-01-03T02:31:04.5950443Z   repository: byYorick/hydro2.0
+2026-01-03T02:31:04.5950816Z   token: ***
+2026-01-03T02:31:04.5950994Z   ssh-strict: true
+2026-01-03T02:31:04.5951169Z   ssh-user: git
+2026-01-03T02:31:04.5951353Z   persist-credentials: true
+2026-01-03T02:31:04.5951551Z   clean: true
+2026-01-03T02:31:04.5951734Z   sparse-checkout-cone-mode: true
+2026-01-03T02:31:04.5951949Z   fetch-depth: 1
+2026-01-03T02:31:04.5952121Z   fetch-tags: false
+2026-01-03T02:31:04.5952297Z   show-progress: true
+2026-01-03T02:31:04.5952476Z   lfs: false
+2026-01-03T02:31:04.5952635Z   submodules: false
+2026-01-03T02:31:04.5952814Z   set-safe-directory: true
+2026-01-03T02:31:04.5953181Z ##[endgroup]
+2026-01-03T02:31:04.7062284Z Syncing repository: byYorick/hydro2.0
+2026-01-03T02:31:04.7063534Z ##[group]Getting Git version info
+2026-01-03T02:31:04.7063933Z Working directory is '/home/runner/work/hydro2.0/hydro2.0'
+2026-01-03T02:31:04.7064492Z [command]/usr/bin/git version
+2026-01-03T02:31:04.7172345Z git version 2.52.0
+2026-01-03T02:31:04.7199108Z ##[endgroup]
+2026-01-03T02:31:04.7212857Z Temporarily overriding HOME='/home/runner/work/_temp/6cdd0724-b5a6-41ff-a121-f2dcf8982c2a' before making global git config changes
+2026-01-03T02:31:04.7213883Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-03T02:31:04.7218256Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/hydro2.0/hydro2.0
+2026-01-03T02:31:04.7257643Z Deleting the contents of '/home/runner/work/hydro2.0/hydro2.0'
+2026-01-03T02:31:04.7260994Z ##[group]Initializing the repository
+2026-01-03T02:31:04.7265060Z [command]/usr/bin/git init /home/runner/work/hydro2.0/hydro2.0
+2026-01-03T02:31:04.7365154Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-01-03T02:31:04.7368460Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-01-03T02:31:04.7369713Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-01-03T02:31:04.7370298Z hint: call:
+2026-01-03T02:31:04.7370557Z hint:
+2026-01-03T02:31:04.7370941Z hint: 	git config --global init.defaultBranch <name>
+2026-01-03T02:31:04.7371312Z hint:
+2026-01-03T02:31:04.7371593Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-01-03T02:31:04.7372071Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-01-03T02:31:04.7372418Z hint:
+2026-01-03T02:31:04.7372606Z hint: 	git branch -m <name>
+2026-01-03T02:31:04.7372809Z hint:
+2026-01-03T02:31:04.7373110Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-01-03T02:31:04.7373607Z Initialized empty Git repository in /home/runner/work/hydro2.0/hydro2.0/.git/
+2026-01-03T02:31:04.7382808Z [command]/usr/bin/git remote add origin https://github.com/byYorick/hydro2.0
+2026-01-03T02:31:04.7418996Z ##[endgroup]
+2026-01-03T02:31:04.7419638Z ##[group]Disabling automatic garbage collection
+2026-01-03T02:31:04.7424097Z [command]/usr/bin/git config --local gc.auto 0
+2026-01-03T02:31:04.7456555Z ##[endgroup]
+2026-01-03T02:31:04.7457319Z ##[group]Setting up auth
+2026-01-03T02:31:04.7465044Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-01-03T02:31:04.7494937Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-01-03T02:31:04.7821914Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-03T02:31:04.7851916Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-01-03T02:31:04.8068199Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-03T02:31:04.8106153Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-01-03T02:31:04.8329184Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-01-03T02:31:04.8364991Z ##[endgroup]
+2026-01-03T02:31:04.8365578Z ##[group]Fetching the repository
+2026-01-03T02:31:04.8373083Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c7c1812f22c1bb7e25f05d118a1c40042faa6b1e:refs/remotes/pull/10/merge
+2026-01-03T02:31:06.6593314Z From https://github.com/byYorick/hydro2.0
+2026-01-03T02:31:06.6594015Z  * [new ref]         c7c1812f22c1bb7e25f05d118a1c40042faa6b1e -> pull/10/merge
+2026-01-03T02:31:06.6625877Z ##[endgroup]
+2026-01-03T02:31:06.6626477Z ##[group]Determining the checkout info
+2026-01-03T02:31:06.6629191Z ##[endgroup]
+2026-01-03T02:31:06.6634152Z [command]/usr/bin/git sparse-checkout disable
+2026-01-03T02:31:06.6674347Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-01-03T02:31:06.6700637Z ##[group]Checking out the ref
+2026-01-03T02:31:06.6704312Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/10/merge
+2026-01-03T02:31:07.0144598Z Note: switching to 'refs/remotes/pull/10/merge'.
+2026-01-03T02:31:07.0145010Z 
+2026-01-03T02:31:07.0145297Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-01-03T02:31:07.0145987Z changes and commit them, and you can discard any commits you make in this
+2026-01-03T02:31:07.0146693Z state without impacting any branches by switching back to a branch.
+2026-01-03T02:31:07.0147516Z 
+2026-01-03T02:31:07.0147835Z If you want to create a new branch to retain commits you create, you may
+2026-01-03T02:31:07.0148547Z do so (now or later) by using -c with the switch command. Example:
+2026-01-03T02:31:07.0149371Z 
+2026-01-03T02:31:07.0149525Z   git switch -c <new-branch-name>
+2026-01-03T02:31:07.0149795Z 
+2026-01-03T02:31:07.0149951Z Or undo this operation with:
+2026-01-03T02:31:07.0150207Z 
+2026-01-03T02:31:07.0150323Z   git switch -
+2026-01-03T02:31:07.0150510Z 
+2026-01-03T02:31:07.0150846Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-01-03T02:31:07.0151319Z 
+2026-01-03T02:31:07.0151855Z HEAD is now at c7c1812 Merge 09a170c7e662a7ea5ab702062f1e900934ccca3c into 2592d523eeb0fff6040fd4b850d7d08b84fc3c52
+2026-01-03T02:31:07.0170975Z ##[endgroup]
+2026-01-03T02:31:07.0211298Z [command]/usr/bin/git log -1 --format=%H
+2026-01-03T02:31:07.0234145Z c7c1812f22c1bb7e25f05d118a1c40042faa6b1e
+2026-01-03T02:31:07.0408632Z ##[group]Run shivammathur/setup-php@v2
+2026-01-03T02:31:07.0408911Z with:
+2026-01-03T02:31:07.0409077Z   php-version: 8.2
+2026-01-03T02:31:07.0409269Z   ini-file: production
+2026-01-03T02:31:07.0409587Z   github-token: ***
+2026-01-03T02:31:07.0409767Z ##[endgroup]
+2026-01-03T02:31:07.1109417Z [command]/usr/bin/bash /home/runner/work/_actions/shivammathur/setup-php/v2/src/scripts/run.sh
+2026-01-03T02:31:07.1526727Z 
+2026-01-03T02:31:07.1527724Z [90;1m==> [0m[37;1mSetup PHP[0m
+2026-01-03T02:31:16.8552608Z [32;1m✓ [0m[34;1mPHP [0m[90;1mInstalled PHP 8.2.29[0m
+2026-01-03T02:31:16.8553094Z 
+2026-01-03T02:31:16.8553344Z [90;1m==> [0m[37;1mSetup Tools[0m
+2026-01-03T02:31:17.2594338Z [32;1m✓ [0m[34;1mcomposer [0m[90;1mAdded composer 2.9.3[0m
+2026-01-03T02:31:17.2594960Z 
+2026-01-03T02:31:17.2595304Z [90;1m==> [0m[37;1mSponsor setup-php[0m
+2026-01-03T02:31:17.2595767Z [32;1m✓ [0m[34;1msetup-php [0m[90;1mhttps://setup-php.com/sponsor[0m
+2026-01-03T02:31:17.2846581Z ##[group]Run actions/setup-node@v4
+2026-01-03T02:31:17.2847066Z with:
+2026-01-03T02:31:17.2847281Z   node-version: 20
+2026-01-03T02:31:17.2847486Z   cache: npm
+2026-01-03T02:31:17.2847725Z   cache-dependency-path: backend/laravel/package-lock.json
+2026-01-03T02:31:17.2848018Z   always-auth: false
+2026-01-03T02:31:17.2848213Z   check-latest: false
+2026-01-03T02:31:17.2848566Z   token: ***
+2026-01-03T02:31:17.2848732Z env:
+2026-01-03T02:31:17.2848894Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:17.2849123Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:17.2849327Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:17.2849512Z ##[endgroup]
+2026-01-03T02:31:17.4619128Z Found in cache @ /opt/hostedtoolcache/node/20.19.6/x64
+2026-01-03T02:31:17.4626396Z ##[group]Environment details
+2026-01-03T02:31:17.8040549Z node: v20.19.6
+2026-01-03T02:31:17.8040970Z npm: 10.8.2
+2026-01-03T02:31:17.8041272Z yarn: 1.22.22
+2026-01-03T02:31:17.8042682Z ##[endgroup]
+2026-01-03T02:31:17.8064699Z [command]/opt/hostedtoolcache/node/20.19.6/x64/bin/npm config get cache
+2026-01-03T02:31:18.2823923Z /home/runner/.npm
+2026-01-03T02:31:18.5143965Z npm cache is not found
+2026-01-03T02:31:18.5827238Z ##[group]Run actions/cache@v4
+2026-01-03T02:31:18.5827569Z with:
+2026-01-03T02:31:18.5827762Z   path: ~/.composer/cache/files
+2026-01-03T02:31:18.5828185Z   key: composer-Linux-ada14c73706257406283c13e55f7497da3e21c693886c9a655fd864ad17164eb
+2026-01-03T02:31:18.5828611Z   restore-keys: composer-Linux-
+2026-01-03T02:31:18.5828848Z   enableCrossOsArchive: false
+2026-01-03T02:31:18.5829062Z   fail-on-cache-miss: false
+2026-01-03T02:31:18.5829266Z   lookup-only: false
+2026-01-03T02:31:18.5829441Z   save-always: false
+2026-01-03T02:31:18.5829610Z env:
+2026-01-03T02:31:18.5829766Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:18.5829978Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:18.5830173Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:18.5830353Z ##[endgroup]
+2026-01-03T02:31:18.9272144Z Cache not found for input keys: composer-Linux-ada14c73706257406283c13e55f7497da3e21c693886c9a655fd864ad17164eb, composer-Linux-
+2026-01-03T02:31:18.9352715Z ##[group]Run composer install --no-interaction --prefer-dist
+2026-01-03T02:31:18.9353176Z [36;1mcomposer install --no-interaction --prefer-dist[0m
+2026-01-03T02:31:18.9395605Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:18.9396065Z env:
+2026-01-03T02:31:18.9396237Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:18.9396468Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:18.9396679Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:18.9397118Z ##[endgroup]
+2026-01-03T02:31:19.1521838Z Installing dependencies from lock file (including require-dev)
+2026-01-03T02:31:19.1590786Z Verifying lock file contents can be installed on current platform.
+2026-01-03T02:31:19.2007890Z Package operations: 152 installs, 0 updates, 0 removals
+2026-01-03T02:31:19.2025872Z   - Downloading pestphp/pest-plugin (v3.0.0)
+2026-01-03T02:31:19.2035569Z   - Downloading clue/redis-protocol (v0.3.2)
+2026-01-03T02:31:19.2039198Z   - Downloading doctrine/inflector (2.1.0)
+2026-01-03T02:31:19.2042228Z   - Downloading doctrine/lexer (3.0.1)
+2026-01-03T02:31:19.2045565Z   - Downloading dragonmantank/cron-expression (v3.6.0)
+2026-01-03T02:31:19.2049229Z   - Downloading symfony/deprecation-contracts (v3.6.0)
+2026-01-03T02:31:19.2052798Z   - Downloading psr/container (2.0.2)
+2026-01-03T02:31:19.2056056Z   - Downloading fakerphp/faker (v1.24.1)
+2026-01-03T02:31:19.2059666Z   - Downloading fidry/cpu-core-counter (1.3.0)
+2026-01-03T02:31:19.2062403Z   - Downloading psr/log (3.0.2)
+2026-01-03T02:31:19.2065624Z   - Downloading filp/whoops (2.18.4)
+2026-01-03T02:31:19.2068707Z   - Downloading symfony/polyfill-php83 (v1.33.0)
+2026-01-03T02:31:19.2071556Z   - Downloading symfony/polyfill-mbstring (v1.33.0)
+2026-01-03T02:31:19.2072924Z   - Downloading symfony/http-foundation (v7.3.7)
+2026-01-03T02:31:19.2075431Z   - Downloading fruitcake/php-cors (v1.3.0)
+2026-01-03T02:31:19.2077708Z   - Downloading guzzlehttp/promises (2.3.0)
+2026-01-03T02:31:19.2079665Z   - Downloading symfony/polyfill-php80 (v1.33.0)
+2026-01-03T02:31:19.2081250Z   - Downloading guzzlehttp/uri-template (v1.0.5)
+2026-01-03T02:31:19.2083255Z   - Downloading symfony/polyfill-intl-normalizer (v1.33.0)
+2026-01-03T02:31:19.2084853Z   - Downloading symfony/polyfill-intl-grapheme (v1.33.0)
+2026-01-03T02:31:19.2086568Z   - Downloading symfony/polyfill-ctype (v1.33.0)
+2026-01-03T02:31:19.2088333Z   - Downloading symfony/string (v7.3.4)
+2026-01-03T02:31:19.2090488Z   - Downloading symfony/service-contracts (v3.6.1)
+2026-01-03T02:31:19.2092017Z   - Downloading symfony/console (v7.3.6)
+2026-01-03T02:31:19.2094602Z   - Downloading voku/portable-ascii (2.0.3)
+2026-01-03T02:31:19.2097208Z   - Downloading phpoption/phpoption (1.9.4)
+2026-01-03T02:31:19.2099975Z   - Downloading graham-campbell/result-type (v1.1.3)
+2026-01-03T02:31:19.2102339Z   - Downloading vlucas/phpdotenv (v5.6.2)
+2026-01-03T02:31:19.2104124Z   - Downloading symfony/css-selector (v7.3.6)
+2026-01-03T02:31:19.2106566Z   - Downloading tijsverkoyen/css-to-inline-styles (v2.3.0)
+2026-01-03T02:31:19.2108145Z   - Downloading symfony/var-dumper (v7.3.5)
+2026-01-03T02:31:19.2110147Z   - Downloading symfony/polyfill-uuid (v1.33.0)
+2026-01-03T02:31:19.2111624Z   - Downloading symfony/uid (v7.3.1)
+2026-01-03T02:31:19.2113668Z   - Downloading symfony/routing (v7.3.6)
+2026-01-03T02:31:19.2115209Z   - Downloading symfony/process (v7.3.4)
+2026-01-03T02:31:19.2117360Z   - Downloading symfony/polyfill-php85 (v1.33.0)
+2026-01-03T02:31:19.2118978Z   - Downloading symfony/polyfill-php84 (v1.33.0)
+2026-01-03T02:31:19.2120892Z   - Downloading symfony/polyfill-intl-idn (v1.33.0)
+2026-01-03T02:31:19.2122401Z   - Downloading symfony/mime (v7.3.4)
+2026-01-03T02:31:19.2124429Z   - Downloading psr/event-dispatcher (1.0.0)
+2026-01-03T02:31:19.2126080Z   - Downloading symfony/event-dispatcher-contracts (v3.6.0)
+2026-01-03T02:31:19.2128353Z   - Downloading symfony/event-dispatcher (v7.3.3)
+2026-01-03T02:31:19.2130694Z   - Downloading egulias/email-validator (4.0.4)
+2026-01-03T02:31:19.2132157Z   - Downloading symfony/mailer (v7.3.5)
+2026-01-03T02:31:19.2134782Z   - Downloading symfony/error-handler (v7.3.6)
+2026-01-03T02:31:19.2136079Z   - Downloading symfony/http-kernel (v7.3.7)
+2026-01-03T02:31:19.2138719Z   - Downloading symfony/finder (v7.3.5)
+2026-01-03T02:31:19.2141154Z   - Downloading ramsey/collection (2.1.1)
+2026-01-03T02:31:19.2143528Z   - Downloading brick/math (0.14.1)
+2026-01-03T02:31:19.2145117Z   - Downloading ramsey/uuid (4.9.1)
+2026-01-03T02:31:19.2146791Z   - Downloading psr/simple-cache (3.0.0)
+2026-01-03T02:31:19.2149104Z   - Downloading nunomaduro/termwind (v2.3.3)
+2026-01-03T02:31:19.2150803Z   - Downloading symfony/translation-contracts (v3.6.1)
+2026-01-03T02:31:19.2152413Z   - Downloading symfony/translation (v7.3.4)
+2026-01-03T02:31:19.2153975Z   - Downloading psr/clock (1.0.0)
+2026-01-03T02:31:19.2155608Z   - Downloading symfony/clock (v7.3.0)
+2026-01-03T02:31:19.2158012Z   - Downloading carbonphp/carbon-doctrine-types (3.2.0)
+2026-01-03T02:31:19.2159992Z   - Downloading nesbot/carbon (3.10.3)
+2026-01-03T02:31:19.2162039Z   - Downloading monolog/monolog (3.9.0)
+2026-01-03T02:31:19.2163671Z   - Downloading psr/http-message (2.0)
+2026-01-03T02:31:19.2165330Z   - Downloading psr/http-factory (1.1.0)
+2026-01-03T02:31:19.2167796Z   - Downloading league/uri-interfaces (7.6.0)
+2026-01-03T02:31:19.2169471Z   - Downloading league/uri (7.6.0)
+2026-01-03T02:31:19.2171144Z   - Downloading league/mime-type-detection (1.16.0)
+2026-01-03T02:31:19.2172710Z   - Downloading league/flysystem-local (3.30.2)
+2026-01-03T02:31:19.2174350Z   - Downloading league/flysystem (3.30.2)
+2026-01-03T02:31:19.2176445Z   - Downloading nette/utils (v4.0.9)
+2026-01-03T02:31:19.2178591Z   - Downloading nette/schema (v1.3.3)
+2026-01-03T02:31:19.2180944Z   - Downloading dflydev/dot-access-data (v3.0.3)
+2026-01-03T02:31:19.2182433Z   - Downloading league/config (v1.2.0)
+2026-01-03T02:31:19.2184425Z   - Downloading league/commonmark (2.7.1)
+2026-01-03T02:31:19.2187112Z   - Downloading laravel/serializable-closure (v2.0.7)
+2026-01-03T02:31:19.2188558Z   - Downloading laravel/prompts (v0.3.8)
+2026-01-03T02:31:19.2192497Z   - Downloading psr/http-client (1.0.3)
+2026-01-03T02:31:19.2194808Z   - Downloading ralouphie/getallheaders (3.0.3)
+2026-01-03T02:31:19.2196269Z   - Downloading guzzlehttp/psr7 (2.8.0)
+2026-01-03T02:31:19.2198476Z   - Downloading guzzlehttp/guzzle (7.10.0)
+2026-01-03T02:31:19.2199996Z   - Downloading laravel/framework (v12.40.1)
+2026-01-03T02:31:19.2202541Z   - Downloading inertiajs/inertia-laravel (v2.0.10)
+2026-01-03T02:31:19.2204937Z   - Downloading jean85/pretty-package-versions (2.1.1)
+2026-01-03T02:31:19.2206460Z   - Downloading symfony/yaml (v7.3.5)
+2026-01-03T02:31:19.2208755Z   - Downloading laravel/roster (v0.2.9)
+2026-01-03T02:31:19.2210216Z   - Downloading laravel/mcp (v0.3.4)
+2026-01-03T02:31:19.2212251Z   - Downloading laravel/boost (v1.8.2)
+2026-01-03T02:31:19.2214072Z   - Downloading laravel/breeze (v2.3.8)
+2026-01-03T02:31:19.2216505Z   - Downloading php-webdriver/webdriver (1.15.2)
+2026-01-03T02:31:19.2218210Z   - Downloading laravel/dusk (v8.3.4)
+2026-01-03T02:31:19.2220276Z   - Downloading laravel/pint (v1.25.1)
+2026-01-03T02:31:19.2222661Z   - Downloading react/event-loop (v1.6.0)
+2026-01-03T02:31:19.2225007Z   - Downloading evenement/evenement (v3.0.2)
+2026-01-03T02:31:19.2226493Z   - Downloading react/stream (v1.4.0)
+2026-01-03T02:31:19.2228751Z   - Downloading react/promise (v3.3.0)
+2026-01-03T02:31:19.2230255Z   - Downloading react/cache (v1.2.0)
+2026-01-03T02:31:19.2232222Z   - Downloading react/dns (v1.14.0)
+2026-01-03T02:31:19.2234026Z   - Downloading react/socket (v1.17.0)
+2026-01-03T02:31:19.2235878Z   - Downloading react/promise-timer (v1.11.0)
+2026-01-03T02:31:19.2238525Z   - Downloading ratchet/rfc6455 (v0.4.0)
+2026-01-03T02:31:19.2240879Z   - Downloading paragonie/sodium_compat (v2.4.0)
+2026-01-03T02:31:19.2243222Z   - Downloading pusher/pusher-php-server (7.2.7)
+2026-01-03T02:31:19.2244724Z   - Downloading clue/redis-react (v2.8.0)
+2026-01-03T02:31:19.2246706Z   - Downloading laravel/reverb (v1.6.2)
+2026-01-03T02:31:19.2249115Z   - Downloading laravel/sail (v1.48.1)
+2026-01-03T02:31:19.2250297Z   - Downloading laravel/sanctum (v4.2.1)
+2026-01-03T02:31:19.2252855Z   - Downloading nikic/php-parser (v5.6.2)
+2026-01-03T02:31:19.2255144Z   - Downloading psy/psysh (v0.12.14)
+2026-01-03T02:31:19.2256678Z   - Downloading laravel/tinker (v2.10.2)
+2026-01-03T02:31:19.2259507Z   - Downloading hamcrest/hamcrest-php (v2.1.1)
+2026-01-03T02:31:19.2261802Z   - Downloading mockery/mockery (1.6.12)
+2026-01-03T02:31:19.2264333Z   - Downloading myclabs/deep-copy (1.13.4)
+2026-01-03T02:31:19.2266733Z   - Downloading staabm/side-effects-detector (1.0.5)
+2026-01-03T02:31:19.2269280Z   - Downloading sebastian/version (5.0.2)
+2026-01-03T02:31:19.2270910Z   - Downloading sebastian/type (5.1.3)
+2026-01-03T02:31:19.2272709Z   - Downloading sebastian/recursion-context (6.0.3)
+2026-01-03T02:31:19.2274349Z   - Downloading sebastian/object-reflector (4.0.1)
+2026-01-03T02:31:19.2275954Z   - Downloading sebastian/object-enumerator (6.0.1)
+2026-01-03T02:31:19.2277785Z   - Downloading sebastian/global-state (7.0.2)
+2026-01-03T02:31:19.2279434Z   - Downloading sebastian/exporter (6.3.2)
+2026-01-03T02:31:19.2281067Z   - Downloading sebastian/environment (7.2.1)
+2026-01-03T02:31:19.2282726Z   - Downloading sebastian/diff (6.0.2)
+2026-01-03T02:31:19.2284402Z   - Downloading sebastian/comparator (6.3.2)
+2026-01-03T02:31:19.2286044Z   - Downloading sebastian/code-unit (3.0.3)
+2026-01-03T02:31:19.2287868Z   - Downloading sebastian/cli-parser (3.0.2)
+2026-01-03T02:31:19.2289937Z   - Downloading phpunit/php-timer (7.0.1)
+2026-01-03T02:31:19.2291608Z   - Downloading phpunit/php-text-template (4.0.1)
+2026-01-03T02:31:19.2293260Z   - Downloading phpunit/php-invoker (5.0.1)
+2026-01-03T02:31:19.2294935Z   - Downloading phpunit/php-file-iterator (5.1.0)
+2026-01-03T02:31:19.2297227Z   - Downloading theseer/tokenizer (1.3.1)
+2026-01-03T02:31:19.2298878Z   - Downloading sebastian/lines-of-code (3.0.1)
+2026-01-03T02:31:19.2300527Z   - Downloading sebastian/complexity (4.0.1)
+2026-01-03T02:31:19.2302205Z   - Downloading sebastian/code-unit-reverse-lookup (4.0.1)
+2026-01-03T02:31:19.2303812Z   - Downloading phpunit/php-code-coverage (11.0.11)
+2026-01-03T02:31:19.2305830Z   - Downloading phar-io/version (3.2.1)
+2026-01-03T02:31:19.2307740Z   - Downloading phar-io/manifest (2.0.4)
+2026-01-03T02:31:19.2309429Z   - Downloading phpunit/phpunit (11.5.15)
+2026-01-03T02:31:19.2311091Z   - Downloading pestphp/pest-plugin-mutate (v3.0.5)
+2026-01-03T02:31:19.2313213Z   - Downloading webmozart/assert (1.12.1)
+2026-01-03T02:31:19.2315322Z   - Downloading phpstan/phpdoc-parser (2.3.0)
+2026-01-03T02:31:19.2317680Z   - Downloading phpdocumentor/reflection-common (2.2.0)
+2026-01-03T02:31:19.2319323Z   - Downloading doctrine/deprecations (1.1.5)
+2026-01-03T02:31:19.2320961Z   - Downloading phpdocumentor/type-resolver (1.12.0)
+2026-01-03T02:31:19.2322594Z   - Downloading phpdocumentor/reflection-docblock (5.6.4)
+2026-01-03T02:31:19.2324710Z   - Downloading ta-tikoma/phpunit-architecture-test (0.8.5)
+2026-01-03T02:31:19.2326306Z   - Downloading pestphp/pest-plugin-arch (v3.1.1)
+2026-01-03T02:31:19.2328129Z   - Downloading nunomaduro/collision (v8.8.3)
+2026-01-03T02:31:19.2330487Z   - Downloading brianium/paratest (v7.8.3)
+2026-01-03T02:31:19.2332244Z   - Downloading pestphp/pest (v3.8.2)
+2026-01-03T02:31:19.2334360Z   - Downloading spatie/error-solutions (1.1.3)
+2026-01-03T02:31:19.2336057Z   - Downloading spatie/backtrace (1.8.1)
+2026-01-03T02:31:19.2337855Z   - Downloading spatie/flare-client-php (1.10.1)
+2026-01-03T02:31:19.2339474Z   - Downloading spatie/ignition (1.15.1)
+2026-01-03T02:31:19.2341101Z   - Downloading spatie/laravel-ignition (2.9.1)
+2026-01-03T02:31:19.2343151Z   - Downloading tightenco/ziggy (v2.6.0)
+2026-01-03T02:31:24.2450973Z   - Installing pestphp/pest-plugin (v3.0.0): Extracting archive
+2026-01-03T02:31:24.3149002Z   - Installing clue/redis-protocol (v0.3.2): Extracting archive
+2026-01-03T02:31:24.3174062Z   - Installing doctrine/inflector (2.1.0): Extracting archive
+2026-01-03T02:31:24.3201032Z   - Installing doctrine/lexer (3.0.1): Extracting archive
+2026-01-03T02:31:24.3232416Z   - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+2026-01-03T02:31:24.3268372Z   - Installing symfony/deprecation-contracts (v3.6.0): Extracting archive
+2026-01-03T02:31:24.3299128Z   - Installing psr/container (2.0.2): Extracting archive
+2026-01-03T02:31:24.3331997Z   - Installing fakerphp/faker (v1.24.1): Extracting archive
+2026-01-03T02:31:24.3365086Z   - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+2026-01-03T02:31:24.3397892Z   - Installing psr/log (3.0.2): Extracting archive
+2026-01-03T02:31:24.3430896Z   - Installing filp/whoops (2.18.4): Extracting archive
+2026-01-03T02:31:24.3464461Z   - Installing symfony/polyfill-php83 (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3487755Z   - Installing symfony/polyfill-mbstring (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3488946Z   - Installing symfony/http-foundation (v7.3.7): Extracting archive
+2026-01-03T02:31:24.3489886Z   - Installing fruitcake/php-cors (v1.3.0): Extracting archive
+2026-01-03T02:31:24.3490805Z   - Installing guzzlehttp/promises (2.3.0): Extracting archive
+2026-01-03T02:31:24.3491682Z   - Installing symfony/polyfill-php80 (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3492500Z   - Installing guzzlehttp/uri-template (v1.0.5): Extracting archive
+2026-01-03T02:31:24.3493575Z   - Installing symfony/polyfill-intl-normalizer (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3494624Z   - Installing symfony/polyfill-intl-grapheme (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3495634Z   - Installing symfony/polyfill-ctype (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3497040Z   - Installing symfony/string (v7.3.4): Extracting archive
+2026-01-03T02:31:24.3501377Z   - Installing symfony/service-contracts (v3.6.1): Extracting archive
+2026-01-03T02:31:24.3505205Z   - Installing symfony/console (v7.3.6): Extracting archive
+2026-01-03T02:31:24.3508790Z   - Installing voku/portable-ascii (2.0.3): Extracting archive
+2026-01-03T02:31:24.3512338Z   - Installing phpoption/phpoption (1.9.4): Extracting archive
+2026-01-03T02:31:24.3515857Z   - Installing graham-campbell/result-type (v1.1.3): Extracting archive
+2026-01-03T02:31:24.3518932Z   - Installing vlucas/phpdotenv (v5.6.2): Extracting archive
+2026-01-03T02:31:24.3522623Z   - Installing symfony/css-selector (v7.3.6): Extracting archive
+2026-01-03T02:31:24.3526105Z   - Installing tijsverkoyen/css-to-inline-styles (v2.3.0): Extracting archive
+2026-01-03T02:31:24.3539239Z   - Installing symfony/var-dumper (v7.3.5): Extracting archive
+2026-01-03T02:31:24.3540021Z   - Installing symfony/polyfill-uuid (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3542508Z   - Installing symfony/uid (v7.3.1): Extracting archive
+2026-01-03T02:31:24.3543186Z   - Installing symfony/routing (v7.3.6): Extracting archive
+2026-01-03T02:31:24.3545609Z   - Installing symfony/process (v7.3.4): Extracting archive
+2026-01-03T02:31:24.3546402Z   - Installing symfony/polyfill-php85 (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3551054Z   - Installing symfony/polyfill-php84 (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3553378Z   - Installing symfony/polyfill-intl-idn (v1.33.0): Extracting archive
+2026-01-03T02:31:24.3555218Z   - Installing symfony/mime (v7.3.4): Extracting archive
+2026-01-03T02:31:24.3557332Z   - Installing psr/event-dispatcher (1.0.0): Extracting archive
+2026-01-03T02:31:24.3560072Z   - Installing symfony/event-dispatcher-contracts (v3.6.0): Extracting archive
+2026-01-03T02:31:24.3563922Z   - Installing symfony/event-dispatcher (v7.3.3): Extracting archive
+2026-01-03T02:31:24.3566964Z   - Installing egulias/email-validator (4.0.4): Extracting archive
+2026-01-03T02:31:24.3570054Z   - Installing symfony/mailer (v7.3.5): Extracting archive
+2026-01-03T02:31:24.3578106Z   - Installing symfony/error-handler (v7.3.6): Extracting archive
+2026-01-03T02:31:24.3579131Z   - Installing symfony/http-kernel (v7.3.7): Extracting archive
+2026-01-03T02:31:24.3581311Z   - Installing symfony/finder (v7.3.5): Extracting archive
+2026-01-03T02:31:24.3790091Z   - Installing ramsey/collection (2.1.1): Extracting archive
+2026-01-03T02:31:24.3792227Z   - Installing brick/math (0.14.1): Extracting archive
+2026-01-03T02:31:24.3796194Z   - Installing ramsey/uuid (4.9.1): Extracting archive
+2026-01-03T02:31:24.3803857Z   - Installing psr/simple-cache (3.0.0): Extracting archive
+2026-01-03T02:31:24.3804590Z   - Installing nunomaduro/termwind (v2.3.3): Extracting archive
+2026-01-03T02:31:24.3805410Z   - Installing symfony/translation-contracts (v3.6.1): Extracting archive
+2026-01-03T02:31:24.3808108Z   - Installing symfony/translation (v7.3.4): Extracting archive
+2026-01-03T02:31:24.3811229Z   - Installing psr/clock (1.0.0): Extracting archive
+2026-01-03T02:31:24.3813783Z   - Installing symfony/clock (v7.3.0): Extracting archive
+2026-01-03T02:31:24.3816651Z   - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+2026-01-03T02:31:24.3819568Z   - Installing nesbot/carbon (3.10.3): Extracting archive
+2026-01-03T02:31:24.3822181Z   - Installing monolog/monolog (3.9.0): Extracting archive
+2026-01-03T02:31:24.3824822Z   - Installing psr/http-message (2.0): Extracting archive
+2026-01-03T02:31:24.3827590Z   - Installing psr/http-factory (1.1.0): Extracting archive
+2026-01-03T02:31:24.3830204Z   - Installing league/uri-interfaces (7.6.0): Extracting archive
+2026-01-03T02:31:24.3832815Z   - Installing league/uri (7.6.0): Extracting archive
+2026-01-03T02:31:24.3835831Z   - Installing league/mime-type-detection (1.16.0): Extracting archive
+2026-01-03T02:31:24.3838712Z   - Installing league/flysystem-local (3.30.2): Extracting archive
+2026-01-03T02:31:24.3841690Z   - Installing league/flysystem (3.30.2): Extracting archive
+2026-01-03T02:31:24.3845249Z   - Installing nette/utils (v4.0.9): Extracting archive
+2026-01-03T02:31:24.3849132Z   - Installing nette/schema (v1.3.3): Extracting archive
+2026-01-03T02:31:24.3852245Z   - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+2026-01-03T02:31:24.3855023Z   - Installing league/config (v1.2.0): Extracting archive
+2026-01-03T02:31:24.3857946Z   - Installing league/commonmark (2.7.1): Extracting archive
+2026-01-03T02:31:24.3861181Z   - Installing laravel/serializable-closure (v2.0.7): Extracting archive
+2026-01-03T02:31:24.3863755Z   - Installing laravel/prompts (v0.3.8): Extracting archive
+2026-01-03T02:31:24.3866488Z   - Installing psr/http-client (1.0.3): Extracting archive
+2026-01-03T02:31:24.3869416Z   - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+2026-01-03T02:31:24.3872088Z   - Installing guzzlehttp/psr7 (2.8.0): Extracting archive
+2026-01-03T02:31:24.3874676Z   - Installing guzzlehttp/guzzle (7.10.0): Extracting archive
+2026-01-03T02:31:24.3877327Z   - Installing laravel/framework (v12.40.1): Extracting archive
+2026-01-03T02:31:24.3880174Z   - Installing inertiajs/inertia-laravel (v2.0.10): Extracting archive
+2026-01-03T02:31:24.3882949Z   - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+2026-01-03T02:31:24.3885473Z   - Installing symfony/yaml (v7.3.5): Extracting archive
+2026-01-03T02:31:24.3888857Z   - Installing laravel/roster (v0.2.9): Extracting archive
+2026-01-03T02:31:24.3891738Z   - Installing laravel/mcp (v0.3.4): Extracting archive
+2026-01-03T02:31:24.3894183Z   - Installing laravel/boost (v1.8.2): Extracting archive
+2026-01-03T02:31:24.3896724Z   - Installing laravel/breeze (v2.3.8): Extracting archive
+2026-01-03T02:31:24.3899513Z   - Installing php-webdriver/webdriver (1.15.2): Extracting archive
+2026-01-03T02:31:24.3902099Z   - Installing laravel/dusk (v8.3.4): Extracting archive
+2026-01-03T02:31:24.3904642Z   - Installing laravel/pint (v1.25.1): Extracting archive
+2026-01-03T02:31:24.3907469Z   - Installing react/event-loop (v1.6.0): Extracting archive
+2026-01-03T02:31:24.3910478Z   - Installing evenement/evenement (v3.0.2): Extracting archive
+2026-01-03T02:31:24.3913284Z   - Installing react/stream (v1.4.0): Extracting archive
+2026-01-03T02:31:24.3916012Z   - Installing react/promise (v3.3.0): Extracting archive
+2026-01-03T02:31:24.3918882Z   - Installing react/cache (v1.2.0): Extracting archive
+2026-01-03T02:31:24.3921426Z   - Installing react/dns (v1.14.0): Extracting archive
+2026-01-03T02:31:24.3924106Z   - Installing react/socket (v1.17.0): Extracting archive
+2026-01-03T02:31:24.3927121Z   - Installing react/promise-timer (v1.11.0): Extracting archive
+2026-01-03T02:31:24.3929680Z   - Installing ratchet/rfc6455 (v0.4.0): Extracting archive
+2026-01-03T02:31:24.3932641Z   - Installing paragonie/sodium_compat (v2.4.0): Extracting archive
+2026-01-03T02:31:24.3935290Z   - Installing pusher/pusher-php-server (7.2.7): Extracting archive
+2026-01-03T02:31:24.3938196Z   - Installing clue/redis-react (v2.8.0): Extracting archive
+2026-01-03T02:31:24.3940953Z   - Installing laravel/reverb (v1.6.2): Extracting archive
+2026-01-03T02:31:24.3943489Z   - Installing laravel/sail (v1.48.1): Extracting archive
+2026-01-03T02:31:24.3946167Z   - Installing laravel/sanctum (v4.2.1): Extracting archive
+2026-01-03T02:31:24.3948799Z   - Installing nikic/php-parser (v5.6.2): Extracting archive
+2026-01-03T02:31:24.3951610Z   - Installing psy/psysh (v0.12.14): Extracting archive
+2026-01-03T02:31:24.3954188Z   - Installing laravel/tinker (v2.10.2): Extracting archive
+2026-01-03T02:31:24.3956993Z   - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+2026-01-03T02:31:24.3959752Z   - Installing mockery/mockery (1.6.12): Extracting archive
+2026-01-03T02:31:24.3962455Z   - Installing myclabs/deep-copy (1.13.4): Extracting archive
+2026-01-03T02:31:24.3965129Z   - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+2026-01-03T02:31:24.3968270Z   - Installing sebastian/version (5.0.2): Extracting archive
+2026-01-03T02:31:24.3971017Z   - Installing sebastian/type (5.1.3): Extracting archive
+2026-01-03T02:31:24.3973738Z   - Installing sebastian/recursion-context (6.0.3): Extracting archive
+2026-01-03T02:31:24.3976522Z   - Installing sebastian/object-reflector (4.0.1): Extracting archive
+2026-01-03T02:31:24.3979215Z   - Installing sebastian/object-enumerator (6.0.1): Extracting archive
+2026-01-03T02:31:24.3981804Z   - Installing sebastian/global-state (7.0.2): Extracting archive
+2026-01-03T02:31:24.3984467Z   - Installing sebastian/exporter (6.3.2): Extracting archive
+2026-01-03T02:31:24.3987264Z   - Installing sebastian/environment (7.2.1): Extracting archive
+2026-01-03T02:31:24.3989861Z   - Installing sebastian/diff (6.0.2): Extracting archive
+2026-01-03T02:31:24.3992407Z   - Installing sebastian/comparator (6.3.2): Extracting archive
+2026-01-03T02:31:24.3994909Z   - Installing sebastian/code-unit (3.0.3): Extracting archive
+2026-01-03T02:31:24.3997642Z   - Installing sebastian/cli-parser (3.0.2): Extracting archive
+2026-01-03T02:31:24.4000288Z   - Installing phpunit/php-timer (7.0.1): Extracting archive
+2026-01-03T02:31:24.4002955Z   - Installing phpunit/php-text-template (4.0.1): Extracting archive
+2026-01-03T02:31:24.4005486Z   - Installing phpunit/php-invoker (5.0.1): Extracting archive
+2026-01-03T02:31:24.4008538Z   - Installing phpunit/php-file-iterator (5.1.0): Extracting archive
+2026-01-03T02:31:24.4010932Z   - Installing theseer/tokenizer (1.3.1): Extracting archive
+2026-01-03T02:31:24.4013507Z   - Installing sebastian/lines-of-code (3.0.1): Extracting archive
+2026-01-03T02:31:24.4016133Z   - Installing sebastian/complexity (4.0.1): Extracting archive
+2026-01-03T02:31:24.4019642Z   - Installing sebastian/code-unit-reverse-lookup (4.0.1): Extracting archive
+2026-01-03T02:31:24.4022154Z   - Installing phpunit/php-code-coverage (11.0.11): Extracting archive
+2026-01-03T02:31:24.4024694Z   - Installing phar-io/version (3.2.1): Extracting archive
+2026-01-03T02:31:24.4027463Z   - Installing phar-io/manifest (2.0.4): Extracting archive
+2026-01-03T02:31:24.4030048Z   - Installing phpunit/phpunit (11.5.15): Extracting archive
+2026-01-03T02:31:24.4032811Z   - Installing pestphp/pest-plugin-mutate (v3.0.5): Extracting archive
+2026-01-03T02:31:24.4035331Z   - Installing webmozart/assert (1.12.1): Extracting archive
+2026-01-03T02:31:24.4038483Z   - Installing phpstan/phpdoc-parser (2.3.0): Extracting archive
+2026-01-03T02:31:24.4041214Z   - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+2026-01-03T02:31:24.4043596Z   - Installing doctrine/deprecations (1.1.5): Extracting archive
+2026-01-03T02:31:24.4046211Z   - Installing phpdocumentor/type-resolver (1.12.0): Extracting archive
+2026-01-03T02:31:24.4049023Z   - Installing phpdocumentor/reflection-docblock (5.6.4): Extracting archive
+2026-01-03T02:31:24.4051666Z   - Installing ta-tikoma/phpunit-architecture-test (0.8.5): Extracting archive
+2026-01-03T02:31:24.4054312Z   - Installing pestphp/pest-plugin-arch (v3.1.1): Extracting archive
+2026-01-03T02:31:24.4057028Z   - Installing nunomaduro/collision (v8.8.3): Extracting archive
+2026-01-03T02:31:24.4059689Z   - Installing brianium/paratest (v7.8.3): Extracting archive
+2026-01-03T02:31:24.4064102Z   - Installing pestphp/pest (v3.8.2): Extracting archive
+2026-01-03T02:31:24.4066351Z   - Installing spatie/error-solutions (1.1.3): Extracting archive
+2026-01-03T02:31:24.4069006Z   - Installing spatie/backtrace (1.8.1): Extracting archive
+2026-01-03T02:31:24.4071469Z   - Installing spatie/flare-client-php (1.10.1): Extracting archive
+2026-01-03T02:31:24.4073671Z   - Installing spatie/ignition (1.15.1): Extracting archive
+2026-01-03T02:31:24.4076154Z   - Installing spatie/laravel-ignition (2.9.1): Extracting archive
+2026-01-03T02:31:24.4078598Z   - Installing tightenco/ziggy (v2.6.0): Extracting archive
+2026-01-03T02:31:26.4863375Z Generating optimized autoload files
+2026-01-03T02:31:28.0272088Z Class Tests\Unit\RecipeRevisionPhaseTest located in ./tests/Unit/RecipeStageMapTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+2026-01-03T02:31:28.2657944Z > Illuminate\Foundation\ComposerScripts::postAutoloadDump
+2026-01-03T02:31:28.2862688Z > @php artisan package:discover --ansi
+2026-01-03T02:31:28.5419623Z 
+2026-01-03T02:31:28.5420568Z   [37;44m INFO [39;49m Discovering packages.  
+2026-01-03T02:31:28.5421064Z 
+2026-01-03T02:31:28.5494536Z   inertiajs/inertia-laravel [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5540646Z   laravel/boost [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5586629Z   laravel/breeze [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5634757Z   laravel/dusk [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5686326Z   laravel/mcp [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5734002Z   laravel/reverb [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5782091Z   laravel/roster [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5831012Z   laravel/sail [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5877976Z   laravel/sanctum [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5925354Z   laravel/tinker [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.5979618Z   nesbot/carbon [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.6021794Z   nunomaduro/collision [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.6064815Z   nunomaduro/termwind [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.6104417Z   spatie/laravel-ignition [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.6149601Z   tightenco/ziggy [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+2026-01-03T02:31:28.6151005Z 
+2026-01-03T02:31:28.6321183Z 101 packages you are using are looking for funding.
+2026-01-03T02:31:28.6321645Z Use the `composer fund` command to find out more!
+2026-01-03T02:31:28.6846474Z ##[group]Run composer audit --no-interaction || true
+2026-01-03T02:31:28.6847082Z [36;1mcomposer audit --no-interaction || true[0m
+2026-01-03T02:31:28.6879879Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:28.6880097Z env:
+2026-01-03T02:31:28.6880434Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:28.6880666Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:28.6880872Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:28.6881051Z ##[endgroup]
+2026-01-03T02:31:29.2459111Z Found 1 security vulnerability advisory affecting 1 package:
+2026-01-03T02:31:29.2494094Z +-------------------+----------------------------------------------------------------------------------+
+2026-01-03T02:31:29.2495489Z | Package           | paragonie/sodium_compat                                                          |
+2026-01-03T02:31:29.2496209Z | Severity          |                                                                                  |
+2026-01-03T02:31:29.2497200Z | Advisory ID       | PKSA-8x19-j2j3-bn67                                                              |
+2026-01-03T02:31:29.2497898Z | CVE               | NO CVE                                                                           |
+2026-01-03T02:31:29.2498550Z | Title             | Missing check that a point is on the prime subgroup for Edwards25519             |
+2026-01-03T02:31:29.2499353Z | URL               | https://00f.net/2025/12/30/libsodium-vulnerability                               |
+2026-01-03T02:31:29.2500039Z | Affected versions | >=2,<2.5.0|<1.24.0                                                               |
+2026-01-03T02:31:29.2500740Z | Reported at       | 2025-12-30T00:00:00+00:00                                                        |
+2026-01-03T02:31:29.2501340Z +-------------------+----------------------------------------------------------------------------------+
+2026-01-03T02:31:29.2748769Z ##[group]Run cp .env.example .env
+2026-01-03T02:31:29.2749108Z [36;1mcp .env.example .env[0m
+2026-01-03T02:31:29.2749326Z [36;1mphp artisan key:generate[0m
+2026-01-03T02:31:29.2749552Z [36;1mphp -r "[0m
+2026-01-03T02:31:29.2749722Z [36;1m  \$file = '.env';[0m
+2026-01-03T02:31:29.2749946Z [36;1m  \$env = file_get_contents(\$file);[0m
+2026-01-03T02:31:29.2750276Z [36;1m  // Используем in-memory cache в CI, чтобы не требовать таблицу cache[0m
+2026-01-03T02:31:29.2750644Z [36;1m  if (preg_match('/^CACHE_STORE=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2751018Z [36;1m    \$env = preg_replace('/^CACHE_STORE=.*/m', 'CACHE_STORE=array', \$env);[0m
+2026-01-03T02:31:29.2751336Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2751550Z [36;1m    \$env .= PHP_EOL.'CACHE_STORE=array';[0m
+2026-01-03T02:31:29.2751785Z [36;1m  }[0m
+2026-01-03T02:31:29.2752029Z [36;1m  // Явно включаем testing окружение для корректной регистрации тестовых маршрутов[0m
+2026-01-03T02:31:29.2752417Z [36;1m  if (preg_match('/^APP_ENV=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2752756Z [36;1m    \$env = preg_replace('/^APP_ENV=.*/m', 'APP_ENV=testing', \$env);[0m
+2026-01-03T02:31:29.2753065Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2753270Z [36;1m    \$env .= PHP_EOL.'APP_ENV=testing';[0m
+2026-01-03T02:31:29.2753513Z [36;1m  }[0m
+2026-01-03T02:31:29.2753723Z [36;1m  // Сессии для E2E не должны требовать таблицу sessions[0m
+2026-01-03T02:31:29.2754038Z [36;1m  if (preg_match('/^SESSION_DRIVER=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2754412Z [36;1m    \$env = preg_replace('/^SESSION_DRIVER=.*/m', 'SESSION_DRIVER=file', \$env);[0m
+2026-01-03T02:31:29.2754737Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2754949Z [36;1m    \$env .= PHP_EOL.'SESSION_DRIVER=file';[0m
+2026-01-03T02:31:29.2755186Z [36;1m  }[0m
+2026-01-03T02:31:29.2755400Z [36;1m  // Устанавливаем/обновляем параметры БД независимо от начальных значений[0m
+2026-01-03T02:31:29.2755796Z [36;1m  \$env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', \$env);[0m
+2026-01-03T02:31:29.2756168Z [36;1m  if (preg_match('/^DB_DATABASE=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2756523Z [36;1m    \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro_test', \$env);[0m
+2026-01-03T02:31:29.2756983Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2757208Z [36;1m    \$env .= PHP_EOL.'DB_DATABASE=hydro_test';[0m
+2026-01-03T02:31:29.2757458Z [36;1m  }[0m
+2026-01-03T02:31:29.2757825Z [36;1m  if (preg_match('/^DB_USERNAME=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2758174Z [36;1m    \$env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=hydro', \$env);[0m
+2026-01-03T02:31:29.2758485Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2758688Z [36;1m    \$env .= PHP_EOL.'DB_USERNAME=hydro';[0m
+2026-01-03T02:31:29.2758924Z [36;1m  }[0m
+2026-01-03T02:31:29.2759124Z [36;1m  if (preg_match('/^DB_PASSWORD=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2759465Z [36;1m    \$env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=hydro', \$env);[0m
+2026-01-03T02:31:29.2759775Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2759979Z [36;1m    \$env .= PHP_EOL.'DB_PASSWORD=hydro';[0m
+2026-01-03T02:31:29.2760209Z [36;1m  }[0m
+2026-01-03T02:31:29.2760403Z [36;1m  if (preg_match('/^DB_HOST=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2760721Z [36;1m    \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', \$env);[0m
+2026-01-03T02:31:29.2761045Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2761267Z [36;1m    \$env .= PHP_EOL.'DB_HOST=127.0.0.1';[0m
+2026-01-03T02:31:29.2761523Z [36;1m  }[0m
+2026-01-03T02:31:29.2761730Z [36;1m  if (preg_match('/^DB_PORT=.*/m', \$env)) {[0m
+2026-01-03T02:31:29.2762039Z [36;1m    \$env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', \$env);[0m
+2026-01-03T02:31:29.2762327Z [36;1m  } else {[0m
+2026-01-03T02:31:29.2762520Z [36;1m    \$env .= PHP_EOL.'DB_PORT=5432';[0m
+2026-01-03T02:31:29.2762756Z [36;1m  }[0m
+2026-01-03T02:31:29.2762963Z [36;1m  file_put_contents(\$file, \$env);[0m
+2026-01-03T02:31:29.2763215Z [36;1m"[0m
+2026-01-03T02:31:29.2795646Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:29.2795870Z env:
+2026-01-03T02:31:29.2796044Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:29.2796264Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:29.2796464Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:29.2796648Z ##[endgroup]
+2026-01-03T02:31:29.5104387Z 
+2026-01-03T02:31:29.5105206Z    INFO  Application key set successfully.  
+2026-01-03T02:31:29.5105522Z 
+2026-01-03T02:31:29.5709516Z ##[group]Run npm install
+2026-01-03T02:31:29.5709776Z [36;1mnpm install[0m
+2026-01-03T02:31:29.5742043Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:29.5742270Z env:
+2026-01-03T02:31:29.5742436Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:29.5742661Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:29.5742860Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:29.5743048Z ##[endgroup]
+2026-01-03T02:31:33.3457863Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-01-03T02:31:33.6588960Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-01-03T02:31:33.7627944Z npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+2026-01-03T02:31:34.4766009Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-01-03T02:31:34.4767739Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-01-03T02:31:37.8162605Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-01-03T02:31:38.9899013Z 
+2026-01-03T02:31:38.9899915Z added 567 packages, and audited 568 packages in 9s
+2026-01-03T02:31:38.9900456Z 
+2026-01-03T02:31:38.9900636Z 117 packages are looking for funding
+2026-01-03T02:31:38.9900918Z   run `npm fund` for details
+2026-01-03T02:31:38.9991757Z 
+2026-01-03T02:31:38.9992370Z 4 vulnerabilities (2 moderate, 2 high)
+2026-01-03T02:31:38.9992744Z 
+2026-01-03T02:31:38.9993117Z To address issues that do not require attention, run:
+2026-01-03T02:31:38.9993676Z   npm audit fix
+2026-01-03T02:31:38.9993877Z 
+2026-01-03T02:31:38.9994244Z To address all issues (including breaking changes), run:
+2026-01-03T02:31:38.9994820Z   npm audit fix --force
+2026-01-03T02:31:38.9995062Z 
+2026-01-03T02:31:38.9995737Z Run `npm audit` for details.
+2026-01-03T02:31:39.0329201Z ##[group]Run npm run build
+2026-01-03T02:31:39.0329653Z [36;1mnpm run build[0m
+2026-01-03T02:31:39.0372032Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:39.0372398Z env:
+2026-01-03T02:31:39.0372672Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:39.0373055Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:39.0373425Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:39.0373721Z ##[endgroup]
+2026-01-03T02:31:39.1612801Z 
+2026-01-03T02:31:39.1613522Z > build
+2026-01-03T02:31:39.1613866Z > vite build
+2026-01-03T02:31:39.1614049Z 
+2026-01-03T02:31:39.7568694Z [36mvite v5.4.21 [32mbuilding for production...[36m[39m
+2026-01-03T02:31:40.1059748Z transforming...
+2026-01-03T02:31:50.5284301Z [32m✓[39m 1708 modules transformed.
+2026-01-03T02:31:51.1947190Z rendering chunks...
+2026-01-03T02:31:51.3192460Z [1m[33m[plugin:vite:reporter][39m[22m [33m[plugin vite:reporter] 
+2026-01-03T02:31:51.3251567Z (!) /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/logger.ts is dynamically imported by /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneComparisonModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/bootstrap.js, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/bootstrap.js but also statically imported by /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/AIPredictionCard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/AttachNodesModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/AutomationEngine.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/CommandPalette.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ErrorBoundary.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GreenhouseCreateModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowCycle/CycleControlPanel.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowCycle/GrowthCycleWizard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/HeaderStatusBar.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/NodeConfigModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/PidConfigForm.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/PidLogsTable.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/PlantCreateModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/RecipeCreateWizard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneCreateWizard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneSimulationModal.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Admin/Recipes.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Admin/Zones.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Alerts/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Analytics/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Audit/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/AdminDashboard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/EngineerDashboard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/OperatorDashboard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Add.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/RelayConfigWizard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Show.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Greenhouses/Create.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Logs/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/Edit.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Settings/Index.vue, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Setup/Wizard.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Users/Index.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/Show.vue?vue&type=script&setup=true&lang.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/bootstrap.js, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useCommands.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useErrorHandler.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useFavorites.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useHistory.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useNodeLifecycle.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useNodeTelemetry.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useOptimisticUpdate.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useRateLimitedApi.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useStoreEvents.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useSystemStatus.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useTelemetry.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWebSocket.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useZones.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/apiClient.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/echoClient.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/routerGuards.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/vueErrorHandlers.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/ziggy.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/ws/invariants.ts, /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/ws/subscriptions.ts, dynamic import will not move module into another chunk.
+2026-01-03T02:31:51.3298725Z [39m
+2026-01-03T02:31:51.6676457Z computing gzip size...
+2026-01-03T02:31:51.7136245Z [2mpublic/build/[22m[32mmanifest.json                                                                    [39m[1m[2m 94.08 kB[22m[1m[22m[2m │ gzip:   6.89 kB[22m
+2026-01-03T02:31:51.7138387Z [2mpublic/build/[22m[35mcss/ZoneEventsTab-BSPHWG04.css                                                   [39m[1m[2m  0.04 kB[22m[1m[22m[2m │ gzip:   0.06 kB[22m
+2026-01-03T02:31:51.7140377Z [2mpublic/build/[22m[35mcss/ZoneDevicesTab-DwEPoXAQ.css                                                  [39m[1m[2m  0.06 kB[22m[1m[22m[2m │ gzip:   0.08 kB[22m
+2026-01-03T02:31:51.7142262Z [2mpublic/build/[22m[35mcss/Index-gsOitxvs.css                                                           [39m[1m[2m  0.10 kB[22m[1m[22m[2m │ gzip:   0.11 kB[22m
+2026-01-03T02:31:51.7144127Z [2mpublic/build/[22m[35mcss/Pagination-ClwHGYMh.css                                                      [39m[1m[2m  0.16 kB[22m[1m[22m[2m │ gzip:   0.15 kB[22m
+2026-01-03T02:31:51.7146104Z [2mpublic/build/[22m[35mcss/StageProgress-CBXMHDtp.css                                                   [39m[1m[2m  0.16 kB[22m[1m[22m[2m │ gzip:   0.13 kB[22m
+2026-01-03T02:31:51.7148326Z [2mpublic/build/[22m[35mcss/OperatorDashboard-BQfLGb3C.css                                               [39m[1m[2m  0.21 kB[22m[1m[22m[2m │ gzip:   0.16 kB[22m
+2026-01-03T02:31:51.7150247Z [2mpublic/build/[22m[35mcss/Index-DrnUIUXG.css                                                           [39m[1m[2m  0.27 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+2026-01-03T02:31:51.7152095Z [2mpublic/build/[22m[35mcss/LoadingState-CehYoz8E.css                                                    [39m[1m[2m  0.28 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+2026-01-03T02:31:51.7154019Z [2mpublic/build/[22m[35mcss/ToastContainer-yJHGKwaT.css                                                  [39m[1m[2m  0.51 kB[22m[1m[22m[2m │ gzip:   0.19 kB[22m
+2026-01-03T02:31:51.7155873Z [2mpublic/build/[22m[35mcss/Index-B3FGKmUu.css                                                           [39m[1m[2m  0.53 kB[22m[1m[22m[2m │ gzip:   0.19 kB[22m
+2026-01-03T02:31:51.7157833Z [2mpublic/build/[22m[35mcss/Index-BOCrBnHg.css                                                           [39m[1m[2m  0.66 kB[22m[1m[22m[2m │ gzip:   0.19 kB[22m
+2026-01-03T02:31:51.7159683Z [2mpublic/build/[22m[35mcss/DataTableV2-0O2LlnSE.css                                                     [39m[1m[2m  1.41 kB[22m[1m[22m[2m │ gzip:   0.44 kB[22m
+2026-01-03T02:31:51.7161541Z [2mpublic/build/[22m[35mcss/AppLayout-BTCLkC3r.css                                                       [39m[1m[2m  2.05 kB[22m[1m[22m[2m │ gzip:   0.47 kB[22m
+2026-01-03T02:31:51.7163400Z [2mpublic/build/[22m[35mcss/StatusIndicator-uJUe-i8L.css                                                 [39m[1m[2m  3.41 kB[22m[1m[22m[2m │ gzip:   0.65 kB[22m
+2026-01-03T02:31:51.7165259Z [2mpublic/build/[22m[35mcss/app-DBgsh7S0.css                                                             [39m[1m[2m 61.36 kB[22m[1m[22m[2m │ gzip:  11.76 kB[22m
+2026-01-03T02:31:51.7167297Z [2mpublic/build/[22m[36mjs/_plugin-vue_export-helper-DlAUqK2U.js                                         [39m[1m[2m  0.09 kB[22m[1m[22m[2m │ gzip:   0.10 kB[22m
+2026-01-03T02:31:51.7169156Z [2mpublic/build/[22m[36mjs/timeouts-gxbgkLhs.js                                                          [39m[1m[2m  0.09 kB[22m[1m[22m[2m │ gzip:   0.10 kB[22m
+2026-01-03T02:31:51.7170930Z [2mpublic/build/[22m[36mjs/apiHelpers-D1dyTkmF.js                                                        [39m[1m[2m  0.19 kB[22m[1m[22m[2m │ gzip:   0.14 kB[22m
+2026-01-03T02:31:51.7172738Z [2mpublic/build/[22m[36mjs/usePageProps-DKHsKCOH.js                                                      [39m[1m[2m  0.22 kB[22m[1m[22m[2m │ gzip:   0.19 kB[22m
+2026-01-03T02:31:51.7174761Z [2mpublic/build/[22m[36mjs/route-BSP3LAB4.js                                                             [39m[1m[2m  0.23 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+2026-01-03T02:31:51.7176473Z [2mpublic/build/[22m[36mjs/useApi-CqKYHAAQ.js                                                            [39m[1m[2m  0.26 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+2026-01-03T02:31:51.7178246Z [2mpublic/build/[22m[36mjs/ZoneTelemetryTab-DeNIWvDd.js                                                  [39m[1m[2m  0.26 kB[22m[1m[22m[2m │ gzip:   0.19 kB[22m
+2026-01-03T02:31:51.7179846Z [2mpublic/build/[22m[36mjs/ZoneEventsTab-Crv4X08k.js                                                     [39m[1m[2m  0.34 kB[22m[1m[22m[2m │ gzip:   0.21 kB[22m
+2026-01-03T02:31:51.7181377Z [2mpublic/build/[22m[36mjs/ZoneCycleActionsBar-DXR8mjtY.js                                               [39m[1m[2m  0.39 kB[22m[1m[22m[2m │ gzip:   0.24 kB[22m
+2026-01-03T02:31:51.7182825Z [2mpublic/build/[22m[36mjs/OperatorDashboard-D8kaNq5l.js                                                 [39m[1m[2m  0.41 kB[22m[1m[22m[2m │ gzip:   0.23 kB[22m
+2026-01-03T02:31:51.7184653Z [2mpublic/build/[22m[36mjs/MultiSeriesTelemetryChart-CpqNvww-.js                                         [39m[1m[2m  0.41 kB[22m[1m[22m[2m │ gzip:   0.23 kB[22m
+2026-01-03T02:31:51.7186306Z [2mpublic/build/[22m[36mjs/ViewerDashboard-D83Ehuvg.js                                                   [39m[1m[2m  0.42 kB[22m[1m[22m[2m │ gzip:   0.23 kB[22m
+2026-01-03T02:31:51.7188087Z [2mpublic/build/[22m[36mjs/UpdatePasswordForm-C2ren57T.js                                                [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
+2026-01-03T02:31:51.7189622Z [2mpublic/build/[22m[36mjs/ZoneCard-CezsoVAI.js                                                          [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:   0.24 kB[22m
+2026-01-03T02:31:51.7191362Z [2mpublic/build/[22m[36mjs/UpdateProfileInformationForm-C9GNB3GF.js                                      [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:   0.26 kB[22m
+2026-01-03T02:31:51.7193127Z [2mpublic/build/[22m[36mjs/DeleteUserForm-DOOvrlIJ.js                                                    [39m[1m[2m  0.49 kB[22m[1m[22m[2m │ gzip:   0.26 kB[22m
+2026-01-03T02:31:51.7194812Z [2mpublic/build/[22m[36mjs/Card.vue_vue_type_script_setup_true_lang-pu_sJfbJ.js                          [39m[1m[2m  0.49 kB[22m[1m[22m[2m │ gzip:   0.35 kB[22m
+2026-01-03T02:31:51.7196468Z [2mpublic/build/[22m[36mjs/reconciliation-De4pqcUM.js                                                    [39m[1m[2m  0.52 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
+2026-01-03T02:31:51.7198238Z [2mpublic/build/[22m[36mjs/AdminDashboard-DNKqmD6K.js                                                    [39m[1m[2m  0.54 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+2026-01-03T02:31:51.7199871Z [2mpublic/build/[22m[36mjs/ZoneDevicesTab-CLJMkx3F.js                                                    [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+2026-01-03T02:31:51.7201650Z [2mpublic/build/[22m[36mjs/Badge.vue_vue_type_script_setup_true_lang-DB8myzzX.js                         [39m[1m[2m  0.60 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+2026-01-03T02:31:51.7203452Z [2mpublic/build/[22m[36mjs/ZoneAutomationTab-BcBWsDdz.js                                                 [39m[1m[2m  0.60 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+2026-01-03T02:31:51.7205133Z [2mpublic/build/[22m[36mjs/EngineerDashboard-6J9OJvKu.js                                                 [39m[1m[2m  0.61 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+2026-01-03T02:31:51.7206996Z [2mpublic/build/[22m[36mjs/ZoneOverviewTab-DgRq77Nj.js                                                   [39m[1m[2m  0.61 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+2026-01-03T02:31:51.7208668Z [2mpublic/build/[22m[36mjs/AgronomistDashboard-BkFDhCqM.js                                               [39m[1m[2m  0.62 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+2026-01-03T02:31:51.7210983Z [2mpublic/build/[22m[36mjs/Button.vue_vue_type_script_setup_true_lang-DdKHdBEx.js                        [39m[1m[2m  0.65 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-03T02:31:51.7212769Z [2mpublic/build/[22m[36mjs/useLoading-BF9ESbwh.js                                                        [39m[1m[2m  0.71 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+2026-01-03T02:31:51.7214409Z [2mpublic/build/[22m[36mjs/useTheme-49hnYnER.js                                                          [39m[1m[2m  0.74 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-03T02:31:51.7216085Z [2mpublic/build/[22m[36mjs/ZoneCycleTab-B91tIi-l.js                                                      [39m[1m[2m  0.78 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+2026-01-03T02:31:51.7218038Z [2mpublic/build/[22m[36mjs/useOptimizedUpdates-GjfSQctd.js                                               [39m[1m[2m  0.79 kB[22m[1m[22m[2m │ gzip:   0.43 kB[22m
+2026-01-03T02:31:51.7219841Z [2mpublic/build/[22m[36mjs/transliterate-Drznwd9I.js                                                     [39m[1m[2m  0.80 kB[22m[1m[22m[2m │ gzip:   0.60 kB[22m
+2026-01-03T02:31:51.7221483Z [2mpublic/build/[22m[36mjs/alerts-ix8JU4Zm.js                                                            [39m[1m[2m  0.84 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+2026-01-03T02:31:51.7223095Z [2mpublic/build/[22m[36mjs/formatTime-tbHQUeJJ.js                                                        [39m[1m[2m  0.91 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+2026-01-03T02:31:51.7224693Z [2mpublic/build/[22m[36mjs/useRole-CkEg_TSc.js                                                           [39m[1m[2m  0.95 kB[22m[1m[22m[2m │ gzip:   0.45 kB[22m
+2026-01-03T02:31:51.7226224Z [2mpublic/build/[22m[36mjs/i18n-C5Al6CFo.js                                                              [39m[1m[2m  0.95 kB[22m[1m[22m[2m │ gzip:   0.69 kB[22m
+2026-01-03T02:31:51.7228079Z [2mpublic/build/[22m[36mjs/ZoneDetailModals-9j7YsnYg.js                                                  [39m[1m[2m  1.01 kB[22m[1m[22m[2m │ gzip:   0.42 kB[22m
+2026-01-03T02:31:51.7229801Z [2mpublic/build/[22m[36mjs/useUrlState-BSHexgHO.js                                                       [39m[1m[2m  1.04 kB[22m[1m[22m[2m │ gzip:   0.52 kB[22m
+2026-01-03T02:31:51.7231639Z [2mpublic/build/[22m[36mjs/TextInput.vue_vue_type_script_setup_true_lang-CMBB5ruC.js                     [39m[1m[2m  1.13 kB[22m[1m[22m[2m │ gzip:   0.65 kB[22m
+2026-01-03T02:31:51.7233645Z [2mpublic/build/[22m[36mjs/ConfirmModal.vue_vue_type_script_setup_true_lang-DDV8uppq.js                  [39m[1m[2m  1.24 kB[22m[1m[22m[2m │ gzip:   0.67 kB[22m
+2026-01-03T02:31:51.7235652Z [2mpublic/build/[22m[36mjs/Modal.vue_vue_type_script_setup_true_lang-Bz5o9O5w.js                         [39m[1m[2m  1.26 kB[22m[1m[22m[2m │ gzip:   0.75 kB[22m
+2026-01-03T02:31:51.7237615Z [2mpublic/build/[22m[36mjs/useToast-BUw6YiBq.js                                                          [39m[1m[2m  1.35 kB[22m[1m[22m[2m │ gzip:   0.69 kB[22m
+2026-01-03T02:31:51.7239336Z [2mpublic/build/[22m[36mjs/StatusIndicator-DqMPalKc.js                                                   [39m[1m[2m  1.41 kB[22m[1m[22m[2m │ gzip:   0.82 kB[22m
+2026-01-03T02:31:51.7241059Z [2mpublic/build/[22m[36mjs/useFavorites-CHUBOiWG.js                                                      [39m[1m[2m  1.46 kB[22m[1m[22m[2m │ gzip:   0.61 kB[22m
+2026-01-03T02:31:51.7242703Z [2mpublic/build/[22m[36mjs/recipes-BrM-w2gp.js                                                           [39m[1m[2m  1.52 kB[22m[1m[22m[2m │ gzip:   0.66 kB[22m
+2026-01-03T02:31:51.7244371Z [2mpublic/build/[22m[36mjs/useInertiaForm-PYoakpnS.js                                                    [39m[1m[2m  1.55 kB[22m[1m[22m[2m │ gzip:   0.81 kB[22m
+2026-01-03T02:31:51.7246252Z [2mpublic/build/[22m[36mjs/LoadingState-CsW53mTG.js                                                      [39m[1m[2m  1.60 kB[22m[1m[22m[2m │ gzip:   0.84 kB[22m
+2026-01-03T02:31:51.7248364Z [2mpublic/build/[22m[36mjs/ConfirmPassword-B9hqeWuU.js                                                   [39m[1m[2m  1.62 kB[22m[1m[22m[2m │ gzip:   0.88 kB[22m
+2026-01-03T02:31:51.7250086Z [2mpublic/build/[22m[36mjs/Dashboard-CGOKGSHU.js                                                         [39m[1m[2m  1.74 kB[22m[1m[22m[2m │ gzip:   0.99 kB[22m
+2026-01-03T02:31:51.7251791Z [2mpublic/build/[22m[36mjs/useStoreEvents-NrmkibFX.js                                                    [39m[1m[2m  1.74 kB[22m[1m[22m[2m │ gzip:   0.77 kB[22m
+2026-01-03T02:31:51.7253675Z [2mpublic/build/[22m[36mjs/PageHeader.vue_vue_type_script_setup_true_lang-C-eJntVe.js                    [39m[1m[2m  1.76 kB[22m[1m[22m[2m │ gzip:   0.73 kB[22m
+2026-01-03T02:31:51.7255494Z [2mpublic/build/[22m[36mjs/Wizard-ByYTGNFv.js                                                            [39m[1m[2m  1.89 kB[22m[1m[22m[2m │ gzip:   1.02 kB[22m
+2026-01-03T02:31:51.7257330Z [2mpublic/build/[22m[36mjs/VerifyEmail-DLfq19X2.js                                                       [39m[1m[2m  1.92 kB[22m[1m[22m[2m │ gzip:   1.04 kB[22m
+2026-01-03T02:31:51.7259032Z [2mpublic/build/[22m[36mjs/ForgotPassword-Dl4sf-QF.js                                                    [39m[1m[2m  1.94 kB[22m[1m[22m[2m │ gzip:   1.06 kB[22m
+2026-01-03T02:31:51.7260847Z [2mpublic/build/[22m[36mjs/ChartBase.vue_vue_type_script_setup_true_lang-X8CoHhM4.js                     [39m[1m[2m  2.05 kB[22m[1m[22m[2m │ gzip:   0.95 kB[22m
+2026-01-03T02:31:51.7262604Z [2mpublic/build/[22m[36mjs/Index-DZovOqVk.js                                                             [39m[1m[2m  2.07 kB[22m[1m[22m[2m │ gzip:   0.87 kB[22m
+2026-01-03T02:31:51.7264247Z [2mpublic/build/[22m[36mjs/ResetPassword-CCc7Qgd_.js                                                     [39m[1m[2m  2.45 kB[22m[1m[22m[2m │ gzip:   1.01 kB[22m
+2026-01-03T02:31:51.7265988Z [2mpublic/build/[22m[36mjs/useErrorHandler-Cp3tyLFJ.js                                                   [39m[1m[2m  2.52 kB[22m[1m[22m[2m │ gzip:   1.16 kB[22m
+2026-01-03T02:31:51.7267822Z [2mpublic/build/[22m[36mjs/useZones-CWbqgkc1.js                                                          [39m[1m[2m  2.60 kB[22m[1m[22m[2m │ gzip:   1.11 kB[22m
+2026-01-03T02:31:51.7269644Z [2mpublic/build/[22m[36mjs/DeleteUserForm.vue_vue_type_script_setup_true_lang-dl-2Kl8H.js                [39m[1m[2m  2.62 kB[22m[1m[22m[2m │ gzip:   1.39 kB[22m
+2026-01-03T02:31:51.7271674Z [2mpublic/build/[22m[36mjs/UpdatePasswordForm.vue_vue_type_script_setup_true_lang-Cst-6kCn.js            [39m[1m[2m  2.87 kB[22m[1m[22m[2m │ gzip:   1.32 kB[22m
+2026-01-03T02:31:51.7273539Z [2mpublic/build/[22m[36mjs/devices-DaeiRz7t.js                                                           [39m[1m[2m  2.88 kB[22m[1m[22m[2m │ gzip:   1.07 kB[22m
+2026-01-03T02:31:51.7275143Z [2mpublic/build/[22m[36mjs/Register-DYxB61-3.js                                                          [39m[1m[2m  2.99 kB[22m[1m[22m[2m │ gzip:   1.27 kB[22m
+2026-01-03T02:31:51.7277206Z [2mpublic/build/[22m[36mjs/UpdateProfileInformationForm.vue_vue_type_script_setup_true_lang-DyDvb2ZR.js  [39m[1m[2m  3.02 kB[22m[1m[22m[2m │ gzip:   1.53 kB[22m
+2026-01-03T02:31:51.7279124Z [2mpublic/build/[22m[36mjs/zones-dv-n6gq2.js                                                             [39m[1m[2m  3.03 kB[22m[1m[22m[2m │ gzip:   1.12 kB[22m
+2026-01-03T02:31:51.7280721Z [2mpublic/build/[22m[36mjs/Recipes-DR9k8wTr.js                                                           [39m[1m[2m  3.25 kB[22m[1m[22m[2m │ gzip:   1.57 kB[22m
+2026-01-03T02:31:51.7282493Z [2mpublic/build/[22m[36mjs/Show-D8YGTcFa.js                                                              [39m[1m[2m  3.29 kB[22m[1m[22m[2m │ gzip:   1.64 kB[22m
+2026-01-03T02:31:51.7284495Z [2mpublic/build/[22m[36mjs/ZoneCycleActionsBar.vue_vue_type_script_setup_true_lang-CeRyH3kT.js           [39m[1m[2m  3.39 kB[22m[1m[22m[2m │ gzip:   1.50 kB[22m
+2026-01-03T02:31:51.7286371Z [2mpublic/build/[22m[36mjs/Error-BWO5MDSf.js                                                             [39m[1m[2m  3.52 kB[22m[1m[22m[2m │ gzip:   1.65 kB[22m
+2026-01-03T02:31:51.7288158Z [2mpublic/build/[22m[36mjs/GuestLayout-Blk9247t.js                                                       [39m[1m[2m  3.97 kB[22m[1m[22m[2m │ gzip:   1.89 kB[22m
+2026-01-03T02:31:51.7289789Z [2mpublic/build/[22m[36mjs/Zones-CRiZON6Q.js                                                             [39m[1m[2m  4.04 kB[22m[1m[22m[2m │ gzip:   1.87 kB[22m
+2026-01-03T02:31:51.7291447Z [2mpublic/build/[22m[36mjs/Login-k4y0O_1u.js                                                             [39m[1m[2m  4.32 kB[22m[1m[22m[2m │ gzip:   1.85 kB[22m
+2026-01-03T02:31:51.7293240Z [2mpublic/build/[22m[36mjs/ZoneEventsTab.vue_vue_type_script_setup_true_lang-DUVyTRfw.js                 [39m[1m[2m  4.55 kB[22m[1m[22m[2m │ gzip:   2.12 kB[22m
+2026-01-03T02:31:51.7295291Z [2mpublic/build/[22m[36mjs/ToastContainer.vue_vue_type_script_setup_true_lang-DeqebLVL.js                [39m[1m[2m  4.59 kB[22m[1m[22m[2m │ gzip:   1.80 kB[22m
+2026-01-03T02:31:51.7297240Z [2mpublic/build/[22m[36mjs/Edit-CZ6tcKRK.js                                                              [39m[1m[2m  5.04 kB[22m[1m[22m[2m │ gzip:   1.99 kB[22m
+2026-01-03T02:31:51.7298828Z [2mpublic/build/[22m[36mjs/Create-BiDvIV7n.js                                                            [39m[1m[2m  5.06 kB[22m[1m[22m[2m │ gzip:   2.32 kB[22m
+2026-01-03T02:31:51.7300540Z [2mpublic/build/[22m[36mjs/DeviceChannelsTable-B8iufICy.js                                               [39m[1m[2m  5.08 kB[22m[1m[22m[2m │ gzip:   1.94 kB[22m
+2026-01-03T02:31:51.7302513Z [2mpublic/build/[22m[36mjs/ZoneTelemetryTab.vue_vue_type_script_setup_true_lang-DeVpDdvi.js              [39m[1m[2m  5.21 kB[22m[1m[22m[2m │ gzip:   2.21 kB[22m
+2026-01-03T02:31:51.7304595Z [2mpublic/build/[22m[36mjs/GrowCycleProgressRing.vue_vue_type_script_setup_true_lang-Dp59vysd.js         [39m[1m[2m  5.38 kB[22m[1m[22m[2m │ gzip:   2.30 kB[22m
+2026-01-03T02:31:51.7306668Z [2mpublic/build/[22m[36mjs/MetricCard.vue_vue_type_script_setup_true_lang-C9DUhgVy.js                    [39m[1m[2m  5.42 kB[22m[1m[22m[2m │ gzip:   1.95 kB[22m
+2026-01-03T02:31:51.7308595Z [2mpublic/build/[22m[36mjs/Index-D4yARp1K.js                                                             [39m[1m[2m  5.46 kB[22m[1m[22m[2m │ gzip:   2.49 kB[22m
+2026-01-03T02:31:51.7310401Z [2mpublic/build/[22m[36mjs/ViewerDashboard.vue_vue_type_script_setup_true_lang-DUIMzUnc.js               [39m[1m[2m  5.81 kB[22m[1m[22m[2m │ gzip:   2.06 kB[22m
+2026-01-03T02:31:51.7312349Z [2mpublic/build/[22m[36mjs/ZoneTelemetryChart-BmtWb89d.js                                                [39m[1m[2m  5.90 kB[22m[1m[22m[2m │ gzip:   2.73 kB[22m
+2026-01-03T02:31:51.7314080Z [2mpublic/build/[22m[36mjs/useTelemetry-BiJnkI1Y.js                                                      [39m[1m[2m  6.32 kB[22m[1m[22m[2m │ gzip:   2.47 kB[22m
+2026-01-03T02:31:51.7315797Z [2mpublic/build/[22m[36mjs/RelayConfigWizard-D7eqBDLz.js                                                 [39m[1m[2m  6.86 kB[22m[1m[22m[2m │ gzip:   2.72 kB[22m
+2026-01-03T02:31:51.7317691Z [2mpublic/build/[22m[36mjs/Pagination-6o5o4CxW.js                                                        [39m[1m[2m  6.94 kB[22m[1m[22m[2m │ gzip:   1.95 kB[22m
+2026-01-03T02:31:51.7319320Z [2mpublic/build/[22m[36mjs/Index-DGkK0CH2.js                                                             [39m[1m[2m  7.12 kB[22m[1m[22m[2m │ gzip:   2.65 kB[22m
+2026-01-03T02:31:51.7321452Z [2mpublic/build/[22m[36mjs/DataTableV2.vue_vue_type_script_setup_true_lang-D1kIiJ99.js                   [39m[1m[2m  7.66 kB[22m[1m[22m[2m │ gzip:   2.89 kB[22m
+2026-01-03T02:31:51.7323516Z [2mpublic/build/[22m[36mjs/OperatorDashboard.vue_vue_type_script_setup_true_lang-DQY4Kfz3.js             [39m[1m[2m  8.04 kB[22m[1m[22m[2m │ gzip:   2.85 kB[22m
+2026-01-03T02:31:51.7325424Z [2mpublic/build/[22m[36mjs/Index-DmnPdeqH.js                                                             [39m[1m[2m  8.24 kB[22m[1m[22m[2m │ gzip:   3.46 kB[22m
+2026-01-03T02:31:51.7327439Z [2mpublic/build/[22m[36mjs/EngineerDashboard.vue_vue_type_script_setup_true_lang-CIs4NXi4.js             [39m[1m[2m  8.35 kB[22m[1m[22m[2m │ gzip:   3.01 kB[22m
+2026-01-03T02:31:51.7329288Z [2mpublic/build/[22m[36mjs/Index-Bd1KkpHB.js                                                             [39m[1m[2m  8.62 kB[22m[1m[22m[2m │ gzip:   3.67 kB[22m
+2026-01-03T02:31:51.7331071Z [2mpublic/build/[22m[36mjs/ZoneCard.vue_vue_type_script_setup_true_lang-DfUaTy6H.js                      [39m[1m[2m  8.62 kB[22m[1m[22m[2m │ gzip:   3.35 kB[22m
+2026-01-03T02:31:51.7333161Z [2mpublic/build/[22m[36mjs/MultiSeriesTelemetryChart.vue_vue_type_script_setup_true_lang-BD02n1CO.js     [39m[1m[2m  8.98 kB[22m[1m[22m[2m │ gzip:   3.87 kB[22m
+2026-01-03T02:31:51.7335071Z [2mpublic/build/[22m[36mjs/Index-qsLjKTjR.js                                                             [39m[1m[2m  9.51 kB[22m[1m[22m[2m │ gzip:   3.66 kB[22m
+2026-01-03T02:31:51.7337075Z [2mpublic/build/[22m[36mjs/RecipeCreateWizard.vue_vue_type_script_setup_true_lang-BMYRVR_O.js            [39m[1m[2m  9.80 kB[22m[1m[22m[2m │ gzip:   3.53 kB[22m
+2026-01-03T02:31:51.7339146Z [2mpublic/build/[22m[36mjs/ErrorBoundary.vue_vue_type_script_setup_true_lang-C3pojk_j.js                 [39m[1m[2m 10.66 kB[22m[1m[22m[2m │ gzip:   3.69 kB[22m
+2026-01-03T02:31:51.7340959Z [2mpublic/build/[22m[36mjs/Index-CvO9K6bj.js                                                             [39m[1m[2m 10.73 kB[22m[1m[22m[2m │ gzip:   3.73 kB[22m
+2026-01-03T02:31:51.7342766Z [2mpublic/build/[22m[36mjs/AdminDashboard.vue_vue_type_script_setup_true_lang-B0HoDA8k.js                [39m[1m[2m 10.77 kB[22m[1m[22m[2m │ gzip:   3.81 kB[22m
+2026-01-03T02:31:51.7344603Z [2mpublic/build/[22m[36mjs/Index-BadvVjsI.js                                                             [39m[1m[2m 11.10 kB[22m[1m[22m[2m │ gzip:   4.35 kB[22m
+2026-01-03T02:31:51.7346258Z [2mpublic/build/[22m[36mjs/StageProgress-Bl6KEqvp.js                                                     [39m[1m[2m 11.34 kB[22m[1m[22m[2m │ gzip:   3.84 kB[22m
+2026-01-03T02:31:51.7348081Z [2mpublic/build/[22m[36mjs/Show-ChabMPYR.js                                                              [39m[1m[2m 11.55 kB[22m[1m[22m[2m │ gzip:   4.59 kB[22m
+2026-01-03T02:31:51.7349672Z [2mpublic/build/[22m[36mjs/Index-C2fhoG8v.js                                                             [39m[1m[2m 12.01 kB[22m[1m[22m[2m │ gzip:   4.49 kB[22m
+2026-01-03T02:31:51.7351242Z [2mpublic/build/[22m[36mjs/Add-_VLuMG56.js                                                               [39m[1m[2m 12.73 kB[22m[1m[22m[2m │ gzip:   5.43 kB[22m
+2026-01-03T02:31:51.7352868Z [2mpublic/build/[22m[36mjs/useWebSocket-CLGDxIpt.js                                                      [39m[1m[2m 14.72 kB[22m[1m[22m[2m │ gzip:   4.60 kB[22m
+2026-01-03T02:31:51.7354768Z [2mpublic/build/[22m[36mjs/AgronomistDashboard.vue_vue_type_script_setup_true_lang-Dsv9Xayw.js           [39m[1m[2m 14.76 kB[22m[1m[22m[2m │ gzip:   4.68 kB[22m
+2026-01-03T02:31:51.7356624Z [2mpublic/build/[22m[36mjs/Index-DZrcugVK.js                                                             [39m[1m[2m 15.24 kB[22m[1m[22m[2m │ gzip:   5.50 kB[22m
+2026-01-03T02:31:51.7358826Z [2mpublic/build/[22m[36mjs/ZoneDevicesTab.vue_vue_type_script_setup_true_lang-BWzQiCCr.js                [39m[1m[2m 15.33 kB[22m[1m[22m[2m │ gzip:   5.19 kB[22m
+2026-01-03T02:31:51.7361014Z [2mpublic/build/[22m[36mjs/ZoneCycleTab.vue_vue_type_script_setup_true_lang-Cgc_c6Ox.js                  [39m[1m[2m 16.25 kB[22m[1m[22m[2m │ gzip:   5.49 kB[22m
+2026-01-03T02:31:51.7362777Z [2mpublic/build/[22m[36mjs/Edit-aY0eFS0q.js                                                              [39m[1m[2m 16.49 kB[22m[1m[22m[2m │ gzip:   4.50 kB[22m
+2026-01-03T02:31:51.7364626Z [2mpublic/build/[22m[36mjs/GrowthCycleWizard.vue_vue_type_script_setup_true_lang-DcFJvNfY.js             [39m[1m[2m 17.37 kB[22m[1m[22m[2m │ gzip:   5.71 kB[22m
+2026-01-03T02:31:51.7366459Z [2mpublic/build/[22m[36mjs/Center-ByB3AxX3.js                                                            [39m[1m[2m 17.82 kB[22m[1m[22m[2m │ gzip:   5.78 kB[22m
+2026-01-03T02:31:51.7368271Z [2mpublic/build/[22m[36mjs/index.esm-C271C61P.js                                                         [39m[1m[2m 18.73 kB[22m[1m[22m[2m │ gzip:   7.01 kB[22m
+2026-01-03T02:31:51.7369882Z [2mpublic/build/[22m[36mjs/Wizard-BgTIei9O.js                                                            [39m[1m[2m 18.73 kB[22m[1m[22m[2m │ gzip:   5.80 kB[22m
+2026-01-03T02:31:51.7371479Z [2mpublic/build/[22m[36mjs/Index-0x64goIU.js                                                             [39m[1m[2m 19.67 kB[22m[1m[22m[2m │ gzip:   6.40 kB[22m
+2026-01-03T02:31:51.7373091Z [2mpublic/build/[22m[36mjs/Welcome-Cw-kJB5h.js                                                           [39m[1m[2m 19.73 kB[22m[1m[22m[2m │ gzip:   6.25 kB[22m
+2026-01-03T02:31:51.7374893Z [2mpublic/build/[22m[36mjs/ZoneOverviewTab.vue_vue_type_script_setup_true_lang-CMgjwbdG.js               [39m[1m[2m 19.93 kB[22m[1m[22m[2m │ gzip:   5.20 kB[22m
+2026-01-03T02:31:51.7376716Z [2mpublic/build/[22m[36mjs/Index-D_vEC2fb.js                                                             [39m[1m[2m 20.17 kB[22m[1m[22m[2m │ gzip:   6.12 kB[22m
+2026-01-03T02:31:51.7378572Z [2mpublic/build/[22m[36mjs/Index-J7v2bRpP.js                                                             [39m[1m[2m 20.26 kB[22m[1m[22m[2m │ gzip:   7.30 kB[22m
+2026-01-03T02:31:51.7379765Z [2mpublic/build/[22m[36mjs/Show-CS4NKS4k.js                                                              [39m[1m[2m 20.54 kB[22m[1m[22m[2m │ gzip:   5.90 kB[22m
+2026-01-03T02:31:51.7380879Z [2mpublic/build/[22m[36mjs/Show-CeXr6_Mu.js                                                              [39m[1m[2m 20.93 kB[22m[1m[22m[2m │ gzip:   8.30 kB[22m
+2026-01-03T02:31:51.7382171Z [2mpublic/build/[22m[36mjs/ZoneDetailModals.vue_vue_type_script_setup_true_lang-CDaw9geM.js              [39m[1m[2m 21.13 kB[22m[1m[22m[2m │ gzip:   6.78 kB[22m
+2026-01-03T02:31:51.7383476Z [2mpublic/build/[22m[36mjs/Show-CLu7dECy.js                                                              [39m[1m[2m 26.32 kB[22m[1m[22m[2m │ gzip:   9.18 kB[22m
+2026-01-03T02:31:51.7384790Z [2mpublic/build/[22m[36mjs/ZoneAutomationTab.vue_vue_type_script_setup_true_lang-P85gl3ty.js             [39m[1m[2m 27.09 kB[22m[1m[22m[2m │ gzip:   7.53 kB[22m
+2026-01-03T02:31:51.7386092Z [2mpublic/build/[22m[36mjs/Index-8n5VKZV-.js                                                             [39m[1m[2m 38.75 kB[22m[1m[22m[2m │ gzip:  12.10 kB[22m
+2026-01-03T02:31:51.7387548Z [2mpublic/build/[22m[36mjs/app-Dd8Gjh-N.js                                                               [39m[1m[2m 84.86 kB[22m[1m[22m[2m │ gzip:  26.88 kB[22m
+2026-01-03T02:31:51.7388832Z [2mpublic/build/[22m[36mjs/AppLayout.vue_vue_type_style_index_0_lang-BXyMArIx.js                         [39m[1m[2m 88.66 kB[22m[1m[22m[2m │ gzip:  24.88 kB[22m
+2026-01-03T02:31:51.7390093Z [2mpublic/build/[22m[36mjs/vendor-DcA2bzZX.js                                                            [39m[1m[2m521.30 kB[22m[1m[22m[2m │ gzip: 178.03 kB[22m
+2026-01-03T02:31:51.7391621Z [2mpublic/build/[22m[36mjs/echarts-vendor-ift35SgJ.js                                                    [39m[1m[2m902.33 kB[22m[1m[22m[2m │ gzip: 297.02 kB[22m
+2026-01-03T02:31:51.7392290Z [32m✓ built in 11.93s[39m
+2026-01-03T02:31:51.8313776Z ##[group]Run php artisan config:clear
+2026-01-03T02:31:51.8314094Z [36;1mphp artisan config:clear[0m
+2026-01-03T02:31:51.8314337Z [36;1mphp artisan cache:clear[0m
+2026-01-03T02:31:51.8314568Z [36;1mphp artisan config:cache[0m
+2026-01-03T02:31:51.8347992Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:51.8348221Z env:
+2026-01-03T02:31:51.8348396Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:51.8348624Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:51.8348838Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:51.8349018Z   APP_ENV: testing
+2026-01-03T02:31:51.8349205Z   SESSION_DRIVER: file
+2026-01-03T02:31:51.8349381Z   CACHE_STORE: array
+2026-01-03T02:31:51.8349578Z   QUEUE_CONNECTION: sync
+2026-01-03T02:31:51.8349789Z ##[endgroup]
+2026-01-03T02:31:52.0494005Z 
+2026-01-03T02:31:52.0494675Z    INFO  Configuration cache cleared successfully.  
+2026-01-03T02:31:52.0495127Z 
+2026-01-03T02:31:52.2716140Z 
+2026-01-03T02:31:52.2716702Z    INFO  Application cache cleared successfully.  
+2026-01-03T02:31:52.2717283Z 
+2026-01-03T02:31:52.5371481Z 
+2026-01-03T02:31:52.5372016Z    INFO  Configuration cached successfully.  
+2026-01-03T02:31:52.5372367Z 
+2026-01-03T02:31:52.5523968Z ##[group]Run mkdir -p test-results
+2026-01-03T02:31:52.5524303Z [36;1mmkdir -p test-results[0m
+2026-01-03T02:31:52.5524734Z [36;1mphp artisan test --testsuite=Unit,Feature --no-coverage --log-junit test-results/phpunit.xml[0m
+2026-01-03T02:31:52.5557151Z shell: /usr/bin/bash -e {0}
+2026-01-03T02:31:52.5557384Z env:
+2026-01-03T02:31:52.5557552Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:31:52.5557785Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:31:52.5557987Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:31:52.5558173Z   APP_ENV: testing
+2026-01-03T02:31:52.5558372Z   DB_CONNECTION: pgsql
+2026-01-03T02:31:52.5558571Z   DB_DATABASE: hydro_test
+2026-01-03T02:31:52.5558763Z   DB_USERNAME: hydro
+2026-01-03T02:31:52.5558947Z   DB_PASSWORD: hydro
+2026-01-03T02:31:52.5559120Z   DB_HOST: 127.0.0.1
+2026-01-03T02:31:52.5559285Z   DB_PORT: 5432
+2026-01-03T02:31:52.5559466Z   BROADCAST_CONNECTION: log
+2026-01-03T02:31:52.5559662Z   BROADCAST_DRIVER: log
+2026-01-03T02:31:52.5559874Z   CACHE_STORE: array
+2026-01-03T02:31:52.5560056Z   SESSION_DRIVER: array
+2026-01-03T02:31:52.5560241Z   QUEUE_CONNECTION: sync
+2026-01-03T02:31:52.5560430Z ##[endgroup]
+2026-01-03T02:31:55.6045575Z 
+2026-01-03T02:31:55.6046272Z    PASS  Tests\Unit\CleanupNodeChannelsGpioCommandTest
+2026-01-03T02:31:55.6226218Z   ✓ command removes gpio and pin from configs                            2.53s  
+2026-01-03T02:31:55.8917550Z 
+2026-01-03T02:31:55.8918226Z    PASS  Tests\Unit\Console\BackupListCommandTest
+2026-01-03T02:31:55.8931423Z   ✓ command signature exists                                             0.07s  
+2026-01-03T02:31:55.8943984Z   ✓ command has description                                              0.04s  
+2026-01-03T02:31:55.8955859Z   ✓ command accepts verify option                                        0.04s  
+2026-01-03T02:31:55.8967400Z   ✓ format timestamp formats correctly                                   0.03s  
+2026-01-03T02:31:55.8979230Z   ✓ format bytes formats correctly                                       0.03s  
+2026-01-03T02:31:55.8990854Z   ✓ verify backup checks correctly                                       0.03s  
+2026-01-03T02:31:55.9002631Z   ✓ command handles missing backup directory                             0.04s  
+2026-01-03T02:31:56.1608245Z 
+2026-01-03T02:31:56.1609062Z    PASS  Tests\Unit\Console\DatabaseBackupCommandTest
+2026-01-03T02:31:56.1621596Z   ✓ command signature exists                                             0.05s  
+2026-01-03T02:31:56.1634115Z   ✓ command has description                                              0.04s  
+2026-01-03T02:31:56.1646000Z   ✓ command accepts compress option                                      0.05s  
+2026-01-03T02:31:56.1657490Z   ✓ command accepts output option                                        0.04s  
+2026-01-03T02:31:56.1669233Z   ✓ format bytes formats correctly                                       0.03s  
+2026-01-03T02:31:56.1681013Z   ✓ command handles database connection error                            0.04s  
+2026-01-03T02:31:58.3962264Z 
+2026-01-03T02:31:58.3962982Z    PASS  Tests\Unit\Console\E2EAuthBootstrapCommandTest
+2026-01-03T02:31:58.3975091Z   ✓ command signature exists                                             0.05s  
+2026-01-03T02:31:58.3987488Z   ✓ creates user if not exists                                           0.30s  
+2026-01-03T02:31:58.3998803Z   ✓ uses existing user if exists                                         0.51s  
+2026-01-03T02:31:58.4010045Z   ✓ outputs token                                                        0.28s  
+2026-01-03T02:31:58.4021588Z   ✓ creates token for user                                               0.51s  
+2026-01-03T02:31:58.4033058Z   ✓ accepts custom email                                                 0.29s  
+2026-01-03T02:31:58.4044484Z   ✓ accepts custom role                                                  0.28s  
+2026-01-03T02:31:58.6390147Z 
+2026-01-03T02:31:58.6390767Z    PASS  Tests\Unit\Console\FullBackupCommandTest
+2026-01-03T02:31:58.6403962Z   ✓ command signature exists                                             0.05s  
+2026-01-03T02:31:58.6415117Z   ✓ command has description                                              0.05s  
+2026-01-03T02:31:58.6427065Z   ✓ command accepts skip docker option                                   0.04s  
+2026-01-03T02:31:58.6438177Z   ✓ command accepts skip mqtt option                                     0.04s  
+2026-01-03T02:31:58.6449721Z   ✓ command handles missing script                                       0.04s  
+2026-01-03T02:31:58.8332725Z 
+2026-01-03T02:31:58.8333294Z    PASS  Tests\Unit\Console\TelemetryAggregateCommandTest
+2026-01-03T02:31:58.8345787Z   ✓ command signature exists                                             0.05s  
+2026-01-03T02:31:58.8357596Z   ✓ command accepts from option                                          0.05s  
+2026-01-03T02:31:58.8369558Z   ✓ command accepts to option                                            0.04s  
+2026-01-03T02:31:58.8380909Z   ✓ command output contains info                                         0.04s  
+2026-01-03T02:31:58.9675562Z 
+2026-01-03T02:31:58.9676336Z    PASS  Tests\Unit\Console\TelemetryCleanupCommandTest
+2026-01-03T02:31:58.9688784Z   ✓ command signature exists                                             0.05s  
+2026-01-03T02:31:58.9700530Z   ✓ command accepts days option                                          0.03s  
+2026-01-03T02:31:58.9711745Z   ✓ command output contains info                                         0.04s  
+2026-01-03T02:31:59.1042222Z 
+2026-01-03T02:31:59.1042958Z    PASS  Tests\Unit\DigitalTwinClientTest
+2026-01-03T02:31:59.1055051Z   ✓ simulate zone sends correct request                                  0.04s  
+2026-01-03T02:31:59.1066653Z   ✓ simulate zone handles error response                                 0.03s  
+2026-01-03T02:31:59.1078655Z   ✓ simulate zone handles connection error                               0.03s  
+2026-01-03T02:31:59.1089708Z   ✓ simulate zone uses default parameters                                0.03s  
+2026-01-03T02:32:00.0713959Z 
+2026-01-03T02:32:00.0714569Z    PASS  Tests\Unit\EffectiveTargetsServiceTest
+2026-01-03T02:32:00.0728377Z   ✓ it returns effective targets with correct structure                  0.38s  
+2026-01-03T02:32:00.0741586Z   ✓ it applies overrides to targets                                      0.14s  
+2026-01-03T02:32:00.0754167Z   ✓ it returns batch results for multiple cycles                         0.18s  
+2026-01-03T02:32:00.0767243Z   ✓ it handles missing current phase gracefully                          0.12s  
+2026-01-03T02:32:00.0780028Z   ✓ it includes irrigation targets in response                           0.14s  
+2026-01-03T02:32:00.1400286Z 
+2026-01-03T02:32:00.1400924Z    PASS  Tests\Unit\Events\CommandStatusUpdatedTest
+2026-01-03T02:32:00.1413408Z   ✓ broadcasts to zone channel when zone id provided                     0.04s  
+2026-01-03T02:32:00.1425578Z   ✓ falls back to global channel when zone id missing                    0.03s  
+2026-01-03T02:32:00.1496384Z 
+2026-01-03T02:32:00.1496733Z    PASS  Tests\Unit\ExampleTest
+2026-01-03T02:32:00.1505068Z   ✓ that true is true
+2026-01-03T02:32:00.2803702Z 
+2026-01-03T02:32:00.2804301Z    PASS  Tests\Unit\GrowStageTemplateTest
+2026-01-03T02:32:00.2817455Z   ✓ it has phases relationship                                           0.08s  
+2026-01-03T02:32:00.2829886Z   ✓ it casts ui meta to array                                            0.05s  
+2026-01-03T02:32:00.4049998Z 
+2026-01-03T02:32:00.4050667Z    PASS  Tests\Unit\MetricTypeTest
+2026-01-03T02:32:00.4062823Z   ✓ metric type values                                                   0.03s  
+2026-01-03T02:32:00.4074703Z   ✓ metric type is valid                                                 0.03s  
+2026-01-03T02:32:00.4086769Z   ✓ metric type normalize                                                0.03s  
+2026-01-03T02:32:00.4099172Z   ✓ metric type cases                                                    0.03s  
+2026-01-03T02:32:01.1666111Z 
+2026-01-03T02:32:01.1667525Z    PASS  Tests\Unit\Middleware\VerifyPythonServiceTokenTest
+2026-01-03T02:32:01.1680621Z   ✓ allows authenticated user via sanctum                                0.06s  
+2026-01-03T02:32:01.1693035Z   ✓ rejects request without token when token configured                  0.05s  
+2026-01-03T02:32:01.1705049Z   ✓ rejects request with invalid token                                   0.04s  
+2026-01-03T02:32:01.1717370Z   ✓ allows request with valid py api token                               0.05s  
+2026-01-03T02:32:01.1729400Z   ✓ allows request with valid laravel api token                          0.05s  
+2026-01-03T02:32:01.1741078Z   ✓ uses viewer user when available                                      0.14s  
+2026-01-03T02:32:01.1753168Z   ✓ uses operator when no viewer                                         0.14s  
+2026-01-03T02:32:01.1765049Z   ✓ allows request without user when token valid                         0.16s  
+2026-01-03T02:32:01.1777463Z   ✓ rejects when no tokens configured                                    0.05s  
+2026-01-03T02:32:01.4419639Z 
+2026-01-03T02:32:01.4420189Z    PASS  Tests\Unit\Models\ZonePidConfigTest
+2026-01-03T02:32:01.4432834Z   ✓ zone pid config belongs to zone                                      0.08s  
+2026-01-03T02:32:01.4444817Z   ✓ zone pid config belongs to user                                      0.06s  
+2026-01-03T02:32:01.4457579Z   ✓ zone pid config accessors                                            0.06s  
+2026-01-03T02:32:01.4469479Z   ✓ zone has pid configs relationship                                    0.06s  
+2026-01-03T02:32:01.5108562Z 
+2026-01-03T02:32:01.5109151Z    PASS  Tests\Unit\NodeConfigServiceTest
+2026-01-03T02:32:01.5122772Z   ✓ get stored config sanitizes credentials and gpio                     0.06s  
+2026-01-03T02:32:01.8744579Z 
+2026-01-03T02:32:01.8745275Z    PASS  Tests\Unit\Policies\DeviceNodePolicyTest
+2026-01-03T02:32:01.8758604Z   ✓ viewer can view nodes                                                0.07s  
+2026-01-03T02:32:01.8770637Z   ✓ operator can update nodes                                            0.07s  
+2026-01-03T02:32:01.8782878Z   ✓ viewer cannot update nodes                                           0.07s  
+2026-01-03T02:32:01.8794798Z   ✓ operator can publish config                                          0.07s  
+2026-01-03T02:32:01.8806750Z   ✓ operator can send commands                                           0.08s  
+2026-01-03T02:32:10.4373768Z 
+2026-01-03T02:32:10.4374370Z    PASS  Tests\Unit\RecipeAnalyticsServiceTest
+2026-01-03T02:32:10.4387868Z   ✓ calculate analytics uses chunking                                    8.23s  
+2026-01-03T02:32:10.4400277Z   ✓ calculate analytics no telemetry                                     0.16s  
+2026-01-03T02:32:10.4412260Z   ✓ calculate analytics with alerts                                      0.16s  
+2026-01-03T02:32:10.7374215Z 
+2026-01-03T02:32:10.7374796Z    PASS  Tests\Unit\RecipeRevisionPhaseTest
+2026-01-03T02:32:10.7387743Z   ✓ it belongs to revision                                               0.08s  
+2026-01-03T02:32:10.7400080Z   ✓ it belongs to stage template                                         0.07s  
+2026-01-03T02:32:10.7412181Z   ✓ it casts extensions to array                                         0.07s  
+2026-01-03T02:32:10.7432075Z   ✓ it appends targets attribute                                         0.07s  
+2026-01-03T02:32:10.8993579Z 
+2026-01-03T02:32:10.8994216Z    PASS  Tests\Unit\Requests\StoreNodeRequestTest
+2026-01-03T02:32:10.9007130Z   ✓ validates required uid                                               0.05s  
+2026-01-03T02:32:10.9019436Z   ✓ validates uid is unique                                              0.05s  
+2026-01-03T02:32:10.9031486Z   ✓ validates zone id exists                                             0.05s  
+2026-01-03T02:32:11.1022562Z 
+2026-01-03T02:32:11.1023160Z    PASS  Tests\Unit\Services\AlertServiceTest
+2026-01-03T02:32:11.1036296Z   ✓ create alert                                                         0.07s  
+2026-01-03T02:32:11.1049508Z   ✓ acknowledge alert                                                    0.07s  
+2026-01-03T02:32:11.1061491Z   ✓ acknowledge already resolved alert throws exception                  0.06s  
+2026-01-03T02:32:12.4606326Z 
+2026-01-03T02:32:12.4607289Z    PASS  Tests\Unit\Services\ConfigPublishLockServiceTest
+2026-01-03T02:32:12.4620843Z   ✓ acquire optimistic lock returns node and version                     0.06s  
+2026-01-03T02:32:12.4633026Z   ✓ check optimistic lock returns true when version unchanged            0.06s  
+2026-01-03T02:32:12.4645233Z   ✓ check optimistic lock returns false when version changed             1.07s  
+2026-01-03T02:32:12.4657537Z   ✓ is duplicate returns false for new config                            0.06s  
+2026-01-03T02:32:12.4669661Z   ✓ is duplicate returns true for published config                       0.06s  
+2026-01-03T02:32:12.4681850Z   ✓ mark as published stores config hash in cache                        0.05s  
+2026-01-03T02:32:12.6269313Z 
+2026-01-03T02:32:12.6270030Z    PASS  Tests\Unit\Services\ConfigSignatureServiceTest
+2026-01-03T02:32:12.6282944Z   ✓ sign config adds timestamp and signature                             0.04s  
+2026-01-03T02:32:12.6295451Z   ✓ verify signature returns true for valid signature                    0.03s  
+2026-01-03T02:32:12.6308077Z   ✓ verify signature returns false for invalid signature                 0.04s  
+2026-01-03T02:32:12.6321479Z   ✓ verify signature returns false for expired timestamp                 0.03s  
+2026-01-03T02:32:12.6333814Z   ✓ verify signature returns false for missing fields                    0.03s  
+2026-01-03T02:32:12.8175800Z 
+2026-01-03T02:32:12.8176414Z    PASS  Tests\Unit\Services\NodeLifecycleServiceTest
+2026-01-03T02:32:12.8189503Z   ✓ transitions node to active state and sets status online              0.07s  
+2026-01-03T02:32:12.8201440Z   ✓ prevents invalid transitions and keeps state unchanged               0.06s  
+2026-01-03T02:32:12.8213675Z   ✓ sets node offline when transitioning to maintenance                  0.06s  
+2026-01-03T02:32:13.2790540Z 
+2026-01-03T02:32:13.2791155Z    PASS  Tests\Unit\Services\NodeServiceBindingTest
+2026-01-03T02:32:13.2803892Z   ✓ attach node to zone sets pending zone id                             0.07s  
+2026-01-03T02:32:13.2815931Z   ✓ attach node clears old zone id                                       0.07s  
+2026-01-03T02:32:13.2828391Z   ✓ complete binding from history logger                                 0.07s  
+2026-01-03T02:32:13.2840569Z   ✓ detach node clears pending zone id                                   0.07s  
+2026-01-03T02:32:13.2852445Z   ✓ detach node with pending zone id                                     0.07s  
+2026-01-03T02:32:13.2864166Z   ✓ detach already detached node                                         0.05s  
+2026-01-03T02:32:13.2875829Z   ✓ cannot attach in invalid lifecycle state                             0.06s  
+2026-01-03T02:32:13.6312943Z 
+2026-01-03T02:32:13.6313588Z    PASS  Tests\Unit\Services\NodeServiceTest
+2026-01-03T02:32:13.6327492Z   ✓ create node                                                          0.07s  
+2026-01-03T02:32:13.6339974Z   ✓ update node                                                          0.06s  
+2026-01-03T02:32:13.6352369Z   ✓ delete node without dependencies                                     0.08s  
+2026-01-03T02:32:13.6364656Z   ✓ delete node attached to zone throws exception                        0.06s  
+2026-01-03T02:32:13.6377265Z   ✓ detach node                                                          0.07s  
+2026-01-03T02:32:14.0148175Z 
+2026-01-03T02:32:14.0148843Z    PASS  Tests\Unit\Services\PredictionServiceTest
+2026-01-03T02:32:14.0161639Z   ✓ predict with sufficient data                                         0.10s  
+2026-01-03T02:32:14.0173370Z   ✓ predict with insufficient data returns null                          0.07s  
+2026-01-03T02:32:14.0185125Z   ✓ get latest prediction                                                0.06s  
+2026-01-03T02:32:14.0197522Z   ✓ generate predictions for active zones                                0.15s  
+2026-01-03T02:32:14.8825166Z 
+2026-01-03T02:32:14.8825808Z    PASS  Tests\Unit\Services\PythonBridgeServiceTest
+2026-01-03T02:32:14.8838856Z   ✓ send zone command with explicit node uid and channel                 0.09s  
+2026-01-03T02:32:14.8850698Z   ✓ send zone command validates node exists and belongs to zone          0.08s  
+2026-01-03T02:32:14.8862778Z   ✓ send zone command throws exception when node not found               0.10s  
+2026-01-03T02:32:14.8874237Z   ✓ send zone command throws exception when node not in zone             0.10s  
+2026-01-03T02:32:14.8886176Z   ✓ send zone command throws exception when channel not found            0.10s  
+2026-01-03T02:32:14.8898171Z   ✓ send zone command throws exception when no node or channel           0.10s  
+2026-01-03T02:32:14.8910276Z   ✓ send zone command throws exception when node has no channels         0.10s  
+2026-01-03T02:32:14.8922093Z   ✓ send zone command throws exception when only node uid specified      0.09s  
+2026-01-03T02:32:14.8933888Z   ✓ send zone command throws exception when only channel specified       0.09s  
+2026-01-03T02:32:15.2163078Z 
+2026-01-03T02:32:15.2163644Z    PASS  Tests\Unit\Services\RecipeServiceTest
+2026-01-03T02:32:15.2176011Z   ✓ create recipe                                                        0.07s  
+2026-01-03T02:32:15.2188304Z   ✓ update recipe                                                        0.07s  
+2026-01-03T02:32:15.2200188Z   ✓ delete recipe without dependencies                                   0.07s  
+2026-01-03T02:32:15.2211651Z   ✓ delete recipe used in active grow cycle throws exception             0.11s  
+2026-01-03T02:32:15.7425197Z 
+2026-01-03T02:32:15.7425835Z    PASS  Tests\Unit\Services\ZonePidConfigServiceTest
+2026-01-03T02:32:15.7438134Z   ✓ get config returns null when not exists                              0.06s  
+2026-01-03T02:32:15.7450365Z   ✓ get config returns existing config                                   0.07s  
+2026-01-03T02:32:15.7462425Z   ✓ create or update creates new config                                  0.08s  
+2026-01-03T02:32:15.7473933Z   ✓ create or update updates existing config                             0.08s  
+2026-01-03T02:32:15.7485498Z   ✓ get default config returns ph config                                 0.04s  
+2026-01-03T02:32:15.7497219Z   ✓ get default config returns ec config                                 0.04s  
+2026-01-03T02:32:15.7508783Z   ✓ validate config throws exception for invalid zones                   0.04s  
+2026-01-03T02:32:15.7520518Z   ✓ validate config throws exception for invalid ph target               0.04s  
+2026-01-03T02:32:15.7531788Z   ✓ get all configs returns all for zone                                 0.06s  
+2026-01-03T02:32:16.4291738Z 
+2026-01-03T02:32:16.4292403Z    PASS  Tests\Unit\Services\ZoneServiceTest
+2026-01-03T02:32:16.4305354Z   ✓ create zone                                                          0.07s  
+2026-01-03T02:32:16.4318079Z   ✓ update zone                                                          0.07s  
+2026-01-03T02:32:16.4330320Z   ✓ delete zone without dependencies                                     0.11s  
+2026-01-03T02:32:16.4342358Z   ✓ delete zone with active recipe throws exception                      0.10s  
+2026-01-03T02:32:16.4354165Z   ✓ delete zone with attached nodes throws exception                     0.07s  
+2026-01-03T02:32:16.4365599Z   ✓ pause zone                                                           0.07s  
+2026-01-03T02:32:16.4377593Z   ✓ pause already paused zone throws exception                           0.05s  
+2026-01-03T02:32:16.4389066Z   ✓ resume zone                                                          0.08s  
+2026-01-03T02:32:16.4400615Z   ✓ resume not paused zone throws exception                              0.05s  
+2026-01-03T02:32:16.5883490Z 
+2026-01-03T02:32:16.5884076Z    PASS  Tests\Feature\AdminRecipesTest
+2026-01-03T02:32:16.5896685Z   ✓ admin recipes page uses revision phases count                        0.15s  
+2026-01-03T02:32:19.5270030Z 
+2026-01-03T02:32:19.5270584Z    PASS  Tests\Feature\AiControllerTest
+2026-01-03T02:32:19.5283619Z   ✓ predict endpoint                                                     0.58s  
+2026-01-03T02:32:19.5296122Z   ✓ predict endpoint without sufficient data                             0.54s  
+2026-01-03T02:32:19.5308675Z   ✓ explain zone endpoint                                                0.63s  
+2026-01-03T02:32:19.5321814Z   ✓ recommend endpoint                                                   0.63s  
+2026-01-03T02:32:19.5334267Z   ✓ diagnostics endpoint                                                 0.55s  
+2026-01-03T02:32:19.7959682Z 
+2026-01-03T02:32:19.7960482Z    PASS  Tests\Feature\AlertWebhookControllerTest
+2026-01-03T02:32:19.7973836Z   ✓ webhook creates alert on firing                                      0.08s  
+2026-01-03T02:32:19.7986264Z   ✓ webhook resolves alert on resolved                                   0.08s  
+2026-01-03T02:32:19.7998185Z   ✓ webhook handles empty alerts array                                   0.05s  
+2026-01-03T02:32:19.8010590Z   ✓ webhook handles missing alerts key                                   0.05s  
+2026-01-03T02:32:20.3549039Z 
+2026-01-03T02:32:20.3549506Z    PASS  Tests\Feature\AlertsTest
+2026-01-03T02:32:20.3562137Z   ✓ alerts requires auth                                                 0.06s  
+2026-01-03T02:32:20.3573674Z   ✓ get alerts list                                                      0.09s  
+2026-01-03T02:32:20.3585644Z   ✓ get alert details                                                    0.07s  
+2026-01-03T02:32:20.3597631Z   ✓ acknowledge alert                                                    0.08s  
+2026-01-03T02:32:20.3609586Z   ✓ acknowledge already resolved alert returns error                     0.08s  
+2026-01-03T02:32:20.3621527Z   ✓ filter alerts by zone                                                0.08s  
+2026-01-03T02:32:20.3633086Z   ✓ filter alerts by status                                              0.09s  
+2026-01-03T02:32:21.0969723Z 
+2026-01-03T02:32:21.0970283Z    PASS  Tests\Feature\Auth\AuthenticationTest
+2026-01-03T02:32:21.0982334Z   ✓ login screen can be rendered                                         0.08s  
+2026-01-03T02:32:21.0994037Z   ✓ users can authenticate using the login screen                        0.29s  
+2026-01-03T02:32:21.1006284Z   ✓ users can not authenticate with invalid password                     0.29s  
+2026-01-03T02:32:21.1017715Z   ✓ users can logout                                                     0.07s  
+2026-01-03T02:32:21.3151827Z 
+2026-01-03T02:32:21.3152399Z    PASS  Tests\Feature\Auth\EmailVerificationTest
+2026-01-03T02:32:21.3165295Z   ✓ email verification screen can be rendered                            0.08s  
+2026-01-03T02:32:21.3179728Z   ✓ email can be verified                                                0.06s  
+2026-01-03T02:32:21.3191580Z   ✓ email is not verified with invalid hash                              0.06s  
+2026-01-03T02:32:21.9870006Z 
+2026-01-03T02:32:21.9870639Z    PASS  Tests\Feature\Auth\PasswordConfirmationTest
+2026-01-03T02:32:21.9883357Z   ✓ confirm password screen can be rendered                              0.08s  
+2026-01-03T02:32:21.9895150Z   ✓ password can be confirmed                                            0.29s  
+2026-01-03T02:32:21.9907473Z   ✓ password is not confirmed with invalid password                      0.29s  
+2026-01-03T02:32:23.4436154Z 
+2026-01-03T02:32:23.4437058Z    PASS  Tests\Feature\Auth\PasswordResetTest
+2026-01-03T02:32:23.4449476Z   ✓ reset password link screen can be rendered                           0.08s  
+2026-01-03T02:32:23.4460769Z   ✓ reset password link can be requested                                 0.29s  
+2026-01-03T02:32:23.4472729Z   ✓ reset password screen can be rendered                                0.32s  
+2026-01-03T02:32:23.4484572Z   ✓ password can be reset with valid token                               0.76s  
+2026-01-03T02:32:24.4874124Z 
+2026-01-03T02:32:24.4874700Z    PASS  Tests\Feature\Auth\PasswordUpdateTest
+2026-01-03T02:32:24.4886651Z   ✓ password can be updated                                              0.75s  
+2026-01-03T02:32:24.4898896Z   ✓ correct password must be provided to update password                 0.28s  
+2026-01-03T02:32:24.8572712Z 
+2026-01-03T02:32:24.8576334Z    PASS  Tests\Feature\Auth\RegistrationTest
+2026-01-03T02:32:24.8586522Z   ✓ registration screen can be rendered                                  0.08s  
+2026-01-03T02:32:24.8598208Z   ✓ new users can register                                               0.29s  
+2026-01-03T02:32:25.3931187Z 
+2026-01-03T02:32:25.3931790Z    PASS  Tests\Feature\AuthTest
+2026-01-03T02:32:25.3944060Z   ✓ login me logout flow                                                 0.53s  
+2026-01-03T02:32:25.4964061Z 
+2026-01-03T02:32:25.4964608Z    PASS  Tests\Feature\ChannelBindingsTest
+2026-01-03T02:32:25.4977581Z   ✓ operator can create channel binding with node channel                0.10s  
+2026-01-03T02:32:25.9909316Z 
+2026-01-03T02:32:25.9910013Z    PASS  Tests\Feature\CommandStatusControllerTest
+2026-01-03T02:32:25.9922335Z   ✓ command status requires auth                                         0.06s  
+2026-01-03T02:32:25.9934069Z   ✓ command status returns 404 for nonexistent command                   0.07s  
+2026-01-03T02:32:25.9945594Z   ✓ command status allows access for admin                               0.09s  
+2026-01-03T02:32:25.9957429Z   ✓ command status allows access for viewer with zone access             0.09s  
+2026-01-03T02:32:25.9969145Z   ✓ command status allows access via node                                0.10s  
+2026-01-03T02:32:25.9980607Z   ✓ command status denies access for command without zone or node        0.08s  
+2026-01-03T02:32:26.1598732Z 
+2026-01-03T02:32:26.1599286Z    PASS  Tests\Feature\CommandsTest
+2026-01-03T02:32:26.1612116Z   ✓ zone command requires auth                                           0.06s  
+2026-01-03T02:32:26.1624133Z   ✓ zone command validation                                              0.10s  
+2026-01-03T02:32:26.4400367Z 
+2026-01-03T02:32:26.4400931Z    FAIL  Tests\Feature\DatabaseIndexesTest
+2026-01-03T02:32:26.4413933Z   ✓ telemetry samples indexes exist                                      0.05s  
+2026-01-03T02:32:26.4426017Z   ⨯ commands indexes exist                                               0.05s  
+2026-01-03T02:32:26.4438497Z   ✓ alerts indexes exist                                                 0.05s  
+2026-01-03T02:32:26.4451718Z   ⨯ zone events indexes exist                                            0.05s  
+2026-01-03T02:32:26.4463536Z   ✓ indexes are used in queries                                          0.06s  
+2026-01-03T02:32:26.5615379Z 
+2026-01-03T02:32:26.5616198Z    PASS  Tests\Feature\ExampleTest
+2026-01-03T02:32:26.5629341Z   ✓ the application returns a successful response                        0.11s  
+2026-01-03T02:32:31.7493706Z 
+2026-01-03T02:32:31.7494342Z    PASS  Tests\Feature\ExtendedSeedersTest
+2026-01-03T02:32:31.7507371Z   ✓ extended seeders work with new schema                                5.18s  
+2026-01-03T02:32:32.9763456Z 
+2026-01-03T02:32:32.9764047Z    PASS  Tests\Feature\GrowCycleControllerTest
+2026-01-03T02:32:32.9776353Z   ✓ it creates a grow cycle                                              0.16s  
+2026-01-03T02:32:32.9787796Z   ✓ it creates and starts cycle immediately                              0.15s  
+2026-01-03T02:32:32.9799618Z   ✓ it gets active cycle with dto                                        0.15s  
+2026-01-03T02:32:32.9811883Z   ✓ it advances phase                                                    0.18s  
+2026-01-03T02:32:32.9823610Z   ✓ it pauses a cycle                                                    0.15s  
+2026-01-03T02:32:32.9835122Z   ✓ it resumes a cycle                                                   0.14s  
+2026-01-03T02:32:32.9846683Z   ✓ it harvests a cycle                                                  0.15s  
+2026-01-03T02:32:32.9916996Z   ✓ it aborts a cycle                                                    0.15s  
+2026-01-03T02:32:34.4614172Z 
+2026-01-03T02:32:34.4614808Z    PASS  Tests\Feature\GrowCyclePolicyTest
+2026-01-03T02:32:34.4628225Z   ✓ agronomist can manage cycles                                         0.13s  
+2026-01-03T02:32:34.4640161Z   ✓ operator cannot manage cycles                                        0.11s  
+2026-01-03T02:32:34.4652113Z   ✓ agronomist can create cycle                                          0.11s  
+2026-01-03T02:32:34.4664150Z   ✓ operator cannot create cycle                                         0.11s  
+2026-01-03T02:32:34.4675996Z   ✓ agronomist can update cycle                                          0.11s  
+2026-01-03T02:32:34.4687599Z   ✓ operator cannot update cycle                                         0.11s  
+2026-01-03T02:32:34.4699489Z   ✓ anyone can view cycle                                                0.33s  
+2026-01-03T02:32:34.4711318Z   ✓ agronomist can switch phase                                          0.11s  
+2026-01-03T02:32:34.4722709Z   ✓ operator cannot switch phase                                         0.11s  
+2026-01-03T02:32:34.4734910Z   ✓ agronomist can change recipe revision                                0.12s  
+2026-01-03T02:32:34.4746374Z   ✓ operator cannot change recipe revision                               0.11s  
+2026-01-03T02:32:35.2435410Z 
+2026-01-03T02:32:35.2435983Z    PASS  Tests\Feature\GrowCycleServiceTest
+2026-01-03T02:32:35.2449645Z   ✓ it creates a grow cycle                                              0.14s  
+2026-01-03T02:32:35.2462216Z   ✓ it starts a cycle                                                    0.14s  
+2026-01-03T02:32:35.2474697Z   ✓ it computes expected harvest                                         0.15s  
+2026-01-03T02:32:35.2487357Z   ✓ it advances stage automatically                                      0.17s  
+2026-01-03T02:32:35.2499484Z   ✓ it advances to specific stage                                        0.17s  
+2026-01-03T02:32:35.6615823Z 
+2026-01-03T02:32:35.6616430Z    PASS  Tests\Feature\InternalApiControllerTest
+2026-01-03T02:32:35.6629205Z   ✓ it returns effective targets batch for multiple cycles               0.22s  
+2026-01-03T02:32:35.6641418Z   ✓ it validates zone ids                                                0.14s  
+2026-01-03T02:32:35.6653667Z   ✓ it requires authentication                                           0.05s  
+2026-01-03T02:32:35.8318764Z 
+2026-01-03T02:32:35.8319372Z    PASS  Tests\Feature\InternalRealtimeTelemetryBatchTest
+2026-01-03T02:32:35.8333020Z   ✓ batches updates by zone and broadcasts                               0.09s  
+2026-01-03T02:32:35.8345309Z   ✓ rejects payloads exceeding size limit                                0.08s  
+2026-01-03T02:32:36.4587431Z 
+2026-01-03T02:32:36.4587961Z    PASS  Tests\Feature\N1OptimizationTest
+2026-01-03T02:32:36.4600798Z   ✓ zone index uses eager loading                                        0.08s  
+2026-01-03T02:32:36.4613285Z   ✓ zone health uses eager loading                                       0.09s  
+2026-01-03T02:32:36.4626260Z   ✓ node index uses eager loading                                        0.10s  
+2026-01-03T02:32:36.4638864Z   ✓ alert index uses eager loading                                       0.08s  
+2026-01-03T02:32:36.4651326Z   ✓ zone service change phase uses eager loading                         0.16s  
+2026-01-03T02:32:36.4663696Z   ✓ zone harvests uses eager loading                                     0.10s  
+2026-01-03T02:32:37.0951871Z 
+2026-01-03T02:32:37.0952500Z    WARN  Tests\Feature\NodeControllerTest
+2026-01-03T02:32:37.0965371Z   ✓ nodes index requires authentication                                  0.06s  
+2026-01-03T02:32:37.0977920Z   ✓ nodes index returns nodes for authenticated user                     0.08s  
+2026-01-03T02:32:37.0990299Z   ✓ nodes index does not include config                                  0.09s  
+2026-01-03T02:32:37.1002841Z   ✓ nodes show does not include config                                   0.08s  
+2026-01-03T02:32:37.1014857Z   ✓ nodes search escapes special characters                              0.08s  
+2026-01-03T02:32:37.1028955Z   - node registration with service token → Service token not configured  0.04s  
+2026-01-03T02:32:37.1042915Z   - node registration rate limited → Service token not configured        0.04s  
+2026-01-03T02:32:37.1055044Z   ✓ node update requires authorization                                   0.07s  
+2026-01-03T02:32:37.1067269Z   ✓ node update allows operator                                          0.08s  
+2026-01-03T02:32:37.5478070Z 
+2026-01-03T02:32:37.5478710Z    PASS  Tests\Feature\NodeRegistryServiceTest
+2026-01-03T02:32:37.5493379Z   ✓ register node creates new node                                       0.07s  
+2026-01-03T02:32:37.5505893Z   ✓ register node updates existing node                                  0.07s  
+2026-01-03T02:32:37.5518464Z   ✓ register node with zone uid ignored                                  0.07s  
+2026-01-03T02:32:37.5531006Z   ✓ register node with numeric zone uid ignored                          0.07s  
+2026-01-03T02:32:37.5543257Z   ✓ register node sets validated to true                                 0.06s  
+2026-01-03T02:32:37.5555439Z   ✓ register node sets first seen at on first registration               0.06s  
+2026-01-03T02:32:37.5567668Z   ✓ register node preserves first seen at on update                      0.06s  
+2026-01-03T02:32:38.5261502Z 
+2026-01-03T02:32:38.5262006Z    PASS  Tests\Feature\NodesTest
+2026-01-03T02:32:38.5274335Z   ✓ nodes requires auth                                                  0.06s  
+2026-01-03T02:32:38.5285907Z   ✓ create node                                                          0.07s  
+2026-01-03T02:32:38.5297577Z   ✓ get nodes list                                                       0.09s  
+2026-01-03T02:32:38.5309125Z   ✓ get node details                                                     0.08s  
+2026-01-03T02:32:38.5320495Z   ✓ update node                                                          0.08s  
+2026-01-03T02:32:38.5332492Z   ✓ delete node without dependencies                                     0.09s  
+2026-01-03T02:32:38.5343970Z   ✓ delete node attached to zone returns error                           0.08s  
+2026-01-03T02:32:38.5355459Z   ✓ filter nodes by zone                                                 0.10s  
+2026-01-03T02:32:38.5367042Z   ✓ register node requires token when configured                         0.05s  
+2026-01-03T02:32:38.5378688Z   ✓ register node with valid token                                       0.07s  
+2026-01-03T02:32:38.5390413Z   ✓ register node with invalid token                                     0.05s  
+2026-01-03T02:32:38.5402122Z   ✓ register node without token when not configured                      0.06s  
+2026-01-03T02:32:38.5413751Z   ✓ register node hello with token                                       0.08s  
+2026-01-03T02:32:39.0428348Z 
+2026-01-03T02:32:39.0428914Z    PASS  Tests\Feature\PlantsTest
+2026-01-03T02:32:39.0442270Z   ✓ admin can view plants page                                           0.12s  
+2026-01-03T02:32:39.0454704Z   ✓ agronomist can view plants page                                      0.10s  
+2026-01-03T02:32:39.0467007Z   ✓ admin can create plant                                               0.07s  
+2026-01-03T02:32:39.0479437Z   ✓ admin can update plant                                               0.07s  
+2026-01-03T02:32:39.0491702Z   ✓ admin can add price version                                          0.08s  
+2026-01-03T02:32:39.0503928Z   ✓ profitability endpoint returns data                                  0.08s  
+2026-01-03T02:32:39.5424752Z 
+2026-01-03T02:32:39.5425385Z    PASS  Tests\Feature\PresetsTest
+2026-01-03T02:32:39.5439130Z   ✓ presets requires auth                                                0.06s  
+2026-01-03T02:32:39.5451846Z   ✓ create preset                                                        0.07s  
+2026-01-03T02:32:39.5464822Z   ✓ get presets list                                                     0.07s  
+2026-01-03T02:32:39.5477240Z   ✓ get preset details                                                   0.08s  
+2026-01-03T02:32:39.5489905Z   ✓ update preset                                                        0.07s  
+2026-01-03T02:32:39.5502696Z   ✓ delete preset without dependencies                                   0.08s  
+2026-01-03T02:32:39.5514961Z   ✓ delete preset used in zones returns error                            0.07s  
+2026-01-03T02:32:40.3527556Z 
+2026-01-03T02:32:40.3528157Z    PASS  Tests\Feature\ProfileTest
+2026-01-03T02:32:40.3541502Z   ✓ profile page is displayed                                            0.09s  
+2026-01-03T02:32:40.3554142Z   ✓ profile information can be updated                                   0.07s  
+2026-01-03T02:32:40.3569307Z   ✓ email verification status is unchanged when the email address is un… 0.06s  
+2026-01-03T02:32:40.3582104Z   ✓ user can delete their account                                        0.29s  
+2026-01-03T02:32:40.3594962Z   ✓ correct password must be provided to delete account                  0.29s  
+2026-01-03T02:32:41.0542532Z 
+2026-01-03T02:32:41.0543165Z    PASS  Tests\Feature\PythonIngestControllerTest
+2026-01-03T02:32:41.0557218Z   ✓ telemetry endpoint requires auth                                     0.06s  
+2026-01-03T02:32:41.0569641Z   ✓ telemetry endpoint proxies to history logger                         0.08s  
+2026-01-03T02:32:41.0582261Z   ✓ telemetry endpoint does not write to database                        0.08s  
+2026-01-03T02:32:41.0594835Z   ✓ telemetry endpoint handles history logger error                      0.08s  
+2026-01-03T02:32:41.0607268Z   ✓ telemetry endpoint validation                                        0.10s  
+2026-01-03T02:32:41.0618987Z   ✓ telemetry endpoint validates node belongs to zone                    0.08s  
+2026-01-03T02:32:41.0631500Z   ✓ telemetry endpoint allows zone without node                          0.06s  
+2026-01-03T02:32:41.0643231Z   ✓ command ack endpoint does not update status                          0.09s  
+2026-01-03T02:32:41.0655025Z   ✓ command ack endpoint requires auth                                   0.05s  
+2026-01-03T02:32:41.6578476Z 
+2026-01-03T02:32:41.6579170Z    PASS  Tests\Feature\RecipeRevisionControllerTest
+2026-01-03T02:32:41.6591994Z   ✓ it shows recipe revision with phases                                 0.13s  
+2026-01-03T02:32:41.6604042Z   ✓ it creates new revision from existing                                0.13s  
+2026-01-03T02:32:41.6615936Z   ✓ it updates draft revision                                            0.08s  
+2026-01-03T02:32:41.6628091Z   ✓ it publishes draft revision                                          0.10s  
+2026-01-03T02:32:41.6640025Z   ✓ it prevents non agronomist from creating revision                    0.07s  
+2026-01-03T02:32:41.6652063Z   ✓ it prevents updating published revision                              0.09s  
+2026-01-03T02:32:42.0727246Z 
+2026-01-03T02:32:42.0727898Z    PASS  Tests\Feature\RecipeStageMapControllerTest
+2026-01-03T02:32:42.0740938Z   ✓ it gets stage map for recipe                                         0.11s  
+2026-01-03T02:32:42.0753119Z   ✓ it auto generates stage map when missing                             0.10s  
+2026-01-03T02:32:42.0765182Z   ✓ it updates stage map                                                 0.07s  
+2026-01-03T02:32:42.0777250Z   ✓ it requires authentication to update                                 0.07s  
+2026-01-03T02:32:42.0789076Z   ✓ it validates stage map data                                          0.07s  
+2026-01-03T02:32:42.9945650Z 
+2026-01-03T02:32:42.9946309Z    PASS  Tests\Feature\RecipesTest
+2026-01-03T02:32:42.9959504Z   ✓ recipes requires auth                                                0.06s  
+2026-01-03T02:32:42.9971751Z   ✓ create recipe                                                        0.08s  
+2026-01-03T02:32:42.9984317Z   ✓ get recipes list                                                     0.09s  
+2026-01-03T02:32:42.9996469Z   ✓ get recipe details                                                   0.11s  
+2026-01-03T02:32:43.0008714Z   ✓ update recipe                                                        0.08s  
+2026-01-03T02:32:43.0021165Z   ✓ delete recipe without dependencies                                   0.08s  
+2026-01-03T02:32:43.0033727Z   ✓ delete recipe used in zones returns error                            0.12s  
+2026-01-03T02:32:43.0046351Z   ✓ add phase to recipe                                                  0.10s  
+2026-01-03T02:32:43.0058937Z   ✓ update phase                                                         0.10s  
+2026-01-03T02:32:43.0071262Z   ✓ delete phase                                                         0.10s  
+2026-01-03T02:32:43.4591030Z 
+2026-01-03T02:32:43.4591567Z    PASS  Tests\Feature\ReportsTest
+2026-01-03T02:32:43.4603974Z   ✓ recipe analytics requires auth                                       0.08s  
+2026-01-03T02:32:43.4615406Z   ✓ get recipe analytics                                                 0.10s  
+2026-01-03T02:32:43.4627141Z   ✓ get zone harvests                                                    0.09s  
+2026-01-03T02:32:43.4638458Z   ✓ create harvest                                                       0.09s  
+2026-01-03T02:32:43.4650625Z   ✓ compare recipes                                                      0.10s  
+2026-01-03T02:32:43.7291383Z 
+2026-01-03T02:32:43.7291945Z    PASS  Tests\Feature\SecurityMiddlewareTest
+2026-01-03T02:32:43.7305255Z   ✓ verify python service token requires token in production             0.05s  
+2026-01-03T02:32:43.7317473Z   ✓ verify python service token denies access when token not configured  0.06s  
+2026-01-03T02:32:43.7330572Z   ✓ verify alertmanager webhook requires secret                          0.05s  
+2026-01-03T02:32:43.7342816Z   ✓ node registration requires token                                     0.05s  
+2026-01-03T02:32:43.7354811Z   ✓ node registration denies when token not configured                   0.05s  
+2026-01-03T02:32:43.9624521Z 
+2026-01-03T02:32:43.9625076Z    PASS  Tests\Feature\ServiceLogApiTest
+2026-01-03T02:32:43.9638483Z   ✓ returns logs with service and level filters                          0.10s  
+2026-01-03T02:32:43.9650608Z   ✓ supports search and date filters                                     0.07s  
+2026-01-03T02:32:43.9663327Z   ✓ forbids access for viewer role                                       0.06s  
+2026-01-03T02:32:44.5787743Z 
+2026-01-03T02:32:44.5788304Z    PASS  Tests\Feature\SimulationControllerTest
+2026-01-03T02:32:44.5801238Z   ✓ simulate zone requires authentication                                0.07s  
+2026-01-03T02:32:44.5813474Z   ✓ simulate zone validates input                                        0.07s  
+2026-01-03T02:32:44.5825582Z   ✓ simulate zone success                                                0.08s  
+2026-01-03T02:32:44.5837797Z   ✓ simulate zone uses zone active recipe if no recipe id provided       0.15s  
+2026-01-03T02:32:44.5850076Z   ✓ simulate zone handles digital twin error                             0.08s  
+2026-01-03T02:32:44.5862309Z   ✓ simulate zone handles connection error                               0.09s  
+2026-01-03T02:32:44.5874462Z   ✓ simulate zone with minimal parameters                                0.08s  
+2026-01-03T02:32:45.1030672Z 
+2026-01-03T02:32:45.1031407Z    PASS  Tests\Feature\SystemControllerTest
+2026-01-03T02:32:45.1043559Z   ✓ system health is public                                              0.06s  
+2026-01-03T02:32:45.1055617Z   ✓ system config full requires auth                                     0.05s  
+2026-01-03T02:32:45.1067786Z   ✓ system config full with auth                                         0.10s  
+2026-01-03T02:32:45.1080069Z   ✓ system config full includes all relations                            0.10s  
+2026-01-03T02:32:45.1092093Z   ✓ system config full filters zones by user access                      0.11s  
+2026-01-03T02:32:45.1104740Z   ✓ system config full excludes node config                              0.11s  
+2026-01-03T02:32:48.0256794Z 
+2026-01-03T02:32:48.0257720Z    PASS  Tests\Feature\TelemetryCleanupCommandTest
+2026-01-03T02:32:48.0270588Z   ✓ telemetry cleanup uses chunking                                      2.68s  
+2026-01-03T02:32:48.0282631Z   ✓ telemetry cleanup empty table                                        0.05s  
+2026-01-03T02:32:48.0294582Z   ✓ telemetry cleanup no old records                                     0.19s  
+2026-01-03T02:32:48.4731276Z 
+2026-01-03T02:32:48.4731766Z    PASS  Tests\Feature\TelemetryLedgerFilterTest
+2026-01-03T02:32:48.4744801Z   ✓ first value is always recorded                                       0.06s  
+2026-01-03T02:32:48.4757011Z   ✓ significant change is recorded                                       0.05s  
+2026-01-03T02:32:48.4771213Z   ✓ insignificant change is not recorded                                 0.05s  
+2026-01-03T02:32:48.4783731Z   ✓ too frequent updates are not recorded                                0.05s  
+2026-01-03T02:32:48.4795571Z   ✓ different metrics have different thresholds                          0.05s  
+2026-01-03T02:32:48.4809580Z   ✓ different zones have independent filtering                           0.06s  
+2026-01-03T02:32:48.4821488Z   ✓ negative change is handled correctly                                 0.06s  
+2026-01-03T02:32:48.4833230Z   ✓ unknown metric uses default threshold                                0.05s  
+2026-01-03T02:32:49.1554656Z 
+2026-01-03T02:32:49.1555212Z    PASS  Tests\Feature\TelemetryTest
+2026-01-03T02:32:49.1568841Z   ✓ zone telemetry endpoints require auth                                0.06s  
+2026-01-03T02:32:49.1581303Z   ✓ zone telemetry history validation                                    0.07s  
+2026-01-03T02:32:49.1593736Z   ✓ node telemetry requires auth                                         0.05s  
+2026-01-03T02:32:49.1606035Z   ✓ node telemetry allows access for authorized user                     0.08s  
+2026-01-03T02:32:49.1618390Z   ✓ zone telemetry history returns samples                               0.09s  
+2026-01-03T02:32:49.1630878Z   ✓ zone telemetry last returns object                                   0.10s  
+2026-01-03T02:32:49.1643076Z   ✓ node telemetry history returns samples                               0.09s  
+2026-01-03T02:32:49.1655758Z   ✓ telemetry aggregates requires auth                                   0.05s  
+2026-01-03T02:32:49.1667451Z   ✓ telemetry aggregates validates zone access                           0.07s  
+2026-01-03T02:32:49.4338509Z 
+2026-01-03T02:32:49.4339150Z    WARN  Tests\Feature\TimescaleDBRetentionTest
+2026-01-03T02:32:49.4351670Z   ✓ timescaledb extension exists                                         0.06s  
+2026-01-03T02:32:49.4365335Z   - telemetry samples is hypertable → Cannot check hypertable: telemetr… 0.05s  
+2026-01-03T02:32:49.4379172Z   - telemetry samples retention policy → Cannot check retention policy:… 0.05s  
+2026-01-03T02:32:49.4392762Z   - telemetry agg 1m retention policy → Cannot check retention policy:…  0.05s  
+2026-01-03T02:32:49.4406083Z   - telemetry agg 1h retention policy → Cannot check retention policy:…  0.06s  
+2026-01-03T02:32:50.2320507Z 
+2026-01-03T02:32:50.2321232Z    PASS  Tests\Feature\UnassignedNodeErrorsAttachTest
+2026-01-03T02:32:50.2334231Z   ✓ unassigned errors become alerts after node registration              0.12s  
+2026-01-03T02:32:50.2346224Z   ✓ unassigned errors not archived if node not attached to zone          0.07s  
+2026-01-03T02:32:50.2358538Z   ✓ preserves earliest first seen at when updating existing alert        0.09s  
+2026-01-03T02:32:50.2370712Z   ✓ handles errors without error code                                    0.09s  
+2026-01-03T02:32:50.2382885Z   ✓ creates zone event with correct data                                 0.12s  
+2026-01-03T02:32:50.2394973Z   ✓ handles multiple errors efficiently                                  0.30s  
+2026-01-03T02:32:50.8046042Z 
+2026-01-03T02:32:50.8047161Z    PASS  Tests\Feature\UnassignedNodeErrorsTest
+2026-01-03T02:32:50.8060010Z   ✓ unassigned errors table exists                                       0.06s  
+2026-01-03T02:32:50.8073831Z   ✓ can insert unassigned error                                          0.05s  
+2026-01-03T02:32:50.8085950Z   ✓ unique constraint on hardware id and code                            0.07s  
+2026-01-03T02:32:50.8098252Z   ✓ get zone unassigned errors requires auth                             0.06s  
+2026-01-03T02:32:50.8110221Z   ✓ get zone unassigned errors                                           0.09s  
+2026-01-03T02:32:50.8122413Z   ✓ unassigned errors attached to node on registration                   0.11s  
+2026-01-03T02:32:50.8134660Z   ✓ unassigned errors filtered by severity                               0.09s  
+2026-01-03T02:32:50.8146450Z   ✓ unassigned errors with null error code                               0.05s  
+2026-01-03T02:32:51.5953592Z 
+2026-01-03T02:32:51.5954246Z    PASS  Tests\Feature\ZoneEventLedgerTest
+2026-01-03T02:32:51.5966684Z   ✓ zone events table has correct structure                              0.06s  
+2026-01-03T02:32:51.5978648Z   ✓ command status updated records to zone events                        0.07s  
+2026-01-03T02:32:51.5990279Z   ✓ alert created records to zone events                                 0.08s  
+2026-01-03T02:32:51.6002086Z   ✓ events api returns events in order                                   0.10s  
+2026-01-03T02:32:51.6013951Z   ✓ events api supports after id pagination                              0.11s  
+2026-01-03T02:32:51.6025337Z   ✓ events api requires authentication                                   0.06s  
+2026-01-03T02:32:51.6036800Z   ✓ events api requires zone access                                      0.10s  
+2026-01-03T02:32:51.6048579Z   ✓ parallel events maintain strict order                                0.08s  
+2026-01-03T02:32:51.6060308Z   ✓ catch up after websocket disconnect                                  0.12s  
+2026-01-03T02:32:52.4393887Z 
+2026-01-03T02:32:52.4394509Z    PASS  Tests\Feature\ZonePidConfigControllerTest
+2026-01-03T02:32:52.4407525Z   ✓ can get pid config for zone and type                                 0.08s  
+2026-01-03T02:32:52.4420285Z   ✓ can get all pid configs for zone                                     0.08s  
+2026-01-03T02:32:52.4432659Z   ✓ can create pid config                                                0.08s  
+2026-01-03T02:32:52.4444798Z   ✓ can update existing pid config                                       0.09s  
+2026-01-03T02:32:52.4457260Z   ✓ validates pid config fields                                          0.07s  
+2026-01-03T02:32:52.4469622Z   ✓ rate limiting on update                                              0.28s  
+2026-01-03T02:32:52.4481727Z   ✓ creates pid config updated event                                     0.09s  
+2026-01-03T02:32:52.4493638Z   ✓ rejects invalid type                                                 0.07s  
+2026-01-03T02:32:52.8292597Z 
+2026-01-03T02:32:52.8293184Z    PASS  Tests\Feature\ZonePidConfigValidationTest
+2026-01-03T02:32:52.8306027Z   ✓ validates zone order dead less than close                            0.09s  
+2026-01-03T02:32:52.8318013Z   ✓ validates zone order close less than far                             0.07s  
+2026-01-03T02:32:52.8331201Z   ✓ validates enable autotune is required                                0.07s  
+2026-01-03T02:32:52.8343174Z   ✓ validates adaptation rate is required                                0.07s  
+2026-01-03T02:32:52.8354688Z   ✓ accepts valid zone order                                             0.08s  
+2026-01-03T02:32:53.1442379Z 
+2026-01-03T02:32:53.1443011Z    PASS  Tests\Feature\ZonePidLogControllerTest
+2026-01-03T02:32:53.1455521Z   ✓ can get pid logs                                                     0.10s  
+2026-01-03T02:32:53.1466770Z   ✓ can filter pid logs by type                                          0.10s  
+2026-01-03T02:32:53.1478217Z   ✓ pid logs supports pagination                                         0.11s  
+2026-01-03T02:32:54.1254119Z 
+2026-01-03T02:32:54.1254971Z    FAIL  Tests\Feature\ZoneSnapshotTest
+2026-01-03T02:32:54.1267285Z   ✓ snapshot includes last event id and server ts                        0.12s  
+2026-01-03T02:32:54.1278657Z   ✓ snapshot is atomic                                                   0.13s  
+2026-01-03T02:32:54.1290517Z   ✓ snapshot includes devices online state                               0.12s  
+2026-01-03T02:32:54.1302152Z   ✓ snapshot includes active alerts                                      0.12s  
+2026-01-03T02:32:54.1313877Z   ✓ snapshot includes latest telemetry per channel                       0.13s  
+2026-01-03T02:32:54.1325637Z   ⨯ snapshot includes commands recent                                    0.13s  
+2026-01-03T02:32:54.1337418Z   ✓ snapshot catch up after event gap                                    0.16s  
+2026-01-03T02:32:54.1349518Z   ✓ snapshot requires authentication                                     0.06s  
+2026-01-03T02:32:56.6668396Z 
+2026-01-03T02:32:56.6668950Z    PASS  Tests\Feature\ZonesTest
+2026-01-03T02:32:56.6681789Z   ✓ zones requires auth                                                  0.06s  
+2026-01-03T02:32:56.6693721Z   ✓ create zone                                                          0.08s  
+2026-01-03T02:32:56.6705694Z   ✓ get zones list                                                       0.09s  
+2026-01-03T02:32:56.6717864Z   ✓ get zone details                                                     0.08s  
+2026-01-03T02:32:56.6729521Z   ✓ update zone                                                          0.08s  
+2026-01-03T02:32:56.6741225Z   ✓ delete zone without dependencies                                     0.12s  
+2026-01-03T02:32:56.6753279Z   ✓ delete zone with active recipe returns error                         0.15s  
+2026-01-03T02:32:56.6764662Z   ✓ attach recipe to zone                                                0.15s  
+2026-01-03T02:32:56.6776397Z   ✓ change phase                                                         0.18s  
+2026-01-03T02:32:56.6788313Z   ✓ pause zone                                                           0.17s  
+2026-01-03T02:32:56.6799985Z   ✓ resume zone                                                          0.17s  
+2026-01-03T02:32:56.6811585Z   ✓ fill zone                                                            0.15s  
+2026-01-03T02:32:56.6823913Z   ✓ drain zone success                                                   0.15s  
+2026-01-03T02:32:56.6835520Z   ✓ drain zone python service down                                       0.16s  
+2026-01-03T02:32:56.6847647Z   ✓ next phase success                                                   0.18s  
+2026-01-03T02:32:56.6859396Z   ✓ next phase no current phase                                          0.11s  
+2026-01-03T02:32:56.6871103Z   ✓ next phase last phase                                                0.15s  
+2026-01-03T02:32:56.6882766Z   ✓ zone show includes phase progress                                    0.15s  
+2026-01-03T02:32:56.6894247Z   ✓ phase progress calculation                                           0.17s  
+2026-01-03T02:32:56.6904050Z   ────────────────────────────────────────────────────────────────────────────  
+2026-01-03T02:32:56.6917147Z    FAILED  Tests\Feature\DatabaseIndexesTest > commands indexes exist           
+2026-01-03T02:32:56.6935889Z   Failed asserting that an array contains 'commands_status_idx'.
+2026-01-03T02:32:56.6955142Z 
+2026-01-03T02:32:56.6957146Z   at tests/Feature/DatabaseIndexesTest.php:58
+2026-01-03T02:32:56.6975534Z      54▕ 
+2026-01-03T02:32:56.6976165Z      55▕         $indexNames = array_column($indexes, 'indexname');
+2026-01-03T02:32:56.6977159Z      56▕         
+2026-01-03T02:32:56.6977908Z      57▕         // Базовые индексы должны существовать
+2026-01-03T02:32:56.6978939Z   ➜  58▕         $this->assertContains('commands_status_idx', $indexNames);
+2026-01-03T02:32:56.6980050Z      59▕         $this->assertContains('commands_cmd_id_idx', $indexNames);
+2026-01-03T02:32:56.6980771Z      60▕         
+2026-01-03T02:32:56.6981753Z      61▕         // Дополнительные индексы могут быть созданы позже
+2026-01-03T02:32:56.6982691Z      62▕         // Проверяем, что есть хотя бы базовые индексы
+2026-01-03T02:32:56.6983095Z 
+2026-01-03T02:32:56.6983370Z   1   tests/Feature/DatabaseIndexesTest.php:58
+2026-01-03T02:32:56.6983873Z 
+2026-01-03T02:32:56.6985255Z   ────────────────────────────────────────────────────────────────────────────  
+2026-01-03T02:32:56.6998799Z    FAILED  Tests\Feature\DatabaseIndexesTest > zone events indexes exist        
+2026-01-03T02:32:56.7001189Z   Failed asserting that an array contains 'zone_events_zone_id_created_at_idx'.
+2026-01-03T02:32:56.7003190Z 
+2026-01-03T02:32:56.7005162Z   at tests/Feature/DatabaseIndexesTest.php:107
+2026-01-03T02:32:56.7022781Z     103▕ 
+2026-01-03T02:32:56.7023393Z     104▕         $indexNames = array_column($indexes, 'indexname');
+2026-01-03T02:32:56.7023954Z     105▕         
+2026-01-03T02:32:56.7024409Z     106▕         // Базовые индексы должны существовать
+2026-01-03T02:32:56.7025092Z   ➜ 107▕         $this->assertContains('zone_events_zone_id_created_at_idx', $indexNames);
+2026-01-03T02:32:56.7026083Z     108▕         $this->assertContains('zone_events_type_idx', $indexNames);
+2026-01-03T02:32:56.7026667Z     109▕         
+2026-01-03T02:32:56.7027364Z     110▕         // Дополнительные индексы могут быть созданы позже
+2026-01-03T02:32:56.7027787Z     111▕         // Проверяем, что есть хотя бы базовые индексы
+2026-01-03T02:32:56.7028008Z 
+2026-01-03T02:32:56.7028166Z   1   tests/Feature/DatabaseIndexesTest.php:107
+2026-01-03T02:32:56.7028610Z 
+2026-01-03T02:32:56.7031160Z   ────────────────────────────────────────────────────────────────────────────  
+2026-01-03T02:32:56.7046152Z    FAILED  Tests\Feature\ZoneSnapshotTest > snapshot includes commands recen…   
+2026-01-03T02:32:56.7047802Z   Failed asserting that two strings are equal.
+2026-01-03T02:32:56.7048247Z   -'cmd-3'
+2026-01-03T02:32:56.7048501Z   +'cmd-1'
+2026-01-03T02:32:56.7048747Z   
+2026-01-03T02:32:56.7051407Z 
+2026-01-03T02:32:56.7052859Z   at tests/Feature/ZoneSnapshotTest.php:319
+2026-01-03T02:32:56.7191632Z     315▕         $this->assertContains('cmd-3', $cmdIds);
+2026-01-03T02:32:56.7192224Z     316▕         
+2026-01-03T02:32:56.7193113Z     317▕         // Проверяем, что команды отсортированы по created_at desc (самые новые первые)
+2026-01-03T02:32:56.7193943Z     318▕         $firstCmd = $commands[0];
+2026-01-03T02:32:56.7194792Z   ➜ 319▕         $this->assertEquals('cmd-3', $firstCmd['cmd_id']);
+2026-01-03T02:32:56.7195269Z     320▕     }
+2026-01-03T02:32:56.7195550Z     321▕ 
+2026-01-03T02:32:56.7196059Z     322▕     public function test_snapshot_catch_up_after_event_gap(): void
+2026-01-03T02:32:56.7196518Z     323▕     {
+2026-01-03T02:32:56.7196647Z 
+2026-01-03T02:32:56.7196977Z   1   tests/Feature/ZoneSnapshotTest.php:319
+2026-01-03T02:32:56.7197219Z 
+2026-01-03T02:32:56.7211831Z 
+2026-01-03T02:32:56.7215885Z   Tests:    3 failed, 6 skipped, 416 passed (1379 assertions)
+2026-01-03T02:32:56.7217530Z   Duration: 63.84s
+2026-01-03T02:32:56.7217937Z 
+2026-01-03T02:32:56.7480123Z ##[error]Process completed with exit code 1.
+2026-01-03T02:32:56.7543617Z ##[group]Run actions/upload-artifact@v4
+2026-01-03T02:32:56.7543882Z with:
+2026-01-03T02:32:56.7544058Z   name: phpunit-junit
+2026-01-03T02:32:56.7544283Z   path: backend/laravel/test-results/phpunit.xml
+2026-01-03T02:32:56.7544544Z   retention-days: 7
+2026-01-03T02:32:56.7544729Z   if-no-files-found: warn
+2026-01-03T02:32:56.7544923Z   compression-level: 6
+2026-01-03T02:32:56.7545107Z   overwrite: false
+2026-01-03T02:32:56.7545303Z   include-hidden-files: false
+2026-01-03T02:32:56.7545504Z env:
+2026-01-03T02:32:56.7545659Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:32:56.7545869Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:32:56.7546065Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:32:56.7546243Z ##[endgroup]
+2026-01-03T02:32:56.9761578Z With the provided path, there will be 1 file uploaded
+2026-01-03T02:32:56.9768409Z Artifact name is valid!
+2026-01-03T02:32:56.9769496Z Root directory input is valid!
+2026-01-03T02:32:57.1611767Z Beginning upload of artifact content to blob storage
+2026-01-03T02:32:57.4331297Z Uploaded bytes 14637
+2026-01-03T02:32:57.4914622Z Finished uploading artifact content to blob storage!
+2026-01-03T02:32:57.4917451Z SHA256 digest of uploaded artifact zip is 958b5fefa7c9d5ae3c75c7afa1daff4e872a1a1e6791f6c9359727849b240798
+2026-01-03T02:32:57.4919055Z Finalizing artifact upload
+2026-01-03T02:32:57.6034833Z Artifact phpunit-junit.zip successfully finalized. Artifact ID 5012043199
+2026-01-03T02:32:57.6037125Z Artifact phpunit-junit has been successfully uploaded! Final size is 14637 bytes. Artifact ID is 5012043199
+2026-01-03T02:32:57.6043221Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20670977912/artifacts/5012043199
+2026-01-03T02:32:57.6174240Z ##[group]Run actions/upload-artifact@v4
+2026-01-03T02:32:57.6174500Z with:
+2026-01-03T02:32:57.6174664Z   name: vitest-junit
+2026-01-03T02:32:57.6174892Z   path: backend/laravel/test-results/junit.xml
+2026-01-03T02:32:57.6175151Z   retention-days: 7
+2026-01-03T02:32:57.6175339Z   if-no-files-found: warn
+2026-01-03T02:32:57.6175542Z   compression-level: 6
+2026-01-03T02:32:57.6175756Z   overwrite: false
+2026-01-03T02:32:57.6175950Z   include-hidden-files: false
+2026-01-03T02:32:57.6176166Z env:
+2026-01-03T02:32:57.6176331Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:32:57.6176547Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:32:57.6176749Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:32:57.6177253Z ##[endgroup]
+2026-01-03T02:32:57.8311311Z ##[warning]No files were found with the provided path: backend/laravel/test-results/junit.xml. No artifacts will be uploaded.
+2026-01-03T02:32:57.8431309Z ##[group]Run actions/upload-artifact@v4
+2026-01-03T02:32:57.8431590Z with:
+2026-01-03T02:32:57.8431770Z   name: vitest-coverage
+2026-01-03T02:32:57.8431977Z   path: backend/laravel/coverage
+2026-01-03T02:32:57.8432203Z   retention-days: 7
+2026-01-03T02:32:57.8432394Z   if-no-files-found: warn
+2026-01-03T02:32:57.8432597Z   compression-level: 6
+2026-01-03T02:32:57.8432790Z   overwrite: false
+2026-01-03T02:32:57.8432989Z   include-hidden-files: false
+2026-01-03T02:32:57.8433202Z env:
+2026-01-03T02:32:57.8433370Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:32:57.8433592Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:32:57.8433801Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:32:57.8433986Z ##[endgroup]
+2026-01-03T02:32:58.0585679Z ##[warning]No files were found with the provided path: backend/laravel/coverage. No artifacts will be uploaded.
+2026-01-03T02:32:58.0714914Z ##[group]Run actions/upload-artifact@v4
+2026-01-03T02:32:58.0715200Z with:
+2026-01-03T02:32:58.0715380Z   name: playwright-report
+2026-01-03T02:32:58.0715615Z   path: backend/laravel/playwright-report
+2026-01-03T02:32:58.0715866Z   retention-days: 7
+2026-01-03T02:32:58.0716056Z   if-no-files-found: warn
+2026-01-03T02:32:58.0716251Z   compression-level: 6
+2026-01-03T02:32:58.0716439Z   overwrite: false
+2026-01-03T02:32:58.0716626Z   include-hidden-files: false
+2026-01-03T02:32:58.0717120Z env:
+2026-01-03T02:32:58.0717362Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-03T02:32:58.0717589Z   COMPOSER_NO_INTERACTION: 1
+2026-01-03T02:32:58.0717795Z   COMPOSER_NO_AUDIT: 1
+2026-01-03T02:32:58.0717973Z ##[endgroup]
+2026-01-03T02:32:58.2921429Z With the provided path, there will be 1 file uploaded
+2026-01-03T02:32:58.2933974Z Artifact name is valid!
+2026-01-03T02:32:58.2934592Z Root directory input is valid!
+2026-01-03T02:32:58.4923271Z Beginning upload of artifact content to blob storage
+2026-01-03T02:32:58.8664039Z Uploaded bytes 195452
+2026-01-03T02:32:58.9263042Z Finished uploading artifact content to blob storage!
+2026-01-03T02:32:58.9267061Z SHA256 digest of uploaded artifact zip is 87b5c97ac524e9cb62331e11324dada9960f2351c60a7f0f64a889daaf53a630
+2026-01-03T02:32:58.9268741Z Finalizing artifact upload
+2026-01-03T02:32:59.0486326Z Artifact playwright-report.zip successfully finalized. Artifact ID 5012043321
+2026-01-03T02:32:59.0488037Z Artifact playwright-report has been successfully uploaded! Final size is 195452 bytes. Artifact ID is 5012043321
+2026-01-03T02:32:59.0495161Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20670977912/artifacts/5012043321
+2026-01-03T02:32:59.0628047Z Post job cleanup.
+2026-01-03T02:32:59.1562352Z [command]/usr/bin/git version
+2026-01-03T02:32:59.1598832Z git version 2.52.0
+2026-01-03T02:32:59.1649855Z Temporarily overriding HOME='/home/runner/work/_temp/b78aa253-83a3-4de4-a7b5-a93d39ba1757' before making global git config changes
+2026-01-03T02:32:59.1651403Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-03T02:32:59.1656072Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/hydro2.0/hydro2.0
+2026-01-03T02:32:59.1690340Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-01-03T02:32:59.1722865Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-01-03T02:32:59.1953729Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-03T02:32:59.1973701Z http.https://github.com/.extraheader
+2026-01-03T02:32:59.1986419Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-01-03T02:32:59.2017694Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-01-03T02:32:59.2239235Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-03T02:32:59.2269516Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-01-03T02:32:59.2582332Z Print service container logs: 3d758394e1cf41efa02968937eb0f972_timescaletimescaledb2130pg15_6ffdc2
+2026-01-03T02:32:59.2587536Z ##[command]/usr/bin/docker logs --details b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:32:59.2706050Z  The files belonging to this database system will be owned by user "postgres".
+2026-01-03T02:32:59.2707465Z  This user must also own the server process.
+2026-01-03T02:32:59.2707932Z  
+2026-01-03T02:32:59.2708359Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-01-03T02:32:59.2709119Z  The default database encoding has accordingly been set to "UTF8".
+2026-01-03T02:32:59.2710207Z  The default text search configuration will be set to "english".
+2026-01-03T02:32:59.2712645Z  
+2026-01-03T02:32:59.2713178Z  Data page checksums are disabled.
+2026-01-03T02:32:59.2713773Z  
+2026-01-03T02:32:59.2714775Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-01-03T02:32:59.2715634Z  creating subdirectories ... ok
+2026-01-03T02:32:59.2716171Z  selecting dynamic shared memory implementation ... posix
+2026-01-03T02:32:59.2717137Z  selecting default max_connections ... 100
+2026-01-03T02:32:59.2717651Z  selecting default shared_buffers ... 128MB
+2026-01-03T02:32:59.2718282Z  selecting default time zone ... UTC
+2026-01-03T02:32:59.2718872Z  creating configuration files ... ok
+2026-01-03T02:32:59.2720646Z  sh: locale: not found
+2026-01-03T02:32:59.2721362Z  2026-01-03 02:30:51.159 UTC [30] WARNING:  no usable system locales were found
+2026-01-03T02:32:59.2722466Z  initdb: warning: enabling "trust" authentication for local connections
+2026-01-03T02:32:59.2724854Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-01-03T02:32:59.2725791Z  psql:/tmp/tmp.kiDDEN:1: WARNING:  
+2026-01-03T02:32:59.2726207Z  WELCOME TO
+2026-01-03T02:32:59.2726535Z   _____ _                               _     ____________  
+2026-01-03T02:32:59.2727165Z  |_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2741055Z    | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2741540Z    | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2741992Z    | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2742461Z    |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2742907Z                 Running version 2.13.0
+2026-01-03T02:32:59.2743343Z  For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2743691Z  
+2026-01-03T02:32:59.2744031Z   1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2744759Z   2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2745093Z  
+2026-01-03T02:32:59.2745412Z  Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2746139Z  For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2746688Z  
+2026-01-03T02:32:59.2747102Z  running bootstrap script ... ok
+2026-01-03T02:32:59.2747403Z  performing post-bootstrap initialization ... ok
+2026-01-03T02:32:59.2747691Z  syncing data to disk ... ok
+2026-01-03T02:32:59.2747901Z  
+2026-01-03T02:32:59.2748055Z  
+2026-01-03T02:32:59.2748265Z  Success. You can now start the database server using:
+2026-01-03T02:32:59.2748536Z  
+2026-01-03T02:32:59.2748745Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-01-03T02:32:59.2749010Z  
+2026-01-03T02:32:59.2749555Z  waiting for server to start....2026-01-03 02:30:51.680 UTC [36] LOG:  starting PostgreSQL 15.5 on x86_64-pc-linux-musl, compiled by gcc (Alpine 12.2.1_git20220924-r10) 12.2.1 20220924, 64-bit
+2026-01-03T02:32:59.2750579Z  2026-01-03 02:30:51.680 UTC [36] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-01-03T02:32:59.2751092Z  2026-01-03 02:30:51.683 UTC [39] LOG:  database system was shut down at 2026-01-03 02:30:51 UTC
+2026-01-03T02:32:59.2751539Z  2026-01-03 02:30:51.687 UTC [36] LOG:  database system is ready to accept connections
+2026-01-03T02:32:59.2752028Z  2026-01-03 02:30:51.688 UTC [42] LOG:  TimescaleDB background worker launcher connected to shared catalogs
+2026-01-03T02:32:59.2752415Z   done
+2026-01-03T02:32:59.2752583Z  server started
+2026-01-03T02:32:59.2752764Z  CREATE DATABASE
+2026-01-03T02:32:59.2752941Z  
+2026-01-03T02:32:59.2753091Z  
+2026-01-03T02:32:59.2753468Z  /usr/local/bin/docker-entrypoint.sh: sourcing /docker-entrypoint-initdb.d/000_install_timescaledb.sh
+2026-01-03T02:32:59.2753946Z  2026-01-03 02:30:52.084 UTC [53] WARNING:  
+2026-01-03T02:32:59.2754186Z  	WELCOME TO
+2026-01-03T02:32:59.2754389Z  	 _____ _                               _     ____________  
+2026-01-03T02:32:59.2754704Z  	|_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2754980Z  	  | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2755243Z  	  | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2755498Z  	  | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2755757Z  	  |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2756022Z  	               Running version 2.13.0
+2026-01-03T02:32:59.2756363Z  	For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2756691Z  	
+2026-01-03T02:32:59.2757192Z  	 1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2757674Z  	 2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2758004Z  	
+2026-01-03T02:32:59.2758321Z  	Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2759040Z  	For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2759591Z  	
+2026-01-03T02:32:59.2759880Z  2026-01-03 02:30:52.084 UTC [53] CONTEXT:  PL/pgSQL function inline_code_block line 16 at RAISE
+2026-01-03T02:32:59.2760257Z  CREATE EXTENSION
+2026-01-03T02:32:59.2760548Z  2026-01-03 02:30:52.371 UTC [58] LOG:  the "timescaledb" extension is not up-to-date
+2026-01-03T02:32:59.2761038Z  2026-01-03 02:30:52.371 UTC [58] HINT:  The most up-to-date version is 2.24.0, the installed version is 2.13.0.
+2026-01-03T02:32:59.2761490Z  psql:/tmp/tmp.kiDDEN:1: WARNING:  
+2026-01-03T02:32:59.2761727Z  WELCOME TO
+2026-01-03T02:32:59.2761925Z   _____ _                               _     ____________  
+2026-01-03T02:32:59.2762332Z  |_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2762591Z    | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2762852Z    | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2763108Z    | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2763370Z    |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2763628Z                 Running version 2.13.0
+2026-01-03T02:32:59.2763972Z  For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2764300Z  
+2026-01-03T02:32:59.2764606Z   1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2765081Z   2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2765402Z  
+2026-01-03T02:32:59.2765719Z  Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2766428Z  For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2767157Z  
+2026-01-03T02:32:59.2767335Z  psql:/tmp/tmp.kiDDEN:1: WARNING:  
+2026-01-03T02:32:59.2767708Z  WELCOME TO
+2026-01-03T02:32:59.2767908Z   _____ _                               _     ____________  
+2026-01-03T02:32:59.2768173Z  |_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2768432Z    | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2768688Z    | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2768941Z    | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2769204Z    |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2769455Z                 Running version 2.13.0
+2026-01-03T02:32:59.2769789Z  For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2770115Z  
+2026-01-03T02:32:59.2770413Z   1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2770894Z   2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2771224Z  
+2026-01-03T02:32:59.2771539Z  Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2772249Z  For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2772796Z  
+2026-01-03T02:32:59.2772985Z  [37;1mUsing postgresql.conf at this path:
+2026-01-03T02:32:59.2773275Z  [0m/var/lib/postgresql/data/postgresql.conf
+2026-01-03T02:32:59.2773520Z  
+2026-01-03T02:32:59.2773684Z  [37;1mWriting backup to:
+2026-01-03T02:32:59.2773922Z  [0m/tmp/timescaledb_tune.backup202601030230
+2026-01-03T02:32:59.2774164Z  
+2026-01-03T02:32:59.2774458Z  [37;1mRecommendations based on 15.62 GB of available memory and 4 CPUs for PostgreSQL 15
+2026-01-03T02:32:59.2774914Z  [0m[37;1mSaving changes to: /var/lib/postgresql/data/postgresql.conf
+2026-01-03T02:32:59.2775530Z  [0m2026-01-03 02:30:52.933 UTC [1] LOG:  starting PostgreSQL 15.5 on x86_64-pc-linux-musl, compiled by gcc (Alpine 12.2.1_git20220924-r10) 12.2.1 20220924, 64-bit
+2026-01-03T02:32:59.2776150Z  2026-01-03 02:30:52.933 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-01-03T02:32:59.2776563Z  2026-01-03 02:30:52.933 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-01-03T02:32:59.2777192Z  2026-01-03 02:30:52.934 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-01-03T02:32:59.2777682Z  2026-01-03 02:30:52.937 UTC [76] LOG:  database system was shut down at 2026-01-03 02:30:52 UTC
+2026-01-03T02:32:59.2778128Z  2026-01-03 02:30:52.958 UTC [1] LOG:  database system is ready to accept connections
+2026-01-03T02:32:59.2778610Z  2026-01-03 02:30:52.959 UTC [79] LOG:  TimescaleDB background worker launcher connected to shared catalogs
+2026-01-03T02:32:59.2779344Z  2026-01-03 02:31:53.676 UTC [143] WARNING:  column type "character varying" used for "quality" does not follow best practices
+2026-01-03T02:32:59.2779851Z  2026-01-03 02:31:53.676 UTC [143] HINT:  Use datatype TEXT instead.
+2026-01-03T02:32:59.2780366Z  2026-01-03 02:31:53.676 UTC [143] WARNING:  column type "timestamp without time zone" used for "ts" does not follow best practices
+2026-01-03T02:32:59.2780896Z  2026-01-03 02:31:53.676 UTC [143] HINT:  Use datatype TIMESTAMPTZ instead.
+2026-01-03T02:32:59.2781447Z  2026-01-03 02:31:53.676 UTC [143] WARNING:  column type "timestamp without time zone" used for "created_at" does not follow best practices
+2026-01-03T02:32:59.2781994Z  2026-01-03 02:31:53.676 UTC [143] HINT:  Use datatype TIMESTAMPTZ instead.
+2026-01-03T02:32:59.2782318Z  2026-01-03 02:30:52.376 UTC [57] WARNING:  
+2026-01-03T02:32:59.2782559Z  	WELCOME TO
+2026-01-03T02:32:59.2782762Z  	 _____ _                               _     ____________  
+2026-01-03T02:32:59.2783039Z  	|_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2783301Z  	  | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2783561Z  	  | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2783933Z  	  | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2784196Z  	  |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2784454Z  	               Running version 2.13.0
+2026-01-03T02:32:59.2784798Z  	For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2785122Z  	
+2026-01-03T02:32:59.2785426Z  	 1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2785912Z  	 2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2786238Z  	
+2026-01-03T02:32:59.2786550Z  	Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2787488Z  	For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2788046Z  	
+2026-01-03T02:32:59.2788335Z  2026-01-03 02:30:52.376 UTC [57] CONTEXT:  PL/pgSQL function inline_code_block line 16 at RAISE
+2026-01-03T02:32:59.2788698Z  CREATE EXTENSION
+2026-01-03T02:32:59.2789059Z  2026-01-03 02:30:52.377 UTC [60] ERROR:  TimescaleDB background worker connected to template database, exiting
+2026-01-03T02:32:59.2789697Z  2026-01-03 02:30:52.378 UTC [36] LOG:  background worker "TimescaleDB Background Worker Scheduler" (PID 60) exited with exit code 1
+2026-01-03T02:32:59.2790180Z  2026-01-03 02:30:52.640 UTC [62] WARNING:  
+2026-01-03T02:32:59.2790420Z  	WELCOME TO
+2026-01-03T02:32:59.2790616Z  	 _____ _                               _     ____________  
+2026-01-03T02:32:59.2790882Z  	|_   _(_)                             | |    |  _  \ ___ \ 
+2026-01-03T02:32:59.2791144Z  	  | |  _ _ __ ___   ___  ___  ___ __ _| | ___| | | | |_/ / 
+2026-01-03T02:32:59.2791422Z  	  | | | |  _ ` _ \ / _ \/ __|/ __/ _` | |/ _ \ | | | ___ \ 
+2026-01-03T02:32:59.2791686Z  	  | | | | | | | | |  __/\__ \ (_| (_| | |  __/ |/ /| |_/ /
+2026-01-03T02:32:59.2791946Z  	  |_| |_|_| |_| |_|\___||___/\___\__,_|_|\___|___/ \____/
+2026-01-03T02:32:59.2792199Z  	               Running version 2.13.0
+2026-01-03T02:32:59.2792536Z  	For more information on TimescaleDB, please visit the following links:
+2026-01-03T02:32:59.2792865Z  	
+2026-01-03T02:32:59.2793162Z  	 1. Getting started: https://docs.timescale.com/timescaledb/latest/getting-started
+2026-01-03T02:32:59.2793630Z  	 2. API reference documentation: https://docs.timescale.com/api/latest
+2026-01-03T02:32:59.2793955Z  	
+2026-01-03T02:32:59.2794265Z  	Note: TimescaleDB collects anonymous reports to better understand and assist our users.
+2026-01-03T02:32:59.2794988Z  	For more information and how to disable, please see our docs https://docs.timescale.com/timescaledb/latest/how-to-guides/configuration/telemetry.
+2026-01-03T02:32:59.2795662Z  	
+2026-01-03T02:32:59.2795947Z  2026-01-03 02:30:52.640 UTC [62] CONTEXT:  PL/pgSQL function inline_code_block line 16 at RAISE
+2026-01-03T02:32:59.2796304Z  CREATE EXTENSION
+2026-01-03T02:32:59.2796485Z  
+2026-01-03T02:32:59.2797255Z  /usr/local/bin/docker-entrypoint.sh: running /docker-entrypoint-initdb.d/001_timescaledb_tune.sh
+2026-01-03T02:32:59.2797724Z  shared_buffers = 3998MB
+2026-01-03T02:32:59.2797947Z  effective_cache_size = 11996MB
+2026-01-03T02:32:59.2798179Z  maintenance_work_mem = 1999MB
+2026-01-03T02:32:59.2798398Z  work_mem = 10237kB
+2026-01-03T02:32:59.2798613Z  timescaledb.max_background_workers = 16
+2026-01-03T02:32:59.2798875Z  max_worker_processes = 23
+2026-01-03T02:32:59.2799105Z  max_parallel_workers_per_gather = 2
+2026-01-03T02:32:59.2799350Z  max_parallel_workers = 4
+2026-01-03T02:32:59.2799563Z  wal_buffers = 16MB
+2026-01-03T02:32:59.2799752Z  min_wal_size = 512MB
+2026-01-03T02:32:59.2799960Z  default_statistics_target = 100
+2026-01-03T02:32:59.2800194Z  random_page_cost = 1.1
+2026-01-03T02:32:59.2800411Z  checkpoint_completion_target = 0.9
+2026-01-03T02:32:59.2800665Z  max_locks_per_transaction = 128
+2026-01-03T02:32:59.2800897Z  autovacuum_max_workers = 10
+2026-01-03T02:32:59.2801245Z  autovacuum_naptime = 10
+2026-01-03T02:32:59.2801469Z  effective_io_concurrency = 256
+2026-01-03T02:32:59.2801727Z  timescaledb.last_tuned = '2026-01-03T02:30:52Z'
+2026-01-03T02:32:59.2802011Z  timescaledb.last_tuned_version = '0.15.0'
+2026-01-03T02:32:59.2802252Z  
+2026-01-03T02:32:59.2802571Z  waiting for server to shut down....2026-01-03 02:30:52.659 UTC [36] LOG:  received fast shutdown request
+2026-01-03T02:32:59.2803033Z  2026-01-03 02:30:52.660 UTC [36] LOG:  aborting any active transactions
+2026-01-03T02:32:59.2803610Z  2026-01-03 02:30:52.660 UTC [63] FATAL:  terminating background worker "TimescaleDB Background Worker Scheduler" due to administrator command
+2026-01-03T02:32:59.2804368Z  2026-01-03 02:30:52.660 UTC [42] FATAL:  terminating background worker "TimescaleDB Background Worker Launcher" due to administrator command
+2026-01-03T02:32:59.2805092Z  2026-01-03 02:30:52.661 UTC [71] FATAL:  terminating background worker "Error Log Retention Policy [2]" due to administrator command
+2026-01-03T02:32:59.2805819Z  2026-01-03 02:30:52.661 UTC [54] FATAL:  terminating background worker "TimescaleDB Background Worker Scheduler" due to administrator command
+2026-01-03T02:32:59.2806538Z  2026-01-03 02:30:52.663 UTC [36] LOG:  background worker "TimescaleDB Background Worker Scheduler" (PID 54) exited with exit code 1
+2026-01-03T02:32:59.2807439Z  2026-01-03 02:30:52.663 UTC [36] LOG:  background worker "TimescaleDB Background Worker Scheduler" (PID 63) exited with exit code 1
+2026-01-03T02:32:59.2808118Z  2026-01-03 02:30:52.664 UTC [36] LOG:  background worker "TimescaleDB Background Worker Launcher" (PID 42) exited with exit code 1
+2026-01-03T02:32:59.2808766Z  2026-01-03 02:30:52.664 UTC [36] LOG:  background worker "logical replication launcher" (PID 43) exited with exit code 1
+2026-01-03T02:32:59.2809389Z  2026-01-03 02:30:52.665 UTC [36] LOG:  background worker "Error Log Retention Policy [2]" (PID 71) exited with exit code 1
+2026-01-03T02:32:59.2810030Z  2026-01-03 02:30:52.814 UTC [70] FATAL:  terminating background worker "Telemetry Reporter [1]" due to administrator command
+2026-01-03T02:32:59.2810643Z  2026-01-03 02:30:52.816 UTC [36] LOG:  background worker "Telemetry Reporter [1]" (PID 70) exited with exit code 1
+2026-01-03T02:32:59.2811084Z  2026-01-03 02:30:52.817 UTC [37] LOG:  shutting down
+2026-01-03T02:32:59.2811431Z  2026-01-03 02:30:52.817 UTC [37] LOG:  checkpoint starting: shutdown immediate
+2026-01-03T02:32:59.2812274Z  2026-01-03 02:30:52.849 UTC [37] LOG:  checkpoint complete: wrote 1754 buffers (10.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.026 s, sync=0.006 s, total=0.033 s; sync files=807, longest=0.001 s, average=0.001 s; distance=10006 kB, estimate=10006 kB
+2026-01-03T02:32:59.2813229Z  2026-01-03 02:30:52.857 UTC [36] LOG:  database system is shut down
+2026-01-03T02:32:59.2813522Z   done
+2026-01-03T02:32:59.2813691Z  server stopped
+2026-01-03T02:32:59.2813862Z  
+2026-01-03T02:32:59.2814083Z  PostgreSQL init process complete; ready for start up.
+2026-01-03T02:32:59.2814363Z  
+2026-01-03T02:32:59.2820665Z Stop and remove container: 3d758394e1cf41efa02968937eb0f972_timescaletimescaledb2130pg15_6ffdc2
+2026-01-03T02:32:59.2825830Z ##[command]/usr/bin/docker rm --force b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:32:59.4485802Z b839ffd235d01fbed089811b3d190458dc71084a14d4b315940d73f489225f77
+2026-01-03T02:32:59.4522919Z Remove container network: github_network_8b7ff9dd22204c5084932abdf00a5d9b
+2026-01-03T02:32:59.4529269Z ##[command]/usr/bin/docker network rm github_network_8b7ff9dd22204c5084932abdf00a5d9b
+2026-01-03T02:32:59.5775502Z github_network_8b7ff9dd22204c5084932abdf00a5d9b
+2026-01-03T02:32:59.5830233Z Cleaning up orphan processes
