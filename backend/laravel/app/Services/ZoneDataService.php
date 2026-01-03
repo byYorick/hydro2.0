@@ -51,6 +51,7 @@ class ZoneDataService
             $commandsRecent = Command::query()
                 ->where('zone_id', $zone->id)
                 ->orderBy('created_at', 'desc')
+                ->orderBy('id', 'desc')
                 ->limit(10)
                 ->get()
                 ->map(fn ($command) => [
