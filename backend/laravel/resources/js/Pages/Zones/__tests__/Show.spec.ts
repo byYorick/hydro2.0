@@ -36,6 +36,52 @@ vi.mock('@/Pages/Zones/ZoneTelemetryChart.vue', () => ({
   },
 }))
 
+vi.mock('@/Pages/Zones/Tabs/ZoneTelemetryTab.vue', () => ({
+  default: {
+    name: 'ZoneTelemetryTab',
+    props: ['chartDataPh', 'chartDataEc', 'chartTimeRange'],
+    emits: ['timeRangeChange'],
+    components: {
+      ZoneTelemetryChart: {
+        name: 'ZoneTelemetryChart',
+        props: ['title', 'data', 'seriesName', 'timeRange'],
+        emits: ['time-range-change'],
+        template: '<div class="zone-chart">{{ title }}</div>',
+      },
+    },
+    template: `
+      <div class="zone-telemetry-tab">
+        <ZoneTelemetryChart
+          title="pH"
+          :data="chartDataPh"
+          seriesName="pH"
+          :timeRange="chartTimeRange"
+          @time-range-change="$emit('timeRangeChange', $event)"
+        />
+        <ZoneTelemetryChart
+          title="EC"
+          :data="chartDataEc"
+          seriesName="EC"
+          :timeRange="chartTimeRange"
+          @time-range-change="$emit('timeRangeChange', $event)"
+        />
+      </div>
+    `,
+  },
+}))
+
+vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
+  name: 'MultiSeriesTelemetryChart',
+  __isTeleport: false,
+  __isKeepAlive: false,
+  default: {
+    name: 'MultiSeriesTelemetryChart',
+    props: ['title', 'series', 'timeRange'],
+    emits: ['time-range-change'],
+    template: '<div class="multi-chart">Multi Chart</div>',
+  },
+}))
+
 vi.mock('@/Components/PhaseProgress.vue', () => ({
   default: { 
     name: 'PhaseProgress', 

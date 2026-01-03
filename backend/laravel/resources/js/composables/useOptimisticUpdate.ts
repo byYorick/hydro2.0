@@ -45,11 +45,13 @@ interface OptimisticUpdateOptions<T> {
   onError?: (error: Error) => void
 }
 
+type TimeoutHandle = ReturnType<typeof setTimeout>
+
 interface PendingUpdate {
   id: string
   applyUpdate: () => void
   rollback: () => void
-  timeoutId: NodeJS.Timeout | null
+  timeoutId: TimeoutHandle | null
   timestamp: number
 }
 
@@ -85,7 +87,7 @@ export function useOptimisticUpdate() {
     }
     
     // Создаем запись о pending обновлении
-    let timeoutId: NodeJS.Timeout | null = null
+    let timeoutId: TimeoutHandle | null = null
     
     let timeoutError: Error | null = null
 

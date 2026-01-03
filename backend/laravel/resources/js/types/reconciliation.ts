@@ -168,6 +168,8 @@ export interface SnapshotResponse {
   message?: string
 }
 
+export type SnapshotHandler = (snapshot: ZoneSnapshot) => void
+
 /**
  * Проверка валидности snapshot
  */

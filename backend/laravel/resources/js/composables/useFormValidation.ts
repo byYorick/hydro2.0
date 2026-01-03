@@ -2,13 +2,14 @@
  * Composable для улучшенной валидации и обработки ошибок форм
  */
 import { computed } from 'vue'
-import type { UseFormReturn } from '@inertiajs/vue3'
+import type { InertiaForm } from '@inertiajs/vue3'
+import type { FormDataKeys } from '@inertiajs/core'
 
 /**
  * Улучшенная обработка ошибок формы
  */
 export function useFormValidation<T extends Record<string, unknown>>(
-  form: UseFormReturn<T>
+  form: InertiaForm<T>
 ) {
   /**
    * Проверяет, есть ли ошибки в форме
@@ -29,21 +30,21 @@ export function useFormValidation<T extends Record<string, unknown>>(
   /**
    * Получает ошибку для конкретного поля
    */
-  function getError(field: keyof T): string | null {
-    return form.errors[field as string] || null
+  function getError(field: FormDataKeys<T>): string | null {
+    return form.errors[field] || null
   }
 
   /**
    * Проверяет, есть ли ошибка для конкретного поля
    */
-  function hasError(field: keyof T): boolean {
-    return !!form.errors[field as string]
+  function hasError(field: FormDataKeys<T>): boolean {
+    return !!form.errors[field]
   }
 
   /**
    * Получает классы для поля с ошибкой
    */
-  function getErrorClasses(field: keyof T, baseClasses: string = ''): string {
+  function getErrorClasses(field: FormDataKeys<T>, baseClasses: string = ''): string {
     const errorClasses = 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]'
     const normalClasses = 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]'
     
@@ -55,8 +56,8 @@ export function useFormValidation<T extends Record<string, unknown>>(
   /**
    * Очищает ошибки для конкретного поля
    */
-  function clearError(field: keyof T): void {
-    form.clearErrors(field as string)
+  function clearError(field: FormDataKeys<T>): void {
+    form.clearErrors(field)
   }
 
   /**

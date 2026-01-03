@@ -808,12 +808,16 @@ async function createRecipe(): Promise<void> {
     // 3. Создать фазы для ревизии
     for (const phase of recipeForm.phases) {
       const phTarget = phase.targets?.ph
-      const phMin = typeof phTarget === 'object' && phTarget?.min !== undefined ? phTarget.min : (typeof phTarget === 'number' ? phTarget : null)
-      const phMax = typeof phTarget === 'object' && phTarget?.max !== undefined ? phTarget.max : (typeof phTarget === 'number' ? phTarget : null)
+      const isPhTargetObject = typeof phTarget === 'object' && phTarget !== null
+      const phTargetObject = isPhTargetObject ? (phTarget as { min?: number; max?: number }) : null
+      const phMin = phTargetObject && phTargetObject.min !== undefined ? phTargetObject.min : (typeof phTarget === 'number' ? phTarget : null)
+      const phMax = phTargetObject && phTargetObject.max !== undefined ? phTargetObject.max : (typeof phTarget === 'number' ? phTarget : null)
 
       const ecTarget = phase.targets?.ec
-      const ecMin = typeof ecTarget === 'object' && ecTarget?.min !== undefined ? ecTarget.min : (typeof ecTarget === 'number' ? ecTarget : null)
-      const ecMax = typeof ecTarget === 'object' && ecTarget?.max !== undefined ? ecTarget.max : (typeof ecTarget === 'number' ? ecTarget : null)
+      const isEcTargetObject = typeof ecTarget === 'object' && ecTarget !== null
+      const ecTargetObject = isEcTargetObject ? (ecTarget as { min?: number; max?: number }) : null
+      const ecMin = ecTargetObject && ecTargetObject.min !== undefined ? ecTargetObject.min : (typeof ecTarget === 'number' ? ecTarget : null)
+      const ecMax = ecTargetObject && ecTargetObject.max !== undefined ? ecTargetObject.max : (typeof ecTarget === 'number' ? ecTarget : null)
 
       await api.post(`/recipe-revisions/${revisionId}/phases`, {
         phase_index: phase.phase_index,

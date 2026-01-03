@@ -4,12 +4,13 @@
  */
 import { useForm } from '@inertiajs/vue3'
 import { router } from '@inertiajs/vue3'
+import type { FormDataKeys, FormDataType } from '@inertiajs/core'
 import { useToast } from './useToast'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
-export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
+export interface UseInertiaFormOptions<T extends FormDataType<T>> {
   /**
    * Функция для показа Toast уведомлений (опционально)
    * Если не передана, будет использован useToast
@@ -47,7 +48,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
    * Какие поля формы сбрасывать при успехе (опционально)
    * Если не указано, но resetOnSuccess=true, будет сброшена вся форма
    */
-  resetFieldsOnSuccess?: (keyof T)[]
+  resetFieldsOnSuccess?: FormDataKeys<T>[]
 
   /**
    * Функция, вызываемая при успехе (опционально)
@@ -91,7 +92,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
 /**
  * Создает обертку над useForm с унифицированными callbacks
  */
-export function useInertiaForm<T extends Record<string, unknown>>(
+export function useInertiaForm<T extends FormDataType<T>>(
   initialData: T,
   options: UseInertiaFormOptions<T> = {}
 ) {
@@ -153,9 +154,9 @@ export function useInertiaForm<T extends Record<string, unknown>>(
       // eslint-disable-next-line no-console
       console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
       if (Array.isArray(reloadOnSuccess)) {
-        router.reload({ only: reloadOnSuccess, preserveUrl, preserveState })
+        router.reload({ only: reloadOnSuccess, preserveUrl })
       } else {
-        router.reload({ preserveUrl, preserveState })
+        router.reload({ preserveUrl })
       }
     }
 

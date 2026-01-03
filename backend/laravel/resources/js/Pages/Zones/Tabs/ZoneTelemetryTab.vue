@@ -106,13 +106,25 @@ const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Component
 
 type TelemetryRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
+type PhaseTargets = {
+  ph?: { min?: number; max?: number } | null
+  ec?: { min?: number; max?: number } | null
+}
+
+type ZoneTargetsInput = ZoneTargetsType | PhaseTargets
+
+type TargetRange = {
+  min: number
+  max: number
+}
+
 interface Props {
   zoneId: number | null
   chartTimeRange: TelemetryRange
   chartDataPh: Array<{ ts: number; value: number }>
   chartDataEc: Array<{ ts: number; value: number }>
   telemetry: ZoneTelemetry
-  targets: ZoneTargetsType
+  targets: ZoneTargetsInput
 }
 
 const props = defineProps<Props>()
@@ -139,6 +151,36 @@ const chartPalette = computed(() => {
   }
 })
 
+const isPhaseTargets = (targets: ZoneTargetsInput): targets is PhaseTargets => {
+  return typeof targets === 'object' && targets !== null && ('ph' in targets || 'ec' in targets)
+}
+
+const resolveTargetRange = (metric: 'ph' | 'ec'): TargetRange | undefined => {
+  const targets = props.targets
+  if (!targets || typeof targets !== 'object') return undefined
+
+  if (isPhaseTargets(targets)) {
+    const phaseTarget = targets[metric]
+    if (phaseTarget && typeof phaseTarget === 'object') {
+      const min = phaseTarget.min
+      const max = phaseTarget.max
+      if (min !== undefined && max !== undefined) {
+        return { min, max }
+      }
+    }
+  }
+
+  const legacyTargets = targets as ZoneTargetsType
+  if (metric === 'ph' && legacyTargets.ph_min !== undefined && legacyTargets.ph_max !== undefined) {
+    return { min: legacyTargets.ph_min, max: legacyTargets.ph_max }
+  }
+  if (metric === 'ec' && legacyTargets.ec_min !== undefined && legacyTargets.ec_max !== undefined) {
+    return { min: legacyTargets.ec_min, max: legacyTargets.ec_max }
+  }
+
+  return undefined
+}
+
 const multiSeriesData = computed(() => {
   return [
     {
@@ -148,10 +190,7 @@ const multiSeriesData = computed(() => {
       data: props.chartDataPh,
       currentValue: props.telemetry?.ph ?? null,
       yAxisIndex: 0,
-      targetRange: (props.targets?.ph && typeof props.targets.ph === 'object' && 'min' in props.targets.ph) ? {
-        min: props.targets.ph.min,
-        max: props.targets.ph.max,
-      } : undefined,
+      targetRange: resolveTargetRange('ph'),
     },
     {
       name: 'ec',
@@ -160,10 +199,7 @@ const multiSeriesData = computed(() => {
       data: props.chartDataEc,
       currentValue: props.telemetry?.ec ?? null,
       yAxisIndex: 1,
-      targetRange: (props.targets?.ec && typeof props.targets.ec === 'object' && 'min' in props.targets.ec) ? {
-        min: props.targets.ec.min,
-        max: props.targets.ec.max,
-      } : undefined,
+      targetRange: resolveTargetRange('ec'),
     },
   ]
 })

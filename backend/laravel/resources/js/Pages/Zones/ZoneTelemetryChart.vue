@@ -68,6 +68,7 @@ import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import type { TelemetrySample } from '@/types'
 import { useTheme } from '@/composables/useTheme'
+import type { EChartsOption } from 'echarts'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
@@ -149,7 +150,7 @@ const chartColors = computed(() => {
   }
 })
 
-const option = computed(() => {
+const option = computed<EChartsOption>(() => {
   const dataLength = props.data?.length || 0
   const hasLargeDataset = dataLength > 50 // Показываем DataZoom для наборов данных > 50 точек
   const colors = chartColors.value
@@ -204,21 +205,21 @@ const option = computed(() => {
       containLabel: true, // Автоматически подстраивает размеры под подписи осей
     },
     xAxis: {
-      type: 'time' as any,
+      type: 'time' as const,
       axisLabel: { 
         color: colors.textDim,
         rotate: 0, // Не поворачиваем подписи
-        formatter: ((value: number) => {
+        formatter: (value: number) => {
           // Форматируем время для компактности
           const date = new Date(value)
           return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-        }) as any
+        },
       },
       axisLine: { lineStyle: { color: colors.borderMuted } },
-      boundaryGap: false, // График начинается от края
+      boundaryGap: [0, 0], // График начинается от края
     },
     yAxis: {
-      type: 'value',
+      type: 'value' as const,
       axisLabel: { 
         color: colors.textDim,
         formatter: (value: number) => {

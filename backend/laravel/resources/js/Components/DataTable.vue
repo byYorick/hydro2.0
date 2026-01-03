@@ -42,14 +42,23 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Pagination from './Pagination.vue'
 
-const props = defineProps({
-  headers: { type: Array, default: () => [] },
-  rows: { type: Array, default: () => [] },
+type DataTableRow = Array<unknown>
+
+const props = withDefaults(defineProps<{
+  headers?: string[]
+  rows?: DataTableRow[]
+}>(), {
+  headers: () => [],
+  rows: () => [],
 })
+
+defineSlots<{
+  [key: string]: (props: { value: unknown }) => any
+}>()
 
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)

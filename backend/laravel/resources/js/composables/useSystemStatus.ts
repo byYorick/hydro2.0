@@ -1,8 +1,9 @@
 /**
  * Composable для управления статусами системы
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
+import type Echo from 'laravel-echo'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -91,17 +92,7 @@ if (import.meta.hot) {
 
 declare global {
   interface Window {
-    Echo?: {
-      connector?: {
-        pusher?: {
-          connection?: {
-            state?: string
-            bind?: (event: string, handler: () => void) => void
-            unbind?: (event: string, handler: () => void) => void
-          }
-        }
-      }
-    }
+    Echo?: Echo<any>
   }
 }
 
@@ -424,37 +415,41 @@ export function useSystemStatus(showToast?: ToastHandler) {
   // Подписка на изменения состояния WebSocket для мгновенного обновления статусов
   let unsubscribeWsState: (() => void) | null = null
 
-  onMounted(() => {
-    startMonitoring()
-    
-    // Подписываемся на изменения состояния WebSocket для мгновенного обновления
-    unsubscribeWsState = onWsStateChange((state) => {
-      if (!sharedState) return
-      
-      // Мгновенно обновляем статусы WebSocket и MQTT при изменении состояния
-      if (state === 'connected') {
-        sharedState.wsStatus.value = 'connected'
-        checkMqttStatus()
-        logger.debug('[useSystemStatus] WebSocket state changed to connected, statuses updated immediately')
-      } else if (state === 'disconnected' || state === 'unavailable' || state === 'failed') {
-        sharedState.wsStatus.value = 'disconnected'
-        sharedState.mqttStatus.value = 'offline'
-        logger.debug('[useSystemStatus] WebSocket state changed to disconnected, statuses updated immediately')
-      } else if (state === 'connecting') {
-        sharedState.wsStatus.value = 'connecting'
-        logger.debug('[useSystemStatus] WebSocket state changed to connecting, statuses updated immediately')
-      }
-    })
-  })
+  const hasInstance = !!getCurrentInstance()
 
-  onUnmounted(() => {
-    // Отписываемся от изменений состояния WebSocket
-    if (unsubscribeWsState) {
-      unsubscribeWsState()
-      unsubscribeWsState = null
-    }
-    stopMonitoring()
-  })
+  if (hasInstance) {
+    onMounted(() => {
+      startMonitoring()
+      
+      // Подписываемся на изменения состояния WebSocket для мгновенного обновления
+      unsubscribeWsState = onWsStateChange((state) => {
+        if (!sharedState) return
+        
+        // Мгновенно обновляем статусы WebSocket и MQTT при изменении состояния
+        if (state === 'connected') {
+          sharedState.wsStatus.value = 'connected'
+          checkMqttStatus()
+          logger.debug('[useSystemStatus] WebSocket state changed to connected, statuses updated immediately')
+        } else if (state === 'disconnected' || state === 'unavailable' || state === 'failed') {
+          sharedState.wsStatus.value = 'disconnected'
+          sharedState.mqttStatus.value = 'offline'
+          logger.debug('[useSystemStatus] WebSocket state changed to disconnected, statuses updated immediately')
+        } else if (state === 'connecting') {
+          sharedState.wsStatus.value = 'connecting'
+          logger.debug('[useSystemStatus] WebSocket state changed to connecting, statuses updated immediately')
+        }
+      })
+    })
+
+    onUnmounted(() => {
+      // Отписываемся от изменений состояния WebSocket
+      if (unsubscribeWsState) {
+        unsubscribeWsState()
+        unsubscribeWsState = null
+      }
+      stopMonitoring()
+    })
+  }
 
   // WebSocket детали из echoClient
   const wsReconnectAttempts = computed(() => getReconnectAttempts())
