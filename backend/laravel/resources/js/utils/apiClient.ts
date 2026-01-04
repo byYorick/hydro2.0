@@ -2,7 +2,7 @@
  * Единый модуль конфигурации HTTP клиента (axios)
  * Все настройки CSRF, baseURL, interceptors централизованы здесь
  */
-import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosRequestHeaders } from 'axios'
 import { logger } from './logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import type { ToastAction, ToastVariant } from '@/composables/useToast'
@@ -79,8 +79,9 @@ apiClient.interceptors.request.use(
     if (method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       const csrfToken = getCsrfToken()
       if (csrfToken) {
-        config.headers = config.headers || {}
-        config.headers['X-CSRF-TOKEN'] = csrfToken
+        const headers = (config.headers ?? {}) as AxiosRequestHeaders
+        headers['X-CSRF-TOKEN'] = csrfToken
+        config.headers = headers
       }
     }
     
@@ -89,8 +90,9 @@ apiClient.interceptors.request.use(
     if (method === 'GET') {
       const csrfToken = getCsrfToken()
       if (csrfToken && !config.headers?.['X-CSRF-TOKEN']) {
-        config.headers = config.headers || {}
-        config.headers['X-CSRF-TOKEN'] = csrfToken
+        const headers = (config.headers ?? {}) as AxiosRequestHeaders
+        headers['X-CSRF-TOKEN'] = csrfToken
+        config.headers = headers
       }
     }
     

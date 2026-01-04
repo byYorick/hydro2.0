@@ -269,6 +269,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+import type { AxiosError } from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -281,8 +282,35 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
+import type { User } from '@/types'
 
-const page = usePage()
+interface PageProps {
+  auth?: {
+    user?: User
+  }
+  [key: string]: unknown
+}
+
+interface ErrorResponse {
+  message?: string
+  errors?: Record<string, string[]>
+}
+
+const isAxiosError = (err: unknown): err is AxiosError<ErrorResponse> => {
+  return !!err && typeof err === 'object' && 'isAxiosError' in err
+}
+
+const getErrorMessage = (err: unknown): string => {
+  if (isAxiosError(err)) {
+    return err.response?.data?.message || err.message || 'Неизвестная ошибка'
+  }
+  if (err instanceof Error) {
+    return err.message || 'Неизвестная ошибка'
+  }
+  return 'Неизвестная ошибка'
+}
+
+const page = usePage<PageProps>()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
@@ -292,14 +320,14 @@ const { showToast } = useToast()
 // Инициализация API с Toast
 const { api } = useApi(showToast)
 
-const users = ref([])
+const users = ref<User[]>([])
 const searchQuery = ref('')
 const roleFilter = ref('')
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
-const editingUser = ref(null)
-const deletingUser = ref(null)
+const editingUser = ref<User | null>(null)
+const deletingUser = ref<User | null>(null)
 
 const userForm = reactive({
   name: '',
@@ -442,7 +470,7 @@ const loadUsers = async () => {
   }
 }
 
-const editUser = (user) => {
+const editUser = (user: User) => {
   editingUser.value = user
   userForm.name = user.name
   userForm.email = user.email
@@ -452,7 +480,7 @@ const editUser = (user) => {
   Object.keys(formErrors).forEach(key => formErrors[key] = '')
 }
 
-const confirmDelete = (user) => {
+const confirmDelete = (user: User) => {
   deletingUser.value = user
 }
 
@@ -468,8 +496,7 @@ const doDelete = async () => {
     deletingUser.value = null
   } catch (err) {
     logger.error('Failed to delete user:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
+    showToast(`Ошибка: ${getErrorMessage(err)}`, 'error', TOAST_TIMEOUT.LONG)
     deletingUser.value = null
   } finally {
     loading.value.delete = false
@@ -516,7 +543,7 @@ const saveUser = async () => {
     logger.error('Failed to save user:', err)
     
     // Обработка ошибок валидации
-    if (err.response?.status === 422 && err.response?.data?.errors) {
+    if (isAxiosError(err) && err.response?.status === 422 && err.response.data?.errors) {
       const errors = err.response.data.errors
       if (errors.name) formErrors.name = errors.name[0]
       if (errors.email) formErrors.email = errors.email[0]
@@ -524,8 +551,7 @@ const saveUser = async () => {
       if (errors.role) formErrors.role = errors.role[0]
       showToast('Ошибки валидации', 'error', TOAST_TIMEOUT.LONG)
     } else {
-      const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-      showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
+      showToast(`Ошибка: ${getErrorMessage(err)}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } finally {
     loading.value.save = false

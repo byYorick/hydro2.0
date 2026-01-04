@@ -226,7 +226,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
 import Badge, { type BadgeVariant } from '@/Components/Badge.vue'
-import DataTableV2 from '@/Components/DataTableV2.vue'
+import DataTableV2, { type DataTableColumn } from '@/Components/DataTableV2.vue'
 import Pagination from '@/Components/Pagination.vue'
 import { useZonesStore } from '@/stores/zones'
 import { useStoreEvents } from '@/composables/useStoreEvents'
@@ -405,7 +405,7 @@ const paginatedZones = computed(() => {
   return filteredZones.value.slice(start, end)
 })
 
-const columns = [
+const columns: DataTableColumn<Zone>[] = [
   {
     key: 'name',
     label: 'Название',

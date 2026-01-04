@@ -12,13 +12,14 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
   initialState: T
 ) {
   const loading = ref<T>(initialState) as Ref<T>
+  type LoadingKey = T extends boolean ? never : Extract<keyof T, string>
 
   /**
    * Установить состояние загрузки
    * @param key - Ключ (если T - объект) или undefined (если T - boolean)
    * @param value - Значение (для boolean режима)
    */
-  function setLoading(key?: keyof T extends string ? keyof T : never, value?: boolean): void {
+  function setLoading(key?: LoadingKey, value?: boolean): void {
     if (typeof loading.value === 'boolean') {
       loading.value = (value !== undefined ? value : true) as T
     } else if (key && typeof loading.value === 'object') {
@@ -30,7 +31,7 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
    * Начать загрузку
    * @param key - Ключ (если T - объект)
    */
-  function startLoading(key?: keyof T extends string ? keyof T : never): void {
+  function startLoading(key?: LoadingKey): void {
     setLoading(key, true)
   }
 
@@ -38,7 +39,7 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
    * Остановить загрузку
    * @param key - Ключ (если T - объект)
    */
-  function stopLoading(key?: keyof T extends string ? keyof T : never): void {
+  function stopLoading(key?: LoadingKey): void {
     setLoading(key, false)
   }
 
@@ -59,7 +60,7 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
    * Проверить, есть ли активная загрузка
    * @param key - Опциональный ключ для проверки конкретного состояния
    */
-  function isLoading(key?: keyof T extends string ? keyof T : never): boolean {
+  function isLoading(key?: LoadingKey): boolean {
     if (typeof loading.value === 'boolean') {
       return loading.value
     } else if (key && typeof loading.value === 'object') {
@@ -77,7 +78,7 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
    */
   async function withLoading<R>(
     fn: () => Promise<R>,
-    key?: keyof T extends string ? keyof T : never
+    key?: LoadingKey
   ): Promise<R> {
     try {
       startLoading(key)
@@ -104,4 +105,3 @@ export function useLoading<T extends boolean | Record<string, boolean>>(
 export function useSimpleLoading() {
   return useLoading<boolean>(false)
 }
-

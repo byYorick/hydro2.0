@@ -22,13 +22,18 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ZoneTelemetry } from '@/types'
-import type { ZoneTargets } from '@/types'
+import type { ZoneTelemetry, ZoneTargets } from '@/types'
+
+type ClimateTargets = {
+  temperature?: number
+  humidity?: number
+  co2?: number
+}
 
 interface PhaseTargets {
   ph?: { min: number; max: number } | null
   ec?: { min: number; max: number } | null
-  climate?: { temperature?: number; humidity?: number; co2?: number } | null
+  climate?: ClimateTargets | null
 }
 
 interface Props {
@@ -43,6 +48,22 @@ const props = withDefaults(defineProps<Props>(), {
   showMetrics: () => ['all'],
 })
 
+const isPhaseTargets = (
+  targets: PhaseTargets | ZoneTargets | null | undefined
+): targets is PhaseTargets => {
+  return !!targets && typeof targets === 'object' && (
+    'ph' in targets || 'ec' in targets || 'climate' in targets
+  )
+}
+
+const isLegacyTargets = (
+  targets: PhaseTargets | ZoneTargets | null | undefined
+): targets is ZoneTargets => {
+  return !!targets && typeof targets === 'object' && (
+    'ph_min' in targets || 'temp_min' in targets || 'humidity_min' in targets || 'ec_min' in targets
+  )
+}
+
 interface MetricData {
   key: string
   label: string
@@ -53,25 +74,26 @@ interface MetricData {
 
 const allMetrics = computed((): MetricData[] => {
   const t = props.telemetry || {}
-  const tgts = props.targets || {}
+  const targets = props.targets
 
   const metrics: MetricData[] = []
 
-  // Проверяем формат targets (новый формат из current_phase или старый ZoneTargets)
-  const isNewFormat = 'ph' in tgts || 'ec' in tgts || 'climate' in tgts
-  const isOldFormat = 'ph_min' in tgts || 'temp_min' in tgts
-
   // Проверяем, что telemetry - объект, а не число
   const isTelemetryObject = typeof t === 'object' && t !== null
-  const telemetryObj = isTelemetryObject ? t as any : {}
+  const telemetryObj = isTelemetryObject ? (t as ZoneTelemetry) : ({} as ZoneTelemetry)
+  const phaseTargets = isPhaseTargets(targets) ? targets : null
+  const legacyTargets = isLegacyTargets(targets) ? targets : null
+  const climateTargets = phaseTargets?.climate && typeof phaseTargets.climate === 'object'
+    ? phaseTargets.climate
+    : null
 
   // Температура
   if (isTelemetryObject && telemetryObj.temperature !== null && telemetryObj.temperature !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'climate' in tgts && tgts.climate?.temperature !== undefined) {
-      target = tgts.climate.temperature as number
-    } else if (isOldFormat && 'temp_min' in tgts && 'temp_max' in tgts) {
-      target = ((tgts as ZoneTargets).temp_min + (tgts as ZoneTargets).temp_max) / 2
+    if (climateTargets?.temperature !== undefined) {
+      target = climateTargets.temperature
+    } else if (legacyTargets?.temp_min !== undefined && legacyTargets?.temp_max !== undefined) {
+      target = (legacyTargets.temp_min + legacyTargets.temp_max) / 2
     }
     const delta = target !== null ? telemetryObj.temperature - target : null
     metrics.push({
@@ -86,10 +108,10 @@ const allMetrics = computed((): MetricData[] => {
   // Влажность
   if (isTelemetryObject && telemetryObj.humidity !== null && telemetryObj.humidity !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'climate' in tgts && tgts.climate?.humidity !== undefined) {
-      target = tgts.climate.humidity as number
-    } else if (isOldFormat && 'humidity_min' in tgts && 'humidity_max' in tgts) {
-      target = ((tgts as ZoneTargets).humidity_min + (tgts as ZoneTargets).humidity_max) / 2
+    if (climateTargets?.humidity !== undefined) {
+      target = climateTargets.humidity
+    } else if (legacyTargets?.humidity_min !== undefined && legacyTargets?.humidity_max !== undefined) {
+      target = (legacyTargets.humidity_min + legacyTargets.humidity_max) / 2
     }
     const delta = target !== null ? telemetryObj.humidity - target : null
     metrics.push({
@@ -104,10 +126,11 @@ const allMetrics = computed((): MetricData[] => {
   // pH
   if (isTelemetryObject && telemetryObj.ph !== null && telemetryObj.ph !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'ph' in tgts && tgts.ph && typeof tgts.ph === 'object' && 'min' in tgts.ph && 'max' in tgts.ph) {
-      target = (tgts.ph.min + tgts.ph.max) / 2
-    } else if (isOldFormat && 'ph_min' in tgts && 'ph_max' in tgts) {
-      target = ((tgts as ZoneTargets).ph_min + (tgts as ZoneTargets).ph_max) / 2
+    const phTargets = phaseTargets?.ph && typeof phaseTargets.ph === 'object' ? phaseTargets.ph : null
+    if (phTargets?.min !== undefined && phTargets?.max !== undefined) {
+      target = (phTargets.min + phTargets.max) / 2
+    } else if (legacyTargets?.ph_min !== undefined && legacyTargets?.ph_max !== undefined) {
+      target = (legacyTargets.ph_min + legacyTargets.ph_max) / 2
     }
     const delta = target !== null ? telemetryObj.ph - target : null
     metrics.push({
@@ -122,10 +145,11 @@ const allMetrics = computed((): MetricData[] => {
   // EC
   if (isTelemetryObject && telemetryObj.ec !== null && telemetryObj.ec !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'ec' in tgts && tgts.ec && typeof tgts.ec === 'object' && 'min' in tgts.ec && 'max' in tgts.ec) {
-      target = (tgts.ec.min + tgts.ec.max) / 2
-    } else if (isOldFormat && 'ec_min' in tgts && 'ec_max' in tgts) {
-      target = ((tgts as ZoneTargets).ec_min + (tgts as ZoneTargets).ec_max) / 2
+    const ecTargets = phaseTargets?.ec && typeof phaseTargets.ec === 'object' ? phaseTargets.ec : null
+    if (ecTargets?.min !== undefined && ecTargets?.max !== undefined) {
+      target = (ecTargets.min + ecTargets.max) / 2
+    } else if (legacyTargets?.ec_min !== undefined && legacyTargets?.ec_max !== undefined) {
+      target = (legacyTargets.ec_min + legacyTargets.ec_max) / 2
     }
     const delta = target !== null ? telemetryObj.ec - target : null
     metrics.push({
@@ -140,8 +164,8 @@ const allMetrics = computed((): MetricData[] => {
   // CO2 (если есть в телеметрии)
   if (isTelemetryObject && telemetryObj.co2 !== null && telemetryObj.co2 !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'climate' in tgts && tgts.climate?.co2 !== undefined) {
-      target = tgts.climate.co2 as number
+    if (climateTargets?.co2 !== undefined) {
+      target = climateTargets.co2
     }
     const delta = target !== null ? telemetryObj.co2 - target : null
     metrics.push({

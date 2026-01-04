@@ -23,6 +23,15 @@ const RecycleScrollerStub = {
 }
 
 config.global.components.RecycleScroller = RecycleScrollerStub
+config.global.mocks = {
+  ...config.global.mocks,
+  $page: {
+    url: '/devices',
+    props: {
+      devices: []
+    }
+  }
+}
 
 // Mock stores
 const sampleDevices = [
@@ -154,4 +163,3 @@ describe('Devices Index - Virtualization (P2-1)', () => {
     }
   })
 })
-

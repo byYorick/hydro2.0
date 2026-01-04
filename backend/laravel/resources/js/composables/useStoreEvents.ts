@@ -93,7 +93,8 @@ export function useStoreEvents() {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const vue = require('vue')
-    onUnmountedHook = vue.onUnmounted
+    const hasInstance = typeof vue.getCurrentInstance === 'function' && !!vue.getCurrentInstance()
+    onUnmountedHook = hasInstance ? vue.onUnmounted : () => {}
   } catch (e) {
     // Если Vue недоступен (например, в SSR), используем заглушки
     onUnmountedHook = () => {}

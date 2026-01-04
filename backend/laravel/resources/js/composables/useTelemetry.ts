@@ -1,7 +1,7 @@
 /**
  * Composable для работы с телеметрией с кешированием и rate limiting
  */
-import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance, type Ref, type ComputedRef } from 'vue'
 import type { ToastHandler } from './useApi'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
@@ -392,18 +392,22 @@ export function useTelemetry(showToast?: ToastHandler) {
     })
   }
 
-  // Подписываемся на событие reconciliation при монтировании
-  onMounted(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
-    }
-  })
+  const hasInstance = !!getCurrentInstance()
 
-  onUnmounted(() => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
-    }
-  })
+  if (hasInstance) {
+    // Подписываемся на событие reconciliation при монтировании
+    onMounted(() => {
+      if (typeof window !== 'undefined') {
+        window.addEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+      }
+    })
+
+    onUnmounted(() => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+      }
+    })
+  }
 
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,

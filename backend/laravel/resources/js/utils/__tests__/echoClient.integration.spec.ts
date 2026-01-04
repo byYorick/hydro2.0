@@ -18,16 +18,32 @@ const mockPusher = vi.hoisted(() => ({
   disconnect: vi.fn(),
 }))
 
-const MockPusher = vi.hoisted(() => vi.fn().mockImplementation(() => mockPusher))
+const MockPusher = vi.hoisted(() =>
+  vi.fn(function MockPusherConstructor() {
+    return mockPusher
+  })
+)
 
 // Создаем отдельный мок для disconnect, чтобы можно было отслеживать вызовы
 const mockEchoDisconnect = vi.fn()
-const MockEcho = vi.hoisted(() => vi.fn().mockImplementation(() => ({
-  connector: {
-    pusher: mockPusher,
-  },
-  disconnect: mockEchoDisconnect,
-})))
+const MockEcho = vi.hoisted(() =>
+  vi.fn(function MockEchoConstructor() {
+    return {
+      connector: {
+        pusher: mockPusher,
+      },
+      disconnect: mockEchoDisconnect,
+    }
+  })
+)
+
+const setEnv = (overrides: Record<string, string | undefined>) => {
+  const meta = import.meta as any
+  meta.env = {
+    ...meta.env,
+    ...overrides,
+  }
+}
 
 // Mock laravel-echo and pusher-js modules
 vi.mock('laravel-echo', () => ({
@@ -48,6 +64,7 @@ import {
   onWsStateChange,
   getConnectionState as getState,
 } from '../echoClient'
+import * as envUtils from '../env'
 
 describe('echoClient - Integration Tests', () => {
   // Используем global.window напрямую, чтобы изменения в initEcho были видны
@@ -75,14 +92,14 @@ describe('echoClient - Integration Tests', () => {
     originalWindow.Echo = undefined
 
     // Mock environment
-    ;(import.meta as any).env = {
+    setEnv({
       VITE_ENABLE_WS: 'true',
       VITE_REVERB_APP_KEY: 'test-key',
       VITE_REVERB_HOST: 'localhost',
       VITE_REVERB_PORT: '8080',
       VITE_REVERB_SCHEME: 'http',
       ...previousEnv,
-    }
+    })
   })
 
   afterEach(() => {
@@ -139,13 +156,18 @@ describe('echoClient - Integration Tests', () => {
       initEcho(true)
       MockEcho.mockClear()
       
-      ;(import.meta as any).env.VITE_ENABLE_WS = 'false'
-      
+      ;(import.meta as any).env = {
+        VITE_ENABLE_WS: 'false',
+      }
+      const envSpy = vi.spyOn(envUtils, 'readBooleanEnv').mockReturnValue(false)
       const echo = initEcho()
       
       expect(echo).toBeNull()
+      envSpy.mockRestore()
       // Восстанавливаем для следующих тестов
-      ;(import.meta as any).env.VITE_ENABLE_WS = 'true'
+      ;(import.meta as any).env = {
+        VITE_ENABLE_WS: 'true',
+      }
     })
 
     it('should return existing instance if already initialized', () => {
@@ -155,6 +177,7 @@ describe('echoClient - Integration Tests', () => {
       originalWindow.Echo = undefined
       
       const echo1 = initEcho()
+      mockPusherConnection.state = 'connecting'
       // Второй вызов должен вернуть тот же экземпляр
       const echo2 = initEcho()
       
@@ -550,4 +573,3 @@ describe('echoClient - Integration Tests', () => {
     })
   })
 })
-
