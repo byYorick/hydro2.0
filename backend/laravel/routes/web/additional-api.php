@@ -304,10 +304,6 @@ Route::middleware('role:admin,operator,engineer')->get('/logs', function (Reques
             'label' => 'Automation Engine',
             'description' => 'События ядра автоматики и командные переходы.',
         ],
-        'history-logger' => [
-            'label' => 'History Logger',
-            'description' => 'Архив событий телеметрии и подтверждений команд.',
-        ],
         'scheduler' => [
             'label' => 'Scheduler',
             'description' => 'Запуск расписаний полива, освещения и заданий.',

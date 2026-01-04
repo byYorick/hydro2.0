@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\SystemLog;
 use App\Models\User;
 use Carbon\Carbon;
-use Tests\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ServiceLogApiTest extends TestCase
@@ -72,6 +72,31 @@ class ServiceLogApiTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertEquals($todayLog->id, $data[0]['id']);
         $this->assertEquals('mqtt-bridge', $data[0]['service']);
+    }
+
+    public function test_excludes_services_when_requested(): void
+    {
+        $visible = SystemLog::create([
+            'level' => 'info',
+            'message' => 'Automation Engine log',
+            'context' => ['service' => 'automation-engine'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        SystemLog::create([
+            'level' => 'error',
+            'message' => 'History Logger log',
+            'context' => ['service' => 'history-logger'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        $response = $this->getJson('/api/logs/service?exclude_services[]=history-logger');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $this->assertCount(1, $data);
+        $this->assertEquals($visible->id, $data[0]['id']);
+        $this->assertEquals('automation-engine', $data[0]['service']);
     }
 
     public function test_forbids_access_for_viewer_role(): void

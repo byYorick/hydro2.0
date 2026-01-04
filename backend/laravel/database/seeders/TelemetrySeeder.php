@@ -69,18 +69,22 @@ class TelemetrySeeder extends Seeder
                     $variation = $this->getVariationForMetric($metricType);
 
                     // Генерируем данные для миниграфиков:
-                    // 1. Последние 24 часа - каждую минуту (1440 точек)
-                    // 2. Последние 7 дней - каждые 10 минут (1008 точек)
-                    // 3. Последние 30 дней - каждый час (720 точек)
+                    // 1. Последние 24 часа - каждые 5 минут (288 точек)
+                    // 2. Последние 7 дней - каждый час (168 точек)
+                    // 3. Последние 30 дней - каждые 6 часов (120 точек)
+                    $interval24hMinutes = 5;
+                    $interval7dMinutes = 60;
+                    $interval30dHours = 6;
 
                     $samples = [];
 
                     // 1. Последние 24 часа - детальные данные для миниграфиков
-                    $this->command->info('  - Генерация данных за последние 24 часа (каждую минуту)...');
+                    $this->command->info('  - Генерация данных за последние 24 часа (каждые 5 минут)...');
                     $startTime24h = Carbon::now()->subDay();
-                    for ($i = 0; $i < 1440; $i++) {
-                        $ts = $startTime24h->copy()->addMinutes($i);
-                        $value = $this->generateValue($baseValue, $variation, $i, 1440);
+                    $samples24h = (int) (24 * 60 / $interval24hMinutes);
+                    for ($i = 0; $i < $samples24h; $i++) {
+                        $ts = $startTime24h->copy()->addMinutes($i * $interval24hMinutes);
+                        $value = $this->generateValue($baseValue, $variation, $i, $samples24h);
 
                         $samples[] = [
                             'zone_id' => $zone->id,
@@ -101,12 +105,12 @@ class TelemetrySeeder extends Seeder
                         }
                     }
 
-                    // 2. Последние 7 дней - каждые 10 минут
-                    $this->command->info('  - Генерация данных за последние 7 дней (каждые 10 минут)...');
+                    // 2. Последние 7 дней - каждый час
+                    $this->command->info('  - Генерация данных за последние 7 дней (каждый час)...');
                     $startTime7d = Carbon::now()->subDays(7);
-                    $samples7d = 7 * 24 * 6; // 7 дней * 24 часа * 6 точек в час
+                    $samples7d = (int) (7 * 24 * 60 / $interval7dMinutes);
                     for ($i = 0; $i < $samples7d; $i++) {
-                        $ts = $startTime7d->copy()->addMinutes($i * 10);
+                        $ts = $startTime7d->copy()->addMinutes($i * $interval7dMinutes);
                         // Пропускаем, если уже есть данные за последние 24 часа
                         if ($ts->gte($startTime24h)) {
                             continue;
@@ -133,12 +137,12 @@ class TelemetrySeeder extends Seeder
                         }
                     }
 
-                    // 3. Последние 30 дней - каждый час (для длительных периодов)
-                    $this->command->info('  - Генерация данных за последние 30 дней (каждый час)...');
+                    // 3. Последние 30 дней - каждые 6 часов (для длительных периодов)
+                    $this->command->info('  - Генерация данных за последние 30 дней (каждые 6 часов)...');
                     $startTime30d = Carbon::now()->subDays(30);
-                    $samples30d = 30 * 24; // 30 дней * 24 часа
+                    $samples30d = (int) (30 * 24 / $interval30dHours);
                     for ($i = 0; $i < $samples30d; $i++) {
-                        $ts = $startTime30d->copy()->addHours($i);
+                        $ts = $startTime30d->copy()->addHours($i * $interval30dHours);
                         // Пропускаем, если уже есть более детальные данные
                         if ($ts->gte($startTime7d)) {
                             continue;

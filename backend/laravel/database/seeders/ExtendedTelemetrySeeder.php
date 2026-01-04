@@ -52,7 +52,7 @@ class ExtendedTelemetrySeeder extends Seeder
     private function seedHistoricalTelemetry(Zone $zone, $sensors): int
     {
         $samplesCreated = 0;
-        $intervalMinutes = 5; // Интервал между измерениями
+        $intervalMinutes = 15; // Интервал между измерениями
         $batch = [];
         $batchSize = 500;
 
@@ -61,8 +61,8 @@ class ExtendedTelemetrySeeder extends Seeder
         // Определяем количество дней в зависимости от статуса зоны
         $status = strtolower((string) $zone->status);
         $daysBack = match ($status) {
-            'running', 'online' => 7,
-            'paused', 'warning' => 3,
+            'running', 'online' => 3,
+            'paused', 'warning' => 2,
             'stopped', 'critical' => 1,
             default => 1,
         };

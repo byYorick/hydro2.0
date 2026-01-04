@@ -19,6 +19,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -26,9 +27,9 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $agg1hCreated = $this->seedAggregated1h($zones);
         $dailyCreated = $this->seedDaily($zones);
 
-        $this->command->info("Создано агрегации 1m: " . number_format($agg1mCreated));
-        $this->command->info("Создано агрегации 1h: " . number_format($agg1hCreated));
-        $this->command->info("Создано дневной агрегации: " . number_format($dailyCreated));
+        $this->command->info('Создано агрегации 1m: '.number_format($agg1mCreated));
+        $this->command->info('Создано агрегации 1h: '.number_format($agg1hCreated));
+        $this->command->info('Создано дневной агрегации: '.number_format($dailyCreated));
     }
 
     private function seedAggregated1m($zones): int
@@ -40,7 +41,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 7 дней, по 1 минуте
+        // Создаем данные за последние 3 дня, по 1 часу
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -48,9 +49,9 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startTime = now()->subDays(7)->startOfDay();
+            $startTime = now()->subDays(3)->startOfDay();
 
-            for ($day = 0; $day < 7; $day++) {
+            for ($day = 0; $day < 3; $day++) {
                 for ($hour = 0; $hour < 24; $hour++) {
                     $ts = $startTime->copy()->addDays($day)->addHours($hour);
 
@@ -83,7 +84,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
         }
 
-        if (!empty($batch)) {
+        if (! empty($batch)) {
             DB::table('telemetry_agg_1m')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
@@ -99,7 +100,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 30 дней, по 1 часу
+        // Создаем данные за последние 14 дней, по 1 часу
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -107,9 +108,9 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startTime = now()->subDays(30)->startOfDay();
+            $startTime = now()->subDays(14)->startOfDay();
 
-            for ($day = 0; $day < 30; $day++) {
+            for ($day = 0; $day < 14; $day++) {
                 for ($hour = 0; $hour < 24; $hour++) {
                     $ts = $startTime->copy()->addDays($day)->addHours($hour);
 
@@ -142,7 +143,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
         }
 
-        if (!empty($batch)) {
+        if (! empty($batch)) {
             DB::table('telemetry_agg_1h')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
@@ -158,7 +159,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'date'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 90 дней
+        // Создаем данные за последние 30 дней
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -166,9 +167,9 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startDate = now()->subDays(90)->startOfDay();
+            $startDate = now()->subDays(30)->startOfDay();
 
-            for ($day = 0; $day < 90; $day++) {
+            for ($day = 0; $day < 30; $day++) {
                 $date = $startDate->copy()->addDays($day);
 
                 foreach ($metricTypes as $metricType) {
@@ -199,7 +200,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
         }
 
-        if (!empty($batch)) {
+        if (! empty($batch)) {
             DB::table('telemetry_daily')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
@@ -209,7 +210,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
     private function getBaseValue(string $metricType, Zone $zone): float
     {
         $preset = $zone->preset;
-        
+
         if ($preset) {
             return match ($metricType) {
                 'ph' => ($preset->ph_optimal_range['min'] ?? 6.0) + (($preset->ph_optimal_range['max'] ?? 6.5) - ($preset->ph_optimal_range['min'] ?? 6.0)) / 2,

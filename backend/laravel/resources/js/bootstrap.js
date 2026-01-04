@@ -5,6 +5,28 @@ import { logger } from './utils/logger';
 import { initEcho, isEchoInitializing, getEchoInstance, onWsStateChange } from './utils/echoClient';
 import Echo from 'laravel-echo';
 
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  const existingPatch = (window.__boostFetchPatched === true)
+  if (!existingPatch && typeof window.fetch === 'function') {
+    window.__boostFetchPatched = true
+    const originalFetch = window.fetch.bind(window)
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input?.url ?? ''
+      const isBoostLog = url.includes('/_boost/browser-logs')
+      if (!isBoostLog) {
+        return originalFetch(input, init)
+      }
+      return originalFetch(input, init).catch(() => {
+        // Avoid noisy console errors from Boost logger during HMR/page swaps.
+        return new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+    }
+  }
+}
+
 // Экспортируем apiClient в window.axios для обратной совместимости
 // (если где-то в коде используется window.axios напрямую)
 window.axios = apiClient;
@@ -124,6 +146,7 @@ function initializeEcho() {
 // Добавляем защиту от множественных инициализаций
 let echoInitialized = false;
 let echoInitInProgress = false;
+let initializationScheduled = false;
 
 function initializeEchoOnce() {
   if (echoInitialized || echoInitInProgress) {

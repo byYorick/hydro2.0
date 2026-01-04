@@ -2,19 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\TelemetryLast;
-use App\Models\Command;
-use App\Models\Alert;
 use App\Helpers\ZoneAccessHelper;
-use Illuminate\Http\Request;
+use App\Models\Alert;
+use App\Models\Command;
+use App\Models\TelemetryLast;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 /**
  * Контроллер для синхронизации состояния при переподключении WebSocket.
- * 
+ *
  * Предоставляет snapshots данных (telemetry, commands, alerts) для reconciliation
  * после переподключения клиента.
  */
@@ -22,13 +22,13 @@ class SyncController extends Controller
 {
     /**
      * Получить snapshot телеметрии для всех доступных зон пользователя.
-     * 
+     *
      * Возвращает последние значения телеметрии для всех зон, к которым
      * пользователь имеет доступ.
      */
     public function telemetry(Request $request): JsonResponse
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
@@ -37,10 +37,10 @@ class SyncController extends Controller
         }
 
         $user = Auth::user();
-        
+
         // Получаем список доступных зон
         $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         if (empty($accessibleZoneIds)) {
             return response()->json([
                 'status' => 'ok',
@@ -60,7 +60,7 @@ class SyncController extends Controller
                     'sensors.label as channel',
                     'sensors.type as metric_type',
                     'telemetry_last.last_value as value',
-                    'telemetry_last.last_ts as ts'
+                    'telemetry_last.last_ts',
                 ])
                 ->get()
                 ->map(function ($item) {
@@ -70,7 +70,7 @@ class SyncController extends Controller
                         'channel' => $item->channel,
                         'metric_type' => $item->metric_type,
                         'value' => $item->value,
-                        'ts' => $item->ts?->toIso8601String(),
+                        'ts' => $item->last_ts?->toIso8601String(),
                     ];
                 });
 
@@ -95,13 +95,13 @@ class SyncController extends Controller
 
     /**
      * Получить snapshot статусов команд.
-     * 
+     *
      * Возвращает активные (не завершенные) команды для всех зон,
      * к которым пользователь имеет доступ.
      */
     public function commands(Request $request): JsonResponse
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
@@ -110,10 +110,10 @@ class SyncController extends Controller
         }
 
         $user = Auth::user();
-        
+
         // Получаем список доступных зон
         $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         try {
             $query = Command::query()
                 ->whereNotIn('status', Command::FINAL_STATUSES) // Только активные команды
@@ -121,7 +121,7 @@ class SyncController extends Controller
                 ->limit(100); // Ограничиваем количество для производительности
 
             // Фильтруем по доступным зонам, если пользователь не админ
-            if (!$user->isAdmin()) {
+            if (! $user->isAdmin()) {
                 if (empty($accessibleZoneIds)) {
                     return response()->json([
                         'status' => 'ok',
@@ -170,13 +170,13 @@ class SyncController extends Controller
 
     /**
      * Получить snapshot активных алертов.
-     * 
+     *
      * Возвращает активные алерты для всех зон, к которым
      * пользователь имеет доступ.
      */
     public function alerts(Request $request): JsonResponse
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
@@ -185,10 +185,10 @@ class SyncController extends Controller
         }
 
         $user = Auth::user();
-        
+
         // Получаем список доступных зон
         $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         try {
             $query = Alert::query()
                 ->select(['id', 'zone_id', 'type', 'status', 'details', 'code', 'source', 'created_at'])
@@ -198,7 +198,7 @@ class SyncController extends Controller
                 ->limit(100); // Ограничиваем количество для производительности
 
             // Фильтруем по доступным зонам, если пользователь не админ
-            if (!$user->isAdmin()) {
+            if (! $user->isAdmin()) {
                 if (empty($accessibleZoneIds)) {
                     return response()->json([
                         'status' => 'ok',
@@ -247,13 +247,13 @@ class SyncController extends Controller
 
     /**
      * Получить полный snapshot всех данных для reconciliation.
-     * 
+     *
      * Возвращает объединенный snapshot телеметрии, команд и алертов
      * в одном запросе для оптимизации.
      */
     public function full(Request $request): JsonResponse
     {
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
@@ -262,7 +262,7 @@ class SyncController extends Controller
         }
 
         $user = Auth::user();
-        
+
         try {
             // Получаем все snapshots параллельно
             $telemetryResponse = $this->telemetry($request);

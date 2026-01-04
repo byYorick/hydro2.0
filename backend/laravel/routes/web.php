@@ -19,9 +19,8 @@ use Inertia\Inertia;
 
 // Роут для Laravel Boost browser-logs
 // В проде отключен для предотвращения DoS и утечки данных
-// В dev режиме доступен только для авторизованных пользователей с throttle
+// В dev режиме принимает Boost payload без auth
 Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
-    // В проде полностью отключаем эндпоинт
     if (app()->environment('production')) {
         \Log::warning('Browser log endpoint accessed in production (blocked)', [
             'ip' => $request->ip(),
@@ -32,13 +31,12 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
         return response()->json(['status' => 'disabled'], 404);
     }
 
-    // Для GET запросов просто возвращаем 200 (может использоваться для проверки доступности)
     if ($request->isMethod('GET')) {
         return response()->json(['status' => 'ok', 'method' => 'GET'], 200);
     }
 
-    // В dev режиме требуем аутентификацию и валидацию для POST запросов
-    if (! auth()->check()) {
+    $allowAnonymous = app()->environment(['local', 'testing']) || config('app.debug', false) === true;
+    if (! $allowAnonymous && ! auth()->check()) {
         \Log::warning('Browser log endpoint: unauthenticated request', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
@@ -48,14 +46,75 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
         return response()->json(['status' => 'unauthorized'], 403);
     }
 
-    // Валидируем и ограничиваем размер данных
+    $buildLogMessage = function (array $data) use (&$buildLogMessage): string {
+        $messages = [];
+
+        foreach ($data as $value) {
+            $messages[] = match (true) {
+                is_array($value) => $buildLogMessage($value),
+                is_string($value), is_numeric($value) => (string) $value,
+                is_bool($value) => $value ? 'true' : 'false',
+                is_null($value) => 'null',
+                is_object($value) => json_encode($value) ?: '',
+                default => (string) $value,
+            };
+        }
+
+        return implode(' ', array_filter($messages, static fn ($message): bool => $message !== ''));
+    };
+
+    try {
+        $logger = \Log::channel('browser');
+    } catch (\Throwable $e) {
+        $logger = \Log::channel((string) config('logging.default'));
+    }
+
+    if (is_array($request->input('logs'))) {
+        $validated = $request->validate([
+            'logs' => ['required', 'array', 'max:200'],
+            'logs.*.type' => ['nullable', 'string', 'max:50'],
+            'logs.*.timestamp' => ['nullable', 'string', 'max:64'],
+            'logs.*.data' => ['nullable', 'array', 'max:50'],
+            'logs.*.url' => ['nullable', 'string', 'max:2000'],
+            'logs.*.userAgent' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        foreach ($validated['logs'] as $log) {
+            $logType = $log['type'] ?? 'log';
+            $level = match ($logType) {
+                'warn' => 'warning',
+                'log', 'table' => 'debug',
+                'window_error', 'uncaught_error', 'unhandled_rejection' => 'error',
+                'debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency' => $logType,
+                default => 'info',
+            };
+            $message = $buildLogMessage($log['data'] ?? []);
+            $context = [
+                'url' => $log['url'] ?? $request->fullUrl(),
+                'user_agent' => $log['userAgent'] ?? $request->userAgent(),
+                'timestamp' => $log['timestamp'] ?? now()->toIso8601String(),
+            ];
+
+            if (auth()->check()) {
+                $context['user_id'] = auth()->id();
+            }
+
+            $logger->write(
+                level: $level,
+                message: $message !== '' ? $message : '[empty]',
+                context: $context
+            );
+        }
+
+        return response()->json(['status' => 'ok', 'count' => count($validated['logs'])], 200);
+    }
+
     $validated = $request->validate([
         'level' => ['nullable', 'string', 'in:log,info,warn,error'],
         'message' => ['nullable', 'string', 'max:1000'],
-        'data' => ['nullable', 'array', 'max:10'], // Ограничиваем количество полей
+        'data' => ['nullable', 'array', 'max:10'],
     ]);
 
-    // Логируем только валидированные данные
     \Log::debug('Browser log received (dev only)', [
         'user_id' => auth()->id(),
         'level' => $validated['level'] ?? 'log',
@@ -64,7 +123,7 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
     ]);
 
     return response()->json(['status' => 'ok'], 200);
-})->middleware(['web', 'auth', 'throttle:120,1']); // 120 запросов в минуту для dev режима
+})->middleware(['web', 'throttle:120,1']); // 120 запросов в минуту для dev режима
 
 // Broadcasting authentication route
 // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
@@ -1618,10 +1677,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             'automation-engine' => [
                 'label' => 'Automation Engine',
                 'description' => 'События ядра автоматики и командные переходы.',
-            ],
-            'history-locker' => [
-                'label' => 'History Locker',
-                'description' => 'Архив событий, восстановления и следов действия оператора.',
             ],
             'system' => [
                 'label' => 'System Services',

@@ -484,12 +484,13 @@ class FullServiceTestSeeder extends Seeder
             }
         }
 
-        // Создаем samples за последние 24 часа (каждые 5 минут)
+        // Создаем samples за последние 24 часа (каждые 15 минут)
         $samplesCount = 0;
+        $intervalMinutes = 15;
         for ($hoursAgo = 23; $hoursAgo >= 0; $hoursAgo--) {
             $timestamp = $now->copy()->subHours($hoursAgo);
 
-            for ($minute = 0; $minute < 60; $minute += 5) {
+            for ($minute = 0; $minute < 60; $minute += $intervalMinutes) {
                 $sampleTime = $timestamp->copy()->addMinutes($minute);
 
                 foreach ($zones as $zone) {

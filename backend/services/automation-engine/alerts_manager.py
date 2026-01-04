@@ -67,7 +67,7 @@ async def ensure_alert(zone_id: int, alert_type: str, details: Dict[str, Any]) -
         await execute(
             """
             UPDATE alerts
-            SET details = $1, updated_at = NOW()
+            SET details = $1
             WHERE id = $2
             """,
             details_json,
@@ -170,4 +170,3 @@ async def find_active_alert(zone_id: int, alert_type: str) -> Optional[Dict[str,
             'created_at': rows[0]["created_at"],
         }
     return None
-

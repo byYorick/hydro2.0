@@ -1,36 +1,34 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
-      <header class="space-y-3">
-        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 class="text-lg font-semibold">
-              Журнал сервисов
-            </h1>
-            <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
-              Отслеживайте события автоматизации, History Logger, MQTT Bridge и cron в одном окне.
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2 items-center">
-            <span class="text-xs uppercase text-[color:var(--text-dim)] tracking-[0.3em]">Фильтры</span>
-            <select
-              v-model="filters.service"
-              class="input-select"
-            >
-              <option value="all">
-                Все сервисы
-              </option>
-              <option
-                v-for="option in serviceSelectOptions"
-                :key="option.key"
-                :value="option.key"
-              >
-                {{ option.label }}
-              </option>
-            </select>
+    <div class="space-y-4">
+      <header class="space-y-2">
+        <div>
+          <h1 class="text-lg font-semibold">
+            Журнал сервисов
+          </h1>
+          <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
+            Отслеживайте события автоматизации, MQTT Bridge и cron в одном окне.
+          </p>
+        </div>
+      </header>
+
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-3">
+        <Tabs
+          v-model="activeServiceTab"
+          data-testid="logs-service-tabs"
+          :tabs="serviceTabs"
+          aria-label="Сервисы"
+        />
+      </div>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Фильтр</span>
             <select
               v-model="filters.level"
-              class="input-select"
+              class="input-select h-9"
+              data-testid="logs-filter-level"
             >
               <option value="">
                 Все уровни
@@ -47,17 +45,19 @@
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              class="input-field w-56"
+              class="input-field h-9 w-full sm:w-64"
             />
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
             <input
               v-model="filters.from"
               type="date"
-              class="input-field"
+              class="input-field h-9"
             />
             <input
               v-model="filters.to"
               type="date"
-              class="input-field"
+              class="input-field h-9"
             />
             <Button
               size="sm"
@@ -69,86 +69,84 @@
             </Button>
           </div>
         </div>
-      </header>
+      </section>
 
-      <div
-        v-if="error"
-        class="text-sm text-[color:var(--accent-red)]"
-      >
-        {{ error }}
-      </div>
+      <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              {{ activeServiceLabel }}
+            </div>
+            <p class="text-xs text-[color:var(--text-dim)]">
+              {{ activeServiceDescription }}
+            </p>
+          </div>
+          <span class="text-xs text-[color:var(--text-dim)]">
+            {{ totalCount }} записей
+          </span>
+        </div>
 
-      <div
-        v-if="loading"
-        class="text-sm text-[color:var(--text-dim)] text-center py-8"
-      >
-        Загрузка логов...
-      </div>
-
-      <div
-        v-else-if="!hasLogs"
-        class="text-sm text-[color:var(--text-dim)] text-center py-8"
-      >
-        Нет логов по выбранным фильтрам
-      </div>
-
-      <div
-        v-else
-        class="grid gap-4 lg:grid-cols-2"
-      >
-        <Card
-          v-for="service in visibleServices"
-          :key="service.key"
-          class="space-y-3"
+        <div
+          v-if="error"
+          class="text-sm text-[color:var(--accent-red)]"
         >
-          <div class="flex items-center justify-between gap-4">
-            <div>
+          {{ error }}
+        </div>
+
+        <div
+          v-else-if="loading"
+          class="text-sm text-[color:var(--text-dim)] text-center py-8"
+        >
+          Загрузка логов...
+        </div>
+
+        <div
+          v-else-if="!hasLogs"
+          class="text-sm text-[color:var(--text-dim)] text-center py-8"
+        >
+          Нет логов по выбранным фильтрам
+        </div>
+
+        <div
+          v-else
+          class="space-y-1 max-h-[560px] overflow-y-auto pr-1"
+        >
+          <div
+            v-for="entry in logs"
+            :key="entry.id"
+            class="text-sm text-[color:var(--text-muted)] flex items-start gap-3 py-3 border-b border-[color:var(--border-muted)]"
+            data-testid="service-log-entry"
+          >
+            <Badge
+              :variant="levelVariant(entry.level)"
+              size="xs"
+              class="shrink-0"
+            >
+              {{ entry.level }}
+            </Badge>
+            <div class="flex-1 min-w-0 space-y-1">
+              <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-dim)]">
+                <span>{{ formatTime(entry.created_at) }}</span>
+                <Badge
+                  v-if="showServiceBadge"
+                  size="xs"
+                  variant="secondary"
+                  class="uppercase tracking-[0.08em]"
+                  data-testid="service-log-service"
+                >
+                  {{ serviceLabelFor(entry.service) }}
+                </Badge>
+              </div>
               <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-                {{ service.label }}
+                {{ entry.message }}
               </div>
-              <p class="text-xs text-[color:var(--text-dim)]">
-                {{ service.description ?? 'Логи сервиса' }}
-              </p>
-            </div>
-            <span class="text-xs text-[color:var(--text-dim)]">{{ entriesFor(service.key).length }} записей</span>
-          </div>
-          <div class="space-y-2 max-h-[360px] overflow-y-auto scrollbar-glow pr-1">
-            <div
-              v-for="entry in entriesFor(service.key)"
-              :key="entry.id"
-              class="surface-strong rounded-2xl border border-[color:var(--border-muted)] p-3"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-                    {{ entry.message }}
-                  </div>
-                  <div class="text-xs text-[color:var(--text-dim)]">
-                    {{ summarizeContext(entry.context) }}
-                  </div>
-                </div>
-                <div class="text-right">
-                  <Badge
-                    :variant="levelVariant(entry.level)"
-                    size="xs"
-                  >
-                    {{ entry.level }}
-                  </Badge>
-                  <div class="text-[10px] text-[color:var(--text-dim)] mt-1">
-                    {{ formatTime(entry.created_at) }}
-                  </div>
-                </div>
+              <div class="text-xs text-[color:var(--text-dim)]">
+                {{ summarizeContext(entry.context) }}
               </div>
             </div>
-            <div
-              v-if="!entriesFor(service.key).length"
-              class="text-xs text-[color:var(--text-dim)] text-center py-6"
-            >
-              Нет событий по выбранным фильтрам
-            </div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </section>
 
       <div
         v-if="meta.total > 0"
@@ -183,7 +181,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
+import Tabs from '@/Components/Tabs.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { formatTime } from '@/utils/formatTime'
@@ -224,13 +222,20 @@ const props = defineProps<Props>()
 
 const { get } = useApi()
 
+const excludedServiceKeys = new Set(['history-logger', 'history-locker'])
+const defaultService = props.defaultService && !excludedServiceKeys.has(props.defaultService)
+  ? props.defaultService
+  : 'all'
+
 const filters = reactive({
-  service: props.defaultService || 'all',
+  service: defaultService,
   level: props.defaultLevel || '',
   search: props.defaultSearch || '',
   from: '',
   to: '',
 })
+
+const activeServiceTab = ref(filters.service)
 
 const levelOptions = ['ERROR', 'WARNING', 'INFO', 'DEBUG']
 const logs = ref<ServiceLog[]>([])
@@ -243,12 +248,18 @@ const meta = reactive<ServiceLogMeta>({
 const loading = ref(false)
 const error = ref('')
 
+const POLL_INTERVAL_MS = 15000
+const POLL_KEY = '__logsPollInterval__'
+const SEARCH_KEY = '__logsSearchDebounce__'
+
 let pollInterval: ReturnType<typeof setInterval> | null = null
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 const dynamicServices = computed<ServiceOption[]>(() => {
   const known = new Set(props.serviceOptions.map((s) => s.key))
-  const dynamic = Array.from(new Set(logs.value.map((l) => l.service))).filter((key) => !known.has(key))
+  const dynamic = Array.from(new Set(logs.value.map((l) => l.service))).filter((key) =>
+    !known.has(key) && !excludedServiceKeys.has(key)
+  )
   return dynamic.map((key) => ({
     key,
     label: key,
@@ -257,23 +268,46 @@ const dynamicServices = computed<ServiceOption[]>(() => {
 })
 
 const serviceSelectOptions = computed<ServiceOption[]>(() =>
-  [...props.serviceOptions, ...dynamicServices.value].filter(
-    (item, index, arr) => arr.findIndex((i) => i.key === item.key) === index
-  )
+  [...props.serviceOptions, ...dynamicServices.value]
+    .filter((item) => !excludedServiceKeys.has(item.key))
+    .filter((item, index, arr) => arr.findIndex((i) => i.key === item.key) === index)
 )
 
-const visibleServices = computed<ServiceOption[]>(() => {
-  const baseList = filters.service === 'all'
-    ? [...props.serviceOptions, ...dynamicServices.value]
-    : [...props.serviceOptions, ...dynamicServices.value].filter((s) => s.key === filters.service)
+const serviceTabs = computed(() => {
+  const tabs = [
+    { id: 'all', label: 'Все сервисы' },
+    ...serviceSelectOptions.value.map((service) => ({
+      id: service.key,
+      label: service.label,
+    })),
+  ]
 
-  // Убираем дубликаты
-  return baseList.filter((item, index, arr) => arr.findIndex((i) => i.key === item.key) === index)
+  return tabs.filter((tab, index, arr) => arr.findIndex((item) => item.id === tab.id) === index)
 })
 
-const hasLogs = computed(() => logs.value.length > 0)
+const activeServiceOption = computed(() =>
+  serviceSelectOptions.value.find((service) => service.key === filters.service)
+)
 
-const entriesFor = (serviceKey: string) => logs.value.filter((entry) => entry.service === serviceKey)
+const activeServiceLabel = computed(() => {
+  if (filters.service === 'all') return 'Все сервисы'
+  return activeServiceOption.value?.label ?? filters.service
+})
+
+const activeServiceDescription = computed(() => {
+  if (filters.service === 'all') {
+    return 'Сводка по сервисам и системе в реальном времени.'
+  }
+  return activeServiceOption.value?.description ?? 'Логи сервиса'
+})
+
+const showServiceBadge = computed(() => filters.service === 'all')
+
+const serviceLabelFor = (serviceKey: string) =>
+  serviceSelectOptions.value.find((service) => service.key === serviceKey)?.label ?? serviceKey
+
+const hasLogs = computed(() => logs.value.length > 0)
+const totalCount = computed(() => meta.total || logs.value.length)
 
 const levelVariant = (level: string) => {
   const normalized = level?.toLowerCase()
@@ -317,6 +351,7 @@ async function fetchLogs(page = 1) {
     const params: Record<string, any> = {
       page,
       per_page: meta.per_page,
+      exclude_services: Array.from(excludedServiceKeys),
     }
 
     if (filters.service && filters.service !== 'all') params.service = filters.service
@@ -386,13 +421,34 @@ function refresh() {
 
 function startPolling() {
   if (pollInterval) clearInterval(pollInterval)
-  pollInterval = setInterval(() => fetchLogs(meta.page), 5000)
+
+  if (typeof window !== 'undefined') {
+    const existing = (window as any)[POLL_KEY] as ReturnType<typeof setInterval> | null
+    if (existing) clearInterval(existing)
+  }
+
+  pollInterval = setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    fetchLogs(meta.page)
+  }, POLL_INTERVAL_MS)
+
+  if (typeof window !== 'undefined') {
+    ;(window as any)[POLL_KEY] = pollInterval
+  }
 }
 
 function stopPolling() {
   if (pollInterval) {
     clearInterval(pollInterval)
     pollInterval = null
+  }
+
+  if (typeof window !== 'undefined') {
+    const existing = (window as any)[POLL_KEY] as ReturnType<typeof setInterval> | null
+    if (existing) {
+      clearInterval(existing)
+      ;(window as any)[POLL_KEY] = null
+    }
   }
 }
 
@@ -402,10 +458,38 @@ watch(
 )
 
 watch(
+  () => filters.service,
+  (value) => {
+    if (activeServiceTab.value !== value) {
+      activeServiceTab.value = value
+    }
+  }
+)
+
+watch(
+  activeServiceTab,
+  (value) => {
+    if (filters.service !== value) {
+      filters.service = value
+    }
+  }
+)
+
+watch(
   () => filters.search,
   () => {
     if (searchDebounce) clearTimeout(searchDebounce)
+
+    if (typeof window !== 'undefined') {
+      const existing = (window as any)[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
+      if (existing) clearTimeout(existing)
+    }
+
     searchDebounce = setTimeout(() => fetchLogs(1), 400)
+
+    if (typeof window !== 'undefined') {
+      ;(window as any)[SEARCH_KEY] = searchDebounce
+    }
   }
 )
 
@@ -419,6 +503,13 @@ onUnmounted(() => {
   if (searchDebounce) {
     clearTimeout(searchDebounce)
     searchDebounce = null
+  }
+  if (typeof window !== 'undefined') {
+    const existing = (window as any)[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
+    if (existing) {
+      clearTimeout(existing)
+      ;(window as any)[SEARCH_KEY] = null
+    }
   }
 })
 </script>

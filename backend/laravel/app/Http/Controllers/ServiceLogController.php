@@ -16,6 +16,8 @@ class ServiceLogController extends Controller
     {
         $validated = $request->validate([
             'service' => ['nullable', 'string', 'max:64'],
+            'exclude_services' => ['nullable', 'array'],
+            'exclude_services.*' => ['string', 'max:64'],
             'level' => ['nullable', 'string', 'max:32'],
             'search' => ['nullable', 'string', 'max:255'],
             'from' => ['nullable', 'date'],
@@ -25,6 +27,7 @@ class ServiceLogController extends Controller
         ]);
 
         $service = $validated['service'] ?? null;
+        $excludeServices = $validated['exclude_services'] ?? [];
         $level = $validated['level'] ?? null;
         $search = $validated['search'] ?? null;
         $from = $validated['from'] ?? null;
@@ -38,12 +41,19 @@ class ServiceLogController extends Controller
                 $service,
                 fn ($q) => $q->whereRaw("coalesce(context->>'service', context->>'source', 'system') = ?", [$service])
             )
+            ->when(! empty($excludeServices), function ($q) use ($excludeServices) {
+                $placeholders = implode(',', array_fill(0, count($excludeServices), '?'));
+                $q->whereRaw(
+                    "coalesce(context->>'service', context->>'source', 'system') not in ({$placeholders})",
+                    $excludeServices
+                );
+            })
             ->when($level, fn ($q) => $q->whereRaw('UPPER(level) = ?', [strtoupper($level)]))
             ->when($search, function ($q) use ($search) {
                 $like = '%'.$search.'%';
                 $q->where(function ($sub) use ($like) {
                     $sub->where('message', 'ILIKE', $like)
-                        ->orWhereRaw("context::text ILIKE ?", [$like]);
+                        ->orWhereRaw('context::text ILIKE ?', [$like]);
                 });
             })
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
