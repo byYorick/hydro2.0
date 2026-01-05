@@ -69,9 +69,9 @@ class ExtendedLogsSeeder extends Seeder
             ],
         ];
 
-        // Создаем логи за последние 7 дней
-        for ($daysAgo = 7; $daysAgo >= 0; $daysAgo--) {
-            $logCount = rand(20, 50);
+        // Создаем логи за последние 2 дня
+        for ($daysAgo = 2; $daysAgo >= 0; $daysAgo--) {
+            $logCount = rand(5, 10);
             
             for ($i = 0; $i < $logCount; $i++) {
                 $level = $levels[rand(0, count($levels) - 1)];
@@ -120,9 +120,9 @@ class ExtendedLogsSeeder extends Seeder
 
         foreach ($nodes as $node) {
             $logCount = match ($node->status) {
-                'online' => rand(10, 30),
-                'offline' => rand(1, 5),
-                default => rand(5, 15),
+                'online' => rand(3, 8),
+                'offline' => rand(1, 2),
+                default => rand(2, 4),
             };
 
             for ($i = 0; $i < $logCount; $i++) {
@@ -163,10 +163,10 @@ class ExtendedLogsSeeder extends Seeder
 
         foreach ($zones as $zone) {
             $logCount = match ($zone->status) {
-                'RUNNING' => rand(5, 15),
-                'PAUSED' => rand(2, 5),
-                'STOPPED' => rand(0, 2),
-                default => rand(1, 5),
+                'RUNNING' => rand(2, 4),
+                'PAUSED' => rand(1, 2),
+                'STOPPED' => rand(0, 1),
+                default => rand(1, 2),
             };
 
             for ($i = 0; $i < $logCount; $i++) {
@@ -209,9 +209,9 @@ class ExtendedLogsSeeder extends Seeder
         $statuses = ['success', 'failed', 'skipped'];
         $statusWeights = [80, 15, 5];
 
-        // Создаем логи за последние 7 дней
-        for ($daysAgo = 7; $daysAgo >= 0; $daysAgo--) {
-            $logCount = rand(30, 100);
+        // Создаем логи за последние 2 дня
+        for ($daysAgo = 2; $daysAgo >= 0; $daysAgo--) {
+            $logCount = rand(10, 20);
             
             for ($i = 0; $i < $logCount; $i++) {
                 $taskName = $taskNames[rand(0, count($taskNames) - 1)];
@@ -246,4 +246,3 @@ class ExtendedLogsSeeder extends Seeder
         return $created;
     }
 }
-

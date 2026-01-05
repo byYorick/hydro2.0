@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 
 /**
  * Сидер для быстрого заполнения данных телеметрии для миниграфиков
- * Генерирует данные за последние 24 часа с интервалом 5 минут
+ * Генерирует данные за последние 24 часа с интервалом 30 минут
  */
 class TelemetryMiniGraphSeeder extends Seeder
 {
@@ -72,10 +72,10 @@ class TelemetryMiniGraphSeeder extends Seeder
                     $baseValue = $this->getBaseValueForMetric($metricType);
                     $variation = $this->getVariationForMetric($metricType);
 
-                    // Генерируем данные за последние 24 часа - каждые 5 минут
+                    // Генерируем данные за последние 24 часа - каждые 30 минут
                     $samples = [];
                     $startTime = Carbon::now()->subDay();
-                    $intervalMinutes = 5;
+                    $intervalMinutes = 30;
                     $samplesPerDay = (int) (24 * 60 / $intervalMinutes);
 
                     $this->command->info("  - Метрика {$metricType}: генерация {$samplesPerDay} точек...");

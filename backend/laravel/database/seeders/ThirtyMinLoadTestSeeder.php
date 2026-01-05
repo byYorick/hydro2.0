@@ -61,7 +61,7 @@ class ThirtyMinLoadTestSeeder extends Seeder
                     'zone_id' => $zone->id,
                     'name' => "Node {$i} - Zone " . $zone->name,
                     'type' => $i % 4 === 0 ? 'ph' : ($i % 4 === 1 ? 'ec' : 'sensor'),
-                    'status' => 'ONLINE',
+                    'status' => 'online',
                     'lifecycle_state' => 'ACTIVE',
                     'fw_version' => '1.0.0',
                     'last_seen_at' => now(),
@@ -97,4 +97,3 @@ class ThirtyMinLoadTestSeeder extends Seeder
         $this->command->info("✓ Создано нод: " . count($nodes));
     }
 }
-

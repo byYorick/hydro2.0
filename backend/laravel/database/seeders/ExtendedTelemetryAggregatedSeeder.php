@@ -41,7 +41,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 3 дня, по 1 часу
+        // Создаем данные за последний 1 день, каждые 3 часа
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -49,10 +49,10 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startTime = now()->subDays(3)->startOfDay();
+            $startTime = now()->subDays(1)->startOfDay();
 
-            for ($day = 0; $day < 3; $day++) {
-                for ($hour = 0; $hour < 24; $hour++) {
+            for ($day = 0; $day < 1; $day++) {
+                for ($hour = 0; $hour < 24; $hour += 3) {
                     $ts = $startTime->copy()->addDays($day)->addHours($hour);
 
                     foreach ($metricTypes as $metricType) {
@@ -69,7 +69,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                             'value_min' => $value - 0.1,
                             'value_max' => $value + 0.1,
                             'value_median' => $value,
-                            'sample_count' => rand(10, 12),
+                            'sample_count' => rand(3, 6),
                             'created_at' => $ts,
                         ];
 
@@ -100,7 +100,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 14 дней, по 1 часу
+        // Создаем данные за последние 3 дня, каждые 3 часа
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -108,10 +108,10 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startTime = now()->subDays(14)->startOfDay();
+            $startTime = now()->subDays(3)->startOfDay();
 
-            for ($day = 0; $day < 14; $day++) {
-                for ($hour = 0; $hour < 24; $hour++) {
+            for ($day = 0; $day < 3; $day++) {
+                for ($hour = 0; $hour < 24; $hour += 3) {
                     $ts = $startTime->copy()->addDays($day)->addHours($hour);
 
                     foreach ($metricTypes as $metricType) {
@@ -128,7 +128,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                             'value_min' => $value - 0.2,
                             'value_max' => $value + 0.2,
                             'value_median' => $value,
-                            'sample_count' => rand(50, 60),
+                            'sample_count' => rand(10, 20),
                             'created_at' => $ts,
                         ];
 
@@ -159,7 +159,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'date'];
         $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
-        // Создаем данные за последние 30 дней
+        // Создаем данные за последние 7 дней
         foreach ($zones as $zone) {
             $nodes = DeviceNode::where('zone_id', $zone->id)->get();
             if ($nodes->isEmpty()) {
@@ -167,9 +167,9 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
             }
 
             $node = $nodes->first();
-            $startDate = now()->subDays(30)->startOfDay();
+            $startDate = now()->subDays(7)->startOfDay();
 
-            for ($day = 0; $day < 30; $day++) {
+            for ($day = 0; $day < 7; $day++) {
                 $date = $startDate->copy()->addDays($day);
 
                 foreach ($metricTypes as $metricType) {
@@ -186,7 +186,7 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         'value_min' => $value - 0.5,
                         'value_max' => $value + 0.5,
                         'value_median' => $value,
-                        'sample_count' => rand(200, 300),
+                    'sample_count' => rand(20, 40),
                         'created_at' => $date,
                     ];
 

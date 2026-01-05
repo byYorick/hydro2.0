@@ -62,7 +62,7 @@ class LoadTestSeeder extends Seeder
                         'zone_id' => $zone->id,
                         'name' => "Node {$j} - Zone {$i}",
                         'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'sensor'),
-                        'status' => 'ONLINE',
+                        'status' => 'online',
                         'lifecycle_state' => 'ACTIVE',
                         'fw_version' => '1.0.0',
                         'last_seen_at' => now(),
@@ -98,4 +98,3 @@ class LoadTestSeeder extends Seeder
         $this->command->info("✓ Создано нод: " . count($nodes));
     }
 }
-

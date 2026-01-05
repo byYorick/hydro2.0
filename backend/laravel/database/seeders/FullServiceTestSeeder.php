@@ -3,10 +3,12 @@
 namespace Database\Seeders;
 
 use App\Models\Alert;
+use App\Models\ChannelBinding;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Preset;
@@ -57,6 +59,9 @@ class FullServiceTestSeeder extends Seeder
 
         // 5. Узлы и каналы
         $nodes = $this->seedNodes($zones);
+
+        // 5.5. Инфраструктура и привязки каналов
+        $this->seedInfrastructureAndBindings($zones);
 
         // 6. Рецепты и фазы
         $recipes = $this->seedRecipes();
@@ -222,7 +227,7 @@ class FullServiceTestSeeder extends Seeder
             ['type' => 'controller', 'uid' => 'nd-combo-001', 'name' => 'Combo Controller', 'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light']],
         ];
 
-        $statuses = ['ONLINE', 'ONLINE', 'OFFLINE', 'ONLINE', 'DEGRADED'];
+        $statuses = ['online', 'online', 'offline', 'online', 'online'];
         $lifecycleStates = ['ACTIVE', 'ACTIVE', 'UNPROVISIONED', 'ASSIGNED_TO_ZONE', 'ACTIVE'];
 
         foreach ($zones as $zoneIndex => $zone) {
@@ -239,8 +244,8 @@ class FullServiceTestSeeder extends Seeder
                     'status' => $status,
                     'lifecycle_state' => $lifecycle,
                     'fw_version' => '1.2.3',
-                    'last_seen_at' => $status === 'ONLINE' ? now() : now()->subHours(2),
-                    'last_heartbeat_at' => $status === 'ONLINE' ? now() : now()->subHours(2),
+                    'last_seen_at' => $status === 'online' ? now() : now()->subHours(2),
+                    'last_heartbeat_at' => $status === 'online' ? now() : now()->subHours(2),
                 ]
             );
 
@@ -271,6 +276,104 @@ class FullServiceTestSeeder extends Seeder
         }
 
         return $nodes;
+    }
+
+    /**
+     * Создание инфраструктуры зон и привязок к каналам (для automation-engine).
+     */
+    private function seedInfrastructureAndBindings(array $zones): void
+    {
+        $this->command->info('Создание инфраструктуры и привязок каналов...');
+
+        $createdInfra = 0;
+        $createdBindings = 0;
+
+        $channelMap = [
+            'pump1' => ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'role' => 'main_pump', 'required' => true],
+            'pump2' => ['asset_type' => 'DRAIN', 'label' => 'Drain Pump', 'role' => 'drain', 'required' => false],
+            'light' => ['asset_type' => 'LIGHT', 'label' => 'Light', 'role' => 'light', 'required' => false],
+            'fan' => ['asset_type' => 'FAN', 'label' => 'Fan', 'role' => 'fan', 'required' => false],
+            'heater' => ['asset_type' => 'HEATER', 'label' => 'Heater', 'role' => 'heater', 'required' => false],
+            'mist' => ['asset_type' => 'MISTER', 'label' => 'Mister', 'role' => 'mister', 'required' => false],
+        ];
+
+        foreach ($zones as $zone) {
+            $nodeIds = DeviceNode::where('zone_id', $zone->id)->pluck('id');
+            if ($nodeIds->isEmpty()) {
+                continue;
+            }
+
+            $channels = NodeChannel::whereIn('node_id', $nodeIds)
+                ->where('type', 'actuator')
+                ->get();
+
+            if ($channels->isEmpty()) {
+                continue;
+            }
+
+            $capabilities = array_merge([
+                'ph_control' => false,
+                'ec_control' => false,
+                'climate_control' => false,
+                'light_control' => false,
+                'irrigation_control' => false,
+                'recirculation' => false,
+                'flow_sensor' => false,
+            ], $zone->capabilities ?? []);
+
+            foreach ($channels as $channel) {
+                $channelName = $channel->channel;
+                if (! isset($channelMap[$channelName])) {
+                    continue;
+                }
+
+                $mapping = $channelMap[$channelName];
+                $infra = InfrastructureInstance::firstOrCreate(
+                    [
+                        'owner_type' => 'zone',
+                        'owner_id' => $zone->id,
+                        'asset_type' => $mapping['asset_type'],
+                        'label' => $mapping['label'],
+                    ],
+                    [
+                        'required' => $mapping['required'],
+                    ]
+                );
+
+                if ($infra->wasRecentlyCreated) {
+                    $createdInfra++;
+                }
+
+                $binding = ChannelBinding::firstOrCreate(
+                    [
+                        'infrastructure_instance_id' => $infra->id,
+                        'node_channel_id' => $channel->id,
+                    ],
+                    [
+                        'direction' => $channel->type === 'sensor' ? 'sensor' : 'actuator',
+                        'role' => $mapping['role'],
+                    ]
+                );
+
+                if ($binding->wasRecentlyCreated) {
+                    $createdBindings++;
+                }
+
+                if ($channelName === 'pump1') {
+                    $capabilities['irrigation_control'] = true;
+                } elseif ($channelName === 'light') {
+                    $capabilities['light_control'] = true;
+                } elseif (in_array($channelName, ['fan', 'heater'], true)) {
+                    $capabilities['climate_control'] = true;
+                }
+            }
+
+            $zone->capabilities = $capabilities;
+            $zone->save();
+        }
+
+        $this->command->info("Создано инфраструктуры: {$createdInfra}");
+        $this->command->info("Создано привязок: {$createdBindings}");
     }
 
     private function seedRecipes(): array
@@ -486,8 +589,9 @@ class FullServiceTestSeeder extends Seeder
 
         // Создаем samples за последние 24 часа (каждые 15 минут)
         $samplesCount = 0;
-        $intervalMinutes = 15;
-        for ($hoursAgo = 23; $hoursAgo >= 0; $hoursAgo--) {
+        $intervalMinutes = 60;
+        $hoursBack = 6;
+        for ($hoursAgo = $hoursBack; $hoursAgo >= 0; $hoursAgo--) {
             $timestamp = $now->copy()->subHours($hoursAgo);
 
             for ($minute = 0; $minute < 60; $minute += $intervalMinutes) {
@@ -817,7 +921,7 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание логов...');
 
         // System Logs
-        for ($i = 0; $i < 50; $i++) {
+        for ($i = 0; $i < 10; $i++) {
             DB::table('system_logs')->insert([
                 'level' => ['info', 'warning', 'error'][rand(0, 2)],
                 'message' => 'System log entry '.($i + 1),
@@ -828,7 +932,7 @@ class FullServiceTestSeeder extends Seeder
 
         // Node Logs
         foreach ($nodes as $node) {
-            for ($i = 0; $i < 20; $i++) {
+            for ($i = 0; $i < 5; $i++) {
                 DB::table('node_logs')->insert([
                     'node_id' => $node->id,
                     'level' => ['info', 'warning', 'error'][rand(0, 2)],
@@ -841,7 +945,7 @@ class FullServiceTestSeeder extends Seeder
 
         // AI Logs
         foreach ($zones as $zone) {
-            for ($i = 0; $i < 10; $i++) {
+            for ($i = 0; $i < 3; $i++) {
                 DB::table('ai_logs')->insert([
                     'zone_id' => $zone->id,
                     'action' => ['predict', 'recommend', 'explain', 'diagnostics'][rand(0, 3)],
@@ -852,7 +956,7 @@ class FullServiceTestSeeder extends Seeder
         }
 
         // Scheduler Logs
-        for ($i = 0; $i < 30; $i++) {
+        for ($i = 0; $i < 8; $i++) {
             DB::table('scheduler_logs')->insert([
                 'task_name' => ['recipe_phase', 'irrigation', 'dosing', 'light_control'][rand(0, 3)],
                 'status' => ['success', 'failed'][rand(0, 1)],
