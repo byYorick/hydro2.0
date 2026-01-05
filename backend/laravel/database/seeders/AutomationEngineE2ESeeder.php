@@ -12,6 +12,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
@@ -160,12 +161,12 @@ class AutomationEngineE2ESeeder extends Seeder
 
         // 6. Создаем инфраструктуру зоны
         $infrastructure = [
-            ['asset_type' => 'PUMP', 'channel' => 'main_pump', 'label' => 'Main Pump', 'required' => true],
-            ['asset_type' => 'DRAIN', 'channel' => 'drain_pump', 'label' => 'Drain Pump', 'required' => false],
-            ['asset_type' => 'FAN', 'channel' => 'fan', 'label' => 'Fan', 'required' => true],
-            ['asset_type' => 'HEATER', 'channel' => 'heater', 'label' => 'Heater', 'required' => true],
-            ['asset_type' => 'LIGHT', 'channel' => 'light', 'label' => 'Light', 'required' => false],
-            ['asset_type' => 'MISTER', 'channel' => 'mister', 'label' => 'Mister', 'required' => false],
+            ['asset_type' => 'PUMP', 'channel' => 'main_pump', 'label' => 'Main Pump', 'required' => true, 'role' => 'main_pump'],
+            ['asset_type' => 'DRAIN', 'channel' => 'drain_pump', 'label' => 'Drain Pump', 'required' => false, 'role' => 'drain'],
+            ['asset_type' => 'FAN', 'channel' => 'fan', 'label' => 'Fan', 'required' => true, 'role' => 'fan'],
+            ['asset_type' => 'HEATER', 'channel' => 'heater', 'label' => 'Heater', 'required' => true, 'role' => 'heater'],
+            ['asset_type' => 'LIGHT', 'channel' => 'light', 'label' => 'Light', 'required' => false, 'role' => 'light'],
+            ['asset_type' => 'MISTER', 'channel' => 'mister', 'label' => 'Mister', 'required' => false, 'role' => 'mister'],
         ];
 
         foreach ($infrastructure as $infraData) {
@@ -174,35 +175,33 @@ class AutomationEngineE2ESeeder extends Seeder
                     'owner_type' => 'zone',
                     'owner_id' => $zone->id,
                     'asset_type' => $infraData['asset_type'],
+                    'label' => $infraData['label'],
                 ],
                 [
-                    'label' => $infraData['label'],
                     'required' => $infraData['required'],
                 ]
             );
 
-            if ($infraData['required']) {
-                $channelName = $infraData['channel'] ?? null;
-                $channel = $channelName
-                    ? NodeChannel::where('node_id', $node->id)
-                        ->where('channel', $channelName)
-                        ->first()
-                    : null;
+            $channelName = $infraData['channel'] ?? null;
+            $channel = $channelName
+                ? NodeChannel::where('node_id', $node->id)
+                    ->where('channel', $channelName)
+                    ->first()
+                : null;
 
-                if ($channel) {
-                    $direction = $channel->type === 'actuator' ? 'actuator' : 'sensor';
+            if ($channel) {
+                $direction = $channel->type === 'actuator' ? 'actuator' : 'sensor';
 
-                    ChannelBinding::firstOrCreate(
-                        [
-                            'infrastructure_instance_id' => $infra->id,
-                            'node_channel_id' => $channel->id,
-                        ],
-                        [
-                            'direction' => $direction,
-                            'role' => $infraData['asset_type'],
-                        ]
-                    );
-                }
+                ChannelBinding::firstOrCreate(
+                    [
+                        'infrastructure_instance_id' => $infra->id,
+                        'node_channel_id' => $channel->id,
+                    ],
+                    [
+                        'direction' => $direction,
+                        'role' => $infraData['role'] ?? $channel->channel,
+                    ]
+                );
             }
         }
 
@@ -223,13 +222,16 @@ class AutomationEngineE2ESeeder extends Seeder
 
         $recipe->plants()->syncWithoutDetaching([$plant->id]);
 
+        $creatorId = User::where('role', 'admin')->value('id') ?? User::value('id');
+
         $revision = RecipeRevision::firstOrCreate([
             'recipe_id' => $recipe->id,
             'revision_number' => 1,
         ], [
             'status' => 'PUBLISHED',
             'description' => 'E2E baseline revision',
-            'created_by' => 1,
+            'created_by' => $creatorId,
+            'published_at' => now(),
         ]);
 
         $germinationTemplate = GrowStageTemplate::firstOrCreate([

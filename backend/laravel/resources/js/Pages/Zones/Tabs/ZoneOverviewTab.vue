@@ -44,10 +44,11 @@
         </div>
         <div class="flex flex-wrap items-center gap-2 justify-end">
           <template v-if="canOperateZone">
+            <!-- Старая система управления зоной отключена. Используйте панель управления циклами в разделе "Цикл" -->
             <Button
               size="sm"
               variant="secondary"
-              :disabled="loading.toggle"
+              :disabled="true"
               class="flex-1 sm:flex-none min-w-[140px]"
               :data-testid="toggleStatus === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'"
               @click="$emit('toggle')"

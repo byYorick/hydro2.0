@@ -826,30 +826,32 @@ const toggleStatus = computed(() => {
   return activeGrowCycle.value?.status || zone.value.status
 })
 
+// Старая функция onToggle отключена. Используйте новую систему управления циклами в CycleControlPanel.
+/*
 async function onToggle(): Promise<void> {
   if (!zoneId.value) return
-  
+
   const currentCycle = activeGrowCycle.value
   if (!currentCycle?.id) {
     showToast('Нет активного цикла для паузы или возобновления', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
-  
+
   const currentStatus = toggleStatus.value
   const isPaused = currentStatus === 'PAUSED'
   const newStatus = isPaused ? 'RUNNING' : 'PAUSED'
   const action = isPaused ? 'resume' : 'pause'
   const actionText = isPaused ? 'возобновлен' : 'приостановлен'
-  
+
   setLoading('toggle', true)
-  
+
   // Создаем оптимистичное обновление
   const optimisticUpdate = createOptimisticZoneUpdate(
     zonesStore,
     zoneId.value,
     { activeGrowCycle: { ...currentCycle, status: newStatus } }
   )
-  
+
   try {
     // Применяем оптимистичное обновление и выполняем операцию на сервере
     await performUpdate(
@@ -870,11 +872,11 @@ async function onToggle(): Promise<void> {
         onError: async (error) => {
           logger.error('Failed to toggle zone:', error)
           let errorMessage: string = ERROR_MESSAGES.UNKNOWN
-          
+
           // Проверяем, если это ошибка 422 (Cycle is not paused/running), синхронизируем статус
-          const is422Error = error && typeof error === 'object' && 'response' in error && 
+          const is422Error = error && typeof error === 'object' && 'response' in error &&
                            (error as any).response?.status === 422
-          
+
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
           } else if (is422Error && error && typeof error === 'object' && 'response' in error) {
@@ -883,9 +885,9 @@ async function onToggle(): Promise<void> {
               errorMessage = String(response.data.message)
             }
           }
-          
+
           showToast(`Ошибка при изменении статуса цикла: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
-          
+
           // При ошибке 422 откладываем синхронизацию, чтобы избежать rate limiting
           // Используем setTimeout с задержкой и reloadZone, который делает fallback к Inertia reload
           if (is422Error) {
@@ -894,7 +896,7 @@ async function onToggle(): Promise<void> {
               currentStatus,
               action,
             })
-            
+
             // Откладываем синхронизацию на 2 секунды, чтобы избежать rate limiting
             setTimeout(() => {
               if (zoneId.value) {
@@ -922,6 +924,7 @@ async function onToggle(): Promise<void> {
     setLoading('toggle', false)
   }
 }
+*/
 
 function openActionModal(actionType: CommandType): void {
   currentActionType.value = actionType
