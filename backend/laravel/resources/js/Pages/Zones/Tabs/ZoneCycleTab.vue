@@ -1,20 +1,5 @@
 <template>
   <div class="space-y-4">
-    <ZoneCycleActionsBar
-      :status-label="cycleStatusLabel"
-      :status-variant="cycleStatusVariant"
-      :active-grow-cycle-status="activeGrowCycle?.status"
-      :current-phase="currentPhase"
-      :expected-harvest-at="activeGrowCycle?.expected_harvest_at || null"
-      :can-manage-cycle="canManageCycle"
-      :loading="loading"
-      @pause="$emit('pause')"
-      @resume="$emit('resume')"
-      @harvest="$emit('harvest')"
-      @abort="$emit('abort')"
-      @next-phase="$emit('next-phase')"
-    />
-
     <Card>
       <div class="flex items-center justify-between mb-2">
         <div class="text-sm font-semibold">
@@ -27,7 +12,12 @@
             data-testid="recipe-attach-btn"
             @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
           >
-            {{ activeGrowCycle ? 'Сменить ревизию' : 'Запустить цикл' }}
+            <span v-if="!activeGrowCycle" data-testid="zone-start-btn">
+              Запустить цикл
+            </span>
+            <span v-else>
+              Сменить ревизию
+            </span>
           </Button>
         </template>
       </div>
@@ -191,10 +181,12 @@
       :phase-days-total="computedPhaseDaysTotal"
       :can-manage="canManageCycle"
       :loading="loading.cyclePause || loading.cycleResume || loading.cycleHarvest || loading.cycleAbort"
+      :loading-next-phase="loading.nextPhase"
       @pause="$emit('pause')"
       @resume="$emit('resume')"
       @harvest="$emit('harvest')"
       @abort="$emit('abort')"
+      @next-phase="$emit('next-phase')"
     />
   </div>
 </template>
@@ -207,7 +199,6 @@ import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
 import { translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatInterval, formatTimeShort } from '@/utils/formatTime'
 import type { Cycle } from '@/types'
-import ZoneCycleActionsBar from '@/Pages/Zones/ZoneCycleActionsBar.vue'
 
 interface LoadingStateProps {
   cyclePause: boolean

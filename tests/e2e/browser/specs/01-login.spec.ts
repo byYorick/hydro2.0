@@ -20,17 +20,42 @@ test.describe('Login/Logout', () => {
     await page.fill(`[data-testid="${TEST_IDS.LOGIN_PASSWORD}"]`, password);
     await page.click(`[data-testid="${TEST_IDS.LOGIN_SUBMIT}"]`);
 
-    // Ждем редиректа (может быть редирект на / или /dashboard)
+    // Ждем появления признаков авторизации или ошибки
     await page.waitForLoadState('networkidle', { timeout: 15000 });
-    
-    // Проверяем текущий URL и переходим на dashboard если нужно
-    const currentURL = page.url();
-    if (!currentURL.includes('/dashboard')) {
-      await page.goto(`${baseURL}/dashboard`, { waitUntil: 'networkidle' });
+    const dashboardIndicator = page.locator('[data-testid="dashboard-zones-count"]')
+      .or(page.locator('nav a[href="/zones"]'));
+    let authenticated = false;
+
+    for (let i = 0; i < 15; i += 1) {
+      await page.waitForTimeout(1000);
+      const errorVisible = await page.locator(`[data-testid="${TEST_IDS.LOGIN_ERROR}"]`).isVisible().catch(() => false);
+      if (errorVisible) {
+        const errorText = await page.locator(`[data-testid="${TEST_IDS.LOGIN_ERROR}"]`).textContent();
+        throw new Error(`Login failed: ${errorText || 'Unknown error'}`);
+      }
+
+      const dashboardVisible = await dashboardIndicator.first().isVisible().catch(() => false);
+      if (dashboardVisible) {
+        authenticated = true;
+        break;
+      }
     }
 
+    if (!authenticated) {
+      const currentURL = page.url();
+      throw new Error(`Login did not complete. Current URL: ${currentURL}`);
+    }
+
+    // Нормализуем URL на главную (dashboard)
+    await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
+
     // Проверяем, что мы на Dashboard
-    await expect(page.locator('[data-testid="dashboard-zones-count"]').or(page.locator('h1'))).toBeVisible({ timeout: 15000 });
+    const dashboardZones = page.locator('[data-testid="dashboard-zones-count"]');
+    if (await dashboardZones.count() > 0) {
+      await expect(dashboardZones.first()).toBeVisible({ timeout: 15000 });
+    } else {
+      await expect(page.locator('h1').first()).toBeVisible({ timeout: 15000 });
+    }
   });
 
   test('should show error on invalid credentials', async ({ page, context }) => {
@@ -68,11 +93,16 @@ test.describe('Login/Logout', () => {
     const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
     // Используем сохраненное состояние авторизации
-    await page.goto(`${baseURL}/dashboard`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
 
     // Ищем кнопку выхода (может быть в меню пользователя)
     // Проверяем наличие элементов Dashboard для подтверждения авторизации
-    await expect(page.locator('[data-testid="dashboard-zones-count"]').or(page.locator('h1'))).toBeVisible({ timeout: 10000 });
+    const dashboardZones = page.locator('[data-testid="dashboard-zones-count"]');
+    if (await dashboardZones.count() > 0) {
+      await expect(dashboardZones.first()).toBeVisible({ timeout: 10000 });
+    } else {
+      await expect(page.locator('h1').first()).toBeVisible({ timeout: 10000 });
+    }
 
     // Ищем кнопку logout (может быть в UserMenu или другом месте)
     // Если есть явная кнопка logout с data-testid, используем её
@@ -90,4 +120,3 @@ test.describe('Login/Logout', () => {
     }
   });
 });
-

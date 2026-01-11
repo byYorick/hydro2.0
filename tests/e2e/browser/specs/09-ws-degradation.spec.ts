@@ -3,7 +3,7 @@ import { TEST_IDS } from '../constants';
 
 test.describe('WebSocket Degradation', () => {
   test('should show WS connection indicator', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForSelector('h1', { timeout: 15000 });
 
     // Проверяем наличие индикатора WebSocket (может быть в header или на странице)
@@ -21,7 +21,7 @@ test.describe('WebSocket Degradation', () => {
   });
 
   test('should show disconnected state when network is offline', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForSelector('h1', { timeout: 15000 });
 
     // Проверяем начальное состояние
@@ -48,7 +48,7 @@ test.describe('WebSocket Degradation', () => {
   });
 
   test('should reconnect and show connected state when network is restored', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForSelector('h1', { timeout: 15000 });
 
     // Отключаем сеть
@@ -116,4 +116,3 @@ test.describe('WebSocket Degradation', () => {
     }
   });
 });
-

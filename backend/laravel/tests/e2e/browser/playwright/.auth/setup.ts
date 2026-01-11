@@ -29,39 +29,34 @@ setup('authenticate', async ({ page }) => {
   // Отправляем форму
   await page.click('[data-testid="login-submit"]');
   
-  // Ждем навигации (может быть редирект на / или /dashboard)
-  let navigated = false;
-  for (let i = 0; i < 15; i++) {
+  // Ждем появления признаков авторизации (URL может остаться /login из-за preserveUrl)
+  const dashboardIndicator = page.locator('[data-testid="dashboard-zones-count"]')
+    .or(page.locator('nav a[href="/zones"]'));
+  let authenticated = false;
+
+  for (let i = 0; i < 20; i++) {
     await page.waitForTimeout(1000);
-    const currentURL = page.url();
-    
-    // Проверяем наличие ошибки
+
     const errorVisible = await page.locator('[data-testid="login-error"]').isVisible().catch(() => false);
     if (errorVisible) {
       const errorText = await page.locator('[data-testid="login-error"]').textContent();
       throw new Error(`Login failed: ${errorText || 'Unknown error'}`);
     }
-    
-    // Если мы не на странице логина, значит логин прошел
-    if (!currentURL.includes('/login')) {
-      navigated = true;
+
+    const dashboardVisible = await dashboardIndicator.first().isVisible().catch(() => false);
+    if (dashboardVisible) {
+      authenticated = true;
       break;
     }
   }
-  
-  if (!navigated) {
+
+  if (!authenticated) {
     const currentURL = page.url();
-    throw new Error(`Failed to navigate away from login. Current URL: ${currentURL}`);
+    throw new Error(`Login did not complete. Current URL: ${currentURL}`);
   }
-  
-  // Если мы на главной странице, переходим на dashboard
-  const currentURL = page.url();
-  if (currentURL === `${baseURL}/` || currentURL === baseURL) {
-    await page.goto(`${baseURL}/dashboard`, { waitUntil: 'networkidle' });
-  } else if (!currentURL.includes('/dashboard')) {
-    // Если мы на другой странице, переходим на dashboard
-    await page.goto(`${baseURL}/dashboard`, { waitUntil: 'networkidle' });
-  }
+
+  // Нормализуем URL на главную (dashboard)
+  await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
   
   // Ждем загрузки dashboard
   await page.waitForLoadState('networkidle', { timeout: 20000 });

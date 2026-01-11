@@ -79,8 +79,8 @@
             v-if="cycle.status === 'RUNNING'"
             size="sm"
             variant="secondary"
-            :disabled="loading"
-            data-testid="cycle-pause-button"
+            :disabled="loading || loadingNextPhase"
+            data-testid="zone-pause-btn"
             @click="$emit('pause')"
           >
             <template v-if="loading">
@@ -97,8 +97,8 @@
             v-if="cycle.status === 'PAUSED'"
             size="sm"
             variant="secondary"
-            :disabled="loading"
-            data-testid="cycle-resume-button"
+            :disabled="loading || loadingNextPhase"
+            data-testid="zone-resume-btn"
             @click="$emit('resume')"
           >
             <template v-if="loading">
@@ -115,8 +115,8 @@
             v-if="cycle.status === 'RUNNING' || cycle.status === 'PAUSED'"
             size="sm"
             variant="success"
-            :disabled="loading"
-            data-testid="cycle-harvest-button"
+            :disabled="loading || loadingNextPhase"
+            data-testid="zone-harvest-btn"
             @click="$emit('harvest')"
           >
             <template v-if="loading">
@@ -133,7 +133,7 @@
             v-if="cycle.status === 'RUNNING' || cycle.status === 'PAUSED'"
             size="sm"
             variant="danger"
-            :disabled="loading"
+            :disabled="loading || loadingNextPhase"
             @click="$emit('abort')"
           >
             <template v-if="loading">
@@ -144,6 +144,23 @@
               />
             </template>
             Аварийная остановка
+          </Button>
+
+          <Button
+            v-if="cycle.status === 'RUNNING' || cycle.status === 'PAUSED'"
+            size="sm"
+            variant="outline"
+            :disabled="loading || loadingNextPhase"
+            @click="$emit('next-phase')"
+          >
+            <template v-if="loadingNextPhase">
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
+            </template>
+            Следующая фаза
           </Button>
         </div>
       </div>
@@ -262,6 +279,7 @@ interface Props {
   phaseDaysTotal?: number | null
   canManage?: boolean
   loading?: boolean
+  loadingNextPhase?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -273,6 +291,7 @@ const props = withDefaults(defineProps<Props>(), {
   phaseDaysTotal: null,
   canManage: false,
   loading: false,
+  loadingNextPhase: false,
 })
 
 defineEmits<{
@@ -280,6 +299,7 @@ defineEmits<{
   resume: []
   harvest: []
   abort: []
+  'next-phase': []
 }>()
 
 const { api } = useApi()

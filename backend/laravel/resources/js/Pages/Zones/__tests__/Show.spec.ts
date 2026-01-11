@@ -130,15 +130,6 @@ vi.mock('@/Components/ZoneActionModal.vue', () => ({
   },
 }))
 
-vi.mock('@/Components/AttachRecipeModal.vue', () => ({
-  default: { 
-    name: 'AttachRecipeModal', 
-    props: ['show', 'zone'],
-    emits: ['close', 'attached'],
-    template: '<div v-if="show" class="attach-recipe-modal">Attach Recipe</div>',
-  },
-}))
-
 vi.mock('@/Components/AttachNodesModal.vue', () => ({
   default: { 
     name: 'AttachNodesModal', 
@@ -413,7 +404,6 @@ vi.mock('@/composables/useLoading', () => {
   return {
     useLoading: (initialState?: any) => {
       const defaultState = {
-        toggle: false,
         irrigate: false,
         nextPhase: false,
         cycles: {
@@ -522,6 +512,7 @@ describe('Zones/Show.vue', () => {
     axiosGetMock.mockClear()
     axiosPostMock.mockClear()
     fetchHistoryMock.mockClear()
+    usePageMockInstance.props.auth.user.role = 'operator'
     
     // Мокируем window.location для zoneId computed
     Object.defineProperty(window, 'location', {
@@ -623,7 +614,8 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toContain('Климат')
   })
 
-  it('показывает кнопки управления только для операторов и админов', () => {
+  it('показывает кнопки управления для агронома', () => {
+    usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
@@ -662,9 +654,9 @@ describe('Zones/Show.vue', () => {
     expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
-  it('отправляет команду при клике на Pause/Resume', async () => {
+  it('отображает управление циклом для агронома', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
-    
+    usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))

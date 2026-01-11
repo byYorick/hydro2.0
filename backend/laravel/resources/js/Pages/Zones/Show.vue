@@ -14,21 +14,15 @@
         :zone="zone"
         :variant="variant"
         :active-grow-cycle="activeGrowCycle"
-        :active-cycle="activeCycle"
-        :toggle-status="toggleStatus"
         :loading="loading"
         :can-operate-zone="canOperateZone"
-        :growth-cycle-command-status="growthCycleCommandStatus"
         :targets="targets"
         :telemetry="telemetry"
         :computed-phase-progress="computedPhaseProgress"
         :computed-phase-days-elapsed="computedPhaseDaysElapsed"
         :computed-phase-days-total="computedPhaseDaysTotal"
         :events="events"
-        @toggle="onToggle"
         @force-irrigation="openActionModal('FORCE_IRRIGATION')"
-        @next-phase="onNextPhase"
-        @run-cycle="onRunCycle"
         @open-simulation="modals.open('simulation')"
       />
 
@@ -145,7 +139,6 @@ import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useErrorHandler } from '@/composables/useErrorHandler'
-import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
 import { useZonesStore } from '@/stores/zones'
 import { useTelemetryBatch } from '@/composables/useOptimizedUpdates'
 import { useToast } from '@/composables/useToast'
@@ -225,10 +218,8 @@ const selectedNode = ref<any>(null)
 
 // Loading states using useLoading composable
 interface LoadingState extends Record<string, boolean> {
-  toggle: boolean
   irrigate: boolean
   nextPhase: boolean
-  cycleConfig: boolean
   cyclePause: boolean
   cycleResume: boolean
   cycleHarvest: boolean
@@ -237,10 +228,8 @@ interface LoadingState extends Record<string, boolean> {
 }
 
 const { loading, setLoading } = useLoading<LoadingState>({
-  toggle: false,
   irrigate: false,
   nextPhase: false,
-  cycleConfig: false,
   cyclePause: false,
   cycleResume: false,
   cycleHarvest: false,
@@ -251,13 +240,12 @@ const { loading, setLoading } = useLoading<LoadingState>({
 const { showToast } = useToast()
 
 // Инициализация composables с Toast
-const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus, pendingCommands } = useCommands(showToast)
+const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
 const { fetchZone, reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
-const { performUpdate } = useOptimisticUpdate()
 const zonesStore = useZonesStore()
 
 // zoneId должен определяться из URL или props напрямую, без зависимости от zone
@@ -382,10 +370,11 @@ const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
 // События цикла (теперь загружаются внутри CycleControlPanel)
 const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
-const canOperateZone = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
-const canManageDevices = computed(() => ['admin', 'operator'].includes(userRole.value))
-const canManageRecipe = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
-const canManageCycle = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
+const isAgronomist = computed(() => userRole.value === 'agronomist')
+const canOperateZone = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(userRole.value))
+const canManageDevices = computed(() => ['admin', 'operator', 'engineer'].includes(userRole.value))
+const canManageRecipe = computed(() => isAgronomist.value)
+const canManageCycle = computed(() => isAgronomist.value)
 
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
@@ -616,15 +605,6 @@ const cyclesList = computed(() => {
   >
 })
 
-// Функции для отображения статуса команд
-const growthCycleCommandStatus = computed(() => {
-  const activeStatuses = ['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'pending', 'executing', 'completed', 'failed', 'ack']
-  const matching = pendingCommands.value
-    .filter((cmd) => cmd.type === 'GROWTH_CYCLE_CONFIG' && cmd.zoneId === zoneId.value && activeStatuses.includes(cmd.status))
-    .sort((a, b) => b.timestamp - a.timestamp)
-  return matching[0]?.status || null
-})
-
 // Графики: загрузка данных истории
 const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
 type TelemetryRange = typeof telemetryRanges[number]
@@ -822,109 +802,6 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
   }
 })
 
-const toggleStatus = computed(() => {
-  return activeGrowCycle.value?.status || zone.value.status
-})
-
-// Старая функция onToggle отключена. Используйте новую систему управления циклами в CycleControlPanel.
-/*
-async function onToggle(): Promise<void> {
-  if (!zoneId.value) return
-
-  const currentCycle = activeGrowCycle.value
-  if (!currentCycle?.id) {
-    showToast('Нет активного цикла для паузы или возобновления', 'error', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  const currentStatus = toggleStatus.value
-  const isPaused = currentStatus === 'PAUSED'
-  const newStatus = isPaused ? 'RUNNING' : 'PAUSED'
-  const action = isPaused ? 'resume' : 'pause'
-  const actionText = isPaused ? 'возобновлен' : 'приостановлен'
-
-  setLoading('toggle', true)
-
-  // Создаем оптимистичное обновление
-  const optimisticUpdate = createOptimisticZoneUpdate(
-    zonesStore,
-    zoneId.value,
-    { activeGrowCycle: { ...currentCycle, status: newStatus } }
-  )
-
-  try {
-    // Применяем оптимистичное обновление и выполняем операцию на сервере
-    await performUpdate(
-      `zone-toggle-${zoneId.value}-${Date.now()}`,
-      {
-        applyUpdate: optimisticUpdate.applyUpdate,
-        rollback: optimisticUpdate.rollback,
-        syncWithServer: async () => {
-          await api.post(`/api/grow-cycles/${currentCycle.id}/${action}`, {})
-          return await fetchZone(zoneId.value, true)
-        },
-        onSuccess: async (updatedZone) => {
-          showToast(`Цикл успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
-          if (updatedZone?.id) {
-            zonesStore.upsert(updatedZone, false)
-          }
-        },
-        onError: async (error) => {
-          logger.error('Failed to toggle zone:', error)
-          let errorMessage: string = ERROR_MESSAGES.UNKNOWN
-
-          // Проверяем, если это ошибка 422 (Cycle is not paused/running), синхронизируем статус
-          const is422Error = error && typeof error === 'object' && 'response' in error &&
-                           (error as any).response?.status === 422
-
-          if (error && typeof error === 'object' && 'message' in error) {
-            errorMessage = String(error.message)
-          } else if (is422Error && error && typeof error === 'object' && 'response' in error) {
-            const response = (error as any).response
-            if (response?.data?.message) {
-              errorMessage = String(response.data.message)
-            }
-          }
-
-          showToast(`Ошибка при изменении статуса цикла: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
-
-          // При ошибке 422 откладываем синхронизацию, чтобы избежать rate limiting
-          // Используем setTimeout с задержкой и reloadZone, который делает fallback к Inertia reload
-          if (is422Error) {
-            logger.info('[Zones/Show] Status mismatch detected, will sync zone from server with delay', {
-              zoneId: zoneId.value,
-              currentStatus,
-              action,
-            })
-
-            // Откладываем синхронизацию на 2 секунды, чтобы избежать rate limiting
-            setTimeout(() => {
-              if (zoneId.value) {
-                logger.info('[Zones/Show] Syncing zone status from server after delay', {
-                  zoneId: zoneId.value,
-                })
-                // Используем reloadZone вместо fetchZone - он делает fallback к Inertia reload при ошибке
-                reloadZone(zoneId.value, ['zone']).catch((syncError) => {
-                  logger.error('[Zones/Show] Failed to sync zone status after validation error:', syncError)
-                  // Если и reloadZone не помог, просто логируем ошибку
-                  // Пользователь может обновить страницу вручную
-                })
-              }
-            }, 2000)
-          }
-        },
-        showLoading: false, // Управляем loading вручную
-        timeout: 10000, // 10 секунд таймаут
-      }
-    )
-  } catch (err) {
-    // Ошибка уже обработана в onError callback
-    logger.error('Failed to toggle zone (unhandled):', err)
-  } finally {
-    setLoading('toggle', false)
-  }
-}
-*/
 
 function openActionModal(actionType: CommandType): void {
   currentActionType.value = actionType
@@ -934,7 +811,7 @@ function openActionModal(actionType: CommandType): void {
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
   
-  setLoading('cycleConfig', true)
+  setLoading('irrigate', true)
   
   const actionNames: Record<CommandType, string> = {
     'FORCE_IRRIGATION': 'Полив',
@@ -959,7 +836,7 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
   } finally {
-    setLoading('cycleConfig', false)
+    setLoading('irrigate', false)
   }
 }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CycleCenterController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
@@ -836,6 +837,35 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             'activeAlerts' => $activeAlerts,
         ]);
     })->name('greenhouses.show');
+
+    /**
+     * Cycle Center - основной операционный экран циклов выращивания
+     */
+    Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
+
+    /**
+     * Grow Cycle Wizard - мастер запуска цикла выращивания
+     *
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
+     */
+    Route::get('/grow-cycle-wizard', function () {
+        return Inertia::render('GrowCycles/Wizard', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('grow-cycle-wizard');
+
+    /**
+     * Analytics - страница аналитики и отчетов
+     *
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
+     */
+    Route::get('/analytics', function () {
+        return Inertia::render('Analytics/Index', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('analytics');
 
     /**
      * Zones routes
@@ -1952,6 +1982,3 @@ if (app()->environment('testing')) {
         return redirect()->intended('/');
     })->name('testing.login');
 }
-
-// Подключаем дополнительные файлы маршрутов
-require __DIR__.'/web/greenhouses-zones.php';

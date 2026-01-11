@@ -44,25 +44,6 @@
         </div>
         <div class="flex flex-wrap items-center gap-2 justify-end">
           <template v-if="canOperateZone">
-            <!-- Старая система управления зоной отключена. Используйте панель управления циклами в разделе "Цикл" -->
-            <Button
-              size="sm"
-              variant="secondary"
-              :disabled="true"
-              class="flex-1 sm:flex-none min-w-[140px]"
-              :data-testid="toggleStatus === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'"
-              @click="$emit('toggle')"
-            >
-              <template v-if="loading.toggle">
-                <LoadingState
-                  loading
-                  size="sm"
-                  :container-class="'inline-flex mr-2'"
-                />
-              </template>
-              <span class="hidden sm:inline">{{ toggleStatus === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
-              <span class="sm:hidden">{{ toggleStatus === 'PAUSED' ? '▶' : '⏸' }}</span>
-            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -81,56 +62,6 @@
               <span class="hidden sm:inline">Полить сейчас</span>
               <span class="sm:hidden">💧</span>
             </Button>
-            <Button
-              size="sm"
-              :disabled="loading.nextPhase"
-              class="flex-1 sm:flex-none"
-              data-testid="next-phase-button"
-              @click="$emit('next-phase')"
-            >
-              <template v-if="loading.nextPhase">
-                <LoadingState
-                  loading
-                  size="sm"
-                  :container-class="'inline-flex mr-2'"
-                />
-              </template>
-              <span class="hidden sm:inline">Следующая фаза</span>
-              <span class="sm:hidden">⏭</span>
-            </Button>
-            <Button
-              v-if="!activeCycle"
-              size="sm"
-              class="flex-1 sm:flex-none"
-              :disabled="loading.cycleConfig"
-              @click="$emit('run-cycle')"
-            >
-              Запустить цикл выращивания
-            </Button>
-            <Button
-              v-else
-              size="sm"
-              variant="outline"
-              class="flex-1 sm:flex-none"
-              :disabled="loading.cycleConfig"
-              @click="$emit('run-cycle')"
-            >
-              Настройки цикла
-            </Button>
-            <div
-              v-if="growthCycleCommandStatus"
-              class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)] w-full"
-            >
-              <div
-                class="w-1.5 h-1.5 rounded-full"
-                :class="{
-                  'bg-[color:var(--accent-amber)] animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(growthCycleCommandStatus || ''),
-                  'bg-[color:var(--accent-green)]': ['DONE', 'completed', 'ack'].includes(growthCycleCommandStatus || ''),
-                  'bg-[color:var(--accent-red)]': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(growthCycleCommandStatus || '')
-                }"
-              ></div>
-              <span>{{ getCommandStatusText(growthCycleCommandStatus) }}</span>
-            </div>
           </template>
           <Button
             size="sm"
@@ -178,7 +109,7 @@
           :started-at="activeGrowCycle.started_at"
         />
         <div
-          v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'"
+          v-else-if="activeGrowCycle || zone.status === 'RUNNING'"
           class="text-center py-6"
         >
           <div class="text-4xl mb-2">
@@ -276,21 +207,15 @@ import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/type
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
 interface OverviewLoadingState {
-  toggle: boolean
   irrigate: boolean
-  nextPhase: boolean
-  cycleConfig: boolean
 }
 
 interface Props {
   zone: Zone
   variant: 'success' | 'neutral' | 'warning' | 'danger'
   activeGrowCycle?: any
-  activeCycle?: any
-  toggleStatus: string
   loading: OverviewLoadingState
   canOperateZone: boolean
-  growthCycleCommandStatus: string | null
   targets: ZoneTargetsType
   telemetry: ZoneTelemetry
   computedPhaseProgress: number | null
@@ -300,10 +225,7 @@ interface Props {
 }
 
 defineEmits<{
-  (e: 'toggle'): void
   (e: 'force-irrigation'): void
-  (e: 'next-phase'): void
-  (e: 'run-cycle'): void
   (e: 'open-simulation'): void
 }>()
 
@@ -324,22 +246,4 @@ function getEventVariant(kind: string): 'danger' | 'warning' | 'info' | 'neutral
   return 'neutral'
 }
 
-function getCommandStatusText(status: string | null): string {
-  if (!status) return ''
-  const texts: Record<string, string> = {
-    'QUEUED': 'В очереди',
-    'SENT': 'Отправлено',
-    'ACCEPTED': 'Принято',
-    'DONE': 'Выполнено',
-    'FAILED': 'Ошибка',
-    'TIMEOUT': 'Таймаут',
-    'SEND_FAILED': 'Ошибка отправки',
-    'pending': 'Ожидание...',
-    'executing': 'Выполняется...',
-    'completed': 'Выполнено',
-    'ack': 'Выполнено',
-    'failed': 'Ошибка'
-  }
-  return texts[status] || status
-}
 </script>

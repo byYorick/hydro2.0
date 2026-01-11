@@ -75,9 +75,13 @@ test.describe('Grow Cycle Recipe', () => {
       console.log('Failed to create grow cycle:', e);
     }
     
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}?tab=cycle`, { waitUntil: 'networkidle' });
     await page.waitForLoadState('networkidle', { timeout: 20000 });
-    await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    const cycleTab = page.getByRole('tab', { name: /Цикл/i });
+    await expect(cycleTab).toBeVisible({ timeout: 15000 });
+    await cycleTab.click();
+
+    await page.getByText('Рецепт', { exact: true }).waitFor({ timeout: 15000 });
     await page.waitForTimeout(2000);
 
     // Проверяем наличие фаз ревизии рецепта (может быть в разных форматах)
@@ -92,7 +96,7 @@ test.describe('Grow Cycle Recipe', () => {
       await expect(phase0.first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если фазы не найдены, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      await expect(page.getByText('Рецепт', { exact: true })).toBeVisible();
     }
     if (await phase1.count() > 0) {
       await expect(phase1.first()).toBeVisible({ timeout: 5000 });

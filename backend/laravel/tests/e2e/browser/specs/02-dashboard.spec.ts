@@ -3,7 +3,7 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Dashboard Overview', () => {
   test('should display zones count card', async ({ page, testZone }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     
     // Ждем загрузки страницы и данных
     await page.waitForLoadState('networkidle', { timeout: 20000 });
@@ -43,7 +43,7 @@ test.describe('Dashboard Overview', () => {
     const zone3 = await apiHelper.createTestZone(greenhouse.id, { status: 'PAUSED' });
 
     try {
-      await page.goto('/dashboard', { waitUntil: 'networkidle' });
+      await page.goto('/', { waitUntil: 'networkidle' });
       await page.waitForLoadState('networkidle', { timeout: 20000 });
       await page.waitForSelector('h1', { timeout: 15000 });
       await page.waitForTimeout(3000); // Даем время на загрузку данных
@@ -99,7 +99,7 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display alerts count', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     
     // Ждем загрузки страницы
     await page.waitForLoadState('networkidle', { timeout: 20000 });
@@ -128,7 +128,7 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display events panel', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     
     // Ждем загрузки страницы
     await page.waitForLoadState('networkidle', { timeout: 20000 });
@@ -157,33 +157,28 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should filter events by kind', async ({ page }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForSelector('h1', { timeout: 15000 });
 
     // Проверяем наличие панели событий
     const eventsPanel = page.locator(`[data-testid="${TEST_IDS.DASHBOARD_EVENTS_PANEL}"]`);
-    if (await eventsPanel.count() === 0) {
-      // Если панель не найдена, пропускаем тест
-      test.skip();
-      return;
-    }
+    await expect(eventsPanel).toBeVisible({ timeout: 15000 });
 
     // Проверяем наличие фильтров событий
     const allFilter = page.locator(`[data-testid="${TEST_IDS.DASHBOARD_EVENT_FILTER('ALL')}"]`);
     const alertFilter = page.locator(`[data-testid="${TEST_IDS.DASHBOARD_EVENT_FILTER('ALERT')}"]`);
     
-    if (await allFilter.count() > 0 && await alertFilter.count() > 0) {
-      await expect(allFilter).toBeVisible();
-      await expect(alertFilter).toBeVisible();
-      
-      // Кликаем на фильтр ALERT
-      await alertFilter.click();
-      await page.waitForTimeout(1000);
-    }
+    await expect(allFilter).toBeVisible();
+    await expect(alertFilter).toBeVisible();
+    
+    // Кликаем на фильтр ALERT
+    await alertFilter.click();
+    await page.waitForTimeout(1000);
   });
 
   test('should navigate to zone detail on zone card click', async ({ page, testZone, testGreenhouse }) => {
-    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForSelector('h1', { timeout: 15000 });
 
     // Ждем появления карточки зоны (может быть в разных местах)
@@ -216,4 +211,3 @@ test.describe('Dashboard Overview', () => {
     await expect(statusBadge.first()).toBeVisible({ timeout: 10000 });
   });
 });
-

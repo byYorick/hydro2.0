@@ -8,8 +8,8 @@ test.describe('UI Smoke Tests - No 500 Errors', () => {
       'X-Inertia-Version': '1',
     });
 
-    // Переходим на Dashboard (требует авторизации, поэтому ожидаем редирект)
-    const response = await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    // Переходим на главную (dashboard, требует авторизации, поэтому ожидаем редирект)
+    const response = await page.goto('/', { waitUntil: 'networkidle' });
 
     // Проверяем, что получаем редирект на login (302) или что нет 500 ошибки
     if (response?.status() === 302) {

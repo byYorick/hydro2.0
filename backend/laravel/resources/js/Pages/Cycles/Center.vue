@@ -16,7 +16,7 @@
           </div>
           <div class="flex flex-wrap gap-2">
             <Button
-              v-if="canConfigure"
+              v-if="canManageCycle"
               size="sm"
               variant="secondary"
               @click="router.visit('/recipes')"
@@ -24,7 +24,7 @@
               Фазы и рецепты
             </Button>
             <Button
-              v-if="canConfigure"
+              v-if="canManageCycle"
               size="sm"
               @click="router.visit('/grow-cycle-wizard')"
             >
@@ -306,9 +306,9 @@
           </div>
 
           <div class="flex flex-wrap gap-2">
-            <template v-if="canOperate && zone.cycle">
+            <template v-if="zone.cycle">
               <Button
-                v-if="zone.cycle.status === 'RUNNING'"
+                v-if="canManageCycle && zone.cycle.status === 'RUNNING'"
                 size="sm"
                 variant="secondary"
                 :disabled="isActionLoading(zone.id, 'pause')"
@@ -317,7 +317,7 @@
                 {{ isActionLoading(zone.id, 'pause') ? 'Пауза...' : 'Пауза' }}
               </Button>
               <Button
-                v-else-if="zone.cycle.status === 'PAUSED'"
+                v-else-if="canManageCycle && zone.cycle.status === 'PAUSED'"
                 size="sm"
                 variant="secondary"
                 :disabled="isActionLoading(zone.id, 'resume')"
@@ -326,6 +326,7 @@
                 {{ isActionLoading(zone.id, 'resume') ? 'Запуск...' : 'Возобновить' }}
               </Button>
               <Button
+                v-if="canIssueZoneCommands"
                 size="sm"
                 variant="outline"
                 @click="openActionModal(zone, 'FORCE_IRRIGATION')"
@@ -333,6 +334,7 @@
                 Промывка
               </Button>
               <Button
+                v-if="canManageCycle"
                 size="sm"
                 variant="secondary"
                 :disabled="isActionLoading(zone.id, 'harvest')"
@@ -341,6 +343,7 @@
                 {{ isActionLoading(zone.id, 'harvest') ? 'Фиксация...' : 'Сбор' }}
               </Button>
               <Button
+                v-if="canManageCycle"
                 size="sm"
                 variant="outline"
                 :disabled="isActionLoading(zone.id, 'abort')"
@@ -349,7 +352,7 @@
                 Стоп
               </Button>
             </template>
-            <template v-else-if="canConfigure && !zone.cycle">
+            <template v-else-if="canManageCycle && !zone.cycle">
               <Button
                 size="sm"
                 @click="router.visit('/grow-cycle-wizard')"
@@ -358,7 +361,6 @@
               </Button>
             </template>
             <Button
-              v-if="canConfigure"
               size="sm"
               variant="ghost"
               @click="router.visit(`/zones/${zone.id}`)"
@@ -523,8 +525,8 @@ interface Props {
 const props = defineProps<Props>()
 const page = usePage()
 const role = computed(() => (page.props.auth as any)?.user?.role || 'viewer')
-const canOperate = computed(() => ['admin', 'operator'].includes(role.value))
-const canConfigure = computed(() => ['admin', 'agronomist'].includes(role.value))
+const canManageCycle = computed(() => role.value === 'agronomist')
+const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
 const query = ref('')
 const statusFilter = ref('')
