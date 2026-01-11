@@ -87,12 +87,22 @@ class DatabaseSeeder extends Seeder
         $this->command->info('⚙️  Режим разработки: '.($isDevelopment ? 'Да' : 'Нет'));
         $this->command->info('🧪 Режим тестирования: '.($isTesting ? 'Да' : 'Нет'));
 
+        $seedProfile = config('hydro.seed_profile');
+        $seedProfile = $seedProfile ? strtolower($seedProfile) : 'full';
+        $this->command->info("🧩 Профиль сидеров: {$seedProfile}");
+
+        if ($seedProfile === 'lite') {
+            $this->runLiteSeeders($isTesting);
+
+            return;
+        }
+
         // Выполняем группы сидеров
         $totalSeeders = 0;
         $executedSeeders = 0;
 
         foreach ($this->seederGroups as $groupName => $groupConfig) {
-            $seeders = $this->filterSeedersByEnvironment($groupConfig['seeders'], $isDevelopment, $isTesting);
+            $seeders = $this->filterSeedersByEnvironment($groupConfig['seeders'], $groupName, $isDevelopment, $isTesting);
 
             if (empty($seeders)) {
                 continue;
@@ -129,12 +139,11 @@ class DatabaseSeeder extends Seeder
     /**
      * Фильтрация сидеров по окружению
      */
-    private function filterSeedersByEnvironment(array $seeders, bool $isDevelopment, bool $isTesting): array
+    private function filterSeedersByEnvironment(array $seeders, string $groupName, bool $isDevelopment, bool $isTesting): array
     {
-        // Все critical сидеры выполняются всегда
-        // Infrastructure и business_logic только в development
-        // Operational_data, analytics, logs_and_archives только в development
-        // E2E сидеры только в testing
+        if ($groupName === 'critical') {
+            return $seeders;
+        }
 
         return array_filter($seeders, function ($seeder) use ($isDevelopment, $isTesting) {
             // E2E сидеры только для тестирования
@@ -145,6 +154,25 @@ class DatabaseSeeder extends Seeder
             // Остальные сидеры только для разработки
             return $isDevelopment;
         });
+    }
+
+    private function runLiteSeeders(bool $isTesting): void
+    {
+        $this->command->info('⚡ Запуск облегченного набора сидеров');
+
+        $seeders = [
+            LiteAutomationSeeder::class,
+        ];
+
+        foreach ($seeders as $seederClass) {
+            $this->call($seederClass);
+        }
+
+        if ($isTesting) {
+            $this->executeSpecialSeeders();
+        }
+
+        $this->command->info('✅ Облегченный набор сидеров выполнен');
     }
 
     /**
