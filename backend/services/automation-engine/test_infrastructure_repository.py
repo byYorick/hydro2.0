@@ -163,11 +163,13 @@ async def test_get_zone_asset_instances():
 async def test_get_zone_bindings_by_role_with_circuit_breaker():
     """Test getting bindings with circuit breaker."""
     from infrastructure.circuit_breaker import CircuitBreaker
+    from prometheus_client import CollectorRegistry
     
     circuit_breaker = CircuitBreaker(
         name="test_db",
         failure_threshold=5,
-        timeout=60
+        timeout=60,
+        registry=CollectorRegistry()
     )
     repo = InfrastructureRepository(db_circuit_breaker=circuit_breaker)
     

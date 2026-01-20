@@ -95,11 +95,13 @@ async def test_get_zones_grow_cycles_batch():
 async def test_get_active_grow_cycle_with_circuit_breaker():
     """Test getting active grow cycle with circuit breaker."""
     from infrastructure.circuit_breaker import CircuitBreaker
+    from prometheus_client import CollectorRegistry
     
     circuit_breaker = CircuitBreaker(
         name="test_db",
         failure_threshold=5,
-        timeout=60
+        timeout=60,
+        registry=CollectorRegistry()
     )
     repo = GrowCycleRepository(db_circuit_breaker=circuit_breaker)
     

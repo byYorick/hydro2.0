@@ -37,6 +37,7 @@ async def test_correction_controller_uses_pid_config_from_db():
     }
     
     controller = CorrectionController(correction_type)
+    invalidate_cache(zone_id, correction_type.value)
     
     with patch('services.pid_config_service.fetch', new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = [{'config': db_config, 'updated_at': datetime.utcnow()}]
@@ -46,7 +47,7 @@ async def test_correction_controller_uses_pid_config_from_db():
             mock_should.return_value = (True, 'test')
             with patch('correction_controller.create_zone_event', new_callable=AsyncMock):
                 with patch('correction_controller.record_correction', new_callable=AsyncMock):
-                    targets = {'ph': 6.0}
+                    targets = {'ph': {'target': 6.0}}
                     telemetry = {'PH': 6.8}  # Отклонение 0.8
                     nodes = {}
                     actuators = {
@@ -89,7 +90,7 @@ async def test_pid_output_event_created():
             create_event_mock = AsyncMock()
             with patch('correction_controller.create_zone_event', create_event_mock):
                 with patch('correction_controller.record_correction', new_callable=AsyncMock):
-                    targets = {'ph': 6.0}
+                    targets = {'ph': {'target': 6.0}}
                     telemetry = {'PH': 7.0}  # Большое отклонение
                     nodes = {}
                     actuators = {

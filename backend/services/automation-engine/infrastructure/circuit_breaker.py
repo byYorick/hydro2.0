@@ -6,7 +6,7 @@ import time
 import logging
 from enum import Enum
 from typing import Callable, Awaitable, TypeVar, Optional, Any
-from prometheus_client import Gauge, Counter
+from prometheus_client import Gauge, Counter, CollectorRegistry, REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,8 @@ class CircuitBreaker:
         name: str,
         failure_threshold: int = 5,
         timeout: float = 60.0,
-        half_open_max_calls: int = 3
+        half_open_max_calls: int = 3,
+        registry: Optional[CollectorRegistry] = None
     ):
         """
         Инициализация Circuit Breaker.
@@ -55,6 +56,7 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.timeout = timeout
         self.half_open_max_calls = half_open_max_calls
+        self.registry = registry or REGISTRY
         
         self.state = CircuitState.CLOSED
         self.failure_count = 0
@@ -66,17 +68,20 @@ class CircuitBreaker:
         self.state_gauge = Gauge(
             f"circuit_breaker_state_{name}",
             f"Circuit breaker state for {name} (0=CLOSED, 1=OPEN, 2=HALF_OPEN)",
-            ["component"]
+            ["component"],
+            registry=self.registry
         )
         self.failures_counter = Counter(
             f"circuit_breaker_failures_total_{name}",
             f"Circuit breaker failures for {name}",
-            ["component"]
+            ["component"],
+            registry=self.registry
         )
         self.requests_blocked_counter = Counter(
             f"circuit_breaker_requests_blocked_total_{name}",
             f"Blocked requests for {name}",
-            ["component"]
+            ["component"],
+            registry=self.registry
         )
     
     async def call(self, func: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
@@ -202,5 +207,4 @@ class CircuitBreaker:
     def is_open(self) -> bool:
         """Проверить, открыт ли Circuit Breaker."""
         return self.state == CircuitState.OPEN
-
 

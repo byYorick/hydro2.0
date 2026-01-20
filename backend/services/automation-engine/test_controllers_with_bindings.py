@@ -1,20 +1,12 @@
 """Tests for controllers with bindings support."""
 import pytest
-import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+import sys
+from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
-
-# Mock common modules before importing controllers
-sys.modules['common'] = MagicMock()
-sys.modules['common.db'] = MagicMock()
-sys.modules['common.utils'] = MagicMock()
-sys.modules['common.utils.time'] = MagicMock()
-sys.modules['common.water_flow'] = MagicMock()
-sys.modules['common.alerts'] = MagicMock()
 
 from climate_controller import (
     check_and_control_climate,
