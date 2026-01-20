@@ -341,10 +341,16 @@ class TestImprovedLogging:
     async def test_structured_logging_on_database_error(self):
         """Тест структурированного логирования при ошибке БД."""
         from telemetry_processing import process_telemetry_batch
+        from telemetry_processing import _node_cache, _zone_cache
         from models import TelemetrySampleModel
         from unittest.mock import AsyncMock, patch
         import logging
-        
+
+        _node_cache.clear()
+        _zone_cache.clear()
+        _node_cache[("nd-ph-1", None)] = (1, 1)
+        _zone_cache[("zn-1", None)] = 1
+
         samples = [
             TelemetrySampleModel(
                 node_uid="nd-ph-1",

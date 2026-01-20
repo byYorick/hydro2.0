@@ -146,6 +146,7 @@ import {
   calculateCycleProgress,
   type GrowStage,
 } from '@/utils/growStages'
+import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import type { Zone, ZoneTelemetry, ZoneTargets } from '@/types'
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
@@ -216,23 +217,18 @@ const cycleProgress = computed<number | null>(() => {
     if (currentPhase && phases.length > 0 && cycle.started_at) {
       const phaseIndex = currentPhase.phase_index ?? -1
       if (phaseIndex >= 0) {
-        // Вычисляем прогресс на основе времени
-        const startedAt = new Date(cycle.started_at)
-        const now = new Date()
-        const phaseStartedAt = cycle.phase_started_at ? new Date(cycle.phase_started_at) : startedAt
-        
-        // Вычисляем длительность текущей фазы
-        const durationHours = currentPhase.duration_hours || (currentPhase.duration_days ? currentPhase.duration_days * 24 : 0)
-        const phaseEndAt = new Date(phaseStartedAt.getTime() + durationHours * 60 * 60 * 1000)
-        
-        const totalMs = phaseEndAt.getTime() - phaseStartedAt.getTime()
-        const elapsedMs = now.getTime() - phaseStartedAt.getTime()
-        const phaseProgress = totalMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100)) : 0
+        const startedAt = cycle.started_at
+        const phaseStartedAt = cycle.phase_started_at || startedAt
+        const phaseProgress = calculateProgressFromDuration(
+          phaseStartedAt,
+          currentPhase.duration_hours,
+          currentPhase.duration_days
+        ) ?? 0
         
         return calculateCycleProgress(
           phaseIndex,
           phases,
-          cycle.started_at,
+          startedAt,
           phaseProgress
         )
       }

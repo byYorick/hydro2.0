@@ -205,17 +205,17 @@ def temp_status(node_uid_or_hw: str) -> str:
     return f"hydro/gh-temp/zn-temp/{node_uid_or_hw}/status"
 
 
-def temp_config_report(node_uid: str) -> str:
+def temp_config_report(node_uid_or_hw: str) -> str:
     """
     Генерирует временный топик для config_report (до привязки к зоне).
     
     Args:
-        node_uid: UID узла (nodes.uid)
+        node_uid_or_hw: UID узла или hardware_id
     
     Returns:
-        Топик в формате: hydro/gh-temp/zn-temp/{node_uid}/config_report
+        Топик в формате: hydro/gh-temp/zn-temp/{node_uid_or_hw}/config_report
     """
-    return f"hydro/gh-temp/zn-temp/{node_uid}/config_report"
+    return f"hydro/gh-temp/zn-temp/{node_uid_or_hw}/config_report"
 
 
 # Дополнительные функции для полноты (не указаны в требованиях, но могут быть полезны)

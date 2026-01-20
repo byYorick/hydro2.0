@@ -80,11 +80,17 @@ async def test_batch_upsert_telemetry_last():
     """Тест batch upsert для telemetry_last."""
     with patch('telemetry_processing.fetch') as mock_fetch, \
          patch('telemetry_processing.execute') as mock_execute:
-        
+
         mock_fetch.return_value = [
             {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
         ]
-        
+
+        _zone_cache.clear()
+        _node_cache.clear()
+        tp._cache_last_update = time.time()
+        _zone_cache[('zn-1', 'gh-1')] = 1
+        _node_cache[('nd-1', 'gh-1')] = (10, 1)
+
         samples = [
             TelemetrySampleModel(
                 zone_uid='zn-1',
@@ -97,7 +103,7 @@ async def test_batch_upsert_telemetry_last():
         ]
 
         _sensor_cache.clear()
-        _sensor_cache[(1, None, "TEMPERATURE", "TEMPERATURE")] = 101
+        _sensor_cache[(1, 10, "TEMPERATURE", "TEMPERATURE")] = 101
         
         await process_telemetry_batch(samples)
         

@@ -1,0 +1,273 @@
+# E03: Node Setup (Preconfig) - Полный цикл добавления новой ноды
+# DoD: нода регистрируется в setup режиме, назначается зоне и отправляет фронтовое событие
+
+name: E03_node_setup_preconfig
+description: |
+  Проверяет полный цикл добавления новой ноды:
+  - node-sim стартует в preconfig
+  - отправляется node_hello в общий топик
+  - нода регистрируется в БД без привязки к зоне
+  - фронтенд получает событие device.updated
+  - нода назначается зоне
+  - config_report (temp) завершает привязку и переводит ноду в ASSIGNED_TO_ZONE
+
+setup:
+  prerequisites:
+    - backend: Laravel is running
+    - mqtt: broker is accessible
+    - database: nodes table exists
+    - websocket: WebSocket server is running
+
+actions:
+  - step: set_test_identifiers
+    type: set
+    test_hardware_id: h${TIMESTAMP_S}
+    test_node_uid_seed: nd-setup-${TIMESTAMP_S}
+    test_gh_uid: gh-test-1
+    test_zone_uid: zn-test-1
+
+  - step: build_node_sim_config
+    type: set
+    node_sim:
+      config:
+        mqtt:
+          host: ${MQTT_HOST:-localhost}
+          port: ${MQTT_PORT:-1884}
+          username: ${MQTT_USER:-null}
+          password: ${MQTT_PASS:-null}
+        node:
+          gh_uid: ${test_gh_uid}
+          zone_uid: ${test_zone_uid}
+          node_uid: ${test_node_uid_seed}
+          hardware_id: ${test_hardware_id}
+          node_type: ph
+          mode: preconfig
+          channels:
+            - ph_sensor
+            - solution_temp_c
+          actuators:
+            - main_pump
+        telemetry:
+          interval_seconds: 2.0
+          heartbeat_interval_seconds: 15.0
+
+  - step: connect_websocket
+    type: websocket_connect
+
+  - step: subscribe_devices_channel
+    type: websocket_subscribe
+    channel: private-hydro.devices
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  - step: node_sends_node_hello
+    type: mqtt_publish
+    topic: hydro/node_hello
+    qos: 1
+    payload:
+      message_type: node_hello
+      hardware_id: ${test_hardware_id}
+      node_type: ph
+      fw_version: 2.0.0-sim
+      capabilities:
+        - ph
+        - temperature
+    wait_seconds: 2
+
+  - step: wait_for_device_created_event
+    type: websocket_event
+    event_type: device.updated
+    lookback_messages: 50
+    timeout_seconds: 30.0
+    save: device_created_event
+
+  - step: db_lookup_node
+    type: database_query
+    query: |
+      SELECT id, uid, hardware_id
+      FROM nodes
+      WHERE hardware_id = :hardware_id
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      hardware_id: ${test_hardware_id}
+    expected_rows: 1
+    save: node_row
+
+  - step: set_node_identity
+    type: set
+    node_id: ${node_row.0.id}
+    node_uid: ${node_row.0.uid}
+
+  - step: wait_for_registered_state
+    type: db_wait
+    query: |
+      SELECT id, zone_id, pending_zone_id, lifecycle_state
+      FROM nodes
+      WHERE id = :node_id
+        AND zone_id IS NULL
+        AND lifecycle_state = 'REGISTERED_BACKEND'
+    params:
+      node_id: ${node_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: registered_row
+
+  - step: fetch_unassigned_nodes
+    type: api_get
+    endpoint: /api/nodes
+    params:
+      unassigned: true
+      search: ${node_uid}
+    save: unassigned_nodes
+
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_row
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: assign_node_to_zone
+    type: api_patch
+    endpoint: /api/nodes/${node_id}
+    payload:
+      zone_id: ${zone_id}
+    wait_seconds: 2
+
+  - step: wait_for_device_assigned_event
+    type: websocket_event
+    event_type: device.updated
+    lookback_messages: 50
+    timeout_seconds: 30.0
+    save: device_assigned_event
+
+  - step: node_sends_config_report
+    type: mqtt_publish
+    topic: hydro/gh-temp/zn-temp/${test_hardware_id}/config_report
+    qos: 1
+    payload:
+      node_id: ${test_hardware_id}
+      version: 3
+      type: ph_node
+      gh_uid: gh-temp
+      zone_uid: zn-temp
+      channels:
+        - name: ph_sensor
+          type: SENSOR
+          metric: PH
+        - name: solution_temp_c
+          type: SENSOR
+          metric: TEMPERATURE
+        - name: main_pump
+          type: ACTUATOR
+          actuator_type: PUMP
+      wifi:
+        configured: true
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+    wait_seconds: 2
+
+  - step: wait_for_binding_completed
+    type: db_wait
+    query: |
+      SELECT id, zone_id, pending_zone_id, lifecycle_state
+      FROM nodes
+      WHERE id = :node_id
+        AND zone_id = :zone_id
+        AND pending_zone_id IS NULL
+        AND lifecycle_state = 'ASSIGNED_TO_ZONE'
+    params:
+      node_id: ${node_id}
+      zone_id: ${zone_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: binding_row
+
+  - step: fetch_unassigned_nodes_after
+    type: api_get
+    endpoint: /api/nodes
+    params:
+      unassigned: true
+      search: ${node_uid}
+    save: unassigned_nodes_after
+
+assertions:
+  - name: device_created_event_payload
+    type: json_assertion
+    source: device_created_event
+    path: data.device
+    expected:
+      - field: hardware_id
+        operator: equals
+        value: ${test_hardware_id}
+      - field: zone_id
+        operator: equals
+        value: null
+
+  - name: device_assigned_event_payload
+    type: json_assertion
+    source: device_assigned_event
+    path: data.device
+    expected:
+      - field: hardware_id
+        operator: equals
+        value: ${test_hardware_id}
+
+  - name: node_registered_in_setup_mode
+    type: custom_assert
+    condition: >-
+      context.get('registered_row', [{}])[0].get('lifecycle_state') == 'REGISTERED_BACKEND'
+      and context.get('registered_row', [{}])[0].get('zone_id') is None
+      and context.get('registered_row', [{}])[0].get('pending_zone_id') is None
+
+  - name: unassigned_api_has_results
+    type: json_assertion
+    source: unassigned_nodes
+    path: data.data
+    expected:
+      - field: length
+        operator: greater_than
+        value: 0
+
+  - name: unassigned_api_returns_node
+    type: json_assertion
+    source: unassigned_nodes
+    path: data.data[0]
+    expected:
+      - field: uid
+        operator: equals
+        value: ${node_uid}
+
+  - name: node_binding_completed
+    type: custom_assert
+    condition: >-
+      context.get('binding_row', [{}])[0].get('zone_id') == context.get('zone_id')
+      and context.get('binding_row', [{}])[0].get('pending_zone_id') is None
+      and context.get('binding_row', [{}])[0].get('lifecycle_state') == 'ASSIGNED_TO_ZONE'
+
+  - name: unassigned_api_excludes_node_after_binding
+    type: json_assertion
+    source: unassigned_nodes_after
+    path: data.data
+    expected:
+      - field: length
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator

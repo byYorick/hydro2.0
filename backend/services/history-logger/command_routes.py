@@ -134,7 +134,6 @@ async def publish_zone_command(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                ON CONFLICT (cmd_id) DO NOTHING
                 """,
                 zone_id,
                 node_id,
@@ -367,7 +366,6 @@ async def publish_node_command(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                ON CONFLICT (cmd_id) DO NOTHING
                 """,
                 req.zone_id,
                 node_id,
@@ -623,7 +621,6 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                ON CONFLICT (cmd_id) DO NOTHING
                 """,
                 req.zone_id,
                 node_id,

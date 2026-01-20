@@ -11,6 +11,8 @@ help:
 	@echo "  up             - start dev stack (backend/docker-compose.dev.yml)"
 	@echo "  down           - stop dev stack"
 	@echo "  migrate        - run Laravel migrations"
+	@echo "  seed           - run Laravel seeders"
+	@echo "  reset-db       - reset DB (migrate:fresh --seed)"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
@@ -29,6 +31,14 @@ down:
 .PHONY: migrate
 migrate: up
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate
+
+.PHONY: seed
+seed: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed
+
+.PHONY: reset-db
+reset-db: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate:fresh --seed
 
 .PHONY: test
 test: up

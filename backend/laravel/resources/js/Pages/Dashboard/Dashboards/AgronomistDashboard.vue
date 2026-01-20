@@ -405,6 +405,7 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import MetricCard from '@/Components/MetricCard.vue'
 import { translateStatus } from '@/utils/i18n'
+import { calculateProgressFromDuration, normalizeDurationHours } from '@/utils/growCycleProgress'
 import { useTelemetry } from '@/composables/useTelemetry'
 import type { Zone, Recipe } from '@/types'
 
@@ -621,15 +622,22 @@ const activeRecipes = computed(() => {
         
         // Вычисляем прогресс фазы на основе времени
         if (startedAt) {
-          const now = new Date()
-          const phaseDuration = ((currentPhaseData as any).duration_days || 0) * 24 * 60 * 60 * 1000
-          const elapsed = now.getTime() - startedAt.getTime()
-          phaseProgress = phaseDuration > 0 ? Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100)) : 0
+          phaseProgress = calculateProgressFromDuration(
+            startedAt,
+            null,
+            (currentPhaseData as any).duration_days
+          ) ?? 0
           
           // Вычисляем время до следующей фазы
-          const nextPhaseStart = new Date(startedAt.getTime() + phaseDuration)
-          if (nextPhaseStart > now) {
-            nextPhaseTransition = nextPhaseStart.toISOString()
+          const durationHours = normalizeDurationHours(
+            null,
+            (currentPhaseData as any).duration_days
+          )
+          if (durationHours) {
+            const nextPhaseStart = new Date(startedAt.getTime() + durationHours * 60 * 60 * 1000)
+            if (nextPhaseStart > new Date()) {
+              nextPhaseTransition = nextPhaseStart.toISOString()
+            }
           }
         }
       }

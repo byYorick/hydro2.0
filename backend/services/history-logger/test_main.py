@@ -21,7 +21,48 @@ def bypass_ingest_auth():
 
 def test_health_endpoint(client):
     """Test health check endpoint."""
-    response = client.get("/health")
+    class _AcquireCtx:
+        def __init__(self, conn):
+            self._conn = conn
+
+        async def __aenter__(self):
+            return self._conn
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    conn = AsyncMock()
+    conn.fetchval.return_value = 1
+
+    class _PoolStub:
+        def acquire(self):
+            return _AcquireCtx(conn)
+
+    class _MqttStub:
+        def is_connected(self):
+            return True
+
+    queue = AsyncMock()
+    queue.get_queue_metrics.return_value = {
+        "size": 0,
+        "oldest_age_seconds": 0,
+        "dlq_size": 0,
+        "success_rate": 1.0,
+    }
+
+    with patch("system_routes.get_pool", new_callable=AsyncMock) as mock_get_pool, \
+         patch("system_routes.check_db_health", new_callable=AsyncMock), \
+         patch("system_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("system_routes.check_mqtt_health", new_callable=AsyncMock), \
+         patch("system_routes.get_alert_queue", new_callable=AsyncMock) as mock_get_alert_queue, \
+         patch("system_routes.get_status_queue", new_callable=AsyncMock) as mock_get_status_queue:
+        mock_get_pool.return_value = _PoolStub()
+        mock_get_mqtt.return_value = _MqttStub()
+        mock_get_alert_queue.return_value = queue
+        mock_get_status_queue.return_value = queue
+
+        response = client.get("/health")
+
     assert response.status_code == 200
     data = response.json()
     assert data["status"] in {"ok", "degraded"}
@@ -160,10 +201,19 @@ def test_ingest_telemetry_endpoint_with_zone_uid(client):
 async def test_process_telemetry_batch_includes_ts_parameter():
     """Test that process_telemetry_batch includes ts parameter in SQL query."""
     from unittest.mock import patch, AsyncMock
+    import telemetry_processing as tp
     from telemetry_processing import process_telemetry_batch
+    from telemetry_processing import _node_cache, _zone_cache
     from models import TelemetrySampleModel
     from datetime import datetime
-    
+    import time
+
+    _node_cache.clear()
+    _zone_cache.clear()
+    tp._cache_last_update = time.time()
+    _node_cache[("nd-ph-1", None)] = (1, 1)
+    _zone_cache[("zn-1", None)] = 1
+
     # Мокаем execute для проверки SQL запроса
     with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
         # Мокаем fetch для получения node_id
@@ -261,11 +311,20 @@ async def test_telemetry_payload_model_validation():
 @pytest.mark.asyncio
 async def test_process_telemetry_batch_with_zone_id_extraction():
     """Test process_telemetry_batch with zone_id extraction from zone_uid."""
+    import telemetry_processing as tp
     from telemetry_processing import process_telemetry_batch
+    from telemetry_processing import _node_cache, _zone_cache
     from models import TelemetrySampleModel
     from unittest.mock import patch, AsyncMock
     from datetime import datetime
-    
+    import time
+
+    _node_cache.clear()
+    _zone_cache.clear()
+    tp._cache_last_update = time.time()
+    _node_cache[("nd-ph-1", None)] = (1, 1)
+    _zone_cache[("zn-1", None)] = 1
+
     samples = [
         TelemetrySampleModel(
             node_uid="nd-ph-1",

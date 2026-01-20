@@ -176,9 +176,9 @@
                 </Badge>
                 <Badge
                   v-if="zone.cycle"
-                  :variant="getCycleStatusVariant(zone.cycle.status)"
+                  :variant="getCycleStatusVariant(zone.cycle.status, 'center')"
                 >
-                  {{ getCycleStatusLabel(zone.cycle.status) }}
+                  {{ getCycleStatusLabel(zone.cycle.status, 'short') }}
                 </Badge>
               </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1 flex flex-wrap items-center gap-2">
@@ -452,6 +452,7 @@ import Pagination from '@/Components/Pagination.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
+import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useCommands } from '@/composables/useCommands'
@@ -614,28 +615,6 @@ function getZoneStatusVariant(status: string) {
     default:
       return 'neutral'
   }
-}
-
-function getCycleStatusVariant(status: string) {
-  switch (status) {
-    case 'RUNNING':
-      return 'success'
-    case 'PAUSED':
-      return 'warning'
-    case 'PLANNED':
-      return 'info'
-    default:
-      return 'neutral'
-  }
-}
-
-function getCycleStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    RUNNING: 'Активен',
-    PAUSED: 'Пауза',
-    PLANNED: 'План',
-  }
-  return labels[status] || status
 }
 
 function setActionLoading(zoneId: number, action: string, value: boolean) {

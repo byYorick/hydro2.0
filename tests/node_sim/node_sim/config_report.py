@@ -36,7 +36,7 @@ _METRIC_UNITS = {
 
 def _normalize_sensor_channel(sensor_name: str) -> str:
     if sensor_name == "ina209_ma":
-        return "ina209"
+        return "pump_bus_current"
     return sensor_name
 
 
@@ -56,7 +56,7 @@ def _sensor_metric(sensor_name: str) -> str:
         return "CO2"
     if "lux" in name:
         return "LIGHT_INTENSITY"
-    if name in ("ina209_ma", "current_ma", "current"):
+    if name in ("ina209_ma", "current_ma", "current", "pump_bus_current"):
         return "PUMP_CURRENT"
     if name in ("flow_present", "flow"):
         return "FLOW_RATE"
@@ -136,20 +136,31 @@ def build_config_report_payload(
     mqtt_payload: Dict[str, object] = {
         "host": mqtt.host,
         "port": mqtt.port,
+        "keepalive": mqtt.keepalive,
     }
     if mqtt.username:
-        mqtt_payload["username"] = mqtt.username
+        mqtt_payload["user"] = mqtt.username
+    if mqtt.password:
+        mqtt_payload["pass"] = mqtt.password
     if mqtt.tls:
         mqtt_payload["tls"] = mqtt.tls
+    if node.mode == "preconfig":
+        node_id = node.hardware_id
+        gh_uid = "gh-temp"
+        zone_uid = "zn-temp"
+    else:
+        node_id = node.node_uid
+        gh_uid = node.gh_uid
+        zone_uid = node.zone_uid
 
     payload = {
-        "node_id": node.node_uid,
+        "node_id": node_id,
         "version": version,
         "type": _node_type_name(node.node_type),
-        "gh_uid": node.gh_uid,
-        "zone_uid": node.zone_uid,
+        "gh_uid": gh_uid,
+        "zone_uid": zone_uid,
         "channels": _build_channels(node, poll_interval_ms),
-        "wifi": {"ssid": "node-sim"},
+        "wifi": {"configured": True},
         "mqtt": mqtt_payload,
     }
     return payload
@@ -168,7 +179,7 @@ def publish_config_report(
         version=version,
     )
     if node.mode == "preconfig":
-        topic = temp_config_report(node.node_uid)
+        topic = temp_config_report(node.hardware_id)
     else:
         topic = config_report(node.gh_uid, node.zone_uid, node.node_uid)
 

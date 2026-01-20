@@ -343,6 +343,7 @@ main() {
                 # CORE - BASIC
                 "core/E01_bootstrap"
                 "core/E02_auth_ws_api"
+                "core/E03_node_setup_preconfig"
                 
                 # COMMANDS
                 "commands/E10_command_happy"

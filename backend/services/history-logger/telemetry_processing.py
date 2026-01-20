@@ -64,6 +64,15 @@ _realtime_updates: "OrderedDict[tuple, dict]" = OrderedDict()
 _realtime_lock = asyncio.Lock()
 
 
+def _is_sensor_fk_error(error: Exception) -> bool:
+    message = str(error)
+    return (
+        "telemetry_last_sensor_id_foreign" in message
+        or "telemetry_samples_sensor_id_foreign" in message
+        or ("foreign key" in message and "sensors" in message and "sensor_id" in message)
+    )
+
+
 def _normalize_metric_type(metric_type: str) -> str:
     return (metric_type or "").strip().upper()
 
@@ -1263,6 +1272,13 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     len(telemetry_last_updates),
                 )
         except Exception as e:
+            if _is_sensor_fk_error(e):
+                logger.warning(
+                    "Sensor FK violation detected, clearing sensor cache",
+                    extra={"error": str(e)},
+                )
+                _sensor_cache.clear()
+                return
             logger.error(f"Failed to batch upsert telemetry_last: {e}", exc_info=True)
             for sensor_id, update_data in telemetry_last_updates.items():
                 try:
@@ -1343,6 +1359,13 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
         except Exception as e:
             error_type = type(e).__name__
             DATABASE_ERRORS.labels(error_type=error_type).inc()
+            if _is_sensor_fk_error(e):
+                logger.warning(
+                    "Sensor FK violation detected, clearing sensor cache",
+                    extra={"error": str(e)},
+                )
+                _sensor_cache.clear()
+                return
             logger.error(
                 "Failed to insert telemetry batch",
                 extra={

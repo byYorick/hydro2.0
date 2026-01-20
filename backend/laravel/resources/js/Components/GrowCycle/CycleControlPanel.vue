@@ -237,6 +237,7 @@ import LoadingState from '@/Components/LoadingState.vue'
 import StageProgress from '@/Components/StageProgress.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { logger } from '@/utils/logger'
 
 interface GrowCycle {
@@ -320,28 +321,6 @@ function formatDateTime(dateStr: string | null | undefined): string {
   } catch {
     return dateStr
   }
-}
-
-function getCycleStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    PLANNED: 'Запланирован',
-    RUNNING: 'Запущен',
-    PAUSED: 'Приостановлен',
-    HARVESTED: 'Собран',
-    ABORTED: 'Прерван',
-  }
-  return labels[status] || status
-}
-
-function getCycleStatusVariant(status: string): 'success' | 'neutral' | 'warning' | 'danger' {
-  const variants: Record<string, 'success' | 'neutral' | 'warning' | 'danger'> = {
-    PLANNED: 'neutral',
-    RUNNING: 'success',
-    PAUSED: 'warning',
-    HARVESTED: 'success',
-    ABORTED: 'danger',
-  }
-  return variants[status] || 'neutral'
 }
 
 function getEventVariant(type: string): 'success' | 'neutral' | 'warning' | 'danger' {

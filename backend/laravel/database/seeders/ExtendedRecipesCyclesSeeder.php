@@ -1630,8 +1630,26 @@ class ExtendedRecipesCyclesSeeder extends Seeder
 
         $growCycleService = app(GrowCycleService::class);
         $userId = User::where('role', 'admin')->value('id') ?? User::value('id');
+        $zonesByStatus = $zones->groupBy('status');
+        $pausedZoneIds = $zonesByStatus->get('PAUSED', collect())->pluck('id')->all();
+        $stoppedZones = $zonesByStatus->get('STOPPED', collect());
+        $plannedZoneId = $stoppedZones->first()?->id;
+        $skipZoneId = $stoppedZones->skip(1)->first()?->id;
+
+        if (! $plannedZoneId && $zones->isNotEmpty()) {
+            $plannedZoneId = $zones->first()->id;
+        }
+        if (! $skipZoneId && $zones->count() > 1) {
+            $skipZoneId = $zones->firstWhere('id', '!=', $plannedZoneId)?->id;
+        }
+
+        $plannedZoneIds = $plannedZoneId ? [$plannedZoneId] : [];
+        $skipZoneIds = $skipZoneId ? [$skipZoneId] : [];
 
         foreach ($zones as $zone) {
+            if (in_array($zone->id, $skipZoneIds, true)) {
+                continue;
+            }
             if ($zone->activeGrowCycle) {
                 continue;
             }
@@ -1645,9 +1663,12 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 continue;
             }
 
-            $startedAt = now()->subDays(rand(1, 30));
+            $plannedCycle = in_array($zone->id, $plannedZoneIds, true);
+            $startedAt = $plannedCycle
+                ? now()->addDays(rand(2, 7))
+                : now()->subDays(rand(1, 30));
             $zoneStatus = strtolower((string) $zone->status);
-            $startImmediately = ! in_array($zoneStatus, ['offline', 'critical'], true);
+            $startImmediately = ! $plannedCycle && ! in_array($zoneStatus, ['offline', 'critical'], true);
 
             try {
                 $cycle = $growCycleService->createCycle(
@@ -1662,6 +1683,14 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                     ],
                     $userId
                 );
+
+                if ($cycle->status === \App\Enums\GrowCycleStatus::RUNNING) {
+                    $growCycleService->computeExpectedHarvest($cycle);
+                }
+
+                if (in_array($zone->id, $pausedZoneIds, true) && $cycle->status === \App\Enums\GrowCycleStatus::RUNNING) {
+                    $growCycleService->pause($cycle, $userId);
+                }
             } catch (\Throwable $e) {
                 $this->command->warn("Не удалось создать цикл для зоны {$zone->id}: {$e->getMessage()}");
             }

@@ -1,460 +1,388 @@
 {
-  "test_suite": "E63_backoff_on_errors",
-  "generated_at": "2026-01-02T20:49:29.651560",
+  "test_suite": "E03_node_setup_preconfig",
+  "generated_at": "2026-01-20T16:23:41.594035",
   "test_cases": [
     {
-      "name": "stop_node_simulator_initial",
+      "name": "set_test_identifiers",
       "status": "passed",
-      "duration": 15.266749382019043,
+      "duration": 2.2172927856445312e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "stop_node_simulator_initial",
+          "name": "set_test_identifiers",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.921970"
+      "timestamp": "2026-01-20T16:23:18.825628"
     },
     {
-      "name": "set_test_uids",
+      "name": "build_node_sim_config",
       "status": "passed",
-      "duration": 1.6689300537109375e-05,
+      "duration": 7.414817810058594e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "build_node_sim_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.922169"
+      "timestamp": "2026-01-20T16:23:18.825866"
     },
     {
-      "name": "set_zone_id_from_uid",
+      "name": "connect_websocket",
       "status": "passed",
-      "duration": 0.008577108383178711,
+      "duration": 5.4836273193359375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id_from_uid",
+          "name": "connect_websocket",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.930782"
+      "timestamp": "2026-01-20T16:23:18.825882"
     },
     {
-      "name": "set_node_id_from_uid",
+      "name": "subscribe_devices_channel",
       "status": "passed",
-      "duration": 0.002012014389038086,
+      "duration": 0.20912528038024902,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id_from_uid",
+          "name": "subscribe_devices_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.932860"
+      "timestamp": "2026-01-20T16:23:19.035034"
     },
     {
-      "name": "set_ids",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 3.814697265625e-06,
+      "duration": 5.746941566467285,
       "error_message": null,
       "steps": [
         {
-          "name": "set_ids",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.932912"
+      "timestamp": "2026-01-20T16:23:24.782020"
     },
     {
-      "name": "cleanup_old_cycles",
+      "name": "node_sends_node_hello",
       "status": "passed",
-      "duration": 0.008783340454101562,
+      "duration": 2.004249334335327,
       "error_message": null,
       "steps": [
         {
-          "name": "cleanup_old_cycles",
+          "name": "node_sends_node_hello",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.941727"
+      "timestamp": "2026-01-20T16:23:26.786405"
     },
     {
-      "name": "create_plant",
+      "name": "wait_for_device_created_event",
       "status": "passed",
-      "duration": 0.05593538284301758,
+      "duration": 7.43865966796875e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "create_plant",
+          "name": "wait_for_device_created_event",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:20.997739"
+      "timestamp": "2026-01-20T16:23:26.786571"
     },
     {
-      "name": "create_recipe",
+      "name": "db_lookup_node",
       "status": "passed",
-      "duration": 0.05939030647277832,
+      "duration": 0.007949113845825195,
       "error_message": null,
       "steps": [
         {
-          "name": "create_recipe",
+          "name": "db_lookup_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.057194"
+      "timestamp": "2026-01-20T16:23:26.794593"
     },
     {
-      "name": "create_revision",
+      "name": "set_node_identity",
       "status": "passed",
-      "duration": 0.05574631690979004,
+      "duration": 7.510185241699219e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "create_revision",
+          "name": "set_node_identity",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.112993"
+      "timestamp": "2026-01-20T16:23:26.794878"
     },
     {
-      "name": "add_phase",
+      "name": "wait_for_registered_state",
       "status": "passed",
-      "duration": 0.05559253692626953,
+      "duration": 0.0015079975128173828,
       "error_message": null,
       "steps": [
         {
-          "name": "add_phase",
+          "name": "wait_for_registered_state",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.168646"
+      "timestamp": "2026-01-20T16:23:26.796642"
     },
     {
-      "name": "publish_revision",
+      "name": "fetch_unassigned_nodes",
       "status": "passed",
-      "duration": 0.0551760196685791,
+      "duration": 0.11352062225341797,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_revision",
+          "name": "fetch_unassigned_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.223874"
+      "timestamp": "2026-01-20T16:23:26.910237"
     },
     {
-      "name": "create_cycle",
+      "name": "fetch_zone_id",
       "status": "passed",
-      "duration": 0.09005570411682129,
+      "duration": 0.003008127212524414,
       "error_message": null,
       "steps": [
         {
-          "name": "create_cycle",
+          "name": "fetch_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.314043"
+      "timestamp": "2026-01-20T16:23:26.913514"
     },
     {
-      "name": "set_cycle_id",
+      "name": "set_zone_id",
       "status": "passed",
-      "duration": 2.384185791015625e-06,
+      "duration": 1.5735626220703125e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_cycle_id",
+          "name": "set_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:21.314082"
+      "timestamp": "2026-01-20T16:23:26.913747"
     },
     {
-      "name": "wait_for_effective_targets",
+      "name": "assign_node_to_zone",
       "status": "passed",
-      "duration": 2.001861095428467,
+      "duration": 2.17037296295166,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_effective_targets",
+          "name": "assign_node_to_zone",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.315953"
+      "timestamp": "2026-01-20T16:23:29.084264"
     },
     {
-      "name": "enable_capabilities",
+      "name": "wait_for_device_assigned_event",
       "status": "passed",
-      "duration": 0.0015835762023925781,
+      "duration": 0.0002713203430175781,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_capabilities",
+          "name": "wait_for_device_assigned_event",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.317602"
+      "timestamp": "2026-01-20T16:23:29.084950"
     },
     {
-      "name": "fetch_heater_channel",
+      "name": "node_sends_config_report",
       "status": "passed",
-      "duration": 0.0007748603820800781,
+      "duration": 2.005610466003418,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_heater_channel",
+          "name": "node_sends_config_report",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.318411"
+      "timestamp": "2026-01-20T16:23:31.091429"
     },
     {
-      "name": "fetch_heater_infra",
+      "name": "wait_for_binding_completed",
       "status": "passed",
-      "duration": 0.0012135505676269531,
+      "duration": 0.0010304450988769531,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_heater_infra",
+          "name": "wait_for_binding_completed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.319662"
+      "timestamp": "2026-01-20T16:23:31.092747"
     },
     {
-      "name": "upsert_heater_binding",
+      "name": "fetch_unassigned_nodes_after",
       "status": "passed",
-      "duration": 0.0015382766723632812,
+      "duration": 0.09451103210449219,
       "error_message": null,
       "steps": [
         {
-          "name": "upsert_heater_binding",
+          "name": "fetch_unassigned_nodes_after",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.321259"
+      "timestamp": "2026-01-20T16:23:31.187316"
     },
     {
-      "name": "reset_backoff",
+      "name": "device_created_event_payload",
       "status": "passed",
-      "duration": 0.024716615676879883,
+      "duration": 4.887580871582031e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "reset_backoff",
+          "name": "device_created_event_payload",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:23.346008"
+      "timestamp": "2026-01-20T16:23:31.187384"
     },
     {
-      "name": "publish_temp_low_baseline",
+      "name": "device_assigned_event_payload",
       "status": "passed",
-      "duration": 2.001873254776001,
+      "duration": 2.2649765014648438e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_temp_low_baseline",
+          "name": "device_assigned_event_payload",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:25.347961"
+      "timestamp": "2026-01-20T16:23:31.187415"
     },
     {
-      "name": "wait_for_baseline_command",
+      "name": "node_registered_in_setup_mode",
       "status": "passed",
-      "duration": 20.009488582611084,
+      "duration": 0.00013375282287597656,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_baseline_command",
+          "name": "node_registered_in_setup_mode",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:45.357485"
+      "timestamp": "2026-01-20T16:23:31.187555"
     },
     {
-      "name": "baseline_timestamp",
+      "name": "unassigned_api_has_results",
       "status": "passed",
-      "duration": 0.0006597042083740234,
+      "duration": 7.62939453125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "baseline_timestamp",
+          "name": "unassigned_api_has_results",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:45.358208"
+      "timestamp": "2026-01-20T16:23:31.187571"
     },
     {
-      "name": "baseline_window_start",
+      "name": "unassigned_api_returns_node",
       "status": "passed",
-      "duration": 0.0003933906555175781,
+      "duration": 2.8371810913085938e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "baseline_window_start",
+          "name": "unassigned_api_returns_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:45.358662"
+      "timestamp": "2026-01-20T16:23:31.187603"
     },
     {
-      "name": "set_degraded_state",
+      "name": "node_binding_completed",
       "status": "passed",
-      "duration": 0.02420353889465332,
+      "duration": 8.797645568847656e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_degraded_state",
+          "name": "node_binding_completed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:45.382902"
+      "timestamp": "2026-01-20T16:23:31.187696"
     },
     {
-      "name": "degraded_timestamp",
+      "name": "unassigned_api_excludes_node_after_binding",
       "status": "passed",
-      "duration": 0.0003705024719238281,
+      "duration": 6.4373016357421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "degraded_timestamp",
+          "name": "unassigned_api_excludes_node_after_binding",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-02T20:48:45.383309"
-    },
-    {
-      "name": "publish_temp_low_degraded",
-      "status": "passed",
-      "duration": 2.001096487045288,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_temp_low_degraded",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:48:47.384457"
-    },
-    {
-      "name": "wait_for_degraded_cycle",
-      "status": "passed",
-      "duration": 20.001915216445923,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_degraded_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:07.386407"
-    },
-    {
-      "name": "reset_backoff_after_degraded",
-      "status": "passed",
-      "duration": 0.024588823318481445,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_backoff_after_degraded",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:07.411069"
-    },
-    {
-      "name": "reset_timestamp",
-      "status": "passed",
-      "duration": 0.0004525184631347656,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_timestamp",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:07.411556"
-    },
-    {
-      "name": "publish_temp_low_after_reset",
-      "status": "passed",
-      "duration": 2.002153158187866,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_temp_low_after_reset",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:09.413760"
-    },
-    {
-      "name": "wait_for_post_reset_command",
-      "status": "passed",
-      "duration": 20.00448250770569,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_post_reset_command",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:29.418276"
-    },
-    {
-      "name": "baseline_heater_command_created",
-      "status": "passed",
-      "duration": 0.0016651153564453125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "baseline_heater_command_created",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:29.419964"
-    },
-    {
-      "name": "no_commands_in_degraded_mode",
-      "status": "passed",
-      "duration": 0.0005075931549072266,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "no_commands_in_degraded_mode",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:29.420481"
-    },
-    {
-      "name": "commands_after_reset",
-      "status": "passed",
-      "duration": 0.0004401206970214844,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "commands_after_reset",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-02T20:49:29.420927"
+      "timestamp": "2026-01-20T16:23:31.187708"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E63_backoff_on_errors": {
-      "ws_messages": [],
+    "E03_node_setup_preconfig": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.devices"
+          },
+          "timestamp": "2026-01-20T16:23:18.944803"
+        },
+        {
+          "data": {
+            "event": "device.updated",
+            "data": {
+              "device": {
+                "id": 75,
+                "uid": "nd-ph-h1768915-1",
+                "name": null,
+                "type": "ph",
+                "status": "offline",
+                "lifecycle_state": "REGISTERED_BACKEND",
+                "fw_version": "2.0.0-sim",
+                "hardware_id": "h1768915398",
+                "zone_id": null,
+                "last_seen_at": null,
+                "first_seen_at": "2026-01-20T13:23:25+00:00",
+                "was_recently_created": false
+              },
+              "event_id": 1768915405000003593,
+              "server_ts": 1768915405000
+            },
+            "channel": "private-hydro.devices"
+          },
+          "timestamp": "2026-01-20T16:23:25.055487"
+        },
+        {
+          "data": {
+            "event": "device.updated",
+            "data": "{\"device\":{\"id\":75,\"uid\":\"nd-ph-h1768915-1\",\"name\":null,\"type\":\"ph\",\"status\":\"offline\",\"lifecycle_state\":\"REGISTERED_BACKEND\",\"fw_version\":\"2.0.0-sim\",\"hardware_id\":\"h1768915398\",\"zone_id\":null,\"last_seen_at\":null,\"first_seen_at\":\"2026-01-20T13:23:25+00:00\",\"was_recently_created\":false},\"event_id\":1768915407000003594,\"server_ts\":1768915407000}",
+            "channel": "private-hydro.devices"
+          },
+          "timestamp": "2026-01-20T16:23:27.069417"
+        }
+      ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "node_id": 1,
-        "cycle_id": 79
+        "zone_uid": "zn-test-1",
+        "node_id": 75,
+        "node_uid": "nd-ph-h1768915-1",
+        "test_hardware_id": "h1768915398",
+        "ws_last_event_id": 1768915407000003594
       }
     }
   }

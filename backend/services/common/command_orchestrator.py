@@ -91,21 +91,25 @@ async def send_command(
     
     # Создаем запись команды в БД со статусом QUEUED
     try:
-        await execute(
-            """
-            INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
-            SELECT $1, n.id, $3, $4, $5, 'QUEUED', $6, NOW(), NOW()
-            FROM nodes n
-            WHERE n.uid = $2 AND n.zone_id = $1
-            ON CONFLICT (cmd_id) DO NOTHING
-            """,
-            zone_id,
-            node_uid,
-            channel,
-            cmd,
-            params,
+        existing_cmd = await fetch(
+            "SELECT 1 FROM commands WHERE cmd_id = $1",
             cmd_id,
         )
+        if not existing_cmd:
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                SELECT $1, n.id, $3, $4, $5, 'QUEUED', $6, NOW(), NOW()
+                FROM nodes n
+                WHERE n.uid = $2 AND n.zone_id = $1
+                """,
+                zone_id,
+                node_uid,
+                channel,
+                cmd,
+                params,
+                cmd_id,
+            )
     except Exception as e:
         logger.error(f"Failed to create command record in DB: {e}", exc_info=True)
         # Продолжаем выполнение, возможно команда уже существует

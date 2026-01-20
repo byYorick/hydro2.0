@@ -331,8 +331,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
 
     if uptime is not None:
         try:
-            uptime_ms = float(uptime)
-            uptime_seconds = int(uptime_ms / 1000.0)
+            uptime_seconds = int(float(uptime))
             updates.append(f"uptime_seconds=${param_index + 1}")
             params.append(uptime_seconds)
             param_index += 1
@@ -731,29 +730,64 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             )
             CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
             return
-        CONFIG_REPORT_RECEIVED.inc()
 
-        node_rows = await fetch(
-            """
-            SELECT id,
-                   uid,
-                   lifecycle_state,
-                   zone_id,
-                   pending_zone_id
-            FROM nodes
-            WHERE uid = $1
-            """,
-            node_uid,
-        )
-        if not node_rows:
-            logger.warning(
-                f"[CONFIG_REPORT] Node {node_uid} not found in database, skipping config_report"
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
+
+        if is_temp_topic:
+            hardware_id = node_uid
+            node_rows = await fetch(
+                """
+                SELECT id,
+                       uid,
+                       lifecycle_state,
+                       zone_id,
+                       pending_zone_id
+                FROM nodes
+                WHERE hardware_id = $1
+                """,
+                hardware_id,
             )
-            CONFIG_REPORT_ERROR.labels(node_uid=node_uid).inc()
-            return
+            if not node_rows:
+                logger.warning(
+                    f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, skipping config_report"
+                )
+                CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+                return
+            node = node_rows[0]
+            node_uid = node.get("uid")
+            node_id = node.get("id")
+            if node_uid and isinstance(data, dict):
+                data["node_id"] = node_uid
+            logger.info(
+                "[CONFIG_REPORT] Mapped temp config_report: hardware_id=%s -> node_uid=%s",
+                hardware_id,
+                node_uid,
+            )
+        else:
+            node_rows = await fetch(
+                """
+                SELECT id,
+                       uid,
+                       lifecycle_state,
+                       zone_id,
+                       pending_zone_id
+                FROM nodes
+                WHERE uid = $1
+                """,
+                node_uid,
+            )
+            if not node_rows:
+                logger.warning(
+                    f"[CONFIG_REPORT] Node {node_uid} not found in database, skipping config_report"
+                )
+                CONFIG_REPORT_ERROR.labels(node_uid=node_uid).inc()
+                return
+            node = node_rows[0]
+            node_id = node.get("id")
 
-        node = node_rows[0]
-        node_id = node.get("id")
+        CONFIG_REPORT_RECEIVED.inc()
 
         await execute(
             """
@@ -1074,10 +1108,6 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                     """
                     INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-                    ON CONFLICT (cmd_id) DO UPDATE SET
-                        status = EXCLUDED.status,
-                        source = COALESCE(commands.source, EXCLUDED.source),
-                        updated_at = NOW()
                     """,
                     zone_id,
                     node_id,

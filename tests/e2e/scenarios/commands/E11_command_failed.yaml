@@ -29,8 +29,6 @@ setup:
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
-      # Настройка для симуляции FAILED ответа
-      # Примечание: node-sim может иметь специальную команду или режим для FAILED
 
 actions:
   - step: start_node_simulator
@@ -81,17 +79,20 @@ actions:
     type: websocket_subscribe
     channel: commands.${test_zone_id}
 
-  # Отправляем команду, которая приведет к FAILED
-  # Примечание: Для симуляции FAILED может потребоваться специальная команда
-  # или node-sim должен быть настроен на FAILED ответ для определенных команд
-  # Здесь используем команду с неверным каналом или параметрами
+  # Останавливаем node-sim, чтобы не получить DONE и вручную смоделировать FAILED
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true
+
+  # Отправляем команду, а затем вручную публикуем FAILED через MQTT
   - step: send_command_that_fails
     type: api_post
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay_state
-      channel: nonexistent_channel  # Несуществующий канал может привести к FAILED
+      channel: main_pump
       params:
+        channel: main_pump
         state: true
     save: command_response
     optional: true  # Может вернуть 503 если bridge недоступен
@@ -190,6 +191,6 @@ assertions:
     optional: true
 
 cleanup:
-  - step: stop_node_simulator
-    type: stop_simulator
-    optional: true  # fault injection не работает в контейнере
+  - step: start_node_simulator
+    type: start_simulator
+    optional: true

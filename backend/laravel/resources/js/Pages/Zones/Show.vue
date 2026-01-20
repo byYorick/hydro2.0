@@ -148,6 +148,9 @@ import { useUrlState } from '@/composables/useUrlState'
 import { usePageProps } from '@/composables/usePageProps'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
+import { calculateProgressBetween } from '@/utils/growCycleProgress'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -392,44 +395,15 @@ const computedPhaseProgress = computed(() => {
     })
     return null
   }
-
-  // Все даты в UTC (ISO8601 с 'Z' или без, но интерпретируем как UTC)
-  const now = new Date() // Текущее время в UTC (Date всегда в UTC внутренне)
-  const phaseStart = new Date(phase.phase_started_at)
-  const phaseEnd = new Date(phase.phase_ends_at)
-
-  // Проверяем валидность дат
-  if (isNaN(phaseStart.getTime()) || isNaN(phaseEnd.getTime())) {
-    logger.debug('[Zones/Show] computedPhaseProgress: invalid dates', {
+  const progress = calculateProgressBetween(phase.phase_started_at, phase.phase_ends_at)
+  if (progress === null) {
+    logger.debug('[Zones/Show] computedPhaseProgress: unable to calculate', {
       phase_started_at: phase.phase_started_at,
       phase_ends_at: phase.phase_ends_at,
-      phaseStartTime: phaseStart.getTime(),
-      phaseEndTime: phaseEnd.getTime(),
     })
     return null
   }
-
-  const totalMs = phaseEnd.getTime() - phaseStart.getTime()
-  if (totalMs <= 0) {
-    logger.debug('[Zones/Show] computedPhaseProgress: totalMs <= 0', { totalMs })
-    return null
-  }
-
-  const elapsedMs = now.getTime() - phaseStart.getTime()
-  
-  logger.debug('[Zones/Show] computedPhaseProgress: calculation', {
-    now: now.toISOString(),
-    phaseStart: phaseStart.toISOString(),
-    phaseEnd: phaseEnd.toISOString(),
-    elapsedMs,
-    totalMs,
-    progress: elapsedMs > 0 ? (elapsedMs / totalMs) * 100 : 0,
-  })
-  
-  if (elapsedMs <= 0) return 0
-  if (elapsedMs >= totalMs) return 100
-
-  return Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100))
+  return progress
 })
 
 const computedPhaseDaysElapsed = computed(() => {
@@ -461,10 +435,7 @@ const computedPhaseDaysTotal = computed(() => {
 // Единый статус цикла зоны и человекочитаемое время до конца фазы
 const cycleStatusLabel = computed(() => {
   if (activeGrowCycle.value) {
-    const status = activeGrowCycle.value.status
-    if (status === 'RUNNING') return 'Цикл активен'
-    if (status === 'PAUSED') return 'Цикл на паузе'
-    if (status === 'PLANNED') return 'Цикл запланирован'
+    return getCycleStatusLabel(activeGrowCycle.value.status, 'sentence')
   }
   if (activeCycle.value) {
     return 'Цикл активен'
@@ -472,12 +443,9 @@ const cycleStatusLabel = computed(() => {
   return 'Цикл не запущен'
 })
 
-const cycleStatusVariant = computed<'success' | 'neutral' | 'warning'>(() => {
+const cycleStatusVariant = computed<BadgeVariant>(() => {
   if (activeGrowCycle.value) {
-    const status = activeGrowCycle.value.status
-    if (status === 'RUNNING') return 'success'
-    if (status === 'PAUSED') return 'warning'
-    if (status === 'PLANNED') return 'neutral'
+    return getCycleStatusVariant(activeGrowCycle.value.status)
   }
   if (activeCycle.value) {
     return 'success'

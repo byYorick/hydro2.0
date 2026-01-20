@@ -113,7 +113,7 @@ class TelemetryPublisher:
             await self._publish_channel_telemetry(sensor)
         
         # Публикуем ток INA209 как отдельный канал
-        await self._publish_ina209_telemetry()
+        await self._publish_pump_bus_current()
         
         # Публикуем flow_present как отдельный канал
         await self._publish_flow_present_telemetry()
@@ -148,8 +148,8 @@ class TelemetryPublisher:
         self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published telemetry: {channel}={value}")
     
-    async def _publish_ina209_telemetry(self):
-        """Опубликовать телеметрию тока INA209."""
+    async def _publish_pump_bus_current(self):
+        """Опубликовать телеметрию суммарного тока насосов."""
         current_ma = self.node.get_sensor_value("ina209_ma") or 0.0
         
         # Формируем payload
@@ -160,14 +160,15 @@ class TelemetryPublisher:
         }
         
         # Определяем топик используя единую библиотеку topics
+        channel = "pump_bus_current"
         if self.node.mode == "preconfig":
-            topic = temp_telemetry(self.node.hardware_id, "ina209")
+            topic = temp_telemetry(self.node.hardware_id, channel)
         else:
-            topic = telemetry(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, "ina209")
+            topic = telemetry(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, channel)
         
         # Публикуем
         self.mqtt.publish_json(topic, payload, qos=1, retain=False)
-        logger.debug(f"Published INA209 telemetry: {current_ma}mA")
+        logger.debug(f"Published pump_bus_current telemetry: {current_ma}mA")
     
     async def _publish_flow_present_telemetry(self):
         """Опубликовать телеметрию flow_present."""

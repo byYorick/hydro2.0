@@ -155,6 +155,48 @@ class TestConfigReportFormatSync:
             mock_complete.assert_called_once()
             mock_processed.inc.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_handle_config_report_temp_topic_maps_hardware_id(self):
+        """Тест обработки config_report из temp топика с hardware_id."""
+        from mqtt_handlers import handle_config_report
+
+        topic = "hydro/gh-temp/zn-temp/esp32-aabbccddeeff/config_report"
+        payload_data = {
+            "node_id": "esp32-aabbccddeeff",
+            "version": 3,
+            "channels": [
+                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
+            ],
+        }
+        payload = json.dumps(payload_data).encode('utf-8')
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
+             patch('mqtt_handlers.sync_node_channels_from_payload', new_callable=AsyncMock) as mock_sync, \
+             patch('mqtt_handlers._complete_binding_after_config_report', new_callable=AsyncMock) as mock_complete, \
+             patch('mqtt_handlers.CONFIG_REPORT_RECEIVED') as mock_received, \
+             patch('mqtt_handlers.CONFIG_REPORT_PROCESSED') as mock_processed:
+
+            mock_fetch.return_value = [
+                {
+                    "id": 7,
+                    "uid": "nd-ph-esp32aa-1",
+                    "lifecycle_state": "REGISTERED_BACKEND",
+                    "zone_id": None,
+                    "pending_zone_id": 1,
+                }
+            ]
+
+            await handle_config_report(topic, payload)
+
+            mock_received.inc.assert_called_once()
+            mock_execute.assert_called_once()
+            updated_payload = mock_execute.call_args[0][1]
+            assert updated_payload["node_id"] == "nd-ph-esp32aa-1"
+            mock_sync.assert_called_once()
+            mock_complete.assert_called_once()
+            mock_processed.inc.assert_called_once()
+
 
 class TestHeartbeatFormatSync:
     """Тесты синхронизации формата heartbeat."""

@@ -311,6 +311,7 @@ import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { formatTime } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
+import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import { useSimpleModal } from '@/composables/useModal'
 import { useCommands } from '@/composables/useCommands'
 import { useApi } from '@/composables/useApi'
@@ -388,30 +389,38 @@ const cycles = computed(() => {
     return []
   }
   return props.zones
-    .filter((zone) => zone.cycles && zone.cycles.length > 0)
+    .filter((zone) => zone.activeGrowCycle || (zone.cycles && zone.cycles.length > 0))
     .map((zone) => {
-      // Используем cycles массив для поиска активного цикла
-      const activeCycle = zone.cycles?.find(cycle => cycle.status === 'RUNNING')
-      if (activeCycle) {
-        const phaseIndex = (activeCycle.current_phase_index ?? 0) + 1
+      const activeGrowCycle = (zone as any).activeGrowCycle
+      const legacyCycle = zone.cycles?.find(cycle => cycle.status === 'RUNNING')
+      const cycle = activeGrowCycle || legacyCycle
+
+      if (cycle) {
+        const currentPhase = activeGrowCycle?.currentPhase
+        const phaseIndex = activeGrowCycle
+          ? (currentPhase?.phase_index ?? 0) + 1
+          : (legacyCycle?.current_phase_index ?? 0) + 1
         
         // Вычисляем прогресс фазы
         let progress = 0
-        const currentPhase = activeCycle.recipe?.phases?.[activeCycle.current_phase_index ?? 0]
-        if (currentPhase && activeCycle.started_at) {
-          const startedAt = new Date(activeCycle.started_at)
-          const now = new Date()
-          const durationHours = currentPhase.duration_hours
-          const phaseEndAt = new Date(startedAt.getTime() + durationHours * 60 * 60 * 1000)
-          const totalMs = phaseEndAt.getTime() - startedAt.getTime()
-          const elapsedMs = now.getTime() - startedAt.getTime()
-          progress = totalMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100)) : 0
+        const phaseDurationHours = activeGrowCycle
+          ? (currentPhase?.duration_hours ?? ((currentPhase?.duration_days || 0) * 24))
+          : (legacyCycle?.recipe?.phases?.[legacyCycle?.current_phase_index ?? 0]?.duration_hours ?? 0)
+
+        const phaseStartCandidate = activeGrowCycle?.phase_started_at || activeGrowCycle?.started_at || legacyCycle?.started_at
+
+        if (phaseDurationHours && phaseStartCandidate) {
+          progress = calculateProgressFromDuration(
+            phaseStartCandidate,
+            phaseDurationHours,
+            null
+          ) ?? 0
         }
 
         return {
           zone_id: zone.id,
           zone,
-          recipe: activeCycle.recipe,
+          recipe: activeGrowCycle?.recipeRevision?.recipe ?? legacyCycle?.recipe ?? null,
           phaseIndex,
           statusLabel: progress >= 85 ? 'Старт' : progress >= 45 ? 'В процессе' : 'Начало',
           progress,

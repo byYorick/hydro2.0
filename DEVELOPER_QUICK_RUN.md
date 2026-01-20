@@ -13,6 +13,8 @@ Goal: a reproducible local bootstrap so an agent can start the system and spot r
 ```bash
 make up
 make migrate
+make seed
+make reset-db
 make test
 make lint
 make smoke
@@ -28,6 +30,8 @@ make down
 
 - `make up`: start the dev stack using `backend/docker-compose.dev.yml`
 - `make migrate`: run Laravel migrations in the dev stack
+- `make seed`: run Laravel seeders in the dev stack
+- `make reset-db`: reset DB (migrate:fresh --seed) in the dev stack
 - `make test`: run PHP (phpunit) and Python (pytest) tests via containers
 - `make lint`: run PHP lint via Pint in the Laravel container
 - `make smoke`: run a short end-to-end smoke (telemetry -> DB, command -> MQTT)
