@@ -2,6 +2,8 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
+from datetime import datetime
+from common.utils.time import utcnow
 from app import app
 
 
@@ -205,7 +207,6 @@ async def test_process_telemetry_batch_includes_ts_parameter():
     from telemetry_processing import process_telemetry_batch
     from telemetry_processing import _node_cache, _zone_cache
     from models import TelemetrySampleModel
-    from datetime import datetime
     import time
 
     _node_cache.clear()
@@ -331,7 +332,7 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
             zone_uid="zn-1",  # zone_id будет извлечен из zone_uid
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
     ]
     

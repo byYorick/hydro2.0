@@ -130,8 +130,8 @@ async def test_check_dry_run_protection_flow_ok():
 @pytest.mark.asyncio
 async def test_calculate_irrigation_volume():
     """Test irrigation volume calculation."""
-    start_time = datetime.utcnow() - timedelta(minutes=10)
-    end_time = datetime.utcnow()
+    start_time = utcnow() - timedelta(minutes=10)
+    end_time = utcnow()
     
     # Симулируем данные flow: 2.0 L/min в течение 10 минут
     with patch("common.water_flow.fetch") as mock_fetch:
@@ -150,8 +150,8 @@ async def test_calculate_irrigation_volume():
 @pytest.mark.asyncio
 async def test_calculate_irrigation_volume_no_data():
     """Test irrigation volume calculation when no data."""
-    start_time = datetime.utcnow() - timedelta(minutes=10)
-    end_time = datetime.utcnow()
+    start_time = utcnow() - timedelta(minutes=10)
+    end_time = utcnow()
     
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = []
@@ -457,10 +457,10 @@ async def test_calibrate_flow_success():
     
     # Данные flow для калибровки
     flow_samples = [
-        {"value": 2.0, "ts": datetime.utcnow() - timedelta(seconds=8), "metadata": {"raw": {"pulses": 100}}},
-        {"value": 2.1, "ts": datetime.utcnow() - timedelta(seconds=6), "metadata": {"raw": {"pulses": 120}}},
-        {"value": 2.0, "ts": datetime.utcnow() - timedelta(seconds=4), "metadata": {"raw": {"pulses": 140}}},
-        {"value": 2.2, "ts": datetime.utcnow() - timedelta(seconds=2), "metadata": {"raw": {"pulses": 160}}},
+        {"value": 2.0, "ts": utcnow() - timedelta(seconds=8), "metadata": {"raw": {"pulses": 100}}},
+        {"value": 2.1, "ts": utcnow() - timedelta(seconds=6), "metadata": {"raw": {"pulses": 120}}},
+        {"value": 2.0, "ts": utcnow() - timedelta(seconds=4), "metadata": {"raw": {"pulses": 140}}},
+        {"value": 2.2, "ts": utcnow() - timedelta(seconds=2), "metadata": {"raw": {"pulses": 160}}},
     ]
     
     # Мок для MQTT клиента

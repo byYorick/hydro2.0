@@ -4,6 +4,8 @@
 Тестирует систему с ~100 зонами, проверяет latency p99 и переполнение очереди.
 """
 
+__test__ = False
+
 import asyncio
 import aiohttp
 import time
@@ -246,4 +248,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

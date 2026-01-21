@@ -4,7 +4,8 @@
 """
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from telemetry_processing import process_telemetry_batch, refresh_caches
 from models import TelemetrySampleModel
 
@@ -29,7 +30,7 @@ async def test_batch_upsert_single_query():
                 node_uid='nd-1',
                 metric_type='TEMPERATURE',
                 value=25.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
             TelemetrySampleModel(
                 zone_uid='zn-1',
@@ -37,7 +38,7 @@ async def test_batch_upsert_single_query():
                 node_uid='nd-1',
                 metric_type='HUMIDITY',
                 value=60.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
             TelemetrySampleModel(
                 zone_uid='zn-1',
@@ -45,7 +46,7 @@ async def test_batch_upsert_single_query():
                 node_uid='nd-1',
                 metric_type='PH',
                 value=6.5,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
         ]
         
@@ -82,7 +83,7 @@ async def test_batch_upsert_latest_timestamp():
          }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):
         
-        base_time = datetime.utcnow()
+        base_time = utcnow()
         
         samples = [
             TelemetrySampleModel(
@@ -99,7 +100,7 @@ async def test_batch_upsert_latest_timestamp():
                 node_uid='nd-1',
                 metric_type='TEMPERATURE',
                 value=25.0,  # Новое значение (более поздний timestamp)
-                ts=datetime.fromtimestamp(base_time.timestamp() + 10)
+                ts=base_time + timedelta(seconds=10)
             ),
         ]
         
@@ -137,7 +138,7 @@ async def test_batch_upsert_fallback():
                 node_uid='nd-1',
                 metric_type='TEMPERATURE',
                 value=25.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
         ]
         

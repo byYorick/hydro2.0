@@ -366,7 +366,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
     updates.append("status='online'")
 
     if len(updates) > 4:
-        query = f"UPDATE nodes SET {', '.join(updates)} WHERE uid=$1"
+        query = "UPDATE nodes SET " + ", ".join(updates) + " WHERE uid=$1"
         await execute(query, *params)
     else:
         await execute(

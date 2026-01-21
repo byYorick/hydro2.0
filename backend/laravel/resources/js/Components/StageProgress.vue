@@ -173,6 +173,7 @@ import {
   calculateCycleProgress,
   type GrowStage,
 } from '@/utils/growStages'
+import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import type { RecipeInstance } from '@/types'
 
 interface Props {
@@ -193,42 +194,59 @@ const props = withDefaults(defineProps<Props>(), {
   startedAt: null,
 })
 
+const growCycle = computed(() => normalizeGrowCycle(props.growCycle))
+
 // Используем growCycle если доступен, иначе fallback на recipeInstance
+const phaseTemplates = computed(() => {
+  if (growCycle.value?.recipeRevision?.phases?.length) {
+    return growCycle.value.recipeRevision.phases
+  }
+  return props.recipeInstance?.recipe?.phases || []
+})
+
+const phaseSnapshots = computed(() => growCycle.value?.phases || [])
+
+const phasesForProgress = computed(() => {
+  if (phaseTemplates.value.length > 0) {
+    if (phaseSnapshots.value.length === 0) {
+      return phaseTemplates.value
+    }
+    if (phaseSnapshots.value.length < phaseTemplates.value.length) {
+      return phaseTemplates.value
+    }
+  }
+  return phaseSnapshots.value.length ? phaseSnapshots.value : phaseTemplates.value
+})
+
 const currentPhaseIndex = computed(() => {
-  if (props.growCycle?.currentPhase) {
-    return props.growCycle.currentPhase.phase_index ?? -1
+  if (growCycle.value?.currentPhase) {
+    return growCycle.value.currentPhase.phase_index ?? -1
   }
   return props.recipeInstance?.current_phase_index ?? -1
 })
 
 const currentPhaseName = computed(() => {
-  if (props.growCycle?.currentPhase) {
-    return props.growCycle.currentPhase.name || null
+  if (growCycle.value?.currentPhase) {
+    return growCycle.value.currentPhase.name || null
   }
-  if (!props.recipeInstance?.recipe?.phases) return null
-  const phase = props.recipeInstance.recipe.phases.find(
-    p => p.phase_index === currentPhaseIndex.value
+  const phase = phaseTemplates.value.find(
+    (p: any) => p.phase_index === currentPhaseIndex.value
   )
   return phase?.name || null
 })
 
-const totalPhases = computed(() => {
-  if (props.growCycle?.phases) {
-    return props.growCycle.phases.length || 0
-  }
-  return props.recipeInstance?.recipe?.phases?.length || 0
-})
+const totalPhases = computed(() => phasesForProgress.value.length || 0)
 
 const recipeName = computed(() => {
-  if (props.growCycle?.recipeRevision?.recipe) {
-    return props.growCycle.recipeRevision.recipe.name
+  if (growCycle.value?.recipeRevision?.recipe) {
+    return growCycle.value.recipeRevision.recipe.name
   }
   return props.recipeInstance?.recipe?.name || null
 })
 
 const recipeId = computed(() => {
-  if (props.growCycle?.recipeRevision?.recipe) {
-    return props.growCycle.recipeRevision.recipe.id
+  if (growCycle.value?.recipeRevision?.recipe) {
+    return growCycle.value.recipeRevision.recipe.id
   }
   return props.recipeInstance?.recipe?.id || null
 })
@@ -240,7 +258,7 @@ const currentStage = computed<GrowStage | null>(() => {
   }
   
   // Проверяем наличие фаз
-  const hasPhases = (props.growCycle?.phases?.length ?? 0) > 0 || (props.recipeInstance?.recipe?.phases?.length ?? 0) > 0
+  const hasPhases = phasesForProgress.value.length > 0
   if (!hasPhases) {
     return null
   }
@@ -257,23 +275,15 @@ const allStages = computed<GrowStage[]>(() => {
   const stages: GrowStage[] = []
   const seenStages = new Set<GrowStage>()
   
-  // Используем фазы из growCycle если доступны
-  if (props.growCycle?.phases) {
-    props.growCycle.phases.forEach((phase: any) => {
+  // Используем фазы из growCycle или шаблонные фазы ревизии
+  if (phasesForProgress.value.length) {
+    phasesForProgress.value.forEach((phase: any) => {
       const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
       if (stage && !seenStages.has(stage)) {
         stages.push(stage)
         seenStages.add(stage)
       }
     })
-  } else if (props.recipeInstance?.recipe?.phases) {
-  props.recipeInstance.recipe.phases.forEach((phase) => {
-    const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
-    if (stage && !seenStages.has(stage)) {
-      stages.push(stage)
-      seenStages.add(stage)
-    }
-  })
   }
   
   return stages
@@ -294,8 +304,8 @@ const stageDates = computed<(string | null)[]>(() => {
 
 // Общий прогресс цикла
 const overallProgress = computed(() => {
-  const phases = props.growCycle?.phases || props.recipeInstance?.recipe?.phases
-  const startedAt = props.startedAt || props.growCycle?.started_at
+  const phases = phasesForProgress.value
+  const startedAt = props.startedAt || growCycle.value?.started_at
   
   if (!phases || !startedAt) {
     return 0
@@ -354,7 +364,7 @@ const overallProgress = computed(() => {
 })
 
 const nextPhaseInfo = computed(() => {
-  const phases = props.growCycle?.phases || props.recipeInstance?.recipe?.phases
+  const phases = phasesForProgress.value
   if (!phases || currentPhaseIndex.value < 0) return null
   
   const nextPhase = phases.find(

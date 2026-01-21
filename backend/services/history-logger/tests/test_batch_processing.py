@@ -4,6 +4,7 @@
 """
 import time
 from datetime import datetime
+from common.utils.time import utcnow
 from unittest.mock import patch
 
 import pytest
@@ -40,7 +41,7 @@ async def test_batch_resolve_zones():
                 node_uid='nd-1',
                 metric_type='TEMPERATURE',
                 value=25.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
             TelemetrySampleModel(
                 zone_uid='zn-2',
@@ -48,7 +49,7 @@ async def test_batch_resolve_zones():
                 node_uid='nd-2',
                 metric_type='HUMIDITY',
                 value=60.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
         ]
         
@@ -98,7 +99,7 @@ async def test_batch_upsert_telemetry_last():
                 node_uid='nd-1',
                 metric_type='TEMPERATURE',
                 value=25.0,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
         ]
 
@@ -142,7 +143,7 @@ async def test_sensor_insert_uses_on_conflict_and_caches_id():
                 metric_type='PH',
                 channel='ph_sensor',
                 value=6.5,
-                ts=datetime.utcnow()
+                ts=utcnow()
             ),
         ]
 

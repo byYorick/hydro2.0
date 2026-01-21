@@ -27,6 +27,17 @@ Python Core (MVP 1a)
 docker compose -f backend/docker-compose.dev.yml up -d --build
 ```
 
+## Тесты
+
+Единый прогон по всем Python-сервисам (избегает конфликтов импортов между сервисами):
+```bash
+PG_HOST=localhost PG_PORT=5432 PG_DB=hydro_dev PG_USER=hydro PG_PASS=hydro \
+PYTHONPATH=/home/georgiy/esp/hydro/hydro2.0/backend/services \
+.venv/bin/python -m pytest -rs --import-mode=importlib
+```
+
+Если нужны локальные прогоны по сервисам, запускайте из соответствующей папки сервиса.
+
 ## Проверка сервисов
 
 ### mqtt-bridge
@@ -76,4 +87,3 @@ Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logg
 - Changelog: `CHANGELOG.md`
 - Общая архитектура backend: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
 - MQTT спецификация: `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-

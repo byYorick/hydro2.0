@@ -90,6 +90,7 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   // Посадка
   'посадка': 'planting',
   'посев': 'planting',
+  'проращивание': 'planting',
   'germination': 'planting',
   'germ': 'planting',
   'seed': 'planting',
@@ -129,9 +130,13 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'harvest': 'harvest',
   'finishing': 'harvest',
   'finish': 'harvest',
+  'плодоношение': 'harvest',
+  'плод': 'harvest',
   'созревание': 'harvest',
   'урожай': 'harvest',
   'harvesting': 'harvest',
+  'fruiting': 'harvest',
+  'fruit': 'harvest',
 }
 
 /**
@@ -172,7 +177,7 @@ function getStageMapForTotalPhases(totalPhases: number): GrowStage[] {
     return GROW_STAGES_ORDERED
   }
   if (totalPhases === 4) {
-    return ['planting', 'veg', 'veg', 'flowering']
+    return ['planting', 'veg', 'flowering', 'harvest']
   }
   if (totalPhases === 3) {
     return ['planting', 'veg', 'flowering']

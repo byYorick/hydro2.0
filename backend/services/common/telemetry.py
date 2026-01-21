@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from .db import execute, upsert_telemetry_last, fetch
 from .env import get_settings
 from .metrics import normalize_metric_type, UnknownMetricError
+from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ async def process_telemetry_batch(samples: list[TelemetrySampleModel]):
         
         # 3. Подготовка данных
         stored_metric_type = normalized_metric_type
-        ts_value = sample.ts if sample.ts else datetime.utcnow()
+        ts_value = sample.ts if sample.ts else utcnow().replace(tzinfo=None)
         sensor_type = _infer_sensor_type(normalized_metric_type)
         sensor_label = _build_sensor_label(stored_metric_type, sample.channel, sensor_type)
 

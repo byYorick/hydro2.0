@@ -51,7 +51,7 @@
 
     <!-- Стадия и прогресс -->
     <div
-      v-if="zone.activeGrowCycle"
+      v-if="activeGrowCycle"
       class="mt-3 space-y-2"
     >
       <div class="flex items-center justify-between">
@@ -147,6 +147,7 @@ import {
   type GrowStage,
 } from '@/utils/growStages'
 import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
+import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import type { Zone, ZoneTelemetry, ZoneTargets } from '@/types'
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
@@ -186,12 +187,37 @@ const variant = computed<BadgeVariant>(() => {
   }
 })
 
+const activeGrowCycle = computed(() => {
+  const zone = props.zone as any
+  return normalizeGrowCycle(zone.activeGrowCycle || zone.active_grow_cycle || null) as any
+})
+
+const cyclePhaseTemplates = computed(() => {
+  return activeGrowCycle.value?.recipeRevision?.phases || []
+})
+
+const cyclePhaseSnapshots = computed(() => {
+  return activeGrowCycle.value?.phases || []
+})
+
+const cyclePhasesForProgress = computed(() => {
+  if (cyclePhaseTemplates.value.length > 0) {
+    if (cyclePhaseSnapshots.value.length === 0) {
+      return cyclePhaseTemplates.value
+    }
+    if (cyclePhaseSnapshots.value.length < cyclePhaseTemplates.value.length) {
+      return cyclePhaseTemplates.value
+    }
+  }
+  return cyclePhaseSnapshots.value.length ? cyclePhaseSnapshots.value : cyclePhaseTemplates.value
+})
+
 // Определяем текущую стадию
 const currentStage = computed<GrowStage | null>(() => {
   // Используем новую модель: activeGrowCycle
-  if (props.zone.activeGrowCycle?.currentPhase) {
-    const currentPhase = props.zone.activeGrowCycle.currentPhase
-    const phases = props.zone.activeGrowCycle.phases || []
+  if (activeGrowCycle.value?.currentPhase) {
+    const currentPhase = activeGrowCycle.value.currentPhase
+    const phases = cyclePhasesForProgress.value
     const phaseIndex = currentPhase.phase_index ?? -1
     
     if (phaseIndex >= 0) {
@@ -209,9 +235,9 @@ const currentStage = computed<GrowStage | null>(() => {
 // Вычисляем прогресс цикла
 const cycleProgress = computed<number | null>(() => {
   // Используем новую модель: activeGrowCycle
-  if (props.zone.activeGrowCycle) {
-    const cycle = props.zone.activeGrowCycle
-    const phases = cycle.phases || []
+  if (activeGrowCycle.value) {
+    const cycle = activeGrowCycle.value
+    const phases = cyclePhasesForProgress.value
     const currentPhase = cycle.currentPhase
     
     if (currentPhase && phases.length > 0 && cycle.started_at) {

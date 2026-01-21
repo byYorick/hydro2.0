@@ -12,6 +12,8 @@ Smoke-тест для setup_portal компонента ESP32 узлов.
     python3 test_setup_portal.py --ap-ssid "PH_SETUP_123456" --wifi-ssid "MyWiFi" --wifi-password "password123" --mqtt-host "192.168.1.4" --mqtt-port 1883
 """
 
+__test__ = False
+
 import argparse
 import requests
 import json
@@ -332,4 +334,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

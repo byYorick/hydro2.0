@@ -6,6 +6,7 @@ from typing import Any, Optional, Dict
 import asyncpg
 
 from .env import get_settings
+from .utils.time import utcnow
 
 
 _pool: Optional[asyncpg.pool.Pool] = None
@@ -88,7 +89,7 @@ async def upsert_telemetry_last(
     if sample_ts and getattr(sample_ts, "tzinfo", None):
         sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
     if not sample_ts:
-        sample_ts = datetime.utcnow()
+        sample_ts = utcnow().replace(tzinfo=None)
     
     await execute(
         """

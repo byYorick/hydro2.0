@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -24,9 +25,9 @@ async def test_calculate_ph_stability_stable():
     with patch("health_monitor.fetch") as mock_fetch:
         # Стабильные значения pH (6.5 ± 0.05)
         mock_fetch.return_value = [
-            {"value": 6.5, "ts": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 6.52, "ts": datetime.utcnow() - timedelta(minutes=30)},
-            {"value": 6.48, "ts": datetime.utcnow()},
+            {"value": 6.5, "ts": utcnow() - timedelta(hours=1)},
+            {"value": 6.52, "ts": utcnow() - timedelta(minutes=30)},
+            {"value": 6.48, "ts": utcnow()},
         ]
         
         stability = await calculate_ph_stability(1, hours=2)
@@ -40,9 +41,9 @@ async def test_calculate_ph_stability_unstable():
     with patch("health_monitor.fetch") as mock_fetch:
         # Нестабильные значения pH (6.0 - 7.0)
         mock_fetch.return_value = [
-            {"value": 6.0, "ts": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 7.0, "ts": datetime.utcnow() - timedelta(minutes=30)},
-            {"value": 6.5, "ts": datetime.utcnow()},
+            {"value": 6.0, "ts": utcnow() - timedelta(hours=1)},
+            {"value": 7.0, "ts": utcnow() - timedelta(minutes=30)},
+            {"value": 6.5, "ts": utcnow()},
         ]
         
         stability = await calculate_ph_stability(1, hours=2)
@@ -55,8 +56,8 @@ async def test_calculate_ec_stability():
     """Test EC stability calculation."""
     with patch("health_monitor.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"value": 1.8, "ts": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 1.82, "ts": datetime.utcnow()},
+            {"value": 1.8, "ts": utcnow() - timedelta(hours=1)},
+            {"value": 1.82, "ts": utcnow()},
         ]
         
         stability = await calculate_ec_stability(1, hours=2)

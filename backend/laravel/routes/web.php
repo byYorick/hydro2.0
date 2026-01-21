@@ -898,7 +898,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->with([
                         'greenhouse:id,name',
                         'activeGrowCycle.recipeRevision.recipe:id,name',
+                        'activeGrowCycle.recipeRevision.phases',
                         'activeGrowCycle.currentPhase',
+                        'activeGrowCycle.phases',
                         'activeGrowCycle.plant:id,name',
                     ])
                     ->get();
@@ -1022,7 +1024,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->with([
                     'greenhouse:id,name',
                     'activeGrowCycle.recipeRevision.recipe:id,name,description',
+                    'activeGrowCycle.recipeRevision.phases',
                     'activeGrowCycle.currentPhase',
+                    'activeGrowCycle.phases',
                     'activeGrowCycle.plant:id,name',
                 ])
                 ->findOrFail($zoneIdInt);
@@ -1031,7 +1035,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $zone->refresh();
             $zone->loadMissing([
                 'activeGrowCycle.recipeRevision.recipe',
+                'activeGrowCycle.recipeRevision.phases',
                 'activeGrowCycle.currentPhase',
+                'activeGrowCycle.phases',
                 'activeGrowCycle.plant',
             ]);
 
@@ -1323,6 +1329,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'targets' => $targets,
                 'current_phase' => $currentPhaseNormalized,
                 'active_cycle' => $activeCycle,
+                'active_grow_cycle' => $zone->activeGrowCycle,
                 'devices' => $devices,
                 'events' => $events,
                 'cycles' => $cycles,

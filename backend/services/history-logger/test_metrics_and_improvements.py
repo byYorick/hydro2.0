@@ -8,6 +8,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
+from common.utils.time import utcnow
 import time
 import sys
 import os
@@ -156,7 +157,7 @@ class TestMetrics:
                 zone_id=1,
                 metric_type="PH",
                 value=6.5,
-                ts=datetime.utcnow()
+                ts=utcnow()
             )
         ]
         
@@ -283,7 +284,7 @@ class TestMetrics:
                 zone_id=1,
                 metric_type="PH",
                 value=6.5,
-                ts=datetime.utcnow()
+                ts=utcnow()
             )
         ]
         
@@ -358,7 +359,7 @@ class TestImprovedLogging:
                 zone_id=1,
                 metric_type="PH",
                 value=6.5,
-                ts=datetime.utcnow()
+                ts=utcnow()
             )
         ]
         

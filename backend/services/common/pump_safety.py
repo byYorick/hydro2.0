@@ -5,10 +5,11 @@ Pump Safety Engine - проверки безопасности насосов.
 """
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from .db import fetch, execute
 from .alerts import create_alert, AlertSource, AlertCode
 from .water_flow import check_water_level, check_flow, MIN_FLOW_THRESHOLD
+from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой fl
 MAX_RECENT_FAILURES = 3  # Максимальное количество недавних ошибок
 FAILURE_WINDOW_MINUTES = 30  # Окно времени для подсчёта ошибок
 MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телеметрии для определения offline
+
+
+def _to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None):
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 async def check_dry_run(zone_id: int, min_water_level: Optional[float] = None) -> tuple[bool, Optional[str]]:
@@ -81,7 +90,8 @@ async def check_no_flow(
     Returns:
         (is_ok, error_message): True если поток есть, False если отсутствует
     """
-    now = datetime.utcnow()
+    now = utcnow().replace(tzinfo=None)
+    pump_start_time = _to_naive_utc(pump_start_time)
     elapsed_sec = (now - pump_start_time).total_seconds()
     
     # Проверяем только если прошло больше DRY_RUN_CHECK_DELAY_SEC секунд
@@ -161,10 +171,10 @@ async def check_mcu_offline(zone_id: int, node_id: Optional[int] = None) -> tupl
     if not rows:
         return False, "No nodes found for zone"
     
-    now = datetime.utcnow()
+    now = utcnow().replace(tzinfo=None)
     for row in rows:
         node_status = row.get("status")
-        last_telemetry = row.get("last_telemetry")
+        last_telemetry = _to_naive_utc(row.get("last_telemetry"))
         
         # Проверяем статус узла
         if node_status != "online":
@@ -367,7 +377,7 @@ async def too_many_recent_failures(
     Returns:
         True если слишком много ошибок, False если нормально
     """
-    window_start = datetime.utcnow() - timedelta(minutes=window_minutes)
+    window_start = utcnow().replace(tzinfo=None) - timedelta(minutes=window_minutes)
     
     critical_codes = [
         AlertCode.BIZ_OVERCURRENT.value,

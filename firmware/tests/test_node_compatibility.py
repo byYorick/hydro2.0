@@ -36,6 +36,7 @@ NC = '\033[0m'  # No Color
 @dataclass
 class TestResult:
     """Результат теста."""
+    __test__ = False
     name: str
     passed: bool
     message: str

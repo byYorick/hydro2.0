@@ -503,7 +503,7 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
     MIN_VALID_TIMESTAMP = 1_000_000_000
     MAX_TIMESTAMP_DRIFT_SEC = 300
     server_timestamp = time.time()
-    server_time = datetime.utcfromtimestamp(server_timestamp)
+    server_time = datetime.fromtimestamp(server_timestamp, timezone.utc)
 
     raw_ts = validated_data.ts
     if isinstance(raw_ts, str):

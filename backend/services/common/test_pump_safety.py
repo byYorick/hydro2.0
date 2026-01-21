@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, Mock
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.pump_safety import (
     check_dry_run,
     check_no_flow,
@@ -51,7 +52,7 @@ async def test_check_dry_run_low_water():
 @pytest.mark.asyncio
 async def test_check_no_flow_early():
     """Test no flow check when pump just started (less than delay)."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=1)
+    pump_start_time = utcnow() - timedelta(seconds=1)
     
     is_ok, error_msg = await check_no_flow(1, "pump_recirc", "cmd-1", pump_start_time)
     
@@ -62,7 +63,7 @@ async def test_check_no_flow_early():
 @pytest.mark.asyncio
 async def test_check_no_flow_detected():
     """Test no flow check when no flow detected."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)
+    pump_start_time = utcnow() - timedelta(seconds=5)
     
     with patch("common.pump_safety.check_flow") as mock_check_flow, \
          patch("common.pump_safety.create_alert") as mock_alert:
@@ -81,7 +82,7 @@ async def test_check_no_flow_detected():
 @pytest.mark.asyncio
 async def test_check_no_flow_ok():
     """Test no flow check when flow is normal."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)
+    pump_start_time = utcnow() - timedelta(seconds=5)
     
     with patch("common.pump_safety.check_flow") as mock_check_flow:
         mock_check_flow.return_value = (True, 2.0)  # Поток нормальный
@@ -181,14 +182,14 @@ async def test_get_active_critical_alerts():
             "code": AlertCode.BIZ_OVERCURRENT.value,
             "type": "Overcurrent",
             "details": {},
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow(),
         },
         {
             "id": 2,
             "code": AlertCode.BIZ_NO_FLOW.value,
             "type": "No flow",
             "details": {},
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow(),
         },
     ]
     
@@ -237,7 +238,7 @@ async def test_can_run_pump_with_active_critical_alert():
             "code": AlertCode.BIZ_OVERCURRENT.value,
             "type": "Overcurrent",
             "details": {},
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow(),
         }
     ]
     
@@ -307,7 +308,7 @@ async def test_can_run_pump_ok():
 @pytest.mark.asyncio
 async def test_check_mcu_offline_online():
     """Test MCU offline check when MCU is online."""
-    now = datetime.utcnow()
+    now = utcnow()
     mock_nodes = [
         {
             "id": 1,
@@ -328,7 +329,7 @@ async def test_check_mcu_offline_online():
 @pytest.mark.asyncio
 async def test_check_mcu_offline_offline():
     """Test MCU offline check when MCU is offline."""
-    now = datetime.utcnow()
+    now = utcnow()
     mock_nodes = [
         {
             "id": 1,
@@ -375,7 +376,7 @@ async def test_check_mcu_offline_wrong_status():
         {
             "id": 1,
             "status": "offline",
-            "last_telemetry": datetime.utcnow(),
+            "last_telemetry": utcnow(),
         }
     ]
     
@@ -464,4 +465,3 @@ async def test_can_run_pump_mcu_offline():
         
         assert can_run is False
         assert "MCU offline" in error_msg
-

@@ -1,6 +1,7 @@
 """Tests for scheduler."""
 import pytest
 from datetime import time, datetime, timedelta
+from common.utils.time import utcnow
 from unittest.mock import Mock, patch, AsyncMock
 import httpx
 import sys
@@ -231,7 +232,7 @@ async def test_check_and_execute_schedules_passes_mqtt():
 @pytest.mark.asyncio
 async def test_monitor_pump_safety_safe():
     """Test pump safety monitoring when flow is normal."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)
+    pump_start_time = utcnow() - timedelta(seconds=5)
     
     with patch("main.check_dry_run_protection") as mock_check, \
          patch("main.create_zone_event") as mock_event, \
@@ -258,7 +259,7 @@ async def test_monitor_pump_safety_safe():
 @pytest.mark.asyncio
 async def test_monitor_pump_safety_dry_run():
     """Test pump safety monitoring when dry run detected."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)
+    pump_start_time = utcnow() - timedelta(seconds=5)
     
     with patch("main.check_dry_run_protection") as mock_check, \
          patch("main.create_zone_event") as mock_event, \

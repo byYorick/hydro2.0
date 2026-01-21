@@ -11,8 +11,13 @@ import logging
 import os
 from typing import Dict, Any, Optional, Callable, List
 from datetime import datetime
-import websockets
-from websockets.client import WebSocketClientProtocol
+try:
+    from websockets.asyncio.client import connect, ClientConnection
+except ImportError:
+    import websockets
+    from websockets.client import WebSocketClientProtocol as ClientConnection
+    connect = websockets.connect
+from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ class WSClient:
         self.auth_client = auth_client
         self.api_url = api_url or os.getenv("LARAVEL_URL", "http://localhost:8081").rstrip("/")
         self.socket_id: Optional[str] = None
-        self.ws: Optional[WebSocketClientProtocol] = None
+        self.ws: Optional[ClientConnection] = None
         self.connected = False
         self._message_queue: List[Dict[str, Any]] = []
         self._event_handlers: Dict[str, List[Callable]] = {}
@@ -91,12 +96,12 @@ class WSClient:
             
             # websockets<15 использует extra_headers, websockets>=15 использует additional_headers
             try:
-                self.ws = await websockets.connect(
+                self.ws = await connect(
                     self.ws_url,
                     additional_headers=headers
                 )
             except TypeError:
-                self.ws = await websockets.connect(
+                self.ws = await connect(
                     self.ws_url,
                     extra_headers=headers
                 )
@@ -185,7 +190,7 @@ class WSClient:
                         logger.debug(f"Received WebSocket message: {data}")
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to parse WebSocket message: {message}")
-        except websockets.exceptions.ConnectionClosed:
+        except ConnectionClosed:
             logger.info("WebSocket connection closed")
             self.connected = False
             # Автопереподписка после переподключения

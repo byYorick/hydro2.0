@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
+from common.utils.time import utcnow
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -40,7 +41,7 @@ async def test_correction_controller_uses_pid_config_from_db():
     invalidate_cache(zone_id, correction_type.value)
     
     with patch('services.pid_config_service.fetch', new_callable=AsyncMock) as mock_fetch:
-        mock_fetch.return_value = [{'config': db_config, 'updated_at': datetime.utcnow()}]
+        mock_fetch.return_value = [{'config': db_config, 'updated_at': utcnow()}]
         
         # Мокаем другие зависимости
         with patch('correction_controller.should_apply_correction', new_callable=AsyncMock) as mock_should:
@@ -58,7 +59,7 @@ async def test_correction_controller_uses_pid_config_from_db():
                         }
                     }
                     
-                    telemetry_ts = {'PH': datetime.utcnow().replace(tzinfo=None)}
+                    telemetry_ts = {'PH': utcnow().replace(tzinfo=None)}
                     result = await controller.check_and_correct(
                         zone_id, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators
                     )
@@ -101,7 +102,7 @@ async def test_pid_output_event_created():
                         }
                     }
                     
-                    telemetry_ts = {'PH': datetime.utcnow().replace(tzinfo=None)}
+                    telemetry_ts = {'PH': utcnow().replace(tzinfo=None)}
                     await controller.check_and_correct(
                         zone_id, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators
                     )

@@ -8,6 +8,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
+from common.utils.time import utcnow
 import asyncio
 import httpx
 import sys
@@ -88,7 +89,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -109,7 +110,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -131,7 +132,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -152,7 +153,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -175,7 +176,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -206,7 +207,7 @@ class TestRedisRetryLogic:
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         with patch('state.telemetry_queue', None):

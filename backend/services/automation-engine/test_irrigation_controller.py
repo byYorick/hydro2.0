@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -19,7 +20,7 @@ from irrigation_controller import (
 @pytest.mark.asyncio
 async def test_get_last_irrigation_time():
     """Test getting last irrigation time."""
-    last_time = datetime.utcnow() - timedelta(hours=2)
+    last_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.fetch") as mock_fetch:
         mock_fetch.return_value = [
@@ -44,7 +45,7 @@ async def test_check_and_control_irrigation_interval_reached():
     }
     
     # Последний полив был 2 часа назад
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level:
@@ -70,7 +71,7 @@ async def test_check_and_control_irrigation_interval_not_reached():
     telemetry = {}
     
     # Последний полив был 30 минут назад
-    last_irrigation_time = datetime.utcnow() - timedelta(minutes=30)
+    last_irrigation_time = utcnow() - timedelta(minutes=30)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
          patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
@@ -90,7 +91,7 @@ async def test_check_and_control_irrigation_water_level_low():
     }
     telemetry = {}
     
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level, \
@@ -112,7 +113,7 @@ async def test_check_and_control_irrigation_no_nodes():
     }
     telemetry = {}
     
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level, \
@@ -129,7 +130,7 @@ async def test_check_and_control_irrigation_no_nodes():
 @pytest.mark.asyncio
 async def test_get_last_recirculation_time():
     """Test getting last recirculation time."""
-    last_time = datetime.utcnow() - timedelta(hours=2)
+    last_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.fetch") as mock_fetch:
         mock_fetch.return_value = [
@@ -164,8 +165,7 @@ async def test_check_and_control_recirculation_enabled_interval_reached():
     actuators = {"recirculation_pump": {"node_uid": "nd-recirc-1", "channel": "recirculation_pump"}}
     
     # Последняя рециркуляция была 2 часа назад (с timezone)
-    from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level:
@@ -213,7 +213,7 @@ async def test_check_and_control_recirculation_interval_not_reached():
     
     # Последняя рециркуляция была 30 минут назад (с timezone)
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(minutes=30)
+    last_recirculation_time = utcnow() - timedelta(minutes=30)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
          patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
@@ -253,7 +253,7 @@ async def test_check_and_control_recirculation_water_level_low():
     telemetry = {}
     
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level, \
@@ -286,7 +286,7 @@ async def test_check_and_control_recirculation_no_nodes():
     telemetry = {}
     
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
          patch("irrigation_controller.check_water_level") as mock_water_level, \

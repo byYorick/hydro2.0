@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import Query
 from datetime import datetime, timedelta
@@ -31,14 +32,8 @@ logger = logging.getLogger(__name__)
 SIMULATIONS_RUN = Counter("simulations_run_total", "Total simulations executed")
 SIMULATION_DURATION = Histogram("simulation_duration_seconds", "Simulation execution time")
 
-app = FastAPI(title="Digital Twin Engine")
-
-# Модели для симуляции
-from models import PHModel, ECModel, ClimateModel
-
-
-@app.on_event("startup")
-async def log_startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("Digital twin service started")
     send_service_log(
         service="digital-twin",
@@ -46,6 +41,13 @@ async def log_startup() -> None:
         message="Digital twin service started",
         context={"port": 8003},
     )
+    yield
+
+
+app = FastAPI(title="Digital Twin Engine", lifespan=lifespan)
+
+# Модели для симуляции
+from models import PHModel, ECModel, ClimateModel
 
 
 class SimulationResponse(BaseModel):

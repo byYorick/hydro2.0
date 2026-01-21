@@ -150,6 +150,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { calculateProgressBetween } from '@/utils/growCycleProgress'
+import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
@@ -366,7 +367,15 @@ const currentPhase = computed(() => {
 })
 
 const activeCycle = computed(() => (activeCycleProp.value || null) as any)
-const activeGrowCycle = computed(() => (activeGrowCycleProp.value || zone.value?.activeGrowCycle || null) as any)
+const rawActiveGrowCycle = computed(() => {
+  return (
+    activeGrowCycleProp.value ||
+    zone.value?.activeGrowCycle ||
+    (zone.value as any)?.active_grow_cycle ||
+    null
+  )
+})
+const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value) as any)
 const devices = computed(() => (devicesProp.value || []) as Device[])
 const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)

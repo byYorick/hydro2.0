@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from datetime import datetime
+from common.utils.time import utcnow
 from common.telemetry import TelemetrySampleModel, process_telemetry_batch
 
 
@@ -13,7 +14,7 @@ async def test_process_telemetry_batch_with_node_uid():
         zone_id=1,
         metric_type="PH",
         value=6.5,
-        ts=datetime.utcnow(),
+        ts=utcnow(),
         channel="ph_sensor"
     )
     
