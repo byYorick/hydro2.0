@@ -746,7 +746,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ->where('greenhouse_id', $greenhouse->id)
             ->with([
                 'activeGrowCycle.recipeRevision.recipe:id,name,description',
+                'activeGrowCycle.recipeRevision.phases',
+                'activeGrowCycle.recipeRevision.phases.stageTemplate:id,code,name',
                 'activeGrowCycle.currentPhase',
+                'activeGrowCycle.phases',
                 'activeGrowCycle.plant:id,name',
             ])
             ->withCount([
@@ -899,6 +902,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         'greenhouse:id,name',
                         'activeGrowCycle.recipeRevision.recipe:id,name',
                         'activeGrowCycle.recipeRevision.phases',
+                        'activeGrowCycle.recipeRevision.phases.stageTemplate:id,code,name',
                         'activeGrowCycle.currentPhase',
                         'activeGrowCycle.phases',
                         'activeGrowCycle.plant:id,name',
@@ -1025,6 +1029,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     'greenhouse:id,name',
                     'activeGrowCycle.recipeRevision.recipe:id,name,description',
                     'activeGrowCycle.recipeRevision.phases',
+                    'activeGrowCycle.recipeRevision.phases.stageTemplate:id,code,name',
                     'activeGrowCycle.currentPhase',
                     'activeGrowCycle.phases',
                     'activeGrowCycle.plant:id,name',
@@ -1036,6 +1041,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $zone->loadMissing([
                 'activeGrowCycle.recipeRevision.recipe',
                 'activeGrowCycle.recipeRevision.phases',
+                'activeGrowCycle.recipeRevision.phases.stageTemplate',
                 'activeGrowCycle.currentPhase',
                 'activeGrowCycle.phases',
                 'activeGrowCycle.plant',
@@ -1305,6 +1311,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     'activeGrowCycle.recipeRevision.recipe',
                     'activeGrowCycle.currentPhase',
                     'activeGrowCycle.phases',
+                    'activeGrowCycle.recipeRevision.phases.stageTemplate',
                 ]);
             }
 

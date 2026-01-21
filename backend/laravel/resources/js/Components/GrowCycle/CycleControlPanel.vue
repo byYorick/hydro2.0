@@ -424,4 +424,13 @@ watch(() => props.cycle?.id, (newCycleId) => {
     events.value = []
   }
 })
+
+watch(
+  () => props.cycle?.current_phase_id ?? props.cycle?.currentPhase?.id,
+  (newPhaseId, oldPhaseId) => {
+    if (newPhaseId && newPhaseId !== oldPhaseId) {
+      loadEvents()
+    }
+  }
+)
 </script>

@@ -369,9 +369,9 @@ const currentPhase = computed(() => {
 const activeCycle = computed(() => (activeCycleProp.value || null) as any)
 const rawActiveGrowCycle = computed(() => {
   return (
-    activeGrowCycleProp.value ||
     zone.value?.activeGrowCycle ||
     (zone.value as any)?.active_grow_cycle ||
+    activeGrowCycleProp.value ||
     null
   )
 })

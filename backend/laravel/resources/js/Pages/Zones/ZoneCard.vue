@@ -221,10 +221,13 @@ const currentStage = computed<GrowStage | null>(() => {
     const phaseIndex = currentPhase.phase_index ?? -1
     
     if (phaseIndex >= 0) {
+      const phaseTemplate = phases.find((phase: any) => phase.phase_index === phaseIndex)
+      const stageTemplateCode = phaseTemplate?.stageTemplate?.code || phaseTemplate?.stage_template?.code || null
       return getStageForPhase(
         currentPhase.name,
         phaseIndex,
-        phases.length || 1
+        phases.length || 1,
+        stageTemplateCode
       ) ?? null
     }
   }

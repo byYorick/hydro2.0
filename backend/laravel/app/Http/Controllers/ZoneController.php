@@ -124,7 +124,9 @@ class ZoneController extends Controller
             'greenhouse:id,name',
             'preset:id,name',
             'activeGrowCycle.recipeRevision.recipe:id,name',
-            'activeGrowCycle.currentPhase:id,name',
+            'activeGrowCycle.recipeRevision.phases.stageTemplate:id,code,name',
+            'activeGrowCycle.currentPhase',
+            'activeGrowCycle.phases',
             'activeGrowCycle.plant:id,name',
         ]);
 

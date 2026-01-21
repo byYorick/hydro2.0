@@ -12,7 +12,7 @@
       @click.stop
     >
       <h2 class="text-lg font-semibold mb-4">
-        Digital Twin Simulation
+        Симуляция цифрового двойника
       </h2>
       
       <form
@@ -24,7 +24,10 @@
           <label
             for="simulation-duration-hours"
             class="block text-sm font-medium mb-1"
-          >Duration (hours)</label>
+          >Длительность (часы)</label>
+          <p class="text-xs text-[color:var(--text-muted)] mb-1">
+            Сколько часов моделировать. Дольше = более долгий прогноз.
+          </p>
           <input
             id="simulation-duration-hours"
             v-model.number="form.duration_hours"
@@ -41,7 +44,10 @@
           <label
             for="simulation-step-minutes"
             class="block text-sm font-medium mb-1"
-          >Step (minutes)</label>
+          >Шаг (минуты)</label>
+          <p class="text-xs text-[color:var(--text-muted)] mb-1">
+            Меньше шаг — выше детализация, но расчет дольше.
+          </p>
           <input
             id="simulation-step-minutes"
             v-model.number="form.step_minutes"
@@ -56,28 +62,67 @@
         
         <div>
           <label
-            for="simulation-recipe-id"
+            for="simulation-recipe-search"
             class="block text-sm font-medium mb-1"
-          >Recipe ID (optional)</label>
+          >Рецепт (необязательно)</label>
+          <p class="text-xs text-[color:var(--text-muted)] mb-1">
+            Выберите рецепт из базы или оставьте "по умолчанию", чтобы взять рецепт зоны.
+          </p>
           <input
-            id="simulation-recipe-id"
-            v-model.number="form.recipe_id"
-            name="recipe_id"
-            type="number"
-            class="input-field h-9 w-full"
+            id="simulation-recipe-search"
+            v-model="recipeSearch"
+            name="recipe_search"
+            type="text"
+            placeholder="Поиск по названию..."
+            class="input-field h-9 w-full mb-2"
           />
+          <select
+            id="simulation-recipe-select"
+            v-model="form.recipe_id"
+            name="recipe_id"
+            class="input-field h-9 w-full"
+          >
+            <option :value="null">
+              Рецепт зоны (по умолчанию)
+            </option>
+            <option
+              v-for="recipe in recipes"
+              :key="recipe.id"
+              :value="recipe.id"
+            >
+              {{ recipe.name }}
+            </option>
+          </select>
+          <div
+            v-if="recipesLoading"
+            class="text-xs text-[color:var(--text-muted)] mt-1"
+          >
+            Загрузка рецептов...
+          </div>
+          <div
+            v-else-if="recipesError"
+            class="text-xs text-[color:var(--accent-red)] mt-1"
+          >
+            {{ recipesError }}
+          </div>
         </div>
         
         <div class="border-t border-[color:var(--border-muted)] pt-4">
           <div class="text-sm font-medium mb-2">
-            Initial State (optional)
+            Начальные условия (необязательно)
           </div>
+          <p class="text-xs text-[color:var(--text-muted)] mb-2">
+            Заполните только то, что хотите переопределить. Пустые поля возьмутся из текущих данных.
+          </p>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label
                 for="simulation-initial-ph"
                 class="block text-xs text-[color:var(--text-muted)] mb-1"
               >pH</label>
+              <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
+                Обычно 5.5–6.5 для гидропоники.
+              </p>
               <input
                 id="simulation-initial-ph"
                 v-model.number="form.initial_state.ph"
@@ -92,6 +137,9 @@
                 for="simulation-initial-ec"
                 class="block text-xs text-[color:var(--text-muted)] mb-1"
               >EC</label>
+              <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
+                Электропроводность раствора (мСм/см).
+              </p>
               <input
                 id="simulation-initial-ec"
                 v-model.number="form.initial_state.ec"
@@ -105,7 +153,10 @@
               <label
                 for="simulation-initial-temp-air"
                 class="block text-xs text-[color:var(--text-muted)] mb-1"
-              >Temp Air (°C)</label>
+              >Температура воздуха (°C)</label>
+              <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
+                Стартовая температура воздуха в зоне.
+              </p>
               <input
                 id="simulation-initial-temp-air"
                 v-model.number="form.initial_state.temp_air"
@@ -119,7 +170,10 @@
               <label
                 for="simulation-initial-temp-water"
                 class="block text-xs text-[color:var(--text-muted)] mb-1"
-              >Temp Water (°C)</label>
+              >Температура воды (°C)</label>
+              <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
+                Температура питательного раствора.
+              </p>
               <input
                 id="simulation-initial-temp-water"
                 v-model.number="form.initial_state.temp_water"
@@ -134,6 +188,9 @@
                 for="simulation-initial-humidity"
                 class="block text-xs text-[color:var(--text-muted)] mb-1"
               >Влажность (%)</label>
+              <p class="text-[11px] text-[color:var(--text-dim)] mb-1">
+                Относительная влажность воздуха.
+              </p>
               <input
                 id="simulation-initial-humidity"
                 v-model.number="form.initial_state.humidity_air"
@@ -150,7 +207,7 @@
           v-if="loading"
           class="text-sm text-[color:var(--text-muted)]"
         >
-          Running simulation...
+          Выполняется симуляция...
         </div>
         
         <div
@@ -166,13 +223,13 @@
             variant="secondary"
             @click="$emit('close')"
           >
-            Cancel
+            Отмена
           </Button>
           <Button
             type="submit"
             :disabled="loading"
           >
-            {{ loading ? 'Running...' : 'Run Simulation' }}
+            {{ loading ? 'Запуск...' : 'Запустить' }}
           </Button>
         </div>
       </form>
@@ -183,10 +240,10 @@
         @click.stop
       >
         <div class="text-sm font-medium mb-3">
-          Simulation Results
+          Результаты симуляции
         </div>
         <div class="text-xs text-[color:var(--text-muted)] mb-2">
-          Duration: {{ results.duration_hours }}h, Step: {{ results.step_minutes }}min
+          Длительность: {{ results.duration_hours }} ч, шаг: {{ results.step_minutes }} мин
         </div>
         <div class="h-64">
           <ChartBase
@@ -200,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
@@ -251,9 +308,22 @@ interface SimulationPoint {
 }
 
 interface SimulationResults {
-  duration_hours: number
-  step_minutes: number
+  duration_hours?: number
+  step_minutes?: number
   points: SimulationPoint[]
+}
+
+interface RecipeOption {
+  id: number
+  name: string
+}
+
+interface RecipeDefaults {
+  ph?: number | null
+  ec?: number | null
+  temp_air?: number | null
+  temp_water?: number | null
+  humidity_air?: number | null
 }
 
 const form = reactive<SimulationForm>({
@@ -272,6 +342,13 @@ const form = reactive<SimulationForm>({
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 const error = ref<string | null>(null)
 const results = ref<SimulationResults | null>(null)
+const recipes = ref<RecipeOption[]>([])
+const recipesLoading = ref(false)
+const recipesError = ref<string | null>(null)
+const recipeSearch = ref('')
+let recipeSearchTimer: ReturnType<typeof setTimeout> | null = null
+const lastDefaultsRecipeId = ref<number | null>(null)
+const recipeDefaultsCache = new Map<number, RecipeDefaults>()
 
 const resolveCssColor = (variable: string, fallback: string): string => {
   if (typeof window === 'undefined') {
@@ -307,7 +384,7 @@ const chartOption = computed<EChartsOption | null>(() => {
       axisPointer: { type: 'cross' },
     },
     legend: {
-      data: ['pH', 'EC', 'Temp Air'],
+      data: ['pH', 'EC', 'Температура воздуха'],
       textStyle: { color: chartPalette.value.textStrong },
     },
     grid: {
@@ -318,7 +395,7 @@ const chartOption = computed<EChartsOption | null>(() => {
     },
     xAxis: {
       type: 'value',
-      name: 'Time (hours)',
+      name: 'Время (ч)',
       nameTextStyle: { color: chartPalette.value.text },
       axisLabel: { color: chartPalette.value.text },
       splitLine: { lineStyle: { color: chartPalette.value.grid } },
@@ -333,7 +410,7 @@ const chartOption = computed<EChartsOption | null>(() => {
       },
       {
         type: 'value',
-        name: 'Temp (°C)',
+        name: 'Температура (°C)',
         nameTextStyle: { color: chartPalette.value.text },
         axisLabel: { color: chartPalette.value.text },
         splitLine: { show: false },
@@ -357,7 +434,7 @@ const chartOption = computed<EChartsOption | null>(() => {
         itemStyle: { color: chartPalette.value.ec },
       },
       {
-        name: 'Temp Air',
+        name: 'Температура воздуха',
         type: 'line',
         yAxisIndex: 1,
         data: tempData,
@@ -368,6 +445,160 @@ const chartOption = computed<EChartsOption | null>(() => {
     ],
   }
 })
+
+const resultDurationHours = computed(() => {
+  return results.value?.duration_hours ?? form.duration_hours
+})
+
+const resultStepMinutes = computed(() => {
+  return results.value?.step_minutes ?? form.step_minutes
+})
+
+function toNumberOrNull(value: unknown): number | null {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+function extractRecipeDefaults(recipe: any): RecipeDefaults | null {
+  const phases = Array.isArray(recipe?.phases) ? recipe.phases : []
+  if (phases.length === 0) return null
+  const sorted = [...phases].sort((a, b) => (a.phase_index ?? 0) - (b.phase_index ?? 0))
+  const phase = sorted[0]
+
+  return {
+    ph: toNumberOrNull(
+      phase?.ph_target ?? phase?.ph_min ?? phase?.ph_max ?? phase?.targets?.ph?.min ?? phase?.targets?.ph?.max
+    ),
+    ec: toNumberOrNull(
+      phase?.ec_target ?? phase?.ec_min ?? phase?.ec_max ?? phase?.targets?.ec?.min ?? phase?.targets?.ec?.max
+    ),
+    temp_air: toNumberOrNull(
+      phase?.temp_air_target ?? phase?.targets?.climate?.temperature?.target ?? phase?.targets?.climate?.temperature
+    ),
+    temp_water: toNumberOrNull(
+      phase?.temp_water_target ?? phase?.extensions?.temp_water_target ?? phase?.extensions?.temp_water
+    ),
+    humidity_air: toNumberOrNull(
+      phase?.humidity_target ?? phase?.targets?.climate?.humidity?.target ?? phase?.targets?.climate?.humidity
+    ),
+  }
+}
+
+function applyRecipeDefaults(defaults: RecipeDefaults | null): void {
+  if (!defaults) return
+  if (form.initial_state.ph === null && defaults.ph !== null && defaults.ph !== undefined) {
+    form.initial_state.ph = defaults.ph
+  }
+  if (form.initial_state.ec === null && defaults.ec !== null && defaults.ec !== undefined) {
+    form.initial_state.ec = defaults.ec
+  }
+  if (form.initial_state.temp_air === null && defaults.temp_air !== null && defaults.temp_air !== undefined) {
+    form.initial_state.temp_air = defaults.temp_air
+  }
+  if (form.initial_state.temp_water === null && defaults.temp_water !== null && defaults.temp_water !== undefined) {
+    form.initial_state.temp_water = defaults.temp_water
+  }
+  if (form.initial_state.humidity_air === null && defaults.humidity_air !== null && defaults.humidity_air !== undefined) {
+    form.initial_state.humidity_air = defaults.humidity_air
+  }
+}
+
+function addRecipeIfMissing(recipe: RecipeOption): void {
+  if (!recipes.value.find((item) => item.id === recipe.id)) {
+    recipes.value.push(recipe)
+  }
+}
+
+async function ensureDefaultRecipe(): Promise<void> {
+  if (!props.defaultRecipeId) return
+  if (recipes.value.find((item) => item.id === props.defaultRecipeId)) return
+
+  try {
+    const response = await api.get<{ status: string; data?: { id: number; name: string } }>(
+      `/recipes/${props.defaultRecipeId}`
+    )
+    const data = response.data?.data
+    if (data?.id && data?.name) {
+      addRecipeIfMissing({ id: data.id, name: data.name })
+    }
+  } catch (err) {
+    logger.debug('[ZoneSimulationModal] Failed to load default recipe', err)
+  }
+}
+
+async function loadRecipes(search?: string): Promise<void> {
+  recipesLoading.value = true
+  recipesError.value = null
+  try {
+    const response = await api.get<{ status: string; data?: { data?: RecipeOption[] } }>(
+      '/recipes',
+      {
+        params: search ? { search } : {},
+      }
+    )
+    const items = response.data?.data?.data || []
+    recipes.value = items.map((item) => ({
+      id: item.id,
+      name: item.name,
+    }))
+    await ensureDefaultRecipe()
+  } catch (err) {
+    logger.error('[ZoneSimulationModal] Failed to load recipes', err)
+    recipesError.value = 'Не удалось загрузить список рецептов'
+  } finally {
+    recipesLoading.value = false
+  }
+}
+
+async function loadRecipeDefaults(recipeId: number): Promise<void> {
+  if (recipeDefaultsCache.has(recipeId)) {
+    applyRecipeDefaults(recipeDefaultsCache.get(recipeId) || null)
+    return
+  }
+
+  try {
+    const response = await api.get<{ status: string; data?: any }>(`/recipes/${recipeId}`)
+    const data = response.data?.data
+    const defaults = extractRecipeDefaults(data)
+    if (defaults) {
+      recipeDefaultsCache.set(recipeId, defaults)
+    }
+    applyRecipeDefaults(defaults)
+  } catch (err) {
+    logger.debug('[ZoneSimulationModal] Failed to load recipe defaults', err)
+  }
+}
+
+const effectiveRecipeId = computed(() => form.recipe_id ?? props.defaultRecipeId ?? null)
+
+watch(
+  () => props.show,
+  (isOpen) => {
+    if (isOpen) {
+      loadRecipes(recipeSearch.value.trim())
+    }
+  }
+)
+
+watch(recipeSearch, (value) => {
+  if (!props.show) return
+  if (recipeSearchTimer) {
+    clearTimeout(recipeSearchTimer)
+  }
+  recipeSearchTimer = setTimeout(() => {
+    loadRecipes(value.trim())
+  }, 300)
+})
+
+watch(
+  () => [props.show, effectiveRecipeId.value] as const,
+  ([isOpen, recipeId]) => {
+    if (!isOpen || !recipeId) return
+    if (lastDefaultsRecipeId.value === recipeId) return
+    lastDefaultsRecipeId.value = recipeId
+    loadRecipeDefaults(recipeId)
+  }
+)
 
 async function onSubmit(): Promise<void> {
   startLoading()
@@ -410,13 +641,13 @@ async function onSubmit(): Promise<void> {
     
     if (response.data?.status === 'ok' && response.data?.data) {
       results.value = response.data.data
-      showToast('Simulation completed successfully', 'success', TOAST_TIMEOUT.NORMAL)
+      showToast('Симуляция успешно завершена', 'success', TOAST_TIMEOUT.NORMAL)
     } else {
-      error.value = 'Unexpected response format'
+      error.value = 'Неожиданный формат ответа'
     }
   } catch (err) {
     logger.error('[ZoneSimulationModal] Simulation error:', err)
-    const errorMsg = err instanceof Error ? err.message : 'Failed to run simulation'
+    const errorMsg = err instanceof Error ? err.message : 'Не удалось запустить симуляцию'
     error.value = errorMsg
   } finally {
     stopLoading()

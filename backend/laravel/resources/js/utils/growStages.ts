@@ -139,6 +139,16 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'fruit': 'harvest',
 }
 
+const STAGE_TEMPLATE_CODE_TO_STAGE: Record<string, GrowStage> = {
+  PLANTING: 'planting',
+  GERMINATION: 'planting',
+  ROOTING: 'rooting',
+  VEG: 'veg',
+  FLOWER: 'flowering',
+  FRUIT: 'harvest',
+  HARVEST: 'harvest',
+}
+
 /**
  * Определяет стадию на основе названия фазы
  * 
@@ -163,6 +173,12 @@ export function getStageByPhaseName(phaseName: string | null | undefined): GrowS
   }
   
   return undefined
+}
+
+export function getStageByTemplateCode(code: string | null | undefined): GrowStage | undefined {
+  if (!code) return undefined
+  const normalized = code.toUpperCase().trim()
+  return STAGE_TEMPLATE_CODE_TO_STAGE[normalized]
 }
 
 /**
@@ -217,8 +233,14 @@ export function getStageByPhaseIndex(phaseIndex: number, totalPhases?: number): 
 export function getStageForPhase(
   phaseName: string | null | undefined,
   phaseIndex: number,
-  totalPhases?: number
+  totalPhases?: number,
+  stageTemplateCode?: string | null
 ): GrowStage | undefined {
+  const stageByTemplate = getStageByTemplateCode(stageTemplateCode)
+  if (stageByTemplate) {
+    return stageByTemplate
+  }
+
   // Сначала пытаемся определить по названию
   const stageByName = getStageByPhaseName(phaseName)
   if (stageByName) {

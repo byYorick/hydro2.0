@@ -235,6 +235,18 @@ const currentPhaseName = computed(() => {
   return phase?.name || null
 })
 
+const currentPhaseTemplate = computed(() => {
+  if (currentPhaseIndex.value < 0) return null
+  return phaseTemplates.value.find(
+    (p: any) => p.phase_index === currentPhaseIndex.value
+  ) || null
+})
+
+const currentPhaseStageCode = computed(() => {
+  const template = currentPhaseTemplate.value
+  return template?.stageTemplate?.code || template?.stage_template?.code || null
+})
+
 const totalPhases = computed(() => phasesForProgress.value.length || 0)
 
 const recipeName = computed(() => {
@@ -266,7 +278,8 @@ const currentStage = computed<GrowStage | null>(() => {
   return getStageForPhase(
     currentPhaseName.value,
     currentPhaseIndex.value,
-    totalPhases.value
+    totalPhases.value,
+    currentPhaseStageCode.value
   ) ?? null
 })
 
@@ -278,7 +291,8 @@ const allStages = computed<GrowStage[]>(() => {
   // Используем фазы из growCycle или шаблонные фазы ревизии
   if (phasesForProgress.value.length) {
     phasesForProgress.value.forEach((phase: any) => {
-      const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
+      const stageTemplateCode = phase?.stageTemplate?.code || phase?.stage_template?.code || null
+      const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value, stageTemplateCode)
       if (stage && !seenStages.has(stage)) {
         stages.push(stage)
         seenStages.add(stage)

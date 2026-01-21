@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   getStageByPhaseName,
+  getStageByTemplateCode,
   getStageByPhaseIndex,
   getStageForPhase,
   getStageInfo,
@@ -30,6 +31,20 @@ describe('growStages', () => {
     })
   })
 
+  describe('getStageByTemplateCode', () => {
+    it('should return correct stage for template codes', () => {
+      expect(getStageByTemplateCode('ROOTING')).toBe('rooting')
+      expect(getStageByTemplateCode('VEG')).toBe('veg')
+      expect(getStageByTemplateCode('FLOWER')).toBe('flowering')
+      expect(getStageByTemplateCode('FRUIT')).toBe('harvest')
+      expect(getStageByTemplateCode('HARVEST')).toBe('harvest')
+    })
+
+    it('should return undefined for unknown codes', () => {
+      expect(getStageByTemplateCode('UNKNOWN')).toBeUndefined()
+    })
+  })
+
   describe('getStageByPhaseIndex', () => {
     it('should return correct stage for phase index', () => {
       expect(getStageByPhaseIndex(0)).toBe('planting')
@@ -46,6 +61,10 @@ describe('growStages', () => {
   describe('getStageForPhase', () => {
     it('should prioritize phase name over index', () => {
       expect(getStageForPhase('flowering', 0)).toBe('flowering')
+    })
+
+    it('should prioritize template code over name', () => {
+      expect(getStageForPhase('flowering', 0, 4, 'FRUIT')).toBe('harvest')
     })
 
     it('should use index when name is not found', () => {
