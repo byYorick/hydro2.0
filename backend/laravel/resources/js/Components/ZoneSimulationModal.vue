@@ -204,10 +204,20 @@
         </div>
         
         <div
-          v-if="loading"
-          class="text-sm text-[color:var(--text-muted)]"
+          v-if="isSimulating"
+          class="space-y-2"
         >
-          Выполняется симуляция...
+          <div class="text-xs text-[color:var(--text-muted)]">
+            Статус: {{ simulationStatusLabel }}
+          </div>
+          <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
+            <div
+              class="relative h-2 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
+              :style="{ width: `${simulationProgress}%` }"
+            >
+              <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)] simulation-shimmer"></div>
+            </div>
+          </div>
         </div>
         
         <div
@@ -243,7 +253,7 @@
           Результаты симуляции
         </div>
         <div class="text-xs text-[color:var(--text-muted)] mb-2">
-          Длительность: {{ results.duration_hours }} ч, шаг: {{ results.step_minutes }} мин
+          Длительность: {{ resultDurationHours }} ч, шаг: {{ resultStepMinutes }} мин
         </div>
         <div class="h-64">
           <ChartBase
@@ -257,7 +267,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
 import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
@@ -349,6 +359,9 @@ const recipeSearch = ref('')
 let recipeSearchTimer: ReturnType<typeof setTimeout> | null = null
 const lastDefaultsRecipeId = ref<number | null>(null)
 const recipeDefaultsCache = new Map<number, RecipeDefaults>()
+const simulationJobId = ref<string | null>(null)
+const simulationStatus = ref<'idle' | 'queued' | 'processing' | 'completed' | 'failed'>('idle')
+let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
 const resolveCssColor = (variable: string, fallback: string): string => {
   if (typeof window === 'undefined') {
@@ -444,6 +457,40 @@ const chartOption = computed<EChartsOption | null>(() => {
       },
     ],
   }
+})
+
+const simulationProgress = computed(() => {
+  switch (simulationStatus.value) {
+    case 'queued':
+      return 20
+    case 'processing':
+      return 60
+    case 'completed':
+      return 100
+    case 'failed':
+      return 100
+    default:
+      return 0
+  }
+})
+
+const simulationStatusLabel = computed(() => {
+  switch (simulationStatus.value) {
+    case 'queued':
+      return 'В очереди'
+    case 'processing':
+      return 'Выполняется'
+    case 'completed':
+      return 'Завершено'
+    case 'failed':
+      return 'Ошибка'
+    default:
+      return ''
+  }
+})
+
+const isSimulating = computed(() => {
+  return simulationStatus.value === 'queued' || simulationStatus.value === 'processing' || loading.value
 })
 
 const resultDurationHours = computed(() => {
@@ -571,11 +618,79 @@ async function loadRecipeDefaults(recipeId: number): Promise<void> {
 
 const effectiveRecipeId = computed(() => form.recipe_id ?? props.defaultRecipeId ?? null)
 
+function normalizeSimulationResult(payload: any): SimulationResults | null {
+  if (!payload || typeof payload !== 'object') return null
+  if (Array.isArray(payload.points)) {
+    return payload as SimulationResults
+  }
+  if (payload.data && Array.isArray(payload.data.points)) {
+    return payload.data as SimulationResults
+  }
+  if (payload.result && Array.isArray(payload.result.points)) {
+    return payload.result as SimulationResults
+  }
+  if (payload.result?.data && Array.isArray(payload.result.data.points)) {
+    return payload.result.data as SimulationResults
+  }
+  return null
+}
+
+function clearSimulationPolling(): void {
+  if (simulationPollTimer) {
+    clearInterval(simulationPollTimer)
+    simulationPollTimer = null
+  }
+}
+
+async function pollSimulationStatus(jobId: string): Promise<void> {
+  try {
+    const response = await api.get<{ status: string; data?: any }>(`/simulations/${jobId}`)
+    const data = response.data?.data
+    if (!data) return
+
+    const status = data.status as typeof simulationStatus.value | undefined
+    if (status) {
+      simulationStatus.value = status
+    }
+
+    if (status === 'completed') {
+      const parsed = normalizeSimulationResult(data.result)
+      if (parsed) {
+        results.value = parsed
+      }
+      stopLoading()
+      clearSimulationPolling()
+      return
+    }
+
+    if (status === 'failed') {
+      error.value = data.error || 'Симуляция завершилась с ошибкой'
+      stopLoading()
+      clearSimulationPolling()
+    }
+  } catch (err) {
+    logger.debug('[ZoneSimulationModal] Simulation status poll failed', err)
+  }
+}
+
+function startSimulationPolling(jobId: string): void {
+  clearSimulationPolling()
+  pollSimulationStatus(jobId)
+  simulationPollTimer = setInterval(() => {
+    pollSimulationStatus(jobId)
+  }, 2000)
+}
+
 watch(
   () => props.show,
   (isOpen) => {
     if (isOpen) {
       loadRecipes(recipeSearch.value.trim())
+      if (effectiveRecipeId.value) {
+        loadRecipeDefaults(effectiveRecipeId.value)
+      }
+    } else {
+      clearSimulationPolling()
     }
   }
 )
@@ -600,10 +715,16 @@ watch(
   }
 )
 
+onUnmounted(() => {
+  clearSimulationPolling()
+})
+
 async function onSubmit(): Promise<void> {
   startLoading()
   error.value = null
   results.value = null
+  simulationJobId.value = null
+  simulationStatus.value = 'queued'
   
   try {
     interface SimulationPayload {
@@ -634,23 +755,58 @@ async function onSubmit(): Promise<void> {
       payload.initial_state = initialState
     }
     
-    const response = await api.post<{ status: string; data?: SimulationResults }>(
+    const response = await api.post<{ status: string; data?: any }>(
       `/zones/${props.zoneId}/simulate`,
       payload
     )
     
-    if (response.data?.status === 'ok' && response.data?.data) {
-      results.value = response.data.data
-      showToast('Симуляция успешно завершена', 'success', TOAST_TIMEOUT.NORMAL)
+    const responseData = response.data?.data
+    if (response.data?.status === 'ok' && responseData) {
+      if (responseData.job_id) {
+        simulationJobId.value = responseData.job_id
+        simulationStatus.value = responseData.status || 'queued'
+        startSimulationPolling(responseData.job_id)
+        showToast('Симуляция поставлена в очередь', 'info', TOAST_TIMEOUT.NORMAL)
+        return
+      }
+
+      const parsed = normalizeSimulationResult(responseData)
+      if (parsed) {
+        results.value = parsed
+        simulationStatus.value = 'completed'
+        showToast('Симуляция успешно завершена', 'success', TOAST_TIMEOUT.NORMAL)
+      } else {
+        error.value = 'Неожиданный формат ответа'
+        simulationStatus.value = 'failed'
+      }
     } else {
       error.value = 'Неожиданный формат ответа'
+      simulationStatus.value = 'failed'
     }
   } catch (err) {
     logger.error('[ZoneSimulationModal] Simulation error:', err)
     const errorMsg = err instanceof Error ? err.message : 'Не удалось запустить симуляцию'
     error.value = errorMsg
+    simulationStatus.value = 'failed'
   } finally {
-    stopLoading()
+    if (simulationStatus.value !== 'queued' && simulationStatus.value !== 'processing') {
+      stopLoading()
+    }
   }
 }
 </script>
+
+<style scoped>
+@keyframes simulation-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.simulation-shimmer {
+  animation: simulation-shimmer 1.6s infinite;
+}
+</style>
