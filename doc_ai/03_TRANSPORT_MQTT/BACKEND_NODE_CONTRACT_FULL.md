@@ -249,6 +249,8 @@ Payload:
 - LWT настраивается при инициализации MQTT клиента
 - Брокер автоматически публикует LWT при неожиданном отключении узла
 - QoS = 1, Retain = true
+- Для node-sim в режиме preconfig допустим temp-namespace:
+  `hydro/gh-temp/zn-temp/{node_uid_or_hw}/lwt`
 
 **Backend обязан:**
 - отметить node OFFLINE,

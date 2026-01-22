@@ -16,6 +16,7 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -104,16 +105,19 @@ static void diagnostics_get_error_metrics(diagnostics_error_metrics_t *metrics) 
     
     memset(metrics, 0, sizeof(*metrics));
     
-    // Получаем метрики из node_state_manager
-    // Примечание: node_state_manager не предоставляет разбивку по уровням,
-    // поэтому используем общий счетчик
-    metrics->total_count = node_state_manager_get_error_count(NULL);
-    
-    // TODO: Добавить разбивку по уровням ошибок в node_state_manager
-    // Пока используем общий счетчик для всех типов
-    metrics->warning_count = 0;
-    metrics->error_count = metrics->total_count;
-    metrics->critical_count = 0;
+    // Получаем метрики из node_state_manager с разбивкой по уровням
+    node_state_manager_error_counts_t counts = {0};
+    if (node_state_manager_get_error_counts(NULL, &counts) == ESP_OK) {
+        metrics->warning_count = counts.warning_count;
+        metrics->error_count = counts.error_count;
+        metrics->critical_count = counts.critical_count;
+        metrics->total_count = counts.total_count;
+    } else {
+        metrics->total_count = node_state_manager_get_error_count(NULL);
+        metrics->warning_count = 0;
+        metrics->error_count = metrics->total_count;
+        metrics->critical_count = 0;
+    }
 }
 
 /**
@@ -125,57 +129,55 @@ static void diagnostics_get_task_metrics(diagnostics_task_metrics_t *tasks, uint
     }
     
     *task_count = 0;
-    
+
+#if CONFIG_FREERTOS_USE_TRACE_FACILITY
     // Получаем список задач через FreeRTOS
     UBaseType_t num_tasks = uxTaskGetNumberOfTasks();
     if (num_tasks > DIAGNOSTICS_MAX_TASKS) {
         num_tasks = DIAGNOSTICS_MAX_TASKS;
     }
-    
+
     TaskStatus_t *task_status_array = (TaskStatus_t*)malloc(sizeof(TaskStatus_t) * num_tasks);
     if (task_status_array == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for task status");
         return;
     }
-    
-    // В ESP-IDF 5.5 uxTaskGetSystemState требует configUSE_TRACE_FACILITY
-    // Используем упрощенный подход - получаем информацию только о текущей задаче
-    // и основных задачах через vTaskList или другие методы
-    // Пока отключаем сбор метрик задач, так как требует дополнительной конфигурации
-    // TODO: Включить configUSE_TRACE_FACILITY в sdkconfig для полной поддержки
-    
-    // Временно возвращаем пустой список задач
-    *task_count = 0;
-    
-    free(task_status_array);
-    return;
-    
-    // Код ниже будет использован после включения configUSE_TRACE_FACILITY
-    /*
+
     UBaseType_t actual_count = uxTaskGetSystemState(task_status_array, num_tasks, NULL);
-    
+
     for (UBaseType_t i = 0; i < actual_count && *task_count < DIAGNOSTICS_MAX_TASKS; i++) {
         diagnostics_task_metrics_t *task = &tasks[*task_count];
-        
+
         strncpy(task->task_name, task_status_array[i].pcTaskName, sizeof(task->task_name) - 1);
         task->task_name[sizeof(task->task_name) - 1] = '\0';
         task->stack_high_water_mark = task_status_array[i].usStackHighWaterMark;
-        task->runtime_ms = task_status_array[i].ulRunTimeCounter / (configTICK_RATE_HZ / 1000);
-        
-        // Получаем core_id через xTaskGetCoreID (ESP-IDF 5.5)
-        TaskHandle_t task_handle = xTaskGetHandle(task_status_array[i].pcTaskName);
+
+#if CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
+        uint32_t ticks_per_ms = configTICK_RATE_HZ / 1000U;
+        if (ticks_per_ms > 0) {
+            task->runtime_ms = task_status_array[i].ulRunTimeCounter / ticks_per_ms;
+        } else {
+            task->runtime_ms = task_status_array[i].ulRunTimeCounter;
+        }
+#else
+        task->runtime_ms = 0;
+#endif
+
+        TaskHandle_t task_handle = task_status_array[i].xHandle;
         if (task_handle != NULL) {
             BaseType_t core_id = xTaskGetCoreID(task_handle);
             task->core_id = (core_id >= 0 && core_id <= 1) ? (uint32_t)core_id : 0;
         } else {
-            task->core_id = 0;  // По умолчанию core 0
+            task->core_id = 0;
         }
-        
+
         (*task_count)++;
     }
-    */
-    
+
     free(task_status_array);
+#else
+    *task_count = 0;
+#endif
 }
 
 esp_err_t diagnostics_init(const diagnostics_config_t *config) {
@@ -527,4 +529,3 @@ void diagnostics_update_sensor_metrics(const char *sensor_name, bool read_succes
 bool diagnostics_is_initialized(void) {
     return s_diagnostics.initialized;
 }
-

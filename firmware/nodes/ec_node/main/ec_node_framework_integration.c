@@ -88,14 +88,12 @@ static void ec_node_test_done_timer_cb(TimerHandle_t timer);
 static ec_node_test_entry_t *ec_node_get_test_entry(const char *channel, bool create);
 static void ec_node_schedule_test_done(const char *channel, const char *cmd_id, uint32_t duration_ms,
                                        float current_ma, bool current_valid);
-static void ec_node_cancel_test_done(const char *channel, bool clear_cmd_id);
 static void ec_node_get_last_pump_current(float *current_ma, bool *current_valid);
 static bool ec_node_any_pump_running(void);
 static bool ec_node_is_channel_in_cooldown(const char *channel, uint32_t *remaining_ms);
 static bool ec_node_pump_queue_push(const ec_node_pump_cmd_t *cmd);
 static bool ec_node_pump_queue_pop(ec_node_pump_cmd_t *cmd);
 static size_t ec_node_pump_queue_count(void);
-static size_t ec_node_pump_queue_remove_channel(const char *channel);
 static void ec_node_process_pump_queue(void);
 static void ec_node_schedule_pump_retry(uint32_t delay_ms);
 static void ec_node_pump_retry_timer_cb(TimerHandle_t timer);
@@ -876,20 +874,6 @@ static void ec_node_schedule_test_done(const char *channel, const char *cmd_id, 
     }
 }
 
-static void ec_node_cancel_test_done(const char *channel, bool clear_cmd_id) {
-    ec_node_test_entry_t *entry = ec_node_get_test_entry(channel, false);
-    if (!entry) {
-        return;
-    }
-
-    if (entry->timer) {
-        xTimerStop(entry->timer, 0);
-    }
-    if (clear_cmd_id) {
-        entry->cmd_id[0] = '\0';
-    }
-}
-
 static void ec_node_get_last_pump_current(float *current_ma, bool *current_valid) {
     if (current_ma) {
         *current_ma = 0.0f;
@@ -997,41 +981,6 @@ static size_t ec_node_pump_queue_count(void) {
     size_t count = s_pump_queue_count;
     xSemaphoreGive(s_pump_queue_mutex);
     return count;
-}
-
-static size_t ec_node_pump_queue_remove_channel(const char *channel) {
-    if (!channel || !s_pump_queue_mutex) {
-        return 0;
-    }
-    if (xSemaphoreTake(s_pump_queue_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return 0;
-    }
-
-    ec_node_pump_cmd_t new_queue[EC_NODE_PUMP_QUEUE_MAX] = {0};
-    size_t new_count = 0;
-    size_t removed = 0;
-
-    for (size_t i = 0; i < s_pump_queue_count; i++) {
-        size_t idx = (s_pump_queue_head + i) % EC_NODE_PUMP_QUEUE_MAX;
-        if (strncmp(s_pump_queue[idx].channel_name, channel, EC_NODE_MAX_CHANNEL_NAME_LEN) == 0) {
-            removed++;
-            continue;
-        }
-        if (new_count < EC_NODE_PUMP_QUEUE_MAX) {
-            new_queue[new_count++] = s_pump_queue[idx];
-        }
-    }
-
-    memset(s_pump_queue, 0, sizeof(s_pump_queue));
-    for (size_t i = 0; i < new_count; i++) {
-        s_pump_queue[i] = new_queue[i];
-    }
-    s_pump_queue_head = 0;
-    s_pump_queue_tail = new_count % EC_NODE_PUMP_QUEUE_MAX;
-    s_pump_queue_count = new_count;
-
-    xSemaphoreGive(s_pump_queue_mutex);
-    return removed;
 }
 
 static void ec_node_process_pump_queue(void) {

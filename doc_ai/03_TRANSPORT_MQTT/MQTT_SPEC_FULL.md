@@ -112,6 +112,10 @@ hydro/{gh}/{zone}/{node}/lwt
 payload: "offline"
 ```
 
+Примечание для node-sim (preconfig):
+- В режиме preconfig (до привязки к зоне) node-sim может выставлять LWT в temp-namespace:
+  `hydro/gh-temp/zn-temp/{node_uid_or_hw}/lwt`
+
 ## 4.2. Online status
 
 **ОБЯЗАТЕЛЬНО:** При успешном подключении к MQTT брокеру (событие `MQTT_EVENT_CONNECTED`) узел **ОБЯЗАН** немедленно опубликовать status топик.

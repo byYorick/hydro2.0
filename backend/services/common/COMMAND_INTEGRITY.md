@@ -50,7 +50,7 @@ mqtt_client.publish_json(topic, payload, qos=1, retain=False)
 ## Преимущества единого оркестратора
 
 1. **Автоматический cmd_id**: каждая команда получает уникальный идентификатор
-2. **Отслеживание статусов**: команды записываются в БД со статусами QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
+2. **Отслеживание статусов**: команды записываются в БД со статусами QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY
 3. **Ретраи**: оркестратор может повторять неудачные попытки
 4. **Мониторинг**: все команды видны в БД и могут быть отслежены
 5. **Единый формат**: все команды соответствуют единому контракту
@@ -81,4 +81,4 @@ grep -r 'mqtt_client\.publish_json' backend/services/common/ --exclude-dir=test_
 
 ✅ Все команды имеют `cmd_id` и записываются в БД
 
-✅ Статусы команд отслеживаются: QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT (+ SEND_FAILED → SENT)
+✅ Статусы команд отслеживаются: QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY

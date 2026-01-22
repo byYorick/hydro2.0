@@ -7,6 +7,7 @@ use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
+use App\Services\NodeSimManagerClient;
 use App\Services\PythonBridgeService;
 use Mockery;
 use Tests\RefreshDatabase;
@@ -29,6 +30,7 @@ class StopSimulationNodesJobTest extends TestCase
                     'sim_started_at' => now()->toIso8601String(),
                     'real_duration_minutes' => 10,
                     'time_scale' => 12,
+                    'node_sim_session_id' => 'sim-session-1',
                 ],
             ],
         ]);
@@ -79,12 +81,19 @@ class StopSimulationNodesJobTest extends TestCase
             ->twice()
             ->andReturnUsing(function ($node, $payload) use (&$seen) {
                 $seen[] = [$node->uid, $payload];
+
                 return 'cmd-test';
             });
         $this->app->instance(PythonBridgeService::class, $mock);
 
+        $nodeSimManager = Mockery::mock(NodeSimManagerClient::class);
+        $nodeSimManager->shouldReceive('stopSession')
+            ->once()
+            ->with('sim-session-1');
+        $this->app->instance(NodeSimManagerClient::class, $nodeSimManager);
+
         $job = new StopSimulationNodesJob($zone->id, $simulation->id, 'sim-job');
-        $job->handle($mock);
+        $job->handle($mock, $nodeSimManager);
 
         $this->assertCount(2, $seen);
         $payloadByChannel = [];
@@ -124,7 +133,11 @@ class StopSimulationNodesJobTest extends TestCase
         $mock->shouldReceive('sendNodeCommand')->never();
         $this->app->instance(PythonBridgeService::class, $mock);
 
+        $nodeSimManager = Mockery::mock(NodeSimManagerClient::class);
+        $nodeSimManager->shouldReceive('stopSession')->never();
+        $this->app->instance(NodeSimManagerClient::class, $nodeSimManager);
+
         $job = new StopSimulationNodesJob($zone->id, $simulation->id, 'sim-job');
-        $job->handle($mock);
+        $job->handle($mock, $nodeSimManager);
     }
 }

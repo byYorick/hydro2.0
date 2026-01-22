@@ -140,11 +140,9 @@ class NodeConfigModel(BaseModel):
     node_id: Optional[str] = Field(None, max_length=128, description="Node UID")
     version: Optional[int] = Field(None, ge=1, description="Config version")
     type: Optional[str] = Field(None, max_length=32, description="Node type")
-    node_type: Optional[str] = Field(None, max_length=32, description="Node type (legacy)")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
     gh_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
-    channel: Optional[str] = Field(None, max_length=64, description="Channel name (legacy)")
     channels: Optional[list] = Field(None, description="List of node channels")
     wifi: Optional[Dict[str, Any]] = Field(None, description="WiFi configuration")
     mqtt: Optional[Dict[str, Any]] = Field(None, description="MQTT configuration")
@@ -152,7 +150,7 @@ class NodeConfigModel(BaseModel):
     thresholds: Optional[Dict[str, float]] = None
     schedule: Optional[Dict[str, Any]] = None
     
-    @field_validator('node_type', 'type')
+    @field_validator('type')
     @classmethod
     def validate_node_type(cls, v):
         """Валидация типа узла."""

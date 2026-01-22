@@ -16,6 +16,7 @@ idf_component_register(
         config_apply
         node_framework
         node_utils
+        init_steps_utils
         relay_driver
         i2c_bus
         sht3x

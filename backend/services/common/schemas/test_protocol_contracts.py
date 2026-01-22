@@ -383,15 +383,15 @@ class TestLaravelRequestValidation:
         
         # Валидный запрос
         request = CommandRequest(
-            type="dose",
+            cmd="dose",
             params={"ml": 1.2},
             node_uid="nd-ph-1",
             channel="pump_nutrient"
         )
-        assert request.type == "dose"
+        assert request.cmd == "dose"
         assert request.params == {"ml": 1.2}
         
-        # Невалидный запрос (отсутствует type)
+        # Невалидный запрос (отсутствует cmd)
         from pydantic import ValidationError
         with pytest.raises(ValidationError):
             CommandRequest(params={"ml": 1.2})

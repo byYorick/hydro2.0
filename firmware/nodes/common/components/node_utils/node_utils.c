@@ -354,22 +354,25 @@ esp_err_t node_utils_publish_node_hello(
     
     // Публикуем в общий топик для регистрации
     char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s, node_type=%s", hardware_id, node_type);
-        
-        // Публикуем через mqtt_manager_publish_raw
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-        }
-        
-        free(json_str);
+    if (json_str == NULL) {
+        cJSON_Delete(hello);
+        ESP_LOGE(TAG, "Failed to serialize node_hello JSON");
+        return ESP_ERR_NO_MEM;
     }
-    
+
+    ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s, node_type=%s", hardware_id, node_type);
+
+    // Публикуем через mqtt_manager_publish_raw
+    esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
+    if (pub_err == ESP_OK) {
+        ESP_LOGI(TAG, "node_hello published successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
+    }
+
+    free(json_str);
     cJSON_Delete(hello);
-    return ESP_OK;
+    return pub_err;
 }
 
 esp_err_t node_utils_publish_config_report(void) {

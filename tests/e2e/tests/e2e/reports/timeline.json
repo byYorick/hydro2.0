@@ -1,201 +1,45 @@
 {
-  "test_suite": "E90_live_simulation_stop_commands",
-  "generated_at": "2026-01-22T16:03:06.541713",
+  "test_suite": "E01_bootstrap",
+  "generated_at": "2026-01-22T18:33:42.315163",
   "test_cases": [
     {
       "name": "start_node_simulator",
-      "status": "passed",
-      "duration": 6.748351573944092,
-      "error_message": null,
+      "status": "failed",
+      "duration": 0.047590017318725586,
+      "error_message": "Failed to start service node-sim: service \"mosquitto\" has no container to start\n",
       "steps": [
         {
           "name": "start_node_simulator",
-          "status": "passed"
+          "status": "failed",
+          "error": "Failed to start service node-sim: service \"mosquitto\" has no container to start\n"
         }
       ],
-      "timestamp": "2026-01-22T16:02:52.370185"
+      "timestamp": "2026-01-22T18:33:12.179364"
     },
     {
-      "name": "set_test_uids",
-      "status": "passed",
-      "duration": 2.6941299438476562e-05,
-      "error_message": null,
+      "name": "telemetry_in_db",
+      "status": "failed",
+      "duration": 30.089040517807007,
+      "error_message": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n",
       "steps": [
         {
-          "name": "set_test_uids",
-          "status": "passed"
+          "name": "telemetry_in_db",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2026-01-22T16:02:52.372234"
-    },
-    {
-      "name": "fetch_zone_id",
-      "status": "passed",
-      "duration": 0.016567468643188477,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:52.388965"
-    },
-    {
-      "name": "fetch_node_id",
-      "status": "passed",
-      "duration": 0.008875608444213867,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_node_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:52.398617"
-    },
-    {
-      "name": "set_zone_and_node",
-      "status": "passed",
-      "duration": 1.33514404296875e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_and_node",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:52.401258"
-    },
-    {
-      "name": "wait_for_node_online",
-      "status": "passed",
-      "duration": 0.008030414581298828,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_node_online",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:52.409522"
-    },
-    {
-      "name": "ensure_pwm_channel",
-      "status": "passed",
-      "duration": 0.005533456802368164,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "ensure_pwm_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:52.415455"
-    },
-    {
-      "name": "start_live_simulation",
-      "status": "passed",
-      "duration": 3.4782326221466064,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "start_live_simulation",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.895114"
-    },
-    {
-      "name": "set_job_id",
-      "status": "passed",
-      "duration": 1.4543533325195312e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_job_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.895319"
-    },
-    {
-      "name": "wait_for_simulation_row",
-      "status": "passed",
-      "duration": 0.006098031997680664,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_simulation_row",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.901595"
-    },
-    {
-      "name": "set_simulation_context",
-      "status": "passed",
-      "duration": 9.083747863769531e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_simulation_context",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.902387"
-    },
-    {
-      "name": "simulation_completed_with_meta",
-      "status": "passed",
-      "duration": 0.023910999298095703,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "simulation_completed_with_meta",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.926352"
-    },
-    {
-      "name": "stop_command_set_relay_sent",
-      "status": "passed",
-      "duration": 0.03198409080505371,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "stop_command_set_relay_sent",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.958360"
-    },
-    {
-      "name": "stop_command_set_pwm_sent",
-      "status": "passed",
-      "duration": 0.01682734489440918,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "stop_command_set_pwm_sent",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-22T16:02:55.975211"
+      "timestamp": "2026-01-22T18:33:42.268476"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E90_live_simulation_stop_commands": {
+    "E01_bootstrap": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 1,
-        "job_id": "sim_d342a95f-85ce-43e3-b023-30a3cef7495a",
-        "simulation_id": 1
+        "zone_id": 409,
+        "node_id": 225
       }
     }
   }

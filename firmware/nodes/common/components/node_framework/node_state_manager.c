@@ -25,7 +25,10 @@ static const char *TAG = "node_state_manager";
 
 typedef struct {
     char component[COMPONENT_NAME_MAX_LEN];
+    uint32_t total_count;
+    uint32_t warning_count;
     uint32_t error_count;
+    uint32_t critical_count;
 } error_counter_t;
 
 static struct {
@@ -36,6 +39,28 @@ static struct {
     node_safe_mode_disable_actuators_callback_t safe_mode_callback;
     void *safe_mode_user_ctx;
 } s_state_manager = {0};
+
+static void node_state_manager_increment_error_counts(error_counter_t *counter, error_level_t level) {
+    if (counter == NULL) {
+        return;
+    }
+
+    counter->total_count++;
+    switch (level) {
+        case ERROR_LEVEL_WARNING:
+            counter->warning_count++;
+            break;
+        case ERROR_LEVEL_ERROR:
+            counter->error_count++;
+            break;
+        case ERROR_LEVEL_CRITICAL:
+            counter->critical_count++;
+            break;
+        default:
+            counter->error_count++;
+            break;
+    }
+}
 
 esp_err_t node_state_manager_init(void) {
     if (s_state_manager.initialized) {
@@ -274,7 +299,7 @@ esp_err_t node_state_manager_report_error(
         bool found = false;
         for (size_t i = 0; i < s_state_manager.error_count; i++) {
             if (strcmp(s_state_manager.errors[i].component, component) == 0) {
-                s_state_manager.errors[i].error_count++;
+                node_state_manager_increment_error_counts(&s_state_manager.errors[i], level);
                 found = true;
                 break;
             }
@@ -282,11 +307,12 @@ esp_err_t node_state_manager_report_error(
 
         // Добавляем новый счетчик, если не найден
         if (!found && s_state_manager.error_count < MAX_ERROR_ENTRIES) {
+            memset(&s_state_manager.errors[s_state_manager.error_count], 0, sizeof(error_counter_t));
             strncpy(s_state_manager.errors[s_state_manager.error_count].component, 
                    component, 
                    COMPONENT_NAME_MAX_LEN - 1);
             s_state_manager.errors[s_state_manager.error_count].component[COMPONENT_NAME_MAX_LEN - 1] = '\0';
-            s_state_manager.errors[s_state_manager.error_count].error_count = 1;
+            node_state_manager_increment_error_counts(&s_state_manager.errors[s_state_manager.error_count], level);
             s_state_manager.error_count++;
         }
 
@@ -332,13 +358,13 @@ uint32_t node_state_manager_get_error_count(const char *component) {
         if (component == NULL) {
             // Суммируем все ошибки
             for (size_t i = 0; i < s_state_manager.error_count; i++) {
-                count += s_state_manager.errors[i].error_count;
+                count += s_state_manager.errors[i].total_count;
             }
         } else {
             // Ищем ошибки для конкретного компонента
             for (size_t i = 0; i < s_state_manager.error_count; i++) {
                 if (strcmp(s_state_manager.errors[i].component, component) == 0) {
-                    count = s_state_manager.errors[i].error_count;
+                    count = s_state_manager.errors[i].total_count;
                     break;
                 }
             }
@@ -349,6 +375,42 @@ uint32_t node_state_manager_get_error_count(const char *component) {
     }
 
     return 0;
+}
+
+esp_err_t node_state_manager_get_error_counts(const char *component, node_state_manager_error_counts_t *out_counts) {
+    if (!s_state_manager.initialized || out_counts == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(out_counts, 0, sizeof(*out_counts));
+
+    if (s_state_manager.mutex &&
+        xSemaphoreTake(s_state_manager.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+
+        if (component == NULL) {
+            for (size_t i = 0; i < s_state_manager.error_count; i++) {
+                out_counts->warning_count += s_state_manager.errors[i].warning_count;
+                out_counts->error_count += s_state_manager.errors[i].error_count;
+                out_counts->critical_count += s_state_manager.errors[i].critical_count;
+                out_counts->total_count += s_state_manager.errors[i].total_count;
+            }
+        } else {
+            for (size_t i = 0; i < s_state_manager.error_count; i++) {
+                if (strcmp(s_state_manager.errors[i].component, component) == 0) {
+                    out_counts->warning_count = s_state_manager.errors[i].warning_count;
+                    out_counts->error_count = s_state_manager.errors[i].error_count;
+                    out_counts->critical_count = s_state_manager.errors[i].critical_count;
+                    out_counts->total_count = s_state_manager.errors[i].total_count;
+                    break;
+                }
+            }
+        }
+
+        xSemaphoreGive(s_state_manager.mutex);
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t node_state_manager_register_safe_mode_callback(

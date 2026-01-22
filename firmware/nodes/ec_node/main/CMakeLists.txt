@@ -16,6 +16,7 @@ idf_component_register(
         config_apply
         node_framework
         node_utils
+        init_steps_utils
         trema_ec
         i2c_bus
         oled_ui

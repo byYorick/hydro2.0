@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\DeviceNode;
 use App\Models\ZoneSimulation;
+use App\Services\NodeSimManagerClient;
 use App\Services\PythonBridgeService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,8 +33,9 @@ class StopSimulationNodesJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(PythonBridgeService $bridge): void
+    public function handle(PythonBridgeService $bridge, NodeSimManagerClient $nodeSimManager): void
     {
+        $sessionId = null;
         if ($this->simulationId) {
             $simulation = ZoneSimulation::find($this->simulationId);
             if (! $simulation) {
@@ -43,6 +45,7 @@ class StopSimulationNodesJob implements ShouldQueue
             if (! isset($scenario['simulation']) || ! is_array($scenario['simulation'])) {
                 return;
             }
+            $sessionId = $scenario['simulation']['node_sim_session_id'] ?? null;
         }
 
         $nodes = DeviceNode::query()
@@ -59,6 +62,21 @@ class StopSimulationNodesJob implements ShouldQueue
                 'simulation_id' => $this->simulationId,
                 'job_id' => $this->jobId,
             ]);
+
+            if ($sessionId) {
+                try {
+                    $nodeSimManager->stopSession($sessionId);
+                } catch (\Throwable $e) {
+                    Log::warning('StopSimulationNodesJob: failed to stop node-sim session', [
+                        'zone_id' => $this->zoneId,
+                        'simulation_id' => $this->simulationId,
+                        'job_id' => $this->jobId,
+                        'session_id' => $sessionId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return;
         }
 
@@ -96,6 +114,20 @@ class StopSimulationNodesJob implements ShouldQueue
                         'error' => $e->getMessage(),
                     ]);
                 }
+            }
+        }
+
+        if ($sessionId) {
+            try {
+                $nodeSimManager->stopSession($sessionId);
+            } catch (\Throwable $e) {
+                Log::warning('StopSimulationNodesJob: failed to stop node-sim session', [
+                    'zone_id' => $this->zoneId,
+                    'simulation_id' => $this->simulationId,
+                    'job_id' => $this->jobId,
+                    'session_id' => $sessionId,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
     }

@@ -2,16 +2,16 @@
 
 namespace App\Jobs;
 
-use App\Services\DigitalTwinClient;
-use App\Jobs\CompleteSimulationJob;
 use App\Models\ZoneSimulation;
+use App\Services\DigitalTwinClient;
+use App\Services\NodeSimManagerClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class RunSimulationJob implements ShouldQueue
 {
@@ -33,7 +33,7 @@ class RunSimulationJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(DigitalTwinClient $client): void
+    public function handle(DigitalTwinClient $client, NodeSimManagerClient $nodeSimManager): void
     {
         $simulation = null;
         try {
@@ -49,11 +49,15 @@ class RunSimulationJob implements ShouldQueue
             $simulationMeta = [
                 'real_started_at' => $nowIso,
                 'sim_started_at' => $nowIso,
+                'engine' => $isLiveSimulation ? 'pipeline' : 'digital_twin',
+                'mode' => $isLiveSimulation ? 'live' : 'model',
             ];
             if ($isLiveSimulation) {
                 $timeScale = ($durationHours * 60) / (int) $simDurationMinutes;
                 $simulationMeta['real_duration_minutes'] = (int) $simDurationMinutes;
                 $simulationMeta['time_scale'] = $timeScale;
+                $simulationMeta['node_sim_session_id'] = $this->jobId;
+                $simulationMeta['orchestrator'] = 'laravel';
             }
 
             $existingMeta = [];
@@ -81,6 +85,7 @@ class RunSimulationJob implements ShouldQueue
             ], 3600); // Храним 1 час
 
             if ($isLiveSimulation) {
+                $nodeSimManager->startSession($simulation, $this->jobId);
                 CompleteSimulationJob::dispatch($simulation->id, $this->jobId)
                     ->delay(now()->addMinutes((int) $simDurationMinutes));
                 Log::info('Simulation job scheduled completion', [
@@ -89,6 +94,7 @@ class RunSimulationJob implements ShouldQueue
                     'simulation_id' => $simulation->id,
                     'real_duration_minutes' => (int) $simDurationMinutes,
                 ]);
+
                 return;
             }
 
@@ -138,7 +144,7 @@ class RunSimulationJob implements ShouldQueue
             ]);
 
             // In testing environment, don't throw exceptions to avoid affecting HTTP responses
-            if (!app()->environment('testing')) {
+            if (! app()->environment('testing')) {
                 throw $e; // Пробрасываем для retry механизма
             }
         }

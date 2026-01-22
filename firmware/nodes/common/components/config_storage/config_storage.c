@@ -465,6 +465,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     err = nvs_set_str(s_nvs_handle, NVS_KEY, final_json);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save NodeConfig to NVS: %s", esp_err_to_name(err));
+        free(final_json);
         config_storage_unlock();
         return err;
     }
@@ -473,6 +474,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     err = nvs_commit(s_nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
+        free(final_json);
         config_storage_unlock();
         return err;
     }

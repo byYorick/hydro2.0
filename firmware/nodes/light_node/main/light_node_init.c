@@ -24,11 +24,8 @@
 #include "node_state_manager.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_mac.h"
-#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -90,52 +87,12 @@ static void update_oled_connections(void) {
  * @brief Публикация node_hello сообщения для регистрации узла
  */
 static void light_node_publish_hello(void) {
-    uint8_t mac[6] = {0};
-    esp_err_t err = esp_efuse_mac_get_default(mac);
+    static const char *capabilities[] = {"light"};
+    esp_err_t err = node_utils_publish_node_hello("light", capabilities, 1);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "system", err, "Failed to get MAC address for node_hello");
-        return;
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish node_hello");
     }
-    
-    char hardware_id[32];
-    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
-    cJSON *hello = cJSON_CreateObject();
-    if (!hello) {
-        ESP_LOGE(TAG, "Failed to create node_hello JSON");
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", ESP_ERR_NO_MEM, "Failed to create node_hello JSON");
-        return;
-    }
-    
-    cJSON_AddStringToObject(hello, "message_type", "node_hello");
-    cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
-    cJSON_AddStringToObject(hello, "node_type", "light");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
-    
-    cJSON *capabilities = cJSON_CreateArray();
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("light"));
-    cJSON_AddItemToObject(hello, "capabilities", capabilities);
-    
-    char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s", hardware_id);
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", pub_err, "Failed to publish node_hello");
-        }
-        free(json_str);
-    }
-    
-    cJSON_Delete(hello);
 }
 
 void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {

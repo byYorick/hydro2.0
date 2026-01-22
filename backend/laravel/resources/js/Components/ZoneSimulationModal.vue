@@ -230,6 +230,24 @@
             Статус: {{ simulationStatusLabel }}
           </div>
           <div
+            v-if="simulationEngineLabel"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            Движок: {{ simulationEngineLabel }}
+          </div>
+          <div
+            v-if="simulationCurrentPhaseLabel"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            Фаза: {{ simulationCurrentPhaseLabel }}
+          </div>
+          <div
+            v-if="simulationProgressSourceLabel"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            Источник прогресса: {{ simulationProgressSourceLabel }}
+          </div>
+          <div
             v-if="simulationProgressDetails"
             class="text-xs text-[color:var(--text-muted)]"
           >
@@ -247,6 +265,65 @@
               :style="{ width: `${simulationProgress}%` }"
             >
               <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)] simulation-shimmer"></div>
+            </div>
+          </div>
+          <div
+            v-if="simulationActions.length"
+            class="rounded-lg border border-[color:var(--border-muted)] p-3"
+          >
+            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+              Последние действия
+            </div>
+            <ul class="mt-2 space-y-1">
+              <li
+                v-for="action in simulationActions"
+                :key="`${action.kind}-${action.id}`"
+                class="flex items-start justify-between gap-3 text-xs text-[color:var(--text-muted)]"
+              >
+                <span class="flex-1 truncate">
+                  {{ action.summary || action.event_type || action.cmd || 'Событие' }}
+                </span>
+                <span class="whitespace-nowrap text-[11px] text-[color:var(--text-dim)]">
+                  {{ formatTimestamp(action.created_at) }}
+                </span>
+              </li>
+            </ul>
+          </div>
+          <div
+            v-if="simulationPidStatuses.length"
+            class="rounded-lg border border-[color:var(--border-muted)] p-3"
+          >
+            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+              PID статусы
+            </div>
+            <div class="mt-2 grid grid-cols-2 gap-3 text-xs text-[color:var(--text-muted)]">
+              <div
+                v-for="pid in simulationPidStatuses"
+                :key="pid.type"
+                class="rounded-md bg-[color:var(--bg-surface)] px-2 py-2"
+              >
+                <div class="text-xs font-semibold text-[color:var(--text-primary)]">
+                  {{ pid.type.toUpperCase() }}
+                </div>
+                <div class="text-[11px] text-[color:var(--text-dim)]">
+                  Текущее: {{ formatPidValue(pid.current) }} / Цель: {{ formatPidValue(pid.target) }}
+                </div>
+                <div class="text-[11px] text-[color:var(--text-dim)]">
+                  Выход: {{ formatPidValue(pid.output, 3) }}
+                </div>
+                <div
+                  v-if="pid.zone_state"
+                  class="text-[11px] text-[color:var(--text-dim)]"
+                >
+                  Состояние: {{ pid.zone_state }}
+                </div>
+                <div
+                  v-if="pid.error"
+                  class="text-[11px] text-[color:var(--accent-red)]"
+                >
+                  Ошибка: {{ pid.error }}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -355,6 +432,25 @@ interface SimulationResults {
   points: SimulationPoint[]
 }
 
+interface SimulationAction {
+  kind: 'command' | 'event'
+  id: number
+  summary?: string | null
+  cmd?: string | null
+  event_type?: string | null
+  created_at?: string | null
+}
+
+interface SimulationPidStatus {
+  type: string
+  current?: number | null
+  target?: number | null
+  output?: number | null
+  zone_state?: string | null
+  error?: string | null
+  updated_at?: string | null
+}
+
 interface RecipeOption {
   id: number
   name: string
@@ -398,6 +494,12 @@ const simulationProgressValue = ref<number | null>(null)
 const simulationElapsedMinutes = ref<number | null>(null)
 const simulationRealDurationMinutes = ref<number | null>(null)
 const simulationSimNow = ref<string | null>(null)
+const simulationEngine = ref<string | null>(null)
+const simulationMode = ref<string | null>(null)
+const simulationProgressSource = ref<string | null>(null)
+const simulationActions = ref<SimulationAction[]>([])
+const simulationPidStatuses = ref<SimulationPidStatus[]>([])
+const simulationCurrentPhase = ref<string | null>(null)
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
 const resolveCssColor = (variable: string, fallback: string): string => {
@@ -525,6 +627,24 @@ const simulationProgressDetails = computed(() => {
     return `Прогресс: ${percent}% (${simulationElapsedMinutes.value} / ${simulationRealDurationMinutes.value} мин, осталось ${remaining} мин)`
   }
   return `Прогресс: ${percent}%`
+})
+
+const simulationEngineLabel = computed(() => {
+  if (!simulationEngine.value && !simulationMode.value) return null
+  const engine = simulationEngine.value ? simulationEngine.value.replace('_', ' ') : 'unknown'
+  return simulationMode.value ? `${engine} (${simulationMode.value})` : engine
+})
+
+const simulationProgressSourceLabel = computed(() => {
+  if (!simulationProgressSource.value) return null
+  if (simulationProgressSource.value === 'actions') return 'действия'
+  if (simulationProgressSource.value === 'timer') return 'таймер'
+  return simulationProgressSource.value
+})
+
+const simulationCurrentPhaseLabel = computed(() => {
+  if (!simulationCurrentPhase.value) return null
+  return String(simulationCurrentPhase.value)
 })
 
 const simulationSimTimeLabel = computed(() => {
@@ -710,6 +830,18 @@ function clampProgress(value: number): number {
   return value
 }
 
+function formatTimestamp(value?: string | null): string {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleTimeString()
+}
+
+function formatPidValue(value?: number | null, decimals = 2): string {
+  if (value === null || value === undefined) return '—'
+  return Number(value).toFixed(decimals)
+}
+
 async function pollSimulationStatus(jobId: string): Promise<void> {
   try {
     const response = await api.get<{ status: string; data?: any }>(`/simulations/${jobId}`)
@@ -720,6 +852,15 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
     if (status) {
       simulationStatus.value = status
     }
+
+    if (data.simulation && typeof data.simulation === 'object') {
+      simulationEngine.value = data.simulation.engine ?? null
+      simulationMode.value = data.simulation.mode ?? null
+    }
+    simulationProgressSource.value = typeof data.progress_source === 'string' ? data.progress_source : null
+    simulationActions.value = Array.isArray(data.actions) ? data.actions : []
+    simulationPidStatuses.value = Array.isArray(data.pid_statuses) ? data.pid_statuses : []
+    simulationCurrentPhase.value = data.current_phase ? String(data.current_phase) : null
 
     if (typeof data.progress === 'number' && Number.isFinite(data.progress)) {
       simulationProgressValue.value = clampProgress(data.progress)
@@ -784,6 +925,12 @@ watch(
       simulationElapsedMinutes.value = null
       simulationRealDurationMinutes.value = null
       simulationSimNow.value = null
+      simulationEngine.value = null
+      simulationMode.value = null
+      simulationProgressSource.value = null
+      simulationActions.value = []
+      simulationPidStatuses.value = []
+      simulationCurrentPhase.value = null
     }
   }
 )
@@ -814,6 +961,12 @@ onUnmounted(() => {
   simulationElapsedMinutes.value = null
   simulationRealDurationMinutes.value = null
   simulationSimNow.value = null
+  simulationEngine.value = null
+  simulationMode.value = null
+  simulationProgressSource.value = null
+  simulationActions.value = []
+  simulationPidStatuses.value = []
+  simulationCurrentPhase.value = null
 })
 
 async function onSubmit(): Promise<void> {
@@ -826,6 +979,12 @@ async function onSubmit(): Promise<void> {
   simulationElapsedMinutes.value = null
   simulationRealDurationMinutes.value = null
   simulationSimNow.value = null
+  simulationEngine.value = null
+  simulationMode.value = null
+  simulationProgressSource.value = null
+  simulationActions.value = []
+  simulationPidStatuses.value = []
+  simulationCurrentPhase.value = null
   
   try {
     interface SimulationPayload {

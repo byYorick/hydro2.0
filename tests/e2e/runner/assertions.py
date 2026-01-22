@@ -40,22 +40,22 @@ class Assertions:
             "ACK": 2,
             "DONE": 3,
             "NO_EFFECT": 3,
-            "ERROR": -1,
-            "INVALID": -1,
-            "BUSY": -1,
-            "TIMEOUT": -1,
-            "SEND_FAILED": -1
         }
+        terminal_statuses = {"ERROR", "INVALID", "BUSY"}
         
         last_status_value = -1
         
         for cmd in commands:
             status = cmd.get("status", "").upper()
-            status_value = status_order.get(status, -1)
-            
-            if status_value == -1:
-                # ERROR, INVALID, BUSY, TIMEOUT, SEND_FAILED - это финальные статусы
+            if status in terminal_statuses:
                 continue
+
+            if status not in status_order:
+                raise AssertionError(
+                    f"Unknown command status '{status}' in monotonic check"
+                )
+
+            status_value = status_order[status]
             
             if status_value < last_status_value:
                 raise AssertionError(

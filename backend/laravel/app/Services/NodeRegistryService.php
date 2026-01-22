@@ -120,10 +120,13 @@ class NodeRegistryService
         $maxUidAttempts = 5;
         
         while ($attempt < $maxRetries) {
+            $transactionLevelBefore = DB::transactionLevel();
             DB::beginTransaction();
 
             try {
-                DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                if (DB::getDriverName() === 'pgsql' && $transactionLevelBefore === 0) {
+                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                }
 
                 $hardwareId = $helloData['hardware_id'] ?? null;
                 if (!$hardwareId) {

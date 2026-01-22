@@ -24,7 +24,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
-            \App\Http\Middleware\FrontendLegacyGuard::class,
         ]);
 
         $middleware->alias([
@@ -35,7 +34,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
             'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
             'ae.legacy.sql.guard' => \App\Http\Middleware\AutomationEngineLegacySqlGuard::class,
-            'frontend.legacy.guard' => \App\Http\Middleware\FrontendLegacyGuard::class,
         ]);
         
         // Rate limiting для регистрации нод будет настроен в AppServiceProvider

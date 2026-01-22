@@ -136,6 +136,21 @@ class MqttClient:
                 client.tls_set(ca_certs=self.ca_certs)
             else:
                 client.tls_set()
+
+        if self._preconfig_mode:
+            node_id = self._node_hw_id or self._node_uid
+            if node_id:
+                from .topics import temp_lwt
+                topic = temp_lwt(node_id)
+                client.will_set(topic, payload="offline", qos=1, retain=True)
+            else:
+                logger.warning("Node hardware_id not set before MQTT connect; LWT will be skipped")
+        elif self._gh_uid and self._zone_uid and self._node_uid:
+            from .topics import lwt
+            topic = lwt(self._gh_uid, self._zone_uid, self._node_uid)
+            client.will_set(topic, payload="offline", qos=1, retain=True)
+        else:
+            logger.warning("Node info not set before MQTT connect; LWT will be skipped")
         
         # Callbacks
         client.on_connect = self._on_connect

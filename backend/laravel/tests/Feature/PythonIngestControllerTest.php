@@ -246,7 +246,7 @@ class PythonIngestControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/commands/ack', [
                 'cmd_id' => 'cmd-test-123',
-                'status' => 'completed',
+                'status' => 'DONE',
             ]);
 
         $response->assertOk()
@@ -265,7 +265,7 @@ class PythonIngestControllerTest extends TestCase
         
         $this->postJson('/api/python/commands/ack', [
             'cmd_id' => 'cmd-test-123',
-            'status' => 'completed',
+            'status' => 'DONE',
         ])->assertStatus(401);
     }
 }

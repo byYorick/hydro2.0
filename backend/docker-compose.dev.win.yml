@@ -112,6 +112,8 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
+      - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)
       - PHP_OPCACHE_ENABLE=0
       - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
@@ -337,6 +339,22 @@ services:
       - "9403:9403"  # Prometheus metrics
     restart: unless-stopped
 
+  node-sim-manager:
+    build:
+      context: ./services
+      dockerfile: node-sim-manager/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=INFO
+      - NODE_SIM_ROOT=/node-sim
+    volumes:
+      - ../tests/node_sim:/node-sim:ro
+    depends_on:
+      - mqtt
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
   telemetry-aggregator:
     build:
       context: ./services
@@ -410,4 +428,3 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/16
-

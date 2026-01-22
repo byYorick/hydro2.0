@@ -75,6 +75,14 @@ class MultiNodeOrchestrator:
             ca_certs=self.mqtt_config.ca_certs,
             keepalive=self.mqtt_config.keepalive
         )
+
+        mqtt.set_node_info(
+            gh_uid=node_config.gh_uid,
+            zone_uid=node_config.zone_uid,
+            node_uid=node_config.node_uid,
+            node_hw_id=node_config.hardware_id,
+            preconfig_mode=(node_config.mode == "preconfig"),
+        )
         
         # Подключаемся к MQTT
         try:

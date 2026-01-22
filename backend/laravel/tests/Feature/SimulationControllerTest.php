@@ -13,7 +13,9 @@ use App\Services\GrowCycleService;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SimulationControllerTest extends TestCase
@@ -257,6 +259,63 @@ class SimulationControllerTest extends TestCase
         $this->assertNotNull($progress);
         $this->assertGreaterThan(0.45, $progress);
         $this->assertLessThan(0.55, $progress);
+        $response->assertJsonPath('data.progress_source', 'timer');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_show_simulation_progress_uses_last_action(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $now = now();
+        Carbon::setTestNow($now);
+        $startedAt = $now->copy()->subMinutes(10);
+        $actionAt = $now->copy()->subMinutes(2);
+
+        $simulation = ZoneSimulation::create([
+            'zone_id' => $zone->id,
+            'scenario' => [
+                'recipe_id' => 1,
+                'simulation' => [
+                    'real_started_at' => $startedAt->toIso8601String(),
+                    'sim_started_at' => $startedAt->toIso8601String(),
+                    'real_duration_minutes' => 20,
+                    'time_scale' => 12,
+                ],
+            ],
+            'duration_hours' => 2,
+            'step_minutes' => 10,
+            'status' => 'running',
+        ]);
+
+        DB::table('commands')->insert([
+            'zone_id' => $zone->id,
+            'cmd' => 'dose',
+            'cmd_id' => (string) Str::uuid(),
+            'status' => 'DONE',
+            'created_at' => $actionAt,
+            'updated_at' => $actionAt,
+        ]);
+
+        $jobId = 'sim_test_actions';
+        Cache::put("simulation:{$jobId}", [
+            'status' => 'processing',
+            'started_at' => $startedAt->toIso8601String(),
+            'simulation_id' => $simulation->id,
+            'sim_duration_minutes' => 20,
+        ], 3600);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/simulations/{$jobId}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.progress_source', 'actions');
+        $progress = $response->json('data.progress');
+        $this->assertNotNull($progress);
+        $this->assertGreaterThan(0.35, $progress);
+        $this->assertLessThan(0.45, $progress);
+        $response->assertJsonPath('data.actions.0.kind', 'command');
 
         Carbon::setTestNow();
     }

@@ -228,7 +228,7 @@ class PythonIngestController extends Controller
         
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
+            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY'],
             'details' => ['nullable', 'array'],
         ]);
         
@@ -243,8 +243,6 @@ class PythonIngestController extends Controller
             'ERROR' => \App\Models\Command::STATUS_ERROR,
             'INVALID' => \App\Models\Command::STATUS_INVALID,
             'BUSY' => \App\Models\Command::STATUS_BUSY,
-            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
-            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']),
         };
         
@@ -273,8 +271,6 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
-                \App\Models\Command::STATUS_TIMEOUT,
-                \App\Models\Command::STATUS_SEND_FAILED,
             ];
             
             // Если команда уже в конечном статусе, не обновляем (запрет отката)
@@ -297,7 +293,6 @@ class PythonIngestController extends Controller
             // Запрет перехода назад: если текущий статус более продвинутый, чем новый
             $statusOrder = [
                 \App\Models\Command::STATUS_QUEUED => 0,
-                \App\Models\Command::STATUS_SEND_FAILED => 1,
                 \App\Models\Command::STATUS_SENT => 2,
                 \App\Models\Command::STATUS_ACK => 3,
                 \App\Models\Command::STATUS_DONE => 4,
@@ -305,14 +300,13 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR => 4,
                 \App\Models\Command::STATUS_INVALID => 4,
                 \App\Models\Command::STATUS_BUSY => 4,
-                \App\Models\Command::STATUS_TIMEOUT => 4,
             ];
             
             $currentOrder = $statusOrder[$currentStatus] ?? 0;
             $newOrder = $statusOrder[$newStatus] ?? 0;
             
-            // Запрещаем откат (кроме повторной отправки из SEND_FAILED в SENT)
-            if ($newOrder < $currentOrder && !($currentStatus === \App\Models\Command::STATUS_SEND_FAILED && $newStatus === \App\Models\Command::STATUS_SENT)) {
+            // Запрещаем откат
+            if ($newOrder < $currentOrder) {
                 $isRollback = true;
             }
             
@@ -364,13 +358,11 @@ class PythonIngestController extends Controller
                 $updates['ack_at'] = now();
             }
             
-            // ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED - команда завершилась с ошибкой
+            // ERROR/INVALID/BUSY - команда завершилась с ошибкой
             if (in_array($normalizedStatus, [
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
-                \App\Models\Command::STATUS_TIMEOUT,
-                \App\Models\Command::STATUS_SEND_FAILED,
             ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
@@ -402,8 +394,6 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
-                \App\Models\Command::STATUS_TIMEOUT,
-                \App\Models\Command::STATUS_SEND_FAILED,
             ], true)) {
                 Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
                 event(new \App\Events\CommandFailed(

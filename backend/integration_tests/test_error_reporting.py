@@ -141,6 +141,7 @@ class IntegrationTestRunner:
         
         # Проверка доступности сервисов
         await self.check_services_health()
+        await self.ensure_test_data()
         
     async def teardown(self):
         """Очистка после тестов."""
@@ -166,6 +167,70 @@ class IntegrationTestRunner:
             except Exception as e:
                 logger.error(f"✗ {name} is not available: {e}")
                 raise
+
+    async def ensure_test_data(self):
+        """Создать тестовые сущности в Laravel, если их нет."""
+        logger.info("Ensuring test data exists in Laravel...")
+        try:
+            import subprocess
+            tinker_script = f"""
+$gh = \\\\App\\\\Models\\\\Greenhouse::firstOrCreate(
+    ['uid' => '{TEST_GH_UID}'],
+    [
+        'name' => 'Test Greenhouse',
+        'type' => 'indoor',
+        'timezone' => 'UTC',
+        'provisioning_token' => 'test-token-12345'
+    ]
+);
+$zone = \\\\App\\\\Models\\\\Zone::firstOrCreate(
+    ['uid' => '{TEST_ZONE_UID}'],
+    [
+        'greenhouse_id' => $gh->id,
+        'name' => 'Test Zone',
+        'status' => 'online'
+    ]
+);
+$nodes = [
+    ['uid' => '{TEST_NODES['ph_node']}', 'type' => 'ph', 'name' => 'Test PH Node'],
+    ['uid' => '{TEST_NODES['ec_node']}', 'type' => 'ec', 'name' => 'Test EC Node'],
+    ['uid' => '{TEST_NODES['pump_node']}', 'type' => 'pump', 'name' => 'Test Pump Node'],
+    ['uid' => '{TEST_NODES['climate_node']}', 'type' => 'climate', 'name' => 'Test Climate Node'],
+    ['uid' => '{TEST_NODES['relay_node']}', 'type' => 'relay', 'name' => 'Test Relay Node'],
+    ['uid' => '{TEST_NODES['light_node']}', 'type' => 'light', 'name' => 'Test Light Node'],
+];
+foreach ($nodes as $nodeData) {{
+    \\\\App\\\\Models\\\\DeviceNode::updateOrCreate(
+        ['uid' => $nodeData['uid']],
+        [
+            'zone_id' => $zone->id,
+            'name' => $nodeData['name'],
+            'type' => $nodeData['type'],
+            'status' => 'online',
+            'lifecycle_state' => 'ACTIVE'
+        ]
+    );
+}}
+echo 'OK';
+"""
+            result = subprocess.run(
+                [
+                    "docker", "exec", "backend-laravel-1",
+                    "php", "artisan", "tinker", "--execute",
+                    tinker_script
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20
+            )
+            if result.returncode == 0 and result.stdout.strip().endswith("OK"):
+                logger.info("✓ Test data ensured")
+                return
+            logger.error(f"✗ Failed to create test data: {result.stderr or result.stdout}")
+            raise RuntimeError("Failed to create test data in Laravel")
+        except Exception as e:
+            logger.error(f"✗ Failed to ensure test data: {e}")
+            raise
     
     async def test_error_publishing(self):
         """Тест 1: Отправка ошибок через MQTT."""
@@ -536,4 +601,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

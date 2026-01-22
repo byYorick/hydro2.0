@@ -27,11 +27,8 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_mac.h"
-#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -94,67 +91,12 @@ static void update_oled_connections(void) {
  * @brief Публикация node_hello сообщения для регистрации узла
  */
 static void ph_node_publish_hello(void) {
-    // Получаем MAC адрес как hardware_id
-    uint8_t mac[6] = {0};
-    esp_err_t err = esp_efuse_mac_get_default(mac);
+    static const char *capabilities[] = {"ph", "temperature"};
+    esp_err_t err = node_utils_publish_node_hello("ph", capabilities, 2);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "system", err, "Failed to get MAC address for node_hello");
-        return;
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish node_hello");
     }
-    
-    // Формируем hardware_id из MAC адреса
-    char hardware_id[32];
-    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    
-    // Получаем версию прошивки
-    // Используем версию ESP-IDF, так как версия прошивки не хранится в config_storage
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    // esp_get_idf_version() уже возвращает версию с префиксом "v", не добавляем еще один
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
-    // Создаем JSON сообщение node_hello
-    cJSON *hello = cJSON_CreateObject();
-    if (!hello) {
-        ESP_LOGE(TAG, "Failed to create node_hello JSON");
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", ESP_ERR_NO_MEM, "Failed to create node_hello JSON");
-        return;
-    }
-    
-    cJSON_AddStringToObject(hello, "message_type", "node_hello");
-    cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
-    cJSON_AddStringToObject(hello, "node_type", "ph");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
-    
-    // Добавляем capabilities
-    cJSON *capabilities = cJSON_CreateArray();
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("ph"));
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("temperature"));
-    cJSON_AddItemToObject(hello, "capabilities", capabilities);
-    
-    // Публикуем в общий топик для регистрации
-    char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        // Используем внутреннюю функцию публикации через mqtt_manager
-        // Публикуем в hydro/node_hello для начальной регистрации
-        // Это будет обработано history-logger и зарегистрирует узел
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s", hardware_id);
-        
-        // Публикуем через mqtt_manager_publish_raw
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", pub_err, "Failed to publish node_hello");
-        }
-        
-        free(json_str);
-    }
-    
-    cJSON_Delete(hello);
 }
 
 void ph_node_mqtt_connection_cb(bool connected, void *user_ctx) {

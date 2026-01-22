@@ -136,6 +136,8 @@ services:
       - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-host.docker.internal}
       - MQTT_HOST=${MQTT_HOST:-mqtt}
       - MQTT_PORT=${MQTT_PORT:-1883}
+      - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
+      - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)
       - PHP_OPCACHE_ENABLE=0
       - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
@@ -414,6 +416,23 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  node-sim-manager:
+    build:
+      context: ./services
+      dockerfile: node-sim-manager/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=INFO
+      - NODE_SIM_ROOT=/node-sim
+    volumes:
+      - ../tests/node_sim:/node-sim:ro
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
   telemetry-aggregator:
     build:
       context: ./services
@@ -525,6 +544,7 @@ services:
     volumes:
       - ./integration_tests:/app/integration_tests:ro
       - ./services:/app/services:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     profiles:
       - tests
     command: ["python", "integration_tests/test_error_reporting.py"]

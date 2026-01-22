@@ -106,7 +106,6 @@ class TestSuite:
                 str(base_path / "core" / "E01_bootstrap.yaml"),
                 str(base_path / "core" / "E02_auth_ws_api.yaml"),
                 str(base_path / "core" / "E19_ae_legacy_sql_guard.yaml"),
-                str(base_path / "core" / "E20_frontend_legacy_guard.yaml"),
             ],
             "commands": [
                 str(base_path / "commands" / "E10_command_happy.yaml"),
