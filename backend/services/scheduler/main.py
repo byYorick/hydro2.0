@@ -3,7 +3,8 @@ import json
 import logging
 import os
 import httpx
-from datetime import datetime, time
+from dataclasses import dataclass
+from datetime import datetime, time, timedelta, timezone
 from common.utils.time import utcnow
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
@@ -45,6 +46,99 @@ COMMAND_REST_ERRORS = Counter("scheduler_command_rest_errors_total", "REST comma
 
 # URL automation-engine для отправки команд
 AUTOMATION_ENGINE_URL = os.getenv("AUTOMATION_ENGINE_URL", "http://automation-engine:9405")
+
+
+@dataclass(frozen=True)
+class SimulationClock:
+    real_start: datetime
+    sim_start: datetime
+    time_scale: float
+
+    def now(self) -> datetime:
+        real_now = utcnow().replace(tzinfo=None)
+        elapsed = (real_now - self.real_start).total_seconds()
+        return self.sim_start + timedelta(seconds=elapsed * self.time_scale)
+
+
+def _to_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return _to_naive_utc(parsed)
+
+
+def _extract_simulation_clock(row: Dict[str, Any]) -> Optional[SimulationClock]:
+    scenario = row.get("scenario") or {}
+    sim_meta = scenario.get("simulation") or {}
+    real_start = _parse_iso_datetime(sim_meta.get("real_started_at") or sim_meta.get("started_at"))
+    sim_start = _parse_iso_datetime(sim_meta.get("sim_started_at") or sim_meta.get("sim_start_at"))
+    if not real_start:
+        created_at = row.get("created_at")
+        if not created_at:
+            return None
+        real_start = _to_naive_utc(created_at)
+    if not sim_start:
+        sim_start = real_start
+
+    time_scale = sim_meta.get("time_scale")
+    if time_scale is None:
+        duration_hours = row.get("duration_hours")
+        real_minutes = sim_meta.get("real_duration_minutes")
+        real_seconds = sim_meta.get("real_duration_seconds")
+        if duration_hours and real_minutes:
+            time_scale = (duration_hours * 60) / float(real_minutes)
+        elif duration_hours and real_seconds:
+            time_scale = (duration_hours * 3600) / float(real_seconds)
+
+    try:
+        time_scale_value = float(time_scale)
+    except (TypeError, ValueError):
+        return None
+    if time_scale_value <= 0:
+        return None
+
+    return SimulationClock(
+        real_start=real_start,
+        sim_start=sim_start,
+        time_scale=time_scale_value,
+    )
+
+
+async def get_simulation_clocks(zone_ids: List[int]) -> Dict[int, SimulationClock]:
+    if not zone_ids:
+        return {}
+    try:
+        rows = await fetch(
+            """
+            SELECT DISTINCT ON (zone_id)
+                zone_id,
+                scenario,
+                duration_hours,
+                created_at
+            FROM zone_simulations
+            WHERE zone_id = ANY($1::int[]) AND status = 'running'
+            ORDER BY zone_id, created_at DESC
+            """,
+            zone_ids,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to load simulation clocks: {e}")
+        return {}
+    clocks: Dict[int, SimulationClock] = {}
+    for row in rows:
+        clock = _extract_simulation_clock(row)
+        if clock:
+            clocks[row["zone_id"]] = clock
+    return clocks
 
 
 async def send_command_via_automation_engine(
@@ -487,7 +581,7 @@ async def execute_irrigation_schedule(
 
 
 async def execute_lighting_schedule(
-    zone_id: int, schedule: Dict[str, Any],
+    zone_id: int, schedule: Dict[str, Any], now_time: Optional[time] = None,
 ):
     """Execute lighting schedule for zone (on/off based on time).
     Команды отправляются через automation-engine REST API."""
@@ -498,7 +592,7 @@ async def execute_lighting_schedule(
         if not nodes:
             await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_nodes"})
             return
-        now = datetime.now().time()
+        now = now_time or datetime.now().time()
         start_time = schedule.get("start_time")
         end_time = schedule.get("end_time")
         if not start_time or not end_time:
@@ -598,7 +692,9 @@ async def check_and_execute_schedules(mqtt_client: MqttClient):
     """Check schedules and execute tasks if time matches.
     Команды отправляются через automation-engine REST API."""
     schedules = await get_active_schedules()
-    now = datetime.now().time()
+    zone_ids = sorted({schedule["zone_id"] for schedule in schedules})
+    simulation_clocks = await get_simulation_clocks(zone_ids)
+    real_now = datetime.now()
     # Group by zone and type
     executed: set = set()  # (zone_id, type) to avoid duplicates
     for schedule in schedules:
@@ -607,19 +703,21 @@ async def check_and_execute_schedules(mqtt_client: MqttClient):
         key = (zone_id, task_type)
         if key in executed:
             continue
+        sim_clock = simulation_clocks.get(zone_id)
+        now_time = sim_clock.now().time() if sim_clock else real_now.time()
         if task_type == "irrigation":
             # Check if current time matches schedule time (within 1 minute window)
             schedule_time = schedule.get("time")
             if schedule_time:
                 time_diff = abs(
-                    (now.hour * 60 + now.minute) - (schedule_time.hour * 60 + schedule_time.minute)
+                    (now_time.hour * 60 + now_time.minute) - (schedule_time.hour * 60 + schedule_time.minute)
                 )
                 if time_diff <= 1:
                     await execute_irrigation_schedule(zone_id, schedule)
                     executed.add(key)
         elif task_type == "lighting":
             # Lighting is checked every cycle, execute if needed
-            await execute_lighting_schedule(zone_id, schedule)
+            await execute_lighting_schedule(zone_id, schedule, now_time=now_time)
             executed.add(key)
     
     # Проверяем смены воды

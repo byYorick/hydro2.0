@@ -59,6 +59,25 @@
             required
           />
         </div>
+
+        <div>
+          <label
+            for="simulation-real-duration-minutes"
+            class="block text-sm font-medium mb-1"
+          >Длительность прогона (минуты)</label>
+          <p class="text-xs text-[color:var(--text-muted)] mb-1">
+            Опционально: сколько минут длится весь прогон в реальном времени.
+          </p>
+          <input
+            id="simulation-real-duration-minutes"
+            v-model.number="form.sim_duration_minutes"
+            name="sim_duration_minutes"
+            type="number"
+            min="1"
+            max="10080"
+            class="input-field h-9 w-full"
+          />
+        </div>
         
         <div>
           <label
@@ -300,6 +319,7 @@ const { theme } = useTheme()
 interface SimulationForm {
   duration_hours: number
   step_minutes: number
+  sim_duration_minutes: number | null
   recipe_id: number | null
   initial_state: {
     ph: number | null
@@ -339,6 +359,7 @@ interface RecipeDefaults {
 const form = reactive<SimulationForm>({
   duration_hours: 72,
   step_minutes: 10,
+  sim_duration_minutes: null,
   recipe_id: props.defaultRecipeId || null,
   initial_state: {
     ph: null,
@@ -730,6 +751,7 @@ async function onSubmit(): Promise<void> {
     interface SimulationPayload {
       duration_hours: number
       step_minutes: number
+      sim_duration_minutes?: number
       recipe_id?: number
       initial_state?: Partial<SimulationForm['initial_state']>
     }
@@ -737,6 +759,10 @@ async function onSubmit(): Promise<void> {
     const payload: SimulationPayload = {
       duration_hours: form.duration_hours,
       step_minutes: form.step_minutes,
+    }
+
+    if (form.sim_duration_minutes !== null) {
+      payload.sim_duration_minutes = form.sim_duration_minutes
     }
     
     if (form.recipe_id) {

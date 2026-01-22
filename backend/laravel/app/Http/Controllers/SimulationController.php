@@ -28,6 +28,7 @@ class SimulationController extends Controller
             'step_minutes' => 'integer|min:1|max:60',
             'initial_state' => 'array',
             'recipe_id' => 'nullable|exists:recipes,id',
+            'sim_duration_minutes' => 'nullable|integer|min:1|max:10080',
         ]);
 
         // Формируем сценарий
@@ -87,6 +88,7 @@ class SimulationController extends Controller
                 'duration_hours' => $data['duration_hours'] ?? 72,
                 'step_minutes' => $data['step_minutes'] ?? 10,
                 'scenario' => $scenario,
+                'sim_duration_minutes' => $data['sim_duration_minutes'] ?? null,
             ],
             $jobId
         );

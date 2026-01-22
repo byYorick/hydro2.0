@@ -1,6 +1,6 @@
 """Tests for scheduler."""
 import pytest
-from datetime import time, datetime, timedelta
+from datetime import time, datetime, timedelta, timezone
 from common.utils.time import utcnow
 from unittest.mock import Mock, patch, AsyncMock
 import httpx
@@ -8,6 +8,7 @@ import sys
 import types
 from main import (
     _parse_time_spec,
+    _extract_simulation_clock,
     get_active_schedules,
     get_zone_nodes_for_type,
     execute_irrigation_schedule,
@@ -24,6 +25,29 @@ def test_parse_time_spec():
     assert _parse_time_spec("14:30") == time(14, 30)
     assert _parse_time_spec("invalid") is None
     assert _parse_time_spec("25:00") is None
+
+
+def test_extract_simulation_clock_scales_time():
+    """Test simulation clock scaling."""
+    real_start = datetime(2025, 1, 1, 0, 0, 0)
+    row = {
+        "zone_id": 1,
+        "scenario": {
+            "simulation": {
+                "real_started_at": real_start.isoformat(),
+                "sim_started_at": real_start.isoformat(),
+                "time_scale": 60,
+            }
+        },
+        "duration_hours": 1,
+        "created_at": real_start,
+    }
+    clock = _extract_simulation_clock(row)
+    assert clock is not None
+    with patch("main.utcnow") as mock_utcnow:
+        mock_utcnow.return_value = real_start.replace(tzinfo=timezone.utc) + timedelta(seconds=60)
+        sim_now = clock.now()
+    assert sim_now == real_start + timedelta(hours=1)
 
 
 @pytest.mark.asyncio
@@ -202,18 +226,16 @@ async def test_execute_lighting_schedule_crosses_midnight():
     """Test lighting schedule when window crosses midnight."""
     with patch("main.get_zone_nodes_for_type") as mock_nodes, \
          patch("main.create_scheduler_log") as mock_log, \
-         patch("main.send_command_via_automation_engine") as mock_send, \
-         patch("main.datetime") as mock_datetime:
+         patch("main.send_command_via_automation_engine") as mock_send:
         mock_nodes.return_value = [
             {"node_uid": "nd-light-1", "channel": "light", "type": "light"},
         ]
         mock_send.return_value = True
-        mock_datetime.now.return_value = datetime(2025, 1, 1, 23, 0)
         schedule = {
             "start_time": time(22, 0),
             "end_time": time(6, 0),
         }
-        await execute_lighting_schedule(1, schedule)
+        await execute_lighting_schedule(1, schedule, now_time=time(23, 0))
         assert mock_send.called
         assert mock_send.call_args_list[0][1]["cmd"] == "light_on"
 
@@ -223,8 +245,10 @@ async def test_check_and_execute_schedules_passes_mqtt():
     """Test that mqtt client is passed to water change check."""
     mqtt = Mock()
     with patch("main.get_active_schedules", new_callable=AsyncMock) as mock_schedules, \
+         patch("main.get_simulation_clocks", new_callable=AsyncMock) as mock_sim_clocks, \
          patch("main.check_water_changes", new_callable=AsyncMock) as mock_water_changes:
         mock_schedules.return_value = []
+        mock_sim_clocks.return_value = {}
         await check_and_execute_schedules(mqtt)
         mock_water_changes.assert_awaited_once_with(mqtt)
 
