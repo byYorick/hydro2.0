@@ -110,7 +110,13 @@ else → OFF
 
 Команда:
 ```json
-{ "cmd": "on" }
+{
+  "cmd_id": "cmd-light-001",
+  "cmd": "set_relay",
+  "params": { "state": true },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
 
 События:
@@ -224,7 +230,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
  "cmd": "dose",
  "params": { "ml": 1.2 },
  "cmd_id": "cmd-abc123",
- "ts": 1737355111111,
+ "ts": 1737355112,
  "sig": "hmacsha256"
 }
 ```

@@ -29,7 +29,7 @@ export interface ZoneCommand {
   node_id?: number
   device_id?: number
   command_type: string
-  status: 'QUEUED' | 'SENT' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  status: 'QUEUED' | 'SENT' | 'ACK' | 'DONE' | 'NO_EFFECT' | 'ERROR' | 'INVALID' | 'BUSY' | 'TIMEOUT' | 'SEND_FAILED'
   message?: string
   error?: string
   created_at: string

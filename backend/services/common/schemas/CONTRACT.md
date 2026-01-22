@@ -16,7 +16,6 @@
 2. **Python модели** (`schemas.py`)
    - `Command` - единый контракт команды
    - `CommandResponse` - единый контракт ответа
-   - Legacy модели для обратной совместимости
 
 3. **Laravel модель** (`app/Models/Command.php`)
    - Поддержка новых статусов
@@ -25,7 +24,6 @@
 
 4. **База данных**
    - State-machine статусов: `QUEUED/SENT/ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED`
-   - Дополнительные поля: `error_code`, `error_message`, `result_code`, `duration_ms`
 
 ## Формат команды (Command)
 
@@ -36,9 +34,8 @@
   "cmd_id": "cmd-abc123",
   "cmd": "dose",
   "params": { "ml": 1.2 },
-  "deadline_ms": 1737355112000,
-  "attempt": 1,
-  "ts": 1737355112000
+  "ts": 1737355112,
+  "sig": "deadbeef"
 }
 ```
 
@@ -46,13 +43,11 @@
 
 | Поле | Тип | Обязательное | Описание |
 |------|-----|--------------|----------|
-| `cmd_id` | string | Да | Уникальный идентификатор команды (UUID или correlation_id) |
-| `cmd` | string | Да | Тип команды (например: dose, run_pump, calibrate_ph) |
-| `ts` | integer | Да | Unix timestamp создания команды в миллисекундах |
-| `params` | object | Нет | Параметры команды (объект) |
-| `deadline_ms` | integer | Нет | Дедлайн выполнения команды в миллисекундах |
-| `attempt` | integer | Нет | Номер попытки выполнения (по умолчанию 1) |
-| `correlation_id` | string | Нет | Альтернативное поле для cmd_id (обратная совместимость) |
+| `cmd_id` | string | Да | Уникальный идентификатор команды (UUID) |
+| `cmd` | string | Да | Тип команды (dose, run_pump, set_relay, set_pwm) |
+| `params` | object | Да | Параметры команды (объект) |
+| `ts` | integer | Да | Unix timestamp создания команды в секундах |
+| `sig` | string | Да | HMAC подпись команды (hex) |
 
 ### Примеры использования
 
@@ -64,8 +59,8 @@ from schemas import Command
 # Создание команды
 command = Command.create(
     cmd="dose",
-    params={"ml": 1.2, "channel": "pump_nutrient"},
-    deadline_ms=int(time.time() * 1000) + 30000  # 30 секунд дедлайн
+    params={"ml": 1.2},
+    sig="deadbeef"
 )
 
 # Конвертация в JSON
@@ -93,9 +88,10 @@ $command = Command::create([
 {
   "cmd_id": "cmd-abc123",
   "status": "DONE",
-  "result_code": 0,
   "ts": 1737355113000,
-  "duration_ms": 1000
+  "details": {
+    "duration_ms": 1000
+  }
 }
 ```
 
@@ -104,18 +100,18 @@ $command = Command::create([
 | Поле | Тип | Обязательное | Описание |
 |------|-----|--------------|----------|
 | `cmd_id` | string | Да | Идентификатор команды, на которую приходит ответ |
-| `status` | string | Да | Статус выполнения: `ACCEPTED` \| `DONE` \| `FAILED` |
+| `status` | string | Да | Статус выполнения: `ACK` \| `DONE` \| `ERROR` \| `INVALID` \| `BUSY` \| `NO_EFFECT` |
 | `ts` | integer | Да | Unix timestamp ответа в миллисекундах |
-| `result_code` | integer | Нет | Код результата (0 = успех, >0 = код ошибки) |
-| `error_code` | string | Нет | Символический код ошибки (например: TIMEOUT, INVALID_PARAMS) |
-| `error_message` | string | Нет | Человекочитаемое сообщение об ошибке |
-| `duration_ms` | integer | Нет | Длительность выполнения команды в миллисекундах |
+| `details` | object | Нет | Дополнительные детали ответа |
 
 ### Статусы
 
-- **ACCEPTED** - команда принята узлом и начала выполняться
+- **ACK** - команда принята узлом и начала выполняться
 - **DONE** - команда успешно выполнена
-- **FAILED** - команда завершилась с ошибкой
+- **ERROR** - команда завершилась с ошибкой
+- **INVALID** - команда отклонена из-за параметров/валидации
+- **BUSY** - узел занят (временная недоступность)
+- **NO_EFFECT** - команда не изменила состояние
 
 ### Примеры использования
 
@@ -127,15 +123,13 @@ from schemas import CommandResponse
 # Успешное выполнение
 response = CommandResponse.done(
     cmd_id="cmd-abc123",
-    duration_ms=1000
+    details={"duration_ms": 1000}
 )
 
 # Ошибка выполнения
-response = CommandResponse.failed(
+response = CommandResponse.error(
     cmd_id="cmd-abc123",
-    error_code="TIMEOUT",
-    error_message="Command execution timeout",
-    result_code=1
+    details={"error_code": "TIMEOUT", "error_message": "Command execution timeout"}
 )
 ```
 
@@ -184,22 +178,6 @@ CHECK (status IN ('QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SE
 ✅ **Тестовые fixtures** - fixtures в `schemas/fixtures.py` для тестирования
 
 ✅ **Документация** - полная документация контракта и примеры использования
-
-## Миграция со старых форматов
-
-### Старые статусы → Новые статусы
-
-| Старый | Новый |
-|--------|-------|
-| `pending` | `QUEUED` |
-| `sent` | `SENT` |
-| `ack` | `DONE` |
-| `failed` | `FAILED` |
-| `timeout` | `TIMEOUT` |
-
-### Обратная совместимость
-
-Legacy модели (`CommandRequest`, `LegacyCommandResponse`) обеспечивают обратную совместимость со старым кодом. Постепенно все сервисы должны быть переведены на единый контракт.
 
 ## Тестирование
 

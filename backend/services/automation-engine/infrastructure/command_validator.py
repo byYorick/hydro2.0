@@ -40,7 +40,7 @@ class CommandValidator:
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
         
-        amount = params.get('dose_ml') or params.get('amount')
+        amount = params.get('ml') or params.get('amount')
         if amount is not None:
             try:
                 amount = float(amount)
@@ -127,15 +127,15 @@ class CommandValidator:
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
 
-        dose_ml = params.get('dose_ml') or params.get('amount')
-        if dose_ml is None:
-            return False, "Missing 'dose_ml' in params"
+        ml = params.get('ml') or params.get('amount')
+        if ml is None:
+            return False, "Missing 'ml' in params"
         try:
-            dose_ml = float(dose_ml)
+            ml = float(ml)
         except (ValueError, TypeError):
-            return False, f"Invalid dose_ml type: {dose_ml}"
-        if dose_ml <= 0:
-            return False, f"Dose must be positive, got {dose_ml}"
+            return False, f"Invalid ml type: {ml}"
+        if ml <= 0:
+            return False, f"Dose must be positive, got {ml}"
 
         if 'type' in params:
             valid_types = ['add_acid', 'add_base', 'add_nutrients', 'dilute']
@@ -189,7 +189,7 @@ class CommandValidator:
             return False, "Missing required field: node_uid"
         
         cmd = command.get('cmd')
-        if cmd not in ['set_light', 'set_relay']:
+        if cmd not in ['set_pwm', 'set_relay']:
             return False, f"Invalid command type for light: {cmd}"
         
         # Проверка параметров
@@ -197,18 +197,18 @@ class CommandValidator:
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
         
-        if cmd == 'set_light':
-            intensity = params.get('intensity')
-            if intensity is None:
-                return False, "Missing 'intensity' in params"
-            
+        if cmd == 'set_pwm':
+            value = params.get('value')
+            if value is None:
+                return False, "Missing 'value' in params"
+
             try:
-                intensity = int(intensity)
+                value = int(value)
             except (ValueError, TypeError):
-                return False, f"Invalid intensity type: {intensity}"
-            
-            if intensity < 0 or intensity > 100:
-                return False, f"Intensity must be 0-100, got {intensity}"
+                return False, f"Invalid value type: {value}"
+
+            if value < 0 or value > 255:
+                return False, f"PWM value must be 0-255, got {value}"
         
         elif cmd == 'set_relay':
             state = params.get('state')
@@ -255,7 +255,7 @@ class CommandValidator:
                 return self.validate_light_command(command)
             # По умолчанию проверяем как климат
             return self.validate_climate_command(command)
-        elif cmd == 'set_light':
+        elif cmd == 'set_pwm':
             return self.validate_light_command(command)
         else:
             # Для неизвестных команд проверяем базовую структуру

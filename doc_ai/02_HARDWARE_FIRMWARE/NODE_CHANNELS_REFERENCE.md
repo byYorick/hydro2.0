@@ -103,10 +103,12 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "DOSE",
-  "ml": 1.0,
-  "ttl_ms": 5000,
-  "cmd_id": "cmd-19292"
+  "cmd_id": "cmd-19292",
+  "cmd": "dose",
+  "params": {
+    "ml": 1.0,
+    "ttl_ms": 5000
+  }
 }
 ```
 
@@ -114,9 +116,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-19293"
+  "cmd_id": "cmd-19293",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -132,10 +136,12 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "DOSE",
-  "ml": 5.0,
-  "ttl_ms": 10000,
-  "cmd_id": "cmd-20101"
+  "cmd_id": "cmd-20101",
+  "cmd": "dose",
+  "params": {
+    "ml": 5.0,
+    "ttl_ms": 10000
+  }
 }
 ```
 
@@ -143,9 +149,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-20102"
+  "cmd_id": "cmd-20102",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -163,9 +171,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-30001"
+  "cmd_id": "cmd-30001",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -173,9 +183,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_PWM",
-  "value": 255,
-  "cmd_id": "cmd-30002"
+  "cmd_id": "cmd-30002",
+  "cmd": "set_pwm",
+  "params": {
+    "value": 255
+  }
 }
 ```
 

@@ -52,6 +52,13 @@ class FailureModeConfig:
     delay_ms: int = 0
     drop_response: bool = False
     duplicate_response: bool = False
+    random_drop_rate: float = 0.0
+    random_duplicate_rate: float = 0.0
+    random_delay_ms_min: int = 0
+    random_delay_ms_max: int = 0
+    offline_chance: float = 0.0
+    offline_duration_s: float = 0.0
+    offline_check_interval_s: float = 30.0
 
 
 @dataclass
@@ -137,7 +144,14 @@ class SimConfig:
                 delay_response=fm_data.get("delay_response", False),
                 delay_ms=fm_data.get("delay_ms", 0),
                 drop_response=fm_data.get("drop_response", False),
-                duplicate_response=fm_data.get("duplicate_response", False)
+                duplicate_response=fm_data.get("duplicate_response", False),
+                random_drop_rate=fm_data.get("random_drop_rate", 0.0),
+                random_duplicate_rate=fm_data.get("random_duplicate_rate", 0.0),
+                random_delay_ms_min=fm_data.get("random_delay_ms_min", 0),
+                random_delay_ms_max=fm_data.get("random_delay_ms_max", 0),
+                offline_chance=fm_data.get("offline_chance", 0.0),
+                offline_duration_s=fm_data.get("offline_duration_s", 0.0),
+                offline_check_interval_s=fm_data.get("offline_check_interval_s", 30.0)
             )
         
         return cls(
@@ -174,6 +188,19 @@ class SimConfig:
             errors.append("telemetry.interval_seconds must be > 0")
         if self.telemetry.heartbeat_interval_seconds <= 0:
             errors.append("telemetry.heartbeat_interval_seconds must be > 0")
+
+        # Валидация режимов отказов
+        if self.failure_mode:
+            if not (0.0 <= self.failure_mode.random_drop_rate <= 1.0):
+                errors.append("failure_mode.random_drop_rate must be between 0 and 1")
+            if not (0.0 <= self.failure_mode.random_duplicate_rate <= 1.0):
+                errors.append("failure_mode.random_duplicate_rate must be between 0 and 1")
+            if not (0.0 <= self.failure_mode.offline_chance <= 1.0):
+                errors.append("failure_mode.offline_chance must be between 0 and 1")
+            if self.failure_mode.offline_duration_s < 0:
+                errors.append("failure_mode.offline_duration_s must be >= 0")
+            if self.failure_mode.offline_check_interval_s <= 0:
+                errors.append("failure_mode.offline_check_interval_s must be > 0")
         
         if errors:
             raise ValueError(f"Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))

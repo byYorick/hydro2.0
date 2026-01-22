@@ -5,6 +5,7 @@ Multi-node orchestration для node-sim.
 
 import asyncio
 import logging
+import random
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 
@@ -131,7 +132,11 @@ class MultiNodeOrchestrator:
                 delay_response=failure_mode.delay_response,
                 delay_ms=failure_mode.delay_ms,
                 drop_response=failure_mode.drop_response,
-                duplicate_response=failure_mode.duplicate_response
+                duplicate_response=failure_mode.duplicate_response,
+                random_drop_rate=failure_mode.random_drop_rate,
+                random_duplicate_rate=failure_mode.random_duplicate_rate,
+                random_delay_ms_min=failure_mode.random_delay_ms_min,
+                random_delay_ms_max=failure_mode.random_delay_ms_max
             )
             command_handler.state_machine.set_failure_mode(fm)
         
@@ -186,6 +191,16 @@ class MultiNodeOrchestrator:
                 logger.info(f"Started node {node_instance.node.node_uid}")
             except Exception as e:
                 logger.error(f"Failed to start node {node_instance.node.node_uid}: {e}", exc_info=True)
+
+        # Запускаем offline-симуляцию, если настроена
+        for node_instance in self.nodes:
+            failure_mode = node_instance.config.get("failure_mode")
+            if not failure_mode:
+                continue
+            if failure_mode.offline_chance > 0 and failure_mode.offline_duration_s > 0:
+                self._tasks.append(
+                    asyncio.create_task(self._offline_loop(node_instance, failure_mode))
+                )
         
         logger.info(f"Orchestrator started. {len(self.nodes)} nodes running.")
     
@@ -197,6 +212,11 @@ class MultiNodeOrchestrator:
         self._running = False
         logger.info("Stopping orchestrator...")
         
+        # Останавливаем фоновые задачи
+        for task in self._tasks:
+            task.cancel()
+        self._tasks.clear()
+
         # Останавливаем все ноды
         stop_tasks = []
         for node_instance in self.nodes:
@@ -208,6 +228,24 @@ class MultiNodeOrchestrator:
         await asyncio.gather(*stop_tasks, return_exceptions=True)
         
         logger.info("Orchestrator stopped")
+
+    async def _offline_loop(self, node_instance: NodeInstance, failure_mode: FailureModeConfig):
+        """Периодически переводит ноду в offline для тестирования алертов."""
+        interval = max(1.0, float(failure_mode.offline_check_interval_s or 30.0))
+        duration = max(1.0, float(failure_mode.offline_duration_s))
+        while self._running:
+            await asyncio.sleep(interval)
+            if not self._running:
+                break
+            if node_instance.node.is_offline():
+                continue
+            if random.random() < failure_mode.offline_chance:
+                node_instance.node.set_offline(duration)
+                logger.warning(
+                    "Node %s set offline for %.1fs (random failure)",
+                    node_instance.node.node_uid,
+                    duration
+                )
     
     async def run_forever(self):
         """Запустить оркестратор и работать бесконечно."""
@@ -273,7 +311,14 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
             delay_response=fm_data.get("delay_response", False),
             delay_ms=fm_data.get("delay_ms", 0),
             drop_response=fm_data.get("drop_response", False),
-            duplicate_response=fm_data.get("duplicate_response", False)
+            duplicate_response=fm_data.get("duplicate_response", False),
+            random_drop_rate=fm_data.get("random_drop_rate", 0.0),
+            random_duplicate_rate=fm_data.get("random_duplicate_rate", 0.0),
+            random_delay_ms_min=fm_data.get("random_delay_ms_min", 0),
+            random_delay_ms_max=fm_data.get("random_delay_ms_max", 0),
+            offline_chance=fm_data.get("offline_chance", 0.0),
+            offline_duration_s=fm_data.get("offline_duration_s", 0.0),
+            offline_check_interval_s=fm_data.get("offline_check_interval_s", 30.0)
         )
     
     # Добавляем ноды из конфигурации
@@ -320,7 +365,14 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
                 delay_response=fm_data.get("delay_response", False),
                 delay_ms=fm_data.get("delay_ms", 0),
                 drop_response=fm_data.get("drop_response", False),
-                duplicate_response=fm_data.get("duplicate_response", False)
+                duplicate_response=fm_data.get("duplicate_response", False),
+                random_drop_rate=fm_data.get("random_drop_rate", 0.0),
+                random_duplicate_rate=fm_data.get("random_duplicate_rate", 0.0),
+                random_delay_ms_min=fm_data.get("random_delay_ms_min", 0),
+                random_delay_ms_max=fm_data.get("random_delay_ms_max", 0),
+                offline_chance=fm_data.get("offline_chance", 0.0),
+                offline_duration_s=fm_data.get("offline_duration_s", 0.0),
+                offline_check_interval_s=fm_data.get("offline_check_interval_s", 30.0)
             )
         
         # Добавляем ноду

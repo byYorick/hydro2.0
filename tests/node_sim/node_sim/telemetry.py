@@ -89,12 +89,18 @@ class TelemetryPublisher:
         Публиковать телеметрию on-demand (по команде hil_request_telemetry).
         """
         logger.info("Publishing telemetry on-demand")
+        if self.node.is_offline():
+            logger.info("Telemetry on-demand skipped: node is offline")
+            return
         await self._publish_all_telemetry()
     
     async def _telemetry_loop(self):
         """Цикл публикации телеметрии."""
         while self._running:
             try:
+                if self.node.is_offline():
+                    await asyncio.sleep(self.telemetry_interval_s)
+                    continue
                 await self._publish_all_telemetry()
                 await asyncio.sleep(self.telemetry_interval_s)
             except asyncio.CancelledError:

@@ -2,7 +2,7 @@
 Модуль для надёжной доставки статусов команд в Laravel API.
 
 Обеспечивает:
-- Нормализацию статусов command_response → ACCEPTED/DONE/FAILED
+- Нормализацию статусов command_response → ACK/DONE/ERROR/INVALID/BUSY/NO_EFFECT
 - Персистентную очередь для статусов при ошибках API
 - Воркер для ретраев с exponential backoff
 - Единый httpx.AsyncClient на процесс
@@ -25,14 +25,17 @@ logger = logging.getLogger(__name__)
 class CommandStatus(str, Enum):
     """Нормализованные статусы команд."""
     SENT = "SENT"  # Команда отправлена в MQTT (подтверждение корреляции)
-    ACCEPTED = "ACCEPTED"
+    ACK = "ACK"
     DONE = "DONE"
-    FAILED = "FAILED"
+    ERROR = "ERROR"
+    INVALID = "INVALID"
+    BUSY = "BUSY"
+    NO_EFFECT = "NO_EFFECT"
 
 
 def normalize_status(raw_status: str) -> Optional[CommandStatus]:
     """
-    Нормализует статус command_response в строго ACCEPTED/DONE/FAILED.
+    Нормализует статус command_response в строго ACK/DONE/ERROR/INVALID/BUSY/NO_EFFECT.
     
     Args:
         raw_status: Сырой статус из command_response (может быть в любом регистре)
@@ -42,17 +45,26 @@ def normalize_status(raw_status: str) -> Optional[CommandStatus]:
     """
     raw_upper = str(raw_status).upper().strip()
     
-    # ACCEPTED - команда принята к выполнению
-    if raw_upper in ("ACK", "ACCEPTED", "ACCEPT"):
-        return CommandStatus.ACCEPTED
+    # ACK - команда принята к выполнению
+    if raw_upper == "ACK":
+        return CommandStatus.ACK
     
     # DONE - команда успешно выполнена
-    if raw_upper in ("COMPLETED", "OK", "SUCCESS", "DONE", "FINISHED"):
+    if raw_upper == "DONE":
         return CommandStatus.DONE
     
-    # FAILED - команда завершилась с ошибкой
-    if raw_upper in ("ERROR", "FAILED", "FAIL", "REJECTED", "TIMEOUT"):
-        return CommandStatus.FAILED
+    # ERROR - команда завершилась с ошибкой
+    if raw_upper == "ERROR":
+        return CommandStatus.ERROR
+
+    if raw_upper == "INVALID":
+        return CommandStatus.INVALID
+
+    if raw_upper == "BUSY":
+        return CommandStatus.BUSY
+
+    if raw_upper == "NO_EFFECT":
+        return CommandStatus.NO_EFFECT
     
     return None
 
@@ -74,7 +86,7 @@ class StatusUpdateQueue:
                 CREATE TABLE IF NOT EXISTS pending_status_updates (
                     id BIGSERIAL PRIMARY KEY,
                     cmd_id VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL CHECK (status IN ('SENT', 'ACCEPTED', 'DONE', 'FAILED')),
+                    status VARCHAR(16) NOT NULL CHECK (status IN ('SENT', 'ACK', 'DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT')),
                     details JSONB,
                     retry_count INTEGER DEFAULT 0,
                     max_attempts INTEGER DEFAULT 10,

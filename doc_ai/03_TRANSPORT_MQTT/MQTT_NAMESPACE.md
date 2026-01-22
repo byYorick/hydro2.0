@@ -70,11 +70,13 @@ Payload (пример):
 
 ```json
 {
- "cmd": "SET_PWM",
- "value": 128,
- "ttl_ms": 5000,
- "reason": "ZONE_PH_CORRECTION",
- "request_id": "cmd-2025-01-01-12-00-00-001"
+ "cmd_id": "cmd-2025-01-01-12-00-00-001",
+ "cmd": "set_pwm",
+ "params": {
+   "value": 128
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 

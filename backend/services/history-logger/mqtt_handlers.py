@@ -1133,14 +1133,13 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
 
-        details = {
-            "error_code": data.get("error_code"),
-            "error_message": data.get("error_message"),
+        details = dict(data.get("details") or {})
+        details.update({
             "raw_status": str(raw_status),
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,
-        }
+        })
         details = {k: v for k, v in details.items() if v is not None}
 
         success = await send_status_to_laravel(cmd_id, normalized_status, details)

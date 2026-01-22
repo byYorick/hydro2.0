@@ -33,10 +33,7 @@ def _create_command_payload(
     if sig and ts is None:
         raise ValueError("sig requires ts")
 
-    payload = {"cmd": command_name, "cmd_id": cmd_id}
-
-    if params:
-        payload["params"] = params
+    payload = {"cmd": command_name, "cmd_id": cmd_id, "params": params or {}}
 
     secret = get_settings().node_default_secret
     if ts is None and sig is None:
@@ -177,4 +174,3 @@ async def publish_command_mqtt(
     except Exception as e:
         logger.error("Error publishing command for node %s: %s", node_uid, e, exc_info=True)
         raise
-

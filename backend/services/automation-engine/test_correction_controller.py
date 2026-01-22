@@ -97,7 +97,7 @@ async def test_ph_controller_check_and_correct_low_ph():
         assert result is not None
         assert result['cmd'] == 'dose'
         assert result['params']['type'] == 'add_base'
-        assert result['params']['dose_ml'] == pytest.approx(3.0, abs=0.01)  # abs(-0.3) * 10
+        assert result['params']['ml'] == pytest.approx(3.0, abs=0.01)  # abs(-0.3) * 10
         assert result['event_type'] == 'PH_CORRECTED'
         assert result['event_details']['correction_type'] == 'add_base'
 
@@ -129,7 +129,7 @@ async def test_ph_controller_check_and_correct_high_ph():
         assert result is not None
         assert result['cmd'] == 'dose'
         assert result['params']['type'] == 'add_acid'
-        assert result['params']['dose_ml'] == pytest.approx(3.0, abs=0.01)  # abs(0.3) * 10
+        assert result['params']['ml'] == pytest.approx(3.0, abs=0.01)  # abs(0.3) * 10
         assert result['event_type'] == 'PH_CORRECTED'
 
 
@@ -204,7 +204,7 @@ async def test_ec_controller_check_and_correct_low_ec():
         assert result is not None
         assert result['cmd'] == 'run_pump'
         assert result['params']['type'] == 'add_nutrients'
-        assert result['params']['dose_ml'] == pytest.approx(30.0, abs=0.01)  # abs(-0.3) * 100
+        assert result['params']['ml'] == pytest.approx(30.0, abs=0.01)  # abs(-0.3) * 100
         assert result['params']['duration_ms'] > 0
         assert result['event_type'] == 'EC_DOSING'
 
@@ -245,14 +245,14 @@ async def test_ph_controller_apply_correction():
         'node_uid': 'nd-ph-1',
         'channel': 'pump_acid',
         'cmd': 'dose',
-        'params': {'dose_ml': 3.0, 'type': 'add_acid'},
+        'params': {'ml': 3.0, 'type': 'add_acid'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_acid',
             'current_ph': 6.8,
             'target_ph': 6.5,
             'diff': 0.3,
-            'dose_ml': 3.0
+            'ml': 3.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -295,14 +295,14 @@ async def test_ph_controller_apply_correction_high_ph_detected():
         'node_uid': 'nd-ph-1',
         'channel': 'pump_acid',
         'cmd': 'dose',
-        'params': {'dose_ml': 4.0, 'type': 'add_acid'},
+        'params': {'ml': 4.0, 'type': 'add_acid'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_acid',
             'current_ph': 6.9,
             'target_ph': 6.5,
             'diff': 0.4,  # > 0.3, должно создать PH_TOO_HIGH_DETECTED
-            'dose_ml': 4.0
+            'ml': 4.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -337,14 +337,14 @@ async def test_ph_controller_apply_correction_low_ph_detected():
         'node_uid': 'nd-ph-1',
         'channel': 'pump_base',
         'cmd': 'dose',
-        'params': {'dose_ml': 4.0, 'type': 'add_base'},
+        'params': {'ml': 4.0, 'type': 'add_base'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_base',
             'current_ph': 6.1,
             'target_ph': 6.5,
             'diff': -0.4,  # < -0.3, должно создать PH_TOO_LOW_DETECTED
-            'dose_ml': 4.0
+            'ml': 4.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -379,14 +379,14 @@ async def test_ec_controller_apply_correction():
         'node_uid': 'nd-ec-1',
         'channel': 'pump_nutrient',
         'cmd': 'run_pump',
-        'params': {'dose_ml': 30.0, 'duration_ms': 1000, 'type': 'add_nutrients'},
+        'params': {'ml': 30.0, 'duration_ms': 1000, 'type': 'add_nutrients'},
         'event_type': 'EC_DOSING',
         'event_details': {
             'correction_type': 'add_nutrients',
             'current_ec': 1.5,
             'target_ec': 1.8,
             'diff': -0.3,
-            'dose_ml': 30.0
+            'ml': 30.0
         },
         'zone_id': 1,
         'correction_type_str': 'ec',

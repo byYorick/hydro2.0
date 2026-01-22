@@ -33,19 +33,19 @@ class AllEventsBroadcastingTest extends TestCase
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
 
         // CommandStatusUpdated - канал команд зоны
-        event(new CommandStatusUpdated(1, 'completed', null, null, $zone->id));
+        event(new CommandStatusUpdated(1, 'DONE', null, null, $zone->id));
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) use ($zone) {
             return $e->broadcastOn()->name === "private-commands.{$zone->id}";
         });
 
         // CommandStatusUpdated - глобальный канал команд
-        event(new CommandStatusUpdated(2, 'failed', null, 'Error', null));
+        event(new CommandStatusUpdated(2, 'ERROR', null, 'Error', null));
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
             return $e->broadcastOn()->name === 'private-commands.global';
         });
 
         // CommandFailed - канал команд зоны
-        event(new CommandFailed(3, 'Failed', 'Error', $zone->id));
+        event(new CommandFailed(3, 'Failed', 'Error', Command::STATUS_ERROR, $zone->id));
         Event::assertDispatched(CommandFailed::class, function ($e) use ($zone) {
             return $e->broadcastOn()->name === "private-commands.{$zone->id}";
         });
@@ -101,17 +101,17 @@ class AllEventsBroadcastingTest extends TestCase
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
 
         // CommandStatusUpdated
-        $commandEvent = new CommandStatusUpdated(100, 'completed', 'Done', null, $zone->id);
+        $commandEvent = new CommandStatusUpdated(100, 'DONE', 'Done', null, $zone->id);
         $commandData = $commandEvent->broadcastWith();
         $this->assertEquals(100, $commandData['commandId']);
         $this->assertEquals('completed', $commandData['status']);
         $this->assertEquals($zone->id, $commandData['zoneId']);
 
         // CommandFailed
-        $failedEvent = new CommandFailed(200, 'Failed', 'Error', $zone->id);
+        $failedEvent = new CommandFailed(200, 'Failed', 'Error', Command::STATUS_ERROR, $zone->id);
         $failedData = $failedEvent->broadcastWith();
         $this->assertEquals(200, $failedData['commandId']);
-        $this->assertEquals(Command::STATUS_FAILED, $failedData['status']);
+        $this->assertEquals(Command::STATUS_ERROR, $failedData['status']);
         $this->assertEquals('Error', $failedData['error']);
 
         // ZoneUpdated
@@ -156,13 +156,13 @@ class AllEventsBroadcastingTest extends TestCase
      */
     public function test_all_events_have_broadcast_names(): void
     {
-        $commandEvent = new CommandStatusUpdated(1, 'completed', null, null, 1);
+        $commandEvent = new CommandStatusUpdated(1, 'DONE', null, null, 1);
         $this->assertEquals('CommandStatusUpdated', $commandEvent->broadcastAs());
 
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         
-        $failedEvent = new CommandFailed(1, 'Failed', 'Error', $zone->id);
+        $failedEvent = new CommandFailed(1, 'Failed', 'Error', Command::STATUS_ERROR, $zone->id);
         $this->assertEquals('CommandFailed', $failedEvent->broadcastAs());
 
         $telemetryEvent = new TelemetryBatchUpdated($zone->id, []);

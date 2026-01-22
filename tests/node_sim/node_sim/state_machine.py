@@ -4,6 +4,7 @@ State Machine для обработки команд с поддержкой н�
 
 import asyncio
 from enum import Enum
+import random
 from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass, field
 from collections import deque
@@ -13,9 +14,9 @@ from .utils_time import current_timestamp_ms, sleep_ms
 
 class CommandStatus(Enum):
     """Статусы команды в state machine."""
-    ACCEPTED = "ACCEPTED"
+    ACK = "ACK"
     DONE = "DONE"
-    FAILED = "FAILED"
+    ERROR = "ERROR"
     INVALID = "INVALID"
     BUSY = "BUSY"
     NO_EFFECT = "NO_EFFECT"
@@ -31,6 +32,10 @@ class FailureMode:
     delay_done_ms: int = 0  # Задержка перед отправкой DONE
     drop_next_response: bool = False  # Пропустить следующий ответ
     duplicate_next_response: bool = False  # Дублировать следующий ответ
+    random_drop_rate: float = 0.0
+    random_duplicate_rate: float = 0.0
+    random_delay_ms_min: int = 0
+    random_delay_ms_max: int = 0
 
 
 @dataclass
@@ -39,7 +44,7 @@ class CommandState:
     cmd_id: str
     cmd: str
     params: Dict[str, Any]
-    status: CommandStatus = CommandStatus.ACCEPTED
+    status: CommandStatus = CommandStatus.ACK
     exec_time_ms: int = 0  # Время выполнения команды
     response_payload: Optional[Dict[str, Any]] = None
     accepted_at_ms: int = field(default_factory=current_timestamp_ms)
@@ -52,7 +57,7 @@ class CommandStateMachine:
     State Machine для обработки команд.
     
     Поддерживает:
-    - Переходы ACCEPTED -> DONE/FAILED
+    - Переходы ACK -> DONE/ERROR/INVALID/BUSY/NO_EFFECT
     - Негативные режимы (drop, duplicate, delay)
     - Идемпотентность через кеш
     """
@@ -76,7 +81,7 @@ class CommandStateMachine:
         channel: Optional[str] = None
     ) -> CommandState:
         """
-        Принять команду и создать состояние ACCEPTED.
+        Принять команду и создать состояние ACK.
         
         Args:
             cmd_id: ID команды
@@ -86,13 +91,13 @@ class CommandStateMachine:
             channel: Канал команды
         
         Returns:
-            CommandState в статусе ACCEPTED
+            CommandState в статусе ACK
         """
         state = CommandState(
             cmd_id=cmd_id,
             cmd=cmd,
             params=params,
-            status=CommandStatus.ACCEPTED,
+            status=CommandStatus.ACK,
             exec_time_ms=exec_time_ms,
             channel=channel
         )
@@ -105,7 +110,7 @@ class CommandStateMachine:
         executor: Callable[[str, Dict[str, Any]], tuple[CommandStatus, Optional[Dict[str, Any]]]]
     ) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """
-        Выполнить команду и перевести в DONE/FAILED.
+        Выполнить команду и перевести в DONE/ERROR/INVALID/BUSY/NO_EFFECT.
         
         Args:
             state: Состояние команды
@@ -122,7 +127,7 @@ class CommandStateMachine:
         try:
             final_status, response_payload = executor(state.cmd, state.params)
         except Exception as e:
-            final_status = CommandStatus.FAILED
+            final_status = CommandStatus.ERROR
             response_payload = {"error": str(e)}
         
         # Применяем задержку перед отправкой DONE (негативный режим)
@@ -144,6 +149,9 @@ class CommandStateMachine:
         # Проверяем глобальный флаг
         if self.failure_mode.drop_response:
             return True
+
+        if self.failure_mode.random_drop_rate > 0 and random.random() < self.failure_mode.random_drop_rate:
+            return True
         
         # Проверяем флаг для следующего ответа
         if cmd_id in self._pending_drops:
@@ -160,6 +168,9 @@ class CommandStateMachine:
         # Проверяем глобальный флаг
         if self.failure_mode.duplicate_response:
             return True
+
+        if self.failure_mode.random_duplicate_rate > 0 and random.random() < self.failure_mode.random_duplicate_rate:
+            return True
         
         # Проверяем флаг для следующего ответа
         if cmd_id in self._pending_duplicates:
@@ -175,6 +186,18 @@ class CommandStateMachine:
     def mark_duplicate_next_response(self, cmd_id: str):
         """Пометить, что следующий ответ для cmd_id нужно дублировать."""
         self._pending_duplicates.add(cmd_id)
+
+    def get_response_delay_ms(self) -> int:
+        """Получить задержку перед отправкой ответа."""
+        if not self.failure_mode:
+            return 0
+        if self.failure_mode.delay_response and self.failure_mode.delay_ms > 0:
+            return self.failure_mode.delay_ms
+        if self.failure_mode.random_delay_ms_max > 0:
+            low = max(0, self.failure_mode.random_delay_ms_min)
+            high = max(low, self.failure_mode.random_delay_ms_max)
+            return random.randint(low, high)
+        return 0
     
     def get_state(self, cmd_id: str) -> Optional[CommandState]:
         """Получить состояние команды."""

@@ -21,6 +21,13 @@ telemetry:
 #   delay_ms: 0
 #   drop_response: false
 #   duplicate_response: false
+#   random_drop_rate: 0.0
+#   random_duplicate_rate: 0.0
+#   random_delay_ms_min: 0
+#   random_delay_ms_max: 0
+#   offline_chance: 0.0
+#   offline_duration_s: 0
+#   offline_check_interval_s: 30
 
 # Список нод
 nodes:

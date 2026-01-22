@@ -43,3 +43,10 @@ failure_mode:
   delay_ms: 0               # Задержка в миллисекундах
   drop_response: false       # Пропуск ответа
   duplicate_response: false  # Дублирование ответа
+  random_drop_rate: 0.0      # Случайный пропуск ответа (0..1)
+  random_duplicate_rate: 0.0 # Случайное дублирование (0..1)
+  random_delay_ms_min: 0     # Случайная задержка (минимум, мс)
+  random_delay_ms_max: 0     # Случайная задержка (максимум, мс)
+  offline_chance: 0.0        # Вероятность offline на интервал (0..1)
+  offline_duration_s: 0      # Длительность offline (секунды)
+  offline_check_interval_s: 30 # Интервал проверки offline (секунды)

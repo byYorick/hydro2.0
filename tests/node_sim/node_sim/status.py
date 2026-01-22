@@ -118,6 +118,9 @@ class StatusPublisher:
     
     async def _publish_status(self):
         """Опубликовать online status."""
+        if self.node.is_offline():
+            logger.debug("Skipping status publish: node is offline")
+            return
         payload = {
             "status": "ONLINE",
             "ts": int(time.time())
@@ -135,6 +138,9 @@ class StatusPublisher:
     
     async def _publish_heartbeat(self):
         """Опубликовать heartbeat."""
+        if self.node.is_offline():
+            logger.debug("Skipping heartbeat publish: node is offline")
+            return
         # Вычисляем uptime с момента старта
         uptime_seconds = int(time.time() - self._start_time)
         
@@ -157,4 +163,3 @@ class StatusPublisher:
         # Публикуем
         self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published heartbeat: uptime={uptime_seconds}s")
-

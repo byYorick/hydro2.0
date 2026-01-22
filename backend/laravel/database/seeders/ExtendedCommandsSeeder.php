@@ -64,9 +64,12 @@ class ExtendedCommandsSeeder extends Seeder
         $statuses = [
             Command::STATUS_QUEUED => 5,
             Command::STATUS_SENT => 10,
-            Command::STATUS_ACCEPTED => 15,
-            Command::STATUS_DONE => 60,
-            Command::STATUS_FAILED => 5,
+            Command::STATUS_ACK => 15,
+            Command::STATUS_DONE => 45,
+            Command::STATUS_NO_EFFECT => 5,
+            Command::STATUS_ERROR => 6,
+            Command::STATUS_INVALID => 4,
+            Command::STATUS_BUSY => 2,
             Command::STATUS_TIMEOUT => 3,
             Command::STATUS_SEND_FAILED => 2,
         ];
@@ -95,21 +98,46 @@ class ExtendedCommandsSeeder extends Seeder
                 
                 // Генерируем временные метки
                 $createdAt = $currentDate->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
-                $sentAt = in_array($status, [Command::STATUS_SENT, Command::STATUS_ACCEPTED, Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])
+                $sentAt = in_array($status, [
+                    Command::STATUS_SENT,
+                    Command::STATUS_ACK,
+                    Command::STATUS_DONE,
+                    Command::STATUS_NO_EFFECT,
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                ])
                     ? $createdAt->copy()->addSeconds(rand(1, 30))
                     : null;
                 
-                $ackAt = in_array($status, [Command::STATUS_ACCEPTED, Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])
+                $ackAt = in_array($status, [
+                    Command::STATUS_ACK,
+                    Command::STATUS_DONE,
+                    Command::STATUS_NO_EFFECT,
+                ])
                     ? ($sentAt ? $sentAt->copy()->addSeconds(rand(1, 60)) : $createdAt->copy()->addSeconds(rand(1, 60)))
                     : null;
                 
-                $failedAt = in_array($status, [Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED])
+                $failedAt = in_array($status, [
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                    Command::STATUS_SEND_FAILED,
+                ])
                     ? ($ackAt ? $ackAt->copy()->addSeconds(rand(1, 300)) : ($sentAt ? $sentAt->copy()->addSeconds(rand(1, 300)) : $createdAt->copy()->addSeconds(rand(1, 300))))
                     : null;
 
                 $params = $this->generateCommandParams($cmdType, $cmdSubType);
                 
-                $errorCode = in_array($status, [Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED])
+                $errorCode = in_array($status, [
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                    Command::STATUS_SEND_FAILED,
+                ])
                     ? rand(1000, 9999)
                     : null;
                 
@@ -120,7 +148,12 @@ class ExtendedCommandsSeeder extends Seeder
                 // result_code всегда должен быть установлен (0 = успех, >0 = ошибка)
                 $resultCode = match ($status) {
                     Command::STATUS_DONE => 0,
-                    Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED => rand(1, 9999),
+                    Command::STATUS_NO_EFFECT => 0,
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                    Command::STATUS_SEND_FAILED => rand(1, 9999),
                     default => 0,
                 };
                 $durationMs = $ackAt && $sentAt ? $sentAt->diffInMilliseconds($ackAt) : null;
@@ -226,4 +259,3 @@ class ExtendedCommandsSeeder extends Seeder
         };
     }
 }
-

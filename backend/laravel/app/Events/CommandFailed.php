@@ -23,6 +23,8 @@ class CommandFailed implements ShouldBroadcast
 
     public ?string $error;
 
+    public string $status;
+
     public ?int $zoneId;
 
     public int $eventId;
@@ -33,11 +35,13 @@ class CommandFailed implements ShouldBroadcast
         int|string $commandId,
         string $message,
         ?string $error = null,
+        string $status = \App\Models\Command::STATUS_ERROR,
         ?int $zoneId = null
     ) {
         $this->commandId = $commandId;
         $this->message = $message;
         $this->error = $error;
+        $this->status = $status;
         $this->zoneId = $zoneId;
         
         // Генерируем event_id и server_ts для reconciliation
@@ -75,7 +79,7 @@ class CommandFailed implements ShouldBroadcast
     {
         return [
             'commandId' => $this->commandId,
-            'status' => \App\Models\Command::STATUS_FAILED,
+            'status' => $this->status,
             'message' => $this->message,
             'error' => $this->error,
             'zoneId' => $this->zoneId,
@@ -96,7 +100,7 @@ class CommandFailed implements ShouldBroadcast
                 entityType: 'command',
                 entityId: $this->commandId,
                 payload: [
-                    'status' => \App\Models\Command::STATUS_FAILED,
+                    'status' => $this->status,
                     'message' => $this->message,
                     'error' => $this->error,
                 ],

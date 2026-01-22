@@ -1,12 +1,9 @@
 {
-  "cmd_id": "cmd-ghi789",
-  "cmd": "calibrate_ph",
-  "ts": 1737979200000,
+  "cmd_id": "cmd-99999",
+  "cmd": "set_pwm",
   "params": {
-    "value": 7.0,
-    "channel": "ph_sensor"
+    "value": 128
   },
-  "deadline_ms": 1737979800000,
-  "attempt": 1
+  "ts": 1737979200,
+  "sig": "deadbeef"
 }
-

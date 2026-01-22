@@ -1,11 +1,9 @@
 {
-  "cmd_id": "cmd-def456",
+  "cmd_id": "cmd-54321",
   "cmd": "run_pump",
-  "ts": 1737979200000,
   "params": {
-    "duration_sec": 30,
-    "channel": "pump_irrigation"
+    "duration_ms": 30000
   },
-  "attempt": 1
+  "ts": 1737979200,
+  "sig": "deadbeef"
 }
-

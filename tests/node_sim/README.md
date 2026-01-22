@@ -56,7 +56,7 @@ python -m node_sim.cli multi --config multi.yaml
 - ✅ Публикация heartbeat и online status (в обоих режимах: preconfig/configured)
 - ✅ Публикация config_report при старте (если включено)
 - ✅ Обработка команд с дедупликацией по cmd_id
-- ✅ Отправка command_response (ACCEPTED быстро, DONE/FAILED после выполнения)
+- ✅ Отправка command_response (ACK быстро, DONE/ERROR после выполнения)
 - ✅ Мониторинг доставленных команд (cmd_id, тайминги, статистика)
 - ✅ Режимы отказов: delay, drop, duplicate, overcurrent, no_flow
 - ✅ Поддержка temp-топиков для preconfig режима
@@ -85,6 +85,25 @@ failure_mode:
 ```yaml
 failure_mode:
   duplicate_response: true
+```
+
+### 3.1 Randomized Response (Случайные задержки/пропуски/дубликаты)
+Случайные сбои для реалистичной деградации:
+```yaml
+failure_mode:
+  random_drop_rate: 0.05        # 5% ответов будут потеряны
+  random_duplicate_rate: 0.02   # 2% ответов будут продублированы
+  random_delay_ms_min: 200
+  random_delay_ms_max: 1500
+```
+
+### 3.2 Offline Windows (Потеря связи)
+Периодически отключает ноду (нет heartbeat/telemetry/ответов на команды):
+```yaml
+failure_mode:
+  offline_chance: 0.1           # 10% шанс на каждом интервале
+  offline_duration_s: 45        # длительность offline
+  offline_check_interval_s: 60  # частота проверки
 ```
 
 ### 4. Overcurrent (Перегрузка по току)

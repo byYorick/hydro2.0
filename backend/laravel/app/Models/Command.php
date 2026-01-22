@@ -13,9 +13,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * State-machine статусов:
  * - QUEUED: команда поставлена в очередь
  * - SENT: команда отправлена в MQTT
- * - ACCEPTED: команда принята узлом
+ * - ACK: команда принята узлом
  * - DONE: команда успешно выполнена
- * - FAILED: команда завершилась с ошибкой
+ * - NO_EFFECT: команда выполнена, но эффекта нет
+ * - ERROR: команда завершилась с ошибкой
+ * - INVALID: команда отвергнута из-за неверных параметров
+ * - BUSY: команда отвергнута, узел занят
  * - TIMEOUT: команда не получила ответа в срок
  * - SEND_FAILED: ошибка при отправке команды
  */
@@ -28,9 +31,12 @@ class Command extends Model
      */
     public const STATUS_QUEUED = 'QUEUED';
     public const STATUS_SENT = 'SENT';
-    public const STATUS_ACCEPTED = 'ACCEPTED';
+    public const STATUS_ACK = 'ACK';
     public const STATUS_DONE = 'DONE';
-    public const STATUS_FAILED = 'FAILED';
+    public const STATUS_NO_EFFECT = 'NO_EFFECT';
+    public const STATUS_ERROR = 'ERROR';
+    public const STATUS_INVALID = 'INVALID';
+    public const STATUS_BUSY = 'BUSY';
     public const STATUS_TIMEOUT = 'TIMEOUT';
     public const STATUS_SEND_FAILED = 'SEND_FAILED';
 
@@ -39,7 +45,10 @@ class Command extends Model
      */
     public const FINAL_STATUSES = [
         self::STATUS_DONE,
-        self::STATUS_FAILED,
+        self::STATUS_NO_EFFECT,
+        self::STATUS_ERROR,
+        self::STATUS_INVALID,
+        self::STATUS_BUSY,
         self::STATUS_TIMEOUT,
         self::STATUS_SEND_FAILED,
     ];
@@ -89,7 +98,7 @@ class Command extends Model
      */
     public function isDone(): bool
     {
-        return $this->status === self::STATUS_DONE;
+        return in_array($this->status, [self::STATUS_DONE, self::STATUS_NO_EFFECT], true);
     }
 
     /**
@@ -98,7 +107,9 @@ class Command extends Model
     public function isFailed(): bool
     {
         return in_array($this->status, [
-            self::STATUS_FAILED,
+            self::STATUS_ERROR,
+            self::STATUS_INVALID,
+            self::STATUS_BUSY,
             self::STATUS_TIMEOUT,
             self::STATUS_SEND_FAILED,
         ], true);
@@ -168,5 +179,3 @@ class Command extends Model
         return $query->where('context_type', $contextType);
     }
 }
-
-

@@ -25,8 +25,8 @@ logger = get_logger(__name__)
 class CommandResponse:
     """Ответ на команду."""
     cmd_id: str
-    status: str  # "ACCEPTED", "DONE", "FAILED", "ACK", "ERROR", "INVALID", "BUSY", "NO_EFFECT"
-    details: Optional[str] = None
+    status: str  # "ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"
+    details: Optional[Dict[str, Any]] = None
     response_payload: Optional[Dict[str, Any]] = None
     ts: Optional[int] = None
 
@@ -118,6 +118,10 @@ class CommandHandler:
         self.errors: Dict[str, str] = {}  # channel -> error message
         self.flow_values: Dict[str, float] = {}  # channel -> flow rate
         self.current_values: Dict[str, float] = {}  # channel -> current
+
+        # Эмпирические коэффициенты для симуляции корректировок
+        self._ph_delta_per_ml = 0.01
+        self._ec_delta_per_ml = 0.02
         
         # Маппинг команд
         self.command_map = {
@@ -125,6 +129,7 @@ class CommandHandler:
             "set_relay": self._handle_set_relay_state,  # Алиас
             "run": self._handle_run,
             "run_pump": self._handle_run,  # Алиас
+            "dose": self._handle_dose,
             "stop": self._handle_stop,
             "stop_pump": self._handle_stop,  # Алиас
             "set_pwm": self._handle_set_pwm,
@@ -311,6 +316,14 @@ class CommandHandler:
             params: Параметры команды
             exec_time_ms: Время выполнения в миллисекундах
         """
+        params = dict(params or {})
+        params.setdefault("channel", channel)
+
+        if self.node.is_offline():
+            logger.warning(f"Node offline, dropping command {cmd_id} ({cmd})")
+            self._command_stats["total_dropped"] += 1
+            return
+
         # Проверяем, поддерживается ли команда
         if cmd not in self.command_map:
             logger.warning(f"Unknown command: {cmd}")
@@ -327,7 +340,7 @@ class CommandHandler:
         )
         
         # Отправляем ACK сразу (по протоколу: ACK = команда принята к выполнению)
-        await self._send_response(channel, cmd_id, "ACK", "Command accepted")
+        await self._send_response(channel, cmd_id, "ACK", {"details": "Command accepted"})
         
         # Выполняем команду асинхронно
         executor = self.command_map[cmd]
@@ -354,7 +367,7 @@ class CommandHandler:
                     response_payload = {"details": "Telemetry publication triggered"}
                 except Exception as e:
                     logger.error(f"Error in on-demand telemetry: {e}", exc_info=True)
-                    final_status = CommandStatus.FAILED
+                    final_status = CommandStatus.ERROR
                     response_payload = {"error": f"Failed to publish telemetry: {str(e)}"}
             else:
                 # Выполняем команду через state machine
@@ -375,7 +388,7 @@ class CommandHandler:
                 self._command_stats["commands_by_status"].get(status_str, 0) + 1
             
             # Отправляем финальный ответ
-            details = response_payload.get("details", "OK") if response_payload else "OK"
+            details = response_payload or {"details": "OK"}
             
             logger.info(
                 f"Sending final response for command {state.cmd_id}: status={status_str}, "
@@ -391,8 +404,15 @@ class CommandHandler:
                 )
                 self._command_stats["total_dropped"] += 1
                 return
-            
-            await self._send_response(state.channel, state.cmd_id, status_str, details, response_payload)
+            response_delay_ms = self.state_machine.get_response_delay_ms()
+            if response_delay_ms > 0:
+                await asyncio.sleep(response_delay_ms / 1000.0)
+
+            if self.node.is_offline():
+                logger.warning(f"Node offline, dropping response for {state.cmd_id}")
+                self._command_stats["total_dropped"] += 1
+                return
+            await self._send_response(state.channel, state.cmd_id, status_str, details)
             self._command_stats["total_delivered"] += 1
             
             # Обновляем среднее время ответа
@@ -411,7 +431,11 @@ class CommandHandler:
                 logger.info(f"Duplicating response for command {state.cmd_id}")
                 self._command_stats["total_duplicated"] += 1
                 await asyncio.sleep(0.1)  # Небольшая задержка перед дубликатом
-                await self._send_response(state.channel, state.cmd_id, status_str, details, response_payload)
+                if self.node.is_offline():
+                    logger.warning(f"Node offline, dropping duplicate response for {state.cmd_id}")
+                    self._command_stats["total_dropped"] += 1
+                    return
+                await self._send_response(state.channel, state.cmd_id, status_str, details)
         
         except Exception as e:
             execution_time_ms = current_timestamp_ms() - execution_start_ms
@@ -420,7 +444,7 @@ class CommandHandler:
                 f"(execution_time={execution_time_ms}ms)", exc_info=True
             )
             # Сохраняем ошибку в кеш
-            self.cache.put(state.cmd_id, CommandStatus.FAILED, {"error": str(e)})
+            self.cache.put(state.cmd_id, CommandStatus.ERROR, {"error": str(e)})
             self._command_stats["total_failed"] += 1
             self._command_stats["commands_by_status"]["ERROR"] = \
                 self._command_stats["commands_by_status"].get("ERROR", 0) + 1
@@ -440,8 +464,7 @@ class CommandHandler:
         channel: str,
         cmd_id: str,
         status: str,
-        details: Optional[str] = None,
-        response_payload: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None
     ):
         """Отправить ответ на команду."""
         topic = f"hydro/{self.node.gh_uid}/{self.node.zone_uid}/{self.node.node_uid}/{channel}/command_response"
@@ -454,12 +477,6 @@ class CommandHandler:
         
         if details:
             response["details"] = details
-        
-        if response_payload:
-            # Добавляем дополнительные поля из payload
-            for key, value in response_payload.items():
-                if key not in response:
-                    response[key] = value
         
         self.mqtt.publish_json(topic, response, qos=1)
         logger.debug(f"Sent command response: {status} for {cmd_id}")
@@ -489,7 +506,7 @@ class CommandHandler:
             logger.warning("Cannot send error response: cmd_id is None")
             return
         
-        await self._send_response(channel, cmd_id, status, error)
+        await self._send_response(channel, cmd_id, status, {"error_message": error})
     
     async def _send_cached_response(
         self,
@@ -500,17 +517,17 @@ class CommandHandler:
     ):
         """Отправить закешированный ответ (идемпотентность)."""
         status_str = self._status_to_string(status)
-        details = payload.get("details", "OK (cached)") if payload else "OK (cached)"
-        await self._send_response(channel, cmd_id, status_str, details, payload)
+        details = payload or {"details": "OK (cached)"}
+        await self._send_response(channel, cmd_id, status_str, details)
     
     def _status_to_string(self, status: CommandStatus) -> str:
         """Преобразовать CommandStatus в строку для ответа."""
         if status == CommandStatus.DONE:
             return "DONE"  # Команда выполнена успешно
-        elif status == CommandStatus.ACCEPTED:
+        elif status == CommandStatus.ACK:
             return "ACK"  # Команда принята (по протоколу используется ACK)
-        elif status == CommandStatus.FAILED:
-            return "ERROR"  # По протоколу ошибка - это ERROR, не FAILED
+        elif status == CommandStatus.ERROR:
+            return "ERROR"  # По протоколу ошибка - это ERROR
         elif status == CommandStatus.INVALID:
             return "INVALID"
         elif status == CommandStatus.BUSY:
@@ -519,6 +536,40 @@ class CommandHandler:
             return "NO_EFFECT"
         else:
             return status.value
+
+    def _apply_dose_effect(self, correction_type: str, ml: float) -> tuple[bool, Dict[str, Any]]:
+        """Применить эффект дозировки к сенсорам."""
+        details: Dict[str, Any] = {
+            "correction_type": correction_type,
+            "ml": ml,
+        }
+        if correction_type in ("add_acid", "add_base"):
+            sensor = "ph_sensor" if "ph_sensor" in self.node.sensor_states else "ph"
+            current = self.node.get_sensor_value(sensor)
+            if current is None:
+                return False, {**details, "details": "No PH sensor available"}
+            delta = self._ph_delta_per_ml * ml
+            if correction_type == "add_acid":
+                delta = -delta
+            new_value = max(0.0, min(14.0, current + delta))
+            self.node.set_sensor_value(sensor, new_value)
+            details.update({"ph_before": current, "ph_after": new_value})
+            return True, details
+
+        if correction_type in ("add_nutrients", "dilute"):
+            sensor = "ec_sensor" if "ec_sensor" in self.node.sensor_states else "ec"
+            current = self.node.get_sensor_value(sensor)
+            if current is None:
+                return False, {**details, "details": "No EC sensor available"}
+            delta = self._ec_delta_per_ml * ml
+            if correction_type == "dilute":
+                delta = -delta
+            new_value = max(0.0, current + delta)
+            self.node.set_sensor_value(sensor, new_value)
+            details.update({"ec_before": current, "ec_after": new_value})
+            return True, details
+
+        return False, {**details, "details": "Unsupported correction type"}
     
     # Обработчики команд
     
@@ -548,6 +599,8 @@ class CommandHandler:
         """Обработать команду run (запуск насоса)."""
         channel = params.get("channel", "main_pump")
         duration_ms = params.get("duration_ms", 0)
+        correction_type = params.get("type")
+        ml = params.get("ml")
         
         # Проверяем, не запущен ли уже насос
         act_state = self.node.get_actuator_state(channel)
@@ -563,7 +616,18 @@ class CommandHandler:
             if duration_ms > 0:
                 asyncio.create_task(self._stop_pump_after(channel, duration_ms))
             
-            return CommandStatus.DONE, {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            if correction_type and ml is not None:
+                try:
+                    ml_value = float(ml)
+                except (TypeError, ValueError):
+                    ml_value = None
+                if ml_value is not None and ml_value > 0:
+                    applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+                    response["dose"] = dose_details
+                    if not applied:
+                        return CommandStatus.NO_EFFECT, response
+            return CommandStatus.DONE, response
         else:
             # Fallback для старых команд
             if self.pump_states.get(channel, False):
@@ -572,7 +636,39 @@ class CommandHandler:
             logger.info(f"Started pump {channel} for {duration_ms}ms")
             if duration_ms > 0:
                 asyncio.create_task(self._stop_pump_after(channel, duration_ms))
-            return CommandStatus.DONE, {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            response = {"details": f"Pump {channel} started", "duration_ms": duration_ms}
+            if correction_type and ml is not None:
+                try:
+                    ml_value = float(ml)
+                except (TypeError, ValueError):
+                    ml_value = None
+                if ml_value is not None and ml_value > 0:
+                    applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+                    response["dose"] = dose_details
+                    if not applied:
+                        return CommandStatus.NO_EFFECT, response
+            return CommandStatus.DONE, response
+
+    def _handle_dose(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать команду dose."""
+        ml = params.get("ml")
+        correction_type = params.get("type")
+
+        if ml is None:
+            return CommandStatus.INVALID, {"error": "Missing 'ml' parameter"}
+        try:
+            ml_value = float(ml)
+        except (TypeError, ValueError):
+            return CommandStatus.INVALID, {"error": "Parameter 'ml' must be numeric"}
+        if ml_value <= 0:
+            return CommandStatus.INVALID, {"error": "Parameter 'ml' must be positive"}
+        if not correction_type:
+            return CommandStatus.INVALID, {"error": "Missing 'type' parameter"}
+
+        applied, dose_details = self._apply_dose_effect(correction_type, ml_value)
+        if applied:
+            return CommandStatus.DONE, {"details": "Dose applied", **dose_details}
+        return CommandStatus.NO_EFFECT, {"details": "Dose had no effect", **dose_details}
     
     async def _stop_pump_after(self, channel: str, duration_ms: int):
         """Остановить насос через указанное время."""
@@ -731,7 +827,7 @@ class CommandHandler:
         Эта команда триггерит немедленную публикацию телеметрии для всех каналов.
         """
         if self.telemetry_publisher is None:
-            return CommandStatus.FAILED, {"error": "Telemetry publisher not available"}
+            return CommandStatus.ERROR, {"error": "Telemetry publisher not available"}
         
         # Триггерим публикацию телеметрии on-demand асинхронно
         # Создаем задачу для публикации (не ждем завершения)
@@ -757,7 +853,7 @@ class CommandHandler:
                 return CommandStatus.DONE, {"details": "Telemetry publication will be triggered"}
         except Exception as e:
             logger.error(f"Error triggering on-demand telemetry: {e}", exc_info=True)
-            return CommandStatus.FAILED, {"error": f"Failed to publish telemetry: {str(e)}"}
+            return CommandStatus.ERROR, {"error": f"Failed to publish telemetry: {str(e)}"}
     
     def _handle_hil_request_telemetry(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """
@@ -766,7 +862,7 @@ class CommandHandler:
         Эта команда триггерит немедленную публикацию телеметрии для всех каналов.
         """
         if self.telemetry_publisher is None:
-            return CommandStatus.FAILED, {"error": "Telemetry publisher not available"}
+            return CommandStatus.ERROR, {"error": "Telemetry publisher not available"}
         
         # Триггерим публикацию телеметрии on-demand
         try:
@@ -781,7 +877,7 @@ class CommandHandler:
                 loop.run_until_complete(self.telemetry_publisher.publish_on_demand())
         except Exception as e:
             logger.error(f"Error triggering on-demand telemetry: {e}", exc_info=True)
-            return CommandStatus.FAILED, {"error": f"Failed to publish telemetry: {str(e)}"}
+            return CommandStatus.ERROR, {"error": f"Failed to publish telemetry: {str(e)}"}
         
         logger.info("Triggered on-demand telemetry publication")
         return CommandStatus.DONE, {"details": "Telemetry publication triggered"}

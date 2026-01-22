@@ -5,9 +5,9 @@ name: E15_command_ack_flow
 description: |
   Проверяет детальный поток ACK команд:
   - Команда отправляется в MQTT
-  - Node-sim получает и отвечает ACCEPTED
+  - Node-sim получает и отвечает ACK
   - WS событие CommandStatusUpdated
-  - DB статус обновляется на ACCEPTED
+  - DB статус обновляется на ACK
   - Все тайминги фиксируются корректно
 
 setup:
@@ -107,7 +107,7 @@ actions:
     event_type: ".App\\Events\\CommandStatusUpdated"
     filter:
       commandId: ${command_id}
-      status: "ACCEPTED"
+      status: "ACK"
     timeout: 10.0
     save: ws_ack_event
 
@@ -126,16 +126,16 @@ assertions:
   # Проверка 1: WS событие содержит правильные данные
   - name: ws_ack_event_data
     type: custom_assert
-    condition: context.get('ws_ack_event', {}).get('data', {}).get('status') == 'ACCEPTED' and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))
+    condition: context.get('ws_ack_event', {}).get('data', {}).get('status') == 'ACK' and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))
 
-  # Проверка 2: DB статус ACCEPTED
+  # Проверка 2: DB статус ACK
   - name: db_ack_status
     type: json_assertion
     data: ${ack_status}
     expected:
       - field: status
         operator: equals
-        value: "ACCEPTED"
+        value: "ACK"
       - field: ack_at
         operator: is_not_null
       - field: sent_at
@@ -163,6 +163,6 @@ cleanup:
         'query': 'SELECT status FROM commands WHERE cmd_id = :command_id',
         'params': {'command_id': context.get('command_id')}
       }))
-      result and result[0]['status'] in ['DONE', 'FAILED', 'TIMEOUT']
+      result and result[0]['status'] in ['DONE', 'ERROR', 'TIMEOUT']
     timeout: 30.0
     optional: true

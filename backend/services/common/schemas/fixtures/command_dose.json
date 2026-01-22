@@ -1,11 +1,9 @@
 {
-  "cmd_id": "cmd-abc123",
+  "cmd_id": "cmd-12345",
   "cmd": "dose",
-  "ts": 1737979200000,
   "params": {
-    "ml": 1.2,
-    "channel": "pump_nutrient"
+    "ml": 1.2
   },
-  "attempt": 1
+  "ts": 1737979200,
+  "sig": "deadbeef"
 }
-

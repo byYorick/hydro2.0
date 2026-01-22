@@ -11,7 +11,7 @@ return new class extends Migration
      * Run the migrations.
      * 
      * Обновляет статусы команд согласно единому контракту:
-     * QUEUED/SENT/ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED
+     * QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
      */
     public function up(): void
     {
@@ -26,9 +26,13 @@ return new class extends Migration
             SET status = CASE 
                 WHEN status = 'pending' THEN 'QUEUED'
                 WHEN status = 'sent' THEN 'SENT'
-                WHEN status = 'ack' THEN 'DONE'
-                WHEN status = 'failed' THEN 'FAILED'
+                WHEN status = 'ack' THEN 'ACK'
+                WHEN status = 'accepted' THEN 'ACK'
+                WHEN status = 'done' THEN 'DONE'
+                WHEN status = 'completed' THEN 'DONE'
+                WHEN status = 'failed' THEN 'ERROR'
                 WHEN status = 'timeout' THEN 'TIMEOUT'
+                WHEN status = 'send_failed' THEN 'SEND_FAILED'
                 ELSE 'QUEUED'
             END
         ");
@@ -44,7 +48,7 @@ return new class extends Migration
         DB::statement("
             ALTER TABLE commands 
             ADD CONSTRAINT commands_status_check 
-            CHECK (status IN ('QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'))
+            CHECK (status IN ('QUEUED', 'SENT', 'ACK', 'DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'))
         ");
 
         // Восстанавливаем индекс
@@ -72,9 +76,12 @@ return new class extends Migration
             SET status = CASE 
                 WHEN status = 'QUEUED' THEN 'pending'
                 WHEN status = 'SENT' THEN 'sent'
-                WHEN status = 'ACCEPTED' THEN 'sent'
+                WHEN status = 'ACK' THEN 'ack'
                 WHEN status = 'DONE' THEN 'ack'
-                WHEN status = 'FAILED' THEN 'failed'
+                WHEN status = 'NO_EFFECT' THEN 'ack'
+                WHEN status = 'ERROR' THEN 'failed'
+                WHEN status = 'INVALID' THEN 'failed'
+                WHEN status = 'BUSY' THEN 'failed'
                 WHEN status = 'TIMEOUT' THEN 'timeout'
                 WHEN status = 'SEND_FAILED' THEN 'failed'
                 ELSE 'pending'

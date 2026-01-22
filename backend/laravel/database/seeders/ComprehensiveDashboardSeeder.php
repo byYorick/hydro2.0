@@ -118,12 +118,29 @@ class ComprehensiveDashboardSeeder extends Seeder
             'READ_SENSOR' => ['metric' => 'EC'],
         ];
 
-        $statuses = [Command::STATUS_QUEUED, Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED];
+        $statuses = [
+            Command::STATUS_QUEUED,
+            Command::STATUS_SENT,
+            Command::STATUS_ACK,
+            Command::STATUS_DONE,
+            Command::STATUS_NO_EFFECT,
+            Command::STATUS_ERROR,
+            Command::STATUS_INVALID,
+            Command::STATUS_BUSY,
+            Command::STATUS_TIMEOUT,
+            Command::STATUS_SEND_FAILED,
+        ];
         $statusWeights = [
             Command::STATUS_QUEUED => 5,
             Command::STATUS_SENT => 20,
-            Command::STATUS_DONE => 70,
-            Command::STATUS_FAILED => 5,
+            Command::STATUS_ACK => 10,
+            Command::STATUS_DONE => 45,
+            Command::STATUS_NO_EFFECT => 5,
+            Command::STATUS_ERROR => 5,
+            Command::STATUS_INVALID => 3,
+            Command::STATUS_BUSY => 2,
+            Command::STATUS_TIMEOUT => 3,
+            Command::STATUS_SEND_FAILED => 2,
         ]; // Процентное распределение
 
         $totalCommands = 0;
@@ -153,13 +170,28 @@ class ComprehensiveDashboardSeeder extends Seeder
                     $ackAt = null;
                     $failedAt = null;
 
-                    if (in_array($status, [Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED])) {
+                    if (in_array($status, [
+                        Command::STATUS_SENT,
+                        Command::STATUS_ACK,
+                        Command::STATUS_DONE,
+                        Command::STATUS_NO_EFFECT,
+                        Command::STATUS_ERROR,
+                        Command::STATUS_INVALID,
+                        Command::STATUS_BUSY,
+                        Command::STATUS_TIMEOUT,
+                    ], true)) {
                         $sentAt = $createdAt->copy()->addSeconds(rand(1, 5));
                     }
 
-                    if ($status === Command::STATUS_DONE) {
+                    if (in_array($status, [Command::STATUS_ACK, Command::STATUS_DONE, Command::STATUS_NO_EFFECT], true)) {
                         $ackAt = $sentAt ? $sentAt->copy()->addSeconds(rand(1, 10)) : $createdAt->copy()->addSeconds(rand(1, 10));
-                    } elseif ($status === Command::STATUS_FAILED) {
+                    } elseif (in_array($status, [
+                        Command::STATUS_ERROR,
+                        Command::STATUS_INVALID,
+                        Command::STATUS_BUSY,
+                        Command::STATUS_TIMEOUT,
+                        Command::STATUS_SEND_FAILED,
+                    ], true)) {
                         $failedAt = $sentAt ? $sentAt->copy()->addSeconds(rand(5, 30)) : $createdAt->copy()->addSeconds(rand(5, 30));
                     }
 
@@ -407,9 +439,12 @@ class ComprehensiveDashboardSeeder extends Seeder
         $stats = [
             'QUEUED' => Command::where('status', Command::STATUS_QUEUED)->count(),
             'SENT' => Command::where('status', Command::STATUS_SENT)->count(),
-            'ACCEPTED' => Command::where('status', Command::STATUS_ACCEPTED)->count(),
+            'ACK' => Command::where('status', Command::STATUS_ACK)->count(),
             'DONE' => Command::where('status', Command::STATUS_DONE)->count(),
-            'FAILED' => Command::where('status', Command::STATUS_FAILED)->count(),
+            'NO_EFFECT' => Command::where('status', Command::STATUS_NO_EFFECT)->count(),
+            'ERROR' => Command::where('status', Command::STATUS_ERROR)->count(),
+            'INVALID' => Command::where('status', Command::STATUS_INVALID)->count(),
+            'BUSY' => Command::where('status', Command::STATUS_BUSY)->count(),
             'TIMEOUT' => Command::where('status', Command::STATUS_TIMEOUT)->count(),
             'SEND_FAILED' => Command::where('status', Command::STATUS_SEND_FAILED)->count(),
         ];

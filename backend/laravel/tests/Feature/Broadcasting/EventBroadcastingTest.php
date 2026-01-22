@@ -9,6 +9,7 @@ use App\Events\EventCreated;
 use App\Events\NodeConfigUpdated;
 use App\Events\TelemetryBatchUpdated;
 use App\Events\ZoneUpdated;
+use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\User;
@@ -176,6 +177,7 @@ class EventBroadcastingTest extends TestCase
             commandId: 303,
             message: 'Ошибка выполнения',
             error: 'Connection timeout',
+            status: Command::STATUS_ERROR,
             zoneId: 7
         );
 
@@ -217,7 +219,7 @@ class EventBroadcastingTest extends TestCase
     {
         $event = new CommandStatusUpdated(
             commandId: 404,
-            status: 'queued',
+            status: 'QUEUED',
             message: 'Ожидание выполнения',
             error: null,
             zoneId: 15
@@ -226,7 +228,7 @@ class EventBroadcastingTest extends TestCase
         $data = $event->broadcastWith();
 
         $this->assertEquals(404, $data['commandId']);
-        $this->assertEquals('queued', $data['status']);
+        $this->assertEquals('QUEUED', $data['status']);
         $this->assertEquals('Ожидание выполнения', $data['message']);
         $this->assertNull($data['error']);
         $this->assertEquals(15, $data['zoneId']);

@@ -22,13 +22,19 @@ class PipelineMetricsService
             }
             
             $sentAt = $command->sent_at;
-            $acceptedAt = $command->ack_at; // ack_at используется для ACCEPTED
+            $acceptedAt = $command->ack_at; // ack_at используется для ACK/DONE/NO_EFFECT
             $doneAt = null;
             
             // Определяем done_at в зависимости от статуса
-            if ($command->status === Command::STATUS_DONE) {
+            if (in_array($command->status, [Command::STATUS_DONE, Command::STATUS_NO_EFFECT], true)) {
                 $doneAt = $command->ack_at ?? now(); // Если DONE, используем ack_at или текущее время
-            } elseif (in_array($command->status, [Command::STATUS_FAILED, Command::STATUS_TIMEOUT])) {
+            } elseif (in_array($command->status, [
+                Command::STATUS_ERROR,
+                Command::STATUS_INVALID,
+                Command::STATUS_BUSY,
+                Command::STATUS_TIMEOUT,
+                Command::STATUS_SEND_FAILED,
+            ], true)) {
                 $doneAt = $command->failed_at ?? now();
             }
             

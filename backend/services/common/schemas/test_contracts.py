@@ -108,22 +108,34 @@ class TestCommandContracts:
         # Проверяем обязательные поля
         assert "cmd_id" in fixture
         assert "cmd" in fixture
+        assert "params" in fixture
         assert "ts" in fixture
+        assert "sig" in fixture
     
     def test_command_invalid_missing_required_fields(self, command_schema):
         """Тест, что схема отклоняет отсутствие обязательных полей."""
         # Отсутствует cmd_id
-        invalid = {"cmd": "dose", "ts": 1234567890}
+        invalid = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
         
         # Отсутствует cmd
-        invalid = {"cmd_id": "cmd-123", "ts": 1234567890}
+        invalid = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
         
         # Отсутствует ts
-        invalid = {"cmd_id": "cmd-123", "cmd": "dose"}
+        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "sig": "deadbeef"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, command_schema)
+
+        # Отсутствует params
+        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "deadbeef"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, command_schema)
+
+        # Отсутствует sig
+        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
     
@@ -132,7 +144,9 @@ class TestCommandContracts:
         invalid = {
             "cmd_id": "invalid cmd id with spaces!",
             "cmd": "dose",
-            "ts": 1234567890
+            "params": {"ml": 1.2},
+            "ts": 1234567890,
+            "sig": "deadbeef"
         }
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)

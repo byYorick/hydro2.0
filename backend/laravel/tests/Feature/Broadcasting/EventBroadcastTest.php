@@ -124,7 +124,7 @@ class EventBroadcastTest extends TestCase
         $this->assertSame('private-commands.7', $event->broadcastOn()->name);
         $payload = $event->broadcastWith();
         $this->assertSame(501, $payload['commandId']);
-        $this->assertSame('queued', $payload['status']);
+        $this->assertSame('QUEUED', $payload['status']);
         $this->assertSame('Ожидание исполнения', $payload['message']);
         $this->assertNull($payload['error']);
         $this->assertSame(7, $payload['zoneId']);
@@ -136,7 +136,7 @@ class EventBroadcastTest extends TestCase
     {
         $event = new CommandStatusUpdated(
             commandId: 777,
-            status: 'completed',
+            status: 'DONE',
             message: 'Команда завершена',
         );
 
@@ -150,13 +150,14 @@ class EventBroadcastTest extends TestCase
             commandId: 321,
             message: 'Ошибка выполнения',
             error: 'Timeout',
+            status: Command::STATUS_ERROR,
             zoneId: 12,
         );
 
         $this->assertSame('private-commands.12', $event->broadcastOn()->name);
         $payload = $event->broadcastWith();
         $this->assertSame(321, $payload['commandId']);
-        $this->assertSame(Command::STATUS_FAILED, $payload['status']);
+        $this->assertSame(Command::STATUS_ERROR, $payload['status']);
         $this->assertSame('Ошибка выполнения', $payload['message']);
         $this->assertSame('Timeout', $payload['error']);
         $this->assertSame(12, $payload['zoneId']);
@@ -169,6 +170,7 @@ class EventBroadcastTest extends TestCase
         $event = new CommandFailed(
             commandId: 654,
             message: 'Ошибка без зоны',
+            status: Command::STATUS_ERROR,
         );
 
         $this->assertSame('private-commands.global', $event->broadcastOn()->name);

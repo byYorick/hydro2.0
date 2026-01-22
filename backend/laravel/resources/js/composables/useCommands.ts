@@ -19,26 +19,24 @@ interface PendingCommandInternal {
 }
 
 export function normalizeStatus(status: CommandStatus | string): CommandStatus {
-  // Нормализация статусов: маппинг старых значений на новые
   const statusUpper = String(status).toUpperCase()
-  
-  // Новые статусы (используем как есть)
-  if (['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(statusUpper)) {
+
+  if ([
+    'QUEUED',
+    'SENT',
+    'ACK',
+    'DONE',
+    'NO_EFFECT',
+    'ERROR',
+    'INVALID',
+    'BUSY',
+    'TIMEOUT',
+    'SEND_FAILED'
+  ].includes(statusUpper)) {
     return statusUpper as CommandStatus
   }
-  
-  // Маппинг старых статусов на новые (для обратной совместимости)
-  const legacyMap: Record<string, CommandStatus> = {
-    'PENDING': 'QUEUED',
-    'ACK': 'DONE',           // ack -> DONE (команда выполнена)
-    'ACCEPTED': 'ACCEPTED',  // accepted -> ACCEPTED
-    'COMPLETED': 'DONE',     // completed -> DONE
-    'EXECUTING': 'ACCEPTED', // executing -> ACCEPTED (команда выполняется)
-    'FAILED': 'FAILED',      // failed -> FAILED
-    'SENT': 'SENT',          // sent -> SENT
-  }
-  
-  return legacyMap[statusUpper] || 'unknown'
+
+  return 'UNKNOWN'
 }
 
 /**
@@ -97,7 +95,7 @@ export function useCommands(showToast?: ToastHandler) {
       // Сохраняем информацию о команде для отслеживания статуса
       if (commandId) {
         pendingCommands.value.set(commandId, {
-          status: 'pending',
+          status: 'QUEUED',
           zoneId,
           type: commandType,
           timestamp: Date.now(),
@@ -116,7 +114,7 @@ export function useCommands(showToast?: ToastHandler) {
       return {
         id: (commandId ?? Date.now()) as number,
         type: commandType,
-        status: 'pending',
+        status: 'QUEUED',
         created_at: new Date().toISOString(),
       } as Command
     } catch (err) {
@@ -177,7 +175,7 @@ export function useCommands(showToast?: ToastHandler) {
       
       if (commandId) {
         pendingCommands.value.set(commandId, {
-          status: 'pending',
+          status: 'QUEUED',
           nodeId,
           type: commandType,
           timestamp: Date.now(),
@@ -195,7 +193,7 @@ export function useCommands(showToast?: ToastHandler) {
       return {
         id: (commandId ?? Date.now()) as number,
         type: commandType,
-        status: 'pending',
+        status: 'QUEUED',
         created_at: new Date().toISOString(),
       } as Command
     } catch (err) {
@@ -227,13 +225,13 @@ export function useCommands(showToast?: ToastHandler) {
       if (pendingCommands.value.has(commandId)) {
         const command = pendingCommands.value.get(commandId)
         if (command) {
-          command.status = normalizeStatus(status.status || 'unknown')
+          command.status = normalizeStatus(status.status || 'UNKNOWN')
           pendingCommands.value.set(commandId, command)
         }
       }
       
       return {
-        status: normalizeStatus(status.status || 'unknown'),
+        status: normalizeStatus(status.status || 'UNKNOWN'),
       }
     } catch (err) {
       const normalizedError = handleError(err, {
@@ -267,9 +265,9 @@ export function useCommands(showToast?: ToastHandler) {
       pendingCommands.value.set(commandId, command)
       
       // Показываем уведомление при завершении
-      if (normalizedStatus === 'completed' && showToast) {
+      if (['DONE', 'NO_EFFECT'].includes(normalizedStatus) && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
-      } else if (normalizedStatus === 'failed' && showToast) {
+      } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus) && showToast) {
         showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
@@ -297,7 +295,7 @@ export function useCommands(showToast?: ToastHandler) {
     const now = Date.now()
     for (const [id, command] of pendingCommands.value.entries()) {
       if (
-        (['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed'].includes(command.status)) &&
+        (['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(command.status)) &&
         (now - command.timestamp) > maxAge
       ) {
         pendingCommands.value.delete(id)
@@ -361,7 +359,7 @@ export function useCommands(showToast?: ToastHandler) {
       if (!cmd.cmd_id) continue
       
       const commandId = cmd.cmd_id
-      const status = normalizeStatus(cmd.status || 'unknown')
+      const status = normalizeStatus(cmd.status || 'UNKNOWN')
       
       // Обновляем только если команда еще не завершена или статус изменился
       if (pendingCommands.value.has(commandId)) {
@@ -379,7 +377,7 @@ export function useCommands(showToast?: ToastHandler) {
             newStatus: status,
           })
         }
-      } else if (!['DONE', 'FAILED', 'TIMEOUT'].includes(status)) {
+      } else if (!['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(status)) {
         // Добавляем активные команды, которых еще нет в pendingCommands
         pendingCommands.value.set(commandId, {
           status,

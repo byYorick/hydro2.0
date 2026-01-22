@@ -205,12 +205,22 @@ class TestCommandProtocol:
     def test_command_missing_required_fields(self, command_schema):
         """Тест отсутствия обязательных полей."""
         # Отсутствует cmd_id
-        payload = {"cmd": "dose", "ts": 1234567890}
+        payload = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
         
         # Отсутствует cmd
-        payload = {"cmd_id": "cmd-123", "ts": 1234567890}
+        payload = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, command_schema)
+
+        # Отсутствует params
+        payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "deadbeef"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, command_schema)
+
+        # Отсутствует sig
+        payload = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
 
@@ -224,10 +234,10 @@ class TestCommandResponseProtocol:
         return load_schema(COMMAND_RESPONSE_SCHEMA)
     
     def test_command_response_accepted(self, command_response_schema):
-        """Тест ответа ACCEPTED."""
+        """Тест ответа ACK."""
         payload = create_command_response_fixture(
             cmd_id="cmd-123",
-            status="ACCEPTED"
+            status="ACK"
         )
         
         # Валидация через JSON-schema
@@ -235,8 +245,7 @@ class TestCommandResponseProtocol:
         
         # Валидация через Pydantic модель
         response = CommandResponse(**payload)
-        assert response.status == "ACCEPTED"
-        assert response.result_code == 0
+        assert response.status == "ACK"
     
     def test_command_response_all_fixtures(self, command_response_schema):
         """Тест всех fixtures ответов."""
@@ -249,7 +258,7 @@ class TestCommandResponseProtocol:
             # Валидация через Pydantic модель
             response = CommandResponse(**fixture)
             assert response.cmd_id is not None
-            assert response.status in ["ACCEPTED", "DONE", "FAILED"]
+            assert response.status in ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
             assert response.ts > 0
     
     def test_command_response_invalid_status(self, command_response_schema):
@@ -396,7 +405,8 @@ class TestProtocolCompatibility:
         # Создаём команду
         cmd = Command.create(
             cmd="dose",
-            params={"ml": 1.2, "channel": "pump_nutrient"}
+            params={"ml": 1.2, "channel": "pump_nutrient"},
+            sig="deadbeef"
         )
         
         # Конвертируем в JSON
@@ -409,7 +419,7 @@ class TestProtocolCompatibility:
         # Создаём ответ
         response = CommandResponse.done(
             cmd_id=cmd.cmd_id,
-            duration_ms=1000
+            details={"duration_ms": 1000}
         )
         
         # Валидируем ответ
@@ -554,4 +564,3 @@ class TestZoneEventsProtocol:
         
         with pytest.raises(AssertionError):
             validate_against_schema(payload, zone_events_schema)
-

@@ -25,22 +25,17 @@
   "cmd_id": "cmd-abc123",
   "cmd": "dose",
   "params": { "ml": 1.2 },
-  "deadline_ms": 1737355112000,
-  "attempt": 1,
-  "ts": 1737355112000
+  "ts": 1737355112,
+  "sig": "deadbeef"
 }
 ```
 
 **Обязательные поля:**
 - `cmd_id` - уникальный идентификатор команды
 - `cmd` - тип команды
-- `ts` - timestamp создания
-
-**Опциональные поля:**
-- `correlation_id` - альтернативное поле для cmd_id (обратная совместимость)
 - `params` - параметры команды (объект)
-- `deadline_ms` - дедлайн выполнения
-- `attempt` - номер попытки (по умолчанию 1)
+- `ts` - timestamp создания (секунды)
+- `sig` - HMAC подпись
 
 ## Формат ответа (CommandResponse)
 
@@ -48,22 +43,20 @@
 {
   "cmd_id": "cmd-abc123",
   "status": "DONE",
-  "result_code": 0,
   "ts": 1737355113000,
-  "duration_ms": 1000
+  "details": {
+    "duration_ms": 1000
+  }
 }
 ```
 
 **Обязательные поля:**
 - `cmd_id` - идентификатор команды
-- `status` - статус (ACCEPTED|DONE|FAILED)
+- `status` - статус (ACK|DONE|ERROR|INVALID|BUSY|NO_EFFECT)
 - `ts` - timestamp ответа
 
 **Опциональные поля:**
-- `result_code` - код результата (0 = успех)
-- `error_code` - символический код ошибки
-- `error_message` - сообщение об ошибке
-- `duration_ms` - длительность выполнения
+- `details` - дополнительные детали ответа
 
 ## Статусы в БД
 

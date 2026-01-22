@@ -6,7 +6,7 @@
 - Добавляет cmd_id
 - Ведёт статусы в БД
 - Обеспечивает ретраи
-- Отслеживает результаты (ACCEPTED/DONE/FAILED)
+- Отслеживает результаты (ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY)
 """
 import asyncio
 import logging
@@ -50,7 +50,7 @@ async def send_command(
         cmd_id: Идентификатор команды (генерируется автоматически если не указан)
         deadline_ms: Дедлайн выполнения команды в миллисекундах
         attempt: Номер попытки (начинается с 1)
-        wait_for_response: Ожидать ли ответа (ACCEPTED/DONE/FAILED)
+        wait_for_response: Ожидать ли ответа (ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY)
         timeout_sec: Таймаут ожидания ответа в секундах
     
     Returns:
@@ -198,7 +198,7 @@ async def wait_for_command_result(
     poll_interval_sec: float = 0.5
 ) -> Optional[Dict[str, Any]]:
     """
-    Ожидать результата выполнения команды (ACCEPTED/DONE/FAILED).
+    Ожидать результата выполнения команды (ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY).
     
     Периодически проверяет статус команды в БД.
     
@@ -226,7 +226,7 @@ async def wait_for_command_result(
             status = rows[0]["status"]
             
             # Конечные статусы
-            if status in ["DONE", "FAILED", "TIMEOUT", "SEND_FAILED"]:
+            if status in ["DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"]:
                 return {
                     "status": status,
                     "error_code": rows[0].get("error_code"),
@@ -236,7 +236,7 @@ async def wait_for_command_result(
                 }
             
             # Промежуточные статусы - продолжаем ждать
-            if status in ["ACCEPTED"]:
+            if status in ["ACK"]:
                 # Команда принята, но еще не завершена
                 pass
         

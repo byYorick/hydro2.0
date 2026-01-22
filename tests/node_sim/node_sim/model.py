@@ -99,6 +99,9 @@ class NodeModel:
     
     # Колбэки для ошибок
     error_callbacks: List[Callable[[str, Dict], None]] = field(default_factory=list)
+
+    # Состояние доступности
+    offline_until: Optional[float] = None
     
     def __post_init__(self):
         """Инициализация после создания."""
@@ -211,6 +214,21 @@ class NodeModel:
         
         self.sensor_states[sensor].value = value
         self.sensor_states[sensor].last_update = time.time()
+
+    def set_offline(self, duration_s: float):
+        """Перевести ноду в offline на заданное время."""
+        if duration_s <= 0:
+            return
+        self.offline_until = time.time() + duration_s
+
+    def is_offline(self) -> bool:
+        """Проверить, находится ли нода в offline."""
+        if self.offline_until is None:
+            return False
+        if time.time() >= self.offline_until:
+            self.offline_until = None
+            return False
+        return True
     
     def get_sensor_value(self, sensor: str) -> Optional[float]:
         """Получить значение сенсора."""

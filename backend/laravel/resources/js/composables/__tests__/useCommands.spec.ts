@@ -67,7 +67,7 @@ describe('useCommands', () => {
     const mockApi = {
       api: {
         post: vi.fn().mockResolvedValue({
-          data: { data: { id: 1, status: 'pending' } }
+          data: { data: { id: 1, status: 'QUEUED' } }
         })
       }
     }
@@ -76,7 +76,7 @@ describe('useCommands', () => {
     const { wrapper, api } = mountUseCommands()
     const result = await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
 
-    expect(result).toEqual({ id: 1, status: 'pending' })
+    expect(result).toEqual({ id: 1, status: 'QUEUED' })
     expect(mockApi.api.post).toHaveBeenCalledWith('/api/zones/1/commands', {
       type: 'FORCE_IRRIGATION',
       params: { duration_sec: 10 }
@@ -101,7 +101,7 @@ describe('useCommands', () => {
     await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
 
     // Update status
-    api.updateCommandStatus(1, 'completed', 'Success')
+    api.updateCommandStatus(1, 'DONE', 'Success')
 
     // Check that command status was updated
     const commands = api.pendingCommands.value

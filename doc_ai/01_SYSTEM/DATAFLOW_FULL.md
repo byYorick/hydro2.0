@@ -121,7 +121,11 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "cmd": "run_pump",
- "duration_ms": 2500
+ "params": {
+  "duration_ms": 2500
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -130,7 +134,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "status": "ACK",
- "ts": 1710023005
+ "ts": 1710023005123
 }
 ```
 

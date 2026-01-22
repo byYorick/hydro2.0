@@ -1,7 +1,5 @@
 {
-  "cmd_id": "cmd-abc123",
-  "status": "ACCEPTED",
-  "ts": 1737979201000,
-  "result_code": 0
+  "cmd_id": "cmd-12345",
+  "status": "ACK",
+  "ts": 1737979200000
 }
-

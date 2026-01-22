@@ -608,7 +608,7 @@ function handleCommandEvent(channelName: string, payload: any, isFailure: boolea
 
   const normalized = {
     commandId: payload?.commandId ?? payload?.command_id,
-    status: isFailure ? 'failed' : payload?.status ?? 'unknown',
+    status: isFailure ? (payload?.status ?? 'ERROR') : (payload?.status ?? 'UNKNOWN'),
     message: payload?.message,
     error: payload?.error,
     zoneId: zoneId,

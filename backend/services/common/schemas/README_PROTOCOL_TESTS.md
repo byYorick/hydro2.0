@@ -96,7 +96,7 @@ with open(schema_path) as f:
     schema = json.load(f)
 
 # Валидация через JSON-schema
-payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890}
+payload = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
 jsonschema.validate(instance=payload, schema=schema)
 
 # Валидация через Pydantic
@@ -117,4 +117,3 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)/backend/services:$(pwd)/backend/services
 1. Проверьте, что JSON-schema соответствует новому формату
 2. Обновите fixtures если нужно
 3. Убедитесь, что Pydantic модели обновлены
-

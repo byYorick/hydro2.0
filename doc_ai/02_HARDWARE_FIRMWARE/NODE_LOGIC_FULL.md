@@ -205,7 +205,11 @@ ActuatorChannel {
 {
  "cmd_id": "cmd-19292",
  "cmd": "run_pump",
- "duration_ms": 2000
+ "params": {
+  "duration_ms": 2000
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 

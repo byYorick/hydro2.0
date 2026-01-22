@@ -201,7 +201,7 @@ async def test_publish_command_with_params():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        params = {"duration_ms": 60000, "intensity": 80}
+        params = {"duration_ms": 60000, "value": 80}
         result = await command_bus.publish_command(1, "nd-light-1", "white_light", "set_pwm", params)
         
         assert result is True
@@ -234,8 +234,8 @@ async def test_publish_command_without_params():
         assert result is True
         call_args = mock_client.post.call_args
         assert call_args[1]["json"]["cmd"] == "set_relay"
-        # params не должен быть в payload если не передан
-        assert "params" not in call_args[1]["json"] or call_args[1]["json"].get("params") is None
+        # params всегда передается как объект
+        assert call_args[1]["json"]["params"] == {}
 
 
 @pytest.mark.asyncio
@@ -298,7 +298,7 @@ async def test_publish_command_without_token():
 
 @pytest.mark.asyncio
 async def test_publish_controller_command_without_params_preserves_cmd_id():
-    """Test that command without params preserves cmd_id and it reaches history-logger."""
+    """Test that command preserves cmd_id and it reaches history-logger."""
     from infrastructure.command_tracker import CommandTracker
     
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -335,20 +335,18 @@ async def test_publish_controller_command_without_params_preserves_cmd_id():
         mock_client.post.assert_called_once()
         call_args = mock_client.post.call_args
         
-        # Проверяем, что params был создан и содержит cmd_id
+        # Проверяем, что cmd_id добавлен в payload
         payload = call_args[1]["json"]
-        assert "params" in payload, "params должен быть создан даже если его не было в команде"
-        assert "cmd_id" in payload["params"], "cmd_id должен быть в params"
+        assert "cmd_id" in payload, "cmd_id должен быть в payload"
         
         # Проверяем, что cmd_id не пустой
-        cmd_id_in_payload = payload["params"]["cmd_id"]
+        cmd_id_in_payload = payload["cmd_id"]
         assert cmd_id_in_payload is not None
         assert len(cmd_id_in_payload) > 0
         
         # Проверяем, что cmd_id также был добавлен в исходную команду
-        assert "params" in command, "params должен быть добавлен в исходную команду"
-        assert "cmd_id" in command["params"], "cmd_id должен быть в command['params']"
-        cmd_id_in_command = command["params"]["cmd_id"]
+        assert "cmd_id" in command, "cmd_id должен быть добавлен в исходную команду"
+        cmd_id_in_command = command["cmd_id"]
         
         # Проверяем, что cmd_id совпадает (тот же cmd_id, что был сгенерирован трекером)
         assert cmd_id_in_command == cmd_id_in_payload, "cmd_id в команде и в payload должны совпадать"

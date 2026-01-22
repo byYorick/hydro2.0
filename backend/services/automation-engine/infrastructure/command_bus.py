@@ -105,7 +105,8 @@ class CommandBus:
         node_uid: str,
         channel: str,
         cmd: str,
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        cmd_id: Optional[str] = None
     ) -> bool:
         """
         Публикация команды через history-logger REST API.
@@ -116,6 +117,7 @@ class CommandBus:
             channel: Канал узла
             cmd: Команда
             params: Параметры команды
+            cmd_id: Идентификатор команды (если уже сгенерирован)
         
         Returns:
             True если команда успешно отправлена, False в противном случае
@@ -135,9 +137,10 @@ class CommandBus:
                 "node_uid": node_uid,
                 "channel": channel,
                 "source": self.command_source,
+                "params": params or {},
             }
-            if params:
-                payload["params"] = params
+            if cmd_id:
+                payload["cmd_id"] = cmd_id
             if trace_id:
                 payload["trace_id"] = trace_id
             
@@ -246,6 +249,7 @@ class CommandBus:
         channel = command.get('channel', 'default')
         cmd = command.get('cmd')
         params = command.get('params')
+        cmd_id = command.get('cmd_id')
         normalized_context = normalize_context(context)
         
         if not node_uid or not cmd:
@@ -275,15 +279,9 @@ class CommandBus:
         if self.tracker:
             try:
                 cmd_id = await self.tracker.track_command(zone_id, command, normalized_context)
-                # Добавляем cmd_id в команду для ответа
-                # ВАЖНО: если params был None, создаём пустой dict
-                if 'params' not in command or command['params'] is None:
-                    command['params'] = {}
-                # Гарантированно передаём cmd_id в params
-                command['params']['cmd_id'] = cmd_id
-                # ВАЖНО: обновляем локальную переменную params после добавления cmd_id
-                # чтобы cmd_id дошел до history-logger через publish_command()
-                params = command['params']
+                # Добавляем cmd_id в команду (top-level)
+                command['cmd_id'] = cmd_id
+                cmd_id = command['cmd_id']
             except Exception as e:
                 logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
                 # Если tracker не сработал, используем исходные params (могут быть None)
@@ -292,9 +290,8 @@ class CommandBus:
             # Если tracker не настроен, используем исходные params
             params = command.get('params')
         
-        # Публикация команды
-        # params гарантированно содержит cmd_id, если tracker вернул cmd_id
-        success = await self.publish_command(zone_id, node_uid, channel, cmd, params)
+        # Публикация команды (cmd_id передается top-level)
+        success = await self.publish_command(zone_id, node_uid, channel, cmd, params, cmd_id=cmd_id)
         
         # Аудит команды (даже если не удалось отправить)
         try:

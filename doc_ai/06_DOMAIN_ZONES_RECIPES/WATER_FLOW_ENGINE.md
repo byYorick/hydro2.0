@@ -83,15 +83,20 @@ MQTT telemetry:
 
 Команда:
 ```json
-{"cmd": "run", "params": {"sec": 8}}
+{
+  "cmd_id": "cmd-irrig-001",
+  "cmd": "run_pump",
+  "params": { "duration_ms": 8000 },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
 
 ## 3.2. VALVE (распределитель потоков)
 
-Команды:
-- `open`
-- `close`
-- `select_line: X`
+Команды (единый формат):
+- `set_relay` с `params.state: true|false`
+- при необходимости выбора линии: `params.select_line: X`
 
 ## 3.3. RECIRCULATION_PUMP (опционально)
 
@@ -199,25 +204,58 @@ Start Flow Calibration
 
 # 9. Режим наполнения (Fill Mode)
 
-Может быть вызван вручную:
+Может быть вызван вручную (как высокоуровневая операция),
+но на MQTT отправляются только стандартные команды:
 
+```json
+{
+  "cmd_id": "cmd-fill-001",
+  "cmd": "set_relay",
+  "params": { "state": true },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
-{"cmd": "fill", "params": {"target_level": 0.9}}
+
+```json
+{
+  "cmd_id": "cmd-fill-002",
+  "cmd": "run_pump",
+  "params": { "duration_ms": 8000 },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
 
 Узел:
 
-- включает клапан подачи 
-- включает насос 
-- контролирует уровень 
-- останавливается при достижении уровня 
+- включает клапан подачи
+- включает насос
+- контролирует уровень
+- останавливается при достижении уровня
 
 ---
 
 # 10. Режим слива (Drain Mode)
 
+```json
+{
+  "cmd_id": "cmd-drain-001",
+  "cmd": "set_relay",
+  "params": { "state": true },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
-{"cmd": "drain", "params": {"target_level": 0.1}}
+
+```json
+{
+  "cmd_id": "cmd-drain-002",
+  "cmd": "run_pump",
+  "params": { "duration_ms": 8000 },
+  "ts": 1737355112,
+  "sig": "a1b2c3d4e5f6..."
+}
 ```
 
 Аналогично, но наоборот.
@@ -294,8 +332,8 @@ updated_at
 
 ### commands
 ```
-cmd = run, stop, fill, drain
-params = {sec, target_level}
+cmd = run_pump, set_relay
+params = {duration_ms, state, select_line}
 ```
 
 ### events

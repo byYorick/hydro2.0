@@ -315,7 +315,7 @@ class CorrectionController:
                 f'current_{target_key}': current_val,
                 f'target_{target_key}': target_val,
                 'diff': diff,
-                'dose_ml': amount,
+                'ml': amount,
                 'binding_role': actuator.get('role'),
                 'pid_zone': pid.get_zone().value,
                 'pid_dt_seconds': dt_seconds
@@ -359,7 +359,7 @@ class CorrectionController:
             reason=reason,
             telemetry=command.get('telemetry', {}),
             pid_zone=pid.get_zone().value if pid else None,
-            pid_output=command['event_details'].get('dose_ml', 0) if pid else None,
+            pid_output=command['event_details'].get('ml', 0) if pid else None,
             pid_integral=pid.integral if pid else None,
             pid_prev_error=pid.prev_error if pid else None,
         )
@@ -569,7 +569,7 @@ class CorrectionController:
         role = (actuator.get("role") or "").lower()
         # pH насосы умеют dose, остальным даем run_pump
         use_dose = role.startswith("ph_")
-        params: Dict[str, Any] = {"type": correction_type, "dose_ml": amount_ml}
+        params: Dict[str, Any] = {"type": correction_type, "ml": amount_ml}
 
         if use_dose:
             cmd = "dose"

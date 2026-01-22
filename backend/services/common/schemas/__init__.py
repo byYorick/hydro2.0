@@ -22,7 +22,6 @@ spec.loader.exec_module(schemas_module)
 Command = schemas_module.Command
 CommandResponse = schemas_module.CommandResponse
 CommandRequest = schemas_module.CommandRequest
-LegacyCommandResponse = schemas_module.LegacyCommandResponse
 TelemetryPayload = schemas_module.TelemetryPayload
 NodeConfigModel = schemas_module.NodeConfigModel
 SimulationScenario = schemas_module.SimulationScenario
@@ -32,7 +31,6 @@ __all__ = [
     'Command',
     'CommandResponse',
     'CommandRequest',
-    'LegacyCommandResponse',
     'TelemetryPayload',
     'NodeConfigModel',
     'SimulationScenario',

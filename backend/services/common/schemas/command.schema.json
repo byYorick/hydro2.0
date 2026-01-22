@@ -3,56 +3,36 @@
   "title": "Command",
   "description": "Единый контракт команды для всех сервисов",
   "type": "object",
-  "required": ["cmd_id", "cmd", "ts"],
+  "required": ["cmd_id", "cmd", "params", "ts", "sig"],
   "properties": {
     "cmd_id": {
       "type": "string",
-      "description": "Уникальный идентификатор команды (UUID или correlation_id)",
+      "description": "Уникальный идентификатор команды (UUID)",
       "pattern": "^[a-zA-Z0-9_-]+$",
       "minLength": 1,
       "maxLength": 128
     },
-    "correlation_id": {
-      "anyOf": [
-        {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_-]+$",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        {"type": "null"}
-      ],
-      "description": "Альтернативное поле для cmd_id (для обратной совместимости)"
-    },
     "cmd": {
       "type": "string",
-      "description": "Тип команды (например: dose, run_pump, calibrate_ph)",
+      "description": "Тип команды (dose, run_pump, set_relay, set_pwm)",
       "minLength": 1,
       "maxLength": 64
     },
     "params": {
       "type": "object",
       "description": "Параметры команды",
-      "additionalProperties": true,
-      "default": {}
-    },
-    "deadline_ms": {
-      "anyOf": [
-        {"type": "integer", "minimum": 0},
-        {"type": "null"}
-      ],
-      "description": "Дедлайн выполнения команды в миллисекундах (Unix timestamp)"
-    },
-    "attempt": {
-      "type": "integer",
-      "description": "Номер попытки выполнения команды (начинается с 1)",
-      "minimum": 1,
-      "default": 1
+      "additionalProperties": true
     },
     "ts": {
       "type": "integer",
-      "description": "Unix timestamp создания команды в миллисекундах",
+      "description": "Unix timestamp создания команды в секундах",
       "minimum": 0
+    },
+    "sig": {
+      "type": "string",
+      "description": "HMAC подпись команды (hex)",
+      "minLength": 1,
+      "maxLength": 128
     }
   },
   "additionalProperties": false

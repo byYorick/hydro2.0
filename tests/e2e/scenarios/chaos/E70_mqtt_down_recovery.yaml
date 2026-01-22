@@ -120,7 +120,7 @@ assertions:
     query: |
       SELECT status
       FROM commands
-      WHERE cmd_id = :cmd_id_2 AND status IN ('SENT', 'ACK', 'ACCEPTED')
+      WHERE cmd_id = :cmd_id_2 AND status IN ('SENT', 'ACK')
     params:
       cmd_id_2: ${command_response_2.data.command_id}
     timeout: 20.0

@@ -72,12 +72,19 @@ class CommandObserver
 
             try {
                 // Проверяем конечные статусы ошибок
-                if (in_array($newStatus, [Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED])) {
+                if (in_array($newStatus, [
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                    Command::STATUS_SEND_FAILED,
+                ])) {
                     // Отправляем событие об ошибке
                     event(new CommandFailed(
                         commandId: $command->cmd_id,
                         message: 'Command failed',
                         error: $command->error_message ?? ($command->failed_at ? 'Command execution failed' : null),
+                        status: $newStatus,
                         zoneId: $command->zone_id
                     ));
                 } else {
@@ -85,8 +92,9 @@ class CommandObserver
                     $message = match ($newStatus) {
                         Command::STATUS_QUEUED => 'Command queued',
                         Command::STATUS_SENT => 'Command sent',
-                        Command::STATUS_ACCEPTED => 'Command accepted',
+                        Command::STATUS_ACK => 'Command acknowledged',
                         Command::STATUS_DONE => 'Command completed',
+                        Command::STATUS_NO_EFFECT => 'Command completed with no effect',
                         default => 'Command status updated',
                     };
 
@@ -117,7 +125,15 @@ class CommandObserver
             }
             
             // Записываем метрики latency для команды
-            if (in_array($newStatus, [Command::STATUS_ACCEPTED, Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])) {
+            if (in_array($newStatus, [
+                Command::STATUS_ACK,
+                Command::STATUS_DONE,
+                Command::STATUS_NO_EFFECT,
+                Command::STATUS_ERROR,
+                Command::STATUS_INVALID,
+                Command::STATUS_BUSY,
+                Command::STATUS_TIMEOUT,
+            ])) {
                 try {
                     $metricsService = app(PipelineMetricsService::class);
                     $metricsService->recordCommandLatency($command);

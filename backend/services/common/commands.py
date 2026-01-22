@@ -1,7 +1,7 @@
 """
 Функции для работы с командами согласно единому контракту.
 
-Используют новые статусы: QUEUED/SENT/ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED
+Используют новые статусы: QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
 """
 import uuid
 from .db import execute
@@ -12,7 +12,7 @@ async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
     Помечает команду как отправленную (SENT).
     
     Защита от гонок: обновляет только если статус QUEUED (или SEND_FAILED при allow_resend=True).
-    Это предотвращает откат статуса назад, если команда уже перешла в ACCEPTED/DONE/FAILED.
+    Это предотвращает откат статуса назад, если команда уже перешла в ACK/DONE/ERROR.
     
     Args:
         cmd_id: Идентификатор команды
@@ -52,7 +52,7 @@ async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
         logger.info(f"[MARK_COMMAND_SENT] STEP 3.1: UPDATE result for cmd_id={cmd_id}: '{result}' (allow_resend=True)")
         # Проверяем, обновилась ли команда
         if "UPDATE 0" in result:
-            logger.warning(f"[MARK_COMMAND_SENT] STEP 3.2: WARNING - No rows updated for cmd_id={cmd_id} - command may already be in SENT/ACCEPTED/DONE status")
+            logger.warning(f"[MARK_COMMAND_SENT] STEP 3.2: WARNING - No rows updated for cmd_id={cmd_id} - command may already be in SENT/ACK/DONE/NO_EFFECT/ERROR status")
         else:
             logger.info(f"[MARK_COMMAND_SENT] STEP 3.3: SUCCESS - Command {cmd_id} updated to SENT")
     else:
@@ -86,17 +86,17 @@ async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
     logger.info(f"[MARK_COMMAND_SENT] STEP 5: Completed mark_command_sent for cmd_id={cmd_id}")
 
 
-async def mark_command_accepted(cmd_id: str):
+async def mark_command_ack(cmd_id: str):
     """
-    Помечает команду как принятую узлом (ACCEPTED).
+    Помечает команду как принятую узлом (ACK).
     
     Защита от гонок: обновляет только если статус QUEUED или SENT.
-    Не обновляет если команда уже в ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED.
+    Не обновляет если команда уже в ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED.
     """
     await execute(
         """
         UPDATE commands
-        SET status='ACCEPTED', ack_at=NOW(), updated_at=NOW()
+        SET status='ACK', ack_at=NOW(), updated_at=NOW()
         WHERE cmd_id=$1 AND status IN ('QUEUED','SENT')
         """,
         cmd_id,
@@ -107,8 +107,8 @@ async def mark_command_done(cmd_id: str, duration_ms: int = None, result_code: i
     """
     Помечает команду как успешно выполненную (DONE).
     
-    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
-    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACK).
+    Не обновляет если команда уже в DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED.
     """
     if duration_ms is not None:
         await execute(
@@ -116,7 +116,7 @@ async def mark_command_done(cmd_id: str, duration_ms: int = None, result_code: i
             UPDATE commands
             SET status='DONE', ack_at=COALESCE(ack_at, NOW()), 
                 result_code=$2, duration_ms=$3, updated_at=NOW()
-            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACCEPTED')
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
             """,
             cmd_id,
             result_code,
@@ -128,10 +128,36 @@ async def mark_command_done(cmd_id: str, duration_ms: int = None, result_code: i
             UPDATE commands
             SET status='DONE', ack_at=COALESCE(ack_at, NOW()), 
                 result_code=$2, updated_at=NOW()
-            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACCEPTED')
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
+        """,
+        cmd_id,
+        result_code,
+    )
+
+async def mark_command_no_effect(cmd_id: str, duration_ms: int = None):
+    """
+    Помечает команду как выполненную без эффекта (NO_EFFECT).
+    """
+    if duration_ms is not None:
+        await execute(
+            """
+            UPDATE commands
+            SET status='NO_EFFECT', ack_at=COALESCE(ack_at, NOW()), 
+                result_code=0, duration_ms=$2, updated_at=NOW()
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
             """,
             cmd_id,
-            result_code,
+            duration_ms,
+        )
+    else:
+        await execute(
+            """
+            UPDATE commands
+            SET status='NO_EFFECT', ack_at=COALESCE(ack_at, NOW()), 
+                result_code=0, updated_at=NOW()
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
+            """,
+            cmd_id,
         )
 
 
@@ -142,18 +168,18 @@ async def mark_command_failed(
     result_code: int = 1
 ):
     """
-    Помечает команду как завершившуюся с ошибкой (FAILED).
+    Помечает команду как завершившуюся с ошибкой (ERROR).
     
-    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
-    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACK).
+    Не обновляет если команда уже в DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED.
     """
     if error_code or error_message:
         await execute(
             """
             UPDATE commands
-            SET status='FAILED', failed_at=NOW(), 
+            SET status='ERROR', failed_at=NOW(), 
                 error_code=$2, error_message=$3, result_code=$4, updated_at=NOW()
-            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACCEPTED')
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
             """,
             cmd_id,
             error_code,
@@ -164,27 +190,64 @@ async def mark_command_failed(
         await execute(
             """
             UPDATE commands
-            SET status='FAILED', failed_at=NOW(), result_code=$2, updated_at=NOW()
-            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACCEPTED')
+            SET status='ERROR', failed_at=NOW(), result_code=$2, updated_at=NOW()
+            WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
             """,
             cmd_id,
             result_code,
         )
 
+async def mark_command_invalid(
+    cmd_id: str,
+    error_code: str = None,
+    error_message: str = None,
+    result_code: int = 1,
+):
+    await execute(
+        """
+        UPDATE commands
+        SET status='INVALID', failed_at=NOW(), 
+            error_code=$2, error_message=$3, result_code=$4, updated_at=NOW()
+        WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
+        """,
+        cmd_id,
+        error_code,
+        error_message,
+        result_code,
+    )
+
+async def mark_command_busy(
+    cmd_id: str,
+    error_code: str = None,
+    error_message: str = None,
+    result_code: int = 1,
+):
+    await execute(
+        """
+        UPDATE commands
+        SET status='BUSY', failed_at=NOW(), 
+            error_code=$2, error_message=$3, result_code=$4, updated_at=NOW()
+        WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
+        """,
+        cmd_id,
+        error_code,
+        error_message,
+        result_code,
+    )
 
 async def mark_command_timeout(cmd_id: str):
     """
     Помечает команду как завершившуюся по таймауту (TIMEOUT).
     
-    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
-    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACK).
+    Не обновляет если команда уже в DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED.
     """
     await execute(
         """
         UPDATE commands
         SET status='TIMEOUT', failed_at=NOW(), 
             error_code='TIMEOUT', result_code=1, updated_at=NOW()
-        WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACCEPTED')
+        WHERE cmd_id=$1 AND status IN ('QUEUED','SENT','ACK')
         """,
         cmd_id,
     )
@@ -195,7 +258,7 @@ async def mark_command_send_failed(cmd_id: str, error_message: str = None):
     Помечает команду как не отправленную (SEND_FAILED).
     
     Защита от гонок: обновляет только если статус QUEUED.
-    Не обновляет если команда уже отправлена (SENT/ACCEPTED) или завершена (DONE/FAILED/TIMEOUT).
+    Не обновляет если команда уже отправлена (SENT/ACK) или завершена (DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT).
     """
     await execute(
         """
@@ -216,21 +279,16 @@ async def mark_timeouts(seconds: int = 30):
         UPDATE commands
         SET status='TIMEOUT', failed_at=NOW(), 
             error_code='TIMEOUT', result_code=1, updated_at=NOW()
-        WHERE status IN ('QUEUED','SENT','ACCEPTED')
+        WHERE status IN ('QUEUED','SENT','ACK')
           AND created_at < NOW() - ($1::text || ' seconds')::interval
         """,
         str(seconds),
     )
 
 
-# Legacy функции для обратной совместимости
-async def mark_command_ack(cmd_id: str):
-    """Legacy: помечает команду как выполненную (использует DONE вместо ack)."""
-    await mark_command_done(cmd_id)
+# Legacy функция удалена: используйте mark_command_ack для ACK и mark_command_done для DONE.
 
 
 def new_command_id() -> str:
     """Генерирует новый уникальный идентификатор команды."""
     return str(uuid.uuid4())
-
-

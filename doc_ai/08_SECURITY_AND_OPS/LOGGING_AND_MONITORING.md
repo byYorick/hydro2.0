@@ -36,7 +36,7 @@
  "node_id": 11,
  "event": "COMMAND_SENT",
  "details": {
- "command_type": "DOSE",
+ "command_type": "dose",
  "channel": "pump_acid",
  "ml": 1.0
  }

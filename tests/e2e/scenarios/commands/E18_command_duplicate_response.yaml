@@ -123,7 +123,7 @@ actions:
         'query': 'SELECT status FROM commands WHERE cmd_id = :cmd_id',
         'params': {'cmd_id': context['duplicate_command_id']}
       }))
-      result and result[0]['status'] in ['DONE', 'FAILED']
+      result and result[0]['status'] in ['DONE', 'ERROR']
     timeout: 30.0
     interval: 2.0
 
@@ -146,7 +146,7 @@ assertions:
     expected:
       - field: status
         operator: in
-        value: ["DONE", "FAILED"]
+        value: ["DONE", "ERROR"]
 
   # Проверка 2: Только один финальный статус (нет множественных DONE)
   - name: single_final_status
@@ -182,4 +182,4 @@ assertions:
     expected:
       - field: status
         operator: in
-        value: ["DONE", "FAILED"]
+        value: ["DONE", "ERROR"]

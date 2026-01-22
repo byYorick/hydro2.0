@@ -699,8 +699,7 @@ onMounted(async () => {
       updateCommandStatus(commandEvent.commandId, commandEvent.status as any, commandEvent.message)
       
       // Если команда завершена, обновляем зону
-      // Проверяем новые и старые статусы для обратной совместимости
-      const finalStatuses = ['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed']
+      const finalStatuses = ['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED']
       if (finalStatuses.includes(commandEvent.status)) {
         if (zoneId.value) {
           reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])

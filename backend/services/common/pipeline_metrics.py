@@ -3,7 +3,7 @@
 
 Отслеживает:
 - lag по очередям (pending_* size, oldest_age)
-- command end-to-end latency (SENT→DONE)
+- command end-to-end latency (SENT→DONE/NO_EFFECT)
 - error delivery latency (MQTT→WS)
 """
 import logging
@@ -38,19 +38,19 @@ PENDING_STATUS_UPDATES_OLDEST_AGE = Gauge(
 # Метрики command latency
 COMMAND_E2E_LATENCY = Histogram(
     "pipeline_command_e2e_latency_seconds",
-    "Command end-to-end latency from SENT to DONE",
+    "Command end-to-end latency from SENT to DONE/NO_EFFECT",
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0]
 )
 
-COMMAND_SENT_TO_ACCEPTED_LATENCY = Histogram(
-    "pipeline_command_sent_to_accepted_latency_seconds",
-    "Command latency from SENT to ACCEPTED",
+COMMAND_SENT_TO_ACK_LATENCY = Histogram(
+    "pipeline_command_sent_to_ack_latency_seconds",
+    "Command latency from SENT to ACK",
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
 )
 
-COMMAND_ACCEPTED_TO_DONE_LATENCY = Histogram(
-    "pipeline_command_accepted_to_done_latency_seconds",
-    "Command latency from ACCEPTED to DONE",
+COMMAND_ACK_TO_DONE_LATENCY = Histogram(
+    "pipeline_command_ack_to_done_latency_seconds",
+    "Command latency from ACK to DONE/NO_EFFECT",
     buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]
 )
 
@@ -117,25 +117,25 @@ def update_queue_metrics(queue_name: str, size: int, oldest_age_seconds: float):
         logger.warning(f"Unknown queue name: {queue_name}")
 
 
-def record_command_latency(sent_at: datetime, accepted_at: Optional[datetime], done_at: Optional[datetime]):
+def record_command_latency(sent_at: datetime, ack_at: Optional[datetime], done_at: Optional[datetime]):
     """
     Записывает метрики latency команды.
     
     Args:
         sent_at: Время отправки команды (SENT)
-        accepted_at: Время принятия команды (ACCEPTED), может быть None
-        done_at: Время завершения команды (DONE), может быть None
+        ack_at: Время принятия команды (ACK), может быть None
+        done_at: Время завершения команды (DONE/NO_EFFECT), может быть None
     """
     now = utcnow()
     
-    if accepted_at:
-        sent_to_accepted = (accepted_at - sent_at).total_seconds()
-        COMMAND_SENT_TO_ACCEPTED_LATENCY.observe(sent_to_accepted)
+    if ack_at:
+        sent_to_ack = (ack_at - sent_at).total_seconds()
+        COMMAND_SENT_TO_ACK_LATENCY.observe(sent_to_ack)
     
     if done_at:
-        if accepted_at:
-            accepted_to_done = (done_at - accepted_at).total_seconds()
-            COMMAND_ACCEPTED_TO_DONE_LATENCY.observe(accepted_to_done)
+        if ack_at:
+            ack_to_done = (done_at - ack_at).total_seconds()
+            COMMAND_ACK_TO_DONE_LATENCY.observe(ack_to_done)
         
         e2e_latency = (done_at - sent_at).total_seconds()
         COMMAND_E2E_LATENCY.observe(e2e_latency)

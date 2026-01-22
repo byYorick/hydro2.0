@@ -618,7 +618,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       // Ожидаем ответа от ноды
       let executionNotified = false
       const result = await checkCommandStatus(cmdId, 30, (status) => {
-        if (status === 'ACCEPTED' && !executionNotified) {
+        if (status === 'ACK' && !executionNotified) {
           executionNotified = true
           showToast(`Выполнение: ${channelLabel}...`, 'info', TOAST_TIMEOUT.NORMAL)
         }
@@ -719,9 +719,9 @@ async function checkCommandStatus(
             onStatusChange(normalizedStatus)
           }
         }
-        if (normalizedStatus === 'DONE') {
-          return { success: true, status: 'DONE' }
-        } else if (['FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
+        if (['DONE', 'NO_EFFECT'].includes(normalizedStatus)) {
+          return { success: true, status: normalizedStatus }
+        } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
           const errorMessage = response.data.data.error_message || undefined
           const errorCode = response.data.data.error_code || undefined
           const errorDetail = errorMessage || errorCode || null
@@ -732,7 +732,7 @@ async function checkCommandStatus(
             errorCode,
             errorMessage,
           }
-        } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACCEPTED') {
+        } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACK') {
           // Продолжаем ожидание
           await new Promise(resolve => setTimeout(resolve, 500))
           continue
@@ -747,10 +747,10 @@ async function checkCommandStatus(
         continue
       }
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      return { success: false, status: 'error', error: errorMessage }
+      return { success: false, status: 'ERROR', error: errorMessage }
     }
   }
-  return { success: false, status: 'timeout' }
+  return { success: false, status: 'TIMEOUT' }
 }
 
 // Загрузка данных телеметрии для графиков

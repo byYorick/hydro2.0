@@ -4,6 +4,7 @@ CLI интерфейс для node-sim.
 
 import asyncio
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -99,15 +100,24 @@ async def run_simulator(config: SimConfig):
     
     # Создаем обработчик команд (передаем telemetry_publisher для поддержки hil_request_telemetry)
     command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry, event_loop=event_loop)
+    offline_task = None
     if config.failure_mode:
         from .state_machine import FailureMode
         failure_mode = FailureMode(
             delay_response=config.failure_mode.delay_response,
             delay_ms=config.failure_mode.delay_ms,
             drop_response=config.failure_mode.drop_response,
-            duplicate_response=config.failure_mode.duplicate_response
+            duplicate_response=config.failure_mode.duplicate_response,
+            random_drop_rate=config.failure_mode.random_drop_rate,
+            random_duplicate_rate=config.failure_mode.random_duplicate_rate,
+            random_delay_ms_min=config.failure_mode.random_delay_ms_min,
+            random_delay_ms_max=config.failure_mode.random_delay_ms_max
         )
         command_handler.state_machine.set_failure_mode(failure_mode)
+        if config.failure_mode.offline_chance > 0 and config.failure_mode.offline_duration_s > 0:
+            offline_task = asyncio.create_task(
+                _offline_loop(node, config.failure_mode)
+            )
     
     # Создаем публикатор ошибок и интегрируем с моделью
     from .errors import ErrorPublisher, create_error_callback
@@ -139,8 +149,27 @@ async def run_simulator(config: SimConfig):
     finally:
         await telemetry.stop()
         await status_publisher.stop()
+        if offline_task:
+            offline_task.cancel()
         mqtt.disconnect()
         logger.info("Node simulator stopped")
+
+
+async def _offline_loop(node: "NodeModel", failure_mode):
+    """Периодически переводит ноду в offline для тестирования алертов."""
+    interval = max(1.0, float(failure_mode.offline_check_interval_s or 30.0))
+    duration = max(1.0, float(failure_mode.offline_duration_s))
+    while True:
+        await asyncio.sleep(interval)
+        if node.is_offline():
+            continue
+        if random.random() < failure_mode.offline_chance:
+            node.set_offline(duration)
+            logger.warning(
+                "Node %s set offline for %.1fs (random failure)",
+                node.node_uid,
+                duration
+            )
 
 
 async def run_multi_nodes(config_path: str):

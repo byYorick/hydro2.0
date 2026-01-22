@@ -105,14 +105,14 @@ class CommandRollback:
         if cmd in ('dose', 'run_pump'):
             # Откат pH: дозируем противоположное вещество с уменьшенной дозой
             if correction_type in ('add_acid', 'add_base'):
-                amount = params.get('dose_ml') or params.get('amount') or 0
+                amount = params.get('ml') or params.get('amount') or 0
                 duration_ms = params.get('duration_ms')
 
                 rollback_type = 'add_base' if correction_type == 'add_acid' else 'add_acid'
                 rollback_params = {'type': rollback_type}
 
                 if amount:
-                    rollback_params['dose_ml'] = amount * 0.5
+                    rollback_params['ml'] = amount * 0.5
                 if duration_ms:
                     rollback_params['duration_ms'] = int(duration_ms * 0.5)
 

@@ -270,7 +270,11 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 {
  "cmd_id": "cmd-39494",
  "cmd": "run_pump",
- "duration_ms": 2000
+ "params": {
+  "duration_ms": 2000
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -287,7 +291,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 {
  "cmd_id": "cmd-39494",
  "status": "ACK",
- "ts": 1710001234
+ "ts": 1710001234123
 }
 ```
 

@@ -8,6 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import Query
+from decimal import Decimal
 from datetime import datetime, timedelta
 from common.utils.time import utcnow
 from fastapi import FastAPI, HTTPException
@@ -112,28 +113,49 @@ async def get_recipe_revision_phases(recipe_id: int) -> List[Dict[str, Any]]:
     
     # Преобразуем фазы в формат, совместимый со старым кодом
     phases = []
+    def to_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+        if value is None:
+            return default
+        if isinstance(value, Decimal):
+            return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def sanitize_numeric(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, dict):
+            return {k: sanitize_numeric(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [sanitize_numeric(v) for v in value]
+        return value
+
     for row in phase_rows:
         # Преобразуем колонки в формат targets для совместимости
         targets = {}
         
         if row.get("ph_target") is not None:
-            targets["ph"] = row["ph_target"]
+            targets["ph"] = to_float(row["ph_target"], None)
         if row.get("ec_target") is not None:
-            targets["ec"] = row["ec_target"]
+            targets["ec"] = to_float(row["ec_target"], None)
         if row.get("temp_air_target") is not None:
-            targets["temp_air"] = row["temp_air_target"]
+            targets["temp_air"] = to_float(row["temp_air_target"], None)
         if row.get("humidity_target") is not None:
-            targets["humidity_air"] = row["humidity_target"]
+            targets["humidity_air"] = to_float(row["humidity_target"], None)
         if row.get("co2_target") is not None:
-            targets["co2"] = row["co2_target"]
+            targets["co2"] = to_float(row["co2_target"], None)
         
         # Добавляем расширения если есть
         if row.get("extensions"):
             targets.update(row["extensions"])
-        
-        duration_hours = row.get("duration_hours")
+
+        targets = sanitize_numeric(targets)
+
+        duration_hours = to_float(row.get("duration_hours"), None)
         if not duration_hours and row.get("duration_days"):
-            duration_hours = row["duration_days"] * 24
+            duration_hours = to_float(row["duration_days"], 0) * 24
         
         phases.append({
             "phase_index": row["phase_index"],
@@ -170,13 +192,32 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         if not phases:
             raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found or has no phases")
 
+        def to_float(value: Any, default: float) -> float:
+            if value is None:
+                return default
+            if isinstance(value, Decimal):
+                return float(value)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def sanitize_numeric(value: Any) -> Any:
+            if isinstance(value, Decimal):
+                return float(value)
+            if isinstance(value, dict):
+                return {k: sanitize_numeric(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [sanitize_numeric(v) for v in value]
+            return value
+
         # Начальное состояние
-        initial_state = request.scenario.initial_state or {}
-        ph = initial_state.get("ph", 6.0)
-        ec = initial_state.get("ec", 1.2)
-        temp_air = initial_state.get("temp_air", 22.0)
-        temp_water = initial_state.get("temp_water", 20.0)
-        humidity_air = initial_state.get("humidity_air", 60.0)
+        initial_state = sanitize_numeric(request.scenario.initial_state or {})
+        ph = to_float(initial_state.get("ph"), 6.0)
+        ec = to_float(initial_state.get("ec"), 1.2)
+        temp_air = to_float(initial_state.get("temp_air"), 22.0)
+        temp_water = to_float(initial_state.get("temp_water"), 20.0)
+        humidity_air = to_float(initial_state.get("humidity_air"), 60.0)
 
         # Получаем калиброванные параметры для зоны (опционально, можно кэшировать)
         # Для MVP используем дефолтные параметры, калибровку можно вызывать отдельно
@@ -197,6 +238,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         current_time = start_time
         end_time = current_time + timedelta(hours=request.duration_hours)
         step_delta = timedelta(minutes=request.step_minutes)
+        step_hours = step_delta.total_seconds() / 3600
 
         # Определяем текущую фазу
         current_phase_index = 0
@@ -220,11 +262,11 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
             # Получаем targets текущей фазы
             if current_phase_index < len(phases):
                 phase = phases[current_phase_index]
-                targets = phase.get("targets", {})
-                target_ph = targets.get("ph", ph)
-                target_ec = targets.get("ec", ec)
-                target_temp_air = targets.get("temp_air", temp_air)
-                target_humidity_air = targets.get("humidity_air", humidity_air)
+                targets = sanitize_numeric(phase.get("targets", {}))
+                target_ph = to_float(targets.get("ph", ph), ph)
+                target_ec = to_float(targets.get("ec", ec), ec)
+                target_temp_air = to_float(targets.get("temp_air", temp_air), temp_air)
+                target_humidity_air = to_float(targets.get("humidity_air", humidity_air), humidity_air)
             else:
                 # Используем последние значения как targets
                 target_ph = ph
@@ -232,18 +274,21 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
                 target_temp_air = temp_air
                 target_humidity_air = humidity_air
 
-            # Симулируем один шаг
-            elapsed_hours = (current_time - phase_start_time).total_seconds() / 3600
+            # Симулируем один шаг (используем длительность шага, а не накопленное время)
+            ph = to_float(ph, 6.0)
+            ec = to_float(ec, 1.2)
+            temp_air = to_float(temp_air, 22.0)
+            humidity_air = to_float(humidity_air, 60.0)
             
             # pH модель
-            ph = ph_model.step(ph, target_ph, elapsed_hours)
+            ph = ph_model.step(ph, target_ph, step_hours)
             
             # EC модель
-            ec = ec_model.step(ec, target_ec, elapsed_hours)
+            ec = ec_model.step(ec, target_ec, step_hours)
             
             # Климат модель
             temp_air, humidity_air = climate_model.step(
-                temp_air, humidity_air, target_temp_air, target_humidity_air, elapsed_hours
+                temp_air, humidity_air, target_temp_air, target_humidity_air, step_hours
             )
 
             # Сохраняем точку
@@ -279,6 +324,7 @@ async def simulate_zone_endpoint(request: SimulationRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Digital Twin simulation failed", exc_info=e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

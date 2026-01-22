@@ -137,18 +137,18 @@ describe('useWebSocket - Integration Tests', () => {
 
       if (statusListener) {
         // Command started
-        statusListener({ commandId: 100, status: 'running', zoneId: 1 })
+        statusListener({ commandId: 100, status: 'SENT', zoneId: 1 })
         
         // Command in progress
-        statusListener({ commandId: 100, status: 'running', message: 'Processing...', zoneId: 1 })
+        statusListener({ commandId: 100, status: 'ACK', message: 'Processing...', zoneId: 1 })
         
         // Command completed
-        statusListener({ commandId: 100, status: 'completed', message: 'Done', zoneId: 1 })
+        statusListener({ commandId: 100, status: 'DONE', message: 'Done', zoneId: 1 })
       }
 
       expect(commandUpdates).toHaveLength(3)
-      expect(commandUpdates[0].status).toBe('running')
-      expect(commandUpdates[2].status).toBe('completed')
+      expect(commandUpdates[0].status).toBe('SENT')
+      expect(commandUpdates[2].status).toBe('DONE')
 
       unsubscribe()
     })
@@ -177,7 +177,7 @@ describe('useWebSocket - Integration Tests', () => {
       )?.[1]
 
       if (statusListener1) {
-        statusListener1({ commandId: 100, status: 'completed', zoneId: 1 })
+        statusListener1({ commandId: 100, status: 'DONE', zoneId: 1 })
       }
 
       // Both zones should be subscribed
@@ -259,7 +259,7 @@ describe('useWebSocket - Integration Tests', () => {
       if (statusListener) {
         // Should not throw, error should be caught
         expect(() => {
-          statusListener({ commandId: 100, status: 'completed', zoneId: 1 })
+          statusListener({ commandId: 100, status: 'DONE', zoneId: 1 })
         }).not.toThrow()
       }
     })
@@ -311,4 +311,3 @@ describe('useWebSocket - Integration Tests', () => {
     })
   })
 })
-

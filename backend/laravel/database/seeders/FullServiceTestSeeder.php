@@ -687,8 +687,19 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание команд...');
 
         $commandTypes = ['DOSE', 'IRRIGATE', 'SET_LIGHT', 'SET_CLIMATE', 'READ_SENSOR'];
-        $statuses = [Command::STATUS_QUEUED, Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED];
-        $statusWeights = [5, 20, 70, 5]; // Процентное распределение
+        $statuses = [
+            Command::STATUS_QUEUED,
+            Command::STATUS_SENT,
+            Command::STATUS_ACK,
+            Command::STATUS_DONE,
+            Command::STATUS_NO_EFFECT,
+            Command::STATUS_ERROR,
+            Command::STATUS_INVALID,
+            Command::STATUS_BUSY,
+            Command::STATUS_TIMEOUT,
+            Command::STATUS_SEND_FAILED,
+        ];
+        $statusWeights = [5, 20, 10, 45, 5, 5, 3, 2, 3, 2]; // Процентное распределение
 
         $commandsCount = 0;
         for ($daysAgo = 7; $daysAgo >= 0; $daysAgo--) {
@@ -715,10 +726,26 @@ class FullServiceTestSeeder extends Seeder
                 }
 
                 $createdAt = $dayStart->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
-                $sentAt = $status !== Command::STATUS_QUEUED ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
-                $ackAt = in_array($status, [Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])
+                $sentAt = in_array($status, [
+                    Command::STATUS_SENT,
+                    Command::STATUS_ACK,
+                    Command::STATUS_DONE,
+                    Command::STATUS_NO_EFFECT,
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                ], true) ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
+                $ackAt = in_array($status, [Command::STATUS_ACK, Command::STATUS_DONE, Command::STATUS_NO_EFFECT], true)
                     ? ($sentAt ? $sentAt->copy()->addMinutes(rand(1, 10)) : $createdAt->copy()->addMinutes(rand(1, 10)))
                     : null;
+                $failedAt = in_array($status, [
+                    Command::STATUS_ERROR,
+                    Command::STATUS_INVALID,
+                    Command::STATUS_BUSY,
+                    Command::STATUS_TIMEOUT,
+                    Command::STATUS_SEND_FAILED,
+                ], true) ? $createdAt->copy()->addMinutes(rand(2, 15)) : null;
 
                 Command::create([
                     'zone_id' => $zone->id,
@@ -732,6 +759,7 @@ class FullServiceTestSeeder extends Seeder
                     'created_at' => $createdAt,
                     'sent_at' => $sentAt,
                     'ack_at' => $ackAt,
+                    'failed_at' => $failedAt,
                 ]);
 
                 $commandsCount++;

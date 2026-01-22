@@ -534,13 +534,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     command_source = req.source or "api"
 
     cmd_id = req.cmd_id
-    if not cmd_id and req.params and "cmd_id" in req.params:
-        cmd_id = req.params.get("cmd_id")
-        params_without_cmd_id = {
-            k: v for k, v in req.params.items() if k != "cmd_id"
-        }
-    else:
-        params_without_cmd_id = req.params
+    params_without_cmd_id = req.params or {}
 
     try:
         payload = _create_command_payload(

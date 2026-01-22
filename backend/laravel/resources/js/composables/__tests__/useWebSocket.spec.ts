@@ -157,7 +157,7 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
-        status: 'completed',
+        status: 'DONE',
         message: 'Command completed',
         zoneId: 1,
         zone_id: 1
@@ -168,7 +168,7 @@ describe('useWebSocket', () => {
       const call = onCommandUpdate.mock.calls[0]?.[0]
       expect(call).toMatchObject({
         commandId: 123,
-        status: 'completed',
+        status: 'DONE',
         message: 'Command completed',
         zoneId: 1
       })
@@ -195,6 +195,7 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
+        status: 'ERROR',
         message: 'Command failed',
         error: 'Some error',
         zoneId: 1,
