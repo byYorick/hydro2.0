@@ -5,6 +5,10 @@
 Документ описывает полный Global Scheduler Engine — центральный мозг системы 2.0,
 который координирует работу зон, контроллеров, симуляций, AI, команд и расписаний.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Назначение Global Scheduler Engine

@@ -201,9 +201,9 @@ async def send_zone_command(
     
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
-    payload = {"cmd": req.type, "cmd_id": cmd_id, "params": req.params or {}}
+    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
     try:
-        _maybe_attach_hmac(payload, req.type, req.ts, req.sig)
+        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика
@@ -286,9 +286,9 @@ async def send_node_command(
     
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
-    payload = {"cmd": req.type, "cmd_id": cmd_id, "params": req.params or {}}
+    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
     try:
-        _maybe_attach_hmac(payload, req.type, req.ts, req.sig)
+        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика

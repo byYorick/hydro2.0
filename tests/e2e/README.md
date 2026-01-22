@@ -82,7 +82,7 @@ tests/e2e/
 ### Команды
 Статусы должны изменяться монотонно:
 ```
-QUEUED → SENT → ACCEPTED → DONE/FAILED/TIMEOUT
+QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 ```
 ❌ Без откатов
 

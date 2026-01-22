@@ -47,6 +47,9 @@ COMMAND_REST_ERRORS = Counter("scheduler_command_rest_errors_total", "REST comma
 # URL automation-engine для отправки команд
 AUTOMATION_ENGINE_URL = os.getenv("AUTOMATION_ENGINE_URL", "http://automation-engine:9405")
 
+# Временное хранилище последнего тика per zone (для sim-time пересечений)
+_LAST_SCHEDULE_CHECKS: Dict[int, datetime] = {}
+
 
 @dataclass(frozen=True)
 class SimulationClock:
@@ -111,6 +114,31 @@ def _extract_simulation_clock(row: Dict[str, Any]) -> Optional[SimulationClock]:
         sim_start=sim_start,
         time_scale=time_scale_value,
     )
+
+
+def _get_last_check(zone_id: int, now_dt: datetime, sim_clock: Optional[SimulationClock]) -> datetime:
+    last_check = _LAST_SCHEDULE_CHECKS.get(zone_id)
+    if last_check is not None:
+        return last_check
+    delta_seconds = 60.0
+    if sim_clock:
+        delta_seconds *= sim_clock.time_scale
+    return now_dt - timedelta(seconds=delta_seconds)
+
+
+def _schedule_crossings(last_dt: datetime, now_dt: datetime, target: time) -> List[datetime]:
+    if now_dt < last_dt:
+        last_dt, now_dt = now_dt, last_dt
+    start_date = last_dt.date()
+    end_date = now_dt.date()
+    days = (end_date - start_date).days
+    crossings: List[datetime] = []
+    for offset in range(days + 1):
+        day = start_date + timedelta(days=offset)
+        candidate = datetime.combine(day, target)
+        if last_dt < candidate <= now_dt:
+            crossings.append(candidate)
+    return crossings
 
 
 async def get_simulation_clocks(zone_ids: List[int]) -> Dict[int, SimulationClock]:
@@ -400,7 +428,8 @@ async def monitor_pump_safety(
             zone_id=zone_id,
             node_uid=node_uid,
             channel=channel,
-            cmd="stop"
+            cmd="set_relay",
+            params={"state": False}
         )
         
         # Создаем событие остановки насоса
@@ -458,6 +487,7 @@ async def execute_irrigation_schedule(
         targets = schedule.get("targets", {})
         irrigation = targets.get("irrigation", {})
         duration_sec = irrigation.get("duration_sec") or targets.get("irrigation_duration_sec", 60)
+        duration_ms = max(0, int(duration_sec * 1000))
         
         # Create IRRIGATION_STARTED event
         irrigation_start_time = utcnow()
@@ -478,8 +508,8 @@ async def execute_irrigation_schedule(
                 zone_id=zone_id,
                 node_uid=node_info['node_uid'],
                 channel=node_info['channel'],
-                cmd="irrigate",
-                params={"duration_sec": duration_sec}
+                cmd="run_pump",
+                params={"duration_ms": duration_ms}
             )
             
             # Start async monitoring for dry run protection
@@ -695,30 +725,45 @@ async def check_and_execute_schedules(mqtt_client: MqttClient):
     zone_ids = sorted({schedule["zone_id"] for schedule in schedules})
     simulation_clocks = await get_simulation_clocks(zone_ids)
     real_now = datetime.now()
-    # Group by zone and type
-    executed: set = set()  # (zone_id, type) to avoid duplicates
+    # Group by zone and schedule signature to avoid duplicates within a tick
+    executed: set = set()
+    zone_now: Dict[int, datetime] = {}
+    zone_last: Dict[int, datetime] = {}
     for schedule in schedules:
         zone_id = schedule["zone_id"]
         task_type = schedule["type"]
-        key = (zone_id, task_type)
+        key = (
+            zone_id,
+            task_type,
+            schedule.get("time"),
+            schedule.get("start_time"),
+            schedule.get("end_time"),
+        )
         if key in executed:
             continue
-        sim_clock = simulation_clocks.get(zone_id)
-        now_time = sim_clock.now().time() if sim_clock else real_now.time()
+        if zone_id not in zone_now:
+            sim_clock = simulation_clocks.get(zone_id)
+            now_dt = sim_clock.now() if sim_clock else real_now
+            zone_now[zone_id] = now_dt
+            zone_last[zone_id] = _get_last_check(zone_id, now_dt, sim_clock)
+        now_dt = zone_now[zone_id]
+        last_dt = zone_last[zone_id]
+        now_time = now_dt.time()
         if task_type == "irrigation":
             # Check if current time matches schedule time (within 1 minute window)
             schedule_time = schedule.get("time")
             if schedule_time:
-                time_diff = abs(
-                    (now_time.hour * 60 + now_time.minute) - (schedule_time.hour * 60 + schedule_time.minute)
-                )
-                if time_diff <= 1:
+                crossings = _schedule_crossings(last_dt, now_dt, schedule_time)
+                for _ in crossings:
                     await execute_irrigation_schedule(zone_id, schedule)
+                if crossings:
                     executed.add(key)
         elif task_type == "lighting":
             # Lighting is checked every cycle, execute if needed
             await execute_lighting_schedule(zone_id, schedule, now_time=now_time)
             executed.add(key)
+    for zone_id, now_dt in zone_now.items():
+        _LAST_SCHEDULE_CHECKS[zone_id] = now_dt
     
     # Проверяем смены воды
     await check_water_changes(mqtt_client)

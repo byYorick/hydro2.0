@@ -53,12 +53,12 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",
             "channel": "default",
-            "params": {"duration": 60}
+            "params": {"duration_ms": 60000}
         }
         
         response = client.post("/commands", json=payload, headers=auth_headers)
@@ -75,7 +75,7 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
 
 @pytest.mark.asyncio
 async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_client):
-    """Test command publication with legacy 'type' field."""
+    """Test command publication with legacy 'type' field rejected."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
          patch("command_routes.get_settings") as mock_settings:
         
@@ -83,22 +83,18 @@ async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_clien
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "type": "irrigate",  # Legacy format
+            "type": "run_pump",  # Legacy format
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",
             "channel": "default",
-            "params": {"duration": 60}
+            "params": {"duration_ms": 60000}
         }
         
         response = client.post("/commands", json=payload, headers=auth_headers)
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "ok"
-        
-        # Проверяем, что команда была опубликована в MQTT
-        assert mock_mqtt_client._client._client.publish.called
+
+        assert response.status_code == 400
+        assert "cmd" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -106,7 +102,7 @@ async def test_publish_command_missing_fields(client, auth_headers):
     """Test command publication with missing required fields."""
     # Missing greenhouse_uid
     payload = {
-        "cmd": "irrigate",
+        "cmd": "run_pump",
         "zone_id": 1,
         "node_uid": "nd-irrig-1",
         "channel": "default"
@@ -129,7 +125,7 @@ async def test_publish_command_missing_cmd(client, auth_headers):
     
     response = client.post("/commands", json=payload, headers=auth_headers)
     assert response.status_code == 400
-    assert "cmd" in response.json()["detail"] or "type" in response.json()["detail"]
+    assert "cmd" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -151,7 +147,7 @@ async def test_publish_command_unauthorized(client, mock_mqtt_client):
             mock_settings.return_value = Mock(mqtt_zone_format="id")
             
             payload = {
-                "cmd": "irrigate",
+                "cmd": "run_pump",
                 "greenhouse_uid": "gh-1",
                 "zone_id": 1,
                 "node_uid": "nd-irrig-1",
@@ -178,11 +174,11 @@ async def test_publish_zone_command_success(client, auth_headers, mock_mqtt_clie
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "node_uid": "nd-irrig-1",
             "channel": "default",
-            "params": {"duration": 60}
+            "params": {"duration_ms": 60000}
         }
         
         response = client.post("/zones/1/commands", json=payload, headers=auth_headers)
@@ -197,7 +193,7 @@ async def test_publish_zone_command_success(client, auth_headers, mock_mqtt_clie
 async def test_publish_zone_command_missing_fields(client, auth_headers):
     """Test zone command publication with missing fields."""
     payload = {
-        "cmd": "irrigate",
+        "cmd": "run_pump",
         "greenhouse_uid": "gh-1",
         # Missing node_uid and channel
     }
@@ -217,11 +213,11 @@ async def test_publish_node_command_success(client, auth_headers, mock_mqtt_clie
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "channel": "default",
-            "params": {"duration": 60}
+            "params": {"duration_ms": 60000}
         }
         
         response = client.post("/nodes/nd-irrig-1/commands", json=payload, headers=auth_headers)
@@ -236,7 +232,7 @@ async def test_publish_node_command_success(client, auth_headers, mock_mqtt_clie
 async def test_publish_node_command_missing_fields(client, auth_headers):
     """Test node command publication with missing fields."""
     payload = {
-        "cmd": "irrigate",
+        "cmd": "run_pump",
         "greenhouse_uid": "gh-1",
         # Missing zone_id and channel
     }
@@ -256,7 +252,7 @@ async def test_publish_command_with_trace_id(client, auth_headers, mock_mqtt_cli
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",
@@ -281,7 +277,7 @@ async def test_publish_command_with_cmd_id(client, auth_headers, mock_mqtt_clien
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",
@@ -309,7 +305,7 @@ async def test_publish_command_mqtt_error(client, auth_headers, mock_mqtt_client
         mock_publish.side_effect = Exception("MQTT publish failed")
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",
@@ -334,7 +330,7 @@ async def test_publish_command_zone_uid_format(client, auth_headers, mock_mqtt_c
         mock_get_uid.return_value = "zn-1"
         
         payload = {
-            "cmd": "irrigate",
+            "cmd": "run_pump",
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
             "node_uid": "nd-irrig-1",

@@ -11,6 +11,7 @@
 - `infrastructure/` - readiness и bindings
 - `grow_cycle/` - циклы выращивания
 - `automation_engine/` - автоматизация управления
+- `simulation/` - симуляции (live, digital twin)
 - `chaos/` - хаос-тесты (деградация и восстановление)
 
 ## CORE
@@ -267,6 +268,16 @@
 - Серия ошибок → AE увеличивает интервал/переходит в degraded
 - Подтверждение через метрики/лог/zone_events
 
+## SIMULATION
+
+### E90_live_simulation_stop_commands.yaml
+**DoD:** live-симуляция завершается, stop-команды отправлены
+
+Проверяет live-симуляцию:
+- Создается zone_simulations запись и завершается
+- Мета real_duration_minutes задана
+- После завершения отправляются set_relay и set_pwm
+
 ## CHAOS
 
 ### E70_mqtt_down_recovery.yaml
@@ -327,5 +338,4 @@
 Поддерживаемые сервисы: `laravel`, `mosquitto`, `postgres`, `history-logger`, `automation-engine`, `redis`, `reverb`.
 
 Поддерживаемые действия: `stop`, `start`, `pause`, `unpause`.
-
 

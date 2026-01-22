@@ -98,11 +98,8 @@ class CommandResponse(BaseModel):
 
 
 class CommandRequest(BaseModel):
-    """
-    Legacy модель для HTTP запросов команд.
-    Используется для совместимости с существующими API endpoints.
-    """
-    type: str = Field(..., max_length=64, description="Command type")
+    """HTTP модель для команд (strict format)."""
+    cmd: str = Field(..., max_length=64, description="Command name")
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
     channel: Optional[str] = Field(None, max_length=64, description="Channel name")
@@ -116,20 +113,18 @@ class CommandRequest(BaseModel):
     def to_command(self) -> Command:
         """Конвертирует CommandRequest в единый контракт Command."""
         return Command.create(
-            cmd=self.type,
+            cmd=self.cmd,
             params=self.params,
             cmd_id=self.cmd_id,
             sig=self.sig
         )
     
-    @field_validator('type')
+    @field_validator('cmd')
     @classmethod
     def validate_command_type(cls, v):
         """Валидация типа команды."""
         allowed_types = [
-            'run_pump', 'calibrate_ph', 'calibrate_ec', 'manual_dose',
-            'adjust_ph', 'adjust_ec', 'fill', 'drain', 'calibrate_flow',
-            'set_light', 'set_fan', 'set_heater', 'reboot', 'update_config'
+            'dose', 'run_pump', 'set_relay', 'set_pwm'
         ]
         if v not in allowed_types:
             # Предупреждение, но не блокируем (для расширяемости)

@@ -65,7 +65,7 @@ actions:
     type: api_post
     endpoint: /api/nodes/${node_id}/commands
     payload:
-      cmd: set_relay_state
+      cmd: set_relay
       channel: main_pump
       params:
         state: true
@@ -95,7 +95,7 @@ actions:
     type: api_post
     endpoint: /api/nodes/${node_id}/commands
     payload:
-      cmd: set_relay_state
+      cmd: set_relay
       channel: main_pump
       params:
         state: false

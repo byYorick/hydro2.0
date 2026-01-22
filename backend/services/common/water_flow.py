@@ -393,13 +393,13 @@ async def execute_fill_mode(
     
     node_info = nodes[0]
     
-    # Отправляем команду fill через единый оркестратор
+    # Отправляем команду включения через единый оркестратор
     fill_result = await send_command(
         zone_id=zone_id,
         node_uid=node_info['node_uid'],
         channel=node_info['channel'],
-        cmd="fill",
-        params={"target_level": target_level},
+        cmd="set_relay",
+        params={"state": True},
         greenhouse_uid=gh_uid,
         deadline_ms=int((fill_start_time.timestamp() + max_duration_sec) * 1000),
     )
@@ -436,8 +436,8 @@ async def execute_fill_mode(
                 zone_id=zone_id,
                 node_uid=node_info['node_uid'],
                 channel=node_info['channel'],
-                cmd="stop",
-                params={},
+                cmd="set_relay",
+                params={"state": False},
                 greenhouse_uid=gh_uid,
             )
             
@@ -464,8 +464,8 @@ async def execute_fill_mode(
                     zone_id=zone_id,
                     node_uid=node_info['node_uid'],
                     channel=node_info['channel'],
-                    cmd="stop",
-                    params={},
+                    cmd="set_relay",
+                    params={"state": False},
                     greenhouse_uid=gh_uid,
                 )
                 
@@ -543,13 +543,13 @@ async def execute_drain_mode(
     
     node_info = nodes[0]
     
-    # Отправляем команду drain через единый оркестратор
+    # Отправляем команду включения через единый оркестратор
     drain_result = await send_command(
         zone_id=zone_id,
         node_uid=node_info['node_uid'],
         channel=node_info['channel'],
-        cmd="drain",
-        params={"target_level": target_level},
+        cmd="set_relay",
+        params={"state": True},
         greenhouse_uid=gh_uid,
         deadline_ms=int((drain_start_time.timestamp() + max_duration_sec) * 1000),
     )
@@ -586,8 +586,8 @@ async def execute_drain_mode(
                 zone_id=zone_id,
                 node_uid=node_info['node_uid'],
                 channel=node_info['channel'],
-                cmd="stop",
-                params={},
+                cmd="set_relay",
+                params={"state": False},
                 greenhouse_uid=gh_uid,
             )
             
@@ -614,8 +614,8 @@ async def execute_drain_mode(
                     zone_id=zone_id,
                     node_uid=node_info['node_uid'],
                     channel=node_info['channel'],
-                    cmd="stop",
-                    params={},
+                    cmd="set_relay",
+                    params={"state": False},
                     greenhouse_uid=gh_uid,
                 )
                 
@@ -726,8 +726,8 @@ async def calibrate_flow(
         zone_id=zone_id,
         node_uid=pump_node_uid,
         channel=pump_channel,
-        cmd="run",
-        params={"sec": pump_duration_sec},
+        cmd="run_pump",
+        params={"duration_ms": int(pump_duration_sec * 1000)},
         greenhouse_uid=gh_uid,
     )
     

@@ -112,7 +112,7 @@ npx playwright test specs/01-login.spec.ts
 
 ### 5. Commands (`05-commands.spec.ts`)
 - Отправка команды узлу
-- Проверка статусов SENT/ACK/ACCEPTED/DONE в UI
+- Проверка статусов SENT/ACK/DONE/NO_EFFECT в UI
 - Обновление без перезагрузки (WebSocket)
 - Отображение ошибки при некорректном канале
 

@@ -8,6 +8,10 @@
 - как backend интегрируется с Python-сервисом, MQTT и фронтендом;
 - какие правила должны соблюдать разработчики и ИИ-агенты.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Назначение Backend

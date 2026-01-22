@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\DigitalTwinClient;
+use App\Jobs\CompleteSimulationJob;
 use App\Models\ZoneSimulation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,13 +43,14 @@ class RunSimulationJob implements ShouldQueue
                 ? $this->params['scenario']
                 : [];
             $simDurationMinutes = $this->params['sim_duration_minutes'] ?? null;
+            $isLiveSimulation = is_numeric($simDurationMinutes) && (int) $simDurationMinutes > 0;
 
             $nowIso = now()->toIso8601String();
             $simulationMeta = [
                 'real_started_at' => $nowIso,
                 'sim_started_at' => $nowIso,
             ];
-            if (is_numeric($simDurationMinutes) && (int) $simDurationMinutes > 0) {
+            if ($isLiveSimulation) {
                 $timeScale = ($durationHours * 60) / (int) $simDurationMinutes;
                 $simulationMeta['real_duration_minutes'] = (int) $simDurationMinutes;
                 $simulationMeta['time_scale'] = $timeScale;
@@ -75,7 +77,20 @@ class RunSimulationJob implements ShouldQueue
                 'status' => 'processing',
                 'started_at' => now()->toIso8601String(),
                 'simulation_id' => $simulation->id,
+                'sim_duration_minutes' => $isLiveSimulation ? (int) $simDurationMinutes : null,
             ], 3600); // Храним 1 час
+
+            if ($isLiveSimulation) {
+                CompleteSimulationJob::dispatch($simulation->id, $this->jobId)
+                    ->delay(now()->addMinutes((int) $simDurationMinutes));
+                Log::info('Simulation job scheduled completion', [
+                    'job_id' => $this->jobId,
+                    'zone_id' => $this->zoneId,
+                    'simulation_id' => $simulation->id,
+                    'real_duration_minutes' => (int) $simDurationMinutes,
+                ]);
+                return;
+            }
 
             // Выполняем симуляцию
             $result = $client->simulateZone($this->zoneId, [

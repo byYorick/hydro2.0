@@ -63,9 +63,7 @@ async def publish_zone_command(
         )
 
     if not req.get_command_name():
-        raise HTTPException(
-            status_code=400, detail="Either 'cmd' or 'type' must be provided"
-        )
+        raise HTTPException(status_code=400, detail="'cmd' is required")
 
     zone_uid = None
     s = get_settings()
@@ -75,7 +73,6 @@ async def publish_zone_command(
 
     try:
         payload = _create_command_payload(
-            cmd_type=req.type,
             cmd=req.cmd,
             cmd_id=req.cmd_id,
             params=req.params,
@@ -105,7 +102,7 @@ async def publish_zone_command(
                     logger.warning(
                         f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
                     )
-            if cmd_status in ("ack", "done", "failed"):
+            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
                 logger.info(
                     "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
                     cmd_id,
@@ -294,10 +291,8 @@ async def publish_node_command(
             status_code=400, detail="greenhouse_uid, zone_id and channel are required"
         )
 
-    if not req.get_command_name():
-        raise HTTPException(
-            status_code=400, detail="Either 'cmd' or 'type' must be provided"
-        )
+    if not req.cmd:
+        raise HTTPException(status_code=400, detail="'cmd' is required")
 
     zone_uid = None
     s = get_settings()
@@ -307,7 +302,6 @@ async def publish_node_command(
 
     try:
         payload = _create_command_payload(
-            cmd_type=req.type,
             cmd=req.cmd,
             cmd_id=req.cmd_id,
             params=req.params,
@@ -337,7 +331,7 @@ async def publish_node_command(
                     logger.warning(
                         f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
                     )
-            if cmd_status in ("ack", "done", "failed"):
+            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
                 logger.info(
                     "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
                     cmd_id,
@@ -518,8 +512,8 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     """
     _auth_ingest(request)
 
-    if not req.get_command_name():
-        raise HTTPException(status_code=400, detail="Either 'cmd' or 'type' must be provided")
+    if not req.cmd:
+        raise HTTPException(status_code=400, detail="'cmd' is required")
 
     if not (req.greenhouse_uid and req.zone_id and req.node_uid and req.channel):
         raise HTTPException(
@@ -538,7 +532,6 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
 
     try:
         payload = _create_command_payload(
-            cmd_type=req.type,
             cmd=req.cmd,
             cmd_id=cmd_id,
             params=params_without_cmd_id,
@@ -586,7 +579,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
                     logger.warning(
                         f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
                     )
-            if cmd_status in ("ack", "done", "failed"):
+            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
                 logger.info(
                     "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
                     cmd_id,

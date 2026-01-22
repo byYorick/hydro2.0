@@ -40,18 +40,19 @@ class CommandValidator:
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
         
-        amount = params.get('ml') or params.get('amount')
-        if amount is not None:
-            try:
-                amount = float(amount)
-            except (ValueError, TypeError):
-                return False, f"Invalid amount type: {amount}"
-            if amount <= 0:
-                return False, f"Amount must be positive, got {amount}"
-            # Максимальная доза зависит от типа
-            max_amount = self.settings.PH_PID_MAX_OUTPUT if params.get('type') in ['add_acid', 'add_base'] else self.settings.EC_PID_MAX_OUTPUT
-            if amount > max_amount:
-                return False, f"Amount too high: {amount}ml (max: {max_amount}ml)"
+        ml = params.get('ml')
+        if ml is None:
+            return False, "Missing 'ml' in params"
+        try:
+            ml = float(ml)
+        except (ValueError, TypeError):
+            return False, f"Invalid ml type: {ml}"
+        if ml <= 0:
+            return False, f"Amount must be positive, got {ml}"
+        # Максимальная доза зависит от типа
+        max_amount = self.settings.PH_PID_MAX_OUTPUT if params.get('type') in ['add_acid', 'add_base'] else self.settings.EC_PID_MAX_OUTPUT
+        if ml > max_amount:
+            return False, f"Amount too high: {ml}ml (max: {max_amount}ml)"
 
         # Проверка типа корректировки
         correction_type = params.get('type')
@@ -127,7 +128,7 @@ class CommandValidator:
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
 
-        ml = params.get('ml') or params.get('amount')
+        ml = params.get('ml')
         if ml is None:
             return False, "Missing 'ml' in params"
         try:

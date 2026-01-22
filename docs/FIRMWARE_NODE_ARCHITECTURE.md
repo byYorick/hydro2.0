@@ -54,7 +54,7 @@
   - Актуаторы `ph_doser_up`/`ph_doser_down` типа `PUMP`, включая `safe_limits` и `gpio`.
 - Набор параметров (`poll_interval_ms`, `precision`, `GPIO`, `safe_limits`, `ml_per_second`) описан в `ph_node_channel_map.h`.
 - Обработчик `ph_node_config_handler_wrapper` заменяет `channels` на `ph_node_build_config_channels` и вызывает оригинальный процессор.
-- Команды (`run_pump`, `stop_pump`, `calibrate`) подключаются через `node_command_handler_register`.
+- Команды (`run_pump`, `calibrate`) подключаются через `node_command_handler_register`.
 
 ### ec_node (текущее состояние)
 
@@ -64,7 +64,7 @@
 - Каналы по умолчанию:
   - `ec_sensor` (SENSOR, EC, unit mS/cm)
   - `pump_nutrient` (ACTUATOR/PUMP)
-- Команды: `run_pump`, `stop_pump`, `calibrate`, `calibrate_ec`, `test_sensor`.
+- Команды: `run_pump`, `calibrate`, `calibrate_ec`, `test_sensor`.
 - Телеметрия:
   - `ec_sensor` (metric `EC`, unit `mS/cm`)
   - `TDS` публикуется как `METRIC_TYPE_CUSTOM` (unit `ppm`) при наличии данных.
@@ -96,7 +96,7 @@
 
 - Команда зависит от типа актуатора:
   - Насос: `run_pump` с `duration_ms`.
-  - Реле: `set_state` с `state` и `duration_ms`.
+  - Реле: `set_relay` с `state` и `duration_ms`.
   - Клапан: `set_relay` с `state` и `duration_ms`.
 - Ответы:
   - Сразу `ACCEPTED` (если команда валидна и запуск успешен).
@@ -148,7 +148,7 @@
 - Если один насос активен, следующий `run_pump` ставится в очередь (FIFO).
 - Команда в очереди получает `ACCEPTED` с `data.queued=true`.
 - При cooldown канала добавляется `data.cooldown_ms`.
-- Следующий насос запускается только после `DONE`/`stop_pump`.
+- Следующий насос запускается только после `DONE`/`FAILED`.
 - Одновременно два насоса не включаются.
 - Ошибки очереди:
   - `pump_queue_full` — очередь переполнена.

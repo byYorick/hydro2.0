@@ -408,12 +408,6 @@ esp_err_t climate_node_framework_init_integration(void) {
         return err;
     }
 
-    err = node_command_handler_register("set_relay_state", handle_set_relay, NULL);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register set_relay_state handler: %s", esp_err_to_name(err));
-        return err;
-    }
-
     err = node_command_handler_register("set_pwm", handle_set_pwm, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register set_pwm handler: %s", esp_err_to_name(err));

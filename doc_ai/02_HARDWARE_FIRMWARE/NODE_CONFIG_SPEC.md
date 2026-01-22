@@ -14,6 +14,10 @@
 - `../01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 - Шаблоны: `configs/nodes/*.json`
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Общее описание

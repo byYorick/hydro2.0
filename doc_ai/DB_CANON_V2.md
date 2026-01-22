@@ -1,6 +1,10 @@
 # DB_CANON_V2.md
 # Каноническая структура БД для модели "Теплица → Зона → Цикл (центр истины) → Растение → Рецепты → Фазы"
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 Дата: 2025-12-25
 Ветка: `refactor/grow-cycle-centric`
 

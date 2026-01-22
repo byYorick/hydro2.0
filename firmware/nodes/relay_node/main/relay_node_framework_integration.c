@@ -342,7 +342,7 @@ static void relay_node_build_error_details(
             if (channel) {
                 cJSON_AddStringToObject(extra, "channel", channel);
             }
-            cJSON_AddStringToObject(extra, "action", action ? action : "set_state");
+            cJSON_AddStringToObject(extra, "action", action ? action : "set_relay");
             cJSON_AddNumberToObject(extra, "requested_state", requested_state);
             cJSON_AddStringToObject(extra, "esp_err", esp_err_to_name(err));
         }
@@ -420,7 +420,7 @@ static esp_err_t relay_node_init_channel_callback(
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-// Обработчик команды set_state с командным автоматом
+// Обработчик команды set_relay с командным автоматом
 // Состояния: ACCEPTED -> DONE/FAILED
 static esp_err_t handle_set_state(
     const char *channel,
@@ -440,7 +440,7 @@ static esp_err_t handle_set_state(
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
     int state = 0;
     if (!relay_node_parse_state(state_item, &state)) {
-        ESP_LOGW(TAG, "set_state invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
+        ESP_LOGW(TAG, "set_relay invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
             cmd_id,
             "FAILED",
@@ -487,7 +487,7 @@ static esp_err_t handle_set_state(
             err,
             channel,
             state,
-            "set_state",
+            "set_relay",
             &error_code,
             &error_message,
             &error_details
@@ -644,19 +644,9 @@ esp_err_t relay_node_framework_init(void) {
     }
 
     // Регистрация обработчиков команд
-    err = node_command_handler_register("set_state", handle_set_state, NULL);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to register set_state handler: %s", esp_err_to_name(err));
-    }
-
     err = node_command_handler_register("set_relay", handle_set_state, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register set_relay handler: %s", esp_err_to_name(err));
-    }
-
-    err = node_command_handler_register("set_relay_state", handle_set_state, NULL);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to register set_relay_state handler: %s", esp_err_to_name(err));
     }
 
     err = node_command_handler_register("toggle", handle_toggle, NULL);

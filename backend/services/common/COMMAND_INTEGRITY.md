@@ -4,6 +4,11 @@
 
 **ВАЖНО**: Все команды из `backend/services/common/*` должны идти через единый оркестратор `command_orchestrator.send_command()`, а НЕ напрямую через `mqtt_client.publish_json()`.
 
+Единый формат команд (без legacy):
+```
+{"cmd_id","cmd","params","ts","sig"}
+```
+
 ## Правила
 
 1. **Запрещено** использовать `mqtt_client.publish_json()` для отправки команд с полем `"cmd"` в `backend/services/common/*`
@@ -22,8 +27,8 @@ result = await send_command(
     zone_id=zone_id,
     node_uid=node_uid,
     channel=channel,
-    cmd="fill",
-    params={"target_level": 0.9},
+    cmd="run_pump",
+    params={"duration_ms": 15000},
     wait_for_response=True,  # Опционально: ждать результата
     timeout_sec=30.0
 )
@@ -37,15 +42,15 @@ if result.get("status") == "sent":
 
 ```python
 # ЗАПРЕЩЕНО: прямая публикация в MQTT
-payload = {"cmd": "fill", "params": {"target_level": 0.9}}
-topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/command"
+payload = {"cmd": "run_pump", "params": {"duration_ms": 15000}}
+topic = f"hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command"
 mqtt_client.publish_json(topic, payload, qos=1, retain=False)
 ```
 
 ## Преимущества единого оркестратора
 
 1. **Автоматический cmd_id**: каждая команда получает уникальный идентификатор
-2. **Отслеживание статусов**: команды записываются в БД со статусами QUEUED/SENT/ACCEPTED/DONE/FAILED
+2. **Отслеживание статусов**: команды записываются в БД со статусами QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
 3. **Ретраи**: оркестратор может повторять неудачные попытки
 4. **Мониторинг**: все команды видны в БД и могут быть отслежены
 5. **Единый формат**: все команды соответствуют единому контракту
@@ -76,4 +81,4 @@ grep -r 'mqtt_client\.publish_json' backend/services/common/ --exclude-dir=test_
 
 ✅ Все команды имеют `cmd_id` и записываются в БД
 
-✅ Статусы команд отслеживаются: QUEUED → SENT → ACCEPTED → DONE/FAILED
+✅ Статусы команд отслеживаются: QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT (+ SEND_FAILED → SENT)

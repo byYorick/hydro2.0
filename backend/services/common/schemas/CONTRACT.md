@@ -23,7 +23,7 @@
    - Методы для проверки состояния команды
 
 4. **База данных**
-   - State-machine статусов: `QUEUED/SENT/ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED`
+   - State-machine статусов: `QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`
 
 ## Формат команды (Command)
 
@@ -140,10 +140,13 @@ response = CommandResponse.error(
 | Статус | Описание | Переходы |
 |--------|----------|----------|
 | `QUEUED` | Команда поставлена в очередь | → SENT, SEND_FAILED |
-| `SENT` | Команда отправлена в MQTT | → ACCEPTED, TIMEOUT, SEND_FAILED |
-| `ACCEPTED` | Команда принята узлом | → DONE, FAILED, TIMEOUT |
+| `SENT` | Команда отправлена в MQTT | → ACK, TIMEOUT, SEND_FAILED |
+| `ACK` | Команда принята узлом | → DONE, NO_EFFECT, ERROR, INVALID, BUSY, TIMEOUT |
 | `DONE` | Команда успешно выполнена | (конечное состояние) |
-| `FAILED` | Команда завершилась с ошибкой | (конечное состояние) |
+| `NO_EFFECT` | Команда выполнена без эффекта | (конечное состояние) |
+| `ERROR` | Команда завершилась с ошибкой | (конечное состояние) |
+| `INVALID` | Команда отклонена из-за параметров/валидации | (конечное состояние) |
+| `BUSY` | Узел занят (временная недоступность) | (конечное состояние) |
 | `TIMEOUT` | Команда не получила ответа в срок | (конечное состояние) |
 | `SEND_FAILED` | Ошибка при отправке команды | (конечное состояние) |
 
@@ -151,7 +154,10 @@ response = CommandResponse.error(
 
 Команда всегда завершается в одно из конечных состояний:
 - `DONE` - успешное выполнение
-- `FAILED` - ошибка выполнения
+- `NO_EFFECT` - выполнение без эффекта
+- `ERROR` - ошибка выполнения
+- `INVALID` - ошибка валидации
+- `BUSY` - узел занят
 - `TIMEOUT` - таймаут
 - `SEND_FAILED` - ошибка отправки
 
@@ -160,9 +166,9 @@ response = CommandResponse.error(
 PostgreSQL CHECK constraint гарантирует, что статус может быть только одним из допустимых значений:
 
 ```sql
-ALTER TABLE commands 
-ADD CONSTRAINT commands_status_check 
-CHECK (status IN ('QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'));
+ALTER TABLE commands
+ADD CONSTRAINT commands_status_check
+CHECK (status IN ('QUEUED', 'SENT', 'ACK', 'DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'));
 ```
 
 ## DoD (Definition of Done)

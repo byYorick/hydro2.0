@@ -12,6 +12,10 @@
 - Mosquitto обслуживает MQTT-трафик узлов ESP32,
 - Python-сервис обрабатывает MQTT и управляет контроллерами.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Структура репозитория

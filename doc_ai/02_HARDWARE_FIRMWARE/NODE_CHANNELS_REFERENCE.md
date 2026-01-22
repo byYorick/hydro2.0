@@ -4,6 +4,10 @@
 Документ описывает типы каналов, ключи, единицы измерения и типичные payload-ы.
 Он дополняет `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md` и `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Общие принципы

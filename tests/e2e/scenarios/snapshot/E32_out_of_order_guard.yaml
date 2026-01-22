@@ -86,7 +86,7 @@ actions:
     type: api_post
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      cmd: set_relay_state
+      cmd: set_relay
       channel: main_pump
       params:
         state: false
@@ -98,7 +98,7 @@ actions:
     type: database_query
     query: |
       INSERT INTO zone_events (zone_id, type, entity_type, entity_id, payload_json, created_at)
-      VALUES (:zone_id, 'COMMAND_SENT', 'command', 'test-cmd-' || :timestamp, '{"cmd": "set_relay_state", "channel": "main_pump"}'::jsonb, NOW())
+      VALUES (:zone_id, 'COMMAND_SENT', 'command', 'test-cmd-' || :timestamp, '{"cmd": "set_relay", "channel": "main_pump"}'::jsonb, NOW())
       RETURNING id
     params:
       zone_id: ${zone_id}

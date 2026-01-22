@@ -20,7 +20,7 @@ extern "C" {
  * 
  * Регистрирует обработчики команд и настраивает callbacks для:
  * - Обработки NodeConfig
- * - Обработки команд (run_pump, stop_pump, calibrate)
+ * - Обработки команд (run_pump, calibrate)
  * - Публикации телеметрии
  * 
  * @return ESP_OK при успехе
@@ -49,4 +49,3 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx);
 #endif
 
 #endif // EC_NODE_FRAMEWORK_INTEGRATION_H
-

@@ -229,6 +229,18 @@
           <div class="text-xs text-[color:var(--text-muted)]">
             Статус: {{ simulationStatusLabel }}
           </div>
+          <div
+            v-if="simulationProgressDetails"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            {{ simulationProgressDetails }}
+          </div>
+          <div
+            v-if="simulationSimTimeLabel"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            {{ simulationSimTimeLabel }}
+          </div>
           <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
             <div
               class="relative h-2 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
@@ -382,6 +394,10 @@ const lastDefaultsRecipeId = ref<number | null>(null)
 const recipeDefaultsCache = new Map<number, RecipeDefaults>()
 const simulationJobId = ref<string | null>(null)
 const simulationStatus = ref<'idle' | 'queued' | 'processing' | 'completed' | 'failed'>('idle')
+const simulationProgressValue = ref<number | null>(null)
+const simulationElapsedMinutes = ref<number | null>(null)
+const simulationRealDurationMinutes = ref<number | null>(null)
+const simulationSimNow = ref<string | null>(null)
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
 const resolveCssColor = (variable: string, fallback: string): string => {
@@ -481,6 +497,9 @@ const chartOption = computed<EChartsOption | null>(() => {
 })
 
 const simulationProgress = computed(() => {
+  if (simulationProgressValue.value !== null) {
+    return Math.round(simulationProgressValue.value * 100)
+  }
   switch (simulationStatus.value) {
     case 'queued':
       return 20
@@ -493,6 +512,28 @@ const simulationProgress = computed(() => {
     default:
       return 0
   }
+})
+
+const simulationProgressDetails = computed(() => {
+  if (simulationProgressValue.value === null) return null
+  const percent = Math.round(simulationProgressValue.value * 100)
+  if (simulationElapsedMinutes.value !== null && simulationRealDurationMinutes.value !== null) {
+    const remaining = Math.max(
+      0,
+      Math.round((simulationRealDurationMinutes.value - simulationElapsedMinutes.value) * 100) / 100
+    )
+    return `Прогресс: ${percent}% (${simulationElapsedMinutes.value} / ${simulationRealDurationMinutes.value} мин, осталось ${remaining} мин)`
+  }
+  return `Прогресс: ${percent}%`
+})
+
+const simulationSimTimeLabel = computed(() => {
+  if (!simulationSimNow.value) return null
+  const parsed = new Date(simulationSimNow.value)
+  if (Number.isNaN(parsed.getTime())) {
+    return `Сим-время: ${simulationSimNow.value}`
+  }
+  return `Сим-время: ${parsed.toLocaleString()}`
 })
 
 const simulationStatusLabel = computed(() => {
@@ -663,6 +704,12 @@ function clearSimulationPolling(): void {
   }
 }
 
+function clampProgress(value: number): number {
+  if (value < 0) return 0
+  if (value > 1) return 1
+  return value
+}
+
 async function pollSimulationStatus(jobId: string): Promise<void> {
   try {
     const response = await api.get<{ status: string; data?: any }>(`/simulations/${jobId}`)
@@ -672,6 +719,27 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
     const status = data.status as typeof simulationStatus.value | undefined
     if (status) {
       simulationStatus.value = status
+    }
+
+    if (typeof data.progress === 'number' && Number.isFinite(data.progress)) {
+      simulationProgressValue.value = clampProgress(data.progress)
+    } else {
+      simulationProgressValue.value = null
+    }
+    if (typeof data.elapsed_minutes === 'number' && Number.isFinite(data.elapsed_minutes)) {
+      simulationElapsedMinutes.value = Math.round(data.elapsed_minutes * 100) / 100
+    } else {
+      simulationElapsedMinutes.value = null
+    }
+    if (typeof data.real_duration_minutes === 'number' && Number.isFinite(data.real_duration_minutes)) {
+      simulationRealDurationMinutes.value = Math.round(data.real_duration_minutes * 100) / 100
+    } else {
+      simulationRealDurationMinutes.value = null
+    }
+    if (typeof data.sim_now === 'string') {
+      simulationSimNow.value = data.sim_now
+    } else {
+      simulationSimNow.value = null
     }
 
     if (status === 'completed') {
@@ -712,6 +780,10 @@ watch(
       }
     } else {
       clearSimulationPolling()
+      simulationProgressValue.value = null
+      simulationElapsedMinutes.value = null
+      simulationRealDurationMinutes.value = null
+      simulationSimNow.value = null
     }
   }
 )
@@ -738,6 +810,10 @@ watch(
 
 onUnmounted(() => {
   clearSimulationPolling()
+  simulationProgressValue.value = null
+  simulationElapsedMinutes.value = null
+  simulationRealDurationMinutes.value = null
+  simulationSimNow.value = null
 })
 
 async function onSubmit(): Promise<void> {
@@ -746,6 +822,10 @@ async function onSubmit(): Promise<void> {
   results.value = null
   simulationJobId.value = null
   simulationStatus.value = 'queued'
+  simulationProgressValue.value = null
+  simulationElapsedMinutes.value = null
+  simulationRealDurationMinutes.value = null
+  simulationSimNow.value = null
   
   try {
     interface SimulationPayload {

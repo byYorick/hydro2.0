@@ -1,8 +1,40 @@
 """Tests for correction_controller."""
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
+
+
+class _PidZone:
+    def __init__(self, value: str):
+        self.value = value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _PidZone) and other.value == self.value
+
+
+class _PidStub:
+    def __init__(self, output: float):
+        self._zone = _PidZone("close")
+        self.config = SimpleNamespace(
+            dead_zone=0.0,
+            close_zone=0.0,
+            far_zone=0.0,
+            zone_coeffs={self._zone: SimpleNamespace(kp=1.0, ki=0.0, kd=0.0)},
+        )
+        self.integral = 0.0
+        self.prev_error = 0.0
+        self._output = output
+
+    def compute(self, current: float, dt_seconds: float) -> float:
+        return self._output
+
+    def get_zone(self):
+        return self._zone
 
 
 @pytest.mark.asyncio
@@ -88,7 +120,8 @@ async def test_ph_controller_check_and_correct_low_ph():
     with patch("correction_controller.should_apply_correction") as mock_should, \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch("correction_controller.record_correction", new_callable=AsyncMock), \
-         patch("correction_controller.create_ai_log", new_callable=AsyncMock):
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
         telemetry_ts = {"PH": datetime.now(timezone.utc)}
@@ -120,7 +153,8 @@ async def test_ph_controller_check_and_correct_high_ph():
     with patch("correction_controller.should_apply_correction") as mock_should, \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch("correction_controller.record_correction", new_callable=AsyncMock), \
-         patch("correction_controller.create_ai_log", new_callable=AsyncMock):
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
         telemetry_ts = {"PH": datetime.now(timezone.utc)}
@@ -151,7 +185,8 @@ async def test_ph_controller_check_and_correct_no_water():
     with patch("correction_controller.should_apply_correction") as mock_should, \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch("correction_controller.record_correction", new_callable=AsyncMock), \
-         patch("correction_controller.create_ai_log", new_callable=AsyncMock):
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
         telemetry_ts = {"PH": datetime.now(timezone.utc)}
@@ -195,7 +230,8 @@ async def test_ec_controller_check_and_correct_low_ec():
     with patch("correction_controller.should_apply_correction") as mock_should, \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch("correction_controller.record_correction", new_callable=AsyncMock), \
-         patch("correction_controller.create_ai_log", new_callable=AsyncMock):
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
         
         telemetry_ts = {"EC": datetime.now(timezone.utc)}

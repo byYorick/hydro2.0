@@ -57,15 +57,17 @@
 gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
 ```
 
-### set_state
+### set_relay
 
 Установка состояния реле (OPEN/CLOSED):
 
 ```json
 {
-  "cmd": "set_state",
+  "cmd": "set_relay",
   "cmd_id": "cmd-123",
-  "state": 1
+  "params": {
+    "state": 1
+  }
 }
 ```
 
@@ -95,7 +97,8 @@ gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
 ```json
 {
   "cmd": "toggle",
-  "cmd_id": "cmd-124"
+  "cmd_id": "cmd-124",
+  "params": {}
 }
 ```
 
@@ -293,15 +296,15 @@ idf.py monitor
 ```bash
 # Включить реле
 mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"set_state","cmd_id":"cmd-001","state":1}'
+  -m '{"cmd":"set_relay","cmd_id":"cmd-001","params":{"state":1}}'
 
 # Выключить реле
 mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"set_state","cmd_id":"cmd-002","state":0}'
+  -m '{"cmd":"set_relay","cmd_id":"cmd-002","params":{"state":0}}'
 
 # Переключить реле
 mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"toggle","cmd_id":"cmd-003"}'
+  -m '{"cmd":"toggle","cmd_id":"cmd-003","params":{}}'
 ```
 
 ## Отладка

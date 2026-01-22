@@ -73,7 +73,7 @@ class CommandHandler:
     Обработчик команд с идемпотентностью.
     
     Поддерживает:
-    - Все команды: set_relay_state, run, stop, set_pwm, hil_set_sensor, 
+    - Все команды: set_relay, run_pump, dose, set_pwm, hil_set_sensor,
       hil_raise_error, hil_clear_error, hil_set_flow, hil_set_current
     - Идемпотентность через LRU cache
     - State machine для управления статусами
@@ -123,15 +123,11 @@ class CommandHandler:
         self._ph_delta_per_ml = 0.01
         self._ec_delta_per_ml = 0.02
         
-        # Маппинг команд
+        # Маппинг команд (strict format, без legacy-алиасов)
         self.command_map = {
-            "set_relay_state": self._handle_set_relay_state,
-            "set_relay": self._handle_set_relay_state,  # Алиас
-            "run": self._handle_run,
-            "run_pump": self._handle_run,  # Алиас
+            "set_relay": self._handle_set_relay,
+            "run_pump": self._handle_run,
             "dose": self._handle_dose,
-            "stop": self._handle_stop,
-            "stop_pump": self._handle_stop,  # Алиас
             "set_pwm": self._handle_set_pwm,
             "hil_set_sensor": self._handle_hil_set_sensor,
             "hil_raise_error": self._handle_hil_raise_error,
@@ -205,21 +201,23 @@ class CommandHandler:
             
             channel = parts[4]
             
-            # Валидация обязательных полей
-            if "cmd_id" not in command_dict:
-                logger.error("Command missing cmd_id")
-                self._schedule_async(self._send_error_response(channel, None, "INVALID", "Missing cmd_id"))
-                return
-            
-            if "cmd" not in command_dict:
-                logger.error("Command missing cmd")
-                self._schedule_async(self._send_error_response(channel, command_dict.get("cmd_id"), "INVALID", "Missing cmd"))
+            validation_error = self._validate_command_payload(command_dict)
+            if validation_error:
+                logger.error(f"Command validation failed: {validation_error}")
+                self._schedule_async(
+                    self._send_error_response(
+                        channel,
+                        command_dict.get("cmd_id"),
+                        "INVALID",
+                        validation_error,
+                    )
+                )
                 return
             
             cmd_id = command_dict["cmd_id"]
             cmd = command_dict["cmd"]
             params = command_dict.get("params", {})
-            exec_time_ms = command_dict.get("exec_time_ms", 100)
+            exec_time_ms = 100
             
             # Обрабатываем команду
             self._schedule_async(self._handle_command(channel, cmd_id, cmd, params, exec_time_ms))
@@ -252,21 +250,23 @@ class CommandHandler:
                 self._schedule_async(self._send_error_response(channel, None, "INVALID", "Invalid JSON"))
                 return
             
-            # Валидация обязательных полей
-            if "cmd_id" not in data:
-                logger.error("Command missing cmd_id")
-                self._schedule_async(self._send_error_response(channel, None, "INVALID", "Missing cmd_id"))
-                return
-            
-            if "cmd" not in data:
-                logger.error("Command missing cmd")
-                self._schedule_async(self._send_error_response(channel, data.get("cmd_id"), "INVALID", "Missing cmd"))
+            validation_error = self._validate_command_payload(data)
+            if validation_error:
+                logger.error(f"Command validation failed: {validation_error}")
+                self._schedule_async(
+                    self._send_error_response(
+                        channel,
+                        data.get("cmd_id"),
+                        "INVALID",
+                        validation_error,
+                    )
+                )
                 return
             
             cmd_id = data["cmd_id"]
             cmd = data["cmd"]
             params = data.get("params", {})
-            exec_time_ms = data.get("exec_time_ms", 100)  # По умолчанию 100ms
+            exec_time_ms = 100  # Strict format: exec_time_ms не используется
             
             # Мониторинг: увеличиваем счетчик полученных команд
             self._command_stats["total_received"] += 1
@@ -298,6 +298,29 @@ class CommandHandler:
             except:
                 pass
     
+    def _validate_command_payload(self, payload: Dict[str, Any]) -> Optional[str]:
+        required_keys = {"cmd_id", "cmd", "params", "ts", "sig"}
+        allowed_keys = set(required_keys)
+        if not isinstance(payload, dict):
+            return "Command payload must be an object"
+        missing = required_keys - set(payload.keys())
+        if missing:
+            return f"Missing fields: {', '.join(sorted(missing))}"
+        extra = set(payload.keys()) - allowed_keys
+        if extra:
+            return f"Unknown fields: {', '.join(sorted(extra))}"
+        if not isinstance(payload.get("cmd_id"), str) or not payload.get("cmd_id"):
+            return "Invalid cmd_id"
+        if not isinstance(payload.get("cmd"), str) or not payload.get("cmd"):
+            return "Invalid cmd"
+        if not isinstance(payload.get("params"), dict):
+            return "Invalid params (must be object)"
+        if not isinstance(payload.get("ts"), int) or payload.get("ts", -1) < 0:
+            return "Invalid ts"
+        if not isinstance(payload.get("sig"), str) or not payload.get("sig"):
+            return "Invalid sig"
+        return None
+
     async def _handle_command(
         self,
         channel: str,
@@ -573,8 +596,8 @@ class CommandHandler:
     
     # Обработчики команд
     
-    def _handle_set_relay_state(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
-        """Обработать команду set_relay_state."""
+    def _handle_set_relay(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать команду set_relay."""
         state = params.get("state")
         channel = params.get("channel", "main_pump")  # По умолчанию main_pump
         
@@ -596,7 +619,7 @@ class CommandHandler:
             return CommandStatus.DONE, {"details": f"Relay {channel} set to {state}"}
     
     def _handle_run(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
-        """Обработать команду run (запуск насоса)."""
+        """Обработать команду run_pump (запуск насоса)."""
         channel = params.get("channel", "main_pump")
         duration_ms = params.get("duration_ms", 0)
         correction_type = params.get("type")
@@ -681,7 +704,7 @@ class CommandHandler:
         logger.info(f"Stopped pump {channel} after {duration_ms}ms")
     
     def _handle_stop(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
-        """Обработать команду stop (остановка насоса)."""
+        """Обработать команду stop (legacy, не используется в strict режиме)."""
         channel = params.get("channel", "main_pump")
         
         # Используем модель для остановки

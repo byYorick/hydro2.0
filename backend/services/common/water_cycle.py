@@ -389,12 +389,12 @@ async def tick_recirculation(
     
     # Формируем команду для насоса
     # Для NC-насоса: relay OPEN = насос OFF, relay CLOSED = насос ON
-    relay_state = "OPEN" if desired_state == "OFF" else "CLOSED"
+    relay_state = desired_state == "ON"
     
     # Если включаем насос, добавляем информацию для мониторинга no_flow
     event_details = {
         'desired_state': desired_state,
-        'relay_state': relay_state,
+        'relay_state': "CLOSED" if relay_state else "OPEN",
         'is_nc_pump': is_nc_pump,
         'max_off_minutes': max_off_minutes,
     }
@@ -409,9 +409,9 @@ async def tick_recirculation(
     return {
         'node_uid': node_info["uid"],
         'channel': pump_channel,
-        'cmd': 'set_relay_state',
+        'cmd': 'set_relay',
         'params': {
-            'state': relay_state,  # OPEN или CLOSED
+            'state': relay_state,
             'reason': 'recirculation_control'
         },
         'event_type': 'RECIRCULATION_STATE_CHANGED',
@@ -577,8 +577,8 @@ async def execute_water_change(
                 zone_id=zone_id,
                 node_uid=node_info['uid'],
                 channel=pump_channel,
-                cmd="set_relay_state",
-                params={"state": "OPEN"},
+                cmd="set_relay",
+                params={"state": False},
                 greenhouse_uid=gh_uid,
             )
         

@@ -31,7 +31,9 @@ EC-нода для измерения электропроводности и у
 {
   "cmd": "run_pump",
   "cmd_id": "cmd-123",
-  "duration_ms": 2000
+  "params": {
+    "duration_ms": 2000
+  }
 }
 ```
 
@@ -41,8 +43,10 @@ EC-нода для измерения электропроводности и у
 {
   "cmd": "calibrate",
   "cmd_id": "cmd-124",
-  "stage": 1,
-  "tds_value": 1413
+  "params": {
+    "stage": 1,
+    "tds_value": 1413
+  }
 }
 ```
 

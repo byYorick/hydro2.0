@@ -44,7 +44,7 @@ async def send_command(
         zone_id: ID зоны
         node_uid: UID узла
         channel: Канал узла
-        cmd: Тип команды (например: "fill", "drain", "run", "stop")
+        cmd: Тип команды (например: "dose", "run_pump", "set_relay", "set_pwm")
         params: Параметры команды
         greenhouse_uid: UID теплицы (опционально, будет получен из БД если не указан)
         cmd_id: Идентификатор команды (генерируется автоматически если не указан)

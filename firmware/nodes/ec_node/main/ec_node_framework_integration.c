@@ -245,47 +245,6 @@ static esp_err_t handle_run_pump(
     return ESP_OK;
 }
 
-// Обработчик команды stop_pump
-static esp_err_t handle_stop_pump(
-    const char *channel,
-    const cJSON *params,
-    cJSON **response,
-    void *user_ctx
-) {
-    (void)params;
-    (void)user_ctx;
-
-    if (channel == NULL || response == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_err_t err = pump_driver_stop(channel);
-    if (err != ESP_OK) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "FAILED",
-            "pump_error",
-            "Failed to stop pump",
-            NULL
-        );
-        return err;
-    }
-
-    ec_node_cancel_test_done(channel, true);
-    ec_node_pump_queue_remove_channel(channel);
-    *response = node_command_handler_create_response(
-        NULL,
-        "DONE",
-        NULL,
-        NULL,
-        NULL
-    );
-
-    ESP_LOGI(TAG, "Pump %s stopped", channel);
-    ec_node_process_pump_queue();
-    return ESP_OK;
-}
-
 // Обработчик команды calibrate
 static esp_err_t handle_calibrate(
     const char *channel,
@@ -714,12 +673,6 @@ esp_err_t ec_node_framework_init_integration(void) {
     err = node_command_handler_register("run_pump", handle_run_pump, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register run_pump handler: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    err = node_command_handler_register("stop_pump", handle_stop_pump, NULL);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register stop_pump handler: %s", esp_err_to_name(err));
         return err;
     }
 

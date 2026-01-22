@@ -23,7 +23,7 @@ class Assertions:
         Проверить, что статусы команд изменяются монотонно.
         
         Ожидаемая последовательность:
-        QUEUED -> SENT -> ACCEPTED -> DONE
+        QUEUED -> SENT -> ACK -> DONE/NO_EFFECT
         
         Args:
             commands: Список команд с полем status, отсортированный по времени
@@ -37,9 +37,12 @@ class Assertions:
         status_order = {
             "QUEUED": 0,
             "SENT": 1,
-            "ACCEPTED": 2,
+            "ACK": 2,
             "DONE": 3,
-            "FAILED": -1,
+            "NO_EFFECT": 3,
+            "ERROR": -1,
+            "INVALID": -1,
+            "BUSY": -1,
             "TIMEOUT": -1,
             "SEND_FAILED": -1
         }
@@ -51,7 +54,7 @@ class Assertions:
             status_value = status_order.get(status, -1)
             
             if status_value == -1:
-                # FAILED, TIMEOUT, SEND_FAILED - это финальные статусы
+                # ERROR, INVALID, BUSY, TIMEOUT, SEND_FAILED - это финальные статусы
                 continue
             
             if status_value < last_status_value:
@@ -243,4 +246,3 @@ class Assertions:
         if db_probe.column_exists(table_name, column_name):
             raise AssertionError(f"Column '{column_name}' should not exist in table '{table_name}' but it does")
         return True
-

@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\TelemetryLast;
 use App\Models\Zone;
+use App\Models\ZoneSimulation;
 use App\Jobs\RunSimulationJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -128,9 +130,74 @@ class SimulationController extends Controller
             ], 404);
         }
 
+        $payload = $status;
+        $simulationId = $status['simulation_id'] ?? null;
+        if ($simulationId) {
+            $simulation = ZoneSimulation::find($simulationId);
+            if ($simulation) {
+                $payload['simulation'] = [
+                    'id' => $simulation->id,
+                    'status' => $simulation->status,
+                    'duration_hours' => $simulation->duration_hours,
+                    'step_minutes' => $simulation->step_minutes,
+                ];
+                $progress = $this->buildSimulationProgress($simulation, $payload);
+                if ($progress) {
+                    $payload = array_merge($payload, $progress);
+                }
+            }
+        }
+
         return response()->json([
             'status' => 'ok',
-            'data' => $status,
+            'data' => $payload,
         ]);
+    }
+
+    private function buildSimulationProgress(ZoneSimulation $simulation, array $payload): ?array
+    {
+        $scenario = $simulation->scenario ?? [];
+        $simMeta = [];
+        if (is_array($scenario) && isset($scenario['simulation']) && is_array($scenario['simulation'])) {
+            $simMeta = $scenario['simulation'];
+        }
+
+        $realDurationMinutes = $simMeta['real_duration_minutes'] ?? ($payload['sim_duration_minutes'] ?? null);
+        if (!is_numeric($realDurationMinutes) || (float) $realDurationMinutes <= 0) {
+            return null;
+        }
+
+        $realStartedAt = $simMeta['real_started_at'] ?? ($payload['started_at'] ?? null);
+        if (!$realStartedAt) {
+            $realStartedAt = $simulation->created_at?->toIso8601String();
+        }
+        if (!$realStartedAt) {
+            return null;
+        }
+
+        $realStarted = Carbon::parse($realStartedAt);
+        $now = now();
+        $elapsedSeconds = $realStarted->greaterThan($now) ? 0 : $realStarted->diffInSeconds($now);
+        $elapsedMinutes = $elapsedSeconds / 60;
+        $progress = min(1.0, $elapsedMinutes / (float) $realDurationMinutes);
+        if ($simulation->status === 'completed') {
+            $progress = 1.0;
+        }
+
+        $simNow = null;
+        $timeScale = $simMeta['time_scale'] ?? null;
+        $simStartedAt = $simMeta['sim_started_at'] ?? null;
+        if ($simStartedAt && is_numeric($timeScale)) {
+            $simNow = Carbon::parse($simStartedAt)
+                ->addSeconds($elapsedSeconds * (float) $timeScale)
+                ->toIso8601String();
+        }
+
+        return [
+            'progress' => round($progress, 4),
+            'elapsed_minutes' => round(min($elapsedMinutes, (float) $realDurationMinutes), 2),
+            'real_duration_minutes' => (int) $realDurationMinutes,
+            'sim_now' => $simNow,
+        ];
     }
 }

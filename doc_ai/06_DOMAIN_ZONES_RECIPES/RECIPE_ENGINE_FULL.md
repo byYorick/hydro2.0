@@ -11,6 +11,10 @@ Recipe Engine — это подсистема, которая управляет
 - ✅ Цели хранятся по колонкам, а не в JSON
 - ✅ Единый контракт через `EffectiveTargetsService`
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Назначение Recipe Engine

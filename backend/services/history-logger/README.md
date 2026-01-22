@@ -138,12 +138,12 @@ Health check endpoint.
 **Request:**
 ```json
 {
-  "cmd": "irrigate",
+  "cmd": "run_pump",
   "greenhouse_uid": "gh-1",
   "zone_id": 1,
   "node_uid": "nd-irrig-1",
   "channel": "default",
-  "params": {"duration_sec": 60},
+  "params": {"duration_ms": 60000},
   "trace_id": "trace-123"
 }
 ```
@@ -159,7 +159,7 @@ Health check endpoint.
 ```
 
 **Поддержка legacy формата:**
-- Можно использовать `type` вместо `cmd` (legacy)
+- Можно использовать `type` вместо `cmd`, но рекомендуется только `cmd`
 
 ### POST /zones/{zone_id}/commands
 Публикация команды для зоны.

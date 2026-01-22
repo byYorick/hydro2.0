@@ -74,7 +74,7 @@ actions:
     type: api_post
     endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      cmd: set_relay_state
+      cmd: set_relay
       channel: main_pump
       params:
         channel: main_pump

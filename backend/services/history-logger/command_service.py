@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def _create_command_payload(
-    cmd_type: Optional[str] = None,
     cmd_id: Optional[str] = None,
     params: Optional[dict] = None,
     cmd: Optional[str] = None,
@@ -27,13 +26,12 @@ def _create_command_payload(
 ) -> dict:
     """Создать payload для команды MQTT."""
     cmd_id = cmd_id or str(uuid.uuid4())
-    command_name = cmd or cmd_type
-    if not command_name:
-        raise ValueError("Either 'cmd' or 'type' must be provided")
+    if not cmd:
+        raise ValueError("'cmd' is required")
     if sig and ts is None:
         raise ValueError("sig requires ts")
 
-    payload = {"cmd": command_name, "cmd_id": cmd_id, "params": params or {}}
+    payload = {"cmd": cmd, "cmd_id": cmd_id, "params": params or {}}
 
     secret = get_settings().node_default_secret
     if ts is None and sig is None:

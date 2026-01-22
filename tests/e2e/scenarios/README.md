@@ -23,6 +23,7 @@
 - `infrastructure/` — readiness и bindings
 - `grow_cycle/` — циклы выращивания
 - `automation_engine/` — автоматизация
+- `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
 
 Полный список и DoD: `../../../docs/testing/E2E_SCENARIOS.md`.

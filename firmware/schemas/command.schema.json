@@ -3,7 +3,7 @@
   "title": "Command Message Schema",
   "description": "Schema for command messages sent to firmware nodes",
   "type": "object",
-  "required": ["cmd_id", "cmd", "params"],
+  "required": ["cmd_id", "cmd", "params", "ts", "sig"],
   "properties": {
     "cmd_id": {
       "type": "string",
@@ -13,19 +13,10 @@
       "type": "string",
       "description": "Command name",
       "enum": [
-        "set_relay_state",
-        "set_relay",
-        "run",
+        "dose",
         "run_pump",
-        "stop",
-        "stop_pump",
-        "set_pwm",
-        "hil_set_sensor",
-        "hil_raise_error",
-        "hil_clear_error",
-        "hil_set_flow",
-        "hil_set_current",
-        "hil_request_telemetry"
+        "set_relay",
+        "set_pwm"
       ]
     },
     "params": {
@@ -33,12 +24,15 @@
       "description": "Command parameters",
       "additionalProperties": true
     },
-    "exec_time_ms": {
+    "ts": {
       "type": "integer",
-      "description": "Expected execution time in milliseconds (optional)",
+      "description": "Unix timestamp (seconds) when command was created",
       "minimum": 0
+    },
+    "sig": {
+      "type": "string",
+      "description": "HMAC signature for command payload (hex)"
     }
   },
   "additionalProperties": false
 }
-

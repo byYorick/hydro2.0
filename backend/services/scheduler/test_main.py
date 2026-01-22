@@ -9,6 +9,7 @@ import types
 from main import (
     _parse_time_spec,
     _extract_simulation_clock,
+    _schedule_crossings,
     get_active_schedules,
     get_zone_nodes_for_type,
     execute_irrigation_schedule,
@@ -48,6 +49,24 @@ def test_extract_simulation_clock_scales_time():
         mock_utcnow.return_value = real_start.replace(tzinfo=timezone.utc) + timedelta(seconds=60)
         sim_now = clock.now()
     assert sim_now == real_start + timedelta(hours=1)
+
+
+def test_schedule_crossings_same_day():
+    """Test schedule crossings within the same day."""
+    last_dt = datetime(2025, 1, 1, 10, 0, 0)
+    now_dt = datetime(2025, 1, 1, 12, 0, 0)
+    target = time(11, 0)
+    crossings = _schedule_crossings(last_dt, now_dt, target)
+    assert crossings == [datetime(2025, 1, 1, 11, 0, 0)]
+
+
+def test_schedule_crossings_across_midnight():
+    """Test schedule crossings across midnight."""
+    last_dt = datetime(2025, 1, 1, 23, 30, 0)
+    now_dt = datetime(2025, 1, 2, 0, 30, 0)
+    target = time(0, 15)
+    crossings = _schedule_crossings(last_dt, now_dt, target)
+    assert crossings == [datetime(2025, 1, 2, 0, 15, 0)]
 
 
 @pytest.mark.asyncio
@@ -128,8 +147,8 @@ async def test_send_command_via_automation_engine_success():
             zone_id=1,
             node_uid="nd-irrig-1",
             channel="default",
-            cmd="irrigate",
-            params={"duration": 60}
+            cmd="run_pump",
+            params={"duration_ms": 60000}
         )
         
         assert result is True
@@ -139,8 +158,8 @@ async def test_send_command_via_automation_engine_success():
         assert call_args[1]["json"]["zone_id"] == 1
         assert call_args[1]["json"]["node_uid"] == "nd-irrig-1"
         assert call_args[1]["json"]["channel"] == "default"
-        assert call_args[1]["json"]["cmd"] == "irrigate"
-        assert call_args[1]["json"]["params"] == {"duration": 60}
+        assert call_args[1]["json"]["cmd"] == "run_pump"
+        assert call_args[1]["json"]["params"] == {"duration_ms": 60000}
 
 
 @pytest.mark.asyncio
@@ -161,7 +180,7 @@ async def test_send_command_via_automation_engine_error():
             zone_id=1,
             node_uid="nd-irrig-1",
             channel="default",
-            cmd="irrigate"
+            cmd="run_pump"
         )
         
         assert result is False
@@ -181,7 +200,7 @@ async def test_send_command_via_automation_engine_timeout():
             zone_id=1,
             node_uid="nd-irrig-1",
             channel="default",
-            cmd="irrigate"
+            cmd="run_pump"
         )
         
         assert result is False
@@ -213,12 +232,14 @@ async def test_execute_irrigation_schedule():
         
         await execute_irrigation_schedule(1, {})
         
-        # Should send irrigation command via REST API
+        # Should send pump command via REST API
         assert mock_send_command.called
-        # Проверяем, что была отправлена команда irrigate
-        irrigate_calls = [call for call in mock_send_command.call_args_list 
-                         if call[1]["cmd"] == "irrigate"]
-        assert len(irrigate_calls) > 0
+        # Проверяем, что была отправлена команда run_pump
+        run_pump_calls = [
+            call for call in mock_send_command.call_args_list
+            if call[1]["cmd"] == "run_pump"
+        ]
+        assert len(run_pump_calls) > 0
 
 
 @pytest.mark.asyncio
@@ -270,8 +291,10 @@ async def test_monitor_pump_safety_safe():
         await monitor_pump_safety(1, pump_start_time, "nd-irrig-1", "pump1")
         
         # Не должна быть отправлена команда остановки
-        stop_calls = [call for call in mock_send_command.call_args_list 
-                     if call[1]["cmd"] == "stop"]
+        stop_calls = [
+            call for call in mock_send_command.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
+        ]
         assert len(stop_calls) == 0
         
         # Не должно быть создано событие PUMP_STOPPED
@@ -298,8 +321,10 @@ async def test_monitor_pump_safety_dry_run():
         await monitor_pump_safety(1, pump_start_time, "nd-irrig-1", "pump1")
         
         # Должна быть отправлена команда остановки через REST API
-        stop_calls = [call for call in mock_send_command.call_args_list 
-                     if call[1]["cmd"] == "stop"]
+        stop_calls = [
+            call for call in mock_send_command.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
+        ]
         assert len(stop_calls) > 0
         
         # Должно быть создано событие PUMP_STOPPED

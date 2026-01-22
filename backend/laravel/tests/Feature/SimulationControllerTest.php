@@ -8,8 +8,11 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneSimulation;
 use App\Services\GrowCycleService;
 use Tests\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -211,5 +214,50 @@ class SimulationControllerTest extends TestCase
         $response->assertStatus(202);
 
         // Симуляция выполняется асинхронно, дефолтные значения будут использованы в job
+    }
+
+    public function test_show_simulation_includes_progress_for_live_run(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $now = now();
+        Carbon::setTestNow($now);
+        $startedAt = $now->copy()->subMinutes(5)->toIso8601String();
+
+        $simulation = ZoneSimulation::create([
+            'zone_id' => $zone->id,
+            'scenario' => [
+                'recipe_id' => 1,
+                'simulation' => [
+                    'real_started_at' => $startedAt,
+                    'sim_started_at' => $startedAt,
+                    'real_duration_minutes' => 10,
+                    'time_scale' => 12,
+                ],
+            ],
+            'duration_hours' => 2,
+            'step_minutes' => 10,
+            'status' => 'running',
+        ]);
+
+        $jobId = 'sim_test_progress';
+        Cache::put("simulation:{$jobId}", [
+            'status' => 'processing',
+            'started_at' => $startedAt,
+            'simulation_id' => $simulation->id,
+            'sim_duration_minutes' => 10,
+        ], 3600);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/simulations/{$jobId}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.status', 'processing');
+        $progress = $response->json('data.progress');
+        $this->assertNotNull($progress);
+        $this->assertGreaterThan(0.45, $progress);
+        $this->assertLessThan(0.55, $progress);
+
+        Carbon::setTestNow();
     }
 }

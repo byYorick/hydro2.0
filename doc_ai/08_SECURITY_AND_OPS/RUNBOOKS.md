@@ -44,6 +44,10 @@
 ## 9. Безопасность
 - Composer audit и NPM audit (см. CI). Критичные — оформить тикеты.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 10. Восстановление PostgreSQL из бэкапа
@@ -346,5 +350,3 @@ docker-compose exec db psql -U hydro -c "SHOW archive_command;"
 3. Проверить бэкапы: `php artisan backup:list`
 4. При необходимости — восстановление из бэкапа
 5. Эскалация при невозможности восстановления
-
-

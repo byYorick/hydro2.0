@@ -5,6 +5,10 @@
 Документ дополняет `WIFI_CONNECTIVITY_ENGINE.md` 
 и описывает **режим первой настройки (provisioning)** для узлов ESP32.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Общая идея

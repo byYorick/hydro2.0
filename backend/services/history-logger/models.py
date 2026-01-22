@@ -54,8 +54,7 @@ class TelemetrySampleModel(BaseModel):
 class CommandRequest(BaseModel):
     """Request model for publishing commands."""
 
-    type: Optional[str] = Field(None, max_length=64, description="Command type (legacy)")
-    cmd: Optional[str] = Field(None, max_length=64, description="Command name (new format)")
+    cmd: Optional[str] = Field(None, max_length=64, description="Command name")
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
     source: Optional[str] = Field(None, max_length=64, description="Command source (automation/api/device)")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
@@ -69,8 +68,8 @@ class CommandRequest(BaseModel):
     trace_id: Optional[str] = Field(None, max_length=64, description="Trace ID for logging")
 
     def get_command_name(self) -> str:
-        """Get command name from either 'cmd' or 'type' field."""
-        return self.cmd or self.type or ""
+        """Get command name."""
+        return self.cmd or ""
 
 
 class FillDrainRequest(BaseModel):

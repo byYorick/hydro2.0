@@ -296,8 +296,17 @@ async def test_execute_fill_mode_success():
         # Проверяем, что были созданы события
         assert mock_event.call_count >= 2  # FILL_STARTED и FILL_FINISHED
         
-        # Проверяем, что была отправлена команда fill и stop
-        assert mock_send.call_count >= 2
+        # Проверяем, что были отправлены команды включения и остановки
+        start_calls = [
+            call for call in mock_send.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": True}
+        ]
+        stop_calls = [
+            call for call in mock_send.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
+        ]
+        assert start_calls
+        assert stop_calls
 
 
 @pytest.mark.asyncio
@@ -363,6 +372,11 @@ async def test_execute_fill_mode_timeout():
         
         assert result["success"] is False
         assert result["error"] == "timeout"
+        stop_calls = [
+            call for call in mock_send.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
+        ]
+        assert stop_calls
 
 
 @pytest.mark.asyncio
@@ -413,8 +427,17 @@ async def test_execute_drain_mode_success():
         # Проверяем события
         assert mock_event.call_count >= 2  # DRAIN_STARTED и DRAIN_FINISHED
         
-        # Проверяем команду
-        assert mock_send.call_count >= 2
+        # Проверяем команды включения и остановки
+        start_calls = [
+            call for call in mock_send.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": True}
+        ]
+        stop_calls = [
+            call for call in mock_send.call_args_list
+            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
+        ]
+        assert start_calls
+        assert stop_calls
 
 
 @pytest.mark.asyncio

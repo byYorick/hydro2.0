@@ -220,10 +220,9 @@ class NodeCompatibilityTester:
         command_topic = f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/ph_sensor/command"
         command = {
             "cmd_id": cmd_id,
-            "cmd": "set_relay_state",
+            "cmd": "set_relay",
             "params": {
-                "state": True,
-                "channel": "ph_sensor"
+                "state": True
             }
         }
         

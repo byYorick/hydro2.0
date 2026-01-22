@@ -1,0 +1,216 @@
+# E90: Live Simulation Stop Commands
+# DoD: live-симуляция завершает сессию и отправляет команды остановки
+
+name: E90_live_simulation_stop_commands
+description: |
+  Проверяет live-симуляцию с ускоренным временем:
+  - симуляция создается и завершается
+  - записывается мета real_duration_minutes
+  - после завершения отправляются stop-команды (set_relay + set_pwm)
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        config_report_on_start: true
+        channels:
+          - ph_sensor
+          - ec_sensor
+          - solution_temp_c
+          - air_temp_c
+          - air_rh
+        actuators:
+          - main_pump
+          - drain_pump
+          - fan
+          - heater
+          - light
+          - mister
+          - fan_pwm
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  - step: set_test_uids
+    type: set
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_row
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    expected_rows: 1
+    save: node_row
+
+  - step: set_zone_and_node
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
+
+  - step: wait_for_node_online
+    type: db_wait
+    query: |
+      SELECT status
+      FROM nodes
+      WHERE id = :node_id
+        AND status = 'online'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: ensure_pwm_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
+      VALUES (:node_id, 'fan_pwm', 'ACTUATOR', 'PWM', 'int', '{"actuator_type": "PWM"}'::jsonb, NOW(), NOW())
+      ON CONFLICT (node_id, channel)
+      DO UPDATE SET
+        type = EXCLUDED.type,
+        metric = EXCLUDED.metric,
+        unit = EXCLUDED.unit,
+        config = EXCLUDED.config,
+        updated_at = NOW();
+    params:
+      node_id: ${node_id}
+
+  - step: start_live_simulation
+    type: api_post
+    endpoint: /api/zones/${zone_id}/simulate
+    payload:
+      duration_hours: 24
+      step_minutes: 10
+      sim_duration_minutes: 1
+    save: simulate_response
+
+  - step: set_job_id
+    type: set
+    job_id: ${simulate_response.data.job_id}
+
+  - step: wait_for_simulation_row
+    type: db_wait
+    query: |
+      SELECT id AS simulation_id, created_at
+      FROM zone_simulations
+      WHERE zone_id = :zone_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: simulation_row
+
+  - step: set_simulation_context
+    type: set
+    simulation_id: ${simulation_row.0.simulation_id}
+    simulation_created_at: ${simulation_row.0.created_at}
+
+assertions:
+  - name: simulation_completed_with_meta
+    type: database_query
+    query: |
+      SELECT
+        status,
+        scenario->'simulation'->>'real_duration_minutes' as real_duration_minutes,
+        scenario->'simulation'->>'real_ended_at' as real_ended_at
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'completed'
+        AND scenario->'simulation'->>'real_ended_at' IS NOT NULL
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "completed"
+      - field: real_duration_minutes
+        operator: equals
+        value: "1"
+      - field: real_ended_at
+        operator: is_not_null
+
+  - name: stop_command_set_relay_sent
+    type: database_query
+    query: |
+      SELECT cmd, channel
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'main_pump'
+        AND created_at >= :simulation_created_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      simulation_created_at: ${simulation_created_at}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: cmd
+        operator: equals
+        value: "set_relay"
+
+  - name: stop_command_set_pwm_sent
+    type: database_query
+    query: |
+      SELECT cmd, channel
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_pwm'
+        AND channel = 'fan_pwm'
+        AND created_at >= :simulation_created_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      simulation_created_at: ${simulation_created_at}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: cmd
+        operator: equals
+        value: "set_pwm"
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
