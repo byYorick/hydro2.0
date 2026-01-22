@@ -54,7 +54,7 @@
 
 Все команды обрабатываются через `node_framework` и отправляются на топик:
 ```
-gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
+hydro/{gh_uid}/{zone_uid}/{node_id}/{channel}/command
 ```
 
 ### set_relay
@@ -295,15 +295,15 @@ idf.py monitor
 
 ```bash
 # Включить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
   -m '{"cmd":"set_relay","cmd_id":"cmd-001","params":{"state":1}}'
 
 # Выключить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
   -m '{"cmd":"set_relay","cmd_id":"cmd-002","params":{"state":0}}'
 
 # Переключить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
   -m '{"cmd":"toggle","cmd_id":"cmd-003","params":{}}'
 ```
 
@@ -321,12 +321,12 @@ mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump
 
 ```bash
 # Подписка на STATUS сообщения
-mosquitto_sub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/status"
+mosquitto_sub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/status"
 ```
 
 ### Проверка команд
 
 ```bash
 # Подписка на ответы команд
-mosquitto_sub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/+/response"
+mosquitto_sub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/+/command_response"
 ```
