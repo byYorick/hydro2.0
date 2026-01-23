@@ -961,6 +961,78 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         })->name('zones.web.index');
 
         /**
+         * Zone Simulation - отдельная страница симуляции по зоне
+         *
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - zoneId: int
+         * - zone: { id, name, status, greenhouse_id, greenhouse, activeGrowCycle }
+         * - telemetry: { ph, ec, temperature, humidity }
+         * - active_grow_cycle: object|null
+         */
+        Route::get('/{zoneId}/simulation', function (string $zoneId) {
+            $zoneIdInt = (int) $zoneId;
+
+            $zone = Zone::query()
+                ->with([
+                    'greenhouse:id,name',
+                    'activeGrowCycle.recipeRevision.recipe:id,name,description',
+                    'activeGrowCycle.recipeRevision.phases',
+                    'activeGrowCycle.recipeRevision.phases.stageTemplate:id,code,name',
+                    'activeGrowCycle.currentPhase',
+                    'activeGrowCycle.phases',
+                    'activeGrowCycle.plant:id,name',
+                ])
+                ->findOrFail($zoneIdInt);
+
+            $zone->refresh();
+            $zone->loadMissing([
+                'activeGrowCycle.recipeRevision.recipe',
+                'activeGrowCycle.recipeRevision.phases',
+                'activeGrowCycle.recipeRevision.phases.stageTemplate',
+                'activeGrowCycle.currentPhase',
+                'activeGrowCycle.phases',
+                'activeGrowCycle.plant',
+            ]);
+
+            $telemetryLast = \App\Models\TelemetryLast::query()
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zoneIdInt)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value',
+                ])
+                ->get()
+                ->mapWithKeys(function ($item) {
+                    $key = strtolower($item->metric_type ?? '');
+                    if ($key === 'ph') {
+                        return ['ph' => $item->value];
+                    }
+                    if ($key === 'ec') {
+                        return ['ec' => $item->value];
+                    }
+                    if ($key === 'temperature') {
+                        return ['temperature' => $item->value];
+                    }
+                    if ($key === 'humidity') {
+                        return ['humidity' => $item->value];
+                    }
+
+                    return [];
+                })
+                ->toArray();
+
+            return Inertia::render('Zones/Simulation', [
+                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+                'zoneId' => $zoneIdInt,
+                'zone' => $zone,
+                'telemetry' => $telemetryLast,
+                'active_grow_cycle' => $zone->activeGrowCycle,
+            ]);
+        })->name('zones.simulation');
+
+        /**
          * Zone Show - детальная страница зоны
          *
          * Inertia Props:

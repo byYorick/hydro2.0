@@ -23,7 +23,6 @@
         :computed-phase-days-total="computedPhaseDaysTotal"
         :events="events"
         @force-irrigation="openActionModal('FORCE_IRRIGATION')"
-        @open-simulation="modals.open('simulation')"
       />
 
       <ZoneTelemetryTab
@@ -82,14 +81,12 @@
       />
     </div>
     <ZoneDetailModals
-      :show-simulation-modal="showSimulationModal"
       :show-action-modal="showActionModal"
       :show-growth-cycle-modal="showGrowthCycleModal"
       :show-attach-nodes-modal="showAttachNodesModal"
       :show-node-config-modal="showNodeConfigModal"
       :zone-id="zoneId"
       :zone-name="zone.name"
-      :default-recipe-id="activeGrowCycle?.recipeRevision?.recipe_id || null"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
       :selected-node-id="selectedNodeId"
@@ -99,7 +96,6 @@
       :abort-modal="abortModal"
       :change-recipe-modal="changeRecipeModal"
       :loading="loading"
-      @close-simulation="modals.close('simulation')"
       @close-action="modals.close('action')"
       @submit-action="onActionSubmit"
       @close-attach-nodes="modals.close('attachNodes')"
@@ -197,20 +193,17 @@ const activeTab = useUrlState<string>({
 
 // Modal states using useModal composable
 const modals = useModal<{
-  simulation: boolean
   action: boolean
   growthCycle: boolean
   attachNodes: boolean
   nodeConfig: boolean
 }>({
-  simulation: false,
   action: false,
   growthCycle: false,
   attachNodes: false,
   nodeConfig: false,
 })
 
-const showSimulationModal = computed(() => modals.isModalOpen('simulation'))
 const showActionModal = computed(() => modals.isModalOpen('action'))
 const showGrowthCycleModal = computed(() => modals.isModalOpen('growthCycle'))
 const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))

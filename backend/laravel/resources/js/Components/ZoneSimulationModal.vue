@@ -1,15 +1,16 @@
 <template>
   <div
-    v-if="show"
-    class="fixed inset-0 z-50 flex items-center justify-center"
+    v-if="isVisible"
+    :class="rootClass"
   >
     <div
+      v-if="isModal"
       class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80"
       @click="$emit('close')"
     ></div>
     <div
-      class="relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto"
-      @click.stop
+      :class="panelClass"
+      @click.stop="isModal"
     >
       <h2 class="text-lg font-semibold mb-4">
         Симуляция цифрового двойника
@@ -337,6 +338,7 @@
         
         <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
           <Button
+            v-if="isModal"
             type="button"
             variant="secondary"
             @click="$emit('close')"
@@ -388,13 +390,22 @@ import type { EChartsOption } from 'echarts'
 
 interface Props {
   show?: boolean
+  mode?: 'modal' | 'page'
   zoneId: number
   defaultRecipeId?: number | null
+  initialTelemetry?: {
+    ph?: number | null
+    ec?: number | null
+    temperature?: number | null
+    humidity?: number | null
+  } | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   show: false,
+  mode: 'modal',
   defaultRecipeId: null,
+  initialTelemetry: null,
 })
 
 defineEmits<{
@@ -404,6 +415,21 @@ defineEmits<{
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const { theme } = useTheme()
+
+const isModal = computed(() => props.mode === 'modal')
+const isVisible = computed(() => props.mode === 'page' || props.show)
+const rootClass = computed(() => {
+  if (isModal.value) {
+    return 'fixed inset-0 z-50 flex items-center justify-center'
+  }
+  return 'w-full'
+})
+const panelClass = computed(() => {
+  if (isModal.value) {
+    return 'relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto'
+  }
+  return 'w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6'
+})
 
 interface SimulationForm {
   duration_hours: number
@@ -501,6 +527,39 @@ const simulationActions = ref<SimulationAction[]>([])
 const simulationPidStatuses = ref<SimulationPidStatus[]>([])
 const simulationCurrentPhase = ref<string | null>(null)
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
+
+const applyInitialTelemetry = (telemetry: Props['initialTelemetry']) => {
+  if (!telemetry) return
+  if (form.initial_state.ph === null && telemetry.ph != null) {
+    form.initial_state.ph = telemetry.ph
+  }
+  if (form.initial_state.ec === null && telemetry.ec != null) {
+    form.initial_state.ec = telemetry.ec
+  }
+  if (form.initial_state.temp_air === null && telemetry.temperature != null) {
+    form.initial_state.temp_air = telemetry.temperature
+  }
+  if (form.initial_state.humidity_air === null && telemetry.humidity != null) {
+    form.initial_state.humidity_air = telemetry.humidity
+  }
+}
+
+watch(
+  () => props.initialTelemetry,
+  (telemetry) => {
+    applyInitialTelemetry(telemetry)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.defaultRecipeId,
+  (recipeId) => {
+    if (recipeId && form.recipe_id === null) {
+      form.recipe_id = recipeId
+    }
+  }
+)
 
 const resolveCssColor = (variable: string, fallback: string): string => {
   if (typeof window === 'undefined') {

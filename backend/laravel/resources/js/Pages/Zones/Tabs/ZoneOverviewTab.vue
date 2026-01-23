@@ -63,15 +63,19 @@
               <span class="sm:hidden">💧</span>
             </Button>
           </template>
-          <Button
-            size="sm"
-            variant="outline"
+          <Link
+            :href="`/zones/${zone.id}/simulation`"
             class="flex-1 sm:flex-none"
-            @click="$emit('open-simulation')"
           >
-            <span class="hidden sm:inline">Симуляция</span>
-            <span class="sm:hidden">🧪</span>
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              class="w-full"
+            >
+              <span class="hidden sm:inline">Симуляция</span>
+              <span class="sm:hidden">🧪</span>
+            </Button>
+          </Link>
         </div>
       </div>
     </section>
@@ -201,6 +205,7 @@ import Card from '@/Components/Card.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import StageProgress from '@/Components/StageProgress.vue'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
+import { Link } from '@inertiajs/vue3'
 import { translateEventKind, translateStatus } from '@/utils/i18n'
 import { formatTimeShort } from '@/utils/formatTime'
 import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
@@ -226,7 +231,6 @@ interface Props {
 
 defineEmits<{
   (e: 'force-irrigation'): void
-  (e: 'open-simulation'): void
 }>()
 
 const props = defineProps<Props>()

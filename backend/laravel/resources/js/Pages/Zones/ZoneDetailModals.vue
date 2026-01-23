@@ -1,13 +1,5 @@
 <template>
   <div>
-    <!-- Digital Twin Simulation Modal -->
-    <ZoneSimulationModal
-      :show="showSimulationModal"
-      :zone-id="zoneId"
-      :default-recipe-id="defaultRecipeId"
-      @close="$emit('close-simulation')"
-    />
-
     <!-- Модальное окно для действий с параметрами -->
     <ZoneActionModal
       v-if="showActionModal"
@@ -143,7 +135,6 @@
 
 <script setup lang="ts">
 import type { CommandType } from '@/types'
-import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
@@ -175,13 +166,11 @@ interface LoadingState {
 interface Props {
   zoneId: number | null
   zoneName: string
-  defaultRecipeId: number | null
   currentPhaseTargets: any | null
   activeCycle: any | null
   selectedNodeId: number | null
   selectedNode: any | null
   currentActionType: CommandType
-  showSimulationModal: boolean
   showActionModal: boolean
   showGrowthCycleModal: boolean
   showAttachNodesModal: boolean
@@ -195,7 +184,6 @@ interface Props {
 defineProps<Props>()
 
 defineEmits<{
-  (e: 'close-simulation'): void
   (e: 'close-action'): void
   (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
   (e: 'close-attach-nodes'): void
