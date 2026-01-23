@@ -4,7 +4,8 @@ namespace App\Jobs;
 
 use App\Models\ZoneSimulation;
 use App\Services\DigitalTwinClient;
-use App\Services\NodeSimManagerClient;
+use App\Services\SimulationOrchestratorService;
+use App\Models\Zone;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,7 +34,7 @@ class RunSimulationJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(DigitalTwinClient $client, NodeSimManagerClient $nodeSimManager): void
+    public function handle(DigitalTwinClient $client, SimulationOrchestratorService $orchestrator): void
     {
         $simulation = null;
         try {
@@ -56,8 +57,7 @@ class RunSimulationJob implements ShouldQueue
                 $timeScale = ($durationHours * 60) / (int) $simDurationMinutes;
                 $simulationMeta['real_duration_minutes'] = (int) $simDurationMinutes;
                 $simulationMeta['time_scale'] = $timeScale;
-                $simulationMeta['node_sim_session_id'] = $this->jobId;
-                $simulationMeta['orchestrator'] = 'laravel';
+                $simulationMeta['orchestrator'] = 'digital-twin';
             }
 
             $existingMeta = [];
@@ -67,6 +67,53 @@ class RunSimulationJob implements ShouldQueue
             $scenario['simulation'] = array_merge($existingMeta, $simulationMeta);
             $scenarioPayload = $scenario;
             unset($scenarioPayload['simulation']);
+
+            if ($isLiveSimulation) {
+                $sourceZone = Zone::findOrFail($this->zoneId);
+                $recipeId = $scenario['recipe_id'] ?? null;
+                if (! $recipeId) {
+                    throw new \RuntimeException('recipe_id required for live simulation.');
+                }
+                $context = $orchestrator->createSimulationContext($sourceZone, (int) $recipeId);
+                $simZone = $context['zone'];
+                $simCycle = $context['grow_cycle'];
+
+                $scenario['simulation'] = array_merge(
+                    $scenario['simulation'] ?? [],
+                    [
+                        'source_zone_id' => $this->zoneId,
+                        'sim_zone_id' => $simZone->id,
+                        'sim_grow_cycle_id' => $simCycle->id,
+                    ]
+                );
+
+                $startResponse = $client->startLiveSimulation([
+                    'zone_id' => $simZone->id,
+                    'duration_hours' => $durationHours,
+                    'step_minutes' => $stepMinutes,
+                    'sim_duration_minutes' => (int) $simDurationMinutes,
+                    'scenario' => $scenario,
+                ]);
+                $simulationId = $startResponse['simulation_id'] ?? null;
+
+                Cache::put("simulation:{$this->jobId}", [
+                    'status' => 'processing',
+                    'started_at' => now()->toIso8601String(),
+                    'simulation_id' => $simulationId,
+                    'sim_duration_minutes' => (int) $simDurationMinutes,
+                    'simulation_zone_id' => $simZone->id,
+                    'simulation_grow_cycle_id' => $simCycle->id,
+                ], 3600);
+
+                Log::info('Live simulation started via digital-twin', [
+                    'job_id' => $this->jobId,
+                    'zone_id' => $this->zoneId,
+                    'simulation_zone_id' => $simZone->id,
+                    'simulation_id' => $simulationId,
+                ]);
+
+                return;
+            }
 
             $simulation = ZoneSimulation::create([
                 'zone_id' => $this->zoneId,
@@ -81,22 +128,8 @@ class RunSimulationJob implements ShouldQueue
                 'status' => 'processing',
                 'started_at' => now()->toIso8601String(),
                 'simulation_id' => $simulation->id,
-                'sim_duration_minutes' => $isLiveSimulation ? (int) $simDurationMinutes : null,
+                'sim_duration_minutes' => null,
             ], 3600); // Храним 1 час
-
-            if ($isLiveSimulation) {
-                $nodeSimManager->startSession($simulation, $this->jobId);
-                CompleteSimulationJob::dispatch($simulation->id, $this->jobId)
-                    ->delay(now()->addMinutes((int) $simDurationMinutes));
-                Log::info('Simulation job scheduled completion', [
-                    'job_id' => $this->jobId,
-                    'zone_id' => $this->zoneId,
-                    'simulation_id' => $simulation->id,
-                    'real_duration_minutes' => (int) $simDurationMinutes,
-                ]);
-
-                return;
-            }
 
             // Выполняем симуляцию
             $result = $client->simulateZone($this->zoneId, [

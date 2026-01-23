@@ -6,19 +6,20 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from fastapi import Query
 from decimal import Decimal
 from datetime import datetime, timedelta
 from common.utils.time import utcnow
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from common.env import get_settings
 from common.db import fetch, execute
 from common.schemas import SimulationRequest, SimulationScenario
 from common.service_logs import send_service_log
 from prometheus_client import Counter, Histogram, start_http_server
+import httpx
 
 # Настройка логирования (должна быть до импорта других модулей)
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -32,6 +33,27 @@ logger = logging.getLogger(__name__)
 
 SIMULATIONS_RUN = Counter("simulations_run_total", "Total simulations executed")
 SIMULATION_DURATION = Histogram("simulation_duration_seconds", "Simulation execution time")
+
+LIVE_SIM_TASKS: Dict[int, asyncio.Task] = {}
+
+NODE_SIM_MANAGER_URL = os.getenv("NODE_SIM_MANAGER_URL", "http://node-sim-manager:9100")
+NODE_SIM_MANAGER_TOKEN = os.getenv("NODE_SIM_MANAGER_TOKEN")
+
+DEFAULT_MQTT_CONFIG = {
+    "host": os.getenv("NODE_SIM_MQTT_HOST", os.getenv("MQTT_HOST", "mqtt")),
+    "port": int(os.getenv("NODE_SIM_MQTT_PORT", os.getenv("MQTT_PORT", 1883))),
+    "username": os.getenv("NODE_SIM_MQTT_USERNAME", os.getenv("MQTT_USERNAME")),
+    "password": os.getenv("NODE_SIM_MQTT_PASSWORD", os.getenv("MQTT_PASSWORD")),
+    "tls": bool(os.getenv("NODE_SIM_MQTT_TLS", "false").lower() == "true"),
+    "ca_certs": os.getenv("NODE_SIM_MQTT_CA_CERTS"),
+    "keepalive": int(os.getenv("NODE_SIM_MQTT_KEEPALIVE", os.getenv("MQTT_KEEPALIVE", 60))),
+}
+
+DEFAULT_TELEMETRY_CONFIG = {
+    "interval_seconds": float(os.getenv("NODE_SIM_TELEMETRY_INTERVAL", 5.0)),
+    "heartbeat_interval_seconds": float(os.getenv("NODE_SIM_HEARTBEAT_INTERVAL", 30.0)),
+    "status_interval_seconds": float(os.getenv("NODE_SIM_STATUS_INTERVAL", 60.0)),
+}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +76,30 @@ from models import PHModel, ECModel, ClimateModel
 class SimulationResponse(BaseModel):
     status: str
     data: Dict[str, Any]
+
+
+class LiveSimulationStartRequest(BaseModel):
+    zone_id: int = Field(..., ge=1)
+    duration_hours: int = Field(..., ge=1)
+    step_minutes: int = Field(10, ge=1)
+    sim_duration_minutes: int = Field(..., ge=1)
+    scenario: Dict[str, Any]
+    mqtt: Optional[Dict[str, Any]] = None
+    telemetry: Optional[Dict[str, Any]] = None
+    failure_mode: Optional[Dict[str, Any]] = None
+
+
+class LiveSimulationStopRequest(BaseModel):
+    simulation_id: int = Field(..., ge=1)
+    status: str = Field("completed", pattern="^(completed|failed|stopped)$")
+    reason: Optional[str] = None
+
+
+class LiveSimulationStartResponse(BaseModel):
+    status: str
+    simulation_id: int
+    node_sim_session_id: str
+    time_scale: float
 
 
 async def get_recipe_revision_phases(recipe_id: int) -> List[Dict[str, Any]]:
@@ -315,6 +361,191 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         }
 
 
+async def _node_sim_request(path: str, payload: Dict[str, Any]) -> None:
+    headers = {}
+    if NODE_SIM_MANAGER_TOKEN:
+        headers["Authorization"] = f"Bearer {NODE_SIM_MANAGER_TOKEN}"
+    url = NODE_SIM_MANAGER_URL.rstrip("/") + path
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, json=payload, headers=headers)
+    if response.status_code >= 300:
+        raise HTTPException(status_code=502, detail=f"node-sim-manager error: {response.text}")
+
+
+def _normalize_node_type(value: Optional[str]) -> str:
+    if not value:
+        return "unknown"
+    normalized = value.lower()
+    if normalized == "irrigation":
+        return "irrig"
+    allowed = {"ph", "ec", "climate", "pump", "irrig", "light", "unknown"}
+    return normalized if normalized in allowed else "unknown"
+
+
+async def _load_node_configs(zone_id: int) -> Tuple[str, str, List[Dict[str, Any]]]:
+    zone_rows = await fetch(
+        """
+        SELECT z.uid as zone_uid, g.uid as gh_uid
+        FROM zones z
+        JOIN greenhouses g ON g.id = z.greenhouse_id
+        WHERE z.id = $1
+        """,
+        zone_id,
+    )
+    if not zone_rows:
+        raise HTTPException(status_code=404, detail="zone not found")
+    zone_uid = zone_rows[0]["zone_uid"] or f"zn-{zone_id}"
+    gh_uid = zone_rows[0]["gh_uid"] or "gh-1"
+
+    node_rows = await fetch(
+        """
+        SELECT id, uid, hardware_id, type
+        FROM nodes
+        WHERE zone_id = $1
+        """,
+        zone_id,
+    )
+    if not node_rows:
+        raise HTTPException(status_code=400, detail="zone has no nodes for simulation")
+
+    node_ids = [row["id"] for row in node_rows]
+    channel_rows = await fetch(
+        """
+        SELECT node_id, channel, type
+        FROM node_channels
+        WHERE node_id = ANY($1::int[])
+        """,
+        node_ids,
+    )
+    channels_by_node: Dict[int, Dict[str, List[str]]] = {}
+    for row in channel_rows:
+        entry = channels_by_node.setdefault(row["node_id"], {"sensors": [], "actuators": []})
+        channel_type = (row["type"] or "").upper()
+        if channel_type == "ACTUATOR":
+            entry["actuators"].append(row["channel"])
+        else:
+            entry["sensors"].append(row["channel"])
+
+    nodes: List[Dict[str, Any]] = []
+    for row in node_rows:
+        if not row["uid"] or not row["hardware_id"]:
+            continue
+        node_channels = channels_by_node.get(row["id"], {"sensors": [], "actuators": []})
+        nodes.append({
+            "node_uid": row["uid"],
+            "hardware_id": row["hardware_id"],
+            "gh_uid": gh_uid,
+            "zone_uid": zone_uid,
+            "node_type": _normalize_node_type(row["type"]),
+            "mode": "configured",
+            "config_report_on_start": True,
+            "sensors": node_channels["sensors"],
+            "actuators": node_channels["actuators"],
+        })
+
+    if not nodes:
+        raise HTTPException(status_code=400, detail="zone nodes missing uid/hardware_id")
+    return gh_uid, zone_uid, nodes
+
+
+async def _create_live_simulation(
+    request: LiveSimulationStartRequest,
+) -> Tuple[int, str, float, Dict[str, Any]]:
+    if request.sim_duration_minutes <= 0:
+        raise HTTPException(status_code=400, detail="sim_duration_minutes must be > 0")
+
+    now_iso = utcnow().isoformat()
+    time_scale = (request.duration_hours * 60.0) / float(request.sim_duration_minutes)
+    session_id = f"sim-{request.zone_id}-{int(utcnow().timestamp())}"
+
+    scenario_payload = dict(request.scenario or {})
+    if not scenario_payload.get("recipe_id"):
+        raise HTTPException(status_code=400, detail="recipe_id required for live simulation")
+    sim_meta = {
+        "real_started_at": now_iso,
+        "sim_started_at": now_iso,
+        "engine": "pipeline",
+        "mode": "live",
+        "orchestrator": "digital-twin",
+        "time_scale": time_scale,
+        "real_duration_minutes": int(request.sim_duration_minutes),
+        "node_sim_session_id": session_id,
+    }
+    existing_meta = scenario_payload.get("simulation") or {}
+    scenario_payload["simulation"] = {**existing_meta, **sim_meta}
+
+    rows = await fetch(
+        """
+        INSERT INTO zone_simulations (zone_id, scenario, duration_hours, step_minutes, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 'running', NOW(), NOW())
+        RETURNING id
+        """,
+        request.zone_id,
+        scenario_payload,
+        request.duration_hours,
+        request.step_minutes,
+    )
+    simulation_id = rows[0]["id"]
+
+    return simulation_id, session_id, time_scale, scenario_payload
+
+
+async def _update_simulation_status(
+    simulation_id: int,
+    status: str,
+    scenario: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    await execute(
+        """
+        UPDATE zone_simulations
+        SET status = $1,
+            scenario = COALESCE($2, scenario),
+            error_message = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        """,
+        status,
+        scenario,
+        error_message,
+        simulation_id,
+    )
+
+
+async def _complete_live_simulation(
+    simulation_id: int,
+    session_id: str,
+    duration_minutes: int,
+):
+    try:
+        await asyncio.sleep(duration_minutes * 60)
+        rows = await fetch(
+            "SELECT scenario FROM zone_simulations WHERE id = $1",
+            simulation_id,
+        )
+        if not rows:
+            return
+        scenario = rows[0]["scenario"] or {}
+        sim_meta = scenario.get("simulation") or {}
+        sim_meta["real_ended_at"] = utcnow().isoformat()
+        sim_started = sim_meta.get("sim_started_at")
+        time_scale = sim_meta.get("time_scale")
+        if sim_started and time_scale:
+            try:
+                sim_start_dt = datetime.fromisoformat(sim_started)
+                sim_end_dt = sim_start_dt + timedelta(seconds=duration_minutes * 60 * float(time_scale))
+                sim_meta["sim_ended_at"] = sim_end_dt.isoformat()
+            except ValueError:
+                pass
+        scenario["simulation"] = sim_meta
+        await _node_sim_request("/sessions/stop", {"session_id": session_id})
+        await _update_simulation_status(simulation_id, "completed", scenario=scenario)
+    except Exception as exc:
+        await _update_simulation_status(simulation_id, "failed", error_message=str(exc))
+    finally:
+        LIVE_SIM_TASKS.pop(simulation_id, None)
+
+
 @app.post("/simulate/zone", response_model=SimulationResponse)
 async def simulate_zone_endpoint(request: SimulationRequest):
     """Запустить симуляцию зоны."""
@@ -325,6 +556,83 @@ async def simulate_zone_endpoint(request: SimulationRequest):
         raise
     except Exception as e:
         logger.exception("Digital Twin simulation failed", exc_info=e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/simulations/live/start", response_model=LiveSimulationStartResponse)
+async def start_live_simulation(request: LiveSimulationStartRequest):
+    try:
+        simulation_id, session_id, time_scale, scenario_payload = await _create_live_simulation(request)
+        _, _, nodes = await _load_node_configs(request.zone_id)
+
+        mqtt_config = dict(DEFAULT_MQTT_CONFIG)
+        telemetry_config = dict(DEFAULT_TELEMETRY_CONFIG)
+        if request.mqtt:
+            mqtt_config.update(request.mqtt)
+        if request.telemetry:
+            telemetry_config.update(request.telemetry)
+
+        payload = {
+            "session_id": session_id,
+            "mqtt": mqtt_config,
+            "telemetry": telemetry_config,
+            "nodes": nodes,
+            "failure_mode": request.failure_mode,
+        }
+        await _node_sim_request("/sessions/start", payload)
+
+        task = asyncio.create_task(
+            _complete_live_simulation(simulation_id, session_id, request.sim_duration_minutes)
+        )
+        LIVE_SIM_TASKS[simulation_id] = task
+
+        return LiveSimulationStartResponse(
+            status="started",
+            simulation_id=simulation_id,
+            node_sim_session_id=session_id,
+            time_scale=time_scale,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Live simulation start failed", exc_info=e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/simulations/live/stop")
+async def stop_live_simulation(request: LiveSimulationStopRequest):
+    try:
+        rows = await fetch(
+            "SELECT scenario FROM zone_simulations WHERE id = $1",
+            request.simulation_id,
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="simulation not found")
+        scenario = rows[0]["scenario"] or {}
+        sim_meta = scenario.get("simulation") or {}
+        session_id = sim_meta.get("node_sim_session_id")
+        if session_id:
+            await _node_sim_request("/sessions/stop", {"session_id": session_id})
+
+        if request.status in ("completed", "failed", "stopped"):
+            sim_meta["real_ended_at"] = utcnow().isoformat()
+            scenario["simulation"] = sim_meta
+            await _update_simulation_status(
+                request.simulation_id,
+                request.status,
+                scenario=scenario,
+                error_message=request.reason,
+            )
+
+        task = LIVE_SIM_TASKS.pop(request.simulation_id, None)
+        if task:
+            task.cancel()
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Live simulation stop failed", exc_info=e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

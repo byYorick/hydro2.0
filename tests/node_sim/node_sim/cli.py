@@ -124,7 +124,7 @@ async def run_simulator(config: SimConfig):
         command_handler.state_machine.set_failure_mode(failure_mode)
         if config.failure_mode.offline_chance > 0 and config.failure_mode.offline_duration_s > 0:
             offline_task = asyncio.create_task(
-                _offline_loop(node, config.failure_mode)
+                _offline_loop(node, mqtt, config.failure_mode)
             )
     
     # Создаем публикатор ошибок и интегрируем с моделью
@@ -163,7 +163,7 @@ async def run_simulator(config: SimConfig):
         logger.info("Node simulator stopped")
 
 
-async def _offline_loop(node: "NodeModel", failure_mode):
+async def _offline_loop(node: "NodeModel", mqtt, failure_mode):
     """Периодически переводит ноду в offline для тестирования алертов."""
     interval = max(1.0, float(failure_mode.offline_check_interval_s or 30.0))
     duration = max(1.0, float(failure_mode.offline_duration_s))
@@ -173,11 +173,15 @@ async def _offline_loop(node: "NodeModel", failure_mode):
             continue
         if random.random() < failure_mode.offline_chance:
             node.set_offline(duration)
+            mqtt.disconnect()
             logger.warning(
                 "Node %s set offline for %.1fs (random failure)",
                 node.node_uid,
                 duration
             )
+            await asyncio.sleep(duration)
+            if not mqtt.connect():
+                logger.warning("Node %s failed to reconnect after offline window", node.node_uid)
 
 
 async def run_multi_nodes(config_path: str):

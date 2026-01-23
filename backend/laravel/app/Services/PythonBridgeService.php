@@ -131,7 +131,7 @@ class PythonBridgeService
         $zoneUid = $zone->uid ?? null;
         
         $requestData = [
-            'type' => $command->cmd,
+            'cmd' => $command->cmd,
             'params' => $params,
             'greenhouse_uid' => $ghUid,
             'zone_uid' => $zoneUid, // Передаем zone_uid
@@ -235,7 +235,7 @@ class PythonBridgeService
         }
         
         $requestData = [
-            'type' => $command->cmd,
+            'cmd' => $command->cmd,
             'params' => $params,
             'greenhouse_uid' => $ghUid,
             'zone_id' => $zoneId,

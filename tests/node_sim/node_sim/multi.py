@@ -249,11 +249,15 @@ class MultiNodeOrchestrator:
                 continue
             if random.random() < failure_mode.offline_chance:
                 node_instance.node.set_offline(duration)
+                node_instance.mqtt.disconnect()
                 logger.warning(
                     "Node %s set offline for %.1fs (random failure)",
                     node_instance.node.node_uid,
                     duration
                 )
+                await asyncio.sleep(duration)
+                if not node_instance.mqtt.connect():
+                    logger.warning("Node %s failed to reconnect after offline window", node_instance.node.node_uid)
     
     async def run_forever(self):
         """Запустить оркестратор и работать бесконечно."""
