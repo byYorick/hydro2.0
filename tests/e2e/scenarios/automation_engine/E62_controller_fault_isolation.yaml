@@ -168,7 +168,7 @@ actions:
   # Принудительно вызываем ошибку в climate контроллере через test hook
   - step: inject_climate_error
     type: ae_test_hook
-    url: http://localhost:9505
+    url: http://automation-engine:9505
     zone_id: ${zone_id}
     controller: climate
     action: inject_error
@@ -208,8 +208,8 @@ actions:
   # Очищаем test hook (опционально, если AE_TEST_MODE работает)
   - step: clear_test_hook
     type: ae_test_hook
-    # runner работает на хосте, поэтому обращаемся к проброшенному порту automation-engine
-    url: http://localhost:9505
+    # runner работает в контейнере, используем сервис automation-engine
+    url: http://automation-engine:9505
     zone_id: ${zone_id}
     controller: climate
     action: clear_error

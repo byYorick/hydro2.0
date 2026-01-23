@@ -256,24 +256,24 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         from .config_report import publish_config_report
         from .errors import ErrorPublisher, create_error_callback, create_overcurrent_error
         # Создаем MQTT клиент
-    mqtt = MqttClient(
-        host=config.mqtt.host,
-        port=config.mqtt.port,
-        username=config.mqtt.username,
-        password=config.mqtt.password,
-        client_id=config.mqtt.client_id or f"node-sim-{config.node.node_uid}",
-        tls=config.mqtt.tls,
-        ca_certs=config.mqtt.ca_certs,
-        keepalive=config.mqtt.keepalive
-    )
+        mqtt = MqttClient(
+            host=config.mqtt.host,
+            port=config.mqtt.port,
+            username=config.mqtt.username,
+            password=config.mqtt.password,
+            client_id=config.mqtt.client_id or f"node-sim-{config.node.node_uid}",
+            tls=config.mqtt.tls,
+            ca_certs=config.mqtt.ca_certs,
+            keepalive=config.mqtt.keepalive
+        )
 
-    mqtt.set_node_info(
-        gh_uid=config.node.gh_uid,
-        zone_uid=config.node.zone_uid,
-        node_uid=config.node.node_uid,
-        node_hw_id=config.node.hardware_id,
-        preconfig_mode=(config.node.mode == "preconfig"),
-    )
+        mqtt.set_node_info(
+            gh_uid=config.node.gh_uid,
+            zone_uid=config.node.zone_uid,
+            node_uid=config.node.node_uid,
+            node_hw_id=config.node.hardware_id,
+            preconfig_mode=(config.node.mode == "preconfig"),
+        )
         loop = asyncio.get_running_loop()
         
         # Подключаемся к MQTT

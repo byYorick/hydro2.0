@@ -38,6 +38,12 @@ actions:
     wait_seconds: 5
     optional: true
 
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true
+
   - step: set_test_uids
     type: set
     test_gh_uid: ${setup.node_sim.config.node.gh_uid}
@@ -151,7 +157,7 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://localhost:9505
+    url: http://automation-engine:9505
     zone_id: ${zone_id}
     action: reset_backoff
     optional: true

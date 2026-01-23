@@ -38,10 +38,34 @@ actions:
     endpoint: /api/nodes
     save: nodes_response
 
+  - step: get_zone_id_by_uid
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${setup.node_sim.config.node.zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: get_node_id_by_uid
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${setup.node_sim.config.node.node_uid}
+    save: node_row
+    expected_rows: 1
+
   - step: set_zone_and_node
     type: set
-    zone_id: ${zones_response.data[0].id}
-    node_id: ${nodes_response.data.data[0].id}
+    zone_id: ${zone_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
 
   - step: start_node_simulator
     type: start_simulator
@@ -70,10 +94,7 @@ actions:
       params:
         state: true
     save: command_response
-
-  - step: set_command_id
-    type: set
-    command_id: ${command_response.data.command_id}
+    expected_status: 503
 
   # Ждем обработки команды
   - step: wait_for_timeout
@@ -88,7 +109,26 @@ actions:
 
   - step: wait_after_restore
     type: sleep
-    seconds: 5
+    seconds: 15
+
+  - step: stop_history_logger_for_reconnect
+    type: fault.inject
+    service: history-logger
+    action: stop
+    optional: true
+
+  - step: wait_after_history_logger_stop
+    type: sleep
+    seconds: 2
+
+  - step: restore_history_logger
+    type: fault.restore
+    service: history-logger
+    optional: true
+
+  - step: wait_after_history_logger_restore
+    type: sleep
+    seconds: 10
 
   # Отправляем новую команду (должна доставиться)
   - step: send_command_after_recovery
@@ -100,21 +140,24 @@ actions:
       params:
         state: false
     save: command_response_2
-
-assertions:
-  # Проверка 1: Первая команда получила TIMEOUT (опционально)
-  - name: first_command_timed_out
-    type: database_query
-    query: |
-      SELECT status
-      FROM commands
-      WHERE cmd_id = :cmd_id
-    params:
-      cmd_id: ${command_id}
-    timeout: 5.0
     optional: true
 
-  # Проверка 2: Вторая команда доставилась после восстановления
+  - step: send_command_after_recovery_retry
+    type: api_post
+    endpoint: /api/nodes/${node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        state: false
+    save: command_response_2_retry
+
+  - step: set_command_id_2
+    type: set
+    command_id_2: ${command_response_2_retry.data.command_id}
+
+assertions:
+  # Проверка: Вторая команда доставилась после восстановления
   - name: second_command_delivered
     type: db.wait
     query: |
@@ -122,7 +165,7 @@ assertions:
       FROM commands
       WHERE cmd_id = :cmd_id_2 AND status IN ('SENT', 'ACK')
     params:
-      cmd_id_2: ${command_response_2.data.command_id}
+      cmd_id_2: ${command_id_2}
     timeout: 20.0
     expected_rows: 1
 

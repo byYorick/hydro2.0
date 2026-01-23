@@ -65,6 +65,7 @@ class MqttClient:
         self._connected = threading.Event()
         self._connecting = False
         self._lock = threading.Lock()
+        self._reconnect_in_progress = threading.Event()
         
         # Backoff параметры
         self._base_backoff = 1.0  # Начальная задержка в секундах
@@ -84,6 +85,26 @@ class MqttClient:
         self._zone_uid: Optional[str] = None
         self._node_uid: Optional[str] = None
         self._node_hw_id: Optional[str] = None
+
+    def _cleanup_client(self, client: Optional[mqtt.Client] = None):
+        """Безопасно остановить loop и закрыть сокет клиента."""
+        target = client or self._client
+        if not target:
+            return
+        try:
+            target.loop_stop()
+        except Exception:
+            pass
+        try:
+            target.disconnect()
+        except Exception:
+            pass
+        try:
+            target.socket_close()
+        except Exception:
+            pass
+        if target is self._client:
+            self._client = None
         
     def set_node_info(
         self,
@@ -182,6 +203,10 @@ class MqttClient:
             logger.info("Disconnected from MQTT broker normally")
         else:
             logger.warning(f"Unexpected disconnect from MQTT broker: rc={rc}")
+            if self._reconnect_in_progress.is_set():
+                return
+            self._reconnect_in_progress.set()
+            self._cleanup_client(client)
             # Запускаем переподключение в отдельном потоке
             threading.Thread(
                 target=self._reconnect_with_backoff,
@@ -303,6 +328,8 @@ class MqttClient:
             self._connecting = True
         
         try:
+            if self._client:
+                self._cleanup_client()
             self._client = self._create_client()
             self._client.connect_async(self.host, self.port, self.keepalive)
             self._client.loop_start()
@@ -310,21 +337,17 @@ class MqttClient:
             # Ждем подключения
             if self._connected.wait(timeout=timeout):
                 logger.info("Successfully connected to MQTT broker")
+                self._reconnect_in_progress.clear()
                 return True
             else:
                 logger.error(f"Connection timeout after {timeout}s")
-                self._client.loop_stop()
-                self._client = None
+                self._cleanup_client()
                 return False
                 
         except Exception as e:
             logger.error(f"Error connecting to MQTT broker: {e}", exc_info=True)
             if self._client:
-                try:
-                    self._client.loop_stop()
-                except:
-                    pass
-                self._client = None
+                self._cleanup_client()
             return False
         finally:
             with self._lock:
@@ -334,28 +357,33 @@ class MqttClient:
         """Переподключение с экспоненциальным backoff и jitter."""
         logger.info("Starting reconnection with exponential backoff")
         
-        while not self._connected.is_set():
-            # Вычисляем задержку с jitter
-            jitter = random.uniform(
-                -self._jitter_range * self._current_backoff,
-                self._jitter_range * self._current_backoff
-            )
-            delay = max(0.1, self._current_backoff + jitter)
-            
-            logger.info(f"Reconnecting in {delay:.2f}s (backoff={self._current_backoff:.2f}s ± {self._jitter_range*100:.0f}%)")
-            time.sleep(delay)
-            
-            # Попытка переподключения
-            if self.connect(timeout=5.0):
-                logger.info("Successfully reconnected to MQTT broker")
-                break
-            else:
-                # Увеличиваем backoff экспоненциально
-                self._current_backoff = min(
-                    self._current_backoff * 2,
-                    self._max_backoff
+        try:
+            while not self._connected.is_set():
+                # Вычисляем задержку с jitter
+                jitter = random.uniform(
+                    -self._jitter_range * self._current_backoff,
+                    self._jitter_range * self._current_backoff
                 )
-                logger.warning(f"Reconnection failed, next attempt in {self._current_backoff:.2f}s")
+                delay = max(0.1, self._current_backoff + jitter)
+                
+                logger.info(
+                    f"Reconnecting in {delay:.2f}s (backoff={self._current_backoff:.2f}s ± {self._jitter_range*100:.0f}%)"
+                )
+                time.sleep(delay)
+                
+                # Попытка переподключения
+                if self.connect(timeout=5.0):
+                    logger.info("Successfully reconnected to MQTT broker")
+                    break
+                else:
+                    # Увеличиваем backoff экспоненциально
+                    self._current_backoff = min(
+                        self._current_backoff * 2,
+                        self._max_backoff
+                    )
+                    logger.warning(f"Reconnection failed, next attempt in {self._current_backoff:.2f}s")
+        finally:
+            self._reconnect_in_progress.clear()
     
     def disconnect(self):
         """Отключиться от MQTT брокера."""

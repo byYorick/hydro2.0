@@ -144,12 +144,14 @@ class SimulationOrchestratorService
                 if (! $newChannelId) {
                     continue;
                 }
-                ChannelBinding::create([
-                    'infrastructure_instance_id' => $newInstance->id,
-                    'node_channel_id' => $newChannelId,
-                    'direction' => $binding->direction,
-                    'role' => $binding->role,
-                ]);
+                ChannelBinding::updateOrCreate(
+                    ['node_channel_id' => $newChannelId],
+                    [
+                        'infrastructure_instance_id' => $newInstance->id,
+                        'direction' => $binding->direction,
+                        'role' => $binding->role,
+                    ]
+                );
             }
         }
     }

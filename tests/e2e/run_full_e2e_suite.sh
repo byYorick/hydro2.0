@@ -6,13 +6,23 @@ set -e
 echo "🚀 Запуск ПОЛНОГО E2E-НАБОРА тестов..."
 echo "Время начала: $(date)"
 
-# Переменные окружения для стабильности
-export E2E_STABLE_RUN=1
-export MQTT_HOST=localhost
-export MQTT_PORT=1884
-export LARAVEL_URL=http://localhost:8081
-export WS_URL=ws://localhost:6002/app/local
-export AE_TEST_MODE=1
+# Устанавливаем зависимости, если не хватает модулей
+if ! python3 - <<'PY' >/dev/null 2>&1
+import yaml  # noqa: F401
+PY
+then
+  echo "📦 Устанавливаем зависимости E2E..."
+  pip3 install -r requirements.txt
+fi
+
+# Переменные окружения для стабильности (не переопределяем уже заданные)
+: "${E2E_STABLE_RUN:=1}"
+: "${MQTT_HOST:=localhost}"
+: "${MQTT_PORT:=1884}"
+: "${LARAVEL_URL:=http://localhost:8081}"
+: "${WS_URL:=ws://localhost:6002/app/local}"
+: "${AE_TEST_MODE:=1}"
+export E2E_STABLE_RUN MQTT_HOST MQTT_PORT LARAVEL_URL WS_URL AE_TEST_MODE
 
 # Функция для запуска тестов с повторными попытками
 run_test_with_retry() {
@@ -88,6 +98,10 @@ run_test_with_retry "scenarios/automation_engine/E65_phase_transition_api.yaml"
 run_test_with_retry "scenarios/automation_engine/E66_fail_closed_corrections.yaml"
 
 echo ""
+echo "=== SIMULATION ТЕСТЫ ==="
+run_test_with_retry "scenarios/simulation/E90_live_simulation_stop_commands.yaml"
+
+echo ""
 echo "=== SNAPSHOT ТЕСТЫ ==="
 run_test_with_retry "scenarios/snapshot/E30_snapshot_contains_last_event_id.yaml"
 run_test_with_retry "scenarios/snapshot/E31_reconnect_replay_gap.yaml"
@@ -100,9 +114,6 @@ run_test_with_retry "scenarios/chaos/E71_db_flaky.yaml"
 echo ""
 echo "🎉 ПОЛНЫЙ E2E-НАБОР ЗАВЕРШЕН!"
 echo "Время окончания: $(date)"
-
-
-
 
 
 

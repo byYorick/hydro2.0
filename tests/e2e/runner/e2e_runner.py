@@ -12,6 +12,7 @@ import os
 import time
 import re
 import subprocess
+import shutil
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -133,6 +134,63 @@ class E2ERunner:
         self._stopped_services: List[str] = []
         # Отмечаем, запускали ли инфраструктуру сами, чтобы корректно чистить
         self._infra_started_by_runner = False
+
+    def _use_docker_cli(self) -> bool:
+        """Use docker CLI instead of docker-compose (e.g., in container mode)."""
+        return os.getenv("E2E_CONTAINER") == "1" or os.getenv("E2E_DOCKER_CLI") == "1"
+
+    def _docker_compose_available(self) -> bool:
+        return shutil.which("docker-compose") is not None
+
+    def _compose_project(self) -> str:
+        project = os.getenv("COMPOSE_PROJECT_NAME")
+        if project:
+            return project
+        compose_dir = os.path.dirname(self.compose_file) if os.path.dirname(self.compose_file) else os.getcwd()
+        return os.path.basename(compose_dir) or "e2e"
+
+    def _resolve_container_name(self, compose_service: str) -> str:
+        project = self._compose_project()
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label=com.docker.compose.project={project}",
+                    "--filter",
+                    f"label=com.docker.compose.service={compose_service}",
+                    "--format",
+                    "{{.Names}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                name = result.stdout.strip().splitlines()
+                if name:
+                    return name[0]
+        except Exception:
+            pass
+        return f"{project}-{compose_service}-1"
+
+    def _wait_laravel_health_simple(self, timeout: float = 60.0):
+        """Wait for Laravel health without docker-compose (container-safe)."""
+        import httpx
+
+        url = os.getenv("LARAVEL_URL", "http://localhost:8081") + "/api/system/health"
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                resp = httpx.get(url, timeout=2.0)
+                if resp.status_code == 200:
+                    return
+            except Exception:
+                pass
+            time.sleep(2)
+        logger.warning("Laravel health wait timed out in container mode")
     
     async def setup(self):
         """Инициализация клиентов."""
@@ -267,13 +325,22 @@ class E2ERunner:
         try:
             if action == "stop":
                 logger.info(f"[FAULT_INJECT] Stopping service: {compose_service}")
-                result = subprocess.run(
-                    ["docker-compose", "-f", compose_file, "stop", compose_service],
-                    cwd=compose_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
+                if self._use_docker_cli():
+                    container = self._resolve_container_name(compose_service)
+                    result = subprocess.run(
+                        ["docker", "stop", container],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                else:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", compose_file, "stop", compose_service],
+                        cwd=compose_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
                 if result.returncode != 0:
                     logger.error(f"[FAULT_INJECT] Failed to stop {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to stop service {compose_service}: {result.stderr}")
@@ -289,13 +356,22 @@ class E2ERunner:
                 
             elif action == "pause":
                 logger.info(f"[FAULT_INJECT] Pausing service: {compose_service}")
-                result = subprocess.run(
-                    ["docker-compose", "-f", compose_file, "pause", compose_service],
-                    cwd=compose_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
+                if self._use_docker_cli():
+                    container = self._resolve_container_name(compose_service)
+                    result = subprocess.run(
+                        ["docker", "pause", container],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                else:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", compose_file, "pause", compose_service],
+                        cwd=compose_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
                 if result.returncode != 0:
                     logger.error(f"[FAULT_INJECT] Failed to pause {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to pause service {compose_service}: {result.stderr}")
@@ -303,13 +379,22 @@ class E2ERunner:
                 
             elif action == "unpause":
                 logger.info(f"[FAULT_INJECT] Unpausing service: {compose_service}")
-                result = subprocess.run(
-                    ["docker-compose", "-f", compose_file, "unpause", compose_service],
-                    cwd=compose_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
+                if self._use_docker_cli():
+                    container = self._resolve_container_name(compose_service)
+                    result = subprocess.run(
+                        ["docker", "unpause", container],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                else:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", compose_file, "unpause", compose_service],
+                        cwd=compose_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
                 if result.returncode != 0:
                     logger.error(f"[FAULT_INJECT] Failed to unpause {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to unpause service {compose_service}: {result.stderr}")
@@ -349,13 +434,22 @@ class E2ERunner:
         
         try:
             logger.info(f"[FAULT_INJECT] Restoring service: {compose_service}")
-            result = subprocess.run(
-                ["docker-compose", "-f", compose_file, "start", compose_service],
-                cwd=compose_dir,
-                capture_output=True,
-                text=True,
-                timeout=60  # Больше времени для старта
-            )
+            if self._use_docker_cli():
+                container = self._resolve_container_name(compose_service)
+                result = subprocess.run(
+                    ["docker", "start", container],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            else:
+                result = subprocess.run(
+                    ["docker-compose", "-f", compose_file, "start", compose_service],
+                    cwd=compose_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60  # Больше времени для старта
+                )
             if result.returncode != 0:
                 logger.error(f"[FAULT_INJECT] Failed to start {compose_service}: {result.stderr}")
                 raise RuntimeError(f"Failed to start service {compose_service}: {result.stderr}")
@@ -391,6 +485,14 @@ class E2ERunner:
         """
         if os.getenv("E2E_SKIP_COMPOSE_UP") == "1":
             logger.info("E2E_SKIP_COMPOSE_UP=1, пропускаем docker-compose up")
+            return
+        if self._use_docker_cli():
+            logger.info("E2E_CONTAINER=1: пропускаем docker-compose up, ожидаем Laravel")
+            self._wait_laravel_health_simple()
+            return
+        if not self._docker_compose_available():
+            logger.warning("docker-compose не найден, пропускаем docker-compose up")
+            self._wait_laravel_health_simple()
             return
 
         compose_file = self.compose_file
@@ -541,13 +643,22 @@ class E2ERunner:
             pass
 
         logger.info("Running migrations in laravel container (migrate:fresh --seed)...")
-        result = subprocess.run(
-            ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate:fresh", "--seed"],
-            cwd=compose_dir,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
+        if self._use_docker_cli():
+            container = self._resolve_container_name("laravel")
+            result = subprocess.run(
+                ["docker", "exec", "-T", container, "php", "artisan", "migrate:fresh", "--seed"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+        else:
+            result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate:fresh", "--seed"],
+                cwd=compose_dir,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
         if result.returncode != 0:
             logger.error(f"Migrations failed: {result.stderr}")
             raise RuntimeError(f"Migrations failed: {result.stderr}")
@@ -1997,7 +2108,13 @@ class E2ERunner:
         # Automation Engine test hook
         if step_type == "ae_test_hook":
             import httpx
-            automation_engine_url = cfg.get("url", "http://automation-engine:9405")
+            automation_engine_url = cfg.get("url")
+            if not automation_engine_url:
+                host = os.getenv("AUTOMATION_ENGINE_HOST")
+                if not host:
+                    host = "automation-engine" if os.getenv("E2E_CONTAINER") == "1" else "localhost"
+                port = os.getenv("AUTOMATION_ENGINE_API_PORT", "9505")
+                automation_engine_url = f"http://{host}:{port}"
             zone_id = cfg.get("zone_id") or self.context.get("zone_id")
             controller = cfg.get("controller")
             action = cfg.get("action")  # inject_error, clear_error, reset_backoff, set_state

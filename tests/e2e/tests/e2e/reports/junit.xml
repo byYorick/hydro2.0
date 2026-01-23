@@ -1,16 +1,2 @@
 <?xml version='1.0' encoding='utf-8'?>
-<testsuites name="E01_bootstrap" tests="2" failures="2" skipped="0" time="30.136630535125732"><testsuite name="E01_bootstrap" tests="2" failures="2" skipped="0" time="30.136630535125732"><testcase name="start_node_simulator" time="0.047590017318725586"><failure message="Failed to start service node-sim: service &quot;mosquitto&quot; has no container to start&#10;">Failed to start service node-sim: service "mosquitto" has no container to start
-</failure></testcase><testcase name="telemetry_in_db" time="30.089040517807007"><failure message="Timeout waiting for DB condition: SELECT&#10;  tl.last_value as value,&#10;  s.label as channel,&#10;  s.node_id,&#10;  s.zone_id,&#10;  tl.updated_at,&#10;  s.type as metric_type&#10;FROM telemetry_last tl&#10;JOIN sensors s ON s.id = tl.sensor_id&#10;WHERE s.zone_id = :zone_id&#10;  AND s.node_id = :node_id&#10;  AND s.type = 'PH'&#10;LIMIT 1&#10;">Timeout waiting for DB condition: SELECT
-  tl.last_value as value,
-  s.label as channel,
-  s.node_id,
-  s.zone_id,
-  tl.updated_at,
-  s.type as metric_type
-FROM telemetry_last tl
-JOIN sensors s ON s.id = tl.sensor_id
-WHERE s.zone_id = :zone_id
-  AND s.node_id = :node_id
-  AND s.type = 'PH'
-LIMIT 1
-</failure></testcase></testsuite></testsuites>
+<testsuites name="E71_db_flaky" tests="11" failures="0" skipped="0" time="22.24690318107605"><testsuite name="E71_db_flaky" tests="11" failures="0" skipped="0" time="22.24690318107605"><testcase name="set_test_uids" time="0.10844826698303223" /><testcase name="fetch_node_id" time="0.10938620567321777" /><testcase name="get_zones" time="0.23139739036560059" /><testcase name="set_zone_id" time="0.11336612701416016" /><testcase name="pause_postgres" time="2.1044623851776123" /><testcase name="wait_during_pause" time="7.050938844680786" /><testcase name="publish_error_during_db_pause" time="2.0594606399536133" /><testcase name="unpause_postgres" time="0.3674793243408203" /><testcase name="wait_after_recovery" time="10.095344543457031" /><testcase name="system_still_responding" time="0.0035545825958251953" /><testcase name="data_queued_and_processed" time="0.003064870834350586" /></testsuite></testsuites>

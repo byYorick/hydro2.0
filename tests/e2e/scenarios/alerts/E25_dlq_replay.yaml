@@ -1,0 +1,113 @@
+# E25: DLQ Replay - pending_alerts.dlq -> replay -> delivered
+# DoD: DLQ item -> replay -> delivered
+
+name: E25_dlq_replay
+description: |
+  Проверяет механизм replay алерта из DLQ:
+  - Создается pending_alert со статусом dlq
+  - Выполняется replay через API
+  - pending_alert удаляется
+  - алерт создается в alerts со статусом ACTIVE
+
+setup:
+  prerequisites:
+    - database: pending_alerts table exists
+    - database: alerts table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - backend: Laravel is running
+
+actions:
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+
+  - step: cleanup_alerts
+    type: db.execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+
+  - step: cleanup_pending_alerts
+    type: db.execute
+    query: |
+      DELETE FROM pending_alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+
+  - step: create_dlq_item
+    type: database_query
+    query: |
+      INSERT INTO pending_alerts
+        (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, last_attempt_at, created_at, updated_at)
+      VALUES
+        (:zone_id, 'infra', :code, 'error', 'dlq', :details::jsonb, 3, 3, 'Simulated delivery failure', NOW(), NOW(), NOW())
+      RETURNING id
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+      details: '{"reason":"simulated_dlq"}'
+    save: dlq_row
+
+  - step: set_pending_alert_id
+    type: set
+    pending_alert_id: ${dlq_row.0.id}
+
+  - step: replay_dlq_item
+    type: api_post
+    endpoint: /api/alerts/dlq/${pending_alert_id}/replay
+    expected_status: 200
+    wait_seconds: 1
+
+assertions:
+  - name: pending_alert_removed
+    type: db.wait
+    query: |
+      SELECT id
+      FROM pending_alerts
+      WHERE id = :pending_alert_id
+    params:
+      pending_alert_id: ${pending_alert_id}
+    timeout: 15.0
+    expected_rows: 0
+
+  - name: alert_delivered_active
+    type: db.wait
+    query: |
+      SELECT id
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+      AND status = 'ACTIVE'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+    timeout: 15.0
+    expected_rows: 1
+
+cleanup:
+  - step: cleanup_alerts
+    type: db.execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure

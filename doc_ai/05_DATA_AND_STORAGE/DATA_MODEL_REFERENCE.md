@@ -60,9 +60,19 @@ updated_at
 
 ```
 id BIGSERIAL PK
+greenhouse_id BIGINT FK -> greenhouses
+preset_id BIGINT FK -> presets
+uid VARCHAR(64) UNIQUE
 name VARCHAR
 description TEXT
 status VARCHAR (online/offline/warning/critical)
+water_state VARCHAR (NORMAL_RECIRC/WATER_CHANGE_DRAIN/WATER_CHANGE_FILL/WATER_CHANGE_STABILIZE)
+solution_started_at TIMESTAMP
+health_score NUMERIC(5,2)
+health_status VARCHAR(16)
+hardware_profile JSONB
+capabilities JSONB
+settings JSONB
 created_at
 updated_at
 ```
@@ -70,6 +80,7 @@ updated_at
 Индексы:
 ```
 zones_status_idx
+zones_uid_unique
 ```
 
 ---
@@ -88,6 +99,9 @@ fw_version VARCHAR
 last_seen_at TIMESTAMP
 status VARCHAR (online/offline)
 config JSONB
+error_count INTEGER DEFAULT 0
+warning_count INTEGER DEFAULT 0
+critical_count INTEGER DEFAULT 0
 created_at
 updated_at
 ```
@@ -475,6 +489,81 @@ commands_sent_at_idx (sent_at) -- уже существует
 commands_zone_node_status_idx (zone_id, node_id, status) WHERE zone_id IS NOT NULL AND node_id IS NOT NULL
 commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
 commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
+```
+
+## 6.2. command_tracking
+
+```
+id PK
+cmd_id VARCHAR UNIQUE
+zone_id FK → zones
+command JSONB
+status VARCHAR (pending/completed/failed)
+sent_at TIMESTAMP
+completed_at TIMESTAMP NULL
+response JSONB NULL
+error TEXT NULL
+latency_seconds FLOAT NULL
+context JSONB NULL
+```
+
+Индексы:
+```
+idx_command_tracking_zone_id (zone_id)
+idx_command_tracking_status (status)
+idx_command_tracking_sent_at (sent_at)
+idx_command_tracking_cmd_id (cmd_id)
+```
+
+## 6.3. command_audit
+
+```
+id PK
+zone_id FK → zones
+command_type VARCHAR
+command_data JSONB
+telemetry_snapshot JSONB NULL
+decision_context JSONB NULL
+pid_state JSONB NULL
+created_at TIMESTAMP
+```
+
+Индексы:
+```
+idx_command_audit_zone_id (zone_id)
+idx_command_audit_created_at (created_at)
+idx_command_audit_command_type (command_type)
+```
+
+## 6.4. pid_state
+
+```
+zone_id FK → zones
+pid_type VARCHAR (ph/ec)
+integral FLOAT DEFAULT 0
+prev_error FLOAT NULL
+last_output_ms BIGINT DEFAULT 0
+stats JSONB NULL
+current_zone VARCHAR NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+PK (zone_id, pid_type)
+```
+
+Индексы:
+```
+idx_pid_state_zone_id (zone_id)
+idx_pid_state_updated_at (updated_at)
+```
+
+## 6.5. zone_automation_state
+
+```
+zone_id FK → zones
+state JSONB NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+PK (zone_id)
 ```
 
 ---

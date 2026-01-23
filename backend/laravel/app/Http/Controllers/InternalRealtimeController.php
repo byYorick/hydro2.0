@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Events\TelemetryBatchUpdated;
 use App\Http\Requests\Internal\TelemetryBatchRequest;
+use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class InternalRealtimeController extends Controller
 {
@@ -50,13 +52,23 @@ class InternalRealtimeController extends Controller
             ];
         }
 
+        $broadcastErrors = 0;
         foreach ($updatesByZone as $zoneId => $zoneUpdates) {
-            event(new TelemetryBatchUpdated($zoneId, $zoneUpdates));
+            try {
+                event(new TelemetryBatchUpdated($zoneId, $zoneUpdates));
+            } catch (BroadcastException $e) {
+                $broadcastErrors++;
+                Log::warning('Realtime broadcast failed for telemetry batch', [
+                    'zone_id' => $zoneId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json([
             'status' => 'ok',
-            'broadcasted' => count($updatesByZone),
+            'broadcasted' => count($updatesByZone) - $broadcastErrors,
+            'broadcast_errors' => $broadcastErrors,
             'updates' => count($updates),
         ]);
     }
