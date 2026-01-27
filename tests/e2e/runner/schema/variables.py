@@ -4,6 +4,7 @@ Variable resolution and expression evaluation for E2E tests.
 
 import re
 import logging
+import os
 from typing import Dict, Any, Optional, List, Set
 from datetime import datetime, timedelta
 
@@ -79,8 +80,12 @@ class VariableResolver:
         if current is None:
             # Try to find in context with different naming
             current = self._find_variable_fallback(parts[0])
-            if current is None:
-                return None
+        if current is None:
+            env_value = os.getenv(parts[0])
+            if env_value is not None:
+                current = env_value
+        if current is None:
+            return None
 
         # Navigate through the path
         for part in parts[1:]:

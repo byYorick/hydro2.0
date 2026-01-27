@@ -27,6 +27,14 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e65-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
   # Создаем рецепт с несколькими фазами
   - step: create_multi_phase_recipe
     type: api_post
@@ -34,7 +42,7 @@ actions:
     payload:
       name: multi-phase-recipe-${TIMESTAMP_S}
       description: Recipe with multiple phases for transition testing
-      plant_id: 1
+      plant_id: ${plant_response.data.id}
     save: recipe_response
 
   - step: create_revision
@@ -81,7 +89,7 @@ actions:
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
       recipe_revision_id: ${revision_response.data.id}
-      plant_id: 1
+      plant_id: ${plant_response.data.id}
       start_immediately: true
     save: cycle_response
 
@@ -195,4 +203,9 @@ cleanup:
   - step: delete_recipe
     type: api_delete
     endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true

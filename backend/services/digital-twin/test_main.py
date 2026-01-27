@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from common.schemas import SimulationRequest, SimulationScenario
-from main import get_recipe_revision_phases, simulate_zone
+from main import get_recipe_revision_phases, simulate_zone, _record_simulation_event
 
 
 @pytest.mark.asyncio
@@ -92,3 +92,25 @@ async def test_simulate_zone_returns_points():
     assert data["points"][0]["phase_index"] == 0
     assert data["points"][0]["t"] == pytest.approx(0.0)
     assert data["points"][1]["t"] == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
+async def test_record_simulation_event_inserts_payload():
+    with patch("main.execute", new_callable=AsyncMock) as mock_execute:
+        await _record_simulation_event(
+            simulation_id=10,
+            zone_id=5,
+            service="digital-twin",
+            stage="live_init",
+            status="running",
+            message="test event",
+            payload={"key": "value"},
+        )
+
+    mock_execute.assert_awaited()
+    args = mock_execute.call_args.args
+    assert args[1] == 10
+    assert args[2] == 5
+    assert args[3] == "digital-twin"
+    assert args[4] == "live_init"
+    assert args[5] == "running"

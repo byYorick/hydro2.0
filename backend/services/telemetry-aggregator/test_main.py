@@ -22,7 +22,13 @@ async def test_get_last_ts_exists():
         
         result = await get_last_ts("1m")
         
-        assert result == last_ts
+    assert result == last_ts
+
+
+@pytest.fixture(autouse=True)
+def mock_simulation_events():
+    with patch("main.record_simulation_event", new=AsyncMock(return_value=True)) as mock:
+        yield mock
 
 
 @pytest.mark.asyncio
@@ -63,15 +69,15 @@ async def test_update_last_ts():
 
 
 @pytest.mark.asyncio
-async def test_aggregate_1m_success():
+async def test_aggregate_1m_success(mock_simulation_events):
     """Test aggregating 1m telemetry."""
     last_ts = utcnow() - timedelta(hours=1)
     new_ts = utcnow()
     
     mock_rows = [
-        {"ts": new_ts - timedelta(minutes=5)},
-        {"ts": new_ts - timedelta(minutes=3)},
-        {"ts": new_ts},
+        {"zone_id": 1, "ts": new_ts - timedelta(minutes=5)},
+        {"zone_id": 2, "ts": new_ts - timedelta(minutes=3)},
+        {"zone_id": 1, "ts": new_ts},
     ]
     
     with patch("main.get_last_ts") as mock_get_ts, \
@@ -85,6 +91,7 @@ async def test_aggregate_1m_success():
         assert count == len(mock_rows)
         mock_fetch.assert_called_once()
         mock_update_ts.assert_called_once()
+        assert mock_simulation_events.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -110,20 +117,18 @@ async def test_aggregate_1m_with_time_bucket_fallback():
     last_ts = utcnow() - timedelta(hours=1)
     new_ts = utcnow()
     
-    mock_rows = [{"ts": new_ts}]
+    mock_rows = [{"zone_id": 1, "ts": new_ts}]
     
     with patch("main.get_last_ts") as mock_get_ts, \
          patch("main.fetch") as mock_fetch, \
          patch("main.update_last_ts") as mock_update_ts:
         mock_get_ts.return_value = last_ts
-        # Первый вызов (time_bucket) вызывает исключение
-        # В текущей реализации при ошибке функция возвращает 0, fallback на date_trunc не реализован
-        mock_fetch.side_effect = Exception("time_bucket not found")
+        # Первый вызов (time_bucket) вызывает исключение, затем fallback возвращает данные
+        mock_fetch.side_effect = [Exception("time_bucket not found"), mock_rows]
         
         count = await aggregate_1m()
         
-        # При ошибке функция возвращает 0
-        assert count == 0
+        assert count == len(mock_rows)
 
 
 @pytest.mark.asyncio
@@ -133,9 +138,9 @@ async def test_aggregate_1h_success():
     new_ts = utcnow()
     
     mock_rows = [
-        {"ts": new_ts - timedelta(hours=2)},
-        {"ts": new_ts - timedelta(hours=1)},
-        {"ts": new_ts},
+        {"zone_id": 1, "ts": new_ts - timedelta(hours=2)},
+        {"zone_id": 1, "ts": new_ts - timedelta(hours=1)},
+        {"zone_id": 1, "ts": new_ts},
     ]
     
     with patch("main.get_last_ts") as mock_get_ts, \
@@ -174,9 +179,9 @@ async def test_aggregate_daily_success():
     new_date = utcnow().date()
     
     mock_rows = [
-        {"date": new_date - timedelta(days=2)},
-        {"date": new_date - timedelta(days=1)},
-        {"date": new_date},
+        {"zone_id": 1, "date": new_date - timedelta(days=2)},
+        {"zone_id": 1, "date": new_date - timedelta(days=1)},
+        {"zone_id": 1, "date": new_date},
     ]
     
     with patch("main.get_last_ts") as mock_get_ts, \

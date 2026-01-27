@@ -5,6 +5,12 @@ import httpx
 from infrastructure.command_bus import CommandBus
 
 
+@pytest.fixture(autouse=True)
+def mock_simulation_events():
+    with patch("infrastructure.command_bus.record_simulation_event", new=AsyncMock(return_value=True)) as mock:
+        yield mock
+
+
 @pytest.mark.asyncio
 async def test_publish_command_success():
     """Test successful command publication via REST API."""

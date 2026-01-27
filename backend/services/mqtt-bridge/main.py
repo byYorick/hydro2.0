@@ -18,6 +18,7 @@ from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch
+from common.simulation_events import record_simulation_event
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
 
@@ -258,9 +259,41 @@ async def send_zone_command(
         )
         # Команда успешно опубликована - помечаем как sent
         await mark_command_sent(cmd_id)
+        await record_simulation_event(
+            zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="sent",
+            message="Команда опубликована в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": req.node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+            },
+        )
         return {"status": "ok", "data": {"command_id": cmd_id}}
     except Exception as e:
         logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        await record_simulation_event(
+            zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="failed",
+            level="error",
+            message="Ошибка публикации команды в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": req.node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+                "error": str(e),
+            },
+        )
         # Команда НЕ опубликована - НЕ вызываем mark_command_sent
         raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
@@ -342,9 +375,41 @@ async def send_node_command(
         )
         # Команда успешно опубликована - помечаем как sent
         await mark_command_sent(cmd_id)
+        await record_simulation_event(
+            req.zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="sent",
+            message="Команда опубликована в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+            },
+        )
         return {"status": "ok", "data": {"command_id": cmd_id}}
     except Exception as e:
         logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        await record_simulation_event(
+            req.zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="failed",
+            level="error",
+            message="Ошибка публикации команды в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+                "error": str(e),
+            },
+        )
         # Команда НЕ опубликована - НЕ вызываем mark_command_sent
         raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 

@@ -21,6 +21,7 @@ use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
+use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
@@ -293,6 +294,9 @@ Route::middleware([
 
     // Simulations status (viewer+)
     Route::get('simulations/{jobId}', [SimulationController::class, 'show']);
+    Route::get('simulations/{simulation}/events', [SimulationEventController::class, 'index']);
+    Route::get('simulations/{simulation}/events/stream', [SimulationEventController::class, 'stream'])
+        ->middleware('throttle:5,1');
 
     // Admin (минимальный CRUD поверх ресурсов): зоны быстрый create, рецепт быстрый update
     Route::middleware('role:admin')->prefix('admin')->group(function () {

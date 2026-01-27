@@ -9,6 +9,7 @@ import httpx
 import os
 from common.mqtt import MqttClient
 from common.db import create_zone_event
+from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram
 from .command_validator import CommandValidator
 from .command_tracker import CommandTracker
@@ -186,6 +187,20 @@ class CommandBus:
                         extra={"zone_id": zone_id, "cmd_id": cmd_id, "trace_id": trace_id}
                     )
                     COMMANDS_SENT.labels(zone_id=str(zone_id), metric=cmd).inc()
+                    await record_simulation_event(
+                        zone_id,
+                        service="automation-engine",
+                        stage="command_publish",
+                        status="sent",
+                        message="Команда отправлена через history-logger",
+                        payload={
+                            "cmd": cmd,
+                            "cmd_id": cmd_id,
+                            "channel": channel,
+                            "node_uid": node_uid,
+                            "source": self.command_source,
+                        },
+                    )
                     return True
                 except Exception as e:
                     error_type = "json_decode_error"
@@ -193,6 +208,20 @@ class CommandBus:
                     logger.error(
                         f"Zone {zone_id}: Failed to parse response JSON: {e}",
                         extra={"zone_id": zone_id, "trace_id": trace_id}
+                    )
+                    await record_simulation_event(
+                        zone_id,
+                        service="automation-engine",
+                        stage="command_publish",
+                        status="failed",
+                        level="error",
+                        message="Ошибка разбора ответа history-logger",
+                        payload={
+                            "cmd": cmd,
+                            "channel": channel,
+                            "node_uid": node_uid,
+                            "error": str(e),
+                        },
                     )
                     return False
             else:
@@ -206,22 +235,79 @@ class CommandBus:
                     f"Zone {zone_id}: Failed to publish command {cmd} via REST: {response.status_code} - {error_msg}",
                     extra={"zone_id": zone_id, "trace_id": trace_id}
                 )
+                await record_simulation_event(
+                    zone_id,
+                    service="automation-engine",
+                    stage="command_publish",
+                    status="failed",
+                    level="error",
+                    message="Ошибка отправки команды через history-logger",
+                    payload={
+                        "cmd": cmd,
+                        "channel": channel,
+                        "node_uid": node_uid,
+                        "http_status": response.status_code,
+                        "error": error_msg,
+                    },
+                )
                 return False
                     
         except httpx.TimeoutException as e:
             error_type = "timeout"
             REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
             logger.error(f"Zone {zone_id}: Timeout publishing command {cmd} via REST: {e}", exc_info=True)
+            await record_simulation_event(
+                zone_id,
+                service="automation-engine",
+                stage="command_publish",
+                status="failed",
+                level="error",
+                message="Таймаут отправки команды через history-logger",
+                payload={
+                    "cmd": cmd,
+                    "channel": channel,
+                    "node_uid": node_uid,
+                    "error": str(e),
+                },
+            )
             return False
         except httpx.RequestError as e:
             error_type = "request_error"
             REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
             logger.error(f"Zone {zone_id}: Request error publishing command {cmd} via REST: {e}", exc_info=True)
+            await record_simulation_event(
+                zone_id,
+                service="automation-engine",
+                stage="command_publish",
+                status="failed",
+                level="error",
+                message="Ошибка запроса при отправке команды через history-logger",
+                payload={
+                    "cmd": cmd,
+                    "channel": channel,
+                    "node_uid": node_uid,
+                    "error": str(e),
+                },
+            )
             return False
         except Exception as e:
             error_type = type(e).__name__
             REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
             logger.error(f"Zone {zone_id}: Failed to publish command {cmd} via REST: {e}", exc_info=True)
+            await record_simulation_event(
+                zone_id,
+                service="automation-engine",
+                stage="command_publish",
+                status="failed",
+                level="error",
+                message="Не удалось отправить команду через history-logger",
+                payload={
+                    "cmd": cmd,
+                    "channel": channel,
+                    "node_uid": node_uid,
+                    "error": str(e),
+                },
+            )
             return False
     
     async def publish_controller_command(
@@ -272,6 +358,18 @@ class CommandBus:
                 'command': command,
                 'error': error
             })
+            await record_simulation_event(
+                zone_id,
+                service="automation-engine",
+                stage="command_validate",
+                status="validation_failed",
+                level="warning",
+                message="Команда не прошла валидацию",
+                payload={
+                    "command": command,
+                    "error": error,
+                },
+            )
             return False
         
         # Отслеживание команды

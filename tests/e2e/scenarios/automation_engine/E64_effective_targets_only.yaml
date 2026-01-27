@@ -26,6 +26,14 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e64-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
   # Создаем цикл с известными recipe targets
   - step: create_recipe_with_targets
     type: api_post
@@ -33,7 +41,7 @@ actions:
     payload:
       name: test-recipe-targets-${TIMESTAMP_S}
       description: Test recipe for effective targets
-      plant_id: 1
+      plant_id: ${plant_response.data.id}
     save: recipe_response
 
   - step: create_recipe_revision
@@ -72,7 +80,7 @@ actions:
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
       recipe_revision_id: ${revision_response.data.id}
-      plant_id: 1  # Assume test plant exists
+      plant_id: ${plant_response.data.id}
       start_immediately: true
     save: cycle_response
 
@@ -196,6 +204,16 @@ cleanup:
       WHERE grow_cycle_id = :cycle_id;
     params:
       cycle_id: ${cycle_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true
 
   - step: delete_recipe

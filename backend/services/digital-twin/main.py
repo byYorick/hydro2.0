@@ -487,6 +487,19 @@ async def _create_live_simulation(
     )
     simulation_id = rows[0]["id"]
 
+    await _record_simulation_event(
+        simulation_id,
+        request.zone_id,
+        service="digital-twin",
+        stage="live_init",
+        status="running",
+        message="Live-симуляция зарегистрирована",
+        payload={
+            "node_sim_session_id": session_id,
+            "time_scale": time_scale,
+        },
+    )
+
     return simulation_id, session_id, time_scale, scenario_payload
 
 
@@ -512,20 +525,60 @@ async def _update_simulation_status(
     )
 
 
+async def _record_simulation_event(
+    simulation_id: int,
+    zone_id: int,
+    service: str,
+    stage: str,
+    status: str,
+    message: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    level: str = "info",
+) -> None:
+    await execute(
+        """
+        INSERT INTO simulation_events (
+            simulation_id,
+            zone_id,
+            service,
+            stage,
+            status,
+            level,
+            message,
+            payload,
+            occurred_at,
+            created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        """,
+        simulation_id,
+        zone_id,
+        service,
+        stage,
+        status,
+        level,
+        message,
+        json.dumps(payload) if payload else None,
+    )
+
+
 async def _complete_live_simulation(
     simulation_id: int,
     session_id: str,
     duration_minutes: int,
 ):
+    scenario: Dict[str, Any] = {}
+    zone_id: int = 0
     try:
         await asyncio.sleep(duration_minutes * 60)
         rows = await fetch(
-            "SELECT scenario FROM zone_simulations WHERE id = $1",
+            "SELECT scenario, zone_id FROM zone_simulations WHERE id = $1",
             simulation_id,
         )
         if not rows:
             return
         scenario = rows[0]["scenario"] or {}
+        zone_id = rows[0].get("zone_id") or 0
         sim_meta = scenario.get("simulation") or {}
         sim_meta["real_ended_at"] = utcnow().isoformat()
         sim_started = sim_meta.get("sim_started_at")
@@ -540,8 +593,33 @@ async def _complete_live_simulation(
         scenario["simulation"] = sim_meta
         await _node_sim_request("/sessions/stop", {"session_id": session_id})
         await _update_simulation_status(simulation_id, "completed", scenario=scenario)
+        await _record_simulation_event(
+            simulation_id,
+            zone_id,
+            service="digital-twin",
+            stage="live_complete",
+            status="completed",
+            message="Live-симуляция завершена",
+            payload={
+                "node_sim_session_id": session_id,
+                "duration_minutes": duration_minutes,
+            },
+        )
     except Exception as exc:
         await _update_simulation_status(simulation_id, "failed", error_message=str(exc))
+        await _record_simulation_event(
+            simulation_id,
+            zone_id,
+            service="digital-twin",
+            stage="live_complete",
+            status="failed",
+            message="Live-симуляция завершилась ошибкой",
+            payload={
+                "node_sim_session_id": session_id,
+                "error": str(exc),
+            },
+            level="error",
+        )
     finally:
         LIVE_SIM_TASKS.pop(simulation_id, None)
 
@@ -579,7 +657,39 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
             "nodes": nodes,
             "failure_mode": request.failure_mode,
         }
-        await _node_sim_request("/sessions/start", payload)
+        await _record_simulation_event(
+            simulation_id,
+            request.zone_id,
+            service="node-sim-manager",
+            stage="session_start",
+            status="requested",
+            message="Запрос на запуск node-sim сессии",
+            payload={"node_sim_session_id": session_id},
+        )
+        try:
+            await _node_sim_request("/sessions/start", payload)
+        except Exception as exc:
+            await _record_simulation_event(
+                simulation_id,
+                request.zone_id,
+                service="node-sim-manager",
+                stage="session_start",
+                status="failed",
+                message="Ошибка запуска node-sim сессии",
+                payload={"node_sim_session_id": session_id, "error": str(exc)},
+                level="error",
+            )
+            raise
+
+        await _record_simulation_event(
+            simulation_id,
+            request.zone_id,
+            service="node-sim-manager",
+            stage="session_start",
+            status="completed",
+            message="Node-sim сессия запущена",
+            payload={"node_sim_session_id": session_id},
+        )
 
         task = asyncio.create_task(
             _complete_live_simulation(simulation_id, session_id, request.sim_duration_minutes)
@@ -603,16 +713,35 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
 async def stop_live_simulation(request: LiveSimulationStopRequest):
     try:
         rows = await fetch(
-            "SELECT scenario FROM zone_simulations WHERE id = $1",
+            "SELECT scenario, zone_id FROM zone_simulations WHERE id = $1",
             request.simulation_id,
         )
         if not rows:
             raise HTTPException(status_code=404, detail="simulation not found")
         scenario = rows[0]["scenario"] or {}
+        zone_id = rows[0].get("zone_id") or 0
         sim_meta = scenario.get("simulation") or {}
         session_id = sim_meta.get("node_sim_session_id")
         if session_id:
+            await _record_simulation_event(
+                request.simulation_id,
+                zone_id,
+                service="node-sim-manager",
+                stage="session_stop",
+                status="requested",
+                message="Запрос на остановку node-sim сессии",
+                payload={"node_sim_session_id": session_id},
+            )
             await _node_sim_request("/sessions/stop", {"session_id": session_id})
+            await _record_simulation_event(
+                request.simulation_id,
+                zone_id,
+                service="node-sim-manager",
+                stage="session_stop",
+                status="completed",
+                message="Node-sim сессия остановлена",
+                payload={"node_sim_session_id": session_id},
+            )
 
         if request.status in ("completed", "failed", "stopped"):
             sim_meta["real_ended_at"] = utcnow().isoformat()

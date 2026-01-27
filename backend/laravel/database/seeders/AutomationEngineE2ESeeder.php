@@ -6,6 +6,7 @@ use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\GrowStageTemplate;
+use App\Models\GrowCycle;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
@@ -294,14 +295,24 @@ class AutomationEngineE2ESeeder extends Seeder
 
         $this->command->info('✓ Recipe revision and phases created');
 
-        // 8. Создаем активный grow-cycle
-        $service = app(GrowCycleService::class);
-        $growCycle = $service->createCycle($zone, $revision, $plant->id, [
-            'start_immediately' => true,
-            'planting_at' => Carbon::now()->subDays(5),
-        ]);
+        // 8. Создаем активный grow-cycle (если еще нет)
+        $existingCycle = GrowCycle::where('zone_id', $zone->id)
+            ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
+            ->orderByDesc('created_at')
+            ->first();
 
-        $this->command->info("✓ Grow cycle created: {$growCycle->id}");
+        if ($existingCycle) {
+            $growCycle = $existingCycle;
+            $this->command->info("✓ Grow cycle already exists: {$growCycle->id}");
+        } else {
+            $service = app(GrowCycleService::class);
+            $growCycle = $service->createCycle($zone, $revision, $plant->id, [
+                'start_immediately' => true,
+                'planting_at' => Carbon::now()->subDays(5),
+            ]);
+
+            $this->command->info("✓ Grow cycle created: {$growCycle->id}");
+        }
 
         $this->command->info('=== E2E Automation Engine seed completed ===');
         $this->command->info("Zone ID: {$zone->id}");

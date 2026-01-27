@@ -328,6 +328,68 @@
             </div>
           </div>
         </div>
+
+        <div
+          v-if="simulationDbId"
+          class="rounded-lg border border-[color:var(--border-muted)] p-3"
+        >
+          <div class="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+            <span>Процесс симуляции</span>
+            <span
+              v-if="simulationEventsLoading"
+              class="text-[10px] text-[color:var(--text-dim)]"
+            >загрузка…</span>
+          </div>
+          <div
+            v-if="simulationEventsError"
+            class="mt-2 text-xs text-[color:var(--accent-red)]"
+          >
+            {{ simulationEventsError }}
+          </div>
+          <div
+            v-else-if="!simulationEvents.length"
+            class="mt-2 text-xs text-[color:var(--text-muted)]"
+          >
+            Событий пока нет.
+          </div>
+          <ul
+            v-else
+            class="mt-3 space-y-3 max-h-64 overflow-y-auto pr-1"
+          >
+            <li
+              v-for="event in simulationEvents"
+              :key="event.id"
+              class="flex items-start gap-3 text-xs text-[color:var(--text-muted)]"
+            >
+              <span :class="`mt-1 h-2 w-2 rounded-full ${simulationLevelClass(event.level)}`"></span>
+              <div class="flex-1 space-y-1">
+                <div class="flex flex-wrap items-center gap-2 text-[11px] text-[color:var(--text-dim)]">
+                  <span class="rounded-full border border-[color:var(--border-muted)] px-2 py-0.5">
+                    {{ event.service }}
+                  </span>
+                  <span class="rounded-full border border-[color:var(--border-muted)] px-2 py-0.5">
+                    {{ event.stage }}
+                  </span>
+                  <span class="rounded-full border border-[color:var(--border-muted)] px-2 py-0.5">
+                    {{ event.status }}
+                  </span>
+                </div>
+                <div class="text-xs text-[color:var(--text-primary)]">
+                  {{ event.message || 'Событие симуляции' }}
+                </div>
+                <div
+                  v-if="formatSimulationPayload(event.payload)"
+                  class="text-[11px] text-[color:var(--text-dim)]"
+                >
+                  {{ formatSimulationPayload(event.payload) }}
+                </div>
+              </div>
+              <span class="whitespace-nowrap text-[11px] text-[color:var(--text-dim)]">
+                {{ formatTimestamp(event.occurred_at || event.created_at) }}
+              </span>
+            </li>
+          </ul>
+        </div>
         
         <div
           v-if="error"
@@ -477,6 +539,20 @@ interface SimulationPidStatus {
   updated_at?: string | null
 }
 
+interface SimulationEvent {
+  id: number
+  simulation_id?: number | null
+  zone_id?: number | null
+  service: string
+  stage: string
+  status: string
+  level?: string | null
+  message?: string | null
+  payload?: unknown
+  occurred_at?: string | null
+  created_at?: string | null
+}
+
 interface RecipeOption {
   id: number
   name: string
@@ -526,6 +602,12 @@ const simulationProgressSource = ref<string | null>(null)
 const simulationActions = ref<SimulationAction[]>([])
 const simulationPidStatuses = ref<SimulationPidStatus[]>([])
 const simulationCurrentPhase = ref<string | null>(null)
+const simulationDbId = ref<number | null>(null)
+const simulationEvents = ref<SimulationEvent[]>([])
+const simulationEventsLoading = ref(false)
+const simulationEventsError = ref<string | null>(null)
+const simulationEventsLastId = ref(0)
+let simulationEventsSource: EventSource | null = null
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
 const applyInitialTelemetry = (telemetry: Props['initialTelemetry']) => {
@@ -901,6 +983,121 @@ function formatPidValue(value?: number | null, decimals = 2): string {
   return Number(value).toFixed(decimals)
 }
 
+function formatSimulationPayload(payload: unknown): string | null {
+  if (!payload) return null
+  if (typeof payload === 'string') {
+    return payload.length > 160 ? `${payload.slice(0, 160)}…` : payload
+  }
+  try {
+    const serialized = JSON.stringify(payload)
+    return serialized.length > 160 ? `${serialized.slice(0, 160)}…` : serialized
+  } catch {
+    return null
+  }
+}
+
+function simulationLevelClass(level?: string | null): string {
+  switch (level) {
+    case 'error':
+      return 'bg-[color:var(--accent-red)]'
+    case 'warning':
+      return 'bg-[color:var(--accent-amber)]'
+    default:
+      return 'bg-[color:var(--accent-green)]'
+  }
+}
+
+function resetSimulationEvents(): void {
+  simulationDbId.value = null
+  simulationEvents.value = []
+  simulationEventsError.value = null
+  simulationEventsLoading.value = false
+  simulationEventsLastId.value = 0
+  stopSimulationEventStream()
+}
+
+function stopSimulationEventStream(): void {
+  if (simulationEventsSource) {
+    simulationEventsSource.close()
+    simulationEventsSource = null
+  }
+}
+
+function appendSimulationEvent(event: SimulationEvent): void {
+  if (simulationEvents.value.some((item) => item.id === event.id)) {
+    return
+  }
+  simulationEvents.value.push(event)
+  simulationEvents.value.sort((a, b) => {
+    const aTime = a.occurred_at || a.created_at || ''
+    const bTime = b.occurred_at || b.created_at || ''
+    if (aTime === bTime) {
+      return a.id - b.id
+    }
+    return aTime < bTime ? -1 : 1
+  })
+  simulationEventsLastId.value = Math.max(simulationEventsLastId.value, event.id)
+  if (simulationEvents.value.length > 200) {
+    simulationEvents.value = simulationEvents.value.slice(-200)
+  }
+}
+
+async function loadSimulationEvents(simulationId: number): Promise<void> {
+  simulationEventsLoading.value = true
+  simulationEventsError.value = null
+  try {
+    const response = await api.get<{ status: string; data?: SimulationEvent[]; meta?: any }>(
+      `/simulations/${simulationId}/events`,
+      { params: { order: 'asc', limit: 200 } }
+    )
+    const items = Array.isArray(response.data?.data) ? response.data?.data : []
+    simulationEvents.value = items
+    const lastId = response.data?.meta?.last_id
+    if (typeof lastId === 'number') {
+      simulationEventsLastId.value = lastId
+    } else if (items.length) {
+      simulationEventsLastId.value = Math.max(...items.map((item) => item.id))
+    }
+  } catch (err) {
+    logger.debug('[ZoneSimulationModal] Failed to load simulation events', err)
+    simulationEventsError.value = 'Не удалось загрузить события симуляции'
+  } finally {
+    simulationEventsLoading.value = false
+  }
+}
+
+function startSimulationEventStream(simulationId: number): void {
+  stopSimulationEventStream()
+  if (typeof window === 'undefined') return
+
+  const params = new URLSearchParams()
+  if (simulationEventsLastId.value > 0) {
+    params.set('last_id', String(simulationEventsLastId.value))
+  }
+  const url = `/api/simulations/${simulationId}/events/stream?${params.toString()}`
+  const source = new EventSource(url)
+  simulationEventsSource = source
+
+  source.addEventListener('simulation_event', (event) => {
+    try {
+      const data = JSON.parse((event as MessageEvent).data)
+      if (data && typeof data.id === 'number') {
+        appendSimulationEvent(data as SimulationEvent)
+      }
+    } catch (err) {
+      logger.debug('[ZoneSimulationModal] Failed to parse simulation event', err)
+    }
+  })
+
+  source.addEventListener('close', () => {
+    stopSimulationEventStream()
+  })
+
+  source.addEventListener('error', () => {
+    stopSimulationEventStream()
+  })
+}
+
 async function pollSimulationStatus(jobId: string): Promise<void> {
   try {
     const response = await api.get<{ status: string; data?: any }>(`/simulations/${jobId}`)
@@ -910,6 +1107,18 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
     const status = data.status as typeof simulationStatus.value | undefined
     if (status) {
       simulationStatus.value = status
+    }
+
+    const parsedSimId = Number(data.simulation_id)
+    if (Number.isFinite(parsedSimId) && parsedSimId > 0) {
+      if (simulationDbId.value !== parsedSimId) {
+        simulationDbId.value = parsedSimId
+        simulationEventsLastId.value = 0
+        loadSimulationEvents(parsedSimId)
+        startSimulationEventStream(parsedSimId)
+      } else if (!simulationEvents.value.length && !simulationEventsLoading.value) {
+        loadSimulationEvents(parsedSimId)
+      }
     }
 
     if (data.simulation && typeof data.simulation === 'object') {
@@ -948,6 +1157,7 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
         results.value = parsed
       }
       stopLoading()
+      stopSimulationEventStream()
       clearSimulationPolling()
       return
     }
@@ -955,6 +1165,7 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
     if (status === 'failed') {
       error.value = data.error || 'Симуляция завершилась с ошибкой'
       stopLoading()
+      stopSimulationEventStream()
       clearSimulationPolling()
     }
   } catch (err) {
@@ -990,6 +1201,7 @@ watch(
       simulationActions.value = []
       simulationPidStatuses.value = []
       simulationCurrentPhase.value = null
+      resetSimulationEvents()
     }
   }
 )
@@ -1026,6 +1238,7 @@ onUnmounted(() => {
   simulationActions.value = []
   simulationPidStatuses.value = []
   simulationCurrentPhase.value = null
+  resetSimulationEvents()
 })
 
 async function onSubmit(): Promise<void> {
@@ -1044,6 +1257,7 @@ async function onSubmit(): Promise<void> {
   simulationActions.value = []
   simulationPidStatuses.value = []
   simulationCurrentPhase.value = null
+  resetSimulationEvents()
   
   try {
     interface SimulationPayload {

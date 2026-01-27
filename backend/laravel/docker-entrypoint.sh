@@ -84,6 +84,12 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
             );
             echo 'OK';
         " >/dev/null 2>&1 || echo "⚠ Failed to ensure E2E user, continuing..."
+
+        # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
+        if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
+            echo "Ensuring AutomationEngineE2ESeeder data..."
+            php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1 || echo "⚠ Failed to run AutomationEngineE2ESeeder, continuing..."
+        fi
     fi
 fi
 

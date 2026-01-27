@@ -603,6 +603,32 @@ created_at
 
 ---
 
+## 8.2. simulation_events
+
+```
+id PK
+simulation_id FK → zone_simulations
+zone_id FK → zones
+service VARCHAR
+stage VARCHAR
+status VARCHAR
+level VARCHAR (info/warning/error)
+message TEXT NULL
+payload JSONB NULL
+occurred_at TIMESTAMP
+created_at TIMESTAMP
+```
+
+Индексы:
+```
+simulation_events_sim_id_occurred_idx (simulation_id, occurred_at)
+simulation_events_zone_id_occurred_idx (zone_id, occurred_at)
+simulation_events_service_stage_idx (service, stage)
+simulation_events_status_idx (status)
+```
+
+---
+
 # 9. Пользователи и роли
 
 ## 9.1. users
@@ -663,6 +689,8 @@ sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
 zone 1—N commands
+zone 1—N zone_simulations
+zone_simulation 1—N simulation_events
 ```
 
 **Инфраструктура (новая модель):**

@@ -180,6 +180,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/simulations/zone/{zone} | auth:sanctum (operator/admin) | Запуск симуляции |
 | GET | /api/simulations/{id} | auth:sanctum | Результат симуляции |
+| GET | /api/simulations/{simulation}/events | auth:sanctum | События процесса симуляции |
+| GET | /api/simulations/{simulation}/events/stream | auth:sanctum | SSE-стрим событий симуляции |
 
 ---
 

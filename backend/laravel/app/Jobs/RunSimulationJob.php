@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class RunSimulationJob implements ShouldQueue
@@ -37,6 +38,7 @@ class RunSimulationJob implements ShouldQueue
     public function handle(DigitalTwinClient $client, SimulationOrchestratorService $orchestrator): void
     {
         $simulation = null;
+        $simulationId = null;
         try {
             $durationHours = $this->params['duration_hours'] ?? 72;
             $stepMinutes = $this->params['step_minutes'] ?? 10;
@@ -105,6 +107,23 @@ class RunSimulationJob implements ShouldQueue
                     'simulation_grow_cycle_id' => $simCycle->id,
                 ], 3600);
 
+                if ($simulationId) {
+                    $this->recordSimulationEvent(
+                        $simulationId,
+                        $simZone->id,
+                        'laravel',
+                        'live_start',
+                        'completed',
+                        'Live-симуляция запущена',
+                        [
+                            'source_zone_id' => $this->zoneId,
+                            'simulation_zone_id' => $simZone->id,
+                            'simulation_grow_cycle_id' => $simCycle->id,
+                            'job_id' => $this->jobId,
+                        ]
+                    );
+                }
+
                 Log::info('Live simulation started via digital-twin', [
                     'job_id' => $this->jobId,
                     'zone_id' => $this->zoneId,
@@ -122,6 +141,19 @@ class RunSimulationJob implements ShouldQueue
                 'step_minutes' => $stepMinutes,
                 'status' => 'running',
             ]);
+            $simulationId = $simulation->id;
+
+            $this->recordSimulationEvent(
+                $simulationId,
+                $this->zoneId,
+                'laravel',
+                'job',
+                'running',
+                'Симуляция запущена',
+                [
+                    'job_id' => $this->jobId,
+                ]
+            );
 
             // Устанавливаем статус "processing"
             Cache::put("simulation:{$this->jobId}", [
@@ -143,6 +175,17 @@ class RunSimulationJob implements ShouldQueue
                 'status' => 'completed',
                 'results' => $result['data'] ?? null,
             ]);
+            $this->recordSimulationEvent(
+                $simulationId,
+                $this->zoneId,
+                'laravel',
+                'job',
+                'completed',
+                'Симуляция завершена',
+                [
+                    'job_id' => $this->jobId,
+                ]
+            );
             Cache::put("simulation:{$this->jobId}", [
                 'status' => 'completed',
                 'result' => $result,
@@ -161,6 +204,21 @@ class RunSimulationJob implements ShouldQueue
                     'status' => 'failed',
                     'error_message' => $e->getMessage(),
                 ]);
+            }
+            if ($simulationId) {
+                $this->recordSimulationEvent(
+                    $simulationId,
+                    $this->zoneId,
+                    'laravel',
+                    'job',
+                    'failed',
+                    'Симуляция завершилась ошибкой',
+                    [
+                        'job_id' => $this->jobId,
+                        'error' => $e->getMessage(),
+                    ],
+                    'error'
+                );
             }
             Cache::put("simulation:{$this->jobId}", [
                 'status' => 'failed',
@@ -183,6 +241,41 @@ class RunSimulationJob implements ShouldQueue
         }
     }
 
+    private function recordSimulationEvent(
+        int $simulationId,
+        int $zoneId,
+        string $service,
+        string $stage,
+        string $status,
+        string $message,
+        array $payload = [],
+        string $level = 'info',
+    ): void {
+        try {
+            DB::table('simulation_events')->insert([
+                'simulation_id' => $simulationId,
+                'zone_id' => $zoneId,
+                'service' => $service,
+                'stage' => $stage,
+                'status' => $status,
+                'level' => $level,
+                'message' => $message,
+                'payload' => $payload ? json_encode($payload, JSON_UNESCAPED_UNICODE) : null,
+                'occurred_at' => now(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to record simulation event', [
+                'simulation_id' => $simulationId,
+                'zone_id' => $zoneId,
+                'service' => $service,
+                'stage' => $stage,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Handle a job failure.
      */
@@ -192,6 +285,24 @@ class RunSimulationJob implements ShouldQueue
         $cached = Cache::get("simulation:{$this->jobId}");
         if (is_array($cached) && isset($cached['simulation_id'])) {
             $simulationId = $cached['simulation_id'];
+        }
+        if ($simulationId) {
+            $simulation = ZoneSimulation::find($simulationId);
+            if ($simulation) {
+                $this->recordSimulationEvent(
+                    $simulationId,
+                    $simulation->zone_id,
+                    'laravel',
+                    'job',
+                    'failed',
+                    'Симуляция завершилась ошибкой (retry exhausted)',
+                    [
+                        'job_id' => $this->jobId,
+                        'error' => $exception->getMessage(),
+                    ],
+                    'error'
+                );
+            }
         }
         if ($simulationId) {
             ZoneSimulation::whereKey($simulationId)->update([

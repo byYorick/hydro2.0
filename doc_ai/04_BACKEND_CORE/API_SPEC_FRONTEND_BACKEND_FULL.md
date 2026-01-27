@@ -768,6 +768,66 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Аутентификация:** Требуется `auth:sanctum`
 - Получение результата симуляции.
 
+### 12.3. GET /api/simulations/{simulation}/events
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- Возвращает события процесса симуляции (этапы, статусы, ошибки).
+
+Параметры запроса (query):
+```
+limit (1..200, default 100)
+order (asc|desc, default asc)
+service (string)
+stage (string)
+status (string)
+level (info|warning|error)
+after_id (int)
+since (ISO8601 date/time)
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "id": 101,
+      "simulation_id": 55,
+      "zone_id": 12,
+      "service": "digital-twin",
+      "stage": "live_start",
+      "status": "completed",
+      "level": "info",
+      "message": "Live-симуляция запущена",
+      "payload": { "node_sim_session_id": "sim-12-1700000000" },
+      "occurred_at": "2026-01-26T09:10:00Z",
+      "created_at": "2026-01-26T09:10:00Z"
+    }
+  ],
+  "meta": {
+    "limit": 100,
+    "order": "asc",
+    "last_id": 101
+  }
+}
+```
+
+### 12.4. GET /api/simulations/{simulation}/events/stream
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- SSE-стрим новых событий симуляции.
+
+Параметры запроса (query):
+```
+last_id (int)
+service (string)
+stage (string)
+status (string)
+level (info|warning|error)
+```
+
+События приходят с именем `simulation_event`.
+
 ---
 
 ## 13. WebSocket / Realtime

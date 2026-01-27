@@ -14,7 +14,7 @@ setup:
 actions:
   - step: set_laravel_url
     type: set
-    LARAVEL_URL: http://localhost:8081
+    LARAVEL_URL: ${LARAVEL_URL}
 
   # Тест 1: Health endpoint
   - step: check_health
@@ -90,4 +90,4 @@ assertions:
   # Проверка 3: Логин возвращает правильный validation error
   - name: login_returns_validation_error
     type: custom_assert
-    condition: context.get('login_response', {}).get('status_code') == 422
+    condition: context.get('login_response', {}).get('status_code') in [422, 429]

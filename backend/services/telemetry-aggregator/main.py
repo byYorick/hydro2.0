@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from common.utils.time import utcnow
 from common.env import get_settings
 from common.db import fetch, execute
+from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram, start_http_server
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,23 @@ CLEANUP_LAT = Histogram("cleanup_seconds", "Cleanup duration seconds")
 _error_count = 0
 _last_error_time: Optional[datetime] = None
 _backoff_until: Optional[datetime] = None
+
+
+def _build_zone_stats(rows: list[Dict[str, Any]], ts_key: str) -> Dict[int, Dict[str, Any]]:
+    stats: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        zone_id = row.get("zone_id")
+        if zone_id is None:
+            continue
+        entry = stats.get(zone_id)
+        if entry is None:
+            entry = {"count": 0, "max_ts": None}
+            stats[zone_id] = entry
+        entry["count"] += 1
+        ts_value = row.get(ts_key)
+        if ts_value is not None and (entry["max_ts"] is None or ts_value > entry["max_ts"]):
+            entry["max_ts"] = ts_value
+    return stats
 
 
 async def get_last_ts(aggregation_type: str) -> Optional[datetime]:
@@ -210,7 +228,7 @@ async def aggregate_1m() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -249,7 +267,7 @@ async def aggregate_1m() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -261,6 +279,21 @@ async def aggregate_1m() -> int:
                 # Берём максимальную временную метку
                 max_ts = max(row["ts"] for row in rows)
                 await update_last_ts("1m", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "ts")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_1m",
+                        status="ok",
+                        message="Агрегация 1m завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_ts": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="1m").inc(count)
             logger.info(f"Aggregated 1m: {count} records")
@@ -332,7 +365,7 @@ async def aggregate_1h() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -365,7 +398,7 @@ async def aggregate_1h() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -376,6 +409,21 @@ async def aggregate_1h() -> int:
             if count > 0:
                 max_ts = max(row["ts"] for row in rows)
                 await update_last_ts("1h", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "ts")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_1h",
+                        status="ok",
+                        message="Агрегация 1h завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_ts": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="1h").inc(count)
             logger.info(f"Aggregated 1h: {count} records")
@@ -446,7 +494,7 @@ async def aggregate_daily() -> int:
                     value_max = EXCLUDED.value_max,
                     value_median = EXCLUDED.value_median,
                     sample_count = EXCLUDED.sample_count
-                RETURNING date
+                RETURNING zone_id, date
                 """,
                 last_ts,
             )
@@ -458,6 +506,21 @@ async def aggregate_daily() -> int:
                 max_date = max(row["date"] for row in rows)
                 max_ts = datetime.combine(max_date, datetime.min.time())
                 await update_last_ts("daily", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "date")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_daily",
+                        status="ok",
+                        message="Дневная агрегация завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_date": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="daily").inc(count)
             logger.info(f"Aggregated daily: {count} records")

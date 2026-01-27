@@ -2,14 +2,14 @@
 
 namespace Tests\Unit;
 
-use App\Jobs\CompleteSimulationJob;
 use App\Jobs\RunSimulationJob;
 use App\Models\DeviceNode;
+use App\Models\GrowCycle;
 use App\Models\NodeChannel;
 use App\Models\Zone;
-use App\Models\ZoneSimulation;
 use App\Services\DigitalTwinClient;
-use App\Services\NodeSimManagerClient;
+use App\Services\SimulationOrchestratorService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\RefreshDatabase;
@@ -41,18 +41,24 @@ class RunSimulationJobTest extends TestCase
             'type' => 'ACTUATOR',
         ]);
 
-        $nodeSimManager = Mockery::mock(NodeSimManagerClient::class);
-        $nodeSimManager
-            ->shouldReceive('startSession')
+        $simZone = Zone::factory()->create(['greenhouse_id' => $zone->greenhouse_id]);
+        $simCycle = GrowCycle::factory()->create(['zone_id' => $simZone->id]);
+
+        $orchestrator = Mockery::mock(SimulationOrchestratorService::class);
+        $orchestrator
+            ->shouldReceive('createSimulationContext')
             ->once()
-            ->withArgs(function ($simulation, $sessionId) use ($zone) {
-                return $sessionId === 'sim-job-1'
-                    && $simulation instanceof ZoneSimulation
-                    && $simulation->zone_id === $zone->id;
-            });
-        $this->app->instance(NodeSimManagerClient::class, $nodeSimManager);
+            ->andReturn([
+                'zone' => $simZone,
+                'grow_cycle' => $simCycle,
+            ]);
+        $this->app->instance(SimulationOrchestratorService::class, $orchestrator);
 
         $client = Mockery::mock(DigitalTwinClient::class);
+        $client
+            ->shouldReceive('startLiveSimulation')
+            ->once()
+            ->andReturn(['simulation_id' => 77]);
 
         $job = new RunSimulationJob($zone->id, [
             'duration_hours' => 24,
@@ -61,16 +67,14 @@ class RunSimulationJobTest extends TestCase
             'sim_duration_minutes' => 5,
         ], 'sim-job-1');
 
-        $job->handle($client, $nodeSimManager);
+        $job->handle($client, $orchestrator);
 
-        $simulation = ZoneSimulation::first();
-        $this->assertNotNull($simulation);
-        $this->assertSame('running', $simulation->status);
-        $simulationMeta = $simulation->scenario['simulation'] ?? [];
-        $this->assertSame('sim-job-1', $simulationMeta['node_sim_session_id'] ?? null);
-        $this->assertSame('pipeline', $simulationMeta['engine'] ?? null);
-        $this->assertSame('live', $simulationMeta['mode'] ?? null);
+        $cached = Cache::get('simulation:sim-job-1');
+        $this->assertNotNull($cached);
+        $this->assertSame('processing', $cached['status'] ?? null);
+        $this->assertSame(77, $cached['simulation_id'] ?? null);
+        $this->assertSame($simZone->id, $cached['simulation_zone_id'] ?? null);
+        $this->assertSame($simCycle->id, $cached['simulation_grow_cycle_id'] ?? null);
 
-        Queue::assertPushed(CompleteSimulationJob::class);
     }
 }
