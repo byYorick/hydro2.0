@@ -215,8 +215,3 @@ cleanup:
     type: api_delete
     endpoint: /api/plants/${plant_response.data.id}
     optional: true
-
-  - step: delete_recipe
-    type: api_delete
-    endpoint: /api/recipes/${recipe_response.data.id}
-    optional: true

@@ -129,6 +129,7 @@ class CommandHandler:
             "run_pump": self._handle_run,
             "dose": self._handle_dose,
             "set_pwm": self._handle_set_pwm,
+            "FORCE_IRRIGATION": self._handle_force_irrigation,
             "hil_set_sensor": self._handle_hil_set_sensor,
             "hil_raise_error": self._handle_hil_raise_error,
             "hil_clear_error": self._handle_hil_clear_error,
@@ -617,6 +618,18 @@ class CommandHandler:
             self.relay_states[channel] = state
             logger.info(f"Set relay {channel} to {state}")
             return CommandStatus.DONE, {"details": f"Relay {channel} set to {state}"}
+
+    def _handle_force_irrigation(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать команду FORCE_IRRIGATION через run_pump."""
+        duration_sec = params.get("duration_sec")
+        if duration_sec is not None:
+            try:
+                duration_sec = float(duration_sec)
+            except (TypeError, ValueError):
+                return CommandStatus.INVALID, {"error": "Parameter 'duration_sec' must be numeric"}
+            params = dict(params)
+            params["duration_ms"] = int(duration_sec * 1000)
+        return self._handle_run("run_pump", params)
     
     def _handle_run(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду run_pump (запуск насоса)."""

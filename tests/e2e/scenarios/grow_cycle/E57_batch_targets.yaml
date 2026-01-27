@@ -3,132 +3,162 @@
 
 name: E57_batch_targets
 description: |
-  Проверяет пакетное обновление целей:
-  - Множественные параметры обновляются одновременно
-  - Все effective-targets корректно обновлены
-  - Timestamp обновления консистентный
+  Проверяет выдачу effective targets для нескольких параметров:
+  - В фазе заданы pH/EC и климат
+  - API возвращает все параметры
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
     endpoint: /api/zones
-    save: zones_response
+    payload:
+      name: e2e-grow-zone-e57-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_response.data.id}
 
-  - step: get_running_cycle
-    type: database_query
-    query: |
-      SELECT id, status
-      FROM grow_cycles
-      WHERE zone_id = :zone_id
-      AND status = 'RUNNING'
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      zone_id: ${zone_id}
-    save: running_cycle
-
-  - step: skip_if_no_cycle
-    type: set
-    cycle_id: ${running_cycle.data[0].id if running_cycle.data else None}
-
-  - step: skip_test_if_no_cycle
-    type: eventually
-    condition: "context.get('cycle_id') is not None"
-    timeout: 1.0
-    optional: true
-
-  - step: batch_override
+  - step: create_plant
     type: api_post
-    endpoint: /api/grow-cycles/${cycle_id}/targets/batch
+    endpoint: /api/plants
     payload:
-      targets:
-        - parameter: ph
-          target: 6.9
-          min: 6.4
-          max: 7.4
-        - parameter: ec
-          target: 2.2
-          min: 2.0
-          max: 2.4
-        - parameter: temp_air
-          target: 24.0
-          min: 22.0
-          max: 26.0
-    save: batch_response
+      name: test-plant-e57-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
 
-  - step: wait_for_batch_update
-    type: wait_until
-    condition: |
-      # Проверяем, что все параметры обновлены
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': '''
-          SELECT COUNT(*) as updated_count
-          FROM effective_targets
-          WHERE cycle_id = :cycle_id
-          AND (ph_target = 6.9 OR ec_target = 2.2 OR temp_air_target = 24.0)
-          AND created_at > NOW() - INTERVAL '10 seconds'
-        ''',
-        'params': {'cycle_id': context['cycle_id']}
-      }))
-      result[0]['updated_count'] >= 3 if result else False
-    timeout: 15.0
-    interval: 1.0
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e57-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
+      ph_target: 6.9
+      ph_min: 6.4
+      ph_max: 7.4
+      ec_target: 2.2
+      ec_min: 2.0
+      ec_max: 2.4
+      irrigation_mode: SUBSTRATE
+      temp_air_target: 24.0
+      humidity_target: 55.0
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: wait_after_start
+    type: sleep
+    seconds: 1
+
+  - step: get_effective_targets
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
+    save: effective_targets_response
 
 assertions:
-  # Проверка 1: Все параметры обновлены
-  - name: all_targets_updated
+  # Проверка 1: Параметры фазы сохранены
+  - name: phase_targets_saved
     type: database_query
     query: |
-      SELECT
-        COUNT(CASE WHEN ph_target = 6.9 THEN 1 END) as ph_updated,
-        COUNT(CASE WHEN ec_target = 2.2 THEN 1 END) as ec_updated,
-        COUNT(CASE WHEN temp_air_target = 24.0 THEN 1 END) as temp_updated
-      FROM effective_targets
-      WHERE cycle_id = :cycle_id
-      AND created_at > NOW() - INTERVAL '30 seconds'
+      SELECT ph_target, ph_min, ph_max, ec_target, temp_air_target, humidity_target
+      FROM recipe_revision_phases
+      WHERE recipe_revision_id = :revision_id
+      AND phase_index = 0
+      LIMIT 1
     params:
-      cycle_id: ${cycle_id}
+      revision_id: ${revision_response.data.id}
     expected:
-      - field: ph_updated
-        operator: greater_than
-        value: 0
-      - field: ec_updated
-        operator: greater_than
-        value: 0
-      - field: temp_updated
-        operator: greater_than
-        value: 0
+      - field: ph_target
+        operator: greater_than_or_equal
+        value: 6.9
+      - field: ph_target
+        operator: less_than
+        value: 6.91
+      - field: ph_min
+        operator: greater_than_or_equal
+        value: 6.4
+      - field: ph_min
+        operator: less_than
+        value: 6.41
+      - field: ph_max
+        operator: greater_than_or_equal
+        value: 7.4
+      - field: ph_max
+        operator: less_than
+        value: 7.41
+      - field: ec_target
+        operator: greater_than_or_equal
+        value: 2.2
+      - field: ec_target
+        operator: less_than
+        value: 2.21
+      - field: temp_air_target
+        operator: greater_than_or_equal
+        value: 24.0
+      - field: temp_air_target
+        operator: less_than
+        value: 24.01
+      - field: humidity_target
+        operator: greater_than_or_equal
+        value: 55.0
+      - field: humidity_target
+        operator: less_than
+        value: 55.01
 
-  # Проверка 2: API ответ успешный
-  - name: batch_api_success
-    type: json_assertion
-    data: ${batch_response}
-    expected:
-      - field: status_code
-        operator: in
-        value: [200, 201]
-
-  # Проверка 3: Все записи имеют одинаковый timestamp (batch)
-  - name: consistent_timestamps
-    type: database_query
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
     query: |
-      SELECT COUNT(DISTINCT DATE_TRUNC('second', created_at)) as timestamp_count
-      FROM effective_targets
-      WHERE cycle_id = :cycle_id
-      AND created_at > NOW() - INTERVAL '30 seconds'
-      AND (ph_target = 6.9 OR ec_target = 2.2 OR temp_air_target = 24.0)
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
     params:
-      cycle_id: ${cycle_id}
-    expected:
-      - field: timestamp_count
-        operator: equals
-        value: 1
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

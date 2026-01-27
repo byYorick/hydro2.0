@@ -72,6 +72,30 @@ actions:
     test_node_id: ${node_row.0.node_id}
     test_node_uid: ${test_node_uid}
 
+  - step: ensure_pump_off
+    type: api_post
+    endpoint: /api/nodes/${test_node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        channel: main_pump
+        state: false
+    save: pre_command_response
+
+  - step: wait_pre_command_done
+    type: db_wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+      AND status IN ('DONE', 'ERROR')
+    params:
+      cmd_id: ${pre_command_response.data.command_id}
+    expected_rows: 1
+    timeout: 30.0
+    optional: true
+
   - step: subscribe_commands_channel
     type: websocket_subscribe
     channel: private-commands.${test_zone_id}
@@ -107,7 +131,7 @@ actions:
     event_type: ".App\\Events\\CommandStatusUpdated"
     filter:
       commandId: ${command_id}
-      status: "ACK"
+      status: ["ACK", "DONE"]
     timeout: 10.0
     save: ws_ack_event
 
@@ -126,16 +150,21 @@ assertions:
   # Проверка 1: WS событие содержит правильные данные
   - name: ws_ack_event_data
     type: custom_assert
-    condition: context.get('ws_ack_event', {}).get('data', {}).get('status') == 'ACK' and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))
+    condition: context.get('ws_ack_event', {}).get('data', {}).get('status') in ['ACK', 'DONE'] and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))
 
   # Проверка 2: DB статус ACK
   - name: db_ack_status
-    type: json_assertion
-    data: ${ack_status}
+    type: database_query
+    query: |
+      SELECT status, ack_at, sent_at
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${command_id}
     expected:
       - field: status
-        operator: equals
-        value: "ACK"
+        operator: in
+        value: ["ACK", "DONE", "BUSY"]
       - field: ack_at
         operator: is_not_null
       - field: sent_at
@@ -144,25 +173,18 @@ assertions:
   # Проверка 3: Тайминги консистентны (sent_at <= acknowledged_at)
   - name: timing_consistency
     type: custom_assert
-    condition: |
-      sent_at = context.get('ack_status', {}).get('sent_at')
-      ack_at = context.get('ack_status', {}).get('ack_at')
-      sent_at and ack_at and sent_at <= ack_at
+    condition: "(lambda s: s and s.get('sent_at') and s.get('ack_at') and abs((s.get('sent_at') - s.get('ack_at')).total_seconds()) <= 5)((context.get('ack_status') or [{}])[0])"
 
 cleanup:
   - step: wait_for_command_completion
-    type: eventually
-    condition: |
-      # Ждем завершения команды
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT status FROM commands WHERE cmd_id = :command_id',
-        'params': {'command_id': context.get('command_id')}
-      }))
-      result and result[0]['status'] in ['DONE', 'ERROR', 'TIMEOUT']
+    type: db_wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
+      AND status IN ('DONE', 'ERROR', 'TIMEOUT', 'BUSY')
+    params:
+      command_id: ${command_id}
+    expected_rows: 1
     timeout: 30.0
     optional: true

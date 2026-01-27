@@ -9,64 +9,69 @@ description: |
   - Убеждается, что guard логирует, но не блокирует работу системы
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
-    endpoint: /api/zones
-    save: zones_response
+    endpoint: /api/greenhouses
+    save: greenhouses_response
 
-  - step: fetch_zone_id
-    type: database_query
-    query: |
-      SELECT id
-      FROM zones
-      WHERE uid = 'zn-test-1'
-      LIMIT 1
-    expected_rows: 1
-    save: zone_row
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-legacy-sql-guard-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zone_row.0.id}
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e19-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
 
   - step: create_recipe
-    type: database_query
-    query: |
-      INSERT INTO recipes (name, description, created_at, updated_at)
-      VALUES ('E2E Recipe', 'E2E test recipe', NOW(), NOW())
-      RETURNING id
-    save: recipe_row
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e19-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
 
-  - step: create_recipe_revision
-    type: database_query
-    query: |
-      INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
-      VALUES (:recipe_id, 1, 'PUBLISHED', NOW(), NOW())
-      RETURNING id
-    params:
-      recipe_id: ${recipe_row.0.id}
-    save: revision_row
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
 
-  - step: create_revision_phase
-    type: database_execute
-    query: |
-      INSERT INTO recipe_revision_phases (
-        recipe_revision_id,
-        phase_index,
-        name,
-        created_at,
-        updated_at
-      )
-      VALUES (:revision_id, 0, 'Phase 1', NOW(), NOW())
-    params:
-      revision_id: ${revision_row.0.id}
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
 
   # Создаем цикл выращивания (это вызовет AE сервис)
   - step: create_grow_cycle
     type: api_post
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
-      recipe_revision_id: ${revision_row.0.id}
-      plant_id: 1           # Assume test plant exists
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
       start_immediately: true
     save: cycle_response
 
@@ -143,6 +148,11 @@ cleanup:
     type: api_post
     endpoint: /api/grow-cycles/${cycle_id}/abort
     payload: {}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
     optional: true
 
   # Очищаем логи guard (опционально, для чистоты тестов)

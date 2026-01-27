@@ -101,16 +101,17 @@ actions:
     save: infra_response
 
   # Создаем binding через API (правильный endpoint согласно routes/api.php)
-  - step: create_binding
-    type: api_post
-    endpoint: /api/channel-bindings
-    payload:
+  - step: ensure_binding
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings
+        (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+      VALUES
+        (:infrastructure_instance_id, :node_channel_id, 'actuator', 'main_pump', NOW(), NOW())
+      ON CONFLICT (node_channel_id) DO NOTHING
+    params:
       infrastructure_instance_id: ${infra_response.data.id}
       node_channel_id: ${node_channel_row.0.node_channel_id}
-      direction: actuator
-      role: main_pump
-    save: binding_response
-    optional: true
 
   # Отправляем команду по role (или напрямую к node, если bindings API нет)
   - step: send_command

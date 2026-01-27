@@ -1642,6 +1642,8 @@ class E2ERunner:
             seconds = float(cfg.get("seconds", cfg.get("wait_seconds", 1.0)))
             await asyncio.sleep(seconds)
             return
+        if step_type in ("wait_until", "eventually"):
+            return await self._execute_waiting_step(step_type, cfg)
 
         # MQTT publish
         if step_type in ("publish_mqtt", "mqtt_publish"):
@@ -2489,7 +2491,9 @@ class E2ERunner:
 
         if self.mqtt:
             try:
-                await self.mqtt.disconnect()
+                result = self.mqtt.disconnect()
+                if asyncio.iscoroutine(result):
+                    await result
             except Exception as e:
                 logger.warning(f"Failed to disconnect MQTT: {e}")
 

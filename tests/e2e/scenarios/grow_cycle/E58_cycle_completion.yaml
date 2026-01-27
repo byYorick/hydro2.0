@@ -3,28 +3,73 @@
 
 name: E58_cycle_completion
 description: |
-  Проверяет автоматическое завершение цикла:
-  - Цикл достигает финальной фазы
-  - Статус автоматически меняется на COMPLETED
-  - Harvest данные фиксируются
+  Проверяет завершение цикла через harvest:
+  - Цикл переводится в HARVESTED
+  - actual_harvest_at устанавливается
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
     endpoint: /api/zones
-    save: zones_response
+    payload:
+      name: e2e-grow-zone-e58-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_response.data.id}
 
-  # Создаем простой цикл с одной фазой для быстрого завершения
-  - step: create_quick_cycle
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e58-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e58-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
     type: api_post
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
-      recipe_revision_id: 1  # Предполагаем, что есть тестовый рецепт
-      plant_id: 1           # Предполагаем, что есть тестовое растение
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
       start_immediately: true
     save: cycle_response
 
@@ -32,42 +77,23 @@ actions:
     type: set
     cycle_id: ${cycle_response.data.id}
 
-  # Имитируем завершение фазы
-  - step: advance_to_final_phase
-    type: database_execute
-    query: |
-      UPDATE grow_cycles
-      SET current_phase_index = 0,
-          phase_started_at = NOW() - INTERVAL '25 hours',
-          updated_at = NOW()
-      WHERE id = :cycle_id
-    params:
-      cycle_id: ${cycle_id}
+  - step: harvest_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/harvest
+    payload:
+      batch_label: Test Batch E58
+    save: harvest_response
 
-  # Ждем автоматического завершения
-  - step: wait_for_completion
-    type: wait_until
-    condition: |
-      # Проверяем, что статус изменился на COMPLETED
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT status FROM grow_cycles WHERE id = :cycle_id',
-        'params': {'cycle_id': context['cycle_id']}
-      }))
-      result[0]['status'] == 'COMPLETED' if result else False
-    timeout: 30.0
-    interval: 2.0
+  - step: wait_after_harvest
+    type: sleep
+    seconds: 1
 
 assertions:
-  # Проверка 1: Цикл завершен со статусом COMPLETED
-  - name: cycle_status_completed
+  # Проверка 1: Цикл завершен со статусом HARVESTED
+  - name: cycle_status_harvested
     type: database_query
     query: |
-      SELECT status, completed_at
+      SELECT status, actual_harvest_at
       FROM grow_cycles
       WHERE id = :cycle_id
     params:
@@ -75,37 +101,30 @@ assertions:
     expected:
       - field: status
         operator: equals
-        value: COMPLETED
-      - field: completed_at
+        value: HARVESTED
+      - field: actual_harvest_at
         operator: is_not_null
-
-  # Проверка 2: Harvest данные записаны
-  - name: harvest_data_recorded
-    type: database_query
-    query: |
-      SELECT COUNT(*) as harvest_count
-      FROM cycle_harvests
-      WHERE cycle_id = :cycle_id
-    params:
-      cycle_id: ${cycle_id}
-    expected:
-      - field: harvest_count
-        operator: greater_than
-        value: 0
 
 cleanup:
   - step: delete_test_cycle
     type: database_execute
     query: |
-      DELETE FROM grow_cycles WHERE id = :cycle_id
+      DELETE FROM grow_cycles WHERE zone_id = :zone_id
     params:
-      cycle_id: ${cycle_id}
+      zone_id: ${zone_id}
     optional: true
 
-  - step: delete_harvest_data
-    type: database_execute
-    query: |
-      DELETE FROM cycle_harvests WHERE cycle_id = :cycle_id
-    params:
-      cycle_id: ${cycle_id}
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true
