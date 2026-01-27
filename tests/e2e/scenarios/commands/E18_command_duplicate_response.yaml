@@ -111,21 +111,16 @@ actions:
 
   # Ждем завершения команды несмотря на дубликаты
   - step: wait_for_command_completion
-    type: wait_until
-    condition: |
-      # Проверяем финальный статус команды
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT status FROM commands WHERE cmd_id = :cmd_id',
-        'params': {'cmd_id': context['duplicate_command_id']}
-      }))
-      result and result[0]['status'] in ['DONE', 'ERROR']
+    type: db_wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+      AND status IN ('DONE', 'ERROR')
+    params:
+      cmd_id: ${duplicate_command_id}
     timeout: 30.0
-    interval: 2.0
+    expected_rows: 1
 
   # Проверяем финальный статус
   - step: check_final_status
@@ -141,8 +136,13 @@ actions:
 assertions:
   # Проверка 1: Команда завершилась успешно несмотря на дубликаты
   - name: command_completed_successfully
-    type: json_assertion
-    data: ${final_status}
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${duplicate_command_id}
     expected:
       - field: status
         operator: in

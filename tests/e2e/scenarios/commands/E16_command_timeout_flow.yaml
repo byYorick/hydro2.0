@@ -37,6 +37,7 @@ actions:
   - step: set_test_uids
     type: set
     test_node_uid: ${setup.node_sim.config.node.node_uid}
+    test_started_at: ${TIMESTAMP_S}
 
   - step: fetch_node_id
     type: database_query
@@ -76,9 +77,9 @@ actions:
 
   # Отключаем node-sim временно для имитации timeout
   - step: pause_node_sim
-    type: api_post
-    endpoint: /api/test-utils/node-sim/pause
-    payload: {}
+    type: fault.inject
+    service: node-sim
+    action: pause
     optional: true
 
   - step: send_timeout_command
@@ -121,9 +122,9 @@ actions:
 
   # Восстанавливаем node-sim
   - step: resume_node_sim
-    type: api_post
-    endpoint: /api/test-utils/node-sim/resume
-    payload: {}
+    type: fault.inject
+    service: node-sim
+    action: unpause
     optional: true
 
 assertions:
@@ -135,8 +136,13 @@ assertions:
 
   # Проверка 2: DB статус TIMEOUT
   - name: db_timeout_status
-    type: json_assertion
-    data: ${timeout_status}
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${timeout_command_id}
     expected:
       - field: status
         operator: in
@@ -150,6 +156,11 @@ assertions:
       FROM commands
       WHERE status = 'SENT'
       AND created_at < NOW() - INTERVAL '10 seconds'
+      AND created_at >= to_timestamp(:test_started_at)
+      AND cmd_id != :command_id
+    params:
+      test_started_at: ${test_started_at}
+      command_id: ${timeout_command_id}
     expected:
       - field: stuck_count
         operator: equals

@@ -41,7 +41,6 @@ actions:
       name: test-plant-e40-${TIMESTAMP_S}
       scientific_name: Test Plant
     save: plant_response
-    optional: true
 
   - step: create_recipe_for_test
     type: api_post
@@ -49,6 +48,7 @@ actions:
     payload:
       name: test-recipe-e40-${TIMESTAMP_S}
       description: Test recipe
+      plant_id: ${plant_response.data.id}
     save: recipe_response
     optional: true
 

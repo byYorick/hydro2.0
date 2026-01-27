@@ -4,7 +4,7 @@ Redis queue для буферизации телеметрии перед зап
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from .utils.time import utcnow
 from typing import Optional, List
 from dataclasses import dataclass, asdict
@@ -103,12 +103,18 @@ class TelemetryQueueItem:
             # Преобразуем ISO строку обратно в datetime
             if obj.get("ts"):
                 try:
-                    obj["ts"] = datetime.fromisoformat(obj["ts"].replace('Z', '+00:00'))
+                    ts = datetime.fromisoformat(obj["ts"].replace('Z', '+00:00'))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    obj["ts"] = ts
                 except (ValueError, AttributeError):
                     obj["ts"] = None
             if obj.get("enqueued_at"):
                 try:
-                    obj["enqueued_at"] = datetime.fromisoformat(obj["enqueued_at"].replace('Z', '+00:00'))
+                    enq = datetime.fromisoformat(obj["enqueued_at"].replace('Z', '+00:00'))
+                    if enq.tzinfo is None:
+                        enq = enq.replace(tzinfo=timezone.utc)
+                    obj["enqueued_at"] = enq
                 except (ValueError, AttributeError):
                     obj["enqueued_at"] = None
             return cls(**obj)

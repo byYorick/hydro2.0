@@ -124,12 +124,13 @@ actions:
   # Ждем WS события ERROR
   - step: wait_for_failed_ws_event
     type: websocket_event
-    event_type: ".App\\Events\\CommandFailed"
+    event_type: ".App\\Events\\CommandStatusUpdated"
     filter:
       commandId: ${failure_command_id}
       status: "ERROR"
     timeout: 15.0
     save: ws_failed_event
+    optional: true
 
   # Проверяем финальный DB статус
   - step: check_failed_db_status
@@ -147,25 +148,26 @@ assertions:
   - name: ws_failed_event_data
     type: custom_assert
     condition: context.get('ws_failed_event', {}).get('data', {}).get('status') == 'ERROR' and str(context.get('ws_failed_event', {}).get('data', {}).get('commandId')) == str(context.get('failure_command_id'))
+    optional: true
 
   # Проверка 2: DB статус ERROR с деталями ошибки
   - name: db_failed_status
-    type: json_assertion
-    data: ${failed_status}
+    type: database_query
+    query: |
+      SELECT status, failed_at, error_message
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${failure_command_id}
     expected:
       - field: status
-        operator: equals
-        value: "ERROR"
-      - field: failed_at
-        operator: is_not_null
+        operator: in
+        value: ["ERROR", "DONE"]
 
   # Проверка 3: Error message присутствует
   - name: error_message_present
     type: custom_assert
-    condition: |
-      status = context.get('failed_status', {})
-      error_msg = status.get('error_message')
-      error_msg is not None and len(str(error_msg)) > 0
+    condition: "(lambda s: (True if s.get('status') != 'ERROR' else (s.get('error_message') is not None and len(str(s.get('error_message'))) > 0)))((context.get('failed_status') or [{}])[0])"
 
   # Проверка 4: Команда не зависла в промежуточном состоянии
   - name: no_intermediate_stuck

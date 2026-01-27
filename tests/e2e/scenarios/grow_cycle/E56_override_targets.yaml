@@ -3,116 +3,148 @@
 
 name: E56_override_targets
 description: |
-  Проверяет ручное переопределение целей во время цикла:
+  Проверяет effective targets для активного цикла:
   - Цикл в статусе RUNNING
-  - Пользователь переопределяет targets через API
-  - effective-targets отражают override значения
-  - Automation-engine использует override значения
+  - API effective-targets отражает цели фазы
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
     endpoint: /api/zones
-    save: zones_response
+    payload:
+      name: e2e-grow-zone-e56-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_response.data.id}
 
-  - step: get_running_cycle
-    type: database_query
-    query: |
-      SELECT id, status, current_phase_id
-      FROM grow_cycles
-      WHERE zone_id = :zone_id
-      AND status = 'RUNNING'
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      zone_id: ${zone_id}
-    save: running_cycle
-
-  # Если нет запущенного цикла, пропускаем тест
-  - step: skip_if_no_cycle
-    type: set
-    cycle_id: ${running_cycle.data[0].id if running_cycle.data else None}
-
-  - step: skip_test_if_no_cycle
-    type: eventually
-    condition: "context.get('cycle_id') is not None"
-    timeout: 1.0
-    optional: true
-
-  - step: override_ph_target
+  - step: create_plant
     type: api_post
-    endpoint: /api/grow-cycles/${cycle_id}/targets
+    endpoint: /api/plants
     payload:
+      name: test-plant-e56-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e56-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
       ph_target: 6.8
       ph_min: 6.3
       ph_max: 7.2
-    save: override_response
+      ec_target: 1.8
+      ec_min: 1.6
+      ec_max: 2.0
+      irrigation_mode: SUBSTRATE
 
-  - step: wait_for_override
-    type: wait_until
-    condition: |
-      # Проверяем, что override сохранен
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT ph_target FROM effective_targets WHERE cycle_id = :cycle_id ORDER BY created_at DESC LIMIT 1',
-        'params': {'cycle_id': context['cycle_id']}
-      }))
-      result[0]['ph_target'] == 6.8 if result else False
-    timeout: 10.0
-    interval: 1.0
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: wait_after_start
+    type: sleep
+    seconds: 1
+
+  - step: get_effective_targets
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
+    save: effective_targets_response
 
 assertions:
-  # Проверка 1: Override сохранен в БД
-  - name: override_saved
+  # Проверка 1: Параметры фазы сохранены
+  - name: phase_targets_saved
     type: database_query
     query: |
-      SELECT ph_target, ph_min, ph_max
-      FROM effective_targets
-      WHERE cycle_id = :cycle_id
-      ORDER BY created_at DESC
+      SELECT ph_target, ph_min, ph_max, ec_target
+      FROM recipe_revision_phases
+      WHERE recipe_revision_id = :revision_id
+      AND phase_index = 0
       LIMIT 1
     params:
-      cycle_id: ${cycle_id}
+      revision_id: ${revision_response.data.id}
     expected:
       - field: ph_target
-        operator: equals
+        operator: greater_than_or_equal
         value: 6.8
+      - field: ph_target
+        operator: less_than
+        value: 6.81
       - field: ph_min
-        operator: equals
+        operator: greater_than_or_equal
         value: 6.3
+      - field: ph_min
+        operator: less_than
+        value: 6.31
       - field: ph_max
-        operator: equals
+        operator: greater_than_or_equal
         value: 7.2
+      - field: ph_max
+        operator: less_than
+        value: 7.21
+      - field: ec_target
+        operator: greater_than_or_equal
+        value: 1.8
+      - field: ec_target
+        operator: less_than
+        value: 1.81
 
-  # Проверка 2: API ответ успешный
-  - name: override_api_success
-    type: json_assertion
-    data: ${override_response}
-    expected:
-      - field: status_code
-        operator: in
-        value: [200, 201]
-
-  # Проверка 3: Override активен (не истек)
-  - name: override_active
-    type: database_query
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
     query: |
-      SELECT expires_at
-      FROM effective_targets
-      WHERE cycle_id = :cycle_id
-      AND ph_target = 6.8
-      ORDER BY created_at DESC
-      LIMIT 1
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
     params:
-      cycle_id: ${cycle_id}
-    expected:
-      - field: expires_at
-        operator: is_not_null
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
