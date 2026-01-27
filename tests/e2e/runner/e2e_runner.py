@@ -710,6 +710,14 @@ class E2ERunner:
         if self.variable_resolver:
             return self.variable_resolver.resolve_variables(value, required_vars)
         return value
+
+    def _normalize_expected_status(self, expected_status: Any) -> Optional[List[int]]:
+        """Normalize expected_status into a list of ints for flexible comparisons."""
+        if expected_status is None:
+            return None
+        if isinstance(expected_status, (list, tuple, set)):
+            return [int(s) for s in expected_status]
+        return [int(expected_status)]
     
     def _resolve_variable_expression(self, expr: str) -> Any:
         """
@@ -1715,16 +1723,17 @@ class E2ERunner:
                 res = await self.api.get(endpoint, params=cfg.get("params"))
             elif step_type == "api_post":
                 expected_status = cfg.get("expected_status")
+                expected_statuses = self._normalize_expected_status(expected_status)
                 # Если указан expected_status, делаем запрос напрямую через httpx
                 # чтобы получить ответ даже при ошибке
-                if expected_status:
+                if expected_statuses:
                     import httpx
                     headers = await self.api._get_headers()
                     url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
                     async with httpx.AsyncClient(timeout=self.api.timeout) as client:
                         response = await client.post(url, json=payload, headers=headers)
                         self.api._last_response = response
-                        if response.status_code == expected_status:
+                        if response.status_code in expected_statuses:
                             res = response.json()
                         else:
                             response.raise_for_status()
@@ -1754,10 +1763,11 @@ class E2ERunner:
                 self._auto_extract_ids_from_api_response(endpoint, res)
             # Проверяем expected_status, если указан (для случаев когда не было ошибки)
             expected_status = cfg.get("expected_status")
-            if expected_status:
+            expected_statuses = self._normalize_expected_status(expected_status)
+            if expected_statuses:
                 last_response = self.api.get_last_response()
-                if last_response and last_response.status_code != expected_status:
-                    raise AssertionError(f"Expected status {expected_status}, got {last_response.status_code}")
+                if last_response and last_response.status_code not in expected_statuses:
+                    raise AssertionError(f"Expected status {expected_statuses}, got {last_response.status_code}")
             if "save" in cfg:
                 self.context[cfg["save"]] = res
             return

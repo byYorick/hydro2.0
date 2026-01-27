@@ -127,10 +127,10 @@ assertions:
 
   # Проверка: WebSocket событие AlertCreated отправлено
   - name: alert_ws_event_sent
-    type: websocket_event
+    type: websocket_event_count
     event_type: ".App\\Events\\AlertCreated"
     timeout_seconds: 15.0
-    optional: true  # В окружении e2e broadcasting может быть отключен, поэтому не фейлим сценарий, если WS-событие не пришло
+    # В окружении e2e broadcasting может быть отключен — не фейлим, просто пытаемся собрать события
 
   # Проверка: zone_event для алерта создан
   - name: alert_zone_event_exists

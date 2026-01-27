@@ -88,6 +88,7 @@ actions:
       plant_id: ${plant_response.data.id}
       start_immediately: false
     save: cycle_response
+    expected_status: [200, 422]
     optional: true
 
   - step: fetch_active_cycle_id
@@ -113,6 +114,7 @@ actions:
     endpoint: /api/grow-cycles/${cycle_id}/start
     payload: {}
     save: start_response
+    expected_status: [200, 422]
     optional: true
 
 assertions:

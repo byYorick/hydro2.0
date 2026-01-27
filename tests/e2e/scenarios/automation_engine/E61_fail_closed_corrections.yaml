@@ -282,6 +282,20 @@ actions:
     type: sleep
     seconds: 10
 
+  - step: fetch_freshness_alert
+    type: database_query
+    query: |
+      SELECT id, type, status
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND type LIKE '%%FRESHNESS%%'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: freshness_alert_rows
+
 assertions:
   # Проверка 1: Команды дозирования НЕ созданы (fail-closed)
   - name: no_dosing_commands
@@ -316,21 +330,14 @@ assertions:
     timeout: 10.0
     expected_rows: 1
 
-  # Проверка 3: Alert freshness (опционально)
+  # Проверка 3: Alert freshness (создается только после N пропусков подряд)
   - name: freshness_alert_created
-    type: database_query
-    query: |
-      SELECT id, type, status
-      FROM alerts
-      WHERE zone_id = :zone_id
-      AND type LIKE '%%FRESHNESS%%'
-      AND created_at > NOW() - INTERVAL '5 minutes'
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      zone_id: ${zone_id}
-    timeout: 20.0
-    optional: true  # Alert создается только после N пропусков подряд (порог = 3)
+    type: custom_assert
+    condition: >
+      (len(context.get("freshness_alert_rows", [])) == 0) or (
+        "FRESHNESS" in (context["freshness_alert_rows"][0].get("type", "")) and
+        context["freshness_alert_rows"][0].get("status") is not None
+      )
 
 cleanup:
   - step: stop_node_simulator

@@ -157,7 +157,7 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://automation-engine:9505
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
     optional: true

@@ -120,6 +120,7 @@ class N1OptimizationTest extends TestCase
      */
     public function test_zone_service_change_phase_uses_eager_loading(): void
     {
+        $user = \App\Models\User::factory()->create();
         $zone = Zone::factory()->create();
         $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
@@ -140,7 +141,7 @@ class N1OptimizationTest extends TestCase
         $service = app(GrowCycleService::class);
         $cycle = $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
 
-        $advanced = $service->advancePhase($cycle, 1);
+        $advanced = $service->advancePhase($cycle, $user->id);
 
         $this->assertEquals(1, $advanced->currentPhase->phase_index);
     }

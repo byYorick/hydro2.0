@@ -195,7 +195,7 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://automation-engine:9505
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -230,7 +230,7 @@ actions:
   # Включаем degraded mode через test hook
   - step: set_degraded_state
     type: ae_test_hook
-    url: http://automation-engine:9505
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: set_state
     state:
@@ -258,7 +258,7 @@ actions:
 
   - step: reset_backoff_after_degraded
     type: ae_test_hook
-    url: http://automation-engine:9505
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -349,7 +349,7 @@ cleanup:
 
   - step: clear_state_override
     type: ae_test_hook
-    url: http://automation-engine:9505
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
     optional: true
