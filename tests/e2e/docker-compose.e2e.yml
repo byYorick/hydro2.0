@@ -149,6 +149,8 @@ services:
     - APP_ENV=testing
     - LOG_LEVEL=DEBUG
     - PYTHONUNBUFFERED=1
+    - NODE_SIM_MQTT_HOST=mosquitto
+    - NODE_SIM_MQTT_PORT=1883
     - PG_HOST=postgres
     - PG_PORT=5432
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
@@ -392,6 +394,8 @@ services:
     - DB_USERNAME=${POSTGRES_USER:-hydro}
     - DB_PASSWORD=${POSTGRES_PASSWORD:-hydro_e2e}
     - WS_URL=ws://laravel:6001/app/local
+    - AUTOMATION_ENGINE_HOST=${AUTOMATION_ENGINE_HOST:-automation-engine}
+    - AUTOMATION_ENGINE_API_PORT=${AUTOMATION_ENGINE_API_PORT:-9505}
     - E2E_CONTAINER=1
     - COMPOSE_PROJECT_NAME=e2e
     volumes:

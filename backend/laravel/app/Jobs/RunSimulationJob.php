@@ -47,6 +47,7 @@ class RunSimulationJob implements ShouldQueue
                 : [];
             $simDurationMinutes = $this->params['sim_duration_minutes'] ?? null;
             $isLiveSimulation = is_numeric($simDurationMinutes) && (int) $simDurationMinutes > 0;
+            $fullSimulation = (bool) ($this->params['full_simulation'] ?? ($scenario['full_simulation'] ?? false));
 
             $nowIso = now()->toIso8601String();
             $simulationMeta = [
@@ -73,12 +74,24 @@ class RunSimulationJob implements ShouldQueue
             if ($isLiveSimulation) {
                 $sourceZone = Zone::findOrFail($this->zoneId);
                 $recipeId = $scenario['recipe_id'] ?? null;
+                if (! $recipeId && ! $fullSimulation) {
+                    $fullSimulation = true;
+                }
+                $context = $orchestrator->createSimulationContext(
+                    $sourceZone,
+                    $recipeId ? (int) $recipeId : null,
+                    ['full_simulation' => $fullSimulation]
+                );
+                $simZone = $context['zone'];
+                $simCycle = $context['grow_cycle'];
+                $createdRecipe = $context['recipe'] ?? null;
+                if ($createdRecipe) {
+                    $recipeId = $createdRecipe->id;
+                }
                 if (! $recipeId) {
                     throw new \RuntimeException('recipe_id required for live simulation.');
                 }
-                $context = $orchestrator->createSimulationContext($sourceZone, (int) $recipeId);
-                $simZone = $context['zone'];
-                $simCycle = $context['grow_cycle'];
+                $scenario['recipe_id'] = $recipeId;
 
                 $scenario['simulation'] = array_merge(
                     $scenario['simulation'] ?? [],
@@ -86,6 +99,12 @@ class RunSimulationJob implements ShouldQueue
                         'source_zone_id' => $this->zoneId,
                         'sim_zone_id' => $simZone->id,
                         'sim_grow_cycle_id' => $simCycle->id,
+                        'full_simulation' => $fullSimulation,
+                        'created_plant_id' => $context['plant']?->id,
+                        'created_recipe_id' => $context['recipe']?->id,
+                        'created_recipe_revision_id' => $context['recipe_revision']?->id,
+                        'created_node_id' => $context['node']?->id,
+                        'created_node_uid' => $context['node']?->uid,
                     ]
                 );
 
@@ -119,6 +138,7 @@ class RunSimulationJob implements ShouldQueue
                             'source_zone_id' => $this->zoneId,
                             'simulation_zone_id' => $simZone->id,
                             'simulation_grow_cycle_id' => $simCycle->id,
+                            'full_simulation' => $fullSimulation,
                             'job_id' => $this->jobId,
                         ]
                     );
@@ -130,6 +150,13 @@ class RunSimulationJob implements ShouldQueue
                     'simulation_zone_id' => $simZone->id,
                     'simulation_id' => $simulationId,
                 ]);
+
+                if ($simulationId && $fullSimulation) {
+                    $simulation = $this->resolveSimulation($simulationId);
+                    if ($simulation) {
+                        $orchestrator->executeFullSimulation($simulation, $context);
+                    }
+                }
 
                 return;
             }
@@ -274,6 +301,21 @@ class RunSimulationJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function resolveSimulation(int $simulationId): ?ZoneSimulation
+    {
+        $attempts = 0;
+        while ($attempts < 5) {
+            $simulation = ZoneSimulation::find($simulationId);
+            if ($simulation) {
+                return $simulation;
+            }
+            usleep(200000);
+            $attempts++;
+        }
+
+        return null;
     }
 
     /**

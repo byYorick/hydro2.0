@@ -34,6 +34,7 @@ class SimulationController extends Controller
             'initial_state' => 'array',
             'recipe_id' => 'nullable|exists:recipes,id',
             'sim_duration_minutes' => 'nullable|integer|min:1|max:10080',
+            'full_simulation' => 'nullable|boolean',
         ]);
 
         // Формируем сценарий
@@ -50,6 +51,9 @@ class SimulationController extends Controller
             'recipe_id' => $recipeId,
             'initial_state' => $data['initial_state'] ?? [],
         ];
+        if (array_key_exists('full_simulation', $data)) {
+            $scenario['full_simulation'] = (bool) $data['full_simulation'];
+        }
 
         // Если initial_state пустой, получаем текущее состояние зоны из telemetry_last
         if (empty($scenario['initial_state'])) {
@@ -94,6 +98,7 @@ class SimulationController extends Controller
                 'step_minutes' => $data['step_minutes'] ?? 10,
                 'scenario' => $scenario,
                 'sim_duration_minutes' => $data['sim_duration_minutes'] ?? null,
+                'full_simulation' => $data['full_simulation'] ?? false,
             ],
             $jobId
         );
@@ -148,6 +153,11 @@ class SimulationController extends Controller
                     'mode' => $simMeta['mode'] ?? null,
                     'orchestrator' => $simMeta['orchestrator'] ?? null,
                 ];
+                if ($simulation->relationLoaded('report')) {
+                    $payload['report'] = $simulation->report;
+                } else {
+                    $payload['report'] = $simulation->report()->first();
+                }
                 $activity = $this->buildSimulationActivity($simulation, $simMeta);
                 if ($activity) {
                     $payload = array_merge($payload, $activity);

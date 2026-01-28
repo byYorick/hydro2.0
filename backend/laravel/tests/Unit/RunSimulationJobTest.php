@@ -48,6 +48,11 @@ class RunSimulationJobTest extends TestCase
         $orchestrator
             ->shouldReceive('createSimulationContext')
             ->once()
+            ->with(
+                Mockery::on(fn ($zoneArg) => $zoneArg instanceof Zone && $zoneArg->id === $zone->id),
+                1,
+                ['full_simulation' => false]
+            )
             ->andReturn([
                 'zone' => $simZone,
                 'grow_cycle' => $simCycle,

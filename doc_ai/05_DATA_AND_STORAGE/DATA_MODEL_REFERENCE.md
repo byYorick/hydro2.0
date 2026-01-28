@@ -629,6 +629,32 @@ simulation_events_status_idx (status)
 
 ---
 
+## 8.3. simulation_reports
+
+```
+id PK
+simulation_id FK → zone_simulations (UNIQUE)
+zone_id FK → zones
+status VARCHAR
+started_at TIMESTAMP NULL
+finished_at TIMESTAMP NULL
+summary_json JSONB NULL
+phases_json JSONB NULL
+metrics_json JSONB NULL
+errors_json JSONB NULL
+created_at
+updated_at
+```
+
+Индексы:
+```
+simulation_reports_simulation_id_unique (simulation_id)
+simulation_reports_zone_id_index (zone_id)
+simulation_reports_status_index (status)
+```
+
+---
+
 # 9. Пользователи и роли
 
 ## 9.1. users
@@ -691,6 +717,7 @@ zone 1—N zone_events
 zone 1—N commands
 zone 1—N zone_simulations
 zone_simulation 1—N simulation_events
+zone_simulation 1—1 simulation_reports
 ```
 
 **Инфраструктура (новая модель):**

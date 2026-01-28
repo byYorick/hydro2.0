@@ -317,8 +317,8 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
     )
     
     default_failure_mode = None
-    if "failure_mode" in config_data:
-        fm_data = config_data["failure_mode"]
+    fm_data = config_data.get("failure_mode")
+    if isinstance(fm_data, dict):
         default_failure_mode = FailureModeConfig(
             delay_response=fm_data.get("delay_response", False),
             delay_ms=fm_data.get("delay_ms", 0),
@@ -371,8 +371,8 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
         
         # Режим отказов для этой ноды (может переопределять общий)
         failure_mode = default_failure_mode
-        if "failure_mode" in node_data:
-            fm_data = node_data["failure_mode"]
+        fm_data = node_data.get("failure_mode")
+        if isinstance(fm_data, dict):
             failure_mode = FailureModeConfig(
                 delay_response=fm_data.get("delay_response", False),
                 delay_ms=fm_data.get("delay_ms", 0),

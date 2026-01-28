@@ -1,0 +1,248 @@
+# E91: Live Simulation Full Cycle
+# DoD: создается зона, запускается live-симуляция, формируется полный отчет
+
+name: E91_live_simulation_full_cycle
+description: |
+  Проверяет полный цикл live-симуляции:
+  - создается зона источника
+  - запускается live-симуляция с full_simulation
+  - сим-зона и grow-cycle создаются
+  - создаются plant/recipe/node
+  - все фазы проходят до HARVESTED
+  - формируется отчет в simulation_reports
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: set_greenhouse_ids
+    type: set
+    greenhouse_id: ${greenhouses_response.data.data[0].id}
+    greenhouse_uid: ${greenhouses_response.data.data[0].uid}
+
+  - step: set_uids
+    type: set
+    zone_uid: zn-sim-${TIMESTAMP_S}
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-sim-zone-${TIMESTAMP_S}
+      uid: ${zone_uid}
+      greenhouse_id: ${greenhouse_id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: capture_anchor_time
+    type: database_query
+    query: |
+      SELECT NOW() - INTERVAL '5 seconds' AS anchor_time
+    expected_rows: 1
+    save: anchor_row
+
+  - step: set_anchor_time
+    type: set
+    anchor_time: ${anchor_row.0.anchor_time}
+
+  - step: start_live_simulation
+    type: api_post
+    endpoint: /api/zones/${zone_id}/simulate
+    payload:
+      duration_hours: 24
+      step_minutes: 10
+      sim_duration_minutes: 1
+      full_simulation: true
+    save: simulate_response
+
+  - step: set_job_id
+    type: set
+    job_id: ${simulate_response.data.job_id}
+
+  - step: wait_for_simulation_row
+    type: db_wait
+    query: |
+      SELECT
+        id AS simulation_id,
+        zone_id AS simulation_zone_id,
+        scenario->'simulation'->>'sim_zone_id' AS sim_zone_id,
+        scenario->'simulation'->>'sim_grow_cycle_id' AS sim_grow_cycle_id,
+        scenario->'simulation'->>'created_plant_id' AS created_plant_id,
+        scenario->'simulation'->>'created_recipe_id' AS created_recipe_id,
+        scenario->'simulation'->>'created_node_id' AS created_node_id,
+        created_at
+      FROM zone_simulations
+      WHERE scenario->'simulation'->>'source_zone_id' = :source_zone_id::text
+        AND created_at >= :anchor_time
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      source_zone_id: ${zone_id}
+      anchor_time: ${anchor_time}
+    timeout: 30.0
+    expected_rows: 1
+    save: simulation_row
+
+  - step: set_simulation_context
+    type: set
+    simulation_id: ${simulation_row.0.simulation_id}
+    simulation_zone_id: ${simulation_row.0.simulation_zone_id}
+    sim_zone_id: ${simulation_row.0.sim_zone_id}
+    sim_grow_cycle_id: ${simulation_row.0.sim_grow_cycle_id}
+    created_plant_id: ${simulation_row.0.created_plant_id}
+    created_recipe_id: ${simulation_row.0.created_recipe_id}
+    created_node_id: ${simulation_row.0.created_node_id}
+
+  - step: wait_for_simulation_running
+    type: db_wait
+    query: |
+      SELECT status
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'running'
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_for_report
+    type: db_wait
+    query: |
+      SELECT status, jsonb_array_length(phases_json) AS phases_count
+      FROM simulation_reports
+      WHERE simulation_id = :simulation_id
+        AND status = 'completed'
+        AND jsonb_array_length(phases_json) >= 3
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: report_row
+
+  - step: wait_for_cycle_harvested
+    type: db_wait
+    query: |
+      SELECT status
+      FROM grow_cycles
+      WHERE id = :sim_grow_cycle_id
+        AND status = 'HARVESTED'
+      LIMIT 1
+    params:
+      sim_grow_cycle_id: ${sim_grow_cycle_id}
+    timeout: 30.0
+    expected_rows: 1
+
+assertions:
+  - name: simulation_report_summary_contains_entities
+    type: database_query
+    query: |
+      SELECT
+        summary_json->>'created_plant_id' AS created_plant_id,
+        summary_json->>'created_recipe_id' AS created_recipe_id,
+        summary_json->>'created_node_id' AS created_node_id
+      FROM simulation_reports
+      WHERE simulation_id = :simulation_id
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    expected:
+      - field: created_plant_id
+        operator: is_not_null
+      - field: created_recipe_id
+        operator: is_not_null
+      - field: created_node_id
+        operator: is_not_null
+
+  - name: simulation_report_phases_count
+    type: database_query
+    query: |
+      SELECT jsonb_array_length(phases_json) AS phases_count
+      FROM simulation_reports
+      WHERE simulation_id = :simulation_id
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    expected:
+      - field: phases_count
+        operator: greater_than_or_equal
+        value: 3
+
+  - name: simulation_node_created_in_sim_zone
+    type: database_query
+    query: |
+      SELECT id
+      FROM nodes
+      WHERE id = :created_node_id
+        AND zone_id = :simulation_zone_id
+      LIMIT 1
+    params:
+      created_node_id: ${created_node_id}
+      simulation_zone_id: ${simulation_zone_id}
+    expected_rows: 1
+
+  - name: simulation_events_report_completed
+    type: database_query
+    query: |
+      SELECT id
+      FROM simulation_events
+      WHERE simulation_id = :simulation_id
+        AND stage = 'report'
+        AND status = 'completed'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    expected_rows: 1
+
+cleanup:
+  - step: delete_sim_zone
+    type: database_execute
+    query: |
+      DELETE FROM zones WHERE id = :simulation_zone_id
+    params:
+      simulation_zone_id: ${simulation_zone_id}
+    optional: true
+
+  - step: delete_sim_node
+    type: database_execute
+    query: |
+      DELETE FROM nodes WHERE id = :created_node_id
+    params:
+      created_node_id: ${created_node_id}
+    optional: true
+
+  - step: delete_sim_recipe
+    type: database_execute
+    query: |
+      DELETE FROM recipes WHERE id = :created_recipe_id
+    params:
+      created_recipe_id: ${created_recipe_id}
+    optional: true
+
+  - step: delete_sim_plant
+    type: database_execute
+    query: |
+      DELETE FROM plants WHERE id = :created_plant_id
+    params:
+      created_plant_id: ${created_plant_id}
+    optional: true
+
+  - step: delete_source_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_simulation_report
+    type: database_execute
+    query: |
+      DELETE FROM simulation_reports WHERE simulation_id = :simulation_id
+    params:
+      simulation_id: ${simulation_id}
+    optional: true

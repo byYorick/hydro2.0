@@ -79,6 +79,23 @@
             class="input-field h-9 w-full"
           />
         </div>
+
+        <div class="flex items-start gap-2">
+          <input
+            id="simulation-full-mode"
+            v-model="form.full_simulation"
+            name="full_simulation"
+            type="checkbox"
+            :disabled="form.sim_duration_minutes === null"
+            class="mt-1 h-4 w-4 rounded border-[color:var(--border-muted)] bg-transparent text-[color:var(--accent-cyan)] disabled:opacity-40"
+          />
+          <label
+            for="simulation-full-mode"
+            class="text-xs text-[color:var(--text-muted)]"
+          >
+            Полный прогон: создать зону, растение, рецепт и дополнительную ноду, пройти все фазы до отчета.
+          </label>
+        </div>
         
         <div>
           <label
@@ -390,6 +407,110 @@
             </li>
           </ul>
         </div>
+
+        <div
+          v-if="simulationReport"
+          class="rounded-lg border border-[color:var(--border-muted)] p-3"
+        >
+          <div class="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+            <span>Отчет симуляции</span>
+            <span class="text-[10px] text-[color:var(--text-dim)]">
+              {{ simulationReport.status }}
+            </span>
+          </div>
+          <div class="mt-2 grid grid-cols-2 gap-2 text-xs text-[color:var(--text-muted)]">
+            <div>Старт: {{ formatDateTime(simulationReport.started_at) }}</div>
+            <div>Финиш: {{ formatDateTime(simulationReport.finished_at) }}</div>
+          </div>
+
+          <div
+            v-if="reportSummaryEntries.length"
+            class="mt-3"
+          >
+            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+              Сводка
+            </div>
+            <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 text-xs text-[color:var(--text-muted)]">
+              <div
+                v-for="item in reportSummaryEntries"
+                :key="`summary-${item.key}`"
+                class="rounded-md bg-[color:var(--bg-surface)] px-2 py-2"
+              >
+                <div class="text-[11px] text-[color:var(--text-dim)]">
+                  {{ formatReportKey(item.key) }}
+                </div>
+                <div class="text-xs text-[color:var(--text-primary)]">
+                  {{ formatReportValue(item.value) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="reportPhaseEntries.length"
+            class="mt-3"
+          >
+            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+              Фазы
+            </div>
+            <div class="mt-2 max-h-48 overflow-auto">
+              <table class="w-full text-xs text-[color:var(--text-muted)]">
+                <thead class="text-[11px] uppercase text-[color:var(--text-dim)]">
+                  <tr class="text-left">
+                    <th class="py-1">#</th>
+                    <th class="py-1">Название</th>
+                    <th class="py-1">Старт</th>
+                    <th class="py-1">Финиш</th>
+                    <th class="py-1">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="phase in reportPhaseEntries"
+                    :key="`phase-${phase.phase_id || phase.phase_index}`"
+                    class="border-t border-[color:var(--border-muted)]"
+                  >
+                    <td class="py-1 pr-2">{{ phase.phase_index ?? '—' }}</td>
+                    <td class="py-1 pr-2">{{ phase.name || '—' }}</td>
+                    <td class="py-1 pr-2">{{ formatTimestamp(phase.started_at) }}</td>
+                    <td class="py-1 pr-2">{{ formatTimestamp(phase.completed_at) }}</td>
+                    <td class="py-1">{{ phase.status || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            v-if="reportMetricsEntries.length"
+            class="mt-3"
+          >
+            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+              Метрики
+            </div>
+            <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 text-xs text-[color:var(--text-muted)]">
+              <div
+                v-for="item in reportMetricsEntries"
+                :key="`metric-${item.key}`"
+                class="rounded-md bg-[color:var(--bg-surface)] px-2 py-2"
+              >
+                <div class="text-[11px] text-[color:var(--text-dim)]">
+                  {{ formatReportKey(item.key) }}
+                </div>
+                <div class="text-xs text-[color:var(--text-primary)]">
+                  {{ formatReportValue(item.value) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="reportErrors.length"
+            class="mt-3 text-xs text-[color:var(--accent-red)]"
+          >
+            Ошибки отчета: {{ formatReportValue(reportErrors) }}
+          </div>
+        </div>
         
         <div
           v-if="error"
@@ -497,6 +618,7 @@ interface SimulationForm {
   duration_hours: number
   step_minutes: number
   sim_duration_minutes: number | null
+  full_simulation: boolean
   recipe_id: number | null
   initial_state: {
     ph: number | null
@@ -553,6 +675,28 @@ interface SimulationEvent {
   created_at?: string | null
 }
 
+interface SimulationReport {
+  id: number
+  simulation_id: number
+  zone_id: number
+  status: string
+  started_at?: string | null
+  finished_at?: string | null
+  summary_json?: Record<string, unknown> | null
+  phases_json?: SimulationReportPhase[] | null
+  metrics_json?: Record<string, unknown> | null
+  errors_json?: unknown
+}
+
+interface SimulationReportPhase {
+  phase_id?: number | null
+  phase_index?: number | null
+  name?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  status?: string | null
+}
+
 interface RecipeOption {
   id: number
   name: string
@@ -570,6 +714,7 @@ const form = reactive<SimulationForm>({
   duration_hours: 72,
   step_minutes: 10,
   sim_duration_minutes: null,
+  full_simulation: true,
   recipe_id: props.defaultRecipeId || null,
   initial_state: {
     ph: null,
@@ -603,6 +748,7 @@ const simulationActions = ref<SimulationAction[]>([])
 const simulationPidStatuses = ref<SimulationPidStatus[]>([])
 const simulationCurrentPhase = ref<string | null>(null)
 const simulationDbId = ref<number | null>(null)
+const simulationReport = ref<SimulationReport | null>(null)
 const simulationEvents = ref<SimulationEvent[]>([])
 const simulationEventsLoading = ref(false)
 const simulationEventsError = ref<string | null>(null)
@@ -812,6 +958,35 @@ const simulationStatusLabel = computed(() => {
   }
 })
 
+const reportSummaryEntries = computed(() => {
+  const summary = simulationReport.value?.summary_json
+  if (!summary || typeof summary !== 'object') return []
+  return Object.entries(summary)
+    .map(([key, value]) => ({ key, value }))
+    .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== '')
+})
+
+const reportPhaseEntries = computed<SimulationReportPhase[]>(() => {
+  const phases = simulationReport.value?.phases_json
+  if (!Array.isArray(phases)) return []
+  return phases as SimulationReportPhase[]
+})
+
+const reportMetricsEntries = computed(() => {
+  const metrics = simulationReport.value?.metrics_json
+  if (!metrics || typeof metrics !== 'object') return []
+  return Object.entries(metrics)
+    .map(([key, value]) => ({ key, value }))
+    .filter((entry) => entry.value !== null && entry.value !== undefined && entry.value !== '')
+})
+
+const reportErrors = computed(() => {
+  const errors = simulationReport.value?.errors_json
+  if (!errors) return []
+  if (Array.isArray(errors)) return errors
+  return [errors]
+})
+
 const isSimulating = computed(() => {
   return simulationStatus.value === 'queued' || simulationStatus.value === 'processing' || loading.value
 })
@@ -978,6 +1153,13 @@ function formatTimestamp(value?: string | null): string {
   return parsed.toLocaleTimeString()
 }
 
+function formatDateTime(value?: string | null): string {
+  if (!value) return '—'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString()
+}
+
 function formatPidValue(value?: number | null, decimals = 2): string {
   if (value === null || value === undefined) return '—'
   return Number(value).toFixed(decimals)
@@ -993,6 +1175,21 @@ function formatSimulationPayload(payload: unknown): string | null {
     return serialized.length > 160 ? `${serialized.slice(0, 160)}…` : serialized
   } catch {
     return null
+  }
+}
+
+function formatReportKey(key: string): string {
+  return key.replace(/_/g, ' ')
+}
+
+function formatReportValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
   }
 }
 
@@ -1129,6 +1326,11 @@ async function pollSimulationStatus(jobId: string): Promise<void> {
     simulationActions.value = Array.isArray(data.actions) ? data.actions : []
     simulationPidStatuses.value = Array.isArray(data.pid_statuses) ? data.pid_statuses : []
     simulationCurrentPhase.value = data.current_phase ? String(data.current_phase) : null
+    if (data.report && typeof data.report === 'object') {
+      simulationReport.value = data.report as SimulationReport
+    } else {
+      simulationReport.value = null
+    }
 
     if (typeof data.progress === 'number' && Number.isFinite(data.progress)) {
       simulationProgressValue.value = clampProgress(data.progress)
@@ -1201,6 +1403,7 @@ watch(
       simulationActions.value = []
       simulationPidStatuses.value = []
       simulationCurrentPhase.value = null
+      simulationReport.value = null
       resetSimulationEvents()
     }
   }
@@ -1238,6 +1441,7 @@ onUnmounted(() => {
   simulationActions.value = []
   simulationPidStatuses.value = []
   simulationCurrentPhase.value = null
+  simulationReport.value = null
   resetSimulationEvents()
 })
 
@@ -1257,6 +1461,7 @@ async function onSubmit(): Promise<void> {
   simulationActions.value = []
   simulationPidStatuses.value = []
   simulationCurrentPhase.value = null
+  simulationReport.value = null
   resetSimulationEvents()
   
   try {
@@ -1264,6 +1469,7 @@ async function onSubmit(): Promise<void> {
       duration_hours: number
       step_minutes: number
       sim_duration_minutes?: number
+      full_simulation?: boolean
       recipe_id?: number
       initial_state?: Partial<SimulationForm['initial_state']>
     }
@@ -1275,6 +1481,10 @@ async function onSubmit(): Promise<void> {
 
     if (form.sim_duration_minutes !== null) {
       payload.sim_duration_minutes = form.sim_duration_minutes
+    }
+
+    if (form.full_simulation && form.sim_duration_minutes !== null) {
+      payload.full_simulation = true
     }
     
     if (form.recipe_id) {

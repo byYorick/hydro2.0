@@ -129,7 +129,7 @@ actions:
   - step: capture_anchor_time
     type: database_query
     query: |
-      SELECT NOW() AS anchor_time
+      SELECT NOW() - INTERVAL '5 seconds' AS anchor_time
     expected_rows: 1
     save: anchor_row
 

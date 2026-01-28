@@ -751,6 +751,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
 - Запуск симуляции Digital Twin для зоны.
+  - `full_simulation` (bool, optional) — выполнить полный цикл с созданием сущностей и отчетом.
 
 Тело запроса:
 ```json
@@ -759,14 +760,38 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   "duration_hours": 24,
   "parameters": {
     "target_ph": 6.5
-  }
+  },
+  "full_simulation": false
 }
 ```
 
-### 12.2. GET /api/simulations/{id}
+### 12.2. GET /api/simulations/{job_id}
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- Получение результата симуляции.
+- Получение статуса симуляции (job), прогресса и отчета.
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "status": "processing",
+    "simulation_id": 55,
+    "report": {
+      "id": 12,
+      "simulation_id": 55,
+      "zone_id": 12,
+      "status": "completed",
+      "started_at": "2026-01-26T09:10:00Z",
+      "finished_at": "2026-01-26T09:11:00Z",
+      "summary_json": { "simulation_zone_id": 99 },
+      "phases_json": [],
+      "metrics_json": { "phases_count": 3 },
+      "errors_json": null
+    }
+  }
+}
+```
 
 ### 12.3. GET /api/simulations/{simulation}/events
 
