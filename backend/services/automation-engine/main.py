@@ -10,6 +10,7 @@ from common.utils.time import utcnow
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
+from common.simulation_clock import get_simulation_clocks, SimulationClock
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 import math
 import time
@@ -25,13 +26,27 @@ from utils.system_state_logger import log_system_state
 from utils.zone_prioritizer import prioritize_zones
 
 # Настройка логирования
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 from utils.logging_context import setup_structured_logging
-setup_structured_logging(level=getattr(logging, log_level, logging.INFO))
+from common.logging_setup import (
+    attach_service_context,
+    get_log_format,
+    get_log_level,
+    setup_standard_logging,
+    install_asyncio_exception_handler,
+    install_exception_handlers,
+)
+from common.trace_context import inject_trace_id_header
+
+if get_log_format() == "json":
+    setup_structured_logging(level=get_log_level())
+    attach_service_context("automation-engine")
+else:
+    setup_standard_logging("automation-engine")
+install_exception_handlers("automation-engine")
 
 logger = logging.getLogger(__name__)
 
-# Metrics for error tracking
+# Метрики для отслеживания ошибок
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
 CONFIG_FETCH_SUCCESS = Counter("config_fetch_success_total", "Successful config fetches from Laravel")
@@ -81,7 +96,7 @@ _processing_times = []  # Последние 100 измерений
 _MAX_SAMPLES = 100
 _processing_times_lock = asyncio.Lock()  # Блокировка для thread-safe доступа
 
-# Graceful shutdown
+# Корректное завершение работы
 _shutdown_event = asyncio.Event()
 _zone_service: Optional[ZoneAutomationService] = None
 _command_tracker: Optional[CommandTracker] = None
@@ -246,7 +261,8 @@ async def calculate_optimal_concurrency(
 async def process_zones_parallel(
     zones: List[Dict[str, Any]],
     zone_service: ZoneAutomationService,
-    max_concurrent: int = 5
+    max_concurrent: int = 5,
+    simulation_clocks: Optional[Dict[int, SimulationClock]] = None
 ) -> Dict[str, Any]:
     """
     Обработка зон параллельно с ограничением количества одновременных операций и отслеживанием ошибок.
@@ -272,6 +288,7 @@ async def process_zones_parallel(
         """Обработка зоны с отслеживанием результата."""
         zone_id = zone_row.get("id")
         zone_name = zone_row.get("name", "unknown")
+        sim_clock = simulation_clocks.get(zone_id) if simulation_clocks and zone_id else None
         
         # Устанавливаем zone_id в контекст для логирования
         set_zone_id(zone_id)
@@ -281,7 +298,7 @@ async def process_zones_parallel(
             async with semaphore:
                 try:
                     start = time.time()
-                    await zone_service.process_zone(zone_id)
+                    await zone_service.process_zone(zone_id, sim_clock=sim_clock)
                     duration = time.time() - start
                     
                     ZONE_PROCESSING_TIME.observe(duration)
@@ -413,6 +430,7 @@ async def fetch_full_config(
 ) -> Optional[Dict[str, Any]]:
     """Fetch full config from Laravel API with proper error handling and retry logic."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = inject_trace_id_header(headers)
     max_retries = 3
     retry_delay = 2.0
     
@@ -512,10 +530,10 @@ async def main():
     s = get_settings()
     automation_settings = get_automation_settings()
     
-    # Start Prometheus metrics server
+    # Запуск сервера метрик Prometheus
     start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
     
-    # Start FastAPI server for REST API (scheduler endpoint) в отдельном потоке
+    # Запуск FastAPI сервера для REST API (endpoint scheduler) в отдельном потоке
     import threading
     import uvicorn
     from api import app as api_app
@@ -528,6 +546,7 @@ async def main():
         # Создаем новый event loop для этого потока
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        install_asyncio_exception_handler("automation-engine", logger=logger)
         
         config = uvicorn.Config(
             api_app,
@@ -722,6 +741,11 @@ async def main():
                     zones = prioritize_zones(zones)
                     active_zones = zones
                     
+                    simulation_clocks = {}
+                    zone_ids = [zone.get("id") for zone in zones if zone.get("id")]
+                    if zone_ids:
+                        simulation_clocks = await get_simulation_clocks(zone_ids)
+
                     # Параллельная обработка зон с адаптивной конкурентностью
                     if zones:
                         # Вычисляем оптимальную конкурентность, если включена адаптивность
@@ -746,8 +770,10 @@ async def main():
                         
                         # Обрабатываем зоны с отслеживанием результатов
                         results = await process_zones_parallel(
-                            zones, _zone_service,
-                            max_concurrent=max_concurrent
+                            zones,
+                            _zone_service,
+                            max_concurrent=max_concurrent,
+                            simulation_clocks=simulation_clocks,
                         )
                         
                         # Логируем результаты для мониторинга
@@ -781,7 +807,16 @@ async def main():
                 if _shutdown_event.is_set():
                     break
                 
-                await asyncio.sleep(automation_settings.MAIN_LOOP_SLEEP_SECONDS)
+                sleep_seconds = automation_settings.MAIN_LOOP_SLEEP_SECONDS
+                if simulation_clocks:
+                    try:
+                        max_scale = max(clock.time_scale for clock in simulation_clocks.values())
+                        if max_scale > 1:
+                            sleep_seconds = max(1.0, sleep_seconds / max_scale)
+                    except ValueError:
+                        pass
+
+                await asyncio.sleep(sleep_seconds)
     finally:
         # Graceful shutdown
         logger.info("Graceful shutdown initiated")

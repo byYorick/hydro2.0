@@ -15,6 +15,7 @@ from common.http_client_pool import close_http_client as close_unified_http_clie
 from common.mqtt import get_mqtt_client
 from common.redis_queue import TelemetryQueue, close_redis_client
 from common.service_logs import send_service_log
+from common.trace_context import clear_trace_id, set_trace_id_from_headers
 from ingest_routes import router as ingest_router
 from mqtt_handlers import (
     handle_command_response,
@@ -128,6 +129,7 @@ async def lifespan(app: FastAPI):
 
 async def log_requests(request: Request, call_next):
     """Логирование всех входящих HTTP запросов для диагностики."""
+    trace_id = set_trace_id_from_headers(request.headers, fallback_generate=True)
     start_time = time.time()
 
     client_ip = request.client.host if request.client else "unknown"
@@ -160,6 +162,8 @@ async def log_requests(request: Request, call_next):
             response.status_code,
             process_time,
         )
+        if trace_id:
+            response.headers["X-Trace-Id"] = trace_id
         return response
     except Exception as e:
         process_time = time.time() - start_time
@@ -172,6 +176,8 @@ async def log_requests(request: Request, call_next):
             exc_info=True,
         )
         raise
+    finally:
+        clear_trace_id()
 
 
 def create_app() -> FastAPI:

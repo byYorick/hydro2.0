@@ -5,6 +5,7 @@ WORKDIR /app
 COPY node-sim-manager/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+COPY common /app/common
 COPY node-sim-manager /app
 
 ENV PYTHONUNBUFFERED=1

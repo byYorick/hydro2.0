@@ -230,4 +230,4 @@ async def test_process_zone_phase_transition():
         )
         await service.process_zone(1)
 
-        mock_phase_check.assert_called_once_with(1)
+        mock_phase_check.assert_called_once_with(1, None)

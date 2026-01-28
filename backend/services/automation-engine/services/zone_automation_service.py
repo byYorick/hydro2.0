@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
 from common.utils.time import utcnow
+from common.simulation_clock import SimulationClock
+from common.simulation_events import record_simulation_event
 from common.db import create_zone_event
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
@@ -101,7 +103,7 @@ class ZoneAutomationService:
         await self.ph_controller.save_all_states()
         await self.ec_controller.save_all_states()
     
-    async def process_zone(self, zone_id: int) -> None:
+    async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] = None) -> None:
         """
         Оркестрация одного цикла обработки зоны с поддержкой backoff и degraded mode.
         
@@ -126,7 +128,7 @@ class ZoneAutomationService:
                 await self._check_pid_config_updates(zone_id)
                 
                 # Проверка переходов фаз (стоп-условие, всегда выполняется)
-                await self._check_phase_transitions(zone_id)
+                await self._check_phase_transitions(zone_id, sim_clock)
             
             # Получение данных зоны через circuit breaker
             try:
@@ -163,6 +165,9 @@ class ZoneAutomationService:
             water_level_ok, water_level = await check_water_level(zone_id)
             if water_level is not None:
                 await ensure_water_level_alert(zone_id, water_level)
+
+            sim_now = sim_clock.now() if sim_clock else utcnow()
+            time_scale = sim_clock.time_scale if sim_clock else None
             
             # В degraded mode выполняем только safety checks + health + стоп-условия
             if is_degraded:
@@ -189,7 +194,7 @@ class ZoneAutomationService:
             # 1. Light Controller
             await self._safe_process_controller(
                 'light',
-                self._process_light_controller(zone_id, targets, capabilities, bindings),
+                self._process_light_controller(zone_id, targets, capabilities, bindings, sim_now),
                 zone_id
             )
             
@@ -203,14 +208,36 @@ class ZoneAutomationService:
             # 3. Irrigation Controller
             await self._safe_process_controller(
                 'irrigation',
-                self._process_irrigation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings, actuators),
+                self._process_irrigation_controller(
+                    zone_id,
+                    targets,
+                    telemetry,
+                    capabilities,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                    sim_now,
+                    time_scale,
+                    sim_clock,
+                ),
                 zone_id
             )
             
             # 4. Recirculation Controller
             await self._safe_process_controller(
                 'recirculation',
-                self._process_recirculation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings, actuators),
+                self._process_recirculation_controller(
+                    zone_id,
+                    targets,
+                    telemetry,
+                    capabilities,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                    sim_now,
+                    time_scale,
+                    sim_clock,
+                ),
                 zone_id
             )
             
@@ -531,43 +558,103 @@ class ZoneAutomationService:
                     exc_info=True
                 )
     
-    async def _check_phase_transitions(self, zone_id: int) -> None:
+    async def _check_phase_transitions(
+        self,
+        zone_id: int,
+        sim_clock: Optional[SimulationClock] = None,
+    ) -> None:
         """
-        Проверка и переход между фазами рецепта.
-
-        TODO: Реализовать переходы фаз через GrowCyclePhase/Transition API вместо legacy calculate_current_phase.
-        Пока что логика переходов фаз отключена для обеспечения стабильности после удаления legacy.
+        Проверка и переход между фазами рецепта по simulated-time.
+        Для production-циклов без sim_clock переходы не выполняются.
         """
-        # phase_calc = await calculate_current_phase(zone_id)
-        # if not phase_calc:
-        #     return
+        if not sim_clock:
+            return
 
-        # if phase_calc.get("should_transition") and phase_calc["target_phase_index"] > phase_calc["phase_index"]:
-        #     new_phase_index = phase_calc["target_phase_index"]
-        #     success = await advance_phase(zone_id, new_phase_index)
-        #     if success:
-        #         await create_zone_event(
-        #             zone_id,
-        #             'PHASE_TRANSITION',
-        #             {
-        #                 'from_phase': phase_calc["phase_index"],
-        #             'to_phase': new_phase_index
-        #             }
-        #         )
-        pass
+        phase_info = await self.grow_cycle_repo.get_current_phase_timing(zone_id)
+        if not phase_info:
+            return
+
+        duration_hours = phase_info.get("duration_hours")
+        duration_days = phase_info.get("duration_days")
+        if duration_hours is None and duration_days is None:
+            return
+
+        duration_hours_value = float(duration_hours) if duration_hours is not None else float(duration_days) * 24.0
+        if duration_hours_value <= 0:
+            return
+
+        phase_started_at = phase_info.get("phase_started_at") or phase_info.get("recipe_started_at")
+        if not phase_started_at:
+            return
+
+        sim_now = sim_clock.now()
+        phase_start_sim = sim_clock.to_sim_time(phase_started_at)
+        if sim_now < phase_start_sim:
+            return
+
+        elapsed_hours = (sim_now - phase_start_sim).total_seconds() / 3600.0
+        if elapsed_hours < duration_hours_value:
+            return
+
+        grow_cycle_id = phase_info.get("grow_cycle_id")
+        if not grow_cycle_id:
+            return
+
+        phase_index = phase_info.get("phase_index")
+        max_phase_index = phase_info.get("max_phase_index")
+
+        try:
+            if max_phase_index is not None and phase_index is not None and phase_index >= max_phase_index:
+                success = await self.grow_cycle_repo.harvest_cycle(int(grow_cycle_id))
+                if success:
+                    await record_simulation_event(
+                        zone_id=zone_id,
+                        service="automation-engine",
+                        stage="phase_transition",
+                        status="harvested",
+                        message="Simulation cycle harvested",
+                        payload={
+                            "grow_cycle_id": grow_cycle_id,
+                            "phase_index": phase_index,
+                            "elapsed_hours": elapsed_hours,
+                        },
+                    )
+                return
+
+            success = await self.grow_cycle_repo.advance_phase(int(grow_cycle_id))
+            if success:
+                await record_simulation_event(
+                    zone_id=zone_id,
+                    service="automation-engine",
+                    stage="phase_transition",
+                    status="advanced",
+                    message="Simulation phase advanced",
+                    payload={
+                        "grow_cycle_id": grow_cycle_id,
+                        "phase_index": phase_index,
+                        "elapsed_hours": elapsed_hours,
+                    },
+                )
+        except CircuitBreakerOpenError:
+            logger.warning(
+                "Zone %s: Circuit Breaker open during phase transition",
+                zone_id,
+                extra={"zone_id": zone_id},
+            )
     
     async def _process_light_controller(
         self,
         zone_id: int,
         targets: Dict[str, Any],
         capabilities: Dict[str, bool],
-        bindings: Dict[str, Dict[str, Any]]
+        bindings: Dict[str, Dict[str, Any]],
+        current_time: datetime,
     ) -> None:
         """Обработка контроллера освещения."""
         if not capabilities.get("light_control", False):
             return
         
-        light_cmd = await check_and_control_lighting(zone_id, targets, bindings, utcnow())
+        light_cmd = await check_and_control_lighting(zone_id, targets, bindings, current_time)
         if light_cmd:
             if light_cmd.get('event_type'):
                 await create_zone_event(zone_id, light_cmd['event_type'], light_cmd.get('event_details', {}))
@@ -612,13 +699,25 @@ class ZoneAutomationService:
         capabilities: Dict[str, bool],
         water_level_ok: bool,
         bindings: Dict[str, Dict[str, Any]],
-        actuators: Dict[str, Dict[str, Any]]
+        actuators: Dict[str, Dict[str, Any]],
+        current_time: datetime,
+        time_scale: Optional[float],
+        sim_clock: Optional[SimulationClock],
     ) -> None:
         """Обработка контроллера полива."""
         if not capabilities.get("irrigation_control", False):
             return
         
-        irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry, bindings, actuators)
+        irrigation_cmd = await check_and_control_irrigation(
+            zone_id,
+            targets,
+            telemetry,
+            bindings,
+            actuators,
+            current_time=current_time,
+            time_scale=time_scale,
+            sim_clock=sim_clock,
+        )
         
         # Проверка безопасности перед запуском насоса
         if irrigation_cmd:
@@ -647,13 +746,25 @@ class ZoneAutomationService:
         capabilities: Dict[str, bool],
         water_level_ok: bool,
         bindings: Dict[str, Dict[str, Any]],
-        actuators: Dict[str, Dict[str, Any]]
+        actuators: Dict[str, Dict[str, Any]],
+        current_time: datetime,
+        time_scale: Optional[float],
+        sim_clock: Optional[SimulationClock],
     ) -> None:
         """Обработка контроллера рециркуляции."""
         if not capabilities.get("recirculation", False):
             return
         
-        recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry, bindings, actuators)
+        recirculation_cmd = await check_and_control_recirculation(
+            zone_id,
+            targets,
+            telemetry,
+            bindings,
+            actuators,
+            current_time=current_time,
+            time_scale=time_scale,
+            sim_clock=sim_clock,
+        )
         if recirculation_cmd:
             if recirculation_cmd.get('event_type'):
                 await create_zone_event(zone_id, recirculation_cmd['event_type'], recirculation_cmd.get('event_details', {}))

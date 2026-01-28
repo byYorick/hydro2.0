@@ -29,14 +29,12 @@ from common.water_cycle import (
     WATER_STATE_WATER_CHANGE_STABILIZE,
 )
 from common.service_logs import send_service_log
+from common.trace_context import clear_trace_id, get_trace_id, inject_trace_id_header, set_trace_id
+from common.logging_setup import setup_standard_logging, install_exception_handlers
 
 # Настройка логирования
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-)
+setup_standard_logging("scheduler")
+install_exception_handlers("scheduler")
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +59,11 @@ class SimulationClock:
         real_now = utcnow().replace(tzinfo=None)
         elapsed = (real_now - self.real_start).total_seconds()
         return self.sim_start + timedelta(seconds=elapsed * self.time_scale)
+
+    def scale_duration_seconds(self, duration_seconds: float, min_seconds: float = 0.1) -> float:
+        if self.time_scale <= 0:
+            return duration_seconds
+        return max(min_seconds, duration_seconds / self.time_scale)
 
 
 def _to_naive_utc(value: datetime) -> datetime:
@@ -190,6 +193,10 @@ async def send_command_via_automation_engine(
     Returns:
         True если команда успешно отправлена, False в противном случае
     """
+    created_trace = False
+    if not get_trace_id():
+        set_trace_id()
+        created_trace = True
     try:
         payload = {
             "zone_id": zone_id,
@@ -199,11 +206,13 @@ async def send_command_via_automation_engine(
         }
         if params:
             payload["params"] = params
-        
+
+        headers = inject_trace_id_header()
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(
                 f"{AUTOMATION_ENGINE_URL}/scheduler/command",
-                json=payload
+                json=payload,
+                headers=headers,
             )
             
             if response.status_code == 200:
@@ -235,6 +244,9 @@ async def send_command_via_automation_engine(
         COMMAND_REST_ERRORS.labels(error_type=type(e).__name__).inc()
         logger.error(f"Scheduler command error: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}", exc_info=True)
         return False
+    finally:
+        if created_trace:
+            clear_trace_id()
 
 
 def _parse_time_spec(spec: str) -> Optional[time]:
@@ -458,7 +470,9 @@ async def monitor_pump_safety(
 
 
 async def execute_irrigation_schedule(
-    zone_id: int, schedule: Dict[str, Any],
+    zone_id: int,
+    schedule: Dict[str, Any],
+    sim_clock: Optional[SimulationClock] = None,
 ):
     """Execute irrigation schedule for zone with Water Flow Engine integration.
     Команды отправляются через automation-engine REST API."""
@@ -487,7 +501,11 @@ async def execute_irrigation_schedule(
         targets = schedule.get("targets", {})
         irrigation = targets.get("irrigation", {})
         duration_sec = irrigation.get("duration_sec") or targets.get("irrigation_duration_sec", 60)
-        duration_ms = max(0, int(duration_sec * 1000))
+        duration_sec_value = float(duration_sec)
+        duration_sec_scaled = duration_sec_value
+        if sim_clock:
+            duration_sec_scaled = sim_clock.scale_duration_seconds(duration_sec_value, min_seconds=0.1)
+        duration_ms = max(0, int(duration_sec_scaled * 1000))
         
         # Create IRRIGATION_STARTED event
         irrigation_start_time = utcnow()
@@ -496,8 +514,10 @@ async def execute_irrigation_schedule(
             'IRRIGATION_STARTED',
             {
                 'nodes_count': len(nodes),
-                'duration_sec': duration_sec,
-                'start_time': irrigation_start_time.isoformat()
+                'duration_sec': duration_sec_value,
+                'duration_ms': duration_ms,
+                'time_scale': sim_clock.time_scale if sim_clock else None,
+                'start_time': irrigation_start_time.isoformat(),
             }
         )
         
@@ -755,7 +775,7 @@ async def check_and_execute_schedules(mqtt_client: MqttClient):
             if schedule_time:
                 crossings = _schedule_crossings(last_dt, now_dt, schedule_time)
                 for _ in crossings:
-                    await execute_irrigation_schedule(zone_id, schedule)
+                    await execute_irrigation_schedule(zone_id, schedule, sim_clock)
                 if crossings:
                     executed.add(key)
         elif task_type == "lighting":

@@ -129,6 +129,8 @@ class CommandBus:
         try:
             # Получаем trace_id из контекста логирования
             trace_id = get_trace_id()
+            if cmd_id:
+                trace_id = cmd_id
             
             # Формируем запрос к history-logger
             payload = {
@@ -149,6 +151,8 @@ class CommandBus:
             headers = {"Content-Type": "application/json"}
             if self.history_logger_token:
                 headers["Authorization"] = f"Bearer {self.history_logger_token}"
+            if trace_id:
+                headers["X-Trace-Id"] = trace_id
             
             # Обертка для HTTP запроса через circuit breaker
             async def _send_request():

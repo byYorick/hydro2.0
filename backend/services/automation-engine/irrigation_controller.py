@@ -9,6 +9,13 @@ from common.db import fetch, create_zone_event
 from common.water_flow import check_water_level
 from alerts_manager import ensure_alert
 from services.targets_accessor import get_irrigation_params
+from common.simulation_clock import SimulationClock
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 async def get_last_irrigation_time(zone_id: int) -> Optional[datetime]:
@@ -61,7 +68,10 @@ async def check_and_control_irrigation(
     targets: Dict[str, Any],
     telemetry: Dict[str, Optional[float]],
     bindings: Dict[str, Dict[str, Any]],
-    actuators: Optional[Dict[str, Dict[str, Any]]] = None
+    actuators: Optional[Dict[str, Dict[str, Any]]] = None,
+    current_time: Optional[datetime] = None,
+    time_scale: Optional[float] = None,
+    sim_clock: Optional[SimulationClock] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление поливом зоны.
@@ -115,14 +125,14 @@ async def check_and_control_irrigation(
         return None
     
     # Проверяем, прошло ли достаточно времени
-    now = utcnow()
-    # Приводим last_irrigation_time к aware UTC для корректного сравнения
-    if last_irrigation_time.tzinfo is None:
-        last_irrigation_time = last_irrigation_time.replace(tzinfo=timezone.utc)
-    elif last_irrigation_time.tzinfo != timezone.utc:
-        last_irrigation_time = last_irrigation_time.astimezone(timezone.utc)
-    
-    elapsed_sec = (now - last_irrigation_time).total_seconds()
+    now = current_time or utcnow()
+    last_irrigation_time = _to_utc(last_irrigation_time)
+
+    if sim_clock:
+        last_irrigation_sim = sim_clock.to_sim_time(last_irrigation_time)
+        elapsed_sec = (now - last_irrigation_sim).total_seconds()
+    else:
+        elapsed_sec = (now - last_irrigation_time).total_seconds()
     
     if elapsed_sec < irrigation_interval_sec:
         # Еще не прошло достаточно времени
@@ -134,19 +144,27 @@ async def check_and_control_irrigation(
         # Уровень воды низкий - не запускаем полив
         return None
     
+    duration_sec_value = float(irrigation_duration_sec)
+    duration_sec_scaled = duration_sec_value
+    if sim_clock and time_scale:
+        duration_sec_scaled = sim_clock.scale_duration_seconds(duration_sec_value, min_seconds=0.1)
+
+    duration_ms_scaled = int(duration_sec_scaled * 1000)
+
     # Возвращаем команду для запуска полива
     return {
         'node_uid': pump_binding['node_uid'],
         'channel': pump_binding['channel'],
         'cmd': 'run_pump',
         'params': {
-            'duration_ms': int(irrigation_duration_sec * 1000)
+            'duration_ms': duration_ms_scaled
         },
         'event_type': 'IRRIGATION_STARTED',
         'event_details': {
             'interval_sec': irrigation_interval_sec,
-            'duration_sec': irrigation_duration_sec,
-            'duration_ms': int(irrigation_duration_sec * 1000),
+            'duration_sec': duration_sec_value,
+            'duration_ms': duration_ms_scaled,
+            'time_scale': time_scale,
             'last_irrigation_time': last_irrigation_time.isoformat(),
             'elapsed_sec': elapsed_sec
         }
@@ -203,7 +221,10 @@ async def check_and_control_recirculation(
     targets: Dict[str, Any],
     telemetry: Dict[str, Optional[float]],
     bindings: Dict[str, Dict[str, Any]],
-    actuators: Optional[Dict[str, Dict[str, Any]]] = None
+    actuators: Optional[Dict[str, Dict[str, Any]]] = None,
+    current_time: Optional[datetime] = None,
+    time_scale: Optional[float] = None,
+    sim_clock: Optional[SimulationClock] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление рециркуляцией воды.
@@ -253,18 +274,18 @@ async def check_and_control_recirculation(
     # Получаем время последней рециркуляции
     last_recirculation_time = await get_last_recirculation_time(zone_id)
     
-    now = utcnow()
-    
+    now = current_time or utcnow()
+    elapsed_min: Optional[float] = None
+
     if last_recirculation_time is not None:
-        # Проверяем, прошло ли достаточно времени
-        # Приводим last_recirculation_time к aware UTC для корректного сравнения
-        if last_recirculation_time.tzinfo is None:
-            last_recirculation_time = last_recirculation_time.replace(tzinfo=timezone.utc)
-        elif last_recirculation_time.tzinfo != timezone.utc:
-            last_recirculation_time = last_recirculation_time.astimezone(timezone.utc)
-        
-        elapsed_min = (now - last_recirculation_time).total_seconds() / 60.0
-        
+        last_recirculation_time = _to_utc(last_recirculation_time)
+
+        if sim_clock:
+            last_recirculation_sim = sim_clock.to_sim_time(last_recirculation_time)
+            elapsed_min = (now - last_recirculation_sim).total_seconds() / 60.0
+        else:
+            elapsed_min = (now - last_recirculation_time).total_seconds() / 60.0
+
         if elapsed_min < recirculation_interval_min:
             # Еще не прошло достаточно времени
             return None
@@ -276,20 +297,28 @@ async def check_and_control_recirculation(
         # Уровень воды низкий - не запускаем рециркуляцию
         return None
     
+    duration_sec_value = float(recirculation_duration_sec)
+    duration_sec_scaled = duration_sec_value
+    if sim_clock and time_scale:
+        duration_sec_scaled = sim_clock.scale_duration_seconds(duration_sec_value, min_seconds=0.1)
+
+    duration_ms_scaled = int(duration_sec_scaled * 1000)
+
     # Возвращаем команду для запуска рециркуляции
     return {
         'node_uid': recirculation_binding['node_uid'],
         'channel': recirculation_binding['channel'],
         'cmd': 'run_pump',
         'params': {
-            'duration_ms': int(recirculation_duration_sec * 1000)
+            'duration_ms': duration_ms_scaled
         },
         'event_type': 'RECIRCULATION_CYCLE',
         'event_details': {
             'interval_min': recirculation_interval_min,
-            'duration_sec': recirculation_duration_sec,
-            'duration_ms': int(recirculation_duration_sec * 1000),
+            'duration_sec': duration_sec_value,
+            'duration_ms': duration_ms_scaled,
+            'time_scale': time_scale,
             'last_recirculation_time': last_recirculation_time.isoformat() if last_recirculation_time else None,
-            'elapsed_min': (now - last_recirculation_time).total_seconds() / 60.0 if last_recirculation_time else None
+            'elapsed_min': elapsed_min
         }
     }

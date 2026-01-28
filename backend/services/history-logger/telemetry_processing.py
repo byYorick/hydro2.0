@@ -13,6 +13,7 @@ from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.redis_queue import TelemetryQueueItem
 from common.utils.time import utcnow
+from common.trace_context import clear_trace_id, set_trace_id_from_payload
 from metrics import (
     DATABASE_ERRORS,
     LARAVEL_API_DURATION,
@@ -457,90 +458,79 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
     Обработчик телеметрии из MQTT.
     Добавляет данные в Redis queue для последующей обработки.
     """
-    data = _parse_json(payload)
-    if not data:
-        logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
-        return
-
-    if isinstance(data, dict) and "timestamp" in data and "ts" not in data:
-        logger.warning(
-            "Legacy telemetry format without ts field, dropping message",
-            extra={
-                "topic": topic,
-                "payload_keys": list(data.keys()),
-            },
-        )
-        TELEMETRY_DROPPED.labels(reason="legacy_timestamp").inc()
-        return
-
     try:
-        validated_data = TelemetryPayloadModel(**data)
-    except Exception as e:
-        logger.warning(
-            "Invalid telemetry payload",
-            extra={
-                "error": str(e),
-                "topic": topic,
-                "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
-                "payload_size": len(payload),
-            },
-        )
-        TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
-        return
+        data = _parse_json(payload)
+        if not data:
+            logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
+            return
 
-    TELEM_RECEIVED.inc()
+        if isinstance(data, dict):
+            set_trace_id_from_payload(data, fallback_generate=False)
 
-    gh_uid = _extract_gh_uid(topic)
-    zone_uid = _extract_zone_uid(topic)
-    node_uid = _extract_node_uid(topic)
-    channel = _extract_channel_from_topic(topic)
+        if isinstance(data, dict) and "timestamp" in data and "ts" not in data:
+            logger.warning(
+                "Legacy telemetry format without ts field, dropping message",
+                extra={
+                    "topic": topic,
+                    "payload_keys": list(data.keys()),
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="legacy_timestamp").inc()
+            return
 
-    if not zone_uid and validated_data.zone_uid:
-        zone_uid = validated_data.zone_uid
-    if not node_uid and validated_data.node_uid:
-        node_uid = validated_data.node_uid
-
-    MIN_VALID_TIMESTAMP = 1_000_000_000
-    MAX_TIMESTAMP_DRIFT_SEC = 300
-    server_timestamp = time.time()
-    server_time = datetime.fromtimestamp(server_timestamp, timezone.utc)
-
-    raw_ts = validated_data.ts
-    if isinstance(raw_ts, str):
-        stripped_ts = raw_ts.strip()
         try:
-            if stripped_ts.replace(".", "", 1).isdigit():
-                raw_ts = float(stripped_ts)
-        except Exception:
-            pass
+            validated_data = TelemetryPayloadModel(**data)
+        except Exception as e:
+            logger.warning(
+                "Invalid telemetry payload",
+                extra={
+                    "error": str(e),
+                    "topic": topic,
+                    "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
+                    "payload_size": len(payload),
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
+            return
 
-    ts = None
-    if raw_ts:
-        try:
-            if isinstance(raw_ts, (int, float)):
-                ts_value = float(raw_ts)
-                if ts_value > 1_000_000_000_000:
-                    ts_value = ts_value / 1000.0
-                if ts_value >= MIN_VALID_TIMESTAMP:
-                    drift = ts_value - server_timestamp
-                    if drift > MAX_TIMESTAMP_DRIFT_SEC:
-                        logger.warning(
-                            "Timestamp from device is skewed (drift too large), using server time",
-                            extra={
-                                "device_ts": ts_value,
-                                "server_ts": server_timestamp,
-                                "drift_sec": drift,
-                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                "topic": topic,
-                                "node_uid": node_uid,
-                                "zone_uid": zone_uid,
-                            },
-                        )
-                        ts = server_time
-                    else:
-                        if drift < -MAX_TIMESTAMP_DRIFT_SEC:
+        TELEM_RECEIVED.inc()
+
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        node_uid = _extract_node_uid(topic)
+        channel = _extract_channel_from_topic(topic)
+
+        if not zone_uid and validated_data.zone_uid:
+            zone_uid = validated_data.zone_uid
+        if not node_uid and validated_data.node_uid:
+            node_uid = validated_data.node_uid
+
+        MIN_VALID_TIMESTAMP = 1_000_000_000
+        MAX_TIMESTAMP_DRIFT_SEC = 300
+        server_timestamp = time.time()
+        server_time = datetime.fromtimestamp(server_timestamp, timezone.utc)
+
+        raw_ts = validated_data.ts
+        if isinstance(raw_ts, str):
+            stripped_ts = raw_ts.strip()
+            try:
+                if stripped_ts.replace(".", "", 1).isdigit():
+                    raw_ts = float(stripped_ts)
+            except Exception:
+                pass
+
+        ts = None
+        if raw_ts:
+            try:
+                if isinstance(raw_ts, (int, float)):
+                    ts_value = float(raw_ts)
+                    if ts_value > 1_000_000_000_000:
+                        ts_value = ts_value / 1000.0
+                    if ts_value >= MIN_VALID_TIMESTAMP:
+                        drift = ts_value - server_timestamp
+                        if drift > MAX_TIMESTAMP_DRIFT_SEC:
                             logger.warning(
-                                "Timestamp from device is older than expected, preserving for freshness checks",
+                                "Timestamp from device is skewed (drift too large), using server time",
                                 extra={
                                     "device_ts": ts_value,
                                     "server_ts": server_timestamp,
@@ -551,142 +541,159 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                                     "zone_uid": zone_uid,
                                 },
                             )
-                        ts = datetime.fromtimestamp(ts_value)
-                else:
-                    logger.warning(
-                        "Invalid timestamp from firmware (likely uptime), using server time",
-                        extra={
-                            "ts": ts_value,
-                            "topic": topic,
-                            "node_uid": node_uid,
-                            "zone_uid": zone_uid,
-                        },
-                    )
-            elif isinstance(raw_ts, str):
-                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                ts_timestamp = ts.timestamp()
-                if ts_timestamp < MIN_VALID_TIMESTAMP:
-                    logger.warning(
-                        "Invalid timestamp from firmware (likely uptime), using server time",
-                        extra={
-                            "ts": ts_timestamp,
-                            "topic": topic,
-                            "node_uid": node_uid,
-                            "zone_uid": zone_uid,
-                        },
-                    )
-                    ts = None
-                else:
-                    drift = ts_timestamp - server_timestamp
-                    if drift > MAX_TIMESTAMP_DRIFT_SEC:
+                            ts = server_time
+                        else:
+                            if drift < -MAX_TIMESTAMP_DRIFT_SEC:
+                                logger.warning(
+                                    "Timestamp from device is older than expected, preserving for freshness checks",
+                                    extra={
+                                        "device_ts": ts_value,
+                                        "server_ts": server_timestamp,
+                                        "drift_sec": drift,
+                                        "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                        "topic": topic,
+                                        "node_uid": node_uid,
+                                        "zone_uid": zone_uid,
+                                    },
+                                )
+                            ts = datetime.fromtimestamp(ts_value)
+                    else:
                         logger.warning(
-                            "Timestamp from device is skewed (drift too large), using server time",
+                            "Invalid timestamp from firmware (likely uptime), using server time",
                             extra={
-                                "device_ts": ts_timestamp,
-                                "server_ts": server_timestamp,
-                                "drift_sec": drift,
-                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "ts": ts_value,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid,
+                            },
+                        )
+                elif isinstance(raw_ts, str):
+                    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                    ts_timestamp = ts.timestamp()
+                    if ts_timestamp < MIN_VALID_TIMESTAMP:
+                        logger.warning(
+                            "Invalid timestamp from firmware (likely uptime), using server time",
+                            extra={
+                                "ts": ts_timestamp,
                                 "topic": topic,
                                 "node_uid": node_uid,
                                 "zone_uid": zone_uid,
                             },
                         )
                         ts = None
-                    elif drift < -MAX_TIMESTAMP_DRIFT_SEC:
-                        logger.warning(
-                            "Timestamp from device is older than expected (string), preserving for freshness checks",
-                            extra={
-                                "device_ts": ts_timestamp,
-                                "server_ts": server_timestamp,
-                                "drift_sec": drift,
-                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
-                                "topic": topic,
-                                "node_uid": node_uid,
-                                "zone_uid": zone_uid,
-                            },
-                        )
-        except Exception as e:
+                    else:
+                        drift = ts_timestamp - server_timestamp
+                        if drift > MAX_TIMESTAMP_DRIFT_SEC:
+                            logger.warning(
+                                "Timestamp from device is skewed (drift too large), using server time",
+                                extra={
+                                    "device_ts": ts_timestamp,
+                                    "server_ts": server_timestamp,
+                                    "drift_sec": drift,
+                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                    "topic": topic,
+                                    "node_uid": node_uid,
+                                    "zone_uid": zone_uid,
+                                },
+                            )
+                            ts = None
+                        elif drift < -MAX_TIMESTAMP_DRIFT_SEC:
+                            logger.warning(
+                                "Timestamp from device is older than expected (string), preserving for freshness checks",
+                                extra={
+                                    "device_ts": ts_timestamp,
+                                    "server_ts": server_timestamp,
+                                    "drift_sec": drift,
+                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                    "topic": topic,
+                                    "node_uid": node_uid,
+                                    "zone_uid": zone_uid,
+                                },
+                            )
+            except Exception as e:
+                logger.warning(
+                    "Failed to parse timestamp, using server time",
+                    extra={
+                        "ts": validated_data.ts,
+                        "error": str(e),
+                        "topic": topic,
+                        "node_uid": node_uid,
+                        "zone_uid": zone_uid,
+                    },
+                )
+
+        if ts is None:
+            ts = server_time
+
+        metric_type = validated_data.metric_type
+        if not metric_type:
             logger.warning(
-                "Failed to parse timestamp, using server time",
+                "Missing metric_type in telemetry payload",
                 extra={
-                    "ts": validated_data.ts,
-                    "error": str(e),
                     "topic": topic,
                     "node_uid": node_uid,
                     "zone_uid": zone_uid,
+                    "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
                 },
             )
+            TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
+            return
 
-    if ts is None:
-        ts = server_time
+        channel_name = validated_data.channel or channel
+        filtered_raw = _filter_raw_data(data)
 
-    metric_type = validated_data.metric_type
-    if not metric_type:
-        logger.warning(
-            "Missing metric_type in telemetry payload",
-            extra={
-                "topic": topic,
-                "node_uid": node_uid,
-                "zone_uid": zone_uid,
-                "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
-            },
+        queue_item = TelemetryQueueItem(
+            node_uid=node_uid or "",
+            zone_uid=zone_uid,
+            gh_uid=gh_uid,
+            metric_type=metric_type,
+            value=validated_data.value,
+            ts=ts,
+            raw=filtered_raw,
+            channel=channel_name,
+            enqueued_at=utcnow(),
         )
-        TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
-        return
 
-    channel_name = validated_data.channel or channel
-    filtered_raw = _filter_raw_data(data)
+        logger.info(
+            f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}"
+        )
 
-    queue_item = TelemetryQueueItem(
-        node_uid=node_uid or "",
-        zone_uid=zone_uid,
-        gh_uid=gh_uid,
-        metric_type=metric_type,
-        value=validated_data.value,
-        ts=ts,
-        raw=filtered_raw,
-        channel=channel_name,
-        enqueued_at=utcnow(),
-    )
+        if _get_telemetry_queue():
+            start_time = time.time()
+            success = await _push_with_retry(queue_item)
+            redis_duration = time.time() - start_time
+            REDIS_OPERATION_DURATION.observe(redis_duration)
 
-    logger.info(
-        f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}"
-    )
-
-    if _get_telemetry_queue():
-        start_time = time.time()
-        success = await _push_with_retry(queue_item)
-        redis_duration = time.time() - start_time
-        REDIS_OPERATION_DURATION.observe(redis_duration)
-
-        if not success:
-            logger.warning(
-                f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}"
-            )
-            TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
+            if not success:
+                logger.warning(
+                    f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}"
+                )
+                TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
+                logger.error(
+                    "Failed to push telemetry to queue after retries, dropping message",
+                    extra={
+                        "node_uid": node_uid,
+                        "zone_uid": zone_uid,
+                        "metric_type": queue_item.metric_type,
+                        "topic": topic,
+                    },
+                )
+        else:
             logger.error(
-                "Failed to push telemetry to queue after retries, dropping message",
+                f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}"
+            )
+            TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
+            logger.error(
+                "Telemetry queue not initialized, dropping message",
                 extra={
                     "node_uid": node_uid,
                     "zone_uid": zone_uid,
-                    "metric_type": queue_item.metric_type,
+                    "metric_type": metric_type,
                     "topic": topic,
                 },
             )
-    else:
-        logger.error(
-            f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}"
-        )
-        TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
-        logger.error(
-            "Telemetry queue not initialized, dropping message",
-            extra={
-                "node_uid": node_uid,
-                "zone_uid": zone_uid,
-                "metric_type": metric_type,
-                "topic": topic,
-            },
-        )
+    finally:
+        clear_trace_id()
 
 
 async def refresh_caches() -> None:

@@ -9,6 +9,8 @@ import json
 from typing import Optional, Dict, Any
 from datetime import datetime
 from common.utils.time import utcnow
+from common.trace_context import get_trace_id as get_common_trace_id
+from common.trace_context import set_trace_id as set_common_trace_id
 
 # Context variable для trace ID
 trace_id_var = contextvars.ContextVar('trace_id', default=None)
@@ -19,8 +21,14 @@ def get_trace_id() -> str:
     """Получить или создать trace ID."""
     trace_id = trace_id_var.get()
     if trace_id is None:
-        trace_id = str(uuid.uuid4())[:8]
-        trace_id_var.set(trace_id)
+        common_trace_id = get_common_trace_id()
+        if common_trace_id:
+            trace_id = common_trace_id
+            trace_id_var.set(trace_id)
+        else:
+            trace_id = str(uuid.uuid4())[:8]
+            trace_id_var.set(trace_id)
+            set_common_trace_id(trace_id, allow_generate=False)
     return trace_id
 
 
@@ -29,6 +37,7 @@ def set_trace_id(trace_id: Optional[str] = None) -> str:
     if trace_id is None:
         trace_id = str(uuid.uuid4())[:8]
     trace_id_var.set(trace_id)
+    set_common_trace_id(trace_id, allow_generate=False)
     return trace_id
 
 
@@ -117,5 +126,4 @@ class ZoneContextManager:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         set_zone_id(self.prev_zone_id)
-
 

@@ -320,6 +320,8 @@ Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function ()
 // Internal API для Python сервисов (требует verify.python.service middleware)
 Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$apiThrottle])->group(function () {
     Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
+    Route::post('grow-cycles/{growCycle}/advance-phase', [\App\Http\Controllers\InternalApiController::class, 'advanceGrowCyclePhase']);
+    Route::post('grow-cycles/{growCycle}/harvest', [\App\Http\Controllers\InternalApiController::class, 'harvestGrowCycle']);
     Route::post('realtime/telemetry-batch', [\App\Http\Controllers\InternalRealtimeController::class, 'telemetryBatch']);
 });
 

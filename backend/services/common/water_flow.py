@@ -809,6 +809,7 @@ async def calibrate_flow(
     
     # Сохраняем K в node_channel.config через Laravel API
     from .env import get_settings
+    from .trace_context import inject_trace_id_header
     settings = get_settings()
     api_url = settings.laravel_api_url
     api_token = settings.laravel_api_token
@@ -833,7 +834,7 @@ async def calibrate_flow(
     
     # Обновляем через API
     async with httpx.AsyncClient() as client:
-        headers = {}
+        headers = inject_trace_id_header({})
         if api_token:
             headers["Authorization"] = f"Bearer {api_token}"
         

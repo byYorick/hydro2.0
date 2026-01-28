@@ -10,18 +10,28 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
+from common.logging_setup import setup_standard_logging, install_exception_handlers
+from common.trace_context import clear_trace_id, set_trace_id_from_headers
 
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
+setup_standard_logging("node-sim-manager")
+install_exception_handlers("node-sim-manager")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Node Sim Manager")
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = set_trace_id_from_headers(request.headers, fallback_generate=True)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_trace_id()
+    if trace_id:
+        response.headers["X-Trace-Id"] = trace_id
+    return response
 
 
 @dataclass

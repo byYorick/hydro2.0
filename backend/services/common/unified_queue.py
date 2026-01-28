@@ -25,6 +25,7 @@ import httpx
 
 from .db import get_pool, execute, fetch
 from .env import get_settings
+from .trace_context import inject_trace_id_header
 
 logger = logging.getLogger(__name__)
 
@@ -464,10 +465,12 @@ async def send_telemetry_to_laravel(payload: Dict[str, Any]) -> bool:
         else (s.ingest_token if hasattr(s, 'ingest_token') else None)
     )
     
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    headers = inject_trace_id_header(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+    )
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     
@@ -529,10 +532,12 @@ async def send_status_update_to_laravel(payload: Dict[str, Any]) -> bool:
         else (s.ingest_token if hasattr(s, 'ingest_token') else None)
     )
     
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    headers = inject_trace_id_header(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+    )
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     
@@ -597,10 +602,12 @@ async def send_alert_to_laravel_unified(payload: Dict[str, Any]) -> bool:
         else (s.ingest_token if hasattr(s, 'ingest_token') else None)
     )
     
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    headers = inject_trace_id_header(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+    )
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     

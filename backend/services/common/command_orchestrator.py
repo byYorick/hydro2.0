@@ -18,6 +18,7 @@ from .db import fetch, execute
 from .commands import new_command_id, mark_command_send_failed
 from .env import get_settings
 from .schemas import Command, CommandResponse
+from .trace_context import inject_trace_id_header, set_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,8 @@ async def send_command(
         "cmd_id": cmd_id,
     }
     
-    headers = {}
+    set_trace_id(cmd_id, allow_generate=False)
+    headers = inject_trace_id_header({})
     if api_token:
         headers["Authorization"] = f"Bearer {api_token}"
     

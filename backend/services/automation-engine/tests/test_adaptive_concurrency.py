@@ -160,7 +160,7 @@ async def test_zone_processing_time_metric():
     )
     
     # Мокаем process_zone с задержкой
-    async def slow_process(zone_id):
+    async def slow_process(zone_id, **_kwargs):
         import asyncio
         await asyncio.sleep(0.1)
     

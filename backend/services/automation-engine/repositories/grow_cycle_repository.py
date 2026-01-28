@@ -7,6 +7,7 @@ import logging
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from repositories.laravel_api_repository import LaravelApiRepository
 from common.effective_targets import parse_effective_targets
+from common.db import fetch
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +99,75 @@ class GrowCycleRepository:
                 result[zone_id] = None
 
         return result
+
+    async def get_current_phase_timing(self, zone_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получить тайминг текущей фазы цикла выращивания для зоны.
+
+        Возвращает данные, необходимые для фазовых переходов.
+        """
+        async def _fetch():
+            return await fetch(
+                """
+                SELECT
+                    gc.id as grow_cycle_id,
+                    gc.status,
+                    gc.phase_started_at,
+                    gc.recipe_started_at,
+                    gcp.id as phase_id,
+                    gcp.phase_index,
+                    gcp.duration_hours,
+                    gcp.duration_days,
+                    (
+                        SELECT MAX(phase_index)
+                        FROM grow_cycle_phases
+                        WHERE grow_cycle_id = gc.id
+                    ) as max_phase_index
+                FROM grow_cycles gc
+                JOIN grow_cycle_phases gcp ON gcp.id = gc.current_phase_id
+                WHERE gc.zone_id = $1
+                  AND gc.status = 'RUNNING'
+                ORDER BY gc.id DESC
+                LIMIT 1
+                """,
+                zone_id,
+            )
+
+        if self.db_circuit_breaker:
+            rows = await self.db_circuit_breaker.call(_fetch)
+        else:
+            rows = await _fetch()
+
+        if not rows:
+            return None
+
+        row = rows[0]
+        return {
+            "grow_cycle_id": row.get("grow_cycle_id"),
+            "status": row.get("status"),
+            "phase_started_at": row.get("phase_started_at"),
+            "recipe_started_at": row.get("recipe_started_at"),
+            "phase_id": row.get("phase_id"),
+            "phase_index": row.get("phase_index"),
+            "duration_hours": row.get("duration_hours"),
+            "duration_days": row.get("duration_days"),
+            "max_phase_index": row.get("max_phase_index"),
+        }
+
+    async def advance_phase(self, grow_cycle_id: int) -> bool:
+        """Продвинуть фазу цикла выращивания через Laravel API (internal)."""
+        async def _call():
+            return await self.laravel_api_repo.advance_grow_cycle_phase(grow_cycle_id)
+
+        if self.db_circuit_breaker:
+            return await self.db_circuit_breaker.call(_call)
+        return await _call()
+
+    async def harvest_cycle(self, grow_cycle_id: int) -> bool:
+        """Завершить цикл выращивания через Laravel API (internal)."""
+        async def _call():
+            return await self.laravel_api_repo.harvest_grow_cycle(grow_cycle_id)
+
+        if self.db_circuit_breaker:
+            return await self.db_circuit_breaker.call(_call)
+        return await _call()

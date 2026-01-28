@@ -175,7 +175,9 @@ class SystemHealthMonitor:
             start = time.time()
             
             async with httpx.AsyncClient() as client:
+                from common.trace_context import inject_trace_id_header
                 headers = {"Authorization": f"Bearer {token}"} if token else {}
+                headers = inject_trace_id_header(headers)
                 response = await client.get(
                     f"{base_url}/api/system/health",
                     headers=headers,
@@ -207,4 +209,3 @@ class SystemHealthMonitor:
                 'error': str(e),
                 'last_check': utcnow().isoformat()
             }
-

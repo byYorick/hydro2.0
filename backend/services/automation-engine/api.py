@@ -8,10 +8,25 @@ from typing import Optional, Dict, Any
 import logging
 import os
 from infrastructure import CommandBus
+from common.trace_context import extract_trace_id_from_headers
+from utils.logging_context import set_trace_id
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Automation Engine API")
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = extract_trace_id_from_headers(request.headers)
+    if trace_id:
+        set_trace_id(trace_id)
+    else:
+        trace_id = set_trace_id()
+    response = await call_next(request)
+    if trace_id:
+        response.headers["X-Trace-Id"] = trace_id
+    return response
 
 # Глобальные переменные для доступа к CommandBus
 _command_bus: Optional[CommandBus] = None
@@ -201,4 +216,3 @@ def get_zone_state_override(zone_id: int) -> Optional[Dict[str, Any]]:
     if not _test_mode:
         return None
     return _zone_states_override.get(zone_id)
-

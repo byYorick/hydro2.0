@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -12,6 +12,7 @@ from common.db import execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
+from common.trace_context import clear_trace_id, inject_trace_id_header, set_trace_id_from_payload
 from common.utils.time import utcnow
 from metrics import (
     COMMAND_RESPONSE_ERROR,
@@ -38,159 +39,182 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
+def _apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None) -> None:
+    if fallback_keys:
+        set_trace_id_from_payload(payload_data, keys=fallback_keys, fallback_generate=False)
+    else:
+        set_trace_id_from_payload(payload_data, fallback_generate=False)
+
+
 async def handle_node_hello(topic: str, payload: bytes) -> None:
     """
     Обработчик node_hello сообщений от узлов ESP32.
     Регистрирует новые узлы через Laravel API.
     """
-    logger.info("[NODE_HELLO] ===== START processing node_hello =====")
-    logger.info(f"[NODE_HELLO] Topic: {topic}, payload length: {len(payload)}")
-
     try:
-        data = _parse_json(payload)
-        if not data or not isinstance(data, dict):
-            logger.warning(
-                f"[NODE_HELLO] Invalid JSON in node_hello from topic {topic}"
+        logger.info("[NODE_HELLO] ===== START processing node_hello =====")
+        logger.info(f"[NODE_HELLO] Topic: {topic}, payload length: {len(payload)}")
+
+        try:
+            data = _parse_json(payload)
+            if not data or not isinstance(data, dict):
+                logger.warning(
+                    f"[NODE_HELLO] Invalid JSON in node_hello from topic {topic}"
+                )
+                NODE_HELLO_ERRORS.labels(error_type="invalid_json").inc()
+                return
+
+            _apply_trace_context(data)
+
+            if data.get("message_type") != "node_hello":
+                logger.debug(
+                    "[NODE_HELLO] Not a node_hello message, skipping: %s",
+                    data.get("message_type"),
+                )
+                return
+
+            hardware_id = data.get("hardware_id")
+            if not hardware_id:
+                logger.warning("[NODE_HELLO] Missing hardware_id in node_hello message")
+                NODE_HELLO_ERRORS.labels(error_type="missing_hardware_id").inc()
+                return
+
+            logger.info(
+                f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}"
             )
-            NODE_HELLO_ERRORS.labels(error_type="invalid_json").inc()
+            logger.info(f"[NODE_HELLO] Full payload data: {data}")
+            NODE_HELLO_RECEIVED.inc()
+        except Exception as e:
+            logger.error(f"[NODE_HELLO] Error parsing node_hello: {e}", exc_info=True)
+            NODE_HELLO_ERRORS.labels(error_type="parse_error").inc()
             return
 
-        if data.get("message_type") != "node_hello":
-            logger.debug(
-                "[NODE_HELLO] Not a node_hello message, skipping: %s",
-                data.get("message_type"),
-            )
-            return
-
-        hardware_id = data.get("hardware_id")
-        if not hardware_id:
-            logger.warning("[NODE_HELLO] Missing hardware_id in node_hello message")
-            NODE_HELLO_ERRORS.labels(error_type="missing_hardware_id").inc()
-            return
-
-        logger.info(
-            f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}"
+        s = get_settings()
+        laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
+        ingest_token = (
+            s.history_logger_api_token
+            if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
+            else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
         )
-        logger.info(f"[NODE_HELLO] Full payload data: {data}")
-        NODE_HELLO_RECEIVED.inc()
-    except Exception as e:
-        logger.error(f"[NODE_HELLO] Error parsing node_hello: {e}", exc_info=True)
-        NODE_HELLO_ERRORS.labels(error_type="parse_error").inc()
-        return
 
-    s = get_settings()
-    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
-    ingest_token = (
-        s.history_logger_api_token
-        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
-        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
-    )
+        if not laravel_url:
+            logger.error("[NODE_HELLO] Laravel API URL not configured, cannot register node")
+            NODE_HELLO_ERRORS.labels(error_type="config_missing").inc()
+            return
 
-    if not laravel_url:
-        logger.error("[NODE_HELLO] Laravel API URL not configured, cannot register node")
-        NODE_HELLO_ERRORS.labels(error_type="config_missing").inc()
-        return
+        app_env = os.getenv("APP_ENV", "").lower().strip()
+        is_prod = app_env in ("production", "prod") and app_env != ""
 
-    app_env = os.getenv("APP_ENV", "").lower().strip()
-    is_prod = app_env in ("production", "prod") and app_env != ""
-
-    if is_prod and not ingest_token:
-        logger.error(
-            "[NODE_HELLO] Ingest token (PY_INGEST_TOKEN or HISTORY_LOGGER_API_TOKEN) must be set in production for node registration"
-        )
-        NODE_HELLO_ERRORS.labels(error_type="token_missing").inc()
-        return
-
-    try:
-        api_data = {
-            "message_type": "node_hello",
-            "hardware_id": data.get("hardware_id"),
-            "node_type": data.get("node_type"),
-            "fw_version": data.get("fw_version"),
-            "hardware_revision": data.get("hardware_revision"),
-            "capabilities": data.get("capabilities"),
-            "provisioning_meta": data.get("provisioning_meta"),
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        if ingest_token:
-            headers["Authorization"] = f"Bearer {ingest_token}"
-        elif is_prod:
+        if is_prod and not ingest_token:
             logger.error(
-                "[NODE_HELLO] Cannot register node without ingest token in production"
+                "[NODE_HELLO] Ingest token (PY_INGEST_TOKEN or HISTORY_LOGGER_API_TOKEN) must be set in production for node registration"
             )
             NODE_HELLO_ERRORS.labels(error_type="token_missing").inc()
             return
-        else:
-            logger.warning(
-                "[NODE_HELLO] No ingest token configured, registering without auth (dev mode only)"
+
+        try:
+            api_data = {
+                "message_type": "node_hello",
+                "hardware_id": data.get("hardware_id"),
+                "node_type": data.get("node_type"),
+                "fw_version": data.get("fw_version"),
+                "hardware_revision": data.get("hardware_revision"),
+                "capabilities": data.get("capabilities"),
+                "provisioning_meta": data.get("provisioning_meta"),
+            }
+
+            headers = inject_trace_id_header(
+                {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
             )
 
-        MAX_API_RETRIES = 3
-        API_RETRY_BACKOFF_BASE = 2
-        API_TIMEOUT = s.laravel_api_timeout_sec
+            if ingest_token:
+                headers["Authorization"] = f"Bearer {ingest_token}"
+            elif is_prod:
+                logger.error(
+                    "[NODE_HELLO] Cannot register node without ingest token in production"
+                )
+                NODE_HELLO_ERRORS.labels(error_type="token_missing").inc()
+                return
+            else:
+                logger.warning(
+                    "[NODE_HELLO] No ingest token configured, registering without auth (dev mode only)"
+                )
 
-        last_error = None
-        for attempt in range(MAX_API_RETRIES):
-            try:
-                async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-                    response = await client.post(
-                        f"{laravel_url}/api/nodes/register",
-                        json=api_data,
-                        headers=headers,
-                    )
+            MAX_API_RETRIES = 3
+            API_RETRY_BACKOFF_BASE = 2
+            API_TIMEOUT = s.laravel_api_timeout_sec
 
-                if response.status_code == 201:
-                    response_data = response.json()
-                    node_uid = response_data.get("data", {}).get("uid", "unknown")
-                    logger.info(
-                        "[NODE_HELLO] Node registered successfully: hardware_id=%s, node_uid=%s, attempts=%s",
-                        hardware_id,
-                        node_uid,
-                        attempt + 1,
-                    )
-                    NODE_HELLO_REGISTERED.inc()
-                    return
-                if response.status_code == 200:
-                    response_data = response.json()
-                    node_uid = response_data.get("data", {}).get("uid", "unknown")
-                    logger.info(
-                        "[NODE_HELLO] Node updated successfully: hardware_id=%s, node_uid=%s, attempts=%s",
-                        hardware_id,
-                        node_uid,
-                        attempt + 1,
-                    )
-                    NODE_HELLO_REGISTERED.inc()
-                    return
-                if response.status_code == 401:
-                    logger.error(
-                        "[NODE_HELLO] Unauthorized: token required or invalid. hardware_id=%s, response=%s",
-                        hardware_id,
-                        response.text[:200],
-                    )
-                    NODE_HELLO_ERRORS.labels(error_type="unauthorized").inc()
-                    return
-                if response.status_code >= 500:
-                    last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                    if attempt < MAX_API_RETRIES - 1:
-                        backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
-                        logger.warning(
-                            "[NODE_HELLO] Server error %s (attempt %s/%s), retrying in %ss: hardware_id=%s",
-                            response.status_code,
-                            attempt + 1,
-                            MAX_API_RETRIES,
-                            backoff_seconds,
-                            hardware_id,
+            last_error = None
+            for attempt in range(MAX_API_RETRIES):
+                try:
+                    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                        response = await client.post(
+                            f"{laravel_url}/api/nodes/register",
+                            json=api_data,
+                            headers=headers,
                         )
-                        await asyncio.sleep(backoff_seconds)
-                        continue
+
+                    if response.status_code == 201:
+                        response_data = response.json()
+                        node_uid = response_data.get("data", {}).get("uid", "unknown")
+                        logger.info(
+                            "[NODE_HELLO] Node registered successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            hardware_id,
+                            node_uid,
+                            attempt + 1,
+                        )
+                        NODE_HELLO_REGISTERED.inc()
+                        return
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        node_uid = response_data.get("data", {}).get("uid", "unknown")
+                        logger.info(
+                            "[NODE_HELLO] Node updated successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            hardware_id,
+                            node_uid,
+                            attempt + 1,
+                        )
+                        NODE_HELLO_REGISTERED.inc()
+                        return
+                    if response.status_code == 401:
+                        logger.error(
+                            "[NODE_HELLO] Unauthorized: token required or invalid. hardware_id=%s, response=%s",
+                            hardware_id,
+                            response.text[:200],
+                        )
+                        NODE_HELLO_ERRORS.labels(error_type="unauthorized").inc()
+                        return
+                    if response.status_code >= 500:
+                        last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                        if attempt < MAX_API_RETRIES - 1:
+                            backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
+                            logger.warning(
+                                "[NODE_HELLO] Server error %s (attempt %s/%s), retrying in %ss: hardware_id=%s",
+                                response.status_code,
+                                attempt + 1,
+                                MAX_API_RETRIES,
+                                backoff_seconds,
+                                hardware_id,
+                            )
+                            await asyncio.sleep(backoff_seconds)
+                            continue
+                        logger.error(
+                            "[NODE_HELLO] Failed to register node after %s attempts: status=%s, hardware_id=%s, response=%s",
+                            MAX_API_RETRIES,
+                            response.status_code,
+                            hardware_id,
+                            response.text[:500],
+                        )
+                        NODE_HELLO_ERRORS.labels(
+                            error_type=f"http_{response.status_code}"
+                        ).inc()
+                        return
+
                     logger.error(
-                        "[NODE_HELLO] Failed to register node after %s attempts: status=%s, hardware_id=%s, response=%s",
-                        MAX_API_RETRIES,
+                        "[NODE_HELLO] Failed to register node: status=%s, hardware_id=%s, response=%s",
                         response.status_code,
                         hardware_id,
                         response.text[:500],
@@ -200,77 +224,75 @@ async def handle_node_hello(topic: str, payload: bytes) -> None:
                     ).inc()
                     return
 
+                except httpx.TimeoutException as e:
+                    last_error = f"Timeout: {str(e)}"
+                    if attempt < MAX_API_RETRIES - 1:
+                        backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
+                        logger.warning(
+                            "[NODE_HELLO] Timeout (attempt %s/%s), retrying in %ss: hardware_id=%s",
+                            attempt + 1,
+                            MAX_API_RETRIES,
+                            backoff_seconds,
+                            hardware_id,
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                    else:
+                        logger.error(
+                            "[NODE_HELLO] Timeout while registering node after %s attempts: hardware_id=%s",
+                            MAX_API_RETRIES,
+                            hardware_id,
+                        )
+                        NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+                        return
+                except httpx.RequestError as e:
+                    last_error = f"Request error: {str(e)}"
+                    if attempt < MAX_API_RETRIES - 1:
+                        backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
+                        logger.warning(
+                            "[NODE_HELLO] Request error (attempt %s/%s), retrying in %ss: hardware_id=%s, error=%s",
+                            attempt + 1,
+                            MAX_API_RETRIES,
+                            backoff_seconds,
+                            hardware_id,
+                            str(e),
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                    else:
+                        logger.error(
+                            "[NODE_HELLO] Request error while registering node after %s attempts: hardware_id=%s, error=%s",
+                            MAX_API_RETRIES,
+                            hardware_id,
+                            str(e),
+                        )
+                        NODE_HELLO_ERRORS.labels(error_type="request_error").inc()
+                        return
+
+            if last_error:
                 logger.error(
-                    "[NODE_HELLO] Failed to register node: status=%s, hardware_id=%s, response=%s",
-                    response.status_code,
+                    "[NODE_HELLO] Failed to register node after %s attempts: hardware_id=%s, last_error=%s",
+                    MAX_API_RETRIES,
                     hardware_id,
-                    response.text[:500],
+                    last_error,
                 )
-                NODE_HELLO_ERRORS.labels(
-                    error_type=f"http_{response.status_code}"
-                ).inc()
-                return
+                NODE_HELLO_ERRORS.labels(error_type="max_retries_exceeded").inc()
 
-            except httpx.TimeoutException as e:
-                last_error = f"Timeout: {str(e)}"
-                if attempt < MAX_API_RETRIES - 1:
-                    backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
-                    logger.warning(
-                        "[NODE_HELLO] Timeout (attempt %s/%s), retrying in %ss: hardware_id=%s",
-                        attempt + 1,
-                        MAX_API_RETRIES,
-                        backoff_seconds,
-                        hardware_id,
-                    )
-                    await asyncio.sleep(backoff_seconds)
-                else:
-                    logger.error(
-                        "[NODE_HELLO] Timeout while registering node after %s attempts: hardware_id=%s",
-                        MAX_API_RETRIES,
-                        hardware_id,
-                    )
-                    NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
-                    return
-            except httpx.RequestError as e:
-                last_error = f"Request error: {str(e)}"
-                if attempt < MAX_API_RETRIES - 1:
-                    backoff_seconds = API_RETRY_BACKOFF_BASE**attempt
-                    logger.warning(
-                        "[NODE_HELLO] Request error (attempt %s/%s), retrying in %ss: hardware_id=%s, error=%s",
-                        attempt + 1,
-                        MAX_API_RETRIES,
-                        backoff_seconds,
-                        hardware_id,
-                        str(e),
-                    )
-                    await asyncio.sleep(backoff_seconds)
-                else:
-                    logger.error(
-                        "[NODE_HELLO] Request error while registering node after %s attempts: hardware_id=%s, error=%s",
-                        MAX_API_RETRIES,
-                        hardware_id,
-                        str(e),
-                    )
-                    NODE_HELLO_ERRORS.labels(error_type="request_error").inc()
-                    return
-
-        if last_error:
+        except Exception as e:
             logger.error(
-                "[NODE_HELLO] Failed to register node after %s attempts: hardware_id=%s, last_error=%s",
-                MAX_API_RETRIES,
+                "[NODE_HELLO] Unexpected error registering node: hardware_id=%s, error=%s",
                 hardware_id,
-                last_error,
+                str(e),
+                exc_info=True,
             )
-            NODE_HELLO_ERRORS.labels(error_type="max_retries_exceeded").inc()
-
+            NODE_HELLO_ERRORS.labels(error_type="exception").inc()
     except Exception as e:
         logger.error(
-            "[NODE_HELLO] Unexpected error registering node: hardware_id=%s, error=%s",
-            hardware_id,
+            "[NODE_HELLO] Unexpected error processing node_hello: error=%s",
             str(e),
             exc_info=True,
         )
         NODE_HELLO_ERRORS.labels(error_type="exception").inc()
+    finally:
+        clear_trace_id()
 
 
 async def handle_heartbeat(topic: str, payload: bytes) -> None:
@@ -278,119 +300,124 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
     Обработчик heartbeat сообщений от узлов ESP32.
     Обновляет статус узла в БД.
     """
-    logger.info("[HEARTBEAT] ===== START processing heartbeat =====")
-    logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
+    try:
+        logger.info("[HEARTBEAT] ===== START processing heartbeat =====")
+        logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
 
-    data = _parse_json(payload)
-    if not data or not isinstance(data, dict):
-        logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
-        return
-
-    node_uid = _extract_node_uid(topic)
-    if not node_uid:
-        logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
-        return
-
-    gh_uid = _extract_gh_uid(topic)
-    zone_uid = _extract_zone_uid(topic)
-    is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
-
-    logger.info(
-        f"[HEARTBEAT] Extracted gh_uid='{gh_uid}', zone_uid='{zone_uid}', is_temp_topic={is_temp_topic}, topic='{topic}'"
-    )
-
-    if is_temp_topic:
-        # Для temp топиков node_uid на самом деле hardware_id
-        hardware_id = node_uid
-        logger.info(
-            f"[HEARTBEAT] Processing heartbeat for temp topic, hardware_id: {hardware_id}, data: {data}"
-        )
-
-        # Найдем реальный node_uid по hardware_id
-        node_rows = await fetch(
-            "SELECT uid FROM nodes WHERE hardware_id = $1",
-            hardware_id,
-        )
-        if not node_rows:
-            logger.warning(f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}")
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
             return
-        node_uid = node_rows[0]["uid"]
-        logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
-    else:
+
+        _apply_trace_context(data)
+
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
+            return
+
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
+
         logger.info(
-            f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}"
+            f"[HEARTBEAT] Extracted gh_uid='{gh_uid}', zone_uid='{zone_uid}', is_temp_topic={is_temp_topic}, topic='{topic}'"
         )
 
-    uptime = data.get("uptime")
-    free_heap = data.get("free_heap") or data.get("free_heap_bytes")
-    rssi = data.get("rssi")
-
-    updates = []
-    params = [node_uid]
-    param_index = 1
-
-    if uptime is not None:
-        try:
-            uptime_seconds = int(float(uptime))
-            updates.append(f"uptime_seconds=${param_index + 1}")
-            params.append(uptime_seconds)
-            param_index += 1
-        except (ValueError, TypeError) as e:
-            logger.warning(
-                "Invalid uptime value: %s",
-                uptime,
-                extra={"error": str(e), "node_uid": node_uid},
+        if is_temp_topic:
+            # Для temp топиков node_uid на самом деле hardware_id
+            hardware_id = node_uid
+            logger.info(
+                f"[HEARTBEAT] Processing heartbeat for temp topic, hardware_id: {hardware_id}, data: {data}"
             )
 
-    if free_heap is not None:
-        try:
-            free_heap_int = int(free_heap)
-            updates.append(f"free_heap_bytes=${param_index + 1}")
-            params.append(free_heap_int)
-            param_index += 1
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid free_heap value: {free_heap}")
+            # Найдем реальный node_uid по hardware_id
+            node_rows = await fetch(
+                "SELECT uid FROM nodes WHERE hardware_id = $1",
+                hardware_id,
+            )
+            if not node_rows:
+                logger.warning(f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}")
+                return
+            node_uid = node_rows[0]["uid"]
+            logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
+        else:
+            logger.info(
+                f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}"
+            )
 
-    if rssi is not None:
-        try:
-            rssi_int = int(rssi)
-            updates.append(f"rssi=${param_index + 1}")
-            params.append(rssi_int)
-            param_index += 1
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid rssi value: {rssi}")
+        uptime = data.get("uptime")
+        free_heap = data.get("free_heap") or data.get("free_heap_bytes")
+        rssi = data.get("rssi")
 
-    updates.append("last_heartbeat_at=NOW()")
-    updates.append("updated_at=NOW()")
-    updates.append("last_seen_at=NOW()")
-    updates.append("status='online'")
+        updates = []
+        params = [node_uid]
+        param_index = 1
 
-    if len(updates) > 4:
-        query = "UPDATE nodes SET " + ", ".join(updates) + " WHERE uid=$1"
-        await execute(query, *params)
-    else:
-        await execute(
-            "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), last_seen_at=NOW(), status='online' WHERE uid=$1",
+        if uptime is not None:
+            try:
+                uptime_seconds = int(float(uptime))
+                updates.append(f"uptime_seconds=${param_index + 1}")
+                params.append(uptime_seconds)
+                param_index += 1
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Invalid uptime value: %s",
+                    uptime,
+                    extra={"error": str(e), "node_uid": node_uid},
+                )
+
+        if free_heap is not None:
+            try:
+                free_heap_int = int(free_heap)
+                updates.append(f"free_heap_bytes=${param_index + 1}")
+                params.append(free_heap_int)
+                param_index += 1
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid free_heap value: {free_heap}")
+
+        if rssi is not None:
+            try:
+                rssi_int = int(rssi)
+                updates.append(f"rssi=${param_index + 1}")
+                params.append(rssi_int)
+                param_index += 1
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid rssi value: {rssi}")
+
+        updates.append("last_heartbeat_at=NOW()")
+        updates.append("updated_at=NOW()")
+        updates.append("last_seen_at=NOW()")
+        updates.append("status='online'")
+
+        if len(updates) > 4:
+            query = "UPDATE nodes SET " + ", ".join(updates) + " WHERE uid=$1"
+            await execute(query, *params)
+        else:
+            await execute(
+                "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), last_seen_at=NOW(), status='online' WHERE uid=$1",
+                node_uid,
+            )
+
+        HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
+
+        logged_uptime = None
+        if uptime is not None:
+            try:
+                uptime_ms = float(uptime)
+                logged_uptime = int(uptime_ms / 1000.0)
+            except (ValueError, TypeError):
+                logged_uptime = uptime
+
+        logger.info(
+            "[HEARTBEAT] Node heartbeat processed successfully: node_uid=%s, uptime_seconds=%s, free_heap=%s, rssi=%s",
             node_uid,
+            logged_uptime,
+            free_heap,
+            rssi,
         )
-
-    HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
-
-    logged_uptime = None
-    if uptime is not None:
-        try:
-            uptime_ms = float(uptime)
-            logged_uptime = int(uptime_ms / 1000.0)
-        except (ValueError, TypeError):
-            logged_uptime = uptime
-
-    logger.info(
-        "[HEARTBEAT] Node heartbeat processed successfully: node_uid=%s, uptime_seconds=%s, free_heap=%s, rssi=%s",
-        node_uid,
-        logged_uptime,
-        free_heap,
-        rssi,
-    )
+    finally:
+        clear_trace_id()
 
 
 async def handle_status(topic: str, payload: bytes) -> None:
@@ -398,41 +425,46 @@ async def handle_status(topic: str, payload: bytes) -> None:
     Обработчик status сообщений от узлов ESP32.
     Обновляет статус узла в БД при получении ONLINE/OFFLINE.
     """
-    logger.info("[STATUS] ===== START processing status =====")
-    logger.info(f"[STATUS] Topic: {topic}, payload length: {len(payload)}")
+    try:
+        logger.info("[STATUS] ===== START processing status =====")
+        logger.info(f"[STATUS] Topic: {topic}, payload length: {len(payload)}")
 
-    data = _parse_json(payload)
-    if not data or not isinstance(data, dict):
-        logger.warning(f"[STATUS] Invalid JSON in status from topic {topic}")
-        return
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[STATUS] Invalid JSON in status from topic {topic}")
+            return
 
-    node_uid = _extract_node_uid(topic)
-    if not node_uid:
-        logger.warning(f"[STATUS] Could not extract node_uid from topic {topic}")
-        return
+        _apply_trace_context(data)
 
-    status = data.get("status", "").upper()
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[STATUS] Could not extract node_uid from topic {topic}")
+            return
 
-    logger.info(
-        "[STATUS] Processing status for node_uid: %s, status: %s", node_uid, status
-    )
+        status = data.get("status", "").upper()
 
-    if status == "ONLINE":
-        await execute(
-            "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-            node_uid,
+        logger.info(
+            "[STATUS] Processing status for node_uid: %s, status: %s", node_uid, status
         )
-        logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
-    elif status == "OFFLINE":
-        await execute(
-            "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
-            node_uid,
-        )
-        logger.info(f"[STATUS] Node {node_uid} marked as OFFLINE")
-    else:
-        logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
 
-    STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+        if status == "ONLINE":
+            await execute(
+                "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+                node_uid,
+            )
+            logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
+        elif status == "OFFLINE":
+            await execute(
+                "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+                node_uid,
+            )
+            logger.info(f"[STATUS] Node {node_uid} marked as OFFLINE")
+        else:
+            logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
+
+        STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+    finally:
+        clear_trace_id()
 
 
 async def handle_lwt(topic: str, payload: bytes) -> None:
@@ -440,38 +472,42 @@ async def handle_lwt(topic: str, payload: bytes) -> None:
     Обработчик LWT сообщений от узлов ESP32.
     LWT приходит как строка "offline" при потере связи.
     """
-    logger.info("[LWT] ===== START processing LWT =====")
-    logger.info(f"[LWT] Topic: {topic}, payload length: {len(payload)}")
+    try:
+        logger.info("[LWT] ===== START processing LWT =====")
+        logger.info(f"[LWT] Topic: {topic}, payload length: {len(payload)}")
 
-    node_uid = _extract_node_uid(topic)
-    if not node_uid:
-        logger.warning(f"[LWT] Could not extract node_uid from topic {topic}")
-        return
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[LWT] Could not extract node_uid from topic {topic}")
+            return
 
-    raw_payload = payload.decode("utf-8", errors="ignore").strip()
-    status = raw_payload.upper()
-    if not status:
-        data = _parse_json(payload)
-        if isinstance(data, dict):
-            status = str(data.get("status", "")).upper()
+        raw_payload = payload.decode("utf-8", errors="ignore").strip()
+        status = raw_payload.upper()
+        if not status:
+            data = _parse_json(payload)
+            if isinstance(data, dict):
+                _apply_trace_context(data)
+                status = str(data.get("status", "")).upper()
 
-    if status not in ("OFFLINE", "ONLINE"):
-        status = "OFFLINE"
+        if status not in ("OFFLINE", "ONLINE"):
+            status = "OFFLINE"
 
-    if status == "ONLINE":
-        await execute(
-            "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
-            node_uid,
-        )
-        logger.info(f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)")
-    else:
-        await execute(
-            "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
-            node_uid,
-        )
-        logger.info(f"[LWT] Node {node_uid} marked as OFFLINE")
+        if status == "ONLINE":
+            await execute(
+                "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+                node_uid,
+            )
+            logger.info(f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)")
+        else:
+            await execute(
+                "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+                node_uid,
+            )
+            logger.info(f"[LWT] Node {node_uid} marked as OFFLINE")
 
-    STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+        STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+    finally:
+        clear_trace_id()
 
 
 async def monitor_offline_nodes() -> None:
@@ -517,25 +553,30 @@ async def handle_diagnostics(topic: str, payload: bytes) -> None:
     Обработчик diagnostics сообщений от узлов ESP32.
     Обрабатывает метрики ошибок через общий компонент error_handler.
     """
-    logger.info("[DIAGNOSTICS] ===== START processing diagnostics =====")
-    logger.info(f"[DIAGNOSTICS] Topic: {topic}, payload length: {len(payload)}")
+    try:
+        logger.info("[DIAGNOSTICS] ===== START processing diagnostics =====")
+        logger.info(f"[DIAGNOSTICS] Topic: {topic}, payload length: {len(payload)}")
 
-    data = _parse_json(payload)
-    if not data or not isinstance(data, dict):
-        logger.warning(f"[DIAGNOSTICS] Invalid JSON in diagnostics from topic {topic}")
-        return
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[DIAGNOSTICS] Invalid JSON in diagnostics from topic {topic}")
+            return
 
-    node_uid = _extract_node_uid(topic)
-    if not node_uid:
-        logger.warning(f"[DIAGNOSTICS] Could not extract node_uid from topic {topic}")
-        return
+        _apply_trace_context(data)
 
-    logger.info(f"[DIAGNOSTICS] Processing diagnostics for node_uid: {node_uid}")
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[DIAGNOSTICS] Could not extract node_uid from topic {topic}")
+            return
 
-    error_handler = get_error_handler()
-    await error_handler.handle_diagnostics(node_uid, data)
+        logger.info(f"[DIAGNOSTICS] Processing diagnostics for node_uid: {node_uid}")
 
-    DIAGNOSTICS_RECEIVED.labels(node_uid=node_uid).inc()
+        error_handler = get_error_handler()
+        await error_handler.handle_diagnostics(node_uid, data)
+
+        DIAGNOSTICS_RECEIVED.labels(node_uid=node_uid).inc()
+    finally:
+        clear_trace_id()
 
 
 async def handle_error(topic: str, payload: bytes) -> None:
@@ -544,97 +585,38 @@ async def handle_error(topic: str, payload: bytes) -> None:
     Обрабатывает немедленные ошибки через общий компонент error_handler.
     Для temp-топиков (gh-temp/zn-temp) записывает ошибки в unassigned_node_errors.
     """
-    logger.info("[ERROR] ===== START processing error =====")
-    logger.info(f"[ERROR] Topic: {topic}, payload length: {len(payload)}")
+    try:
+        logger.info("[ERROR] ===== START processing error =====")
+        logger.info(f"[ERROR] Topic: {topic}, payload length: {len(payload)}")
 
-    data = _parse_json(payload)
-    if not data or not isinstance(data, dict):
-        logger.warning(f"[ERROR] Invalid JSON in error from topic {topic}")
-        return
-
-    gh_uid = _extract_gh_uid(topic)
-    zone_uid = _extract_zone_uid(topic)
-    is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
-
-    if is_temp_topic:
-        hardware_id = _extract_node_uid(topic)
-        if not hardware_id:
-            logger.warning(f"[ERROR] Could not extract hardware_id from temp topic {topic}")
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[ERROR] Invalid JSON in error from topic {topic}")
             return
 
-        level = data.get("level", "ERROR")
-        component = data.get("component", "unknown")
-        error_code = data.get("error_code")
-        error_message = data.get("message", data.get("error", "Unknown error"))
+        _apply_trace_context(data)
 
-        logger.info(
-            "[ERROR] Processing error for unassigned node (hardware_id: %s), level: %s, component: %s, error_code: %s",
-            hardware_id,
-            level,
-            component,
-            error_code,
-        )
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
 
-        try:
-            await upsert_unassigned_node_error(
-                hardware_id=hardware_id,
-                error_message=error_message,
-                error_code=error_code,
-                severity=level,
-                topic=topic,
-                last_payload=data,
-            )
-            logger.info(
-                f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}"
-            )
-        except Exception as e:
-            logger.error(
-                f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True
-            )
+        if is_temp_topic:
+            hardware_id = _extract_node_uid(topic)
+            if not hardware_id:
+                logger.warning(f"[ERROR] Could not extract hardware_id from temp topic {topic}")
+                return
 
-        ERROR_RECEIVED.labels(
-            node_uid=f"unassigned-{hardware_id}", level=level.lower()
-        ).inc()
-        return
-
-    node_uid = _extract_node_uid(topic)
-    if not node_uid:
-        logger.warning(f"[ERROR] Could not extract node_uid from topic {topic}")
-        return
-
-    level = data.get("level", "ERROR")
-    component = data.get("component", "unknown")
-    error_code = data.get("error_code", "unknown")
-
-    logger.info(
-        "[ERROR] Processing error for node_uid: %s, level: %s, component: %s, error_code: %s",
-        node_uid,
-        level,
-        component,
-        error_code,
-    )
-
-    try:
-        node_rows = await fetch(
-            """
-            SELECT n.id, n.hardware_id, n.zone_id
-            FROM nodes n
-            WHERE n.uid = $1
-            """,
-            node_uid,
-        )
-
-        if not node_rows:
-            hardware_id_from_topic = node_uid
-            hardware_id_from_payload = data.get("hardware_id")
-            hardware_id = hardware_id_from_payload or hardware_id_from_topic
-
+            level = data.get("level", "ERROR")
+            component = data.get("component", "unknown")
+            error_code = data.get("error_code")
             error_message = data.get("message", data.get("error", "Unknown error"))
 
             logger.info(
-                "[ERROR] Node not found in DB, saving to unassigned errors: node_uid=%s, hardware_id=%s",
-                node_uid,
+                "[ERROR] Processing error for unassigned node (hardware_id: %s), level: %s, component: %s, error_code: %s",
                 hardware_id,
+                level,
+                component,
+                error_code,
             )
 
             try:
@@ -651,8 +633,7 @@ async def handle_error(topic: str, payload: bytes) -> None:
                 )
             except Exception as e:
                 logger.error(
-                    f"[ERROR] Failed to save unassigned node error: {e}",
-                    exc_info=True,
+                    f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True
                 )
 
             ERROR_RECEIVED.labels(
@@ -660,19 +641,46 @@ async def handle_error(topic: str, payload: bytes) -> None:
             ).inc()
             return
 
-        node = node_rows[0]
-        zone_id = node.get("zone_id")
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[ERROR] Could not extract node_uid from topic {topic}")
+            return
 
-        if not zone_id:
-            hardware_id = node.get("hardware_id")
-            if hardware_id:
+        level = data.get("level", "ERROR")
+        component = data.get("component", "unknown")
+        error_code = data.get("error_code", "unknown")
+
+        logger.info(
+            "[ERROR] Processing error for node_uid: %s, level: %s, component: %s, error_code: %s",
+            node_uid,
+            level,
+            component,
+            error_code,
+        )
+
+        try:
+            node_rows = await fetch(
+                """
+                SELECT n.id, n.hardware_id, n.zone_id
+                FROM nodes n
+                WHERE n.uid = $1
+                """,
+                node_uid,
+            )
+
+            if not node_rows:
+                hardware_id_from_topic = node_uid
+                hardware_id_from_payload = data.get("hardware_id")
+                hardware_id = hardware_id_from_payload or hardware_id_from_topic
+
                 error_message = data.get("message", data.get("error", "Unknown error"))
+
                 logger.info(
-                    "[ERROR] Node not assigned to zone, saving to unassigned errors: node_uid=%s, hardware_id=%s, node_id=%s",
+                    "[ERROR] Node not found in DB, saving to unassigned errors: node_uid=%s, hardware_id=%s",
                     node_uid,
                     hardware_id,
-                    node["id"],
                 )
+
                 try:
                     await upsert_unassigned_node_error(
                         hardware_id=hardware_id,
@@ -690,20 +698,58 @@ async def handle_error(topic: str, payload: bytes) -> None:
                         f"[ERROR] Failed to save unassigned node error: {e}",
                         exc_info=True,
                     )
+
                 ERROR_RECEIVED.labels(
                     node_uid=f"unassigned-{hardware_id}", level=level.lower()
                 ).inc()
                 return
 
-        error_handler = get_error_handler()
-        await error_handler.handle_error(node_uid, data)
+            node = node_rows[0]
+            zone_id = node.get("zone_id")
 
-    except Exception as e:
-        logger.error(f"[ERROR] Error checking node in DB: {e}", exc_info=True)
-        error_handler = get_error_handler()
-        await error_handler.handle_error(node_uid, data)
+            if not zone_id:
+                hardware_id = node.get("hardware_id")
+                if hardware_id:
+                    error_message = data.get("message", data.get("error", "Unknown error"))
+                    logger.info(
+                        "[ERROR] Node not assigned to zone, saving to unassigned errors: node_uid=%s, hardware_id=%s, node_id=%s",
+                        node_uid,
+                        hardware_id,
+                        node["id"],
+                    )
+                    try:
+                        await upsert_unassigned_node_error(
+                            hardware_id=hardware_id,
+                            error_message=error_message,
+                            error_code=error_code,
+                            severity=level,
+                            topic=topic,
+                            last_payload=data,
+                        )
+                        logger.info(
+                            f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"[ERROR] Failed to save unassigned node error: {e}",
+                            exc_info=True,
+                        )
+                    ERROR_RECEIVED.labels(
+                        node_uid=f"unassigned-{hardware_id}", level=level.lower()
+                    ).inc()
+                    return
 
-    ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
+            error_handler = get_error_handler()
+            await error_handler.handle_error(node_uid, data)
+
+        except Exception as e:
+            logger.error(f"[ERROR] Error checking node in DB: {e}", exc_info=True)
+            error_handler = get_error_handler()
+            await error_handler.handle_error(node_uid, data)
+
+        ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
+    finally:
+        clear_trace_id()
 
 
 async def handle_config_report(topic: str, payload: bytes) -> None:
@@ -722,6 +768,8 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             )
             CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
             return
+
+        _apply_trace_context(data)
 
         node_uid = _extract_node_uid(topic)
         if not node_uid:
@@ -824,6 +872,8 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             exc_info=True,
         )
         CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+    finally:
+        clear_trace_id()
 
 
 async def _complete_binding_after_config_report(
@@ -860,10 +910,12 @@ async def _complete_binding_after_config_report(
         )
         return
 
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+    headers = inject_trace_id_header(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+    )
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
 
@@ -1047,6 +1099,8 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             COMMAND_RESPONSE_ERROR.inc()
             return
 
+        _apply_trace_context(data, fallback_keys=("trace_id", "cmd_id", "cmdId"))
+
         cmd_id = data.get("cmd_id")
         raw_status = data.get("status", "")
 
@@ -1167,6 +1221,8 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             exc_info=True,
         )
         COMMAND_RESPONSE_ERROR.inc()
+    finally:
+        clear_trace_id()
 
 
 async def handle_time_request(topic: str, payload: bytes) -> None:
@@ -1179,6 +1235,8 @@ async def handle_time_request(topic: str, payload: bytes) -> None:
         if not data or not isinstance(data, dict):
             logger.warning(f"[TIME_REQUEST] Invalid JSON in time_request from topic {topic}")
             return
+
+        _apply_trace_context(data)
 
         server_time = int(utcnow().timestamp())
         mqtt = await get_mqtt_client()
@@ -1207,3 +1265,5 @@ async def handle_time_request(topic: str, payload: bytes) -> None:
             f"[TIME_REQUEST] Unexpected error processing time_request: {e}",
             exc_info=True,
         )
+    finally:
+        clear_trace_id()

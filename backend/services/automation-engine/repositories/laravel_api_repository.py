@@ -113,3 +113,55 @@ class LaravelApiRepository:
         """
         results = await self.get_effective_targets_batch([zone_id])
         return results.get(zone_id)
+
+    async def advance_grow_cycle_phase(self, grow_cycle_id: int) -> bool:
+        """Продвинуть фазу цикла выращивания через internal API."""
+        url = f"{self.base_url}/api/internal/grow-cycles/{grow_cycle_id}/advance-phase"
+
+        try:
+            response = await make_request(
+                'post',
+                url,
+                endpoint='advance_grow_cycle_phase',
+                headers=self._get_headers(),
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('status') == 'ok'
+
+            logger.error(
+                'Laravel API advance phase failed: HTTP %s - %s',
+                response.status_code,
+                response.text[:200],
+            )
+            return False
+        except Exception as e:
+            logger.error(f'Error calling Laravel API (advance phase): {e}', exc_info=True)
+            return False
+
+    async def harvest_grow_cycle(self, grow_cycle_id: int) -> bool:
+        """Завершить цикл выращивания через internal API."""
+        url = f"{self.base_url}/api/internal/grow-cycles/{grow_cycle_id}/harvest"
+
+        try:
+            response = await make_request(
+                'post',
+                url,
+                endpoint='harvest_grow_cycle',
+                headers=self._get_headers(),
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('status') == 'ok'
+
+            logger.error(
+                'Laravel API harvest failed: HTTP %s - %s',
+                response.status_code,
+                response.text[:200],
+            )
+            return False
+        except Exception as e:
+            logger.error(f'Error calling Laravel API (harvest): {e}', exc_info=True)
+            return False

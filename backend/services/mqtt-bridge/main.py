@@ -21,14 +21,12 @@ from common.db import fetch
 from common.simulation_events import record_simulation_event
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
+from common.logging_setup import setup_standard_logging, install_exception_handlers
+from common.trace_context import clear_trace_id, get_trace_id, set_trace_id, set_trace_id_from_headers
 
 # Настройка логирования
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-)
+setup_standard_logging("mqtt-bridge")
+install_exception_handlers("mqtt-bridge")
 logger = logging.getLogger(__name__)
 
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
@@ -111,6 +109,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MQTT Bridge", version="0.1.3", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = set_trace_id_from_headers(request.headers, fallback_generate=True)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_trace_id()
+    if trace_id:
+        response.headers["X-Trace-Id"] = trace_id
+    return response
+
+
+def _ensure_trace_for_command(cmd_id: Optional[str]) -> None:
+    if cmd_id:
+        set_trace_id(cmd_id, allow_generate=False)
 
 
 def _auth(request: Request):
@@ -202,6 +217,7 @@ async def send_zone_command(
     
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
+    _ensure_trace_for_command(cmd_id)
     payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
     try:
         _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
@@ -319,6 +335,7 @@ async def send_node_command(
     
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
+    _ensure_trace_for_command(cmd_id)
     payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
     try:
         _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)

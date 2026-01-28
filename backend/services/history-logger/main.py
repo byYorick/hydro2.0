@@ -1,21 +1,16 @@
 import logging
 import os
-import sys
 
 from app import app, setup_signal_handlers
 from common.env import get_settings
+from common.logging_setup import setup_standard_logging, install_exception_handlers
 
 
 if __name__ == "__main__":
+    log_level_value = setup_standard_logging("history-logger")
+    install_exception_handlers("history-logger")
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    log_level_value = getattr(logging, log_level, logging.INFO)
     uvicorn_log_level = "warning" if log_level == "WARN" else log_level.lower()
-    logging.basicConfig(
-        level=log_level_value,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-        force=True,
-    )
     logging.getLogger().setLevel(log_level_value)
     logging.getLogger("__main__").setLevel(log_level_value)
     logging.getLogger("main").setLevel(log_level_value)

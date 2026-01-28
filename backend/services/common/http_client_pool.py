@@ -15,6 +15,7 @@ import httpx
 from prometheus_client import Counter, Histogram, Gauge
 
 from .env import get_settings
+from .trace_context import inject_trace_id_header
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,8 @@ async def make_request(
         HTTP_CONCURRENT_REQUESTS.inc()
         try:
             # Логируем начало запроса с деталями
-            headers_info = kwargs.get('headers', {})
+            headers_info = inject_trace_id_header(kwargs.get('headers'))
+            kwargs["headers"] = headers_info
             json_info = kwargs.get('json', {})
             logger.info(
                 f"[HTTP_CLIENT] Sending request: {method} {url}, endpoint={endpoint}, "

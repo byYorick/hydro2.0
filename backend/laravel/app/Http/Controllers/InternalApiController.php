@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\GrowCycle;
+use App\Models\User;
 use App\Services\EffectiveTargetsService;
+use App\Services\GrowCycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -15,7 +18,8 @@ use Illuminate\Support\Facades\Validator;
 class InternalApiController extends Controller
 {
     public function __construct(
-        private EffectiveTargetsService $effectiveTargetsService
+        private EffectiveTargetsService $effectiveTargetsService,
+        private GrowCycleService $growCycleService,
     ) {
     }
 
@@ -114,5 +118,78 @@ class InternalApiController extends Controller
             ], 500);
         }
     }
-}
 
+    /**
+     * POST /api/internal/grow-cycles/{growCycle}/advance-phase
+     */
+    public function advanceGrowCyclePhase(GrowCycle $growCycle): JsonResponse
+    {
+        try {
+            $userId = $this->resolveSystemUserId();
+            $cycle = $this->growCycleService->advancePhase($growCycle, $userId);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $cycle,
+            ]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Internal advance phase failed', [
+                'cycle_id' => $growCycle->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/internal/grow-cycles/{growCycle}/harvest
+     */
+    public function harvestGrowCycle(GrowCycle $growCycle): JsonResponse
+    {
+        try {
+            $userId = $this->resolveSystemUserId();
+            $cycle = $this->growCycleService->harvest($growCycle, [
+                'batch_label' => 'SIM',
+            ], $userId);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $cycle,
+            ]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Internal harvest failed', [
+                'cycle_id' => $growCycle->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function resolveSystemUserId(): int
+    {
+        $userId = User::query()->orderBy('id')->value('id');
+        if (! $userId) {
+            throw new \RuntimeException('No users available for internal action.');
+        }
+
+        return (int) $userId;
+    }
+}

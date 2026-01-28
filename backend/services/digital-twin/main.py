@@ -11,7 +11,7 @@ from fastapi import Query
 from decimal import Decimal
 from datetime import datetime, timedelta
 from common.utils.time import utcnow
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from common.env import get_settings
@@ -20,14 +20,12 @@ from common.schemas import SimulationRequest, SimulationScenario
 from common.service_logs import send_service_log
 from prometheus_client import Counter, Histogram, start_http_server
 import httpx
+from common.logging_setup import setup_standard_logging, install_exception_handlers
+from common.trace_context import clear_trace_id, inject_trace_id_header, set_trace_id_from_headers
 
-# Настройка логирования (должна быть до импорта других модулей)
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-)
+# Настройка логирования (до запуска приложения)
+setup_standard_logging("digital-twin")
+install_exception_handlers("digital-twin")
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +53,27 @@ DEFAULT_TELEMETRY_CONFIG = {
     "status_interval_seconds": float(os.getenv("NODE_SIM_STATUS_INTERVAL", 60.0)),
 }
 
+
+def _scale_telemetry_config(
+    telemetry: Dict[str, Any],
+    time_scale: float,
+    min_interval_seconds: float = 0.5,
+) -> Dict[str, Any]:
+    if not time_scale or time_scale <= 0:
+        return telemetry
+
+    scaled = dict(telemetry)
+    for key in ("interval_seconds", "heartbeat_interval_seconds", "status_interval_seconds"):
+        value = scaled.get(key)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        scaled_value = numeric / time_scale
+        scaled[key] = max(min_interval_seconds, scaled_value)
+    return scaled
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Digital twin service started")
@@ -68,6 +87,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Digital Twin Engine", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = set_trace_id_from_headers(request.headers, fallback_generate=True)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_trace_id()
+    if trace_id:
+        response.headers["X-Trace-Id"] = trace_id
+    return response
 
 # Модели для симуляции
 from models import PHModel, ECModel, ClimateModel
@@ -362,7 +393,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
 
 
 async def _node_sim_request(path: str, payload: Dict[str, Any]) -> None:
-    headers = {}
+    headers = inject_trace_id_header()
     if NODE_SIM_MANAGER_TOKEN:
         headers["Authorization"] = f"Bearer {NODE_SIM_MANAGER_TOKEN}"
     url = NODE_SIM_MANAGER_URL.rstrip("/") + path
@@ -649,6 +680,7 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
             mqtt_config.update(request.mqtt)
         if request.telemetry:
             telemetry_config.update(request.telemetry)
+        telemetry_config = _scale_telemetry_config(telemetry_config, time_scale)
 
         payload = {
             "session_id": session_id,

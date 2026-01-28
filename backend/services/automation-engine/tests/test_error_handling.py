@@ -13,7 +13,7 @@ async def test_process_zones_parallel_tracks_errors():
     zone_service = AsyncMock()
     
     # Настраиваем: первая зона успешна, вторая падает с ошибкой
-    async def process_zone(zone_id):
+    async def process_zone(zone_id, **_kwargs):
         if zone_id == 1:
             return  # Успех
         else:
@@ -53,4 +53,3 @@ async def test_process_zones_parallel_all_success():
     assert results['success'] == 2
     assert results['failed'] == 0
     assert len(results['errors']) == 0
-

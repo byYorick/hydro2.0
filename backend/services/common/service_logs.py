@@ -7,6 +7,7 @@ import threading
 from typing import Any, Dict, Optional
 
 from common.env import get_settings
+from common.trace_context import get_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ def send_service_log(
         "message": message,
         "context": context or {},
     }
+    trace_id = get_trace_id()
+    if trace_id and "trace_id" not in payload["context"]:
+        payload["context"]["trace_id"] = trace_id
 
     if async_mode:
         threading.Thread(target=_send_request, args=(url, token, payload), daemon=True).start()

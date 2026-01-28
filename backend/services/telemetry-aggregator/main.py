@@ -13,6 +13,7 @@ from common.env import get_settings
 from common.db import fetch, execute
 from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram, start_http_server
+from common.logging_setup import setup_standard_logging, install_exception_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ CLEANUP_RUNS = Counter("cleanup_runs_total", "Cleanup runs")
 CLEANUP_DELETED = Counter("cleanup_deleted_total", "Deleted records", ["table"])
 CLEANUP_LAT = Histogram("cleanup_seconds", "Cleanup duration seconds")
 
-# Error backoff state
+# Состояние backoff при ошибках
 _error_count = 0
 _last_error_time: Optional[datetime] = None
 _backoff_until: Optional[datetime] = None
@@ -700,11 +701,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    import os
-    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-    )
+    setup_standard_logging("telemetry-aggregator")
+    install_exception_handlers("telemetry-aggregator")
     asyncio.run(main())

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Request
 
@@ -18,6 +18,7 @@ from common.commands import mark_command_send_failed, mark_command_sent
 from common.db import execute, fetch
 from common.env import get_settings
 from common.mqtt import get_mqtt_client
+from common.trace_context import get_trace_id, set_trace_id
 from common.utils.time import utcnow
 from common.water_flow import calibrate_flow, execute_drain_mode, execute_fill_mode
 from metrics import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
@@ -30,6 +31,11 @@ from models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _apply_trace_id(trace_id: Optional[str]) -> None:
+    if trace_id and not get_trace_id():
+        set_trace_id(trace_id, allow_generate=False)
 
 
 @router.post("/nodes/{node_uid}/config")
@@ -56,6 +62,7 @@ async def publish_zone_command(
     Все общение бэка с нодами должно происходить через history-logger.
     """
     _auth_ingest(request)
+    _apply_trace_id(req.trace_id)
 
     if not (req.greenhouse_uid and req.node_uid and req.channel):
         raise HTTPException(
@@ -82,6 +89,7 @@ async def publish_zone_command(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
+    set_trace_id(cmd_id, allow_generate=False)
 
     mqtt = await get_mqtt_client()
 
@@ -285,6 +293,7 @@ async def publish_node_command(
     Все общение бэка с нодами должно происходить через history-logger.
     """
     _auth_ingest(request)
+    _apply_trace_id(req.trace_id)
 
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(
@@ -311,6 +320,7 @@ async def publish_node_command(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
+    set_trace_id(cmd_id, allow_generate=False)
 
     mqtt = await get_mqtt_client()
 
@@ -511,6 +521,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     Универсальный endpoint для публикации команд через history-logger.
     """
     _auth_ingest(request)
+    _apply_trace_id(req.trace_id)
 
     if not req.cmd:
         raise HTTPException(status_code=400, detail="'cmd' is required")
@@ -541,6 +552,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         cmd_id = payload["cmd_id"]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    set_trace_id(cmd_id, allow_generate=False)
 
     log_context = {
         "zone_id": req.zone_id,

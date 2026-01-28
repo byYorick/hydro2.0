@@ -15,10 +15,20 @@ import paho.mqtt.client as mqtt
 import logging
 from dataclasses import dataclass
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+try:
+    from common.logging_setup import setup_standard_logging, install_exception_handlers
+except Exception:
+    setup_standard_logging = None
+    install_exception_handlers = None
+
+if setup_standard_logging and install_exception_handlers:
+    setup_standard_logging("node-emulator")
+    install_exception_handlers("node-emulator")
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 logger = logging.getLogger(__name__)
 
 

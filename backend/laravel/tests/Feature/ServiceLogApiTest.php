@@ -108,4 +108,37 @@ class ServiceLogApiTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    public function test_accepts_structured_log_payload(): void
+    {
+        $timestamp = Carbon::parse('2025-12-20T10:15:30Z');
+        $payload = [
+            'log' => [
+                'timestamp' => $timestamp->toIso8601String(),
+                'level' => 'ERROR',
+                'logger' => 'scheduler.loop',
+                'message' => 'Scheduler tick failed',
+                'service' => 'scheduler',
+                'trace_id' => 'abc123',
+                'exception' => [
+                    'type' => 'RuntimeException',
+                    'message' => 'boom',
+                    'traceback' => ['stack line'],
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/python/logs', $payload);
+
+        $response->assertStatus(200);
+        $log = SystemLog::query()->latest('id')->first();
+        $this->assertNotNull($log);
+        $this->assertEquals('error', $log->level);
+        $this->assertEquals('Scheduler tick failed', $log->message);
+        $this->assertEquals('scheduler', $log->service);
+        $this->assertEquals('scheduler.loop', $log->context['logger'] ?? null);
+        $this->assertEquals('abc123', $log->context['trace_id'] ?? null);
+        $this->assertEquals('RuntimeException', $log->context['exception']['type'] ?? null);
+        $this->assertEquals($timestamp->getTimestamp(), $log->created_at?->getTimestamp());
+    }
 }
