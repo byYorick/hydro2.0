@@ -6,7 +6,7 @@
 
 - `app/android/` — Android-приложение на Kotlin
   - Архитектура: Clean Architecture (data, domain, presentation)
-  - DI: Koin
+  - DI: Hilt
   - Networking: Retrofit
   - Realtime: WebSocket через Laravel Reverb
 - `configs/` — конфигурации для разных окружений:
@@ -23,13 +23,14 @@ app/android/
 │   │   ├── core/          # Общие компоненты
 │   │   │   ├── data/      # Репозитории, API клиенты
 │   │   │   ├── domain/    # Модели, use cases
-│   │   │   ├── di/        # Dependency Injection (Koin)
+│   │   │   ├── di/        # Dependency Injection (Hilt)
 │   │   │   ├── network/   # Сетевой слой
-│   │   │   ├── prefs/     # SharedPreferences
+│   │   │   ├── prefs/     # DataStore
 │   │   │   └── realtime/  # WebSocket сервис
 │   │   ├── features/      # Функциональные модули
 │   │   │   ├── auth/      # Авторизация
 │   │   │   ├── greenhouses/ # Теплицы
+│   │   │   ├── provisioning/ # Provisioning
 │   │   │   ├── zones/     # Зоны
 │   │   │   └── alerts/     # Алерты
 │   │   ├── ui/            # UI компоненты
@@ -38,20 +39,15 @@ app/android/
 └── build.gradle.kts
 ```
 
-## Статус
-
-Реализация в процессе. См. `doc_ai/IMPLEMENTATION_STATUS.md` (раздел 8).
-
 ## Документация
 
-- Архитектура приложения: `doc_ai/12_ANDROID_APP/ANDROID_APP_ARCH.md`
-- Экраны и UX: `doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
-- Интеграция с API: `doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
-- Структура проекта: `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
-- Backend API: `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
+- Архитектура приложения: `../doc_ai/12_ANDROID_APP/ANDROID_APP_ARCH.md`
+- Экраны и UX: `../doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
+- Интеграция с API: `../doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
+- Структура проекта: `../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
+- Backend API: `../doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 
 ## Примечание
 
 Согласно документации, структура может включать также iOS-приложение в будущем.
-
 

@@ -12,7 +12,7 @@ async def test_process_telemetry_batch_ignores_unvalidated_node():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -66,15 +66,18 @@ async def test_process_telemetry_batch_normalizes_metric_type():
          patch("common.telemetry.execute") as mock_execute, \
          patch("common.telemetry.upsert_telemetry_last") as mock_upsert:
         # Mock node lookup
-        mock_fetch.return_value = [{"id": 10, "zone_id": 1, "validated": True}]
+        mock_fetch.side_effect = [
+            [{"id": 10, "zone_id": 1, "validated": True}],
+            [{"id": 101}],
+        ]
         
         await process_telemetry_batch([sample])
         
         # Check that execute was called with normalized metric_type
         mock_execute.assert_called()
         call_args = mock_execute.call_args
-        # metric_type should be normalized to "ph"
-        assert call_args[0][4] == "ph"  # normalized_metric_type
+        metadata = call_args[0][6]
+        assert metadata["metric_type"] == "PH"
 
 
 @pytest.mark.asyncio
@@ -83,7 +86,7 @@ async def test_process_telemetry_batch_validated_node():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -91,11 +94,13 @@ async def test_process_telemetry_batch_validated_node():
          patch("common.telemetry.execute") as mock_execute, \
          patch("common.telemetry.upsert_telemetry_last") as mock_upsert:
         # Mock node lookup - node exists and is validated
-        mock_fetch.return_value = [{"id": 10, "zone_id": 1, "validated": True}]
+        mock_fetch.side_effect = [
+            [{"id": 10, "zone_id": 1, "validated": True}],
+            [{"id": 101}],
+        ]
         
         await process_telemetry_batch([sample])
         
         # execute should be called for validated node
         assert mock_execute.call_count >= 1
         assert mock_upsert.call_count == 1
-

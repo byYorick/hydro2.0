@@ -1,0 +1,271 @@
+"""
+Общий компонент для обработки ошибок от ESP32 нод.
+
+Обрабатывает:
+- Diagnostics сообщения (периодические метрики ошибок)
+- Error сообщения (немедленные ошибки)
+- Интеграция с Laravel API для создания Alerts
+"""
+
+import logging
+from typing import Optional, Dict, Any
+from datetime import datetime
+import httpx
+import json
+from .db import execute, fetch
+from .env import get_settings
+from .alert_queue import send_alert_to_laravel
+
+logger = logging.getLogger(__name__)
+
+
+class NodeErrorHandler:
+    """Обработчик ошибок от ESP32 нод."""
+    
+    def __init__(self):
+        self.settings = get_settings()
+        self.laravel_url = self.settings.laravel_api_url if hasattr(self.settings, 'laravel_api_url') else None
+        self.ingest_token = (
+            self.settings.history_logger_api_token 
+            if hasattr(self.settings, 'history_logger_api_token') and self.settings.history_logger_api_token
+            else (self.settings.ingest_token if hasattr(self.settings, 'ingest_token') else None)
+        )
+    
+    async def handle_diagnostics(self, node_uid: str, diagnostics_data: Dict[str, Any]) -> None:
+        """
+        Обработка diagnostics сообщения от узла.
+        
+        Args:
+            node_uid: UID узла
+            diagnostics_data: Данные диагностики (JSON payload)
+        """
+        try:
+            errors = diagnostics_data.get("errors", {})
+            if not errors:
+                return
+            
+            # Обновляем метрики ошибок в БД
+            # Примечание: Колонки error_count, warning_count, critical_count могут отсутствовать в старых БД
+            try:
+                await execute(
+                    """
+                    UPDATE nodes 
+                    SET 
+                        error_count = COALESCE($2, error_count),
+                        warning_count = COALESCE($3, warning_count),
+                        critical_count = COALESCE($4, critical_count),
+                        updated_at = NOW()
+                    WHERE uid = $1
+                    """,
+                    node_uid,
+                    errors.get("error_count"),
+                    errors.get("warning_count"),
+                    errors.get("critical_count")
+                )
+            except Exception as col_error:
+                # Если колонки отсутствуют, логируем предупреждение, но продолжаем обработку
+                logger.warning(
+                    f"[DIAGNOSTICS] Failed to update error metrics for node {node_uid}: {col_error}. "
+                    "Columns error_count/warning_count/critical_count may not exist. Continuing..."
+                )
+                return  # Пропускаем обновление, но не создаем alert если нет critical_count
+            
+            logger.debug(
+                f"[DIAGNOSTICS] Updated error metrics for node {node_uid}: "
+                f"errors={errors.get('error_count')}, "
+                f"warnings={errors.get('warning_count')}, "
+                f"critical={errors.get('critical_count')}"
+            )
+            
+            # Если есть критические ошибки, создаем Alert
+            if errors.get("critical_count", 0) > 0:
+                await self._create_alert(
+                    node_uid=node_uid,
+                    level="critical",
+                    component="system",
+                    error_code="critical_errors_detected",
+                    message=f"Node has {errors.get('critical_count')} critical errors",
+                    details=errors
+                )
+        
+        except Exception as e:
+            logger.error(
+                f"[DIAGNOSTICS] Failed to process diagnostics for node {node_uid}: {e}",
+                exc_info=True
+            )
+    
+    async def handle_error(self, node_uid: str, error_data: Dict[str, Any]) -> None:
+        """
+        Обработка error сообщения от узла.
+        
+        Args:
+            node_uid: UID узла
+            error_data: Данные ошибки (JSON payload)
+        """
+        try:
+            level = error_data.get("level", "ERROR").upper()
+            component = error_data.get("component", "unknown")
+            error_code = error_data.get("error_code", "unknown")
+            message = error_data.get("message", "Unknown error")
+            
+            # Обновляем счетчик ошибок в БД
+            # Примечание: Колонки error_count, warning_count, critical_count могут отсутствовать в старых БД
+            # В этом случае обновление пропускается, но alert все равно создается
+            try:
+                if level == "CRITICAL":
+                    await execute(
+                        "UPDATE nodes SET critical_count = COALESCE(critical_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+                elif level == "ERROR":
+                    await execute(
+                        "UPDATE nodes SET error_count = COALESCE(error_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+                elif level == "WARNING":
+                    await execute(
+                        "UPDATE nodes SET warning_count = COALESCE(warning_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+            except Exception as col_error:
+                # Если колонки отсутствуют, логируем предупреждение, но продолжаем обработку
+                logger.warning(
+                    f"[ERROR] Failed to update error count for node {node_uid}: {col_error}. "
+                    "Columns error_count/warning_count/critical_count may not exist. Continuing..."
+                )
+            
+            logger.info(
+                f"[ERROR] Node {node_uid} error: level={level}, component={component}, "
+                f"error_code={error_code}, message={message}"
+            )
+            
+            # Создаем Alert через Laravel API
+            await self._create_alert(
+                node_uid=node_uid,
+                level=level.lower(),
+                component=component,
+                error_code=error_code,
+                message=message,
+                details=error_data
+            )
+        
+        except Exception as e:
+            # Логируем ошибку, но не прерываем выполнение - alert должен быть создан даже если обновление счетчика не удалось
+            logger.warning(
+                f"[ERROR] Failed to update error count for node {node_uid}: {e}. "
+                "Continuing with alert creation..."
+            )
+            # Продолжаем создание alert даже если обновление счетчика не удалось
+            pass
+    
+    async def _create_alert(
+        self,
+        node_uid: str,
+        level: str,
+        component: str,
+        error_code: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Создание Alert через Laravel API с персистентной очередью для ретраев.
+        
+        Args:
+            node_uid: UID узла
+            level: Уровень ошибки (warning, error, critical)
+            component: Компонент, где произошла ошибка
+            error_code: Код ошибки
+            message: Сообщение об ошибке
+            details: Дополнительные детали
+        """
+        try:
+            # Получаем node_id и zone_id из БД
+            node_rows = await fetch(
+                """
+                SELECT n.id, n.zone_id, z.id as zone_id_check
+                FROM nodes n
+                LEFT JOIN zones z ON z.id = n.zone_id
+                WHERE n.uid = $1
+                """,
+                node_uid
+            )
+            
+            node_row = None
+            zone_id = None
+            
+            if node_rows:
+                node_row = node_rows[0]
+                zone_id = node_row.get('zone_id')
+            
+            # Разрешаем создание алертов даже для unassigned hardware (zone_id = null)
+            # Это важно для временных ошибок до привязки узла к зоне
+            if not node_rows:
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} not found in database, creating alert with zone_id=null")
+            elif not zone_id:
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} has no zone_id (unassigned), creating alert with zone_id=null")
+            
+            # Структура alerts: zone_id, source, code, type, details, status
+            # source: 'biz' или 'infra' (для ошибок нод используем 'infra')
+            # code: код ошибки (например, 'node_error_ph_sensor')
+            # type: тип алерта (например, 'node_error')
+            # details: JSON с деталями
+            
+            alert_code = f"node_error_{component}_{error_code}"
+            alert_type = "node_error"
+            
+            # Создаем Alert через Laravel API (с автоматической очередью при ошибках)
+            alert_details = {
+                "node_uid": node_uid,
+                "component": component,
+                "error_code": error_code,
+                "level": level,
+                "message": message,
+                "details": details or {}
+            }
+            
+            # Извлекаем ts_device из details, если есть
+            ts_device = None
+            if details and isinstance(details, dict):
+                ts_device = details.get("ts") or details.get("ts_device")
+                if ts_device and isinstance(ts_device, (int, float)):
+                    # Конвертируем Unix timestamp (секунды или миллисекунды) в ISO строку
+                    from datetime import datetime, timezone
+                    ts_value = float(ts_device)
+                    if ts_value > 1_000_000_000_000:
+                        ts_value = ts_value / 1000.0
+                    ts_device = datetime.fromtimestamp(ts_value, tz=timezone.utc).isoformat()
+            
+            success = await send_alert_to_laravel(
+                zone_id=zone_id,
+                source="infra",  # Ошибки нод - это инфраструктурные ошибки
+                code=alert_code,
+                type=alert_type,
+                status="ACTIVE",
+                details=alert_details,
+                node_uid=node_uid,
+                severity=level,  # level может быть warning, error, critical
+                ts_device=ts_device
+            )
+            
+            if success:
+                logger.info(f"[ERROR_HANDLER] Alert created for node {node_uid}: {error_code}")
+            else:
+                logger.info(f"[ERROR_HANDLER] Alert queued for retry for node {node_uid}: {error_code}")
+        
+        except Exception as e:
+            logger.error(
+                f"[ERROR_HANDLER] Exception while creating alert for node {node_uid}: {e}",
+                exc_info=True
+            )
+
+
+# Глобальный экземпляр обработчика
+_error_handler: Optional[NodeErrorHandler] = None
+
+
+def get_error_handler() -> NodeErrorHandler:
+    """Получить глобальный экземпляр обработчика ошибок."""
+    global _error_handler
+    if _error_handler is None:
+        _error_handler = NodeErrorHandler()
+    return _error_handler

@@ -180,15 +180,15 @@ esp_err_t mqtt_manager_publish_heartbeat(const char *data);
 esp_err_t mqtt_manager_publish_command_response(const char *channel, const char *data);
 
 /**
- * @brief Публикация ответа на конфигурацию
- * 
- * Топик: hydro/{gh}/{zone}/{node}/config_response
+ * @brief Публикация NodeConfig отчета
+ *
+ * Топик: hydro/{gh}/{zone}/{node}/config_report
  * QoS: 1, Retain: false
- * 
- * @param data JSON данные ответа
+ *
+ * @param data JSON данные конфигурации ноды
  * @return ESP_OK при успехе
  */
-esp_err_t mqtt_manager_publish_config_response(const char *data);
+esp_err_t mqtt_manager_publish_config_report(const char *data);
 
 /**
  * @brief Публикация диагностики
@@ -207,6 +207,17 @@ esp_err_t mqtt_manager_publish_diagnostics(const char *data);
  * @return true если подключен
  */
 bool mqtt_manager_is_connected(void);
+
+/**
+ * @brief Получить текущую информацию об узле для формирования топиков
+ * 
+ * Эта информация содержит gh_uid, zone_uid и node_uid, которые используются
+ * для публикации telemetry/command/diagnostics и теперь также для ошибок.
+ * 
+ * @param node_info Указатель на структуру, которая будет заполнена
+ * @return ESP_OK при удаче, иначе ошибка (например, ESP_ERR_INVALID_STATE, если менеджер не инициализирован)
+ */
+esp_err_t mqtt_manager_get_node_info(mqtt_node_info_t *node_info);
 
 /**
  * @brief Получить количество переподключений
@@ -238,8 +249,8 @@ esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos,
 /**
  * @brief Обновить информацию об узле (gh_uid, zone_uid, node_uid) без переинициализации MQTT
  * 
- * Используется после получения конфига, чтобы обновить топики для публикации config_response
- * и других сообщений без переподключения к MQTT брокеру.
+ * Используется после получения конфига, чтобы обновить топики для публикации
+ * telemetry/command/config_report и других сообщений без переподключения к MQTT брокеру.
  * 
  * @param node_info Новая информация об узле
  * @return ESP_OK при успехе
@@ -251,4 +262,3 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info);
 #endif
 
 #endif // MQTT_MANAGER_H
-

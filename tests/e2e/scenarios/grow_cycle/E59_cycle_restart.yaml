@@ -1,0 +1,179 @@
+# E59: Cycle Recreate - create new cycle after harvest
+# DoD: create new cycle after harvest
+
+name: E59_cycle_restart
+description: |
+  Проверяет создание нового цикла после завершения (harvest):
+  - Цикл переводится в HARVESTED
+  - Создается новый цикл со статусом RUNNING
+  - Старая запись сохраняется
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-grow-zone-e59-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e59-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e59-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_original_cycle_id
+    type: set
+    original_cycle_id: ${cycle_response.data.id}
+
+  - step: harvest_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${original_cycle_id}/harvest
+    payload:
+      batch_label: Test Batch E59
+    save: harvest_response
+
+  - step: wait_after_harvest
+    type: sleep
+    seconds: 1
+
+  - step: create_new_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: new_cycle_response
+
+  - step: wait_after_new_cycle
+    type: sleep
+    seconds: 1
+
+  - step: set_new_cycle_id
+    type: set
+    new_cycle_id: ${new_cycle_response.data.id}
+
+assertions:
+  # Проверка 1: Новый цикл создан со статусом RUNNING
+  - name: new_cycle_running
+    type: database_query
+    query: |
+      SELECT status
+      FROM grow_cycles
+      WHERE id = :new_cycle_id
+    params:
+      new_cycle_id: ${new_cycle_id}
+    expected:
+      - field: status
+        operator: equals
+        value: RUNNING
+
+  # Проверка 2: Новый цикл использует те же параметры
+  - name: same_parameters
+    type: database_query
+    query: |
+      SELECT recipe_revision_id, plant_id
+      FROM grow_cycles
+      WHERE id = :new_cycle_id
+    params:
+      new_cycle_id: ${new_cycle_id}
+    expected:
+      - field: recipe_revision_id
+        operator: equals
+        value: ${cycle_response.data.recipe_revision_id}
+      - field: plant_id
+        operator: equals
+        value: ${cycle_response.data.plant_id}
+
+  # Проверка 3: Оригинальный цикл все еще существует
+  - name: original_cycle_preserved
+    type: database_query
+    query: |
+      SELECT status
+      FROM grow_cycles
+      WHERE id = :original_cycle_id
+    params:
+      original_cycle_id: ${original_cycle_id}
+    expected:
+      - field: status
+        operator: in
+        value: ["HARVESTED"]
+
+cleanup:
+  - step: delete_new_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'RUNNING'
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

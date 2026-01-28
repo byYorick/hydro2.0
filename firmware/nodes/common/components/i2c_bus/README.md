@@ -127,6 +127,6 @@ esp_err_t err = i2c_bus_recover();
 
 ## Документация
 
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Архитектура нод: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
 

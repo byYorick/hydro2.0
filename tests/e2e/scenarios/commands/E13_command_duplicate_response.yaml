@@ -1,0 +1,163 @@
+# E13: Duplicate Command Response - Дублирующиеся ответы не ломают статус
+# DoD: duplicate responses не ломают статус
+
+name: E13_duplicate_cmd_response
+description: |
+  Проверяет устойчивость к дублирующимся ответам от узла:
+  - Команда отправляется
+  - Узел отправляет DONE ответ дважды (дубль)
+  - Статус команды остается DONE (не переходит в ERROR или другой статус)
+  - WebSocket событие отправляется только один раз
+
+setup:
+  # Настройка симулятора узла
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+  # Предварительные условия
+  prerequisites:
+    - database: nodes table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - database: node attached to zone
+    - mqtt: broker is accessible
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  # Шаг 1: Запуск симулятора узла
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
+
+  # Шаг 1.5: Получаем zone_id и node_id из API (если не установлены автоматически)
+  - step: get_zones
+    type: api_get
+    endpoint: "/api/zones"
+    save: zones
+  
+  - step: get_nodes
+    type: api_get
+    endpoint: "/api/nodes"
+    save: nodes
+
+  - step: find_test_zone_and_node
+    type: set
+    test_zone_id: ${nodes.data.data[0].zone_id}
+    test_node_id: ${nodes.data.data[0].id}
+
+  # Шаг 2: Подписка на WebSocket канал команд зоны
+  - step: subscribe_ws_commands
+    type: websocket_subscribe
+    channel: "private-commands.${test_zone_id}"
+    wait_seconds: 1
+
+  # Шаг 3: Отправка команды через API
+  - step: send_command
+    type: api_post
+    endpoint: "/api/nodes/${test_node_id}/commands"
+    payload:
+      cmd: "set_relay"
+      channel: "main_pump"
+      params:
+        channel: "main_pump"
+        state: false
+    save: command_response
+    wait_seconds: 2
+
+  # Шаг 3.5: Сохраняем COMMAND_ID
+  - step: set_command_id
+    type: set
+    COMMAND_ID: ${command_response.data.command_id}
+
+  # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
+  - step: node_sends_done_first
+    type: mqtt_publish
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    payload:
+      cmd_id: ${COMMAND_ID}
+      status: "DONE"
+      details:
+        result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+  # Шаг 5: Симулятор отправляет DONE ответ второй раз (дубль)
+  - step: node_sends_done_duplicate
+    type: mqtt_publish
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    payload:
+      cmd_id: ${COMMAND_ID}
+      status: "DONE"
+      details:
+        result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+assertions:
+  # Проверка 1: Команда достигает финального статуса DONE (DoD требует проверку финализации)
+  # Дублирующие ответы не должны ломать систему, но финальный статус должен быть DONE
+  - name: command_reaches_final_status_done
+    type: db.wait
+    query: |
+      SELECT id, status, updated_at
+      FROM commands
+      WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
+    params:
+      cmd_id: ${COMMAND_ID}
+    timeout: 90.0
+    expected_rows: 1
+    save: command_status
+
+  # Проверка статуса через database_query (более надежно)
+  - name: assert_status_is_done
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${COMMAND_ID}
+    timeout: 5.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "DONE"
+
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере
+  - step: unsubscribe_ws
+    type: websocket_unsubscribe

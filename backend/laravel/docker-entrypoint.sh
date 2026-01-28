@@ -13,8 +13,17 @@ if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
     php artisan key:generate --force || true
 fi
 
-# Wait for database to be ready (only in dev mode)
-if [ "${APP_ENV:-production}" = "local" ]; then
+# В dev/testing сбрасываем закешированную конфигурацию, чтобы не ловить устаревший DB_HOST
+if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
+    if [ -f /app/bootstrap/cache/config.php ]; then
+        echo "Clearing cached config for local/testing environment..."
+        rm -f /app/bootstrap/cache/config.php 2>/dev/null || true
+        php artisan config:clear >/dev/null 2>&1 || true
+    fi
+fi
+
+# Wait for database to be ready (dev + testing)
+if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
     echo "Waiting for database connection..."
     max_attempts=30
     attempt=0
@@ -33,30 +42,54 @@ if [ "${APP_ENV:-production}" = "local" ]; then
         fi
     done
     
-    # Run migrations if database is available
-    if php artisan db:show >/dev/null 2>&1; then
-        echo "Running database migrations..."
-        if php artisan migrate --force 2>&1; then
-            echo "✓ Migrations completed successfully"
-            
-            # Check if seeders need to run (only if no users exist)
-            USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
-            if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
-                echo "No users found, running database seeders..."
-                if php artisan db:seed --force 2>&1; then
-                    echo "✓ Seeders completed successfully"
-                    echo "✓ Database setup completed"
-                else
-                    echo "⚠ Seeding failed (some data may have been created), continuing..."
-                fi
+    echo "Running database migrations (with retry)..."
+    migrate_attempts=30
+    migrate_try=0
+    migrated_ok=0
+    while [ $migrate_try -lt $migrate_attempts ]; do
+        if php artisan migrate --force >/dev/null 2>&1; then
+            migrated_ok=1
+            break
+        fi
+        migrate_try=$((migrate_try + 1))
+        echo "  migrate attempt $migrate_try/$migrate_attempts failed, retrying..."
+        sleep 2
+    done
+
+    if [ "$migrated_ok" != "1" ]; then
+        echo "⚠ Migrations failed after $migrate_attempts attempts, continuing..."
+    else
+        echo "✓ Migrations completed successfully"
+
+        # Check if seeders need to run (only if no users exist)
+        USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
+        if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+            echo "No users found, running database seeders..."
+            if php artisan db:seed --force 2>/dev/null; then
+                echo "✓ Seeders completed successfully"
+                echo "✓ Database setup completed"
             else
-                echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
+                echo "⚠ Seeding failed (some data may have been created), continuing..."
             fi
         else
-            echo "⚠ Migration failed, continuing..."
+            echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
         fi
-    else
-        echo "⚠ Skipping migrations and seeders (database not available)"
+
+        # Ensure a stable E2E user for runner login (token will be minted via /api/auth/login)
+        echo "Ensuring E2E user exists..."
+        php artisan tinker --execute="
+            \$user = \\App\\Models\\User::updateOrCreate(
+                ['email' => 'e2e@example.com'],
+                ['name' => 'E2E', 'password' => bcrypt('e2e'), 'role' => 'operator']
+            );
+            echo 'OK';
+        " >/dev/null 2>&1 || echo "⚠ Failed to ensure E2E user, continuing..."
+
+        # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
+        if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
+            echo "Ensuring AutomationEngineE2ESeeder data..."
+            php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1 || echo "⚠ Failed to run AutomationEngineE2ESeeder, continuing..."
+        fi
     fi
 fi
 
@@ -188,6 +221,14 @@ if [ -f /opt/docker/etc/nginx/vhost.common.d/10-php.conf ]; then
         # Добавляем настройки перед закрывающей скобкой location блока
         sed -i '/^}$/i\    # FastCGI buffers для больших заголовков (решение 502 Bad Gateway)\n    fastcgi_buffers 16 16k;\n    fastcgi_buffer_size 32k;\n    fastcgi_busy_buffers_size 64k;\n    fastcgi_temp_file_write_size 64k;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
         echo "✓ FastCGI buffers configuration added"
+    fi
+
+    # Важно для Bearer токенов (Sanctum): без этого nginx/PHP-FPM может не прокидывать Authorization header,
+    # из-за чего все /api/* запросы будут UNAUTHENTICATED (401) даже с валидным токеном.
+    if ! grep -q "HTTP_AUTHORIZATION" /opt/docker/etc/nginx/vhost.common.d/10-php.conf; then
+        echo "Adding HTTP_AUTHORIZATION passthrough to 10-php.conf..."
+        sed -i '/^}$/i\    # Pass Authorization header to PHP-FPM (required for Bearer tokens)\n    fastcgi_param HTTP_AUTHORIZATION $http_authorization;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
+        echo "✓ HTTP_AUTHORIZATION passthrough added"
     fi
 fi
 

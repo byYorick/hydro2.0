@@ -1,0 +1,150 @@
+# E56: Override Targets - manual target override during cycle
+# DoD: manual target override during cycle
+
+name: E56_override_targets
+description: |
+  Проверяет effective targets для активного цикла:
+  - Цикл в статусе RUNNING
+  - API effective-targets отражает цели фазы
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-grow-zone-e56-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e56-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e56-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
+      ph_target: 6.8
+      ph_min: 6.3
+      ph_max: 7.2
+      ec_target: 1.8
+      ec_min: 1.6
+      ec_max: 2.0
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: wait_after_start
+    type: sleep
+    seconds: 1
+
+  - step: get_effective_targets
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
+    save: effective_targets_response
+
+assertions:
+  # Проверка 1: Параметры фазы сохранены
+  - name: phase_targets_saved
+    type: database_query
+    query: |
+      SELECT ph_target, ph_min, ph_max, ec_target
+      FROM recipe_revision_phases
+      WHERE recipe_revision_id = :revision_id
+      AND phase_index = 0
+      LIMIT 1
+    params:
+      revision_id: ${revision_response.data.id}
+    expected:
+      - field: ph_target
+        operator: greater_than_or_equal
+        value: 6.8
+      - field: ph_target
+        operator: less_than
+        value: 6.81
+      - field: ph_min
+        operator: greater_than_or_equal
+        value: 6.3
+      - field: ph_min
+        operator: less_than
+        value: 6.31
+      - field: ph_max
+        operator: greater_than_or_equal
+        value: 7.2
+      - field: ph_max
+        operator: less_than
+        value: 7.21
+      - field: ec_target
+        operator: greater_than_or_equal
+        value: 1.8
+      - field: ec_target
+        operator: less_than
+        value: 1.81
+
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

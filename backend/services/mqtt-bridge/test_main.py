@@ -1,6 +1,6 @@
 """Tests for mqtt-bridge endpoints."""
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, Mock, AsyncMock
 from main import app
 
@@ -38,7 +38,7 @@ async def test_zone_fill_success(mock_auth, mock_mqtt_client):
             "elapsed_sec": 30.5
         }
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/fill",
                 json={"target_level": 0.9},
@@ -58,7 +58,7 @@ async def test_zone_fill_invalid_target_level(mock_auth):
     mock_auth.return_value = None
     
     # target_level слишком низкий
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/bridge/zones/1/fill",
             json={"target_level": 0.05},
@@ -77,7 +77,7 @@ async def test_zone_fill_zone_not_found(mock_auth):
     with patch("main.get_gh_uid_for_zone") as mock_gh:
         mock_gh.return_value = None
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/fill",
                 json={"target_level": 0.9},
@@ -103,7 +103,7 @@ async def test_zone_drain_success(mock_auth, mock_mqtt_client):
             "elapsed_sec": 25.3
         }
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/drain",
                 json={"target_level": 0.1},
@@ -123,7 +123,7 @@ async def test_zone_drain_invalid_target_level(mock_auth):
     mock_auth.return_value = None
     
     # target_level слишком высокий
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/bridge/zones/1/drain",
             json={"target_level": 0.95},
@@ -145,7 +145,7 @@ async def test_zone_drain_with_max_duration(mock_auth, mock_mqtt_client):
         mock_gh.return_value = "gh-1"
         mock_drain.return_value = {"success": True}
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/drain",
                 json={"target_level": 0.1, "max_duration_sec": 120},
@@ -180,7 +180,7 @@ async def test_zone_calibrate_flow_success(mock_auth, mock_mqtt_client):
             "calibrated_at": "2025-01-01T12:00:00Z"
         }
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/calibrate-flow",
                 json={"node_id": 1, "channel": "flow_sensor", "pump_duration_sec": 10},
@@ -200,7 +200,7 @@ async def test_zone_calibrate_flow_invalid_duration(mock_auth):
     """Test calibrate-flow endpoint with invalid pump duration."""
     mock_auth.return_value = None
     
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Слишком короткая длительность
         response = await client.post(
             "/bridge/zones/1/calibrate-flow",
@@ -220,7 +220,7 @@ async def test_zone_calibrate_flow_zone_not_found(mock_auth):
     with patch("main.get_gh_uid_for_zone") as mock_gh:
         mock_gh.return_value = None  # Зона не найдена
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/999/calibrate-flow",
                 json={"node_id": 1, "channel": "flow_sensor"},
@@ -243,31 +243,32 @@ async def test_auth_requires_token_when_configured():
     )
     
     with patch("main.get_settings", return_value=mock_settings_obj):
-        async with AsyncClient(app=app, base_url="http://test") as client:
-            # Без токена
-            response = await client.post(
-                "/bridge/zones/1/fill",
-                json={"target_level": 0.9}
-            )
-            assert response.status_code == 401
-            
-            # С неправильным токеном
-            response = await client.post(
-                "/bridge/zones/1/fill",
-                json={"target_level": 0.9},
-                headers={"Authorization": "Bearer wrong-token"}
-            )
-            assert response.status_code == 401
-            
-            # С правильным токеном (но может упасть на других проверках, например zone not found)
-            response = await client.post(
-                "/bridge/zones/1/fill",
-                json={"target_level": 0.9},
-                headers={"Authorization": "Bearer required-token-123"}
-            )
-            # Должен пройти проверку auth (но может упасть на других проверках)
-            # Проверяем, что не 401
-            assert response.status_code != 401
+        transport = ASGITransport(app=app, client=("10.0.0.2", 1234))
+        with patch("main.get_gh_uid_for_zone", return_value=None):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Без токена
+                response = await client.post(
+                    "/bridge/zones/1/fill",
+                    json={"target_level": 0.9}
+                )
+                assert response.status_code == 401
+                
+                # С неправильным токеном
+                response = await client.post(
+                    "/bridge/zones/1/fill",
+                    json={"target_level": 0.9},
+                    headers={"Authorization": "Bearer wrong-token"}
+                )
+                assert response.status_code == 401
+                
+                # С правильным токеном (должен пройти auth)
+                response = await client.post(
+                    "/bridge/zones/1/fill",
+                    json={"target_level": 0.9},
+                    headers={"Authorization": "Bearer required-token-123"}
+                )
+                # Проверяем, что не 401 (ожидаем 404, т.к. zone не найдена)
+                assert response.status_code != 401
 
 
 @pytest.mark.asyncio
@@ -282,14 +283,15 @@ async def test_auth_fails_when_token_not_set():
     )
     
     with patch("main.get_settings", return_value=mock_settings_obj):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        transport = ASGITransport(app=app, client=("10.0.0.2", 1234))
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/fill",
                 json={"target_level": 0.9}
             )
-            # Должен вернуть 500, так как токен обязателен, но не задан
-            assert response.status_code == 500
-            assert "PY_API_TOKEN must be set" in response.json()["detail"]
+            # Должен вернуть 401 для non-localhost без токена
+            assert response.status_code == 401
+            assert "Unauthorized" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -304,7 +306,7 @@ async def test_mqtt_client_stopped_after_fill(mock_auth, mock_mqtt_client):
         mock_gh.return_value = "gh-1"
         mock_fill.return_value = {"success": True}
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/fill",
                 json={"target_level": 0.9},
@@ -328,7 +330,7 @@ async def test_mqtt_client_stopped_after_drain(mock_auth, mock_mqtt_client):
         mock_gh.return_value = "gh-1"
         mock_drain.return_value = {"success": True}
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/drain",
                 json={"target_level": 0.1},
@@ -352,7 +354,7 @@ async def test_mqtt_client_stopped_after_calibrate(mock_auth, mock_mqtt_client):
         mock_gh.return_value = "gh-1"
         mock_calibrate.return_value = {"success": True}
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/bridge/zones/1/calibrate-flow",
                 json={"node_id": 1, "channel": "flow_sensor"},
@@ -362,4 +364,3 @@ async def test_mqtt_client_stopped_after_calibrate(mock_auth, mock_mqtt_client):
             assert response.status_code == 200
             # Проверяем, что stop был вызван
             mock_mqtt_client.stop.assert_called_once()
-

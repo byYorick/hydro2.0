@@ -1,0 +1,184 @@
+# E52: Stage Progress Timeline - симуляция времени → переход фаз
+# DoD: симулировать время/переход фаз, проверить stage timeline + проценты
+
+name: E52_stage_progress_timeline
+description: |
+  Проверяет прогресс стадий во времени:
+  - У зоны есть активный grow-cycle
+  - Симулируется прохождение времени
+  - Проверяется прогресс стадий и проценты
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-grow-zone-e52-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e52-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e52-${TIMESTAMP_S}
+      description: Test recipe for E52
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Planting
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  # Получаем текущее состояние grow cycle
+  - step: get_grow_cycle
+    type: database_query
+    query: |
+      SELECT id, recipe_revision_id, status, current_phase_id, phase_started_at, planting_at
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    save: grow_cycle
+
+  # Получаем информацию о текущей фазе
+  - step: get_current_phase
+    type: database_query
+    query: |
+      SELECT id, phase_index, name, duration_hours
+      FROM grow_cycle_phases
+      WHERE id = :phase_id
+    params:
+      phase_id: ${grow_cycle.0.current_phase_id}
+    save: current_phase
+
+  # Получаем информацию о ревизии рецепта
+  - step: get_recipe_revision
+    type: api_get
+    endpoint: /api/recipe-revisions/${grow_cycle.0.recipe_revision_id}
+    save: revision_details
+
+  # Симулируем прохождение времени (опционально - может требовать специальной логики)
+  # В реальности прогресс рассчитывается автоматически на основе phase_started_at
+  - step: check_current_progress
+    type: database_query
+    query: |
+      SELECT 
+        current_phase_id,
+        phase_started_at,
+        planting_at,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(phase_started_at, planting_at))) as elapsed_seconds
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    save: progress_data
+
+cleanup:
+  - step: delete_grow_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+
+assertions:
+  # Проверка 1: Grow cycle существует
+  - name: grow_cycle_active
+    type: database_query
+    query: |
+      SELECT COUNT(*) as count
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: count
+        operator: equals
+        value: 1
+
+  # Проверка 2: phase_started_at или planting_at установлен
+  - name: started_at_set
+    type: database_query
+    query: |
+      SELECT phase_started_at, planting_at
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: phase_started_at
+        operator: is_not_null
+        or:
+          - field: planting_at
+            operator: is_not_null

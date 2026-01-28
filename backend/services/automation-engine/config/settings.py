@@ -4,6 +4,7 @@ Configuration settings for automation engine.
 """
 from typing import Dict, Any
 from dataclasses import dataclass
+import os
 from common.env import get_settings as get_common_settings
 
 
@@ -16,7 +17,9 @@ class AutomationSettings:
     CONFIG_FETCH_RETRY_SLEEP_SECONDS: int = 15
     
     # Параллельная обработка зон
-    MAX_CONCURRENT_ZONES: int = 5
+    MAX_CONCURRENT_ZONES: int = int(os.getenv("MAX_CONCURRENT_ZONES", "50"))  # Максимум для масштабирования
+    TARGET_CYCLE_TIME_SEC: int = int(os.getenv("TARGET_CYCLE_TIME_SEC", "15"))  # Целевое время цикла
+    ADAPTIVE_CONCURRENCY: bool = os.getenv("ADAPTIVE_CONCURRENCY", "true").lower() == "true"  # Включить адаптивную конкурентность
     
     # Пороги для корректировки pH/EC
     PH_CORRECTION_THRESHOLD: float = 0.2  # Минимальная разница для корректировки
@@ -55,7 +58,10 @@ class AutomationSettings:
     EC_PID_ADAPTATION_RATE: float = 0.05
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
-    TELEMETRY_MAX_AGE_MINUTES: int = 30  # Не корректировать если данные старше 30 минут
+    TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
+    
+    # Порог для алерта о подряд пропусках проверки свежести
+    FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert
     
     # Пороги для критических отклонений
     PH_TOO_HIGH_THRESHOLD: float = 0.3

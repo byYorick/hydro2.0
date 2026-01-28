@@ -5,8 +5,8 @@ namespace Tests\Feature;
 use App\Models\SystemLog;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ServiceLogApiTest extends TestCase
@@ -74,6 +74,31 @@ class ServiceLogApiTest extends TestCase
         $this->assertEquals('mqtt-bridge', $data[0]['service']);
     }
 
+    public function test_excludes_services_when_requested(): void
+    {
+        $visible = SystemLog::create([
+            'level' => 'info',
+            'message' => 'Automation Engine log',
+            'context' => ['service' => 'automation-engine'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        SystemLog::create([
+            'level' => 'error',
+            'message' => 'History Logger log',
+            'context' => ['service' => 'history-logger'],
+            'created_at' => Carbon::now(),
+        ]);
+
+        $response = $this->getJson('/api/logs/service?exclude_services[]=history-logger');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        $this->assertCount(1, $data);
+        $this->assertEquals($visible->id, $data[0]['id']);
+        $this->assertEquals('automation-engine', $data[0]['service']);
+    }
+
     public function test_forbids_access_for_viewer_role(): void
     {
         $viewer = User::factory()->create(['role' => 'viewer']);
@@ -82,5 +107,38 @@ class ServiceLogApiTest extends TestCase
         $response = $this->getJson('/api/logs/service');
 
         $response->assertStatus(403);
+    }
+
+    public function test_accepts_structured_log_payload(): void
+    {
+        $timestamp = Carbon::parse('2025-12-20T10:15:30Z');
+        $payload = [
+            'log' => [
+                'timestamp' => $timestamp->toIso8601String(),
+                'level' => 'ERROR',
+                'logger' => 'scheduler.loop',
+                'message' => 'Scheduler tick failed',
+                'service' => 'scheduler',
+                'trace_id' => 'abc123',
+                'exception' => [
+                    'type' => 'RuntimeException',
+                    'message' => 'boom',
+                    'traceback' => ['stack line'],
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/python/logs', $payload);
+
+        $response->assertStatus(200);
+        $log = SystemLog::query()->latest('id')->first();
+        $this->assertNotNull($log);
+        $this->assertEquals('error', $log->level);
+        $this->assertEquals('Scheduler tick failed', $log->message);
+        $this->assertEquals('scheduler', $log->service);
+        $this->assertEquals('scheduler.loop', $log->context['logger'] ?? null);
+        $this->assertEquals('abc123', $log->context['trace_id'] ?? null);
+        $this->assertEquals('RuntimeException', $log->context['exception']['type'] ?? null);
+        $this->assertEquals($timestamp->getTimestamp(), $log->created_at?->getTimestamp());
     }
 }

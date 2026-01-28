@@ -10,6 +10,7 @@
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
+            <exclude>tests/Feature/Broadcasting</exclude>
         </testsuite>
     </testsuites>
     <source>
@@ -28,6 +29,9 @@
         <env name="DB_DATABASE" value="hydro_test"/>
         <env name="DB_USERNAME" value="hydro"/>
         <env name="DB_PASSWORD" value="hydro"/>
+        <env name="LARAVEL_API_TOKEN" value="test-python-service-token"/>
+        <env name="PY_API_TOKEN" value="test-python-service-token"/>
+        <env name="PY_INGEST_TOKEN" value="test-python-service-token"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

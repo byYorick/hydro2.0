@@ -3,7 +3,7 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -56,6 +56,7 @@ class AuthenticationTest extends TestCase
         $response = $this->actingAs($user)->post('/logout');
 
         $this->assertGuest();
-        $response->assertRedirect('/');
+        // После logout редирект на /login
+        $response->assertRedirect('/login');
     }
 }

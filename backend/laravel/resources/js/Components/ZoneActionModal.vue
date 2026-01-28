@@ -1,147 +1,221 @@
 <template>
-  <Modal :open="show" :title="title" @close="$emit('close')">
-    
-    <form @submit.prevent="onSubmit" class="space-y-4">
+  <Modal
+    :open="show"
+    :title="title"
+    @close="$emit('close')"
+  >
+    <form
+      class="space-y-4"
+      data-testid="zone-command-form"
+      @submit.prevent="onSubmit"
+    >
       <!-- Динамические поля на основе actionType -->
-      <div v-if="actionType === 'FORCE_IRRIGATION'" class="space-y-3">
+      <div
+        v-if="actionType === 'FORCE_IRRIGATION'"
+        class="space-y-3"
+      >
         <div>
-          <label for="zone-action-duration-sec" class="block text-sm font-medium mb-1">Длительность полива (секунды)</label>
+          <label
+            for="zone-action-duration-sec"
+            class="block text-sm font-medium mb-1"
+          >Длительность полива (секунды)</label>
           <input
             id="zone-action-duration-sec"
-            name="duration_sec"
             v-model.number="form.duration_sec"
+            name="duration_sec"
             type="number"
             min="1"
             max="3600"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="10"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 1 до 3600 секунд</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 1 до 3600 секунд
+          </div>
         </div>
       </div>
 
-      <div v-else-if="actionType === 'FORCE_PH_CONTROL'" class="space-y-3">
+      <div
+        v-else-if="actionType === 'FORCE_PH_CONTROL'"
+        class="space-y-3"
+      >
         <div>
-          <label for="zone-action-target-ph" class="block text-sm font-medium mb-1">Целевой pH</label>
+          <label
+            for="zone-action-target-ph"
+            class="block text-sm font-medium mb-1"
+          >Целевой pH</label>
           <input
             id="zone-action-target-ph"
-            name="target_ph"
             v-model.number="form.target_ph"
+            name="target_ph"
             type="number"
             min="4.0"
             max="9.0"
             step="0.1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="6.0"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 4.0 до 9.0</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 4.0 до 9.0
+          </div>
         </div>
       </div>
 
-      <div v-else-if="actionType === 'FORCE_EC_CONTROL'" class="space-y-3">
+      <div
+        v-else-if="actionType === 'FORCE_EC_CONTROL'"
+        class="space-y-3"
+      >
         <div>
-          <label for="zone-action-target-ec" class="block text-sm font-medium mb-1">Целевой EC</label>
+          <label
+            for="zone-action-target-ec"
+            class="block text-sm font-medium mb-1"
+          >Целевой EC</label>
           <input
             id="zone-action-target-ec"
-            name="target_ec"
             v-model.number="form.target_ec"
+            name="target_ec"
             type="number"
             min="0.1"
             max="10.0"
             step="0.1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="1.5"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0.1 до 10.0</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 0.1 до 10.0
+          </div>
         </div>
       </div>
 
-      <div v-else-if="actionType === 'FORCE_CLIMATE'" class="space-y-3">
+      <div
+        v-else-if="actionType === 'FORCE_CLIMATE'"
+        class="space-y-3"
+      >
         <div>
-          <label for="zone-action-target-temp" class="block text-sm font-medium mb-1">Целевая температура (°C)</label>
+          <label
+            for="zone-action-target-temp"
+            class="block text-sm font-medium mb-1"
+          >Целевая температура (°C)</label>
           <input
             id="zone-action-target-temp"
-            name="target_temp"
             v-model.number="form.target_temp"
+            name="target_temp"
             type="number"
             min="10"
             max="35"
             step="0.5"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="22"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 10 до 35°C</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 10 до 35°C
+          </div>
         </div>
         <div>
-          <label for="zone-action-target-humidity" class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
+          <label
+            for="zone-action-target-humidity"
+            class="block text-sm font-medium mb-1"
+          >Целевая влажность (%)</label>
           <input
             id="zone-action-target-humidity"
-            name="target_humidity"
             v-model.number="form.target_humidity"
+            name="target_humidity"
             type="number"
             min="30"
             max="90"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="60"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 30 до 90%</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 30 до 90%
+          </div>
         </div>
       </div>
 
-      <div v-else-if="actionType === 'FORCE_LIGHTING'" class="space-y-3">
+      <div
+        v-else-if="actionType === 'FORCE_LIGHTING'"
+        class="space-y-3"
+      >
         <div>
-          <label for="zone-action-intensity" class="block text-sm font-medium mb-1">Интенсивность (%)</label>
+          <label
+            for="zone-action-intensity"
+            class="block text-sm font-medium mb-1"
+          >Интенсивность (%)</label>
           <input
             id="zone-action-intensity"
-            name="intensity"
             v-model.number="form.intensity"
+            name="intensity"
             type="number"
             min="0"
             max="100"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="80"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0 до 100%</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 0 до 100%
+          </div>
         </div>
         <div>
-          <label for="zone-action-duration-hours" class="block text-sm font-medium mb-1">Длительность (часы)</label>
+          <label
+            for="zone-action-duration-hours"
+            class="block text-sm font-medium mb-1"
+          >Длительность (часы)</label>
           <input
             id="zone-action-duration-hours"
-            name="duration_hours"
             v-model.number="form.duration_hours"
+            name="duration_hours"
             type="number"
             min="0.5"
             max="24"
             step="0.5"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="12"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0.5 до 24 часов</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            От 0.5 до 24 часов
+          </div>
         </div>
       </div>
 
-      <div v-else class="text-sm text-neutral-400">
+      <div
+        v-else
+        class="text-sm text-[color:var(--text-dim)]"
+      >
         Параметры для этого действия не требуются
       </div>
 
-      <div v-if="error" class="text-sm text-red-400">{{ error }}</div>
+      <div
+        v-if="error"
+        class="text-sm text-[color:var(--accent-red)]"
+      >
+        {{ error }}
+      </div>
     </form>
     
     <template #footer>
-      <Button type="button" variant="secondary" @click="$emit('close')" :disabled="loading">
+      <Button
+        type="button"
+        variant="secondary"
+        :disabled="loading"
+        @click="$emit('close')"
+      >
         Отмена
       </Button>
-      <Button type="button" @click="onSubmit" :disabled="loading">
+      <Button
+        type="button"
+        :disabled="loading"
+        @click="onSubmit"
+      >
         {{ loading ? 'Отправка...' : 'Отправить' }}
       </Button>
     </template>
@@ -218,17 +292,6 @@ const title = computed<string>(() => {
     'FORCE_LIGHTING': 'Управление освещением'
   }
   return titles[props.actionType] || 'Действие'
-})
-
-const description = computed<string>(() => {
-  const descriptions: Record<ActionType, string> = {
-    'FORCE_IRRIGATION': 'Укажите длительность полива в секундах',
-    'FORCE_PH_CONTROL': 'Укажите целевое значение pH',
-    'FORCE_EC_CONTROL': 'Укажите целевое значение EC',
-    'FORCE_CLIMATE': 'Укажите целевые параметры температуры и влажности',
-    'FORCE_LIGHTING': 'Укажите параметры освещения'
-  }
-  return descriptions[props.actionType] || 'Выполнить действие'
 })
 
 // Сброс формы при открытии модального окна
@@ -354,4 +417,3 @@ function onSubmit(): void {
   emit('close')
 }
 </script>
-

@@ -1,0 +1,179 @@
+# E70: MQTT Down Recovery - MQTT down 60s → команды TIMEOUT → восстановление
+# DoD: MQTT down 60s → команды TIMEOUT → восстановление
+
+name: E70_mqtt_down_recovery
+description: |
+  Проверяет восстановление после падения MQTT:
+  - MQTT останавливается
+  - Команды отправляются, но не доставляются → TIMEOUT
+  - MQTT восстанавливается
+  - Система продолжает работать
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: get_zone_id_by_uid
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${setup.node_sim.config.node.zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: get_node_id_by_uid
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${setup.node_sim.config.node.node_uid}
+    save: node_row
+    expected_rows: 1
+
+  - step: set_zone_and_node
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
+
+  # Останавливаем MQTT - опционально, т.к. fault injection может не работать в контейнере
+  - step: stop_mqtt
+    type: fault.inject
+    service: mosquitto
+    action: stop
+    optional: true
+
+  - step: wait_after_stop
+    type: sleep
+    seconds: 2
+
+  # Отправляем команду (не должна доставиться)
+  - step: send_command_while_mqtt_down
+    type: api_post
+    endpoint: /api/nodes/${node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        state: true
+    save: command_response
+    expected_status: 503
+
+  # Ждем обработки команды
+  - step: wait_for_timeout
+    type: sleep
+    seconds: 5
+
+  # Восстанавливаем MQTT - опционально, т.к. fault injection может не работать в контейнере
+  - step: restore_mqtt
+    type: fault.restore
+    service: mosquitto
+    optional: true
+
+  - step: wait_after_restore
+    type: sleep
+    seconds: 15
+
+  - step: stop_history_logger_for_reconnect
+    type: fault.inject
+    service: history-logger
+    action: stop
+    optional: true
+
+  - step: wait_after_history_logger_stop
+    type: sleep
+    seconds: 2
+
+  - step: restore_history_logger
+    type: fault.restore
+    service: history-logger
+    optional: true
+
+  - step: wait_after_history_logger_restore
+    type: sleep
+    seconds: 10
+
+  # Отправляем новую команду (должна доставиться)
+  - step: send_command_after_recovery
+    type: api_post
+    endpoint: /api/nodes/${node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        state: false
+    save: command_response_2
+    optional: true
+
+  - step: send_command_after_recovery_retry
+    type: api_post
+    endpoint: /api/nodes/${node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        state: false
+    save: command_response_2_retry
+
+  - step: set_command_id_2
+    type: set
+    command_id_2: ${command_response_2_retry.data.command_id}
+
+assertions:
+  # Проверка: Вторая команда доставилась после восстановления
+  - name: second_command_delivered
+    type: db.wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id_2 AND status IN ('SENT', 'ACK')
+    params:
+      cmd_id_2: ${command_id_2}
+    timeout: 20.0
+    expected_rows: 1
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере
+  - step: ensure_mqtt_running
+    type: fault.restore
+    service: mosquitto
+    optional: true  # fault injection не работает в контейнере

@@ -46,6 +46,11 @@ RUN mkdir -p /app/node_modules/.vite && \
 # Copy application files
 COPY . .
 
+# Ensure cache/storage dirs are writable for artisan commands during build
+RUN mkdir -p /app/bootstrap/cache /app/storage && \
+    chown -R application:application /app/bootstrap/cache /app/storage 2>/dev/null || \
+    chmod -R 777 /app/bootstrap/cache /app/storage || true
+
 # Run composer scripts now that all files are in place
 RUN if [ -f composer.json ] && [ -f artisan ]; then \
         php artisan package:discover --ansi || true; \
@@ -65,6 +70,7 @@ ARG VITE_WS_TLS=false
 ARG VITE_ENABLE_WS=true
 ARG VITE_REVERB_APP_KEY
 ARG VITE_PUSHER_APP_KEY
+ARG SKIP_FRONTEND_BUILD=false
 
 # Устанавливаем переменные окружения только если они заданы (не пустые)
 # В dev режиме они не заданы, чтобы клиент использовал window.location (nginx прокси)
@@ -79,7 +85,11 @@ ENV VITE_REVERB_APP_KEY=${VITE_REVERB_APP_KEY}
 ENV VITE_PUSHER_APP_KEY=${VITE_PUSHER_APP_KEY}
 
 RUN if [ -f package.json ]; then \
-        NODE_ENV=production npm run build; \
+        if [ "${SKIP_FRONTEND_BUILD}" = "true" ]; then \
+            echo "Skipping frontend build (SKIP_FRONTEND_BUILD=true)"; \
+        else \
+            NODE_ENV=production npm run build; \
+        fi; \
     fi
 
 # Copy supervisor config for Reverb and Vite
@@ -110,4 +120,3 @@ COPY nginx-vite-proxy.conf /opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf
 COPY nginx-fastcgi-buffers.conf /opt/docker/etc/nginx/vhost.common.d/20-fastcgi-buffers.conf
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-

@@ -28,7 +28,7 @@
     {
       "name": "pump_bus_current",
       "type": "SENSOR",
-      "metric": "CURRENT_MA",
+      "metric": "PUMP_CURRENT",
       "poll_interval_ms": 5000,
       "unit": "mA"
     }

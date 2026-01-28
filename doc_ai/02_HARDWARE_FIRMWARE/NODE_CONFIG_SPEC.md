@@ -1,460 +1,536 @@
 # NODE_CONFIG_SPEC.md
-# Спецификация NodeConfig для узлов ESP32
+# Спецификация NodeConfig для ESP32-нод
 
-Документ описывает структуру и формат конфигурации узлов (NodeConfig), которая загружается из NVS и используется для настройки работы узла.
+Документ описывает структуру и формат NodeConfig — конфигурации узлов ESP32.
+
+**ВАЖНО:** Эталонная версия этого документа находится здесь.  
+Копия для разработчиков прошивок: `../../firmware/NODE_CONFIG_SPEC.md`.
 
 **Связанные документы:**
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — полная архитектура узлов
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — логика работы узлов
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол
+- `../../firmware/NODE_CONFIG_SPEC.md` — копия для прошивки
+- `../02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
+- `../02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
+- `../01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- Шаблоны: `configs/nodes/*.json`
+
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
-## 1. Общие принципы
+## 1. Общее описание
 
-1. **NodeConfig полностью формируется на backend** и передается узлу через MQTT топик `config`
-2. **Узел сохраняет конфигурацию в NVS** при первом получении или обновлении
-3. **При загрузке узла** конфигурация читается из NVS
-4. **Валидация конфигурации** выполняется на узле перед применением
-5. **Ответ на config** публикуется в топик `config_response` с результатом (OK/ERROR)
+NodeConfig — это JSON-конфигурация узла ESP32, которая:
+- Формируется в прошивке (жёстко зашита) и сохраняется в NVS
+- Определяет тип узла и его каналы (сенсоры/актуаторы)
+- Задаёт параметры Wi‑Fi и MQTT
+- Устанавливает безопасные лимиты и пороги
+- Публикуется нодой на сервер после подключения через MQTT топик `hydro/{gh}/{zone}/{node}/config_report`
+- Не редактируется и не отправляется сервером обратно на ноду
 
 ---
 
-## 2. Структура NodeConfig (JSON)
+## 2. Формат и структура
+
+### 2.1. Базовый формат
 
 ```json
 {
-  "node_id": "nd-ph-001",
-  "type": "ph",
-  "version": "1.0.0",
-  "greenhouse_uid": "gh-1",
-  "zone_id": 3,
-  "mqtt": {
-    "host": "192.168.1.100",
-    "port": 1883,
-    "keepalive": 60,
-    "user": "hydro",
-    "pass": "hydro123",
-    "tls": false,
-    "topic_prefix": "hydro/gh-1/zn-3"
+  "node_id": "nd-ph-1",
+  "version": 3,
+  "type": "ph_node",
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-3",
+  "channels": [],
+  "wifi": {...},
+  "mqtt": {...},
+  "limits": {...},
+  "calibration": {...}
+}
+```
+
+### 2.2. Поля верхнего уровня
+
+| Поле | Тип | Обязательное | Описание |
+|------|-----|--------------|----------|
+| `node_id` | string | Да | Уникальный идентификатор узла (UID) |
+| `version` | integer | Да | Версия формата конфигурации |
+| `type` | string | Да | Тип узла: `ph_node`, `ec_node`, `climate_node`, `pump_node`, `lighting_node` |
+| `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
+| `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
+| `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы). Каналы формируются в прошивке и отправляются нодой на сервер. |
+| `wifi` | object | Да | Параметры Wi-Fi подключения |
+| `mqtt` | object | Да | Параметры MQTT подключения |
+| `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
+| `calibration` | object | Нет | Параметры калибровки (pH, EC) |
+
+---
+
+## 3. Детальное описание полей
+
+### 3.1. `node_id`
+
+Уникальный строковый идентификатор узла. Используется в:
+- MQTT топиках
+- Телеметрии
+- Командах
+
+**Примеры:**
+- `"nd-ph-1"` — pH-нода #1
+- `"nd-ec-2"` — EC-нода #2
+- `"pump-001"` — насосная нода #001
+
+### 3.2. `version`
+
+Версия формата конфигурации. При изменении структуры версия увеличивается.
+
+**Текущая версия:** `3`
+
+### 3.3. `type`
+
+Тип узла. Определяет базовое поведение и доступные каналы.
+
+**Возможные значения:**
+- `ph_node` — нода измерения pH
+- `ec_node` — нода измерения EC (электропроводности)
+- `climate_node` — нода климата (температура, влажность, CO₂)
+- `pump_node` — нода управления насосами
+- `lighting_node` — нода управления освещением
+
+### 3.4. `gh_uid`
+
+Уникальный строковый идентификатор теплицы (Greenhouse UID). Используется в:
+- MQTT топиках для маршрутизации сообщений
+- Идентификации принадлежности узла к теплице
+
+**Примеры:**
+- `"gh-1"` — теплица #1
+- `"gh-main"` — главная теплица
+
+### 3.5. `zone_uid`
+
+Уникальный строковый идентификатор зоны (Zone UID). Используется в:
+- MQTT топиках для маршрутизации сообщений
+- Идентификации принадлежности узла к зоне внутри теплицы
+
+**Примеры:**
+- `"zn-3"` — зона #3
+- `"zn-main"` — главная зона
+
+### 3.6. `channels`
+
+Поле описывает каналы, зашитые в прошивке. Нода публикует этот список на сервер в составе `config_report`, сервер хранит и использует его для команд и телеметрии.
+
+Массив каналов узла. Каждый канал — это сенсор или актуатор.
+
+#### 3.4.1. Канал сенсора
+
+```json
+{
+  "name": "ph_sensor",
+  "type": "SENSOR",
+  "metric": "PH",
+  "poll_interval_ms": 3000,
+  "unit": "pH",
+  "precision": 2
+}
+```
+
+**Поля:**
+- `name` (string, обязательное) — имя канала
+- `type` (string, обязательное) — `"SENSOR"`
+- `metric` (string, обязательное) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
+- `poll_interval_ms` (integer, обязательное) — интервал опроса в миллисекундах
+- `unit` (string, необязательное) — единица измерения
+- `precision` (integer, необязательное) — точность (количество знаков после запятой)
+
+#### 3.4.2. Канал актуатора
+
+```json
+{
+  "name": "pump_acid",
+  "type": "ACTUATOR",
+  "actuator_type": "PUMP",
+  "safe_limits": {
+    "max_duration_ms": 5000,
+    "min_off_ms": 3000,
+    "fail_safe_mode": "NO"
   },
+  "channel": "pump_in"
+}
+```
+
+Пример для реле:
+
+```json
+{
+  "name": "fan_1",
+  "type": "ACTUATOR",
+  "actuator_type": "FAN",
+  "relay_type": "NO",
+  "gpio": 27
+}
+```
+
+**Поля:**
+- `name` (string, обязательное) — имя канала
+- `type` (string, обязательное) — `"ACTUATOR"`
+- `actuator_type` (string, обязательное) — тип актуатора: `PUMP`, `PERISTALTIC_PUMP`, `RELAY`, `VALVE`, `DRIVE`, `FAN`, `HEATER`, `LED`, `PWM`
+- `safe_limits` (object, необязательное) — безопасные лимиты:
+  - `max_duration_ms` — максимальная длительность работы в мс
+  - `min_off_ms` — минимальное время простоя в мс
+  - `fail_safe_mode` — режим НЗ/НО: `NC` или `NO` (для насосов/приводов)
+- `relay_type` (string, обязательное для `RELAY`/`VALVE`/`FAN`/`HEATER`) — тип реле: `NC` или `NO`
+- `channel` (string, необязательное) — физический канал (для pump_node)
+
+#### 3.4.3. Канал актуатора DRIVE (привод)
+
+```json
+{
+  "name": "vent_drive",
+  "type": "ACTUATOR",
+  "actuator_type": "DRIVE",
+  "gpio_open": 25,
+  "gpio_close": 26,
+  "limit_switches": {
+    "open_gpio": 32,
+    "close_gpio": 33
+  },
+  "drive": {
+    "travel_ms": 15000,
+    "position_percent": 0
+  },
+  "safe_limits": {
+    "max_duration_ms": 20000,
+    "min_off_ms": 1000,
+    "fail_safe_mode": "NO"
+  }
+}
+```
+
+**Поля:**
+- `gpio_open` / `gpio_close` (integer, обязательное) — GPIO для направления открытия/закрытия
+- `limit_switches.open_gpio` / `limit_switches.close_gpio` (integer, обязательное) — GPIO концевиков
+- `drive.travel_ms` (integer, обязательное) — полный ход привода в мс (закрыто → открыто)
+- `drive.position_percent` (integer, необязательное) — текущая/начальная позиция (0–100), рассчитывается по `travel_ms`
+
+**Примечание:** команды для привода используют `direction` (OPEN/CLOSE/STOP) и/или `target_percent`, вычисляя время работы от `travel_ms`. Полное открытие/закрытие подтверждается концевиками.
+
+### 3.7. `wifi`
+
+Параметры подключения к Wi-Fi.
+
+```json
+{
+  "ssid": "HydroFarm",
+  "pass": "12345678",
+  "auto_reconnect": true,
+  "timeout_sec": 30
+}
+```
+
+**Поля:**
+- `ssid` (string, обязательное) — имя сети Wi-Fi
+- `pass` (string, обязательное) — пароль Wi-Fi
+- `auto_reconnect` (boolean, необязательное) — автоматическое переподключение (по умолчанию: `true`)
+- `timeout_sec` (integer, необязательное) — таймаут подключения в секундах (по умолчанию: `30`)
+
+**Примечание:** после первичной настройки допускается присылать `wifi: {"configured": true}` или полностью опускать секцию `wifi`, чтобы сохранить текущие настройки на устройстве.
+
+### 3.8. `mqtt`
+
+Параметры подключения к MQTT брокеру.
+
+```json
+{
+  "host": "192.168.1.10",
+  "port": 1883,
+  "keepalive": 30,
+  "client_id": "nd-ph-1",
+  "user": null,
+  "pass": null,
+  "tls": false
+}
+```
+
+**Поля:**
+- `host` (string, обязательное) — IP-адрес или hostname MQTT брокера
+- `port` (integer, обязательное) — порт MQTT брокера (обычно `1883` или `8883` для TLS)
+- `keepalive` (integer, необязательное) — интервал keepalive в секундах (по умолчанию: `30`)
+- `client_id` (string, необязательное) — MQTT client ID (по умолчанию: `node_id`)
+- `user` (string, необязательное) — имя пользователя для аутентификации
+- `pass` (string, необязательное) — пароль для аутентификации
+- `tls` (boolean, необязательное) — использование TLS (по умолчанию: `false`)
+
+### 3.9. `limits`
+
+Безопасные лимиты для узла (особенно для pump_node).
+
+```json
+{
+  "currentMin": 0.1,
+  "currentMax": 2.5,
+  "max_runtime_sec": 300,
+  "cooldown_sec": 60
+}
+```
+
+**Поля:**
+- `currentMin` (float, необязательное) — минимальный ток для обнаружения работы (для INA209)
+- `currentMax` (float, необязательное) — максимальный допустимый ток
+- `max_runtime_sec` (integer, необязательное) — максимальное время непрерывной работы в секундах
+- `cooldown_sec` (integer, необязательное) — время охлаждения после работы в секундах
+
+### 3.10. `calibration`
+
+Параметры калибровки сенсоров (pH, EC).
+
+```json
+{
+  "ph": {
+    "point1": {"raw": 1000, "value": 4.0},
+    "point2": {"raw": 2000, "value": 7.0},
+    "point3": {"raw": 3000, "value": 10.0}
+  },
+  "ec": {
+    "k_value": 1.0,
+    "temperature_compensation": true
+  }
+}
+```
+
+**Поля:**
+- `ph` (object, необязательное) — калибровка pH (2-3 точки)
+- `ec` (object, необязательное) — калибровка EC (K-значение, компенсация температуры)
+
+---
+
+## 4. Примеры конфигураций
+
+### 4.1. pH-нода
+
+```json
+{
+  "node_id": "nd-ph-1",
+  "type": "ph_node",
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-3",
   "channels": [
     {
-      "channel_id": "ph_main",
-      "name": "pH Main Sensor",
-      "type": "sensor",
-      "sensor_type": "ph",
-      "poll_interval_ms": 5000,
-      "calibration": {
-        "points": [
-          {"ph": 4.0, "voltage": 1.2},
-          {"ph": 7.0, "voltage": 2.1},
-          {"ph": 10.0, "voltage": 3.0}
-        ],
-        "method": "linear"
-      },
-      "limits": {
-        "min": 4.0,
-        "max": 10.0,
-        "warning_low": 5.5,
-        "warning_high": 7.5
+      "name": "ph_sensor",
+      "type": "SENSOR",
+      "metric": "PH",
+      "poll_interval_ms": 3000,
+      "unit": "pH",
+      "precision": 2
+    },
+    {
+      "name": "pump_acid",
+      "type": "ACTUATOR",
+      "actuator_type": "PERISTALTIC_PUMP",
+      "safe_limits": {
+        "max_duration_ms": 5000,
+        "min_off_ms": 3000,
+        "fail_safe_mode": "NO"
       }
     }
   ],
-  "hardware": {
-    "i2c": {
-      "sda": 21,
-      "scl": 22,
-      "speed": 100000
-    },
-    "gpio": {
-      "pump_control": 4,
-      "led_status": 2
-    },
-    "ina209": {
-      "address": 0x40,
-      "shunt_resistance_ohm": 0.1,
-      "max_current_ma": 5000
-    }
-  },
-  "safety": {
-    "max_pump_duration_ms": 30000,
-    "min_pump_off_time_ms": 5000,
-    "watchdog_timeout_ms": 60000,
-    "stabilization_delay_ms": 200
-  },
-  "telemetry": {
-    "heartbeat_interval_ms": 15000,
-    "telemetry_interval_ms": 5000,
-    "batch_size": 10
-  },
   "wifi": {
     "ssid": "HydroFarm",
-    "password": "secure_password",
-    "reconnect_attempts": 5,
-    "reconnect_delay_ms": 5000
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  },
+  "calibration": {
+    "ph": {
+      "point1": {"raw": 1000, "value": 4.0},
+      "point2": {"raw": 2000, "value": 7.0}
+    }
+  }
+}
+```
+
+### 4.2. Насосная нода (pump_node)
+
+```json
+{
+  "node_id": "pump-001",
+  "type": "pump_node",
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-3",
+  "channels": [
+    {
+      "name": "pump_in",
+      "type": "ACTUATOR",
+      "actuator_type": "PUMP",
+      "channel": "pump_in",
+      "safe_limits": {
+        "max_duration_ms": 60000,
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
+      }
+    },
+    {
+      "name": "pump_out",
+      "type": "ACTUATOR",
+      "actuator_type": "PUMP",
+      "channel": "pump_out",
+      "safe_limits": {
+        "max_duration_ms": 60000,
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
+      }
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  },
+  "limits": {
+    "currentMin": 0.1,
+    "currentMax": 2.5,
+    "max_runtime_sec": 300,
+    "cooldown_sec": 60
+  }
+}
+```
+
+### 4.3. Климатическая нода (climate_node)
+
+```json
+{
+  "node_id": "nd-climate-1",
+  "type": "climate_node",
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-3",
+  "channels": [
+    {
+      "name": "temperature",
+      "type": "SENSOR",
+      "metric": "TEMPERATURE",
+      "poll_interval_ms": 5000,
+      "unit": "°C",
+      "precision": 1
+    },
+    {
+      "name": "humidity",
+      "type": "SENSOR",
+      "metric": "HUMIDITY",
+      "poll_interval_ms": 5000,
+      "unit": "%",
+      "precision": 1
+    },
+    {
+      "name": "co2",
+      "type": "SENSOR",
+      "metric": "CO2",
+      "poll_interval_ms": 10000,
+      "unit": "ppm",
+      "precision": 0
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
   }
 }
 ```
 
 ---
 
-## 3. Описание полей
+## 5. Процесс загрузки и применения
 
-### 3.1. Основные поля
+### 5.1. При первом запуске
 
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `node_id` | string | Уникальный идентификатор узла (например, "nd-ph-001") | Да |
-| `type` | string | Тип узла: "ph", "ec", "climate", "irrigation", "lighting" | Да |
-| `version` | string | Версия конфигурации (семантическое версионирование) | Да |
-| `greenhouse_uid` | string | UID теплицы | Да |
-| `zone_id` | integer | ID зоны | Да |
+1. Узел загружает NodeConfig из NVS (если есть), иначе использует встроенный (firmware) вариант
+2. Если конфигурации нет и нет встроенной — узел переходит в режим provisioning
+3. Узел подключается к MQTT и публикует NodeConfig в `hydro/{gh}/{zone}/{node}/config_report`
+4. Сервер сохраняет конфигурацию в БД и синхронизирует каналы
 
-### 3.2. MQTT конфигурация
+### 5.2. При обновлении конфигурации
 
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `mqtt.host` | string | Хост MQTT брокера | Да |
-| `mqtt.port` | integer | Порт MQTT брокера (обычно 1883 или 8883 для TLS) | Да |
-| `mqtt.keepalive` | integer | Keepalive интервал в секундах | Да |
-| `mqtt.user` | string | Имя пользователя MQTT | Нет |
-| `mqtt.pass` | string | Пароль MQTT | Нет |
-| `mqtt.tls` | boolean | Использовать TLS | Нет (по умолчанию: false) |
-| `mqtt.topic_prefix` | string | Префикс для MQTT топиков | Да |
+1. Конфигурация обновляется только через прошивку (или локальный provisioning)
+2. После перезапуска узел публикует обновлённый NodeConfig в `config_report`
+3. Сервер обновляет сохранённую конфигурацию и каналы
 
-### 3.3. Каналы (channels)
+### 5.3. Валидация
 
-Каждый канал описывает один сенсор или актуатор:
+Узел должен проверить:
+- Наличие обязательных полей (включая `gh_uid` и `zone_uid`)
+- Корректность типов данных
+- Допустимые значения (порты, интервалы)
+- Соответствие типа узла и каналов
 
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `channel_id` | string | Уникальный ID канала | Да |
-| `name` | string | Человекочитаемое имя | Нет |
-| `type` | string | Тип: "sensor" или "actuator" | Да |
-| `sensor_type` | string | Для сенсоров: "ph", "ec", "temp", "humidity", "co2" | Для сенсоров |
-| `actuator_type` | string | Для актуаторов: "pump", "valve", "relay", "pwm" | Для актуаторов |
-| `poll_interval_ms` | integer | Интервал опроса сенсора (для sensor) | Для сенсоров |
-| `calibration` | object | Данные калибровки | Нет |
-| `limits` | object | Минимальные/максимальные значения и пороги предупреждений | Нет |
-
-#### Калибровка (calibration)
-
-```json
-{
-  "points": [
-    {"ph": 4.0, "voltage": 1.2},
-    {"ph": 7.0, "voltage": 2.1},
-    {"ph": 10.0, "voltage": 3.0}
-  ],
-  "method": "linear"
-}
-```
-
-- `points` — массив точек калибровки
-- `method` — метод интерполяции: "linear", "polynomial", "spline"
-
-#### Лимиты (limits)
-
-```json
-{
-  "min": 4.0,
-  "max": 10.0,
-  "warning_low": 5.5,
-  "warning_high": 7.5
-}
-```
-
-### 3.4. Аппаратная конфигурация (hardware)
-
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `hardware.i2c` | object | Конфигурация I²C шины | Нет |
-| `hardware.gpio` | object | Назначение GPIO пинов | Нет |
-| `hardware.ina209` | object | Конфигурация INA209 (для pump_node) | Нет |
-
-#### I²C конфигурация
-
-```json
-{
-  "sda": 21,
-  "scl": 22,
-  "speed": 100000
-}
-```
-
-#### GPIO конфигурация
-
-```json
-{
-  "pump_control": 4,
-  "led_status": 2,
-  "relay_1": 5,
-  "relay_2": 6
-}
-```
-
-#### INA209 конфигурация (для pump_node)
-
-```json
-{
-  "address": 0x40,
-  "shunt_resistance_ohm": 0.1,
-  "max_current_ma": 5000,
-  "min_bus_current_on": 100,
-  "max_bus_current_on": 4500
-}
-```
-
-### 3.5. Безопасность (safety)
-
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `safety.max_pump_duration_ms` | integer | Максимальная длительность работы насоса | Для pump_node |
-| `safety.min_pump_off_time_ms` | integer | Минимальное время простоя насоса | Для pump_node |
-| `safety.watchdog_timeout_ms` | integer | Таймаут watchdog таймера | Нет |
-| `safety.stabilization_delay_ms` | integer | Задержка стабилизации после включения (для проверки тока) | Для pump_node |
-
-### 3.6. Телеметрия (telemetry)
-
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `telemetry.heartbeat_interval_ms` | integer | Интервал отправки heartbeat | Нет (по умолчанию: 15000) |
-| `telemetry.telemetry_interval_ms` | integer | Интервал отправки телеметрии | Нет (по умолчанию: 5000) |
-| `telemetry.batch_size` | integer | Размер батча для батчинга телеметрии | Нет |
-
-### 3.7. Wi-Fi конфигурация (wifi)
-
-| Поле | Тип | Описание | Обязательное |
-|------|-----|----------|--------------|
-| `wifi.ssid` | string | SSID сети Wi-Fi | Да |
-| `wifi.password` | string | Пароль Wi-Fi | Нет (для открытых сетей) |
-| `wifi.reconnect_attempts` | integer | Количество попыток переподключения | Нет (по умолчанию: 5) |
-| `wifi.reconnect_delay_ms` | integer | Задержка между попытками переподключения | Нет (по умолчанию: 5000) |
-
----
-
-## 4. Жизненный цикл конфигурации
-
-### 4.1. Первоначальная загрузка
-
-1. Узел загружается
-2. Пытается прочитать NodeConfig из NVS
-3. Если конфигурации нет в NVS:
-   - Подключается к Wi-Fi (используя дефолтные или hardcoded параметры)
-   - Подключается к MQTT
-   - Публикует запрос конфигурации в топик `hydro/{gh}/config_request`
-   - Ожидает конфигурацию в топике `hydro/{gh}/{zone}/{node}/config`
-4. При получении конфигурации:
-   - Валидирует конфигурацию
-   - Сохраняет в NVS
-   - Применяет конфигурацию
-   - Публикует `config_response` с статусом OK
-5. Backend обрабатывает `config_response`:
-   - При `status: "OK"`: если нода была привязана к зоне, переводит в `ASSIGNED_TO_ZONE`
-   - При `status: "ERROR"`: нода остается в `REGISTERED_BACKEND`
-
-### 4.2. Обновление конфигурации
-
-1. Backend публикует новую конфигурацию в топик `hydro/{gh}/{zone}/{node}/config`
-2. Узел получает конфигурацию
-3. Валидирует конфигурацию
-4. Если валидация успешна:
-   - Сохраняет в NVS
-   - Применяет новую конфигурацию
-   - Публикует `config_response` с статусом OK
-5. Если валидация не прошла:
-   - Публикует `config_response` с статусом ERROR и описанием ошибки
-   - Продолжает работать со старой конфигурацией
-6. Backend обрабатывает `config_response`:
-   - При `status: "OK"`: если нода была привязана к зоне и находится в `REGISTERED_BACKEND`, переводит в `ASSIGNED_TO_ZONE`
-   - При `status: "ERROR"`: нода остается в текущем состоянии
-
-### 4.3. Формат config_response
-
-```json
-{
-  "status": "OK",
-  "version": "1.0.0",
-  "hash": "abc123def456",
-  "ts": 1710001234
-}
-```
-
-Или при ошибке:
-
-```json
-{
-  "status": "ERROR",
-  "version": "1.0.0",
-  "hash": "abc123def456",
-  "error": "Invalid calibration points",
-  "ts": 1710001234
-}
-```
-
----
-
-## 5. Валидация конфигурации
-
-Узел должен проверять:
-
-1. **Обязательные поля** присутствуют
-2. **Типы данных** соответствуют спецификации
-3. **Диапазоны значений** в допустимых пределах:
-   - `mqtt.port` в диапазоне 1-65535
-   - `poll_interval_ms` > 0
-   - `max_pump_duration_ms` > 0 и < 300000 (5 минут максимум)
-4. **Калибровка**:
-   - Количество точек калибровки >= 2
-   - Значения в допустимых диапазонах
-5. **GPIO пины** не конфликтуют
-6. **I²C адреса** валидны (0x08-0x77)
+При ошибке валидации узел логирует проблему и остаётся на текущей конфигурации.
 
 ---
 
 ## 6. Хранение в NVS
 
-### 6.1. Структура NVS
+NodeConfig сохраняется в NVS (Non-Volatile Storage) ESP32:
+- Ключ: `node_config`
+- Формат: JSON (может быть сжат или сериализован в CBOR)
+- Размер: ограничен размером NVS раздела (обычно 4-16 KB)
 
-- Namespace: `node_config`
-- Ключи:
-  - `config_json` — полный JSON конфигурации
-  - `version` — версия конфигурации
-  - `hash` — хеш конфигурации (для проверки изменений)
-
-### 6.2. Размер
-
-Максимальный размер NodeConfig: **4 KB** (ограничение NVS)
-
-Если конфигурация превышает 4 KB, необходимо:
-- Оптимизировать структуру
-- Использовать сжатие
-- Разделить на несколько namespace
+При загрузке узел:
+1. Читает конфигурацию из NVS
+2. Парсит JSON
+3. Применяет параметры Wi-Fi и MQTT
+4. Инициализирует каналы согласно конфигурации
 
 ---
 
-## 7. Примеры конфигураций
+## 7. Генерация конфигурации
 
-### 7.1. pH node
-
-```json
-{
-  "node_id": "nd-ph-001",
-  "type": "ph",
-  "version": "1.0.0",
-  "greenhouse_uid": "gh-1",
-  "zone_id": 3,
-  "mqtt": {
-    "host": "192.168.1.100",
-    "port": 1883,
-    "keepalive": 60,
-    "topic_prefix": "hydro/gh-1/zn-3"
-  },
-  "channels": [
-    {
-      "channel_id": "ph_main",
-      "name": "pH Main Sensor",
-      "type": "sensor",
-      "sensor_type": "ph",
-      "poll_interval_ms": 5000,
-      "calibration": {
-        "points": [
-          {"ph": 4.0, "voltage": 1.2},
-          {"ph": 7.0, "voltage": 2.1},
-          {"ph": 10.0, "voltage": 3.0}
-        ],
-        "method": "linear"
-      },
-      "limits": {
-        "min": 4.0,
-        "max": 10.0,
-        "warning_low": 5.5,
-        "warning_high": 7.5
-      }
-    }
-  ],
-  "hardware": {
-    "i2c": {
-      "sda": 21,
-      "scl": 22,
-      "speed": 100000
-    }
-  },
-  "telemetry": {
-    "heartbeat_interval_ms": 15000,
-    "telemetry_interval_ms": 5000
-  },
-  "wifi": {
-    "ssid": "HydroFarm",
-    "password": "secure_password"
-  }
-}
-```
-
-### 7.2. Pump node
-
-```json
-{
-  "node_id": "nd-pump-001",
-  "type": "irrigation",
-  "version": "1.0.0",
-  "greenhouse_uid": "gh-1",
-  "zone_id": 3,
-  "mqtt": {
-    "host": "192.168.1.100",
-    "port": 1883,
-    "keepalive": 60,
-    "topic_prefix": "hydro/gh-1/zn-3"
-  },
-  "channels": [
-    {
-      "channel_id": "pump_main",
-      "name": "Main Pump",
-      "type": "actuator",
-      "actuator_type": "pump"
-    }
-  ],
-  "hardware": {
-    "gpio": {
-      "pump_control": 4
-    },
-    "ina209": {
-      "address": 0x40,
-      "shunt_resistance_ohm": 0.1,
-      "max_current_ma": 5000,
-      "min_bus_current_on": 100,
-      "max_bus_current_on": 4500
-    }
-  },
-  "safety": {
-    "max_pump_duration_ms": 30000,
-    "min_pump_off_time_ms": 5000,
-    "stabilization_delay_ms": 200
-  },
-  "telemetry": {
-    "heartbeat_interval_ms": 15000
-  },
-  "wifi": {
-    "ssid": "HydroFarm",
-    "password": "secure_password"
-  }
-}
-```
+NodeConfig формируется в прошивке узла и хранится на стороне ноды.
+Сервер принимает конфигурацию через `config_report`, сохраняет в БД и использует
+для команд, телеметрии и UI.
 
 ---
 
-## 8. Миграция и обратная совместимость
+## 8. Версионирование
 
-1. **Версионирование** — поле `version` используется для отслеживания изменений
-2. **Обратная совместимость** — старые версии конфигурации должны поддерживаться
-3. **Миграция** — при обновлении версии узел может автоматически мигрировать старую конфигурацию
+При изменении структуры NodeConfig:
+1. Увеличивается версия формата
+2. Обновляется документация
+3. Обеспечивается обратная совместимость (если возможно)
+4. Узлы с старой версией могут запросить обновление
+
+**Текущая версия:** `3`
 
 ---
 
 ## 9. Ссылки
 
-- Архитектура узлов: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- Логика узлов: `doc_ai/02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md`
-- MQTT протокол: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Шаблоны конфигураций: `configs/nodes/*.json`
+- Архитектура нод: `../02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- MQTT протокол: `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Структура прошивки: `../02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
+- Потоки данных: `../01_SYSTEM/DATAFLOW_FULL.md`
 
+---
+
+## 10. Примечания
+
+- NodeConfig формируется в прошивке и публикуется нодой на сервер
+- Сервер не редактирует и не отправляет конфиг обратно на ноду
+- Обновление конфигурации происходит через обновление прошивки (или локальный provisioning)
+- При ошибке применения локальной конфигурации узел остаётся в текущем состоянии и сообщает об ошибке

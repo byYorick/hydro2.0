@@ -4,20 +4,22 @@
     <Card 
       v-if="targets.ph"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
       ]"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">pH</div>
+          <div class="text-sm font-medium">
+            pH
+          </div>
           <div 
             v-if="telemetry.ph !== null && telemetry.ph !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.ph, targets.ph.min, targets.ph.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.ph, targets.ph.min, targets.ph.max)">
           {{ getIndicatorLabel(telemetry.ph, targets.ph.min, targets.ph.max) }}
@@ -33,9 +35,12 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph" class="mt-3">
+      <div
+        v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.ph) }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ph) }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.ph, targets.ph) !== null"
             :class="getDeviationColorClass(telemetry.ph, targets.ph.min, targets.ph.max)"
@@ -44,15 +49,18 @@
             {{ formatDeviation(telemetry.ph, targets.ph) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.ph, targets.ph.min, targets.ph.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.ph, targets.ph)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.ph) }}
       </div>
     </Card>
@@ -61,20 +69,22 @@
     <Card 
       v-if="targets.ec"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
       ]"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">EC</div>
+          <div class="text-sm font-medium">
+            EC
+          </div>
           <div 
             v-if="telemetry.ec !== null && telemetry.ec !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.ec, targets.ec.min, targets.ec.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.ec, targets.ec.min, targets.ec.max)">
           {{ getIndicatorLabel(telemetry.ec, targets.ec.min, targets.ec.max) }}
@@ -90,9 +100,12 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec" class="mt-3">
+      <div
+        v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.ec) }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ec) }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.ec, targets.ec) !== null"
             :class="getDeviationColorClass(telemetry.ec, targets.ec.min, targets.ec.max)"
@@ -101,15 +114,18 @@
             {{ formatDeviation(telemetry.ec, targets.ec) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.ec, targets.ec.min, targets.ec.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.ec, targets.ec)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.ec) }}
       </div>
     </Card>
@@ -118,20 +134,22 @@
     <Card 
       v-if="targets.temp"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
       ]"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">Температура</div>
+          <div class="text-sm font-medium">
+            Температура
+          </div>
           <div 
             v-if="telemetry.temperature !== null && telemetry.temperature !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.temperature, targets.temp.min, targets.temp.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.temperature, targets.temp.min, targets.temp.max)">
           {{ getIndicatorLabel(telemetry.temperature, targets.temp.min, targets.temp.max) }}
@@ -147,26 +165,32 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp" class="mt-3">
+      <div
+        v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.temperature, targets.temp) !== null"
             :class="getDeviationColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
             class="font-medium"
           >
-            {{ formatDeviation(telemetry.temperature, targets.temp, '°C') }}
+            {{ formatDeviation(telemetry.temperature, targets.temp) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.temperature, targets.temp)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.temp, '°C') }}
       </div>
     </Card>
@@ -175,20 +199,22 @@
     <Card 
       v-if="targets.humidity"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
       ]"
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">Влажность</div>
+          <div class="text-sm font-medium">
+            Влажность
+          </div>
           <div 
             v-if="telemetry.humidity !== null && telemetry.humidity !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.humidity, targets.humidity.min, targets.humidity.max)">
           {{ getIndicatorLabel(telemetry.humidity, targets.humidity.min, targets.humidity.max) }}
@@ -204,26 +230,32 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity" class="mt-3">
+      <div
+        v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.humidity, targets.humidity) !== null"
             :class="getDeviationColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
             class="font-medium"
           >
-            {{ formatDeviation(telemetry.humidity, targets.humidity, '%') }}
+            {{ formatDeviation(telemetry.humidity, targets.humidity) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.humidity, targets.humidity)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.humidity, '%') }}
       </div>
     </Card>
@@ -247,7 +279,7 @@ interface Props {
   }
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   telemetry: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
   targets: () => ({})
 })
@@ -255,11 +287,10 @@ const props = withDefaults(defineProps<Props>(), {
 // Вычисляем индикатор (зеленый/желтый/красный)
 function getIndicatorVariant(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): BadgeVariant {
   if (value === null || value === undefined) return 'neutral'
-  if (min === null || max === null) return 'info'
-  
-  const target = (min + max) / 2
+  if (min === null || min === undefined || max === null || max === undefined) return 'info'
+
   const tolerance = (max - min) * 0.1 // 10% от диапазона
-  
+
   if (value >= min && value <= max) return 'success'
   if (value >= min - tolerance && value <= max + tolerance) return 'warning'
   return 'danger'
@@ -267,8 +298,8 @@ function getIndicatorVariant(value: number | null | undefined, min: number | nul
 
 function getIndicatorLabel(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): string {
   if (value === null || value === undefined) return 'Нет данных'
-  if (min === null || max === null) return 'OK'
-  
+  if (min === null || min === undefined || max === null || max === undefined) return 'OK'
+
   if (value >= min && value <= max) return 'OK'
   if (value < min) return 'Низкий'
   return 'Высокий'
@@ -333,7 +364,7 @@ function getDeviationPercent(value: number | null | undefined, target: { min?: n
 }
 
 // Форматирование отклонения
-function formatDeviation(value: number | null | undefined, target: { min?: number | null; max?: number | null; target?: number | null }, unit: string = ''): string {
+function formatDeviation(value: number | null | undefined, target: { min?: number | null; max?: number | null; target?: number | null }): string {
   const percent = getDeviationPercent(value, target)
   if (percent === null) return ''
   
@@ -348,7 +379,7 @@ function getProgressWidth(value: number | null | undefined, target: { min?: numb
   if (target.target !== null && target.target !== undefined) {
     // Если есть целевое значение, показываем отклонение от него
     const deviation = Math.abs(value - target.target)
-    const range = target.min !== null && target.max !== null ? (target.max - target.min) : 1
+    const range = (target.min !== null && target.min !== undefined && target.max !== null && target.max !== undefined) ? (target.max - target.min) : 1
     const normalized = Math.min(deviation / (range * 0.5), 1) * 100
     return normalized
   }
@@ -375,13 +406,13 @@ function getProgressBarClass(value: number | null | undefined, min: number | nul
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-emerald-500'
+      return 'bg-[color:var(--accent-green)]'
     case 'warning':
-      return 'bg-amber-500'
+      return 'bg-[color:var(--accent-amber)]'
     case 'danger':
-      return 'bg-red-500'
+      return 'bg-[color:var(--accent-red)]'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 
@@ -390,13 +421,13 @@ function getValueColorClass(value: number | null | undefined, min: number | null
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-400'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-neutral-300'
+      return 'text-[color:var(--text-muted)]'
   }
 }
 
@@ -405,13 +436,13 @@ function getDeviationColorClass(value: number | null | undefined, min: number | 
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-400'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-neutral-400'
+      return 'text-[color:var(--text-muted)]'
   }
 }
 
@@ -420,11 +451,11 @@ function getCardBorderClass(value: number | null | undefined, min: number | null
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'border-emerald-700/30'
+      return 'border-[color:var(--badge-success-border)]'
     case 'warning':
-      return 'border-amber-700/30'
+      return 'border-[color:var(--badge-warning-border)]'
     case 'danger':
-      return 'border-red-700/30'
+      return 'border-[color:var(--badge-danger-border)]'
     default:
       return ''
   }
@@ -435,14 +466,13 @@ function getPulseClass(value: number | null | undefined, min: number | null | un
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-emerald-500 animate-pulse'
+      return 'bg-[color:var(--accent-green)] animate-pulse'
     case 'warning':
-      return 'bg-amber-500 animate-pulse'
+      return 'bg-[color:var(--accent-amber)] animate-pulse'
     case 'danger':
-      return 'bg-red-500 animate-pulse'
+      return 'bg-[color:var(--accent-red)] animate-pulse'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 </script>
-

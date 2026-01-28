@@ -2,14 +2,15 @@
  * Composable для унификации работы с Inertia формами
  * Предоставляет стандартные callbacks для onSuccess, onError, onFinish
  */
-import { useForm, type UseFormReturn } from '@inertiajs/vue3'
+import { useForm } from '@inertiajs/vue3'
 import { router } from '@inertiajs/vue3'
+import type { FormDataKeys, FormDataType } from '@inertiajs/core'
 import { useToast } from './useToast'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
-export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
+export interface UseInertiaFormOptions<T extends FormDataType<T>> {
   /**
    * Функция для показа Toast уведомлений (опционально)
    * Если не передана, будет использован useToast
@@ -47,7 +48,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
    * Какие поля формы сбрасывать при успехе (опционально)
    * Если не указано, но resetOnSuccess=true, будет сброшена вся форма
    */
-  resetFieldsOnSuccess?: (keyof T)[]
+  resetFieldsOnSuccess?: FormDataKeys<T>[]
 
   /**
    * Функция, вызываемая при успехе (опционально)
@@ -65,7 +66,14 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
   onFinish?: () => void
 
   /**
-   * Должен ли выполняться reload после успеха (опционально)
+   * Callback для обновления store после успеха (рекомендуется)
+   * Вместо reloadOnSuccess используйте этот callback для обновления данных
+   */
+  onStoreUpdate?: (data: any) => void
+
+  /**
+   * Должен ли выполняться reload после успеха (deprecated)
+   * @deprecated Используйте onStoreUpdate для обновления store напрямую
    * Можно передать массив ключей для partial reload (only)
    */
   reloadOnSuccess?: boolean | string[]
@@ -73,7 +81,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
   /**
    * Сохранять ли прокрутку (по умолчанию true)
    */
-  preserveScroll?: boolean
+  preserveUrl?: boolean
 
   /**
    * Сохранять ли состояние (по умолчанию false)
@@ -84,7 +92,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
 /**
  * Создает обертку над useForm с унифицированными callbacks
  */
-export function useInertiaForm<T extends Record<string, unknown>>(
+export function useInertiaForm<T extends FormDataType<T>>(
   initialData: T,
   options: UseInertiaFormOptions<T> = {}
 ) {
@@ -99,8 +107,9 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     onSuccess: customOnSuccess,
     onError: customOnError,
     onFinish: customOnFinish,
+    onStoreUpdate,
     reloadOnSuccess = false,
-    preserveScroll = true,
+    preserveUrl = true,
     preserveState = false,
   } = options
 
@@ -130,15 +139,24 @@ export function useInertiaForm<T extends Record<string, unknown>>(
       }
     }
 
-    // Выполняем reload, если нужно (не рекомендуется - лучше обновлять store напрямую)
-    // TODO: Рассмотреть замену на опциональный callback для обновления store
+    // Обновляем store через callback (рекомендуемый способ)
+    if (onStoreUpdate) {
+      try {
+        onStoreUpdate(page.props || page)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('[useInertiaForm] Error in onStoreUpdate callback:', error)
+      }
+    }
+
+    // Выполняем reload, если нужно (deprecated - используйте onStoreUpdate)
     if (reloadOnSuccess) {
       // eslint-disable-next-line no-console
-      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Consider updating store directly instead of using router.reload')
+      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
       if (Array.isArray(reloadOnSuccess)) {
-        router.reload({ only: reloadOnSuccess, preserveScroll, preserveState })
+        router.reload({ only: reloadOnSuccess, preserveUrl })
       } else {
-        router.reload({ preserveScroll, preserveState })
+        router.reload({ preserveUrl })
       }
     }
 
@@ -154,11 +172,21 @@ export function useInertiaForm<T extends Record<string, unknown>>(
   function handleError(errors: Record<string, string>): void {
     // Показываем Toast при ошибке
     if (showErrorToast) {
-      const message =
-        errorMessage ||
-        (Object.keys(errors).length > 0
-          ? ERROR_MESSAGES.VALIDATION
-          : ERROR_MESSAGES.UNKNOWN)
+      // Если есть конкретное сообщение об ошибке, используем его
+      // Иначе берем первое сообщение об ошибке из валидации
+      // Или используем переданное errorMessage
+      let message = errorMessage
+      
+      if (!message && Object.keys(errors).length > 0) {
+        // Берем первое сообщение об ошибке
+        const firstErrorKey = Object.keys(errors)[0]
+        message = errors[firstErrorKey] || ERROR_MESSAGES.VALIDATION
+      }
+      
+      if (!message) {
+        message = ERROR_MESSAGES.UNKNOWN
+      }
+      
       showToast(message, 'error', TOAST_TIMEOUT.LONG)
     }
 
@@ -185,7 +213,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     url: string,
     options: {
-      preserveScroll?: boolean
+      preserveUrl?: boolean
       preserveState?: boolean
       only?: string[]
       onSuccess?: (page: any) => void
@@ -194,7 +222,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     } = {}
   ) {
     const {
-      preserveScroll: optionPreserveScroll = preserveScroll,
+      preserveUrl: optionPreserveScroll = preserveUrl,
       preserveState: optionPreserveState = preserveState,
       only,
       onSuccess: optionOnSuccess,
@@ -226,7 +254,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
 
     // Создаем опции для submit
     const submitOptions: any = {
-      preserveScroll: optionPreserveScroll,
+      preserveUrl: optionPreserveScroll,
       preserveState: optionPreserveState,
       onSuccess: combinedOnSuccess,
       onError: combinedOnError,
@@ -265,4 +293,3 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     handleFinish,
   }
 }
-

@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem
-from common.telemetry import TelemetrySampleModel
+from models import TelemetrySampleModel
 
 
 @pytest.fixture
@@ -22,10 +22,10 @@ def mock_redis_queue():
 @pytest.mark.asyncio
 async def test_handle_telemetry_adds_to_queue(mock_redis_queue):
     """Тест добавления телеметрии в очередь через handle_telemetry."""
-    from main import handle_telemetry
+    from telemetry_processing import handle_telemetry
     
     # Мокаем глобальную очередь
-    with patch('main.telemetry_queue', mock_redis_queue):
+    with patch('state.telemetry_queue', mock_redis_queue):
         # Симулируем MQTT payload (формат от прошивок)
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
         payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2, "channel": "ph_sensor"}'
@@ -44,9 +44,9 @@ async def test_handle_telemetry_adds_to_queue(mock_redis_queue):
 @pytest.mark.asyncio
 async def test_handle_telemetry_no_queue():
     """Тест обработки телеметрии когда очередь не инициализирована."""
-    from main import handle_telemetry
+    from telemetry_processing import handle_telemetry
     
-    with patch('main.telemetry_queue', None):
+    with patch('state.telemetry_queue', None):
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
         payload = b'{"metric_type": "PH", "value": 6.5}'
         
@@ -57,7 +57,7 @@ async def test_handle_telemetry_no_queue():
 @pytest.mark.asyncio
 async def test_process_telemetry_queue_flush_by_size(mock_redis_queue):
     """Тест обработки очереди при достижении размера батча."""
-    from main import process_telemetry_batch
+    from telemetry_processing import process_telemetry_batch
     from unittest.mock import patch
     
     # Создаем тестовые элементы очереди
@@ -75,14 +75,14 @@ async def test_process_telemetry_queue_flush_by_size(mock_redis_queue):
     mock_redis_queue.size.return_value = 200
     mock_redis_queue.pop_batch.return_value = queue_items
     
-    with patch('main.telemetry_queue', mock_redis_queue), \
-         patch('main.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
+    with patch('state.telemetry_queue', mock_redis_queue), \
+         patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
         
         # Импортируем функцию обработки очереди
-        from main import process_telemetry_queue
+        from telemetry_processing import process_telemetry_queue
         
         # Запускаем обработку (но прервем через shutdown_event)
-        with patch('main.shutdown_event.is_set', return_value=True):
+        with patch('state.shutdown_event.is_set', return_value=True):
             await process_telemetry_queue()
         
         # Проверяем, что был вызван process_telemetry_batch
@@ -93,7 +93,7 @@ async def test_process_telemetry_queue_flush_by_size(mock_redis_queue):
 @pytest.mark.asyncio
 async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
     """Тест обработки очереди по времени (flush_ms)."""
-    from main import process_telemetry_queue
+    from telemetry_processing import process_telemetry_queue
     import time
     
     queue_items = [
@@ -108,10 +108,10 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
     
     mock_redis_queue.size.return_value = 1
     
-    with patch('main.telemetry_queue', mock_redis_queue), \
-         patch('main.get_settings') as mock_settings, \
-         patch('main.shutdown_event') as mock_shutdown, \
-         patch('main.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
+    with patch('state.telemetry_queue', mock_redis_queue), \
+         patch('telemetry_processing.get_settings') as mock_settings, \
+         patch('state.shutdown_event') as mock_shutdown, \
+         patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
         
         # Настраиваем моки
         mock_settings.return_value.telemetry_batch_size = 200
@@ -129,7 +129,7 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
         
         mock_redis_queue.pop_batch.return_value = queue_items
         
-        from main import process_telemetry_queue
+        from telemetry_processing import process_telemetry_queue
         
         # Устанавливаем shutdown_event после первой итерации
         shutdown_called = False
@@ -137,12 +137,12 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
         
         async def mock_process_queue():
             nonlocal shutdown_called
-            from main import shutdown_event
+            from state import shutdown_event
             if not shutdown_called:
                 shutdown_called = True
                 shutdown_event.set()
         
-        with patch('main.shutdown_event.is_set', side_effect=[False, True]):
+        with patch('state.shutdown_event.is_set', side_effect=[False, True]):
             # Запускаем обработку
             try:
                 await process_telemetry_queue()
@@ -153,7 +153,7 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
 @pytest.mark.asyncio
 async def test_graceful_shutdown_processes_remaining(mock_redis_queue):
     """Тест graceful shutdown - обработка оставшихся элементов."""
-    from main import shutdown_event
+    from state import shutdown_event
     
     queue_items = [
         TelemetryQueueItem(
@@ -168,13 +168,13 @@ async def test_graceful_shutdown_processes_remaining(mock_redis_queue):
     mock_redis_queue.size.side_effect = [1, 0]  # Сначала есть элементы, потом очередь пуста
     mock_redis_queue.pop_batch.return_value = queue_items
     
-    with patch('main.telemetry_queue', mock_redis_queue), \
-         patch('main.process_telemetry_batch', new_callable=AsyncMock) as mock_process, \
-         patch('main.get_settings') as mock_settings:
+    with patch('state.telemetry_queue', mock_redis_queue), \
+         patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock) as mock_process, \
+         patch('telemetry_processing.get_settings') as mock_settings:
         
         mock_settings.return_value.telemetry_batch_size = 200
         
-        from main import process_telemetry_queue
+        from telemetry_processing import process_telemetry_queue
         
         # Устанавливаем shutdown_event
         shutdown_event.set()
@@ -206,7 +206,7 @@ async def test_telemetry_queue_item_conversion():
     
     # Преобразуем в TelemetrySampleModel
     # zone_id извлекается из zone_uid в process_telemetry_queue
-    from main import extract_zone_id_from_uid
+    from utils import extract_zone_id_from_uid
     zone_id = extract_zone_id_from_uid(queue_item.zone_uid) if queue_item.zone_uid else None
     
     sample = TelemetrySampleModel(
@@ -224,4 +224,3 @@ async def test_telemetry_queue_item_conversion():
     assert sample.metric_type == "PH"
     assert sample.value == 6.5
     assert sample.channel == "ph_sensor"
-

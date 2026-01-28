@@ -1,0 +1,1160 @@
+﻿2026-01-02T17:46:27.5330830Z ##[group]Run npm run lint
+2026-01-02T17:46:27.5331110Z [36;1mnpm run lint[0m
+2026-01-02T17:46:27.5364025Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:46:27.5364460Z env:
+2026-01-02T17:46:27.5364683Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:46:27.5364938Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:46:27.5365168Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:46:27.5365377Z ##[endgroup]
+2026-01-02T17:46:27.6439213Z 
+2026-01-02T17:46:27.6439663Z > lint
+2026-01-02T17:46:27.6440197Z > eslint . --ext .ts,.tsx,.vue
+2026-01-02T17:46:27.6440521Z 
+2026-01-02T17:46:35.9410767Z 
+2026-01-02T17:46:35.9412200Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/AIPredictionCard.vue
+2026-01-02T17:46:35.9442060Z ##[warning]  303:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9448311Z 
+2026-01-02T17:46:35.9448869Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/AttachRecipeModal.vue
+2026-01-02T17:46:35.9450077Z ##[warning]  180:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9465541Z ##[warning]  209:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9466235Z 
+2026-01-02T17:46:35.9466616Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/Breadcrumbs.vue
+2026-01-02T17:46:35.9467493Z ##[warning]  102:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9468231Z 
+2026-01-02T17:46:35.9468611Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/CommandPalette.vue
+2026-01-02T17:46:35.9469476Z ##[warning]  172:18  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:35.9470662Z ##[warning]  267:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9472213Z ##[warning]  271:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9473420Z ##[warning]  275:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9474828Z ##[warning]  465:61  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9476212Z ##[warning]  467:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9477395Z ##[warning]  469:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9478555Z ##[warning]  474:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9479717Z ##[warning]  486:60  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9480884Z ##[warning]  499:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9482084Z ##[warning]  504:76  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9482783Z 
+2026-01-02T17:46:35.9483133Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/DataTable.vue
+2026-01-02T17:46:35.9484044Z ##[warning]  65:5  warning  Unexpected side effect in computed function  vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:35.9485021Z 
+2026-01-02T17:46:35.9485394Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/DataTableV2.vue
+2026-01-02T17:46:35.9486275Z ##[warning]  166:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9487470Z ##[warning]  176:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9488636Z ##[warning]  218:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9489844Z ##[warning]  281:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9491380Z ##[warning]  290:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9492550Z ##[warning]  295:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9493717Z ##[warning]  300:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9495114Z ##[warning]  308:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9496293Z ##[warning]  339:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9496993Z 
+2026-01-02T17:46:35.9497384Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/FavoritesWidget.vue
+2026-01-02T17:46:35.9498228Z ##[warning]  124:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9499399Z ##[warning]  130:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9500098Z 
+2026-01-02T17:46:35.9500510Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GreenhouseCreateModal.vue
+2026-01-02T17:46:35.9501370Z ##[warning]  195:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9502530Z ##[warning]  269:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9503697Z ##[warning]  282:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9505065Z ##[warning]  299:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9506228Z ##[warning]  305:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9507119Z 
+2026-01-02T17:46:35.9507560Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowCycle/CycleControlPanel.vue
+2026-01-02T17:46:35.9508714Z ##[warning]  241:13  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9510098Z ##[warning]  242:13  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9511454Z ##[warning]  252:14  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9512807Z ##[warning]  258:15  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9514217Z ##[warning]  278:7   warning  'emit' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9515895Z ##[warning]  396:49  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9516638Z 
+2026-01-02T17:46:35.9517076Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowCycle/GrowthCycleWizard.vue
+2026-01-02T17:46:35.9518006Z ##[warning]  373:22  warning  Variable 'error' is already declared in the upper scope  vue/no-template-shadow
+2026-01-02T17:46:35.9519260Z ##[warning]  449:25  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9520531Z ##[warning]  450:17  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9521776Z ##[warning]  486:28  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9523028Z ##[warning]  487:29  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9524686Z ##[warning]  488:30  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9525984Z ##[warning]  489:28  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9527224Z ##[warning]  501:51  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9528459Z ##[warning]  524:80  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9529695Z ##[warning]  618:49  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9530939Z ##[warning]  628:34  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9532165Z ##[warning]  671:7   warning  Unexpected lexical declaration in case block             no-case-declarations
+2026-01-02T17:46:35.9533405Z ##[warning]  797:17  warning  Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9534128Z 
+2026-01-02T17:46:35.9534698Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowCycleCard.vue
+2026-01-02T17:46:35.9535569Z ##[warning]  225:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9536755Z ##[warning]  246:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9537911Z ##[warning]  313:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9538600Z 
+2026-01-02T17:46:35.9538983Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/GrowthCycleModal.vue
+2026-01-02T17:46:35.9540022Z ##[warning]  396:102  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9541216Z ##[warning]  691:65   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9541908Z 
+2026-01-02T17:46:35.9542293Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/HeaderStatusBar.vue
+2026-01-02T17:46:35.9543120Z ##[warning]  426:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9544476Z ##[warning]  443:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9545788Z ##[warning]  450:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9546943Z ##[warning]  484:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9548101Z ##[warning]  506:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9549244Z ##[warning]  533:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9550392Z ##[warning]  550:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9551550Z ##[warning]  566:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9552240Z 
+2026-01-02T17:46:35.9552636Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/MiniTelemetryChart.vue
+2026-01-02T17:46:35.9553476Z ##[warning]  211:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9554904Z ##[warning]  220:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9555607Z 
+2026-01-02T17:46:35.9556039Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/MultiSeriesTelemetryChart.vue
+2026-01-02T17:46:35.9557156Z ##[warning]   66:16  warning  Variable 'series' is already declared in the upper scope  vue/no-template-shadow
+2026-01-02T17:46:35.9558429Z ##[warning]  428:27  warning  Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9559707Z ##[warning]  474:7   warning  Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9560432Z 
+2026-01-02T17:46:35.9560816Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/NodeConfigModal.vue
+2026-01-02T17:46:35.9561649Z ##[warning]  149:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9562818Z ##[warning]  156:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9563502Z 
+2026-01-02T17:46:35.9563921Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/NodeLifecycleTransition.vue
+2026-01-02T17:46:35.9565174Z ##[warning]   81:46  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9566578Z ##[warning]   81:60  warning  'duration' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9567993Z ##[warning]   81:79  warning  'options' is defined but never used. Allowed unused args must match /^_/u   @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9569358Z ##[warning]   81:89  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9570669Z ##[warning]  125:17  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9571975Z ##[warning]  169:17  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9572882Z 
+2026-01-02T17:46:35.9573273Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/PlantCreateModal.vue
+2026-01-02T17:46:35.9574136Z ##[warning]  280:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9575517Z ##[warning]  374:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9576677Z ##[warning]  395:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9577831Z ##[warning]  401:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9578527Z 
+2026-01-02T17:46:35.9578923Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/RecipeCreateWizard.vue
+2026-01-02T17:46:35.9579767Z ##[warning]  359:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9580951Z ##[warning]  500:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9581650Z 
+2026-01-02T17:46:35.9582042Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/RoleBasedNavigation.vue
+2026-01-02T17:46:35.9582877Z ##[warning]  42:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9583567Z 
+2026-01-02T17:46:35.9583931Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/StageProgress.vue
+2026-01-02T17:46:35.9584994Z ##[warning]  180:15  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9586168Z ##[warning]  262:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9587324Z ##[warning]  308:11  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9588485Z ##[warning]  361:9   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9589333Z 
+2026-01-02T17:46:35.9589743Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/SystemMonitoringModal.vue
+2026-01-02T17:46:35.9590849Z ##[warning]  218:7  warning  'emit' is assigned a value but never used. Allowed unused vars must match /^_/u            @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9592389Z ##[warning]  244:7  warning  'isChainHealthy' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9593934Z ##[warning]  255:9  warning  'hasWarnings' is assigned a value but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9594967Z 
+2026-01-02T17:46:35.9595397Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/TelemetryAggregatesChart.vue
+2026-01-02T17:46:35.9596296Z ##[warning]  151:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9597477Z ##[warning]  155:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9598634Z ##[warning]  217:7   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9599325Z 
+2026-01-02T17:46:35.9599753Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/UnassignedNodeErrorsWidget.vue
+2026-01-02T17:46:35.9600627Z ##[warning]  103:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9601767Z ##[warning]  158:71  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9602920Z ##[warning]  166:71  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9604443Z ##[warning]  174:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9605214Z 
+2026-01-02T17:46:35.9605555Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/UserMenu.vue
+2026-01-02T17:46:35.9606374Z ##[warning]  173:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9607068Z 
+2026-01-02T17:46:35.9607445Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneActionModal.vue
+2026-01-02T17:46:35.9608439Z ##[warning]  269:6  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9609902Z ##[warning]  298:7  warning  'description' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9610701Z 
+2026-01-02T17:46:35.9611101Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneComparisonModal.vue
+2026-01-02T17:46:35.9612152Z ##[warning]  195:7   warning  'emit' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9613551Z ##[warning]  262:36  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9615096Z ##[warning]  281:56  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9616435Z ##[warning]  285:9   warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9617771Z ##[warning]  359:74  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9619093Z ##[warning]  367:74  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9620614Z ##[warning]  399:21  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9621343Z 
+2026-01-02T17:46:35.9621730Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneCreateWizard.vue
+2026-01-02T17:46:35.9622606Z ##[warning]  196:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9623314Z 
+2026-01-02T17:46:35.9623728Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneDevicesVisualization.vue
+2026-01-02T17:46:35.9625025Z ##[warning]  305:7   warning  'emit' is assigned a value but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9626576Z ##[warning]  380:10  warning  'getStatusDotClass' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9627405Z 
+2026-01-02T17:46:35.9627782Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneMiniMetrics.vue
+2026-01-02T17:46:35.9628615Z ##[warning]   66:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9629784Z ##[warning]  164:75  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9630482Z 
+2026-01-02T17:46:35.9630872Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/ZoneSimulationModal.vue
+2026-01-02T17:46:35.9631910Z ##[warning]  225:7  warning  'emit' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9632693Z 
+2026-01-02T17:46:35.9633137Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/AttachNodesModal.spec.ts
+2026-01-02T17:46:35.9634488Z ##[warning]   42:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9636159Z ##[warning]   43:32  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9637524Z ##[warning]   43:46  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9638871Z ##[warning]   44:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9640212Z ##[warning]   44:47  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9641570Z ##[warning]   45:36  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9642917Z ##[warning]   53:35  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9644449Z ##[warning]   57:34  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9645886Z ##[warning]   57:48  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9647220Z ##[warning]   61:35  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9648549Z ##[warning]   61:49  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9649873Z ##[warning]   65:38  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9651236Z ##[warning]  290:34  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9652769Z ##[warning]  305:25  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9654194Z ##[warning]  374:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9655257Z 
+2026-01-02T17:46:35.9655721Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/AttachRecipeModal.spec.ts
+2026-01-02T17:46:35.9656774Z ##[warning]   40:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9658115Z ##[warning]   41:32  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9659462Z ##[warning]   41:46  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9660777Z ##[warning]   49:35  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9662100Z ##[warning]   53:34  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9663422Z ##[warning]   53:48  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9665006Z ##[warning]   57:36  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9666349Z ##[warning]   57:50  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9667842Z ##[warning]   61:38  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9669169Z ##[warning]  285:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9670481Z ##[warning]  312:5   warning  Forbidden non-null assertion                                                        @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:35.9671889Z ##[warning]  387:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9672688Z 
+2026-01-02T17:46:35.9673181Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/CommandPalette.enhanced.spec.ts
+2026-01-02T17:46:35.9674112Z ##[warning]   52:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9675584Z ##[warning]   65:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9676753Z ##[warning]   79:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9677910Z ##[warning]   87:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9679084Z ##[warning]   98:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9680583Z ##[warning]  106:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9682004Z ##[warning]  116:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9683496Z ##[warning]  124:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9685193Z ##[warning]  132:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9686831Z ##[warning]  144:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9688359Z ##[warning]  166:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9689803Z ##[warning]  176:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9690624Z 
+2026-01-02T17:46:35.9691171Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/ErrorBoundary.spec.ts
+2026-01-02T17:46:35.9692422Z ##[warning]   99:62  warning  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9694210Z ##[warning]  131:11  warning  'errorContainer' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9695452Z 
+2026-01-02T17:46:35.9695979Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/HeaderStatusBar.enhanced.spec.ts
+2026-01-02T17:46:35.9697127Z ##[warning]   83:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9698579Z ##[warning]   92:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9700036Z ##[warning]  102:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9701481Z ##[warning]  111:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9702977Z ##[warning]  118:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9704562Z ##[warning]  128:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9706199Z ##[warning]  140:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9707689Z ##[warning]  149:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9709095Z ##[warning]  165:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9710575Z ##[warning]  175:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9711468Z 
+2026-01-02T17:46:35.9711946Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/HeaderStatusBar.spec.ts
+2026-01-02T17:46:35.9712987Z ##[warning]    6:55  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9714743Z ##[warning]  232:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9715656Z 
+2026-01-02T17:46:35.9716226Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/HeaderStatusBar.websocket.spec.ts
+2026-01-02T17:46:35.9717460Z ##[warning]   71:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9719184Z ##[warning]   72:25  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9720842Z ##[warning]   73:28  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9722508Z ##[warning]   74:36  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9724233Z ##[warning]  121:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9726370Z ##[warning]  141:38  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9727929Z ##[warning]  143:70  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9729697Z ##[warning]  149:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9731416Z ##[warning]  173:31  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9733176Z ##[warning]  239:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9735066Z ##[warning]  288:38  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9736792Z ##[warning]  290:70  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9738544Z ##[warning]  296:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9740185Z ##[warning]  314:32  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9741119Z 
+2026-01-02T17:46:35.9741668Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/NodeConfigModal.spec.ts
+2026-01-02T17:46:35.9742736Z ##[warning]  38:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9744165Z ##[warning]  45:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9745346Z 
+2026-01-02T17:46:35.9745901Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/ZoneActionModal.spec.ts
+2026-01-02T17:46:35.9746990Z ##[warning]  172:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9748417Z ##[warning]  196:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9749359Z 
+2026-01-02T17:46:35.9749881Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/ZoneActionModal.validation.spec.ts
+2026-01-02T17:46:35.9750972Z ##[warning]  20:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9751831Z 
+2026-01-02T17:46:35.9752317Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Components/__tests__/ZonesHeatmap.spec.ts
+2026-01-02T17:46:35.9753401Z ##[warning]  208:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9754519Z 
+2026-01-02T17:46:35.9755054Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Admin/Recipes.vue
+2026-01-02T17:46:35.9756383Z ##[warning]  78:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9757216Z 
+2026-01-02T17:46:35.9757724Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Admin/Zones.vue
+2026-01-02T17:46:35.9758678Z ##[warning]  101:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9759588Z 
+2026-01-02T17:46:35.9759949Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Alerts/Index.vue
+2026-01-02T17:46:35.9760980Z ##[warning]  330:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9762489Z ##[warning]  339:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9763408Z 
+2026-01-02T17:46:35.9764061Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Alerts/__tests__/Index.spec.ts
+2026-01-02T17:46:35.9765494Z ##[warning]  49:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9767049Z ##[warning]  49:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9767949Z 
+2026-01-02T17:46:35.9768367Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Analytics/Index.vue
+2026-01-02T17:46:35.9769416Z ##[warning]  524:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9770922Z ##[warning]  536:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9772340Z ##[warning]  562:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9773248Z 
+2026-01-02T17:46:35.9773655Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Audit/Index.vue
+2026-01-02T17:46:35.9774814Z ##[warning]  219:18  warning  Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9776403Z ##[warning]  252:5   warning  Unexpected side effect in computed function  vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:35.9777329Z 
+2026-01-02T17:46:35.9777785Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Auth/ForgotPassword.vue
+2026-01-02T17:46:35.9778833Z ##[warning]  21:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9779742Z 
+2026-01-02T17:46:35.9780112Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Auth/Login.vue
+2026-01-02T17:46:35.9781188Z ##[warning]  26:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9782208Z 
+2026-01-02T17:46:35.9782624Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Auth/Register.vue
+2026-01-02T17:46:35.9783663Z ##[warning]  18:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9784694Z 
+2026-01-02T17:46:35.9785099Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Auth/ResetPassword.vue
+2026-01-02T17:46:35.9786180Z ##[warning]  29:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9786995Z 
+2026-01-02T17:46:35.9787441Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Cycles/Center.vue
+2026-01-02T17:46:35.9788524Z ##[warning]  525:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9789416Z 
+2026-01-02T17:46:35.9789919Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/AdminDashboard.vue
+2026-01-02T17:46:35.9791179Z ##[warning]  379:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9792149Z 
+2026-01-02T17:46:35.9792659Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/AgronomistDashboard.vue
+2026-01-02T17:46:35.9793812Z ##[warning]  446:31  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9795366Z ##[warning]  463:19  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:35.9796911Z ##[warning]  593:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9798391Z ##[warning]  609:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9799634Z ##[warning]  610:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9800809Z ##[warning]  611:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9802160Z ##[warning]  612:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9803327Z ##[warning]  613:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9804709Z ##[warning]  613:85  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9805915Z ##[warning]  624:55  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9806616Z 
+2026-01-02T17:46:35.9807090Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Dashboards/OperatorDashboard.vue
+2026-01-02T17:46:35.9807993Z ##[warning]  101:40  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9809160Z ##[warning]  117:59  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9810332Z ##[warning]  118:59  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9811491Z ##[warning]  137:15  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9812656Z ##[warning]  137:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9813359Z 
+2026-01-02T17:46:35.9813703Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Dashboard/Index.vue
+2026-01-02T17:46:35.9814896Z ##[warning]  637:7    warning  'hasAlerts' is assigned a value but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9816370Z ##[warning]  661:27   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9817748Z ##[warning]  790:20   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9819296Z ##[warning]  939:23   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9820662Z ##[warning]  940:23   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9822024Z ##[warning]  941:23   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9823397Z ##[warning]  944:109  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9824995Z ##[warning]  963:33   warning  'flushEvents' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9826453Z ##[warning]  963:65   warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9827200Z 
+2026-01-02T17:46:35.9827527Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Add.vue
+2026-01-02T17:46:35.9828405Z ##[warning]  356:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9829589Z ##[warning]  420:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9830750Z ##[warning]  440:59  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9831910Z ##[warning]  454:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9833065Z ##[warning]  476:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9834224Z ##[warning]  477:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9835729Z ##[warning]  479:38  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9836446Z 
+2026-01-02T17:46:35.9836858Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/DeviceChannelsTable.vue
+2026-01-02T17:46:35.9837857Z ##[warning]   51:31  warning  The "test" event has been triggered but not declared on `defineEmits`  vue/require-explicit-emits
+2026-01-02T17:46:35.9839191Z ##[warning]   60:31  warning  The "test" event has been triggered but not declared on `defineEmits`  vue/require-explicit-emits
+2026-01-02T17:46:35.9840568Z ##[warning]  113:5   warning  Unexpected side effect in computed function                            vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:35.9841348Z 
+2026-01-02T17:46:35.9841688Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Index.vue
+2026-01-02T17:46:35.9842529Z ##[warning]  182:38  warning  Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9843727Z ##[warning]  183:24  warning  Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9845170Z ##[warning]  196:36  warning  Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9846415Z ##[warning]  425:5   warning  Unexpected side effect in computed function  vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:35.9847166Z 
+2026-01-02T17:46:35.9847565Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/RelayConfigWizard.vue
+2026-01-02T17:46:35.9848436Z ##[warning]  192:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9849599Z ##[warning]  233:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9850978Z ##[warning]  297:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9851690Z 
+2026-01-02T17:46:35.9852021Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/Show.vue
+2026-01-02T17:46:35.9852819Z ##[warning]  238:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9853984Z ##[warning]  245:28  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9855296Z ##[warning]  285:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9856450Z ##[warning]  476:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9857609Z ##[warning]  586:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9858316Z 
+2026-01-02T17:46:35.9858709Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/__tests__/Add.spec.ts
+2026-01-02T17:46:35.9859645Z ##[warning]  30:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9860823Z ##[warning]  34:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9861985Z ##[warning]  34:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9862681Z 
+2026-01-02T17:46:35.9863089Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/__tests__/Index.spec.ts
+2026-01-02T17:46:35.9863938Z ##[warning]  55:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9865342Z ##[warning]  63:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9866494Z ##[warning]  78:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9867828Z ##[warning]  93:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9868529Z 
+2026-01-02T17:46:35.9869008Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts
+2026-01-02T17:46:35.9869954Z ##[warning]   67:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9871135Z ##[warning]   68:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9872313Z ##[warning]   77:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9873472Z ##[warning]   91:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9875007Z ##[warning]   92:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9877064Z ##[warning]  134:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9879031Z ##[warning]  152:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9880273Z ##[warning]  153:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9880985Z 
+2026-01-02T17:46:35.9881394Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Devices/__tests__/Show.spec.ts
+2026-01-02T17:46:35.9882259Z ##[warning]  100:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9883426Z ##[warning]  100:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9885728Z ##[warning]  268:52  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9887220Z ##[warning]  309:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9887959Z 
+2026-01-02T17:46:35.9888277Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Error.vue
+2026-01-02T17:46:35.9889030Z ##[warning]  102:3  warning  Prop "correlation_id" is not in camelCase  vue/prop-name-casing
+2026-01-02T17:46:35.9889718Z 
+2026-01-02T17:46:35.9890085Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Greenhouses/Create.vue
+2026-01-02T17:46:35.9891012Z ##[warning]  174:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9891736Z 
+2026-01-02T17:46:35.9892173Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Greenhouses/__tests__/Create.spec.ts
+2026-01-02T17:46:35.9893131Z ##[warning]  21:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9894583Z ##[warning]  21:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9895843Z ##[warning]  38:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9897013Z ##[warning]  38:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9897712Z 
+2026-01-02T17:46:35.9898037Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Logs/Index.vue
+2026-01-02T17:46:35.9898905Z ##[warning]  205:28   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9900097Z ##[warning]  292:52   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9901265Z ##[warning]  317:34   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9933127Z ##[warning]  343:42   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9935056Z ##[warning]  345:64   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9936606Z ##[warning]  349:50   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9937840Z ##[warning]  358:75   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9939042Z ##[warning]  367:37   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9940231Z ##[warning]  367:67   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9941411Z ##[warning]  368:40   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9942581Z ##[warning]  368:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9943742Z ##[warning]  369:38   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9945249Z ##[warning]  369:69   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9946429Z ##[warning]  370:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9947594Z ##[warning]  370:76   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9949444Z ##[warning]  370:110  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9950577Z 
+2026-01-02T17:46:35.9950942Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Plants/Index.vue
+2026-01-02T17:46:35.9952082Z ##[warning]  377:5   warning  Unexpected side effect in computed function                              vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:35.9953551Z ##[warning]  487:25  warning  'plant' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:35.9955685Z ##[warning]  487:32  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9956469Z 
+2026-01-02T17:46:35.9956811Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Plants/Show.vue
+2026-01-02T17:46:35.9957630Z ##[warning]  594:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9959420Z ##[warning]  645:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9961349Z ##[warning]  651:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9963277Z ##[warning]  652:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9965464Z ##[warning]  653:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9967435Z ##[warning]  791:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9969378Z ##[warning]  800:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9971337Z ##[warning]  834:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9972520Z 
+2026-01-02T17:46:35.9973099Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Profile/Edit.vue
+2026-01-02T17:46:35.9974701Z ##[warning]  24:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9975912Z 
+2026-01-02T17:46:35.9976693Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Profile/Partials/DeleteUserForm.vue
+2026-01-02T17:46:35.9978290Z ##[warning]  16:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9979600Z 
+2026-01-02T17:46:35.9980345Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Profile/Partials/UpdatePasswordForm.vue
+2026-01-02T17:46:35.9981772Z ##[warning]  17:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9982928Z 
+2026-01-02T17:46:35.9983789Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Profile/Partials/UpdateProfileInformationForm.vue
+2026-01-02T17:46:35.9985517Z ##[warning]  19:34  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9987524Z ##[warning]  24:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9988723Z 
+2026-01-02T17:46:35.9989302Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/Edit.vue
+2026-01-02T17:46:35.9990785Z ##[warning]  386:18   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9992682Z ##[warning]  405:105  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9993923Z ##[warning]  448:26   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9995516Z ##[warning]  514:40   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9997429Z ##[warning]  531:41   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:35.9998151Z 
+2026-01-02T17:46:35.9998501Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/Index.vue
+2026-01-02T17:46:35.9999550Z ##[warning]  126:7   warning  'headers' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0001046Z ##[warning]  135:26  warning  'recipe' is defined but never used. Allowed unused args must match /^_/u            @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0002703Z ##[warning]  162:5   warning  Unexpected side effect in computed function                                         vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:36.0003484Z 
+2026-01-02T17:46:36.0003821Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/Show.vue
+2026-01-02T17:46:36.0005023Z ##[warning]  73:18  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0006451Z ##[warning]  76:7   warning  'page' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0007244Z 
+2026-01-02T17:46:36.0007662Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/__tests__/Edit.spec.ts
+2026-01-02T17:46:36.0008777Z ##[warning]   50:33  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0010183Z ##[warning]   50:47  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0011544Z ##[warning]   51:32  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0012905Z ##[warning]   51:46  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0014405Z ##[warning]   81:30  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0015833Z ##[warning]   92:51  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0017204Z ##[warning]  104:50  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0018737Z ##[warning]  125:35  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0020094Z ##[warning]  126:39  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0021445Z ##[warning]  129:20  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0022804Z ##[warning]  136:24  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0024235Z ##[warning]  214:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u      @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0025927Z ##[warning]  295:32  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0027289Z ##[warning]  296:38  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0028753Z ##[warning]  322:11  warning  'patchCalled' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0030204Z ##[warning]  344:56  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0031567Z ##[warning]  345:51  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0032895Z ##[warning]  364:7   warning  Forbidden non-null assertion                                                            @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0034681Z ##[warning]  405:10  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0036033Z ##[warning]  457:9   warning  Unexpected console statement                                                            no-console
+2026-01-02T17:46:36.0037354Z ##[warning]  480:10  warning  Unexpected any. Specify a different type                                                @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0038099Z 
+2026-01-02T17:46:36.0038520Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/__tests__/Index.spec.ts
+2026-01-02T17:46:36.0039245Z ##[warning]  69:5  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0039847Z 
+2026-01-02T17:46:36.0040260Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Recipes/__tests__/Show.spec.ts
+2026-01-02T17:46:36.0041334Z ##[warning]  2:36  warning  'beforeEach' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0042161Z 
+2026-01-02T17:46:36.0042513Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Settings/Index.vue
+2026-01-02T17:46:36.0043569Z ##[warning]  280:19  warning  'router' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0045475Z ##[warning]  340:5   warning  Unexpected side effect in computed function                               vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:36.0046275Z 
+2026-01-02T17:46:36.0046612Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Setup/Wizard.vue
+2026-01-02T17:46:36.0047522Z ##[warning]  517:14  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0048731Z ##[warning]  661:34  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0050092Z ##[warning]  667:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0051256Z ##[warning]  697:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0052423Z ##[warning]  830:12  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0053563Z ##[warning]  869:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0054964Z ##[warning]  874:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0056146Z ##[warning]  928:18  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0056846Z 
+2026-01-02T17:46:36.0057254Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Setup/__tests__/Wizard.spec.ts
+2026-01-02T17:46:36.0058349Z ##[warning]   51:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0059710Z ##[warning]   52:32  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0061049Z ##[warning]   52:46  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0062388Z ##[warning]   53:33  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0063723Z ##[warning]   53:47  warning  Unexpected any. Specify a different type                                            @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0065398Z ##[warning]  458:11  warning  'wrapper' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0066364Z 
+2026-01-02T17:46:36.0066700Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Users/Index.vue
+2026-01-02T17:46:36.0067774Z ##[warning]  271:19  warning  'router' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0069269Z ##[warning]  284:10  warning  'ERROR_MESSAGES' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0070746Z ##[warning]  347:5   warning  Unexpected side effect in computed function                                       vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:36.0072165Z ##[warning]  369:64  warning  Unexpected any. Specify a different type                                          @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0073514Z ##[warning]  371:33  warning  Unexpected any. Specify a different type                                          @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0075104Z ##[warning]  537:45  warning  Unexpected any. Specify a different type                                          @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0075854Z 
+2026-01-02T17:46:36.0076187Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/Index.vue
+2026-01-02T17:46:36.0077123Z ##[warning]  388:5  warning  Unexpected side effect in computed function  vue/no-side-effects-in-computed-properties
+2026-01-02T17:46:36.0077874Z 
+2026-01-02T17:46:36.0078190Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/Show.vue
+2026-01-02T17:46:36.0079137Z ##[warning]  169:19   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0080496Z ##[warning]  170:18   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0082031Z ##[warning]  171:23   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0083392Z ##[warning]  177:18   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0084976Z ##[warning]  224:26   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0086389Z ##[warning]  299:50   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0087754Z ##[warning]  372:38   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0089095Z ##[warning]  377:71   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0090453Z ##[warning]  378:110  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0091798Z ##[warning]  535:63   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0093142Z ##[warning]  536:59   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0094675Z ##[warning]  608:22   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0096063Z ##[warning]  609:22   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0097580Z ##[warning]  742:74   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0098932Z ##[warning]  758:64   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0100275Z ##[warning]  778:54   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0101617Z ##[warning]  876:38   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0102965Z ##[warning]  881:40   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0104552Z ##[warning]  963:52   warning  'recipeId' is defined but never used. Allowed unused args must match /^_/u           @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0106074Z ##[warning]  963:62   warning  'startedAt' is defined but never used. Allowed unused args must match /^_/u          @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0107580Z ##[warning]  963:73   warning  'expectedHarvestAt' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0109003Z ##[warning]  970:47   warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0110400Z ##[warning]  976:32   warning  'nodeIds' is defined but never used. Allowed unused args must match /^_/u            @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0111184Z 
+2026-01-02T17:46:36.0111581Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/Tabs/ZoneCycleTab.vue
+2026-01-02T17:46:36.0112533Z ##[warning]  221:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0113726Z ##[warning]  222:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0115337Z ##[warning]  223:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0116505Z ##[warning]  224:67  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0117202Z 
+2026-01-02T17:46:36.0117602Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/Tabs/ZoneOverviewTab.vue
+2026-01-02T17:46:36.0118457Z ##[warning]  287:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0119617Z ##[warning]  288:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0120307Z 
+2026-01-02T17:46:36.0120649Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/ZoneCard.vue
+2026-01-02T17:46:36.0121463Z ##[warning]  156:27  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0122634Z ##[warning]  252:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0123323Z 
+2026-01-02T17:46:36.0123706Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/ZoneDetailModals.vue
+2026-01-02T17:46:36.0124769Z ##[warning]   65:22  warning  Unexpected mutation of "harvestModal" prop       vue/no-mutating-props
+2026-01-02T17:46:36.0125955Z ##[warning]   88:22  warning  Unexpected mutation of "abortModal" prop         vue/no-mutating-props
+2026-01-02T17:46:36.0127104Z ##[warning]  111:22  warning  Unexpected mutation of "changeRecipeModal" prop  vue/no-mutating-props
+2026-01-02T17:46:36.0128246Z ##[warning]  121:21  warning  Unexpected mutation of "changeRecipeModal" prop  vue/no-mutating-props
+2026-01-02T17:46:36.0129379Z ##[warning]  129:21  warning  Unexpected mutation of "changeRecipeModal" prop  vue/no-mutating-props
+2026-01-02T17:46:36.0130743Z ##[warning]  174:24  warning  Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0131955Z ##[warning]  175:16  warning  Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0133173Z ##[warning]  177:17  warning  Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0133889Z 
+2026-01-02T17:46:36.0134475Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/ZoneTelemetryChart.vue
+2026-01-02T17:46:36.0135378Z ##[warning]  207:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0136557Z ##[warning]  215:15  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0137256Z 
+2026-01-02T17:46:36.0137648Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/Index.spec.ts
+2026-01-02T17:46:36.0138616Z ##[warning]  127:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0139341Z 
+2026-01-02T17:46:36.0139811Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/Index.virtualization.spec.ts
+2026-01-02T17:46:36.0140729Z ##[warning]  118:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0141909Z ##[warning]  167:50  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0142618Z 
+2026-01-02T17:46:36.0143061Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/Show.integration.spec.ts
+2026-01-02T17:46:36.0144073Z ##[warning]   53:31  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0145697Z ##[warning]   54:30  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0147190Z ##[warning]   54:44  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0148489Z ##[warning]   66:33  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0149807Z ##[warning]   67:32  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0151119Z ##[warning]   67:46  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0152469Z ##[warning]  124:38  warning  'url' is defined but never used. Allowed unused args must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0153847Z ##[warning]  124:51  warning  'config' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0155477Z ##[warning]  124:60  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0156788Z ##[warning]  146:41  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0158087Z ##[warning]  149:41  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0159392Z ##[warning]  162:57  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0160712Z ##[warning]  209:54  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0162020Z ##[warning]  235:57  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0162924Z 
+2026-01-02T17:46:36.0163327Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/Show.spec.ts
+2026-01-02T17:46:36.0164497Z ##[warning]    3:10  warning  'ref' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0165917Z ##[warning]  173:33  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0167252Z ##[warning]  174:32  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0168563Z ##[warning]  174:46  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0169872Z ##[warning]  314:55  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0171191Z ##[warning]  368:33  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0172493Z ##[warning]  392:33  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0173798Z ##[warning]  401:19  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0175220Z ##[warning]  459:27  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0176559Z ##[warning]  490:38  warning  'url' is defined but never used. Allowed unused args must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0177941Z ##[warning]  490:51  warning  'config' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0179295Z ##[warning]  490:60  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0180165Z 
+2026-01-02T17:46:36.0180617Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts
+2026-01-02T17:46:36.0181744Z ##[warning]    3:10  warning  'defineComponent' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0183202Z ##[warning]   91:22  warning  'id' is defined but never used. Allowed unused args must match /^_/u               @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0184717Z ##[warning]  177:22  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0186079Z ##[warning]  224:34  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0187434Z ##[warning]  226:86  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0188768Z ##[warning]  276:34  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0190099Z ##[warning]  278:86  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0191433Z ##[warning]  412:34  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0192768Z ##[warning]  414:86  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0193496Z 
+2026-01-02T17:46:36.0194010Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts
+2026-01-02T17:46:36.0195235Z ##[warning]  52:52  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0196417Z ##[warning]  75:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0197569Z ##[warning]  77:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0198710Z ##[warning]  78:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0199397Z 
+2026-01-02T17:46:36.0199717Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/commands/registry.ts
+2026-01-02T17:46:36.0200570Z ##[warning]  565:5  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0201268Z 
+2026-01-02T17:46:36.0201749Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useKeyboardShortcuts.spec.ts
+2026-01-02T17:46:36.0202825Z ##[warning]   28:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0203973Z ##[warning]   58:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0205238Z ##[warning]   88:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0206359Z ##[warning]  118:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0207478Z ##[warning]  147:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0208604Z ##[warning]  176:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0209720Z ##[warning]  237:43  warning  There is more than one component in this file  vue/one-component-per-file
+2026-01-02T17:46:36.0210406Z 
+2026-01-02T17:46:36.0210859Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useNodeLifecycle.spec.ts
+2026-01-02T17:46:36.0212126Z ##[warning]  206:13  warning  'loading' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0212958Z 
+2026-01-02T17:46:36.0213421Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useOptimisticUpdate.spec.ts
+2026-01-02T17:46:36.0214447Z ##[warning]  96:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0215169Z 
+2026-01-02T17:46:36.0215618Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/usePerformance.spec.ts
+2026-01-02T17:46:36.0216675Z ##[warning]  111:10  warning  'item' is defined but never used. Allowed unused args must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0218095Z ##[warning]  111:16  warning  'filters' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0218878Z 
+2026-01-02T17:46:36.0219335Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useRateLimitedApi.spec.ts
+2026-01-02T17:46:36.0220488Z ##[warning]  223:13  warning  'isProcessing' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0221312Z 
+2026-01-02T17:46:36.0221748Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useStoreEvents.spec.ts
+2026-01-02T17:46:36.0222642Z ##[warning]   12:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0223800Z ##[warning]   41:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0225076Z ##[warning]   73:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0226395Z ##[warning]   97:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0227554Z ##[warning]  118:19  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0228252Z 
+2026-01-02T17:46:36.0228725Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useSystemStatus.mqtt.spec.ts
+2026-01-02T17:46:36.0229630Z ##[warning]  33:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0230778Z ##[warning]  34:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0231474Z 
+2026-01-02T17:46:36.0231919Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useSystemStatus.spec.ts
+2026-01-02T17:46:36.0233057Z ##[warning]  192:13  warning  'coreStatus' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0233883Z 
+2026-01-02T17:46:36.0234447Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useTelemetry.cache.spec.ts
+2026-01-02T17:46:36.0235359Z ##[warning]   75:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0236520Z ##[warning]  148:10  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0237680Z ##[warning]  183:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0238377Z 
+2026-01-02T17:46:36.0238801Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useTelemetry.spec.ts
+2026-01-02T17:46:36.0239856Z ##[warning]   1:48  warning  'afterEach' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0241253Z ##[warning]  62:55  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0242750Z ##[warning]  67:10  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0244055Z ##[warning]  70:10  warning  Unexpected any. Specify a different type                                     @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0244904Z 
+2026-01-02T17:46:36.0245394Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWebSocket.integration.spec.ts
+2026-01-02T17:46:36.0246524Z ##[warning]    2:10  warning  'ref' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0247925Z ##[warning]   35:17  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0249274Z ##[warning]   36:24  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0250622Z ##[warning]   37:26  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0251958Z ##[warning]   38:23  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0253288Z ##[warning]   40:66  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0254748Z ##[warning]   41:21  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0256135Z ##[warning]   74:42  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0257646Z ##[warning]  115:61  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0259010Z ##[warning]  116:30  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0260382Z ##[warning]  125:29  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0261724Z ##[warning]  126:31  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0263067Z ##[warning]  135:16  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0264550Z ##[warning]  160:27  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0265954Z ##[warning]  161:27  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0267311Z ##[warning]  163:32  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0268698Z ##[warning]  164:32  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0270161Z ##[warning]  171:13  warning  'channel1' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0271573Z ##[warning]  171:64  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0272998Z ##[warning]  172:13  warning  'channel2' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0274708Z ##[warning]  172:64  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0276072Z ##[warning]  176:16  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0277423Z ##[warning]  256:16  warning  Unexpected any. Specify a different type                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0278165Z 
+2026-01-02T17:46:36.0278653Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWebSocket.reconnect.spec.ts
+2026-01-02T17:46:36.0279759Z ##[warning]   18:23  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0281157Z ##[warning]   33:17  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0282550Z ##[warning]   34:19  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0283924Z ##[warning]   35:23  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0285420Z ##[warning]   36:24  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0286787Z ##[warning]   37:26  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0288358Z ##[warning]   39:66  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0289741Z ##[warning]   40:21  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0291104Z ##[warning]   81:42  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0292472Z ##[warning]   84:20  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0293852Z ##[warning]  123:61  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0295365Z ##[warning]  124:30  warning  Unexpected any. Specify a different type                                                             @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0296893Z ##[warning]  187:13  warning  'unsubscribe2' is assigned a value but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0298546Z ##[warning]  218:13  warning  'stopListeningCallsBefore' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0299413Z 
+2026-01-02T17:46:36.0299907Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWebSocket.resubscribe.spec.ts
+2026-01-02T17:46:36.0300845Z ##[warning]   22:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0302014Z ##[warning]   37:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0303170Z ##[warning]   38:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0304604Z ##[warning]   39:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0305781Z ##[warning]   46:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0306928Z ##[warning]   47:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0308074Z ##[warning]   49:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0309219Z ##[warning]   49:65  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0310361Z ##[warning]   50:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0311505Z ##[warning]   50:70  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0312655Z ##[warning]   51:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0313805Z ##[warning]   99:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0315074Z ##[warning]  169:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0316235Z ##[warning]  170:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0317386Z ##[warning]  180:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0318541Z ##[warning]  181:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0319691Z ##[warning]  245:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0320848Z ##[warning]  246:25  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0322174Z ##[warning]  250:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0323356Z ##[warning]  251:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0324053Z 
+2026-01-02T17:46:36.0324601Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWebSocket.spec.ts
+2026-01-02T17:46:36.0325482Z ##[warning]   29:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0326642Z ##[warning]   31:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0327790Z ##[warning]   32:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0328934Z ##[warning]   34:66  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0330089Z ##[warning]   35:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0331233Z ##[warning]   60:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0332376Z ##[warning]   94:61  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0333529Z ##[warning]   95:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0334802Z ##[warning]  115:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0335510Z 
+2026-01-02T17:46:36.0336020Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts
+2026-01-02T17:46:36.0337125Z ##[warning]  34:19  warning  'channel' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0338551Z ##[warning]  38:19  warning  'channel' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0340074Z ##[warning]  62:16  warning  Unexpected any. Specify a different type                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0340815Z 
+2026-01-02T17:46:36.0341281Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/__tests__/useWizardValidation.spec.ts
+2026-01-02T17:46:36.0342328Z ##[warning]  3:10  warning  'ref' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0343099Z 
+2026-01-02T17:46:36.0343448Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useCommands.ts
+2026-01-02T17:46:36.0344375Z ##[warning]   74:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0345563Z ##[warning]  159:36  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0346765Z ##[warning]  228:25  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0347941Z ##[warning]  257:23  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0349112Z ##[warning]  314:20  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0350269Z ##[warning]  362:26  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0350973Z 
+2026-01-02T17:46:36.0351351Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useErrorHandler.ts
+2026-01-02T17:46:36.0352480Z ##[warning]  6:26  warning  'getErrorMessageByStatus' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0353497Z 
+2026-01-02T17:46:36.0353881Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useFormValidation.ts
+2026-01-02T17:46:36.0355042Z ##[warning]  4:25  warning  'Ref' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0356476Z ##[warning]  5:25  warning  'FormErrors' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0357262Z 
+2026-01-02T17:46:36.0357627Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useInertiaForm.ts
+2026-01-02T17:46:36.0358664Z ##[warning]    5:24  warning  'UseFormReturn' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0360064Z ##[warning]   55:22  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0361510Z ##[warning]   71:26  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0362881Z ##[warning]  125:32  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0364338Z ##[warning]  218:26  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0365692Z ##[warning]  234:16  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0367023Z ##[warning]  255:26  warning  Unexpected any. Specify a different type                                         @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0367755Z 
+2026-01-02T17:46:36.0368159Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useKeyboardShortcuts.ts
+2026-01-02T17:46:36.0368993Z ##[warning]  90:18  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0369842Z 
+2026-01-02T17:46:36.0370222Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useNodeLifecycle.ts
+2026-01-02T17:46:36.0401669Z ##[warning]   42:11  warning  'api' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0403369Z ##[warning]   55:22  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0404991Z ##[warning]   78:19  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0406386Z ##[warning]  111:19  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0407137Z 
+2026-01-02T17:46:36.0407544Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useNodeTelemetry.ts
+2026-01-02T17:46:36.0408414Z ##[warning]  24:20  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0409583Z ##[warning]  25:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0410729Z ##[warning]  57:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0411866Z ##[warning]  68:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0412548Z 
+2026-01-02T17:46:36.0412946Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useOptimisticUpdate.ts
+2026-01-02T17:46:36.0413990Z ##[warning]    6:15  warning  'computed' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0415852Z ##[warning]    6:40  warning  'ComputedRef' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0417484Z ##[warning]  235:14  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0418813Z ##[warning]  237:27  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0420122Z ##[warning]  266:16  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0421426Z ##[warning]  268:27  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0422736Z ##[warning]  298:10  warning  Unexpected any. Specify a different type                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0423464Z 
+2026-01-02T17:46:36.0423871Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useOptimizedUpdates.ts
+2026-01-02T17:46:36.0425055Z ##[warning]    2:10  warning  'logger' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0426440Z ##[warning]   25:49  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0427755Z ##[warning]   25:59  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0429054Z ##[warning]   45:49  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0430342Z ##[warning]   45:59  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0431621Z ##[warning]  218:5   warning  Forbidden non-null assertion                                              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0432503Z 
+2026-01-02T17:46:36.0432881Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/usePageProps.ts
+2026-01-02T17:46:36.0433721Z ##[warning]  12:55  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0435085Z ##[warning]  19:42  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0436226Z ##[warning]  37:51  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0436909Z 
+2026-01-02T17:46:36.0437298Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useRateLimitedApi.ts
+2026-01-02T17:46:36.0438394Z ##[warning]   20:9   warning  'requestQueue' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0439828Z ##[warning]   20:47  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0441197Z ##[warning]   70:20  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0442533Z ##[warning]   82:21  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0443868Z ##[warning]  142:37  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0445339Z ##[warning]  144:14  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0446679Z ##[warning]  156:38  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0448191Z ##[warning]  158:12  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0449536Z ##[warning]  159:14  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0450873Z ##[warning]  171:39  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0452231Z ##[warning]  173:12  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0453600Z ##[warning]  174:14  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0455081Z ##[warning]  186:40  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0456442Z ##[warning]  188:14  warning  Unexpected any. Specify a different type                                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0457185Z 
+2026-01-02T17:46:36.0457563Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useStoreEvents.ts
+2026-01-02T17:46:36.0458566Z ##[warning]   10:47  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0459937Z ##[warning]   12:41  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0461265Z ##[warning]   16:5   warning  Forbidden non-null assertion                                                              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0462609Z ##[warning]   19:42  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0464127Z ##[warning]   29:32  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0465635Z ##[warning]   43:43  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0466984Z ##[warning]   44:31  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0468434Z ##[warning]   98:5   warning  'onMountedHook' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0469864Z ##[warning]  105:26  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0471220Z ##[warning]  129:37  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0472570Z ##[warning]  147:25  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0473921Z ##[warning]  155:21  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0475446Z ##[warning]  171:19  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0476798Z ##[warning]  172:19  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0478145Z ##[warning]  181:21  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0479668Z ##[warning]  182:21  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0481010Z ##[warning]  189:21  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0482363Z ##[warning]  190:21  warning  Unexpected any. Specify a different type                                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0483099Z 
+2026-01-02T17:46:36.0483480Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useSystemStatus.ts
+2026-01-02T17:46:36.0484697Z ##[warning]    9:66  warning  'initEcho' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0486111Z ##[warning]  207:21  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0487443Z ##[warning]  314:48  warning  Unexpected any. Specify a different type                                    @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0488175Z 
+2026-01-02T17:46:36.0488532Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useTelemetry.ts
+2026-01-02T17:46:36.0489533Z ##[warning]  127:11  warning  'api' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0490904Z ##[warning]  144:22  warning  Forbidden non-null assertion                                                    @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0492227Z ##[warning]  166:41  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0493541Z ##[warning]  204:22  warning  Forbidden non-null assertion                                                    @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0495146Z ##[warning]  231:41  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0496462Z ##[warning]  274:22  warning  Forbidden non-null assertion                                                    @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0497769Z ##[warning]  302:41  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0499064Z ##[warning]  368:29  warning  Forbidden non-null assertion                                                    @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0500372Z ##[warning]  377:12  warning  Unexpected any. Specify a different type                                        @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0501106Z 
+2026-01-02T17:46:36.0501470Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWebSocket.ts
+2026-01-02T17:46:36.0502580Z ##[warning]    10:46  warning  'SnapshotResponse' is defined but never used. Allowed unused vars must match /^_/u             @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0504200Z ##[warning]    11:27  warning  'isValidReconciliationData' is defined but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0505860Z ##[warning]    45:16  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0507229Z ##[warning]    46:42  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0508594Z ##[warning]   110:57  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0510150Z ##[warning]   216:49  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0511527Z ##[warning]   290:37  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0512907Z ##[warning]   291:37  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0514392Z ##[warning]   299:36  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0515801Z ##[warning]   420:24  warning  Forbidden non-null assertion                                                                   @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0517352Z ##[warning]   444:10  warning  'checkSubscriptionInvariants' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0518856Z ##[warning]   445:33  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0520239Z ##[warning]   446:33  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0521611Z ##[warning]   632:59  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0522988Z ##[warning]   690:58  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0524474Z ##[warning]  1008:23  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0526085Z ##[warning]  1009:21  warning  Unexpected any. Specify a different type                                                       @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0527440Z ##[warning]  1291:18  warning  Forbidden non-null assertion                                                                   @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0528177Z 
+2026-01-02T17:46:36.0528541Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWizardApi.ts
+2026-01-02T17:46:36.0529371Z ##[warning]   38:30  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0530552Z ##[warning]  203:15  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0531731Z ##[warning]  211:15  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0532917Z ##[warning]  212:40  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0534076Z ##[warning]  220:15  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0535383Z ##[warning]  228:15  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0536547Z ##[warning]  229:19  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0537715Z ##[warning]  243:17  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0538412Z 
+2026-01-02T17:46:36.0538780Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWizardState.ts
+2026-01-02T17:46:36.0539606Z ##[warning]  21:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0540936Z ##[warning]  46:57  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0542108Z ##[warning]  46:79  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0542806Z 
+2026-01-02T17:46:36.0543203Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWizardValidation.ts
+2026-01-02T17:46:36.0544347Z ##[warning]  11:10  warning  'computed' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0545775Z ##[warning]  11:25  warning  'Ref' is defined but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0546537Z 
+2026-01-02T17:46:36.0546895Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useWsChannel.ts
+2026-01-02T17:46:36.0547930Z ##[warning]   12:10  warning  'logger' is defined but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0549463Z ##[warning]   32:6   warning  'ChannelKind' is defined but never used. Allowed unused vars must match /^_/u              @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0550907Z ##[warning]   38:29  warning  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0552283Z ##[warning]   39:24  warning  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0553651Z ##[warning]   40:26  warning  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0555132Z ##[warning]   41:16  warning  Unexpected any. Specify a different type                                                   @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0556619Z ##[warning]   76:36  warning  'unsubscribeAll' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0558339Z ##[warning]  112:36  warning  'unsubscribeAll' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0559174Z 
+2026-01-02T17:46:36.0559514Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/composables/useZones.ts
+2026-01-02T17:46:36.0560305Z ##[warning]  50:22  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0561444Z ##[warning]  91:22  warning  Forbidden non-null assertion  @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0562143Z 
+2026-01-02T17:46:36.0562519Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/stores/__tests__/zones.spec.ts
+2026-01-02T17:46:36.0563544Z ##[warning]  358:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0564424Z 
+2026-01-02T17:46:36.0564747Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/types/GrowCycle.ts
+2026-01-02T17:46:36.0565629Z ##[warning]  20:32  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0566342Z 
+2026-01-02T17:46:36.0566638Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/types/Zone.ts
+2026-01-02T17:46:36.0567560Z ##[warning]   4:15  warning  'Cycle' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0568925Z ##[warning]  30:21  warning  Unexpected any. Specify a different type                                 @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0569650Z 
+2026-01-02T17:46:36.0570022Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/types/__tests__/types.spec.ts
+2026-01-02T17:46:36.0571081Z ##[warning]   9:3  warning  'User' is defined but never used. Allowed unused vars must match /^_/u        @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0572695Z ##[warning]  10:3  warning  'Greenhouse' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0573491Z 
+2026-01-02T17:46:36.0573825Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/types/reconciliation.ts
+2026-01-02T17:46:36.0574784Z ##[warning]   19:18  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0575982Z ##[warning]   53:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0577152Z ##[warning]   68:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0578306Z ##[warning]  117:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0579465Z ##[warning]  150:29  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0580631Z ##[warning]  174:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0581787Z ##[warning]  191:49  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0582486Z 
+2026-01-02T17:46:36.0582790Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/types/shims.d.ts
+2026-01-02T17:46:36.0583576Z ##[warning]   4:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0584857Z ##[warning]  29:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0586023Z ##[warning]  29:77  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0587172Z ##[warning]  29:87  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0587875Z 
+2026-01-02T17:46:36.0588330Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/__tests__/echoClient.integration.spec.ts
+2026-01-02T17:46:36.0589728Z ##[warning]   43:3   warning  'getEcho' is defined but never used. Allowed unused vars must match /^_/u          @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0591236Z ##[warning]   44:3   warning  'getEchoInstance' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0592716Z ##[warning]   46:3   warning  'getLastError' is defined but never used. Allowed unused vars must match /^_/u     @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0594196Z ##[warning]   49:25  warning  'getState' is defined but never used. Allowed unused vars must match /^_/u         @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0595735Z ##[warning]   54:90  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0597102Z ##[warning]   55:21  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0598453Z ##[warning]   56:23  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0599794Z ##[warning]   57:20  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0601109Z ##[warning]   64:35  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0602438Z ##[warning]   74:43  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0603773Z ##[warning]   78:22  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0605412Z ##[warning]  104:21  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0606750Z ##[warning]  128:67  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0608087Z ##[warning]  142:24  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0609420Z ##[warning]  148:24  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0610821Z ##[warning]  171:13  warning  'echo1' is assigned a value but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0612283Z ##[warning]  172:13  warning  'echo2' is assigned a value but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0613709Z ##[warning]  215:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0615180Z ##[warning]  242:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0616521Z ##[warning]  253:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0617849Z ##[warning]  286:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0619180Z ##[warning]  317:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0620520Z ##[warning]  344:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0622011Z ##[warning]  357:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0623346Z ##[warning]  375:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0624796Z ##[warning]  405:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0626150Z ##[warning]  436:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0627480Z ##[warning]  468:16  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0628827Z ##[warning]  490:24  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0630174Z ##[warning]  509:24  warning  Unexpected any. Specify a different type                                           @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0631575Z ##[warning]  520:13  warning  'echo' is assigned a value but never used. Allowed unused vars must match /^_/u    @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0632355Z 
+2026-01-02T17:46:36.0632731Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/__tests__/logger.spec.ts
+2026-01-02T17:46:36.0633562Z ##[warning]  11:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0634365Z 
+2026-01-02T17:46:36.0634682Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/apiHelpers.ts
+2026-01-02T17:46:36.0635475Z ##[warning]  15:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0636799Z ##[warning]  15:48  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0637949Z ##[warning]  44:39  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0639081Z ##[warning]  45:13  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0640217Z ##[warning]  72:45  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0641359Z ##[warning]  72:60  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0642041Z 
+2026-01-02T17:46:36.0642358Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/echoClient.ts
+2026-01-02T17:46:36.0643130Z ##[warning]    48:24  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0644403Z ##[warning]   211:37  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0645586Z ##[warning]   231:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0646735Z ##[warning]   243:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0647887Z ##[warning]   244:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0649033Z ##[warning]   245:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0650178Z ##[warning]   245:90  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0651315Z ##[warning]   246:35  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0652470Z ##[warning]   292:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0653778Z ##[warning]   293:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0655095Z ##[warning]   306:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0656244Z ##[warning]   338:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0657398Z ##[warning]   339:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0658539Z ##[warning]   582:43  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0659687Z ##[warning]   859:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0660825Z ##[warning]   910:53  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0661984Z ##[warning]  1111:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0663143Z ##[warning]  1115:33  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0664604Z ##[warning]  1267:17  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0665338Z 
+2026-01-02T17:46:36.0665641Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/logger.ts
+2026-01-02T17:46:36.0666498Z ##[warning]  182:7   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0667825Z ##[warning]  206:26  warning  'level' is defined but never used. Allowed unused args must match /^_/u    @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0669228Z ##[warning]  206:43  warning  'message' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0670794Z ##[warning]  206:60  warning  'context' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0672181Z ##[warning]  206:82  warning  'error' is defined but never used. Allowed unused args must match /^_/u    @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0673463Z ##[warning]  263:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0674788Z ##[warning]  272:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0675988Z ##[warning]  281:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0677172Z ##[warning]  290:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0678349Z ##[warning]  299:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0679530Z ##[warning]  308:5   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0680709Z ##[warning]  343:7   warning  Unexpected console statement                                               no-console
+2026-01-02T17:46:36.0681391Z 
+2026-01-02T17:46:36.0681692Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/route.ts
+2026-01-02T17:46:36.0682461Z ##[warning]   6:41  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0683615Z ##[warning]  10:46  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0684887Z ##[warning]  12:58  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0686023Z ##[warning]  13:23  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0686716Z 
+2026-01-02T17:46:36.0687038Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/routerGuards.ts
+2026-01-02T17:46:36.0688210Z ##[warning]   78:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0690093Z ##[warning]   79:59  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0691363Z ##[warning]   97:73  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0692548Z ##[warning]  100:71  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0693717Z ##[warning]  105:44  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0695053Z ##[warning]  120:12  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0696231Z ##[warning]  124:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0697397Z ##[warning]  127:47  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0698550Z ##[warning]  127:62  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0699703Z ##[warning]  150:12  warning  Forbidden non-null assertion              @typescript-eslint/no-non-null-assertion
+2026-01-02T17:46:36.0700862Z ##[warning]  154:21  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0702001Z ##[warning]  165:74  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0703143Z ##[warning]  169:71  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0703842Z 
+2026-01-02T17:46:36.0704210Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/utils/vueErrorHandlers.ts
+2026-01-02T17:46:36.0705532Z ##[warning]  18:29  warning  'vueApp' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0706944Z ##[warning]  18:68  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0708277Z ##[warning]  22:15  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0709590Z ##[warning]  23:15  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0710892Z ##[warning]  24:15  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0712188Z ##[warning]  34:21  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0713510Z ##[warning]  59:55  warning  Unexpected any. Specify a different type                                  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0714359Z 
+2026-01-02T17:46:36.0714680Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/ws/invariants.ts
+2026-01-02T17:46:36.0715585Z ##[warning]  269:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0716313Z 
+2026-01-02T17:46:36.0716632Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/resources/js/ws/subscriptions.ts
+2026-01-02T17:46:36.0717433Z ##[warning]   53:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0718592Z ##[warning]   54:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0719747Z ##[warning]   93:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0720897Z ##[warning]  177:16  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0722223Z ##[warning]  178:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0723378Z ##[warning]  213:26  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0724066Z 
+2026-01-02T17:46:36.0724509Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/helpers/api.ts
+2026-01-02T17:46:36.0725601Z ##[warning]   64:74   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0726788Z ##[warning]   94:81   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0727955Z ##[warning]  127:27   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0729106Z ##[warning]  129:14   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0730271Z ##[warning]  251:29   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0731426Z ##[warning]  346:107  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0732583Z ##[warning]  420:20   warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0733276Z 
+2026-01-02T17:46:36.0733663Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/02-dashboard.spec.ts
+2026-01-02T17:46:36.0734984Z ##[warning]    5:58  warning  'testZone' is defined but never used. Allowed unused args must match /^_/u        @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0736521Z ##[warning]  185:86  warning  'testGreenhouse' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0737343Z 
+2026-01-02T17:46:36.0737895Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/03-zone-detail.spec.ts
+2026-01-02T17:46:36.0739003Z ##[warning]   5:86  warning  'testGreenhouse' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0740367Z ##[warning]  44:7   warning  Unexpected console statement                                                      no-console
+2026-01-02T17:46:36.0741070Z 
+2026-01-02T17:46:36.0741473Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/04-cycle-control.spec.ts
+2026-01-02T17:46:36.0742197Z ##[warning]   19:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0743131Z ##[warning]   37:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0744055Z ##[warning]   56:9  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0745110Z ##[warning]   77:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0746017Z ##[warning]   90:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0746932Z ##[warning]  116:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0747847Z ##[warning]  132:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0748760Z ##[warning]  169:7  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0749353Z 
+2026-01-02T17:46:36.0749724Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/05-commands.spec.ts
+2026-01-02T17:46:36.0750748Z ##[warning]   5:80  warning  'apiHelper' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0752062Z ##[warning]  40:11  warning  Unexpected console statement                                                 no-console
+2026-01-02T17:46:36.0752751Z 
+2026-01-02T17:46:36.0753132Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/06-grow-cycle.spec.ts
+2026-01-02T17:46:36.0754186Z ##[warning]    5:73  warning  'apiHelper' is defined but never used. Allowed unused args must match /^_/u       @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0755956Z ##[warning]   33:13  warning  'cycle' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0757281Z ##[warning]   36:7   warning  Unexpected console statement                                                      no-console
+2026-01-02T17:46:36.0758503Z ##[warning]   75:7   warning  Unexpected console statement                                                      no-console
+2026-01-02T17:46:36.0759712Z ##[warning]  108:7   warning  Unexpected console statement                                                      no-console
+2026-01-02T17:46:36.0760920Z ##[warning]  131:7   warning  Unexpected console statement                                                      no-console
+2026-01-02T17:46:36.0761611Z 
+2026-01-02T17:46:36.0761975Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/07-alerts.spec.ts
+2026-01-02T17:46:36.0762671Z ##[warning]  39:9  warning  Unexpected console statement  no-console
+2026-01-02T17:46:36.0763270Z 
+2026-01-02T17:46:36.0763649Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/e2e/browser/specs/08-bindings.spec.ts
+2026-01-02T17:46:36.0764827Z ##[warning]   2:10  warning  'TEST_IDS' is defined but never used. Allowed unused vars must match /^_/u                @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0766340Z ##[warning]   5:69  warning  'apiHelper' is defined but never used. Allowed unused args must match /^_/u               @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0767856Z ##[warning]  12:11  warning  'channelBinder' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0769217Z ##[warning]  39:11  warning  Unexpected console statement                                                              no-console
+2026-01-02T17:46:36.0770807Z ##[warning]  63:76  warning  'apiHelper' is defined but never used. Allowed unused args must match /^_/u               @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0772286Z ##[warning]  89:96  warning  'apiHelper' is defined but never used. Allowed unused args must match /^_/u               @typescript-eslint/no-unused-vars
+2026-01-02T17:46:36.0773078Z 
+2026-01-02T17:46:36.0773332Z /home/runner/work/hydro2.0/hydro2.0/backend/laravel/vitest.setup.ts
+2026-01-02T17:46:36.0774077Z ##[warning]  107:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0775435Z ##[warning]  129:22  warning  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+2026-01-02T17:46:36.0776140Z 
+2026-01-02T17:46:36.0776520Z ✖ 823 problems (0 errors, 823 warnings)
+2026-01-02T17:46:36.0776707Z 

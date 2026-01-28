@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-ignore
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -14,6 +15,7 @@ interface RegisterFormData {
     email: string
     password: string
     password_confirmation: string
+    [key: string]: any
 }
 
 const { form, submit: submitForm } = useInertiaForm<RegisterFormData>(
@@ -36,93 +38,112 @@ const submit = (): void => {
 </script>
 
 <template>
-    <GuestLayout>
-        <Head title="Регистрация" />
+  <GuestLayout>
+    <Head title="Регистрация" />
 
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="name" value="Имя" />
+    <form @submit.prevent="submit">
+      <div>
+        <InputLabel
+          for="name"
+          value="Имя"
+        />
 
-                <TextInput
-                    id="name"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.name"
-                    required
-                    autofocus
-                    autocomplete="name"
-                />
+        <TextInput
+          id="name"
+          v-model="form.name"
+          type="text"
+          class="mt-1 block w-full"
+          required
+          autofocus
+          autocomplete="name"
+        />
 
-                <InputError class="mt-2" :message="form.errors.name" />
-            </div>
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).name"
+        />
+      </div>
 
-            <div class="mt-4">
-                <InputLabel for="email" value="Email" />
+      <div class="mt-4">
+        <InputLabel
+          for="email"
+          value="Email"
+        />
 
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
+        <TextInput
+          id="email"
+          v-model="form.email"
+          type="email"
+          class="mt-1 block w-full"
+          required
+          autocomplete="username"
+        />
 
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).email"
+        />
+      </div>
 
-            <div class="mt-4">
-                <InputLabel for="password" value="Пароль" />
+      <div class="mt-4">
+        <InputLabel
+          for="password"
+          value="Пароль"
+        />
 
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="new-password"
-                />
+        <TextInput
+          id="password"
+          v-model="form.password"
+          type="password"
+          class="mt-1 block w-full"
+          required
+          autocomplete="new-password"
+        />
 
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).password"
+        />
+      </div>
 
-            <div class="mt-4">
-                <InputLabel
-                    for="password_confirmation"
-                    value="Подтвердите пароль"
-                />
+      <div class="mt-4">
+        <InputLabel
+          for="password_confirmation"
+          value="Подтвердите пароль"
+        />
 
-                <TextInput
-                    id="password_confirmation"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password_confirmation"
-                    required
-                    autocomplete="new-password"
-                />
+        <TextInput
+          id="password_confirmation"
+          v-model="form.password_confirmation"
+          type="password"
+          class="mt-1 block w-full"
+          required
+          autocomplete="new-password"
+        />
 
-                <InputError
-                    class="mt-2"
-                    :message="form.errors.password_confirmation"
-                />
-            </div>
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).password_confirmation"
+        />
+      </div>
 
-            <div class="mt-4 flex items-center justify-between">
-                <Link
-                    :href="route('login')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Уже зарегистрированы? Войти
-                </Link>
+      <div class="mt-4 flex items-center justify-between">
+        <Link
+          :href="route('login')"
+          class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
+        >
+          Уже зарегистрированы? Войти
+        </Link>
 
-                    <Button variant="primary"
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Зарегистрироваться
-                    </Button>
-            </div>
-        </form>
-    </GuestLayout>
+        <Button
+          variant="primary"
+          class="ms-4"
+          :class="{ 'opacity-25': form.processing }"
+          :disabled="form.processing"
+        >
+          Зарегистрироваться
+        </Button>
+      </div>
+    </form>
+  </GuestLayout>
 </template>

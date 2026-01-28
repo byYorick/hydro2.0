@@ -1,0 +1,289 @@
+version: '3.8'
+
+services:
+  # PostgreSQL/TimescaleDB
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-hydro_hil}
+      POSTGRES_USER: ${DB_USER:-hydro}
+      POSTGRES_DB: ${DB_DATABASE:-hydro_hil}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_hil_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hydro} -d ${DB_DATABASE:-hydro_hil}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  # MQTT Broker (Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
+    volumes:
+      - ./mosquitto.hil.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto.passwords:/mosquitto/config/passwords:ro
+      - ./mosquitto.acl:/mosquitto/config/acl:ro
+      - mqtt_hil_data:/mosquitto/data
+      - mqtt_hil_logs:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Laravel Application
+  laravel:
+    build:
+      context: ../../backend/laravel
+      dockerfile: Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
+    working_dir: /app
+    environment:
+      - WEB_DOCUMENT_ROOT=/app/public
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - SESSION_DRIVER=redis
+      - CACHE_DRIVER=redis
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=debug
+      - BROADCAST_CONNECTION=reverb
+      - QUEUE_CONNECTION=redis
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=${DB_DATABASE:-hydro_hil}
+      - DB_USERNAME=${DB_USER:-hydro}
+      - DB_PASSWORD=${DB_PASSWORD:-hydro_hil}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REVERB_APP_ID=${REVERB_APP_ID:-app}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:-local}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:-secret}
+      - REVERB_SERVER_HOST=0.0.0.0
+      - REVERB_SERVER_PORT=6001
+      - REVERB_HOST=localhost
+      - REVERB_PORT=6001
+      - REVERB_SCHEME=http
+      - REVERB_CLIENT_HOST=localhost
+      - REVERB_DEBUG=true
+      - REVERB_AUTO_START=true
+      - REVERB_ALLOWED_ORIGINS=*
+      - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-localhost}
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - MQTT_BRIDGE_URL=http://mqtt-bridge:9000
+      - HISTORY_LOGGER_URL=http://history-logger:9300
+      - AUTOMATION_ENGINE_URL=http://automation-engine:9401
+    volumes:
+      - ../../backend/laravel:/app
+    ports:
+      - "${API_PORT:-8080}:80"
+      - "${WS_PORT:-6001}:6001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # MQTT Bridge
+  mqtt-bridge:
+    build:
+      context: ../../backend/services
+      dockerfile: mqtt-bridge/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
+      - MQTT_USER=${MQTT_BRIDGE_USER:-mqtt_bridge}
+      - MQTT_PASS=${MQTT_BRIDGE_PASS:-bridge_pass}
+      - PG_HOST=db
+      - PG_DB=${DB_DATABASE:-hydro_hil}
+      - PG_USER=${DB_USER:-hydro}
+      - PG_PASS=${DB_PASSWORD:-hydro_hil}
+      - LARAVEL_API_URL=http://laravel
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+    ports:
+      - "${MQTT_BRIDGE_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9000/health\").read()' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # History Logger
+  history-logger:
+    build:
+      context: ../../backend/services
+      dockerfile: history-logger/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
+      - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+      - PG_HOST=db
+      - PG_DB=${DB_DATABASE:-hydro_hil}
+      - PG_USER=${DB_USER:-hydro}
+      - PG_PASS=${DB_PASSWORD:-hydro_hil}
+      - LARAVEL_API_URL=http://laravel
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${HISTORY_LOGGER_PORT:-9300}:9300"
+      - "${HISTORY_LOGGER_METRICS_PORT:-9301}:9301"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Telemetry Aggregator
+  telemetry-aggregator:
+    build:
+      context: ../../backend/services
+      dockerfile: telemetry-aggregator/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=${DB_DATABASE:-hydro_hil}
+      - PG_USER=${DB_USER:-hydro}
+      - PG_PASS=${DB_PASSWORD:-hydro_hil}
+      - PYTHONPATH=/app
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${TELEMETRY_AGGREGATOR_METRICS_PORT:-9404}:9404"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9404)); s.close()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Automation Engine (опционально, можно отключить через переменную)
+  automation-engine:
+    build:
+      context: ../../backend/services
+      dockerfile: automation-engine/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
+      - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}
+      - PG_HOST=db
+      - PG_DB=${DB_DATABASE:-hydro_hil}
+      - PG_USER=${DB_USER:-hydro}
+      - PG_PASS=${DB_PASSWORD:-hydro_hil}
+      - LARAVEL_API_URL=http://laravel
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+    ports:
+      - "${AUTOMATION_ENGINE_METRICS_PORT:-9401}:9401"
+      - "${AUTOMATION_ENGINE_API_PORT:-9405}:9405"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - automation
+
+volumes:
+  postgres_hil_data:
+  mqtt_hil_data:
+  mqtt_hil_logs:
+
+networks:
+  default:
+    name: hil_default
+    driver: bridge
+
+
+
+
+
+
+
+

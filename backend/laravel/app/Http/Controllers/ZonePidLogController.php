@@ -7,6 +7,7 @@ use App\Models\ZoneEvent;
 use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class ZonePidLogController extends Controller
 {
@@ -41,17 +42,21 @@ class ZonePidLogController extends Controller
         $limit = $validated['limit'] ?? 50;
         $offset = $validated['offset'] ?? 0;
 
+        $detailsColumn = Schema::hasColumn('zone_events', 'payload_json')
+            ? 'payload_json'
+            : 'details';
+
         $query = ZoneEvent::where('zone_id', $zone->id)
             ->whereIn('type', ['PID_OUTPUT', 'PID_CONFIG_UPDATED']);
 
         // Фильтр по типу (для PID_OUTPUT)
         if ($type) {
-            $query->where(function ($q) use ($type) {
+            $query->where(function ($q) use ($type, $detailsColumn) {
                 $q->where('type', 'PID_CONFIG_UPDATED')
-                    ->whereJsonContains('details->type', $type)
-                    ->orWhere(function ($q2) use ($type) {
+                    ->whereJsonContains("{$detailsColumn}->type", $type)
+                    ->orWhere(function ($q2) use ($type, $detailsColumn) {
                         $q2->where('type', 'PID_OUTPUT')
-                            ->whereJsonContains('details->type', $type);
+                            ->whereJsonContains("{$detailsColumn}->type", $type);
                     });
             });
         }
@@ -79,7 +84,7 @@ class ZonePidLogController extends Controller
                     'current' => $details['current'] ?? null,
                     'target' => $details['target'] ?? null,
                     'safety_skip_reason' => $details['safety_skip_reason'] ?? null,
-                    'created_at' => $event->created_at->toIso8601String(),
+                    'created_at' => $event->created_at?->toIso8601String(),
                 ];
             } else { // PID_CONFIG_UPDATED
                 return [
@@ -89,7 +94,7 @@ class ZonePidLogController extends Controller
                     'old_config' => $details['old_config'] ?? null,
                     'new_config' => $details['new_config'] ?? null,
                     'updated_by' => $details['updated_by'] ?? null,
-                    'created_at' => $event->created_at->toIso8601String(),
+                    'created_at' => $event->created_at?->toIso8601String(),
                 ];
             }
         });

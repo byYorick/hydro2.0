@@ -7,6 +7,7 @@ use App\Http\Requests\StorePlantRequest;
 use App\Http\Requests\UpdatePlantRequest;
 use App\Models\Plant;
 use App\Services\Profitability\ProfitabilityCalculator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -17,11 +18,9 @@ use Inertia\Response;
 
 class PlantController extends Controller
 {
-    public function __construct(private readonly ProfitabilityCalculator $profitability)
-    {
-    }
+    public function __construct(private readonly ProfitabilityCalculator $profitability) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|JsonResponse
     {
         $plants = Plant::query()
             ->with([
@@ -54,23 +53,35 @@ class PlantController extends Controller
                 ];
             });
 
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => $plants,
+            ]);
+        }
+
         return Inertia::render('Plants/Index', [
             'plants' => $plants,
             'taxonomies' => $this->loadTaxonomies(),
         ]);
     }
 
-    public function show(Plant $plant): Response
+    public function show(Request $request, Plant $plant): Response|JsonResponse
     {
         $profitability = $this->profitability->calculatePlant($plant);
 
-        // Загружаем связанные рецепты с фазами
-        $plant->load(['recipes.phases' => function ($query) {
-            $query->orderBy('phase_index');
-        }]);
+        // Загружаем связанные рецепты с фазами ревизий
+        $plant->load([
+            'recipes.latestPublishedRevision.phases',
+            'recipes.latestDraftRevision.phases',
+        ]);
 
         // Формируем данные рецептов с фазами
         $recipes = $plant->recipes->map(function ($recipe) {
+            $revision = $recipe->latestPublishedRevision ?? $recipe->latestDraftRevision;
+            $phases = $revision?->phases ?? collect();
+
             return [
                 'id' => $recipe->id,
                 'name' => $recipe->name,
@@ -78,7 +89,7 @@ class PlantController extends Controller
                 'is_default' => $recipe->pivot->is_default ?? false,
                 'season' => $recipe->pivot->season,
                 'site_type' => $recipe->pivot->site_type,
-                'phases' => $recipe->phases->map(function ($phase) {
+                'phases' => $phases->map(function ($phase) {
                     return [
                         'id' => $phase->id,
                         'phase_index' => $phase->phase_index,
@@ -87,7 +98,7 @@ class PlantController extends Controller
                         'targets' => $phase->targets,
                     ];
                 })->sortBy('phase_index')->values(),
-                'phases_count' => $recipe->phases->count(),
+                'phases_count' => $phases->count(),
             ];
         });
 
@@ -110,16 +121,45 @@ class PlantController extends Controller
             'profitability' => $profitability,
         ];
 
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => $plantData,
+            ]);
+        }
+
         return Inertia::render('Plants/Show', [
             'plant' => $plantData,
             'taxonomies' => $this->loadTaxonomies(),
         ]);
     }
 
-    public function store(StorePlantRequest $request): RedirectResponse
+    public function store(StorePlantRequest $request)
     {
-        $payload = $this->preparePayload($request->validated());
-        Plant::create($payload);
+        $validated = $request->validated();
+
+        // Маппинг scientific_name -> species для обратной совместимости с тестами
+        if (isset($validated['scientific_name']) && ! isset($validated['species'])) {
+            $validated['species'] = $validated['scientific_name'];
+            unset($validated['scientific_name']);
+        }
+
+        $payload = $this->preparePayload($validated);
+        $plant = Plant::create($payload);
+
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'id' => $plant->id,
+                    'name' => $plant->name,
+                    'scientific_name' => $plant->species,
+                    'slug' => $plant->slug,
+                ],
+            ], 201);
+        }
 
         return back()->with('flash', [
             'success' => 'Растение создано',

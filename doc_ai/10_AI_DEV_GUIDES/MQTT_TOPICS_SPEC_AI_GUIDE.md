@@ -4,11 +4,15 @@
 Документ объясняет, как ИИ-агенты должны обращаться с MQTT-namespace
 и где можно, а где нельзя его изменять.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Базовый формат
 
-Базовый формат описан в `MQTT_NAMESPACE.md`:
+Базовый формат описан в `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`:
 
 ```text
 hydro/{gh}/{zone}/{node}/{channel}/{message_type}
@@ -25,14 +29,14 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - вводить **новые значения** для `{message_type}`, например `config` или `diag`,
  но только если они:
 
- - описаны в `MQTT_NAMESPACE.md`;
+ - описаны в `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`;
  - поддержаны в Python-сервисе;
  - не ломают существующие обработчики.
 
 - вводить новые каналы (`{channel}`), **если** они:
 
- - добавлены в `NODE_CHANNELS_REFERENCE.md`;
- - отражены в `DATA_MODEL_REFERENCE.md` (таблица `channels`).
+ - добавлены в `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`;
+ - отражены в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` (таблица `channels`).
 
 ---
 

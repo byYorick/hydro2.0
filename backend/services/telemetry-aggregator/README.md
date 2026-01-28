@@ -4,7 +4,9 @@
 
 ## Описание
 
-Сервис периодически (по умолчанию каждые 5 минут) агрегирует данные из `telemetry_samples`:
+Сервис периодически (по умолчанию каждые 5 минут) агрегирует данные из `telemetry_samples`
+с джоином на `sensors` для получения `node_id` и `metric_type` (`sensors.type`).
+Канал берется из `telemetry_samples.metadata->>'channel'` (при наличии).
 
 1. **telemetry_agg_1m** - агрегация по 1 минуте (из `telemetry_samples`)
 2. **telemetry_agg_1h** - агрегация по 1 часу (из `telemetry_agg_1m`)
@@ -53,5 +55,4 @@
 - `aggregation_type` - тип агрегации ('1m', '1h', 'daily')
 - `last_ts` - последняя обработанная временная метка
 - `updated_at` - время последнего обновления
-
 

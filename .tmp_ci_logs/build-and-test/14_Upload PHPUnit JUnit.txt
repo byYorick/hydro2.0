@@ -1,0 +1,25 @@
+﻿2026-01-02T17:46:26.3247084Z ##[group]Run actions/upload-artifact@v4
+2026-01-02T17:46:26.3247363Z with:
+2026-01-02T17:46:26.3247548Z   name: phpunit-junit
+2026-01-02T17:46:26.3247779Z   path: backend/laravel/test-results/phpunit.xml
+2026-01-02T17:46:26.3248045Z   retention-days: 7
+2026-01-02T17:46:26.3248233Z   if-no-files-found: warn
+2026-01-02T17:46:26.3248628Z   compression-level: 6
+2026-01-02T17:46:26.3248819Z   overwrite: false
+2026-01-02T17:46:26.3249006Z   include-hidden-files: false
+2026-01-02T17:46:26.3249209Z env:
+2026-01-02T17:46:26.3249366Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:46:26.3249579Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:46:26.3249787Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:46:26.3249969Z ##[endgroup]
+2026-01-02T17:46:26.5380637Z With the provided path, there will be 1 file uploaded
+2026-01-02T17:46:26.5386533Z Artifact name is valid!
+2026-01-02T17:46:26.5387971Z Root directory input is valid!
+2026-01-02T17:46:26.7969932Z Beginning upload of artifact content to blob storage
+2026-01-02T17:46:27.1782628Z Uploaded bytes 14344
+2026-01-02T17:46:27.2598566Z Finished uploading artifact content to blob storage!
+2026-01-02T17:46:27.2600994Z SHA256 digest of uploaded artifact zip is 4d31c1136e90255f03d218ff8b8cd4e01daf0fb8cc220948837d56386449f285
+2026-01-02T17:46:27.2602909Z Finalizing artifact upload
+2026-01-02T17:46:27.3948484Z Artifact phpunit-junit.zip successfully finalized. Artifact ID 5009711535
+2026-01-02T17:46:27.3950139Z Artifact phpunit-junit has been successfully uploaded! Final size is 14344 bytes. Artifact ID is 5009711535
+2026-01-02T17:46:27.3956435Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20663345422/artifacts/5009711535

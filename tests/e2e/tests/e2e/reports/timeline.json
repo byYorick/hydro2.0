@@ -1,0 +1,160 @@
+{
+  "test_suite": "E71_db_flaky",
+  "generated_at": "2026-01-28T07:19:25.173265",
+  "test_cases": [
+    {
+      "name": "set_test_uids",
+      "status": "passed",
+      "duration": 0.11593151092529297,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_test_uids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:03.018660"
+    },
+    {
+      "name": "fetch_node_id",
+      "status": "passed",
+      "duration": 0.13436174392700195,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_node_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:03.157929"
+    },
+    {
+      "name": "get_zones",
+      "status": "passed",
+      "duration": 0.23276185989379883,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zones",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:03.390875"
+    },
+    {
+      "name": "set_zone_id",
+      "status": "passed",
+      "duration": 0.10530734062194824,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:03.497687"
+    },
+    {
+      "name": "pause_postgres",
+      "status": "passed",
+      "duration": 2.175612688064575,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "pause_postgres",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:05.673536"
+    },
+    {
+      "name": "wait_during_pause",
+      "status": "passed",
+      "duration": 7.068634033203125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_during_pause",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:12.742403"
+    },
+    {
+      "name": "publish_error_during_db_pause",
+      "status": "passed",
+      "duration": 2.053063154220581,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_error_during_db_pause",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:14.795896"
+    },
+    {
+      "name": "unpause_postgres",
+      "status": "passed",
+      "duration": 0.2263643741607666,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "unpause_postgres",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:15.022409"
+    },
+    {
+      "name": "wait_after_recovery",
+      "status": "passed",
+      "duration": 10.10325288772583,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_recovery",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:25.125781"
+    },
+    {
+      "name": "system_still_responding",
+      "status": "passed",
+      "duration": 0.0036733150482177734,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "system_still_responding",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:25.129501"
+    },
+    {
+      "name": "data_queued_and_processed",
+      "status": "passed",
+      "duration": 0.005574226379394531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "data_queued_and_processed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-28T07:19:25.135095"
+    }
+  ],
+  "timeline": [],
+  "artifacts": {
+    "E71_db_flaky": {
+      "ws_messages": [],
+      "mqtt_messages": [],
+      "api_responses": [],
+      "context_vars": {
+        "zone_id": 1
+      }
+    }
+  }
+}

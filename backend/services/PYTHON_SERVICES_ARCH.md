@@ -4,9 +4,9 @@
 Документ описывает архитектуру Python-сервисов, их взаимодействие и структуру.
 
 **Связанные документы:**
-- `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
-- `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
+- `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
+- `../../doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 
 ---
 
@@ -105,23 +105,45 @@ mqtt-bridge/
 
 ### 3.2. history-logger
 
-**Назначение:** Подписка на MQTT, запись телеметрии в PostgreSQL.
+**Назначение:** Подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT**.
 
 **Функционал:**
 - Подписка на топики `hydro/+/+/+/telemetry`
 - Парсинг JSON payload
-- Батчинг и upsert в `telemetry_samples`
-- Обновление `telemetry_last`
+- Резолв/создание сенсоров в `sensors`
+- Batch insert в `telemetry_samples` (по `sensor_id`)
+- Batch upsert в `telemetry_last` (по `sensor_id`)
 - Обработка ошибок и реконнект
+- **Batch processing оптимизации:**
+  - Кеш `uid→id` с TTL refresh (60 секунд) для зон и нод
+  - Batch resolve недостающих UID (один запрос вместо N)
+  - Batch insert для `telemetry_samples` (по `sensor_id`)
+  - Batch upsert для `telemetry_last` (по `sensor_id`, один запрос для всех обновлений)
+  - Backpressure при >95% заполнения очереди (sampling с коэффициентом 0.8-0.5)
+  - Метрики и алерты:
+    - `telemetry_queue_size` - текущий размер очереди
+    - `telemetry_queue_dropped_total{reason}` - потерянные сообщения (overflow, backpressure)
+    - `telemetry_queue_overflow_alerts_total` - количество отправленных алертов
+    - `telemetry_dropped_total{reason}` - общие потери телеметрии
+    - Автоматические алерты при >95% заполнения очереди (throttled 1 раз в минуту)
 
 **Зависимости:**
 - MQTT Broker
 - PostgreSQL
+- Redis (для очереди телеметрии)
+
+**REST API Endpoints:**
+- `POST /commands` - универсальный endpoint для публикации команд
+- `POST /zones/{zone_id}/commands` - публикация команды для зоны
+- `POST /nodes/{node_uid}/commands` - публикация команды для ноды
+- `POST /ingest/telemetry` - прием телеметрии через HTTP
+- `GET /health` - health check
+- `GET /metrics` - Prometheus metrics
 
 **Структура:**
 ```
 history-logger/
-├── main.py          # Основной цикл подписки
+├── main.py          # Основной цикл подписки + REST API
 ├── requirements.txt
 ├── Dockerfile
 └── README.md
@@ -129,9 +151,18 @@ history-logger/
 
 **Алгоритм:**
 1. Подписка на MQTT топики телеметрии
-2. Накопление сообщений в батч
-3. Периодическая запись батча в БД (upsert)
-4. Обновление `telemetry_last` для последних значений
+2. Накопление сообщений в Redis очередь
+3. Периодическая обработка батча из очереди:
+   - Использование кеша для резолва zone_id/node_id
+   - Batch resolve недостающих UID
+   - Поиск/создание `sensor_id` в `sensors`
+   - Batch insert в `telemetry_samples`
+   - Batch upsert в `telemetry_last`
+4. Мониторинг размера очереди и backpressure
+5. **Прием команд через REST API:**
+   - Валидация команд через Pydantic
+   - Публикация команд в MQTT топики
+   - Поддержка временных топиков для узлов без конфигурации
 
 ---
 
@@ -139,24 +170,44 @@ history-logger/
 
 **Назначение:** Контроллер зон, проверка targets, публикация команд корректировки.
 
-**Порт:** 9401 (Prometheus metrics)
+**Порты:** 
+- 9401 (Prometheus metrics)
+- 9405 (REST API для scheduler)
 
 **Функционал:**
 - Периодическая загрузка конфигурации из Laravel
 - Проверка активных зон с рецептами
 - Сравнение текущих значений с targets (pH, EC)
-- Публикация команд корректировки через MQTT
+- Публикация команд корректировки через history-logger REST API
+- REST API endpoint для scheduler (`/scheduler/command`)
 - Мониторинг через Prometheus
+- **Адаптивная конкурентность:**
+  - Автоматический расчет оптимального количества параллельных зон
+  - Формула: `concurrency = ceil((total_zones * avg_time) / target_cycle_time)`
+  - Диапазон: 5-50 параллельных зон (защита от перегрузки)
+  - Скользящее среднее времени обработки (последние 100 измерений)
+  - Метрики:
+    - `optimal_concurrency_zones` - рассчитанная оптимальная конкурентность
+    - `zone_processing_time_seconds` - гистограмма времени обработки зон
+    - `zone_processing_errors_total{zone_id, error_type}` - ошибки обработки с детализацией
+- **Обработка ошибок:**
+  - Явный учет ошибок по зонам в `process_zones_parallel()`
+  - Детальная информация об ошибках: zone_id, zone_name, error_type, timestamp
+  - Метрики `zone_processing_errors_total` с детализацией по зонам и типам ошибок
+  - Алерты при >10% ошибок за цикл (warning при 10-30%, critical при >30%)
+  - Интеграция с `error_handler` для централизованной обработки ошибок
 
 **Зависимости:**
-- MQTT Broker
 - PostgreSQL
 - Laravel API
+- History-Logger (REST API для публикации команд)
 
 **Структура:**
 ```
 automation-engine/
 ├── main.py          # Основной цикл проверки зон
+├── config/
+│   └── settings.py  # Настройки (ADAPTIVE_CONCURRENCY, TARGET_CYCLE_TIME_SEC)
 ├── test_main.py     # Тесты
 ├── requirements.txt
 ├── Dockerfile
@@ -166,29 +217,36 @@ automation-engine/
 **Алгоритм:**
 1. Загрузка полной конфигурации из Laravel API
 2. Получение активных зон с рецептами из БД
-3. Для каждой зоны:
-   - Получение текущих значений из `telemetry_last`
+3. Расчет оптимальной конкурентности (если включена адаптивность)
+4. Параллельная обработка зон с ограничением конкурентности:
+   - Получение текущих значений из `telemetry_last` (join с `sensors`)
    - Сравнение с targets из рецепта
-   - Публикация команд корректировки при отклонении
-4. Повтор каждые 15 секунд
+   - Публикация команд корректировки через history-logger REST API
+   - Отслеживание ошибок и метрик
+5. Повтор каждые 15 секунд
+
+**REST API:**
+- `POST /scheduler/command` - прием команд от scheduler
+- `GET /health` - health check
 
 ---
 
 ### 3.4. scheduler
 
-**Назначение:** Расписания поливов/света из recipe phases, публикация команд на MQTT.
+**Назначение:** Расписания поливов/света из recipe phases, публикация команд через automation-engine REST API.
 
 **Порт:** 9402 (Prometheus metrics)
 
 **Функционал:**
 - Загрузка активных расписаний из БД
 - Парсинг time spec из recipe phases
-- Публикация команд по расписанию
+- Публикация команд через automation-engine REST API
 - Отслеживание выполненных команд
+- Мониторинг безопасности насосов (защита от сухого хода)
 
 **Зависимости:**
-- MQTT Broker
 - PostgreSQL
+- Automation-Engine (REST API для публикации команд)
 
 **Структура:**
 ```
@@ -204,8 +262,14 @@ scheduler/
 1. Загрузка активных расписаний из БД
 2. Парсинг time spec (например, "08:00", "12:00,18:00")
 3. Проверка текущего времени
-4. Публикация команд при наступлении времени
-5. Повтор каждые 60 секунд
+4. Публикация команд через automation-engine REST API при наступлении времени
+5. Мониторинг безопасности насосов (проверка потока после запуска)
+6. Повтор каждые 60 секунд
+
+**Команды:**
+- Все команды отправляются через `send_command_via_automation_engine()` → automation-engine REST API
+- Automation-engine проксирует команды в history-logger REST API
+- History-logger публикует команды в MQTT
 
 ---
 
@@ -218,7 +282,7 @@ scheduler/
 **Планируемый функционал:**
 - Хранение информации по нодам (ID, тип, конфиг каналов)
 - Отдача конфига ноде при первом соединении/по запросу
-- См. `backend/services/device-registry/README.md`
+- См. `device-registry/README.md`
 
 ---
 
@@ -242,22 +306,50 @@ scheduler/
 **Направление:** Двустороннее
 
 **Подписки:**
-- `history-logger`: `hydro/+/+/+/telemetry`
+- `history-logger`: `hydro/+/+/+/telemetry`, `hydro/+/+/+/heartbeat`, `hydro/node_hello`, `hydro/+/+/+/node_hello`, `hydro/+/+/+/config_report`, `hydro/+/+/+/+/command_response`
 - `automation-engine`: может подписываться на события (опционально)
 
 **Публикации:**
-- `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command`
-- `automation-engine`: команды корректировки
-- `scheduler`: команды по расписанию
+- `history-logger`: **единственная точка публикации команд** → `hydro/{gh}/{zone}/{node}/{channel}/command`
+- `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command` (legacy, для внешних систем)
 
-### 4.3. С PostgreSQL
+**Важно:** 
+- `automation-engine` и `scheduler` **не публикуют команды напрямую в MQTT**
+- Все команды проходят через `history-logger` REST API
+- Это обеспечивает единую точку логирования и мониторинга команд
+
+### 4.3. Между Python сервисами (REST API)
+
+**Архитектура команд:**
+```
+Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
+```
+
+**Endpoints:**
+- **Automation-Engine** (`http://automation-engine:9405`):
+  - `POST /scheduler/command` - прием команд от scheduler
+  - `GET /health` - health check
+  
+- **History-Logger** (`http://history-logger:9300`):
+  - `POST /commands` - универсальный endpoint для команд
+  - `POST /zones/{zone_id}/commands` - команды для зоны
+  - `POST /nodes/{node_uid}/commands` - команды для ноды
+  - `POST /ingest/telemetry` - прием телеметрии через HTTP
+  - `GET /health` - health check
+
+**Аутентификация:**
+- Bearer token через `Authorization: Bearer <token>`
+- Токены: `HISTORY_LOGGER_API_TOKEN` или `PY_INGEST_TOKEN`
+
+### 4.4. С PostgreSQL
 
 **Направление:** Python → PostgreSQL
 
 **Таблицы:**
-- `telemetry_samples` — история телеметрии (запись через `history-logger`)
-- `telemetry_last` — последние значения (обновление через `history-logger`)
-- `zones`, `recipes`, `recipe_phases` — чтение через `automation-engine` и `scheduler`
+- `sensors` — справочник сенсоров (type/label/scope, связь с zone/node)
+- `telemetry_samples` — история телеметрии (запись через `history-logger`, `sensor_id`)
+- `telemetry_last` — последние значения (обновление через `history-logger`, `sensor_id`)
+- `zones`, `grow_cycles`, `effective_targets` — чтение через `automation-engine` и `scheduler` (через Laravel API)
 - `commands` — логирование команд (опционально)
 
 ---
@@ -305,7 +397,7 @@ backend/services/
 
 ### 5.2. Планируемая структура (согласно документации)
 
-Согласно `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
+Согласно `../../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
 
 ```
 backend/services/
@@ -360,9 +452,39 @@ backend/services/
 - `scheduler`: порт 9402 (`/metrics`)
 
 **Метрики:**
-- Счетчики команд (отправлено, получено)
-- Гистограммы задержек
-- Счетчики ошибок
+
+**history-logger:**
+- `telemetry_received_total` - получено сообщений из MQTT
+- `telemetry_processed_total` - обработано сообщений
+- `telemetry_dropped_total{reason}` - потерянные сообщения
+- `telemetry_queue_size` - размер очереди Redis
+- `telemetry_queue_dropped_total{reason}` - потерянные из-за переполнения очереди
+- `telemetry_queue_overflow_alerts_total` - алерты о переполнении
+- `telemetry_batch_size` - размер батчей
+- `telemetry_processing_duration_seconds` - время обработки батча
+- `telemetry_queue_age_seconds` - возраст самого старого элемента в очереди
+
+**automation-engine:**
+- `optimal_concurrency_zones` - оптимальная конкурентность
+- `zone_processing_time_seconds` - время обработки зон
+- `zone_processing_errors_total{zone_id, error_type}` - ошибки обработки
+- `zone_checks_total` - количество проверок зон
+- `check_latency_seconds` - задержка проверок
+- `automation_commands_sent_total{zone_id, metric}` - отправлено команд
+- `rest_command_errors_total{error_type}` - ошибки REST запросов к history-logger
+- `command_rest_latency_seconds` - задержка REST запросов
+
+**scheduler:**
+- `schedule_executions_total{zone_id, task_type}` - выполненные расписания
+- `active_schedules` - количество активных расписаний
+- `scheduler_command_rest_errors_total{error_type}` - ошибки REST запросов к automation-engine
+
+**history-logger:**
+- `commands_received_total` - получено команд через REST API
+- `commands_published_total{zone_id, metric}` - опубликовано команд в MQTT
+- `command_publish_errors_total{error_type}` - ошибки публикации в MQTT
+- `command_rest_requests_total` - количество REST запросов команд
+- `command_rest_latency_seconds` - задержка обработки REST запросов
 
 ---
 
@@ -374,11 +496,48 @@ backend/services/
 - `pytest.ini` — общая конфигурация
 - `requirements-test.txt` — зависимости для тестов
 - `test_main.py` в каждом сервисе — unit-тесты
+- `tests/` — дополнительные тесты для специфичных функций
+
+**Покрытие тестами:**
+
+**history-logger:**
+- `test_main.py` - основные тесты обработки телеметрии
+- `test_commands.py` - тесты REST API endpoints для команд
+- `test_batch_processing.py` - batch processing и кеширование
+- `test_batch_upsert_optimization.py` - оптимизация batch upsert
+- `test_overflow_metrics.py` - метрики overflow и алерты
+- `test_metrics_and_improvements.py` - общие метрики
+- `test_redis_queue_integration.py` - интеграция с Redis
+
+**automation-engine:**
+- `test_main.py` - основные тесты automation engine
+- `test_command_bus.py` - тесты CommandBus с REST API
+- `test_api.py` - тесты REST API endpoints
+- `test_zone_automation_service.py` - сервис автоматизации зон
+- `tests/test_adaptive_concurrency.py` - адаптивная конкурентность
+- `tests/test_error_handling.py` - обработка ошибок
+- `test_repositories.py` - репозитории
+- `test_*_controller.py` - тесты контроллеров (pH/EC, climate, light, irrigation)
 
 **Запуск:**
 ```bash
+# Все тесты
 pytest backend/services/
+
+# Конкретный сервис
+pytest backend/services/history-logger/
+pytest backend/services/automation-engine/
+pytest backend/services/scheduler/
+
+# С покрытием
+pytest --cov=backend/services/history-logger backend/services/history-logger/
 ```
+
+**Покрытие тестами (после рефакторинга на REST API):**
+- **Automation-Engine:** 20 тестов (CommandBus + REST API)
+- **Scheduler:** 9 тестов (REST интеграция)
+- **History-Logger:** 13 тестов (REST API endpoints)
+- **Всего:** 42 теста, 100% успешность
 
 ---
 
@@ -393,8 +552,15 @@ pytest backend/services/
 - `automation-engine` зависит от `laravel`
 
 **Health checks:**
-- HTTP endpoints для проверки здоровья
-- Prometheus metrics endpoints
+- HTTP endpoints для проверки здоровья (`/health`)
+- Prometheus metrics endpoints (`/metrics`)
+- Health checks в Docker Compose
+
+**Порты:**
+- `mqtt-bridge`: 9000 (REST API + metrics)
+- `history-logger`: 9300 (REST API), 9301 (metrics)
+- `automation-engine`: 9401 (metrics), 9405 (REST API)
+- `scheduler`: 9402 (metrics)
 
 ---
 
@@ -410,8 +576,7 @@ pytest backend/services/
 
 ## Ссылки
 
-- Документация проекта: `doc_ai/`
-- Backend архитектура: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Общий README: `backend/services/README.md`
-
+- Документация проекта: `../../doc_ai/`
+- Backend архитектура: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- MQTT спецификация: `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Общий README: `README.md`

@@ -3,6 +3,10 @@
 
 Этот документ описывает подход к тестированию фронтенда системы управления теплицей 2.0, включая unit-тесты компонентов, интеграционные тесты страниц и E2E-тесты.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Общая стратегия
@@ -374,12 +378,11 @@ npx playwright test --debug
 
 ## 12. Связанные документы
 
-- `DEV_CONVENTIONS.md` - общие конвенции разработки
+- `../DEV_CONVENTIONS.md` - общие конвенции разработки
 - `FRONTEND_ARCH_FULL.md` - архитектура фронтенда
 - `FRONTEND_UI_UX_SPEC.md` - спецификация UI/UX
-- `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` - общая стратегия тестирования
+- `../08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` - общая стратегия тестирования
 
 ---
 
 ## Конец файла FRONTEND_TESTING.md
-

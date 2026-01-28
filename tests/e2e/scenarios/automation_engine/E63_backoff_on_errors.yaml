@@ -1,0 +1,365 @@
+# E63: Backoff on Errors - degraded mode (через test hook)
+# DoD: серия ошибок → degraded mode → контроллеры отключены
+
+name: E63_backoff_on_errors
+description: |
+  Проверяет переход в degraded mode и отключение контроллеров:
+  - Сначала климат работает (есть команда нагрева)
+  - Затем принудительно выставляем error_streak >= threshold
+  - В degraded mode команды не создаются
+  - После reset_backoff команды снова появляются
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - air_temp_c
+        actuators:
+          - heater
+      telemetry:
+        interval_seconds: 60.0
+
+actions:
+  - step: stop_node_simulator_initial
+    type: stop_simulator
+    wait_seconds: 5
+    optional: true
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true
+
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+
+  - step: set_node_id_from_uid
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: set_ids
+    type: set
+    zone_id: ${zone_row.0.id}
+    node_id: ${node_row.0.node_id}
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  # Создаем рецепт с климатическими targets
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e63-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e63-${TIMESTAMP_S}
+      description: Test recipe for E63
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E63
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      temp_air_target: 30.0
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: wait_for_effective_targets
+    type: sleep
+    seconds: 2
+
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'climate_control', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  # Привязка heater
+  - step: fetch_heater_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'heater'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    save: heater_channel_row
+
+  - step: fetch_heater_infra
+    type: database_query
+    query: |
+      SELECT id AS infra_id
+      FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND asset_type = 'HEATER'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: heater_infra_row
+    expected_rows: 1
+
+  - step: upsert_heater_binding
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings (
+        infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at
+      )
+      VALUES (:infra_id, :node_channel_id, 'actuator', 'heater', NOW(), NOW())
+      ON CONFLICT (node_channel_id) DO UPDATE
+      SET infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW();
+    params:
+      infra_id: ${heater_infra_row.0.infra_id}
+      node_channel_id: ${heater_channel_row.0.node_channel_id}
+
+  - step: reset_backoff
+    type: ae_test_hook
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
+    zone_id: ${zone_id}
+    action: reset_backoff
+
+  # Базовая проверка — климат работает
+  - step: publish_temp_low_baseline
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
+    payload:
+      metric_type: TEMPERATURE
+      value: 29.0
+    qos: 1
+    wait_seconds: 2
+
+  - step: wait_for_baseline_command
+    type: sleep
+    seconds: 20
+
+  - step: baseline_timestamp
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: baseline_ts
+
+  - step: baseline_window_start
+    type: database_query
+    query: |
+      SELECT :baseline_ts::timestamp - INTERVAL '2 minutes' AS ts
+    params:
+      baseline_ts: ${baseline_ts.0.ts}
+    save: baseline_ts_min
+
+  # Включаем degraded mode через test hook
+  - step: set_degraded_state
+    type: ae_test_hook
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
+    zone_id: ${zone_id}
+    action: set_state
+    state:
+      error_streak: 3
+      next_allowed_run_at: null
+
+  - step: degraded_timestamp
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: degraded_ts
+
+  - step: publish_temp_low_degraded
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
+    payload:
+      metric_type: TEMPERATURE
+      value: 29.2
+    qos: 1
+    wait_seconds: 2
+
+  - step: wait_for_degraded_cycle
+    type: sleep
+    seconds: 20
+
+  - step: reset_backoff_after_degraded
+    type: ae_test_hook
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
+    zone_id: ${zone_id}
+    action: reset_backoff
+
+  - step: reset_timestamp
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: reset_ts
+
+  - step: publish_temp_low_after_reset
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
+    payload:
+      metric_type: TEMPERATURE
+      value: 28.9
+    qos: 1
+    wait_seconds: 2
+
+  - step: wait_for_post_reset_command
+    type: sleep
+    seconds: 20
+
+assertions:
+  - name: baseline_heater_command_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at <= :baseline_ts
+        AND created_at > :baseline_ts_min
+    params:
+      zone_id: ${zone_id}
+      baseline_ts: ${baseline_ts.0.ts}
+      baseline_ts_min: ${baseline_ts_min.0.ts}
+    expected:
+      - field: cmd_count
+        operator: greater_than
+        value: 0
+
+  - name: no_commands_in_degraded_mode
+    type: database_query
+    query: |
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at > :degraded_ts
+        AND created_at <= :reset_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+      reset_ts: ${reset_ts.0.ts}
+    expected:
+      - field: cmd_count
+        operator: equals
+        value: 0
+
+  - name: commands_after_reset
+    type: database_query
+    query: |
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at > :reset_ts
+    params:
+      zone_id: ${zone_id}
+      reset_ts: ${reset_ts.0.ts}
+    expected:
+      - field: cmd_count
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: clear_state_override
+    type: ae_test_hook
+    url: http://${AUTOMATION_ENGINE_HOST}:9505
+    zone_id: ${zone_id}
+    action: reset_backoff
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

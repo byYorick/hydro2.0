@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\DeviceNode;
 use App\Models\Zone;
 use App\Services\NodeRegistryService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeRegistryServiceTest extends TestCase

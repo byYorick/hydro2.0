@@ -5,9 +5,10 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
+use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
@@ -28,7 +29,7 @@ class PythonIngestControllerTest extends TestCase
     {
         $this->postJson('/api/python/ingest/telemetry', [
             'zone_id' => 1,
-            'metric_type' => 'ph',
+            'metric_type' => 'PH',
             'value' => 6.5,
         ])->assertStatus(401);
     }
@@ -54,7 +55,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
                 'channel' => 'ph_sensor',
             ]);
@@ -70,7 +71,7 @@ class PythonIngestControllerTest extends TestCase
                 && count($request->data()['samples']) === 1
                 && $request->data()['samples'][0]['node_uid'] === $node->uid
                 && $request->data()['samples'][0]['zone_id'] === $zone->id
-                && $request->data()['samples'][0]['metric_type'] === 'ph'
+                && $request->data()['samples'][0]['metric_type'] === 'PH'
                 && $request->data()['samples'][0]['value'] === 6.5;
         });
     }
@@ -97,7 +98,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
 
@@ -125,7 +126,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
 
@@ -141,7 +142,7 @@ class PythonIngestControllerTest extends TestCase
         // Тест: отсутствует zone_id
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error
@@ -150,7 +151,7 @@ class PythonIngestControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => 99999, // Несуществующий zone_id
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error
@@ -161,7 +162,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => 99999, // Несуществующий node_id
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error (exists:nodes,id)
@@ -175,7 +176,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone2->id, // Другая зона
                 'node_id' => $node->id, // Нода привязана к zone1
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422) // Validation error
@@ -196,7 +197,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone2->id, // Другая зона
                 'node_id' => $node->id, // Нода из zone1
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
 
@@ -223,7 +224,7 @@ class PythonIngestControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'value' => 6.5,
             ]);
 
@@ -238,23 +239,22 @@ class PythonIngestControllerTest extends TestCase
         // Создаём команду напрямую
         $command = \App\Models\Command::create([
             'cmd_id' => 'cmd-test-123',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd' => 'test_command',
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/commands/ack', [
                 'cmd_id' => 'cmd-test-123',
-                'status' => 'completed',
+                'status' => 'DONE',
             ]);
 
         $response->assertOk()
             ->assertJson(['status' => 'ok']);
 
-        // Проверяем, что статус команды НЕ обновлён
+        // Проверяем, что статус команды обновлён
         $command->refresh();
-        $this->assertEquals('pending', $command->status);
-        // Laravel больше не обновляет статусы команд
+        $this->assertEquals(Command::STATUS_DONE, $command->status);
     }
 
     public function test_command_ack_endpoint_requires_auth(): void
@@ -265,8 +265,7 @@ class PythonIngestControllerTest extends TestCase
         
         $this->postJson('/api/python/commands/ack', [
             'cmd_id' => 'cmd-test-123',
-            'status' => 'completed',
+            'status' => 'DONE',
         ])->assertStatus(401);
     }
 }
-

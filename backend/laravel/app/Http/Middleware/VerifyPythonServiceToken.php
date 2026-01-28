@@ -88,8 +88,8 @@ class VerifyPythonServiceToken
             ], 401);
         }
 
-        // Токен валиден - устанавливаем сервисного пользователя
-        // Используем первого админа или создаем сервисного пользователя
+        // Токен валиден - устанавливаем сервисного пользователя, если он существует
+        // Для публичных эндпоинтов (например, /api/system/config/full) пользователь не обязателен
         $serviceUser = $this->getServiceUser();
         if ($serviceUser) {
             Auth::guard('sanctum')->setUser($serviceUser);
@@ -99,7 +99,15 @@ class VerifyPythonServiceToken
                 'user_id' => $serviceUser->id,
             ]);
         } else {
-            Log::warning('Python service token verified but service user not found');
+            // Пользователь не найден, но токен валиден - разрешаем запрос для публичных эндпоинтов
+            // Логируем только один раз, чтобы не засорять логи
+            static $logged = false;
+            if (!$logged) {
+                Log::info('Python service token verified but service user not found - allowing request for public endpoints', [
+                    'note' => 'Consider creating a viewer user for better security and authorization',
+                ]);
+                $logged = true;
+            }
         }
 
         return $next($request);
@@ -115,19 +123,19 @@ class VerifyPythonServiceToken
     private function getServiceUser(): ?User
     {
         // Пытаемся найти пользователя с ролью viewer (минимальные права - только чтение)
-        $viewer = User::where('role', 'viewer')->first();
+        $viewer = User::where('role', 'viewer')->latest('id')->first();
         if ($viewer) {
             return $viewer;
         }
 
         // Если viewer нет, используем оператора (но не админа для безопасности)
-        $operator = User::whereIn('role', ['operator', 'engineer', 'agronomist'])->first();
+        $operator = User::whereIn('role', ['operator', 'engineer', 'agronomist'])->latest('id')->first();
         if ($operator) {
             return $operator;
         }
 
         // В крайнем случае используем админа, но логируем предупреждение
-        $admin = User::where('role', 'admin')->first();
+        $admin = User::where('role', 'admin')->latest('id')->first();
         if ($admin) {
             Log::warning('Service token using admin user - consider creating a viewer user for better security', [
                 'admin_id' => $admin->id,
@@ -138,7 +146,7 @@ class VerifyPythonServiceToken
 
         // Если нет подходящих пользователей, возвращаем первого пользователя
         // (в продакшене должен быть хотя бы один пользователь)
-        $user = User::first();
+        $user = User::latest('id')->first();
         if ($user) {
             Log::warning('Service token using first available user - consider creating a dedicated viewer user', [
                 'user_id' => $user->id,

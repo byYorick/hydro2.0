@@ -1,19 +1,31 @@
 <template>
   <div
     v-if="open"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[color:var(--bg-main)]/80 backdrop-blur-sm"
     @click.self="$emit('close')"
   >
-    <div class="bg-neutral-900 border border-neutral-800 rounded-lg shadow-xl w-full max-w-7xl max-h-[90vh] flex flex-col">
+    <div class="bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] rounded-lg shadow-[var(--shadow-card)] w-full max-w-7xl max-h-[90vh] flex flex-col">
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b border-neutral-800">
-        <h2 class="text-lg font-semibold">Сравнение зон</h2>
+      <div class="flex items-center justify-between p-4 border-b border-[color:var(--border-muted)]">
+        <h2 class="text-lg font-semibold">
+          Сравнение зон
+        </h2>
         <button
+          class="p-1.5 rounded hover:bg-[color:var(--bg-elevated)] transition-colors"
           @click="$emit('close')"
-          class="p-1.5 rounded hover:bg-neutral-800 transition-colors"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -27,41 +39,60 @@
             <button
               v-for="zone in availableZones"
               :key="zone.id"
-              @click="toggleZone(zone.id)"
               class="px-3 py-1.5 rounded border text-sm transition-colors"
               :class="selectedZoneIds.includes(zone.id)
-                ? 'border-sky-500 bg-sky-950/30 text-sky-300'
-                : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600'"
+                ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+                : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+              @click="toggleZone(zone.id)"
             >
               {{ zone.name }}
-              <span v-if="selectedZoneIds.includes(zone.id)" class="ml-1">✓</span>
+              <span
+                v-if="selectedZoneIds.includes(zone.id)"
+                class="ml-1"
+              >✓</span>
             </button>
           </div>
-          <div v-if="selectedZoneIds.length < 2" class="text-xs text-amber-400 mt-2">
+          <div
+            v-if="selectedZoneIds.length < 2"
+            class="text-xs text-[color:var(--accent-amber)] mt-2"
+          >
             Выберите минимум 2 зоны для сравнения
           </div>
         </div>
 
         <!-- Сравнительная таблица метрик -->
-        <div v-if="selectedZoneIds.length >= 2" class="mb-6">
-          <h3 class="text-sm font-semibold mb-3">Текущие метрики</h3>
+        <div
+          v-if="selectedZoneIds.length >= 2"
+          class="mb-6"
+        >
+          <h3 class="text-sm font-semibold mb-3">
+            Текущие метрики
+          </h3>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
-                <tr class="border-b border-neutral-800">
-                  <th class="text-left p-2 text-neutral-400">Метрика</th>
+                <tr class="border-b border-[color:var(--border-muted)]">
+                  <th class="text-left p-2 text-[color:var(--text-muted)]">
+                    Метрика
+                  </th>
                   <th
                     v-for="zoneId in selectedZoneIds"
                     :key="zoneId"
-                    class="text-left p-2 text-neutral-400"
+                    class="text-left p-2 text-[color:var(--text-muted)]"
                   >
                     {{ getZoneName(zoneId) }}
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="metric in metrics" :key="metric.key" class="border-b border-neutral-800/50">
-                  <td class="p-2 font-medium">{{ metric.label }}</td>
+                <tr
+                  v-for="metric in metrics"
+                  :key="metric.key"
+                  class="border-b border-[color:var(--border-muted)]"
+                >
+                  <td class="p-2 font-medium">
+                    {{ metric.label }}
+                  </td>
                   <td
                     v-for="zoneId in selectedZoneIds"
                     :key="zoneId"
@@ -69,7 +100,10 @@
                   >
                     <div class="flex items-center gap-2">
                       <span>{{ formatMetricValue(zoneId, metric.key) }}</span>
-                      <span v-if="metric.unit" class="text-xs text-neutral-500">{{ metric.unit }}</span>
+                      <span
+                        v-if="metric.unit"
+                        class="text-xs text-[color:var(--text-dim)]"
+                      >{{ metric.unit }}</span>
                     </div>
                   </td>
                 </tr>
@@ -79,9 +113,17 @@
         </div>
 
         <!-- Графики сравнения -->
-        <div v-if="selectedZoneIds.length >= 2 && !loading" class="space-y-4">
-          <div v-for="metric in chartMetrics" :key="metric.key">
-            <h3 class="text-sm font-semibold mb-2">{{ metric.label }}</h3>
+        <div
+          v-if="selectedZoneIds.length >= 2 && !loading"
+          class="space-y-4"
+        >
+          <div
+            v-for="metric in chartMetrics"
+            :key="metric.key"
+          >
+            <h3 class="text-sm font-semibold mb-2">
+              {{ metric.label }}
+            </h3>
             <Card>
               <MultiSeriesTelemetryChart
                 :title="metric.label"
@@ -94,22 +136,28 @@
         </div>
 
         <!-- Loading state -->
-        <div v-if="loading" class="flex items-center justify-center py-12">
-          <LoadingState loading size="lg" />
+        <div
+          v-if="loading"
+          class="flex items-center justify-center py-12"
+        >
+          <LoadingState
+            loading
+            size="lg"
+          />
         </div>
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-between p-4 border-t border-neutral-800">
-        <div class="text-xs text-neutral-400">
+      <div class="flex items-center justify-between p-4 border-t border-[color:var(--border-muted)]">
+        <div class="text-xs text-[color:var(--text-muted)]">
           Выбрано зон: {{ selectedZoneIds.length }}
         </div>
         <div class="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            @click="exportComparison"
             :disabled="selectedZoneIds.length < 2 || loading"
+            @click="exportComparison"
           >
             📥 Экспорт данных
           </Button>
@@ -133,6 +181,7 @@ import Button from '@/Components/Button.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
+import { useTheme } from '@/composables/useTheme'
 import type { Zone, TelemetrySample } from '@/types'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
@@ -143,11 +192,12 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{
+defineEmits<{
   close: []
 }>()
 
 const { fetchAggregates } = useTelemetry()
+const { theme } = useTheme()
 
 const selectedZoneIds = ref<number[]>([])
 const timeRange = ref<TimeRange>('24H')
@@ -161,7 +211,7 @@ const hasMinimumSelection = computed(() => selectedZoneIds.value.length >= 2)
 const metrics = [
   { key: 'ph', label: 'pH', unit: '' },
   { key: 'ec', label: 'EC', unit: 'мСм/см' },
-  { key: 'temp_air', label: 'Температура', unit: '°C' },
+  { key: 'temperature', label: 'Температура', unit: '°C' },
   { key: 'humidity', label: 'Влажность', unit: '%' },
 ]
 
@@ -169,6 +219,25 @@ const chartMetrics = [
   { key: 'ph', label: 'pH' },
   { key: 'ec', label: 'EC' },
 ]
+
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return [
+    resolveCssColor('--accent-cyan', '#3b82f6'),
+    resolveCssColor('--accent-green', '#10b981'),
+    resolveCssColor('--accent-amber', '#f59e0b'),
+    resolveCssColor('--accent-red', '#ef4444'),
+    resolveCssColor('--accent-lime', '#8b5cf6'),
+  ]
+})
 
 function toggleZone(zoneId: number): void {
   const index = selectedZoneIds.value.indexOf(zoneId)
@@ -200,23 +269,20 @@ function formatMetricValue(zoneId: number, metricKey: string): string {
 }
 
 function getChartSeries(metricKey: string) {
-  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
-  
   return selectedZoneIds.value.map((zoneId, index) => {
-    const zone = props.zones.find(z => z.id === zoneId)
     const data = telemetryData.value.get(zoneId)?.get(metricKey) || []
-    
+
     return {
       name: getZoneName(zoneId),
       label: getZoneName(zoneId),
-      color: colors[index % colors.length],
+      color: chartPalette.value[index % chartPalette.value.length],
       data: data.map(d => ({
         ts: d.ts,
-        value: d.value !== undefined ? d.value : d.avg || 0,
+        value: d.value !== undefined ? d.value : (d as any).avg || 0,
       })),
       currentValue: formatMetricValue(zoneId, metricKey),
     }
-  })
+  }) as any
 }
 
 async function loadTelemetryData(): Promise<void> {
@@ -290,7 +356,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ph') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : point?.avg
+      const value = point?.value !== undefined ? point.value : (point as any)?.avg
       row.push(value !== undefined ? value.toFixed(2) : '')
     })
     
@@ -298,7 +364,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ec') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : point?.avg
+      const value = point?.value !== undefined ? point.value : (point as any)?.avg
       row.push(value !== undefined ? value.toFixed(1) : '')
     })
     
@@ -324,13 +390,13 @@ function resetComparisonState() {
 
 watch(
   () => [selectedZoneIds.value.slice(), timeRange.value, props.open],
-  ([zones, , isOpen]) => {
+  ([zoneIds, , isOpen]) => {
     if (!isOpen) {
       resetComparisonState()
       return
     }
 
-    if (zones.length < 2) {
+    if ((zoneIds as any[]).length < 2) {
       telemetryData.value.clear()
       return
     }

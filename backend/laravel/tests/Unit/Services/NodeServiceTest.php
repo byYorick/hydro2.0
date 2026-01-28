@@ -4,8 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
+use App\Services\NodeRegistryService;
 use App\Services\NodeService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeServiceTest extends TestCase
@@ -18,7 +19,8 @@ class NodeServiceTest extends TestCase
     {
         parent::setUp();
         $this->service = new NodeService(
-            app(NodeLifecycleService::class)
+            app(NodeLifecycleService::class),
+            app(NodeRegistryService::class),
         );
     }
 

@@ -1,17 +1,17 @@
 <template>
   <Card 
-    class="h-full overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group cursor-pointer"
+    class="h-full overflow-hidden surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 group cursor-pointer"
     @click="handleClick"
   >
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs font-medium uppercase tracking-wide text-neutral-400 group-hover:text-neutral-300 transition-colors">
+      <div class="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)] group-hover:text-[color:var(--text-primary)] transition-colors">
         {{ label }}
       </div>
       <div class="flex items-center gap-2">
         <!-- Индикатор аномалий -->
         <div 
           v-if="hasAnomalies && !loading"
-          class="w-2 h-2 rounded-full bg-red-400 animate-pulse"
+          class="w-2 h-2 rounded-full bg-[color:var(--accent-red)] animate-pulse"
           title="Обнаружены аномалии"
         ></div>
         <!-- Индикатор активности -->
@@ -22,22 +22,44 @@
         ></div>
       </div>
     </div>
-    <div class="text-2xl font-bold mb-2" :style="{ color: color }">
+    <div
+      class="text-2xl font-bold mb-2"
+      :style="{ color: color }"
+    >
       {{ currentValue !== null ? formatValue(currentValue) : '-' }}
-      <span v-if="unit" class="text-sm text-neutral-400 ml-1">{{ unit }}</span>
+      <span
+        v-if="unit"
+        class="text-sm text-[color:var(--text-muted)] ml-1"
+      >{{ unit }}</span>
     </div>
     <!-- Sparkline график -->
-    <div v-if="loading" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-neutral-500">Загрузка...</div>
+    <div
+      v-if="loading"
+      class="h-16 flex items-center justify-center"
+    >
+      <div class="text-xs text-[color:var(--text-dim)]">
+        Загрузка...
+      </div>
     </div>
-    <div v-else-if="data.length === 0" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-neutral-500">Нет данных</div>
+    <div
+      v-else-if="data.length === 0"
+      class="h-16 flex items-center justify-center"
+    >
+      <div class="text-xs text-[color:var(--text-dim)]">
+        Нет данных
+      </div>
     </div>
-    <div v-else class="h-16 relative">
-      <ChartBase :option="chartOption" full-height />
+    <div
+      v-else
+      class="h-16 relative"
+    >
+      <ChartBase
+        :option="chartOption"
+        full-height
+      />
       <!-- Подсказка о клике -->
       <div class="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div class="text-[10px] text-neutral-500 bg-neutral-900/80 px-1.5 py-0.5 rounded">
+        <div class="text-[10px] text-[color:var(--text-dim)] bg-[color:var(--bg-surface-strong)] px-1.5 py-0.5 rounded">
           Клик для деталей
         </div>
       </div>
@@ -49,6 +71,7 @@
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import ChartBase from '@/Components/ChartBase.vue'
+import { useTheme } from '@/composables/useTheme'
 
 interface TelemetryDataPoint {
   ts: number
@@ -79,7 +102,68 @@ const props = withDefaults(defineProps<Props>(), {
   currentValue: null,
   unit: '',
   loading: false,
-  color: '#3b82f6'
+  color: 'var(--accent-cyan)'
+})
+
+const { theme } = useTheme()
+
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    surface: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
+    border: resolveCssColor('--border-muted', '#374151'),
+    text: resolveCssColor('--text-primary', '#f3f4f6'),
+  }
+})
+
+const resolveColorFromProp = (value?: string): string => {
+  if (!value) {
+    return resolveCssColor('--accent-cyan', '#3b82f6')
+  }
+  if (value.startsWith('var(')) {
+    const variable = value.slice(4, -1).trim()
+    return resolveCssColor(variable, '#3b82f6')
+  }
+  if (value.startsWith('--')) {
+    return resolveCssColor(value, '#3b82f6')
+  }
+  return value
+}
+
+const toRgba = (color: string, alpha: number): string => {
+  if (color.startsWith('#')) {
+    const hex = color.replace('#', '')
+    const normalized = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex
+    const int = parseInt(normalized, 16)
+    const r = (int >> 16) & 255
+    const g = (int >> 8) & 255
+    const b = int & 255
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  const rgbMatch = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/u)
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  const rgbaMatch = color.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)$/u)
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return color
+}
+
+const resolvedColor = computed(() => {
+  theme.value
+  return resolveColorFromProp(props.color)
 })
 
 function formatValue(value: number | null | undefined): string {
@@ -124,7 +208,7 @@ const chartOption = computed(() => {
       grid: { left: 8, right: 8, top: 8, bottom: 8 },
       xAxis: { show: false },
       yAxis: { show: false },
-    }
+    } as any
   }
 
   return {
@@ -133,7 +217,7 @@ const chartOption = computed(() => {
       confine: false, // Не ограничиваем tooltip границами графика
       appendToBody: true, // Добавляем tooltip в body для правильного z-index
       renderMode: 'html', // Используем HTML рендеринг для лучшего контроля
-      formatter: (params) => {
+      formatter: (params: any) => {
         const point = params[0]
         const date = new Date(point.axisValue)
         // Форматируем время в понятном формате: "25.12.2024, 15:30"
@@ -155,14 +239,14 @@ const chartOption = computed(() => {
         
         return `${dateStr}, ${timeStr}<br/>${point.seriesName}: ${valueStr}${props.unit ? ' ' + props.unit : ''}`
       },
-      backgroundColor: 'rgba(17, 24, 39, 0.95)', // neutral-900 с прозрачностью
-      borderColor: '#374151',
+      backgroundColor: chartPalette.value.surface,
+      borderColor: chartPalette.value.border,
       borderWidth: 1,
       textStyle: {
-        color: '#f3f4f6',
+        color: chartPalette.value.text,
         fontSize: 12,
       },
-      extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 6px;',
+      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 6px 10px; border-radius: 6px;',
     },
     grid: { 
       left: 4, 
@@ -189,7 +273,7 @@ const chartOption = computed(() => {
         smooth: true,
         lineStyle: { 
           width: 1.5,
-          color: props.color
+          color: resolvedColor.value
         },
         areaStyle: {
           color: {
@@ -199,8 +283,8 @@ const chartOption = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: props.color + '40' },
-              { offset: 1, color: props.color + '00' }
+              { offset: 0, color: toRgba(resolvedColor.value, 0.25) },
+              { offset: 1, color: toRgba(resolvedColor.value, 0) }
             ]
           }
         },
@@ -214,4 +298,3 @@ const chartOption = computed(() => {
   }
 })
 </script>
-

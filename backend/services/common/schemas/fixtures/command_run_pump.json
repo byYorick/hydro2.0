@@ -1,0 +1,9 @@
+{
+  "cmd_id": "cmd-54321",
+  "cmd": "run_pump",
+  "params": {
+    "duration_ms": 30000
+  },
+  "ts": 1737979200,
+  "sig": "deadbeef"
+}

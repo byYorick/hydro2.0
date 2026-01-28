@@ -6,6 +6,10 @@ telemetry, commands, config, status/LWT, heartbeat, alerts, events,
 и то, как Backend, MQTT, узлы ESP32, фронтенд и базы данных
 обмениваются информацией в реальном времени.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Общая концепция потоков данных
@@ -58,7 +62,7 @@ telemetry, commands, config, status/LWT, heartbeat, alerts, events,
 
 ## 3.1. Назначение
 Telemetry — это поток измерений, поступающих от узлов:
-pH, EC, t°, RH, LUX, CO₂, уровень, расход и т.п.
+pH, EC, t°, RH, LIGHT_INTENSITY, CO₂, уровень, расход и т.п.
 
 ## 3.2. Шаги
 
@@ -80,14 +84,13 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.4. Пример JSON
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.81,
- "raw": 1461,
  "ts": 1710023000
 }
 ```
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
 
 ## 3.5. QoS = 1 
 ## Retain = false
@@ -122,7 +125,11 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "cmd": "run_pump",
- "duration_ms": 2500
+ "params": {
+  "duration_ms": 2500
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -131,7 +138,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "status": "ACK",
- "ts": 1710023005
+ "ts": 1710023005123
 }
 ```
 
@@ -146,24 +153,19 @@ NodeConfig определяет:
 - безопасные лимиты,
 - параметры Wi‑Fi/MQTT.
 
-Узел не имеет своей логики — всё определяется этим файлом.
+Узел использует этот файл как источник настроек, конфиг хранится в прошивке/NVS.
 
 ## 5.2. Шаги
 
-1. Backend генерирует NodeConfig.
-2. Публикует MQTT config в топик `hydro/{gh}/{zone}/{node}/config`.
-3. Узел принимает config.
-4. Валидирует.
-5. Сохраняет в NVS.
-6. Перезапускает каналы.
-7. Отправляет config_response в топик `hydro/{gh}/{zone}/{node}/config_response`.
-8. **Backend обрабатывает config_response:**
-   - При `status: "OK"`: если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, переводит в `ASSIGNED_TO_ZONE`
-   - При `status: "ERROR"`: логирует ошибку, нода остается в `REGISTERED_BACKEND`
+1. Нода формирует NodeConfig в прошивке/NVS.
+2. Отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
+3. Backend сохраняет конфиг и синхронизирует `node_channels`.
+4. Нода валидирует и применяет конфиг локально.
+5. **Backend переводит ноду в `ASSIGNED_TO_ZONE`** после получения `config_report`.
 
 ## 5.3. Топик
 ```
-hydro/{gh}/{zone}/{node}/config
+hydro/{gh}/{zone}/{node}/config_report
 ```
 
 ## 5.4. Пример payload
@@ -207,13 +209,13 @@ hydro/{gh}/{zone}/{node}/status
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
-4. Подписка на config и command топики
+4. Подписка на command топики (config — опционально, legacy)
 5. Вызов connection callback (если зарегистрирован)
 
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на config/command топики
+- Публикация выполняется **до** подписки на command топики
 - Backend обновляет `nodes.status = 'ONLINE'` и `nodes.last_seen_at = NOW()`
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
@@ -349,11 +351,10 @@ pH_sensor → telemetry
 1. Пользователь жмёт «Next Phase» 
 2. Фронтенд → Backend (REST) 
 3. Backend обновляет модель Zone 
-4. Backend генерирует новый NodeConfig для всех узлов зоны 
-5. MQTT → config 
-6. Узлы применяют config 
-7. Узлы → config_response 
-8. Backend → Events → Фронтенд 
+4. Backend обновляет target-параметры и расчёты 
+5. Backend → Commands → MQTT 
+6. Узлы выполняют команды 
+7. Backend → Events → Фронтенд 
 
 ---
 
@@ -381,7 +382,7 @@ pH_sensor → telemetry
 
 [BACKEND CONTROLLER] → decision → command JSON → MQTT → node → execute → command_response → backend → UI
 
-[BACKEND CONFIG MANAGER] → config JSON → MQTT → node → apply → config_response → backend
+[NODE CONFIG] → config_report JSON → MQTT → backend → DB/Channels
 
 [NODE WIFI] → status/connectivity → status/LWT → MQTT → backend → alert
 

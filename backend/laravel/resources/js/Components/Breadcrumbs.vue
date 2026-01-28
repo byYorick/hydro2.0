@@ -1,29 +1,42 @@
 <template>
-  <nav v-if="items.length > 0" class="flex items-center gap-2 text-sm mb-4" aria-label="Breadcrumb">
+  <nav
+    v-if="items.length > 0"
+    class="flex items-center gap-2 text-sm mb-4"
+    aria-label="Breadcrumb"
+  >
     <ol class="flex items-center gap-2 flex-wrap">
-      <li v-for="(item, index) in items" :key="index" class="flex items-center gap-2">
+      <li
+        v-for="(item, index) in items"
+        :key="index"
+        class="flex items-center gap-2"
+      >
         <Link
           v-if="item.href && index < items.length - 1"
           :href="item.href"
-          class="text-neutral-400 hover:text-neutral-200 transition-colors"
+          class="text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] transition-colors"
         >
           {{ item.label }}
         </Link>
         <span
           v-else
-          class="text-neutral-200 font-medium"
-          :class="{ 'text-neutral-400': index < items.length - 1 }"
+          class="text-[color:var(--text-primary)] font-medium"
+          :class="{ 'text-[color:var(--text-muted)]': index < items.length - 1 }"
         >
           {{ item.label }}
         </span>
         <svg
           v-if="index < items.length - 1"
-          class="w-4 h-4 text-neutral-600 shrink-0"
+          class="w-4 h-4 text-[color:var(--text-dim)] shrink-0"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 5l7 7-7 7"
+          />
         </svg>
       </li>
     </ol>
@@ -80,7 +93,7 @@ const autoItems = computed(() => {
   }
   
   let currentPath = ''
-  pathParts.forEach((part, index) => {
+  pathParts.forEach((part) => {
     currentPath += `/${part}`
     
     // Пропускаем числовые ID (детальные страницы)
@@ -118,4 +131,3 @@ const items = computed(() => {
 <style scoped>
 /* Дополнительные стили при необходимости */
 </style>
-

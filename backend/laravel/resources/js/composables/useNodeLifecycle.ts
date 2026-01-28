@@ -39,7 +39,7 @@ export interface AllowedTransitionsResponse {
 }
 
 export function useNodeLifecycle(showToast?: ToastHandler) {
-  const { api, post, get } = useApi(showToast || null)
+  const { post, get } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast || null)
   
   const loading: Ref<boolean> = ref(false)
@@ -177,4 +177,3 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     getStateLabel,
   }
 }
-

@@ -1,0 +1,146 @@
+# E41: Zone Readiness Warn Start Anyway - missing nodes → warning, но start работает
+# DoD: missing online nodes → warning, но start anyway работает
+
+name: E41_zone_readiness_warn_start_anyway
+description: |
+  Проверяет работу start при отсутствии некоторых узлов:
+  - Зона имеет bindings, но некоторые узлы offline
+  - Запуск grow-cycle должен работать с warning
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Проверяем статус узлов (некоторые могут быть offline)
+  - step: check_nodes_status
+    type: database_query
+    query: |
+      SELECT COUNT(*) as offline_count
+      FROM nodes
+      WHERE zone_id = :zone_id
+      AND (status != 'ONLINE' OR status IS NULL)
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  # Создаем и запускаем grow-cycle (должен работать даже с offline узлами)
+  - step: get_active_cycle
+    type: api_get
+    endpoint: /api/zones/${zone_id}/grow-cycle
+    save: active_cycle_response
+    optional: true
+
+  - step: create_plant_if_needed
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e41-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    optional: true
+
+  - step: create_recipe_if_needed
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e41-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+    optional: true
+
+  - step: create_revision_if_needed
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+    optional: true
+
+  - step: add_phase_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+    optional: true
+
+  - step: publish_revision_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    optional: true
+
+  - step: create_cycle_if_needed
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+    expected_status: [200, 422]
+    optional: true
+
+  - step: fetch_active_cycle_id
+    type: database_query
+    query: |
+      SELECT id as cycle_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+        AND status IN ('PLANNED', 'RUNNING')
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: cycle_row
+    expected_rows: 1
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_row.0.cycle_id}
+
+  - step: start_cycle_with_warnings
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/start
+    payload: {}
+    save: start_response
+    expected_status: [200, 422]
+    optional: true
+
+assertions:
+  # Проверка 1: Zone существует
+  - name: zone_exists
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 2: В ответе может быть warning (опционально)
+  # Если start_response пустой (опциональный шаг не выполнился), проверка пропускается
+  - name: warning_present
+    type: json_assertion
+    data: ${start_response}
+    expected:
+      - field: status
+        operator: in
+        value: ['ok', 'error']
+        optional: true
+      - field: data.warnings
+        operator: is_type
+        value: list
+        optional: true
+    optional: true

@@ -2,6 +2,8 @@
 
 namespace App\Events;
 
+use App\Services\EventSequenceService;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -11,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 
 class CommandFailed implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
 
     public string $queue = 'broadcasts';
 
@@ -21,18 +23,31 @@ class CommandFailed implements ShouldBroadcast
 
     public ?string $error;
 
+    public string $status;
+
     public ?int $zoneId;
+
+    public int $eventId;
+
+    public int $serverTs;
 
     public function __construct(
         int|string $commandId,
         string $message,
         ?string $error = null,
+        string $status = \App\Models\Command::STATUS_ERROR,
         ?int $zoneId = null
     ) {
         $this->commandId = $commandId;
         $this->message = $message;
         $this->error = $error;
+        $this->status = $status;
         $this->zoneId = $zoneId;
+        
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -64,10 +79,34 @@ class CommandFailed implements ShouldBroadcast
     {
         return [
             'commandId' => $this->commandId,
-            'status' => 'failed',
+            'status' => $this->status,
             'message' => $this->message,
             'error' => $this->error,
             'zoneId' => $this->zoneId,
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
         ];
+    }
+
+    /**
+     * Записывает событие в zone_events после успешного broadcast.
+     */
+    public function broadcasted(): void
+    {
+        if ($this->zoneId) {
+            $this->recordZoneEvent(
+                zoneId: $this->zoneId,
+                type: 'command_status',
+                entityType: 'command',
+                entityId: $this->commandId,
+                payload: [
+                    'status' => $this->status,
+                    'message' => $this->message,
+                    'error' => $this->error,
+                ],
+                eventId: $this->eventId,
+                serverTs: $this->serverTs
+            );
+        }
     }
 }

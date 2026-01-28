@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TelemetryPayload",
+  "description": "Payload телеметрии от узлов через MQTT",
+  "type": "object",
+  "required": ["metric_type", "value"],
+  "properties": {
+    "metric_type": {
+      "type": "string",
+      "description": "Тип метрики (PH, EC, TEMPERATURE, HUMIDITY, WATER_LEVEL, FLOW_RATE, LIGHT_INTENSITY, etc.)",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "value": {
+      "type": "number",
+      "description": "Значение метрики"
+    },
+    "ts": {
+      "anyOf": [
+        {"type": "integer"},
+        {"type": "number"},
+        {"type": "string"}
+      ],
+      "description": "Unix timestamp в секундах от прошивки (может быть int, float или string)"
+    },
+    "channel": {
+      "type": "string",
+      "description": "Идентификатор канала",
+      "maxLength": 100
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Node ID от прошивки",
+      "maxLength": 100
+    },
+    "raw": {
+      "anyOf": [
+        {"type": "integer"},
+        {"type": "number"}
+      ],
+      "description": "Сырое значение сенсора от прошивки"
+    },
+    "stub": {
+      "type": "boolean",
+      "description": "Флаг, указывающий что значение симулировано"
+    },
+    "stable": {
+      "type": "boolean",
+      "description": "Флаг стабильности показаний сенсора"
+    },
+    "tds": {
+      "anyOf": [
+        {"type": "integer"},
+        {"type": "number"}
+      ],
+      "description": "TDS значение (от ec_node)"
+    },
+    "error_code": {
+      "anyOf": [
+        {"type": "integer"},
+        {"type": "string"},
+        {"type": "null"}
+      ],
+      "description": "Код ошибки от прошивки"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Значение температуры от прошивки"
+    },
+    "state": {
+      "type": "string",
+      "description": "Состояние от прошивки",
+      "maxLength": 50
+    },
+    "event": {
+      "type": "string",
+      "description": "Событие от прошивки",
+      "maxLength": 100
+    },
+    "health": {
+      "type": "object",
+      "description": "Метрики здоровья (от pump_node)",
+      "additionalProperties": true
+    },
+    "zone_uid": {
+      "type": "string",
+      "description": "Zone UID (fallback из payload)",
+      "maxLength": 100
+    },
+    "node_uid": {
+      "type": "string",
+      "description": "Node UID (fallback из payload)",
+      "maxLength": 100
+    },
+    "gh_uid": {
+      "type": "string",
+      "description": "Greenhouse UID (для multi-greenhouse zone resolution)",
+      "maxLength": 100
+    }
+  },
+  "additionalProperties": true
+}

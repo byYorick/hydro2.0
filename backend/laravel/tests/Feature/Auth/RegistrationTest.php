@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 

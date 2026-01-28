@@ -32,6 +32,10 @@ static const char *TAG = "node_config_handler";
 static node_config_channel_callback_t s_channel_init_cb = NULL;
 static void *s_channel_init_ctx = NULL;
 
+// Callback для формирования channels в ответе на конфиг
+static node_config_channels_callback_t s_channels_cb = NULL;
+static void *s_channels_ctx = NULL;
+
 // Глобальные ссылки на MQTT callbacks для config_apply_mqtt
 static mqtt_config_callback_t s_mqtt_config_cb = NULL;
 static mqtt_command_callback_t s_mqtt_command_cb = NULL;
@@ -304,9 +308,9 @@ static void node_config_handler_process_internal(
     }
 
     // ВАЖНО: Обновляем node_info в mqtt_manager после применения конфига,
-    // чтобы config_response отправлялся на правильный топик с актуальными gh_uid и zone_uid
+    // чтобы публикации (включая config_report) шли в правильный топик с актуальными gh_uid и zone_uid.
     // Это критично, так как нода может получить конфиг на временный топик,
-    // но должна отправить config_response на правильный топик с реальными gh_uid и zone_uid
+    // но должна публиковать данные в топик с реальными gh_uid и zone_uid.
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
     char node_uid[64] = {0};
@@ -722,51 +726,27 @@ esp_err_t node_config_handler_publish_response(
     const char **restarted_components,
     size_t component_count
 ) {
-    cJSON *response = cJSON_CreateObject();
-    if (!response) {
-        return ESP_ERR_NO_MEM;
-    }
+    (void)restarted_components;
+    (void)component_count;
 
-    cJSON_AddStringToObject(response, "status", status);
-    cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
-
-    if (error_msg && strcmp(status, "ERROR") == 0) {
-        cJSON_AddStringToObject(response, "error", error_msg);
-    }
-
-    if (restarted_components && component_count > 0 && strcmp(status, "ACK") == 0) {
-        cJSON *restarted = cJSON_CreateArray();
-        if (restarted) {
-            bool all_added = true;
-            for (size_t i = 0; i < component_count; i++) {
-                cJSON *item = cJSON_CreateString(restarted_components[i] ? restarted_components[i] : "");
-                if (item) {
-                    cJSON_AddItemToArray(restarted, item);
-                } else {
-                    ESP_LOGE(TAG, "Failed to create string for restarted component %zu", i);
-                    all_added = false;
-                    break;
-                }
-            }
-            if (all_added) {
-                cJSON_AddItemToObject(response, "restarted", restarted);
-            } else {
-                // Если не удалось добавить все компоненты, удаляем массив
-                cJSON_Delete(restarted);
-            }
+    if (status && strcmp(status, "ERROR") == 0) {
+        if (error_msg) {
+            ESP_LOGW(TAG, "Config apply error: %s", error_msg);
+        } else {
+            ESP_LOGW(TAG, "Config apply error");
         }
+        return ESP_OK;
     }
 
-    char *json_str = cJSON_PrintUnformatted(response);
-    if (json_str) {
-        esp_err_t err = mqtt_manager_publish_config_response(json_str);
-        free(json_str);
-        cJSON_Delete(response);
+    if (status && (strcmp(status, "ACK") == 0 || strcmp(status, "OK") == 0)) {
+        esp_err_t err = node_utils_publish_config_report();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to publish config_report after apply: %s", esp_err_to_name(err));
+        }
         return err;
     }
 
-    cJSON_Delete(response);
-    return ESP_ERR_NO_MEM;
+    return ESP_OK;
 }
 
 // Функция для регистрации callback инициализации каналов (используется из node_framework)
@@ -777,6 +757,14 @@ void node_config_handler_set_channel_init_callback(
 ) {
     s_channel_init_cb = callback;
     s_channel_init_ctx = user_ctx;
+}
+
+void node_config_handler_set_channels_callback(
+    node_config_channels_callback_t callback,
+    void *user_ctx
+) {
+    s_channels_cb = callback;
+    s_channels_ctx = user_ctx;
 }
 
 void node_config_handler_set_mqtt_callbacks(

@@ -65,5 +65,70 @@ class DigitalTwinClient
             );
         }
     }
-}
 
+    /**
+     * Запустить live-симуляцию через digital-twin orchestrator.
+     */
+    public function startLiveSimulation(array $payload): array
+    {
+        $url = rtrim($this->baseUrl, '/') . '/simulations/live/start';
+
+        try {
+            $response = Http::timeout(30)->post($url, $payload);
+            if ($response->successful()) {
+                return $response->json();
+            }
+
+            Log::error('Digital Twin live simulation start failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new \Exception(
+                "Digital Twin live simulation start failed: " . $response->body(),
+                $response->status()
+            );
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('Digital Twin live connection error', [
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \Exception(
+                "Failed to connect to Digital Twin service: " . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Остановить live-симуляцию через digital-twin orchestrator.
+     */
+    public function stopLiveSimulation(array $payload): array
+    {
+        $url = rtrim($this->baseUrl, '/') . '/simulations/live/stop';
+
+        try {
+            $response = Http::timeout(30)->post($url, $payload);
+            if ($response->successful()) {
+                return $response->json();
+            }
+
+            Log::error('Digital Twin live simulation stop failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            throw new \Exception(
+                "Digital Twin live simulation stop failed: " . $response->body(),
+                $response->status()
+            );
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('Digital Twin live connection error', [
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \Exception(
+                "Failed to connect to Digital Twin service: " . $e->getMessage()
+            );
+        }
+    }
+}

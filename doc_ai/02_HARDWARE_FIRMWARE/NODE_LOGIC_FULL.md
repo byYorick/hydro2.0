@@ -5,6 +5,10 @@
 Он фиксирует правила поведения, внутренние процессы, машинные состояния, обработку команд,
 алгоритмы сенсоров, диагностику, fail‑safe и протоколы взаимодействия.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Главная концепция логики узла
@@ -97,7 +101,7 @@ SAFE_MODE → ограниченный режим
  - telemetry
  - status
  - command_response
- - config_response
+ - config_report
  - heartbeat
 - авто‑reconnect
 
@@ -117,15 +121,12 @@ SAFE_MODE → ограниченный режим
 3. Проверить валидность каналов.
 4. Сохранить в NVS.
 5. Перезапустить sensor loops.
-6. Ответить config_response.
+6. Опубликовать config_report.
 
 В случае ошибки:
-```json
-{
- "status": "ERROR",
- "error": "Invalid channel name"
-}
-```
+- логировать причину,
+- оставить текущую конфигурацию без изменений,
+- не публиковать обновление.
 
 ---
 
@@ -157,13 +158,13 @@ SensorChannel {
 
 - PH
 - EC
-- TEMP_AIR
-- TEMP_WATER
+- TEMPERATURE
 - HUMIDITY
-- LUX
+- LIGHT_INTENSITY
 - CO2 (опционально)
 - WATER_LEVEL
 - FLOW_RATE
+- PUMP_CURRENT
 
 ---
 
@@ -208,7 +209,11 @@ ActuatorChannel {
 {
  "cmd_id": "cmd-19292",
  "cmd": "run_pump",
- "duration_ms": 2000
+ "params": {
+  "duration_ms": 2000
+ },
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -309,14 +314,13 @@ on_command_received for pump_channel:
 ## 5.1. Стандартный JSON
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.82,
- "raw": 1463,
  "ts": 1710012567
 }
 ```
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
 
 ## 5.2. Правила:
 - отправка с QoS=1
@@ -360,8 +364,8 @@ on_command_received for pump_channel:
 
 При повреждении конфигурации:
 - fallback в SAFE MODE
-- запросить config с backend
-- отправить config_response(ERROR)
+- перейти на встроенный NodeConfig или provisioning
+- после восстановления опубликовать config_report
 
 ---
 
@@ -440,18 +444,15 @@ hydro/{node}/debug
 Цепочка:
 
 ```
-backend → build NodeConfig
-backend → publish config
+firmware → build NodeConfig
 node → validate config
 node → save in NVS
 node → restart sensor loops
-node → config_response(OK)
+node → publish config_report
+backend → store NodeConfig + sync channels
 ```
 
-Если ошибка:
-```
-node → config_response(ERROR)
-```
+Если ошибка: логировать причину и оставить текущую конфигурацию.
 
 ---
 

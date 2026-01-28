@@ -4,7 +4,7 @@
 
 ## Описание
 
-Компонент обеспечивает подключение к MQTT брокеру, подписки на топики конфигурации и команд, публикацию телеметрии, статусов и heartbeat согласно спецификации `MQTT_SPEC_FULL.md`.
+Компонент обеспечивает подключение к MQTT брокеру, подписки на топики конфигурации и команд, публикацию телеметрии, статусов и heartbeat согласно спецификации `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
 
 ## Возможности
 
@@ -68,13 +68,13 @@ mqtt_client_publish_heartbeat(json_data);
 // Ответ на команду
 mqtt_client_publish_command_response("pump_acid", json_data);
 
-// Ответ на конфигурацию
-mqtt_client_publish_config_response(json_data);
+// Отчет о конфигурации
+mqtt_client_publish_config_report(json_data);
 ```
 
 ## Формат топиков
 
-Согласно `MQTT_SPEC_FULL.md` раздел 2:
+Согласно `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` раздел 2:
 
 - Config: `hydro/{gh}/{zone}/{node}/config`
 - Command: `hydro/{gh}/{zone}/{node}/{channel}/command`
@@ -83,7 +83,7 @@ mqtt_client_publish_config_response(json_data);
 - LWT: `hydro/{gh}/{zone}/{node}/lwt`
 - Heartbeat: `hydro/{gh}/{zone}/{node}/heartbeat`
 - Command Response: `hydro/{gh}/{zone}/{node}/{channel}/command_response`
-- Config Response: `hydro/{gh}/{zone}/{node}/config_response`
+- Config Report: `hydro/{gh}/{zone}/{node}/config_report`
 
 Где:
 - `{gh}` — UID теплицы (например `gh-1`)
@@ -96,12 +96,12 @@ mqtt_client_publish_config_response(json_data);
 ### Telemetry (раздел 3.2 MQTT_SPEC_FULL.md)
 ```json
 {
-  "node_id": "nd-ph-1",
-  "channel": "ph_sensor",
   "metric_type": "PH",
   "value": 5.86,
+  "ts": 1710001234,
+  "unit": "pH",
   "raw": 1465,
-  "timestamp": 1710001234
+  "stable": false
 }
 ```
 
@@ -184,7 +184,6 @@ mqtt_client_publish_config_response(json_data);
 
 ## Документация
 
-- Спецификация MQTT: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- Спецификация NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
-
+- Спецификация MQTT: `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Спецификация NodeConfig: `../../../../NODE_CONFIG_SPEC.md`

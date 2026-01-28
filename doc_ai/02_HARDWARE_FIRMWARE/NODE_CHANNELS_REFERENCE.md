@@ -2,7 +2,11 @@
 # Полный справочник каналов узлов 2.0 (ESP32)
 
 Документ описывает типы каналов, ключи, единицы измерения и типичные payload-ы.
-Он дополняет `MQTT_NAMESPACE.md` и `DATA_MODEL_REFERENCE.md`.
+Он дополняет `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md` и `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`.
+
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
@@ -87,7 +91,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Актуаторы управляют физическими исполнительными устройствами (насосы, клапаны,
 вентиляторы, освещение и т.п.). Все команды к ним приходят через MQTT-топики `.../{channel}/command`,
-а факт исполнения подтверждается через `command_response` (см. `MQTT_SPEC_FULL.md` и
+а факт исполнения подтверждается через `command_response` (см. `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` и
 `DEVICE_NODE_PROTOCOL.md`).
 
 ### 3.1. Насосы pH
@@ -103,10 +107,12 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "DOSE",
-  "ml": 1.0,
-  "ttl_ms": 5000,
-  "cmd_id": "cmd-19292"
+  "cmd_id": "cmd-19292",
+  "cmd": "dose",
+  "params": {
+    "ml": 1.0,
+    "ttl_ms": 5000
+  }
 }
 ```
 
@@ -114,9 +120,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-19293"
+  "cmd_id": "cmd-19293",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -132,10 +140,12 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "DOSE",
-  "ml": 5.0,
-  "ttl_ms": 10000,
-  "cmd_id": "cmd-20101"
+  "cmd_id": "cmd-20101",
+  "cmd": "dose",
+  "params": {
+    "ml": 5.0,
+    "ttl_ms": 10000
+  }
 }
 ```
 
@@ -143,9 +153,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-20102"
+  "cmd_id": "cmd-20102",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -163,9 +175,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_STATE",
-  "state": 1,
-  "cmd_id": "cmd-30001"
+  "cmd_id": "cmd-30001",
+  "cmd": "set_relay",
+  "params": {
+    "state": true
+  }
 }
 ```
 
@@ -173,9 +187,11 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "cmd": "SET_PWM",
-  "value": 255,
-  "cmd_id": "cmd-30002"
+  "cmd_id": "cmd-30002",
+  "cmd": "set_pwm",
+  "params": {
+    "value": 255
+  }
 }
 ```
 
@@ -202,7 +218,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "node_id": "nd-pump-1",
   "channel": "pump_bus_current",
-  "metric_type": "CURRENT_MA",
+  "metric_type": "PUMP_CURRENT",
   "value": 220.5,
   "timestamp": 1710005555
 }
@@ -244,7 +260,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 1. Любой новый канал должен быть добавлен:
  - сюда;
- - в `DATA_MODEL_REFERENCE.md` (таблица `channels`);
+ - в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` (таблица `channels`);
  - при необходимости — в NodeConfig прошивки.
 2. Нельзя использовать один и тот же ключ для разных физических значений.
 3. Для ИИ-агентов:

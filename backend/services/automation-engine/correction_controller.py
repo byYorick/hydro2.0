@@ -3,15 +3,21 @@ Correction Controller - универсальный контроллер для �
 Устраняет дублирование кода между pH и EC корректировкой.
 """
 from typing import Optional, Dict, Any
+from utils.adaptive_pid import AdaptivePid
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import logging
 from common.db import create_zone_event, create_ai_log
+from common.utils.time import utcnow
 from correction_cooldown import should_apply_correction, record_correction
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
 from services.pid_config_service import get_config, invalidate_cache
+from services.pid_state_manager import PidStateManager
+from common.alerts import create_alert, AlertSource, AlertCode
+from decision_context import DecisionContext
+from services.targets_accessor import get_ph_target, get_ec_target
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +31,22 @@ class CorrectionType(Enum):
 class CorrectionController:
     """Универсальный контроллер для корректировки pH/EC."""
     
-    def __init__(self, correction_type: CorrectionType):
+    def __init__(self, correction_type: CorrectionType, pid_state_manager: Optional[PidStateManager] = None):
         """
         Инициализация контроллера.
         
         Args:
             correction_type: Тип корректировки (PH или EC)
+            pid_state_manager: Менеджер состояния PID (опционально)
         """
         self.correction_type = correction_type
         self.metric_name = correction_type.value.upper()
         self.event_prefix = correction_type.value.upper()
         self._pid_by_zone: Dict[int, AdaptivePid] = {}
         self._last_pid_tick: Dict[int, float] = {}
+        self.pid_state_manager = pid_state_manager or PidStateManager()
+        # Счетчик подряд пропусков проверки свежести по зонам
+        self._freshness_check_failure_count: Dict[int, int] = {}
     
     async def check_and_correct(
         self,
@@ -45,7 +55,8 @@ class CorrectionController:
         telemetry: Dict[str, Optional[float]],
         telemetry_timestamps: Optional[Dict[str, Any]] = None,
         nodes: Dict[str, Dict[str, Any]] = None,
-        water_level_ok: bool = True
+        water_level_ok: bool = True,
+        actuators: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Проверка и корректировка параметра (pH или EC).
@@ -63,13 +74,19 @@ class CorrectionController:
         """
         target_key = self.correction_type.value
         current = telemetry.get(self.metric_name) or telemetry.get(target_key)
-        target = targets.get(target_key)
-        
+        if self.correction_type == CorrectionType.PH:
+            target, target_min, target_max = get_ph_target(targets, zone_id=zone_id)
+        else:
+            target, target_min, target_max = get_ec_target(targets, zone_id=zone_id)
+
         if target is None or current is None:
             return None
         
         # КРИТИЧЕСКАЯ ПРОВЕРКА: проверяем свежесть данных телеметрии
-        # Предотвращает дозирование на основе устаревших данных
+        # Предотвращает дозирование на основе устаревших или недоступных данных (fail-closed)
+        freshness_check_passed = False
+        freshness_check_error = None
+        
         if telemetry_timestamps:
             metric_timestamp = telemetry_timestamps.get(self.metric_name) or telemetry_timestamps.get(target_key)
             if metric_timestamp:
@@ -85,7 +102,12 @@ class CorrectionController:
                     if updated_at:
                         settings = get_settings()
                         max_age = timedelta(minutes=settings.TELEMETRY_MAX_AGE_MINUTES)
-                        age = datetime.utcnow() - updated_at.replace(tzinfo=None) if updated_at.tzinfo else datetime.utcnow() - updated_at
+                        # Приводим updated_at к aware UTC для корректного сравнения
+                        if updated_at.tzinfo is None:
+                            updated_at = updated_at.replace(tzinfo=timezone.utc)
+                        elif updated_at.tzinfo != timezone.utc:
+                            updated_at = updated_at.astimezone(timezone.utc)
+                        age = utcnow() - updated_at
                         
                         if age > max_age:
                             logger.warning(
@@ -105,12 +127,73 @@ class CorrectionController:
                                     'reason': 'telemetry_data_too_old'
                                 }
                             )
+                            # Сбрасываем счетчик пропусков проверки свежести (это другая причина пропуска)
+                            self._freshness_check_failure_count.pop(zone_id, None)
                             return None
+                        else:
+                            # Проверка свежести прошла успешно
+                            freshness_check_passed = True
+                    else:
+                        # Не удалось определить updated_at
+                        freshness_check_error = "unable_to_parse_timestamp"
                 except Exception as e:
-                    logger.warning(
-                        f"Zone {zone_id}: Failed to check {target_key} data freshness: {e}. "
-                        f"Proceeding with correction (may be risky)."
-                    )
+                    # Ошибка при проверке свежести - fail-closed
+                    freshness_check_error = str(e)
+            else:
+                # Нет timestamp для метрики
+                freshness_check_error = "timestamp_missing"
+        else:
+            # Нет telemetry_timestamps - fail-closed
+            freshness_check_error = "telemetry_timestamps_missing"
+        
+        # Fail-closed: если проверка свежести не прошла, не дозируем
+        if not freshness_check_passed:
+            # Увеличиваем счетчик подряд пропусков
+            failure_count = self._freshness_check_failure_count.get(zone_id, 0) + 1
+            self._freshness_check_failure_count[zone_id] = failure_count
+            
+            logger.warning(
+                f"Zone {zone_id}: Failed to check {target_key} data freshness (error: {freshness_check_error}). "
+                f"Skipping correction to prevent blind dosing (fail-closed). "
+                f"Consecutive failures: {failure_count}"
+            )
+            
+            # Создаем событие о пропуске корректировки из-за ошибки проверки свежести
+            await create_zone_event(
+                zone_id,
+                'CORRECTION_SKIPPED_FRESHNESS_CHECK_FAILED',
+                {
+                    'correction_type': self.correction_type.value,
+                    'metric': self.metric_name,
+                    f'current_{target_key}': current,
+                    f'target_{target_key}': target,
+                    'error': freshness_check_error,
+                    'consecutive_failures': failure_count,
+                    'reason': 'freshness_check_failed'
+                }
+            )
+            
+            # Создаем alert при N подряд пропусках
+            settings = get_settings()
+            if failure_count >= settings.FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD:
+                await create_alert(
+                    zone_id=zone_id,
+                    source=AlertSource.INFRA.value,
+                    code=AlertCode.INFRA_FRESHNESS_CHECK_FAILED.value,
+                    type='FRESHNESS_CHECK_FAILED',
+                    details={
+                        'correction_type': self.correction_type.value,
+                        'metric': self.metric_name,
+                        'consecutive_failures': failure_count,
+                        'error': freshness_check_error,
+                        'threshold': settings.FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD
+                    }
+                )
+            
+            return None
+        
+        # Проверка свежести прошла успешно - сбрасываем счетчик
+        self._freshness_check_failure_count.pop(zone_id, None)
         
         try:
             target_val = float(target)
@@ -118,6 +201,10 @@ class CorrectionController:
         except (ValueError, TypeError) as e:
             logger.warning(f"Zone {zone_id}: Invalid {target_key} values - target={target}, current={current}: {e}")
             return None
+
+        if target_min is not None and target_max is not None:
+            if target_min <= current_val <= target_max:
+                return None
         
         diff = current_val - target_val
 
@@ -152,11 +239,13 @@ class CorrectionController:
         if not water_level_ok:
             return None
         
-        # Находим узел для корректировки
-        if not nodes:
-            return None
-        irrig_node = self._find_irrigation_node(nodes)
-        if not irrig_node:
+        # Находим actuator для корректировки
+        actuator = self._select_actuator(
+            correction_type=self._determine_correction_type(diff),
+            actuators=actuators,
+            nodes=nodes
+        )
+        if not actuator:
             return None
         
         # Определяем тип корректировки и количество
@@ -164,6 +253,31 @@ class CorrectionController:
         dt_seconds = self._get_dt_seconds(zone_id)
         amount = pid.compute(current_val, dt_seconds)
 
+        # Детальное логирование PID вычислений
+        logger.debug(
+            f"Zone {zone_id}: {self.metric_name} PID calculation",
+            extra={
+                'zone_id': zone_id,
+                'metric': self.metric_name,
+                'current': current_val,
+                'target': target_val,
+                'error': diff,
+                'pid_zone': pid.get_zone().value,
+                'pid_output': amount,
+                'pid_integral': pid.integral,
+                'pid_prev_error': pid.prev_error,
+                'pid_dt': dt_seconds,
+                'pid_config': {
+                    'dead_zone': pid.config.dead_zone,
+                    'close_zone': pid.config.close_zone,
+                    'far_zone': pid.config.far_zone,
+                    'kp': pid.config.zone_coeffs[pid.get_zone()].kp,
+                    'ki': pid.config.zone_coeffs[pid.get_zone()].ki,
+                    'kd': pid.config.zone_coeffs[pid.get_zone()].kd,
+                }
+            }
+        )
+        
         # Логируем PID_OUTPUT событие только если output > 0
         if amount > 0:
             await create_zone_event(
@@ -187,22 +301,22 @@ class CorrectionController:
             )
             return None
         
+        payload = self._build_correction_command(actuator, correction_type, amount)
+
         # Формируем команду
         command = {
-            'node_uid': irrig_node['node_uid'],
-            'channel': irrig_node['channel'],
-            'cmd': f'adjust_{target_key}',
-            'params': {
-                'amount': amount,
-                'type': correction_type
-            },
+            'node_uid': actuator['node_uid'],
+            'channel': actuator['channel'],
+            'cmd': payload['cmd'],
+            'params': payload['params'],
             'event_type': self._get_correction_event_type(),
             'event_details': {
                 'correction_type': correction_type,
                 f'current_{target_key}': current_val,
                 f'target_{target_key}': target_val,
                 'diff': diff,
-                'dose_ml': amount,
+                'ml': amount,
+                'binding_role': actuator.get('role'),
                 'pid_zone': pid.get_zone().value,
                 'pid_dt_seconds': dt_seconds
             },
@@ -218,7 +332,8 @@ class CorrectionController:
     async def apply_correction(
         self,
         command: Dict[str, Any],
-        command_bus
+        command_bus,
+        pid: Optional[AdaptivePid] = None
     ) -> None:
         """
         Применить корректировку: отправить команду, создать события и логи.
@@ -226,6 +341,7 @@ class CorrectionController:
         Args:
             command: Команда корректировки (результат check_and_correct)
             command_bus: CommandBus для публикации команд
+            pid: Экземпляр PID для контекста (опционально)
         """
         zone_id = command['zone_id']
         correction_type_str = command['correction_type_str']
@@ -235,8 +351,21 @@ class CorrectionController:
         correction_type = command['event_details']['correction_type']
         reason = command.get('reason', '')
         
-        # Отправляем команду через Command Bus
-        await command_bus.publish_controller_command(zone_id, command)
+        # Подготавливаем контекст для аудита
+        context = DecisionContext(
+            current_value=current_val,
+            target_value=target_val,
+            diff=diff,
+            reason=reason,
+            telemetry=command.get('telemetry', {}),
+            pid_zone=pid.get_zone().value if pid else None,
+            pid_output=command['event_details'].get('ml', 0) if pid else None,
+            pid_integral=pid.integral if pid else None,
+            pid_prev_error=pid.prev_error if pid else None,
+        )
+        
+        # Отправляем команду через Command Bus с контекстом
+        await command_bus.publish_controller_command(zone_id, command, context)
         
         # Записываем информацию о корректировке
         await record_correction(zone_id, correction_type_str, {
@@ -307,7 +436,7 @@ class CorrectionController:
         )
 
     async def _get_pid(self, zone_id: int, setpoint: float) -> AdaptivePid:
-        """Получить/инициализировать PID для зоны."""
+        """Получить/инициализировать PID для зоны с восстановлением состояния."""
         pid = self._pid_by_zone.get(zone_id)
 
         if pid is None:
@@ -318,12 +447,34 @@ class CorrectionController:
                 settings = get_settings()
                 pid_config = self._build_pid_config(settings, setpoint)
             pid = AdaptivePid(pid_config)
+            
+            # Пытаемся восстановить состояние из БД
+            restored = await self.pid_state_manager.restore_pid_state(
+                zone_id,
+                self.correction_type.value,
+                pid
+            )
+            if restored:
+                logger.info(
+                    f"Zone {zone_id}: PID {self.correction_type.value} state restored from DB",
+                    extra={'zone_id': zone_id, 'pid_type': self.correction_type.value}
+                )
+            
             self._pid_by_zone[zone_id] = pid
             self._last_pid_tick[zone_id] = time.monotonic()
         else:
             pid.update_setpoint(setpoint)
 
         return pid
+    
+    async def save_all_states(self):
+        """Сохранить состояние всех PID контроллеров этого типа."""
+        for zone_id, pid in self._pid_by_zone.items():
+            await self.pid_state_manager.save_pid_state(
+                zone_id,
+                self.correction_type.value,
+                pid
+            )
 
     def _get_dt_seconds(self, zone_id: int) -> float:
         """Рассчитать dt между вызовами PID для зоны."""
@@ -376,10 +527,68 @@ class CorrectionController:
             adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
         )
     
+    def _select_actuator(
+        self,
+        correction_type: str,
+        actuators: Optional[Dict[str, Dict[str, Any]]],
+        nodes: Optional[Dict[str, Dict[str, Any]]]
+    ) -> Optional[Dict[str, Any]]:
+        """Выбрать actuator по роли (acid/base/nutrient) с fallback на legacy irrig node."""
+        role_order: list[str] = []
+        if self.correction_type == CorrectionType.PH:
+            role_order = ["ph_base_pump"] if correction_type == "add_base" else ["ph_acid_pump"]
+        else:
+            # EC: добавляем удобрения, dilute пока не поддерживаем отдельным actuator
+            if correction_type == "add_nutrients":
+                role_order = ["ec_nutrient_pump"]
+            else:
+                # Для dilute нет корректного actuator — пропускаем, чтобы не совершать неверное действие
+                return None
+
+        if actuators:
+            for role in role_order:
+                if role in actuators:
+                    return actuators[role]
+
+        if nodes:
+            return self._find_irrigation_node(nodes)
+
+        return None
+
+    def _build_correction_command(
+        self,
+        actuator: Dict[str, Any],
+        correction_type: str,
+        amount_ml: float
+    ) -> Dict[str, Any]:
+        """
+        Собрать payload команды дозирования для actuator.
+
+        Возвращает словарь с cmd и params (поддерживает dose или run_pump).
+        """
+        role = (actuator.get("role") or "").lower()
+        # pH насосы умеют dose, остальным даем run_pump
+        use_dose = role.startswith("ph_")
+        params: Dict[str, Any] = {"type": correction_type, "ml": amount_ml}
+
+        if use_dose:
+            cmd = "dose"
+        else:
+            cmd = "run_pump"
+            ml_per_sec = actuator.get("ml_per_sec") or 1.0
+            try:
+                ml_per_sec = float(ml_per_sec)
+            except (TypeError, ValueError):
+                ml_per_sec = 1.0
+            duration_ms = max(1, int((amount_ml / ml_per_sec) * 1000))
+            params["duration_ms"] = duration_ms
+
+        return {"cmd": cmd, "params": params}
+
     def _find_irrigation_node(self, nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Найти узел для полива/дозирования."""
-        for key, node_info in nodes.items():
-            if node_info["type"] == "irrig":
+        """Legacy fallback: найти узел для полива/дозирования по типу irrig."""
+        for node_info in nodes.values():
+            if node_info.get("type") == "irrig":
                 return node_info
         return None
     

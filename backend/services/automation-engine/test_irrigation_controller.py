@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -19,7 +20,7 @@ from irrigation_controller import (
 @pytest.mark.asyncio
 async def test_get_last_irrigation_time():
     """Test getting last irrigation time."""
-    last_time = datetime.utcnow() - timedelta(hours=2)
+    last_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.fetch") as mock_fetch:
         mock_fetch.return_value = [
@@ -35,31 +36,29 @@ async def test_get_last_irrigation_time():
 async def test_check_and_control_irrigation_interval_reached():
     """Test irrigation when interval is reached."""
     targets = {
-        "irrigation_interval_sec": 3600,  # 1 час
-        "irrigation_duration_sec": 60,  # 1 минута
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},  # 1 час, 1 минута
     }
     telemetry = {}
+    bindings = {}
+    actuators = {
+        "irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}
+    }
     
     # Последний полив был 2 часа назад
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
          patch("irrigation_controller.check_water_level") as mock_water_level:
         mock_last_time.return_value = last_irrigation_time
-        # Получаем узлы для полива (fetch вызывается только для получения узлов)
-        mock_fetch.return_value = [
-            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "pump_irrigation"}
-        ]
         mock_water_level.return_value = (True, 0.5)  # Уровень воды нормальный
         
-        cmd = await check_and_control_irrigation(1, targets, telemetry)
+        cmd = await check_and_control_irrigation(1, targets, telemetry, bindings, actuators)
         
         # Должен вернуть команду на полив
         assert cmd is not None
         assert cmd["node_uid"] == "nd-irrig-1"
-        assert cmd["cmd"] == "irrigate"
-        assert cmd["params"]["duration_sec"] == 60
+        assert cmd["cmd"] == "run_pump"
+        assert cmd["params"]["duration_ms"] == 60000
         assert cmd["event_type"] == "IRRIGATION_STARTED"
 
 
@@ -67,18 +66,18 @@ async def test_check_and_control_irrigation_interval_reached():
 async def test_check_and_control_irrigation_interval_not_reached():
     """Test irrigation when interval is not reached."""
     targets = {
-        "irrigation_interval_sec": 3600,  # 1 час
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},  # 1 час
     }
     telemetry = {}
     
     # Последний полив был 30 минут назад
-    last_irrigation_time = datetime.utcnow() - timedelta(minutes=30)
+    last_irrigation_time = utcnow() - timedelta(minutes=30)
     
-    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time:
+    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         mock_last_time.return_value = last_irrigation_time
         
-        cmd = await check_and_control_irrigation(1, targets, telemetry)
+        cmd = await check_and_control_irrigation(1, targets, telemetry, {}, {})
         
         # Не должен возвращать команду
         assert cmd is None
@@ -88,23 +87,19 @@ async def test_check_and_control_irrigation_interval_not_reached():
 async def test_check_and_control_irrigation_water_level_low():
     """Test irrigation blocked when water level is low."""
     targets = {
-        "irrigation_interval_sec": 3600,
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
     }
     telemetry = {}
     
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
-         patch("irrigation_controller.check_water_level") as mock_water_level:
+         patch("irrigation_controller.check_water_level") as mock_water_level, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         mock_last_time.return_value = last_irrigation_time
-        mock_fetch.return_value = [
-            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "pump_irrigation"}
-        ]
         mock_water_level.return_value = (False, 0.15)  # Низкий уровень воды
         
-        cmd = await check_and_control_irrigation(1, targets, telemetry)
+        cmd = await check_and_control_irrigation(1, targets, telemetry, {}, {})
         
         # Не должен возвращать команду из-за низкого уровня воды
         assert cmd is None
@@ -114,30 +109,28 @@ async def test_check_and_control_irrigation_water_level_low():
 async def test_check_and_control_irrigation_no_nodes():
     """Test irrigation when no irrigation nodes available."""
     targets = {
-        "irrigation_interval_sec": 3600,
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
     }
     telemetry = {}
     
-    last_irrigation_time = datetime.utcnow() - timedelta(hours=2)
+    last_irrigation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
-         patch("irrigation_controller.check_water_level") as mock_water_level:
+         patch("irrigation_controller.check_water_level") as mock_water_level, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         mock_last_time.return_value = last_irrigation_time
-        mock_fetch.return_value = []  # Нет узлов
         mock_water_level.return_value = (True, 0.5)
         
-        cmd = await check_and_control_irrigation(1, targets, telemetry)
+        cmd = await check_and_control_irrigation(1, targets, telemetry, {}, {})
         
-        # Не должен возвращать команду
+        # Не должен возвращать команду без actuator
         assert cmd is None
 
 
 @pytest.mark.asyncio
 async def test_get_last_recirculation_time():
     """Test getting last recirculation time."""
-    last_time = datetime.utcnow() - timedelta(hours=2)
+    last_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.fetch") as mock_fetch:
         mock_fetch.return_value = [
@@ -169,33 +162,24 @@ async def test_check_and_control_recirculation_enabled_interval_reached():
     }
     
     telemetry = {}  # Не используется в тесте, но требуется для совместимости
+    actuators = {"recirculation_pump": {"node_uid": "nd-recirc-1", "channel": "recirculation_pump"}}
     
     # Последняя рециркуляция была 2 часа назад (с timezone)
-    from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
          patch("irrigation_controller.check_water_level") as mock_water_level:
         
         mock_last_time.return_value = last_recirculation_time
-        mock_fetch.return_value = [
-            {
-                "id": 1,
-                "uid": "nd-recirc-1",
-                "type": "recirculation",
-                "channel": "recirculation_pump",
-            }
-        ]
         mock_water_level.return_value = (True, 0.5)  # Уровень воды нормальный
         
-        cmd = await check_and_control_recirculation(1, targets, telemetry)
+        cmd = await check_and_control_recirculation(1, targets, telemetry, {}, actuators)
         
         # Должен вернуть команду на рециркуляцию
         assert cmd is not None
         assert cmd["node_uid"] == "nd-recirc-1"
-        assert cmd["cmd"] == "recirculate"
-        assert cmd["params"]["duration_sec"] == 300
+        assert cmd["cmd"] == "run_pump"
+        assert cmd["params"]["duration_ms"] == 300000
         assert cmd["event_type"] == "RECIRCULATION_CYCLE"
 
 
@@ -210,7 +194,7 @@ async def test_check_and_control_recirculation_disabled():
     
     telemetry = {}
     
-    cmd = await check_and_control_recirculation(1, targets, telemetry)
+    cmd = await check_and_control_recirculation(1, targets, telemetry, {}, {})
     
     # Не должен возвращать команду
     assert cmd is None
@@ -229,12 +213,12 @@ async def test_check_and_control_recirculation_interval_not_reached():
     
     # Последняя рециркуляция была 30 минут назад (с timezone)
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(minutes=30)
+    last_recirculation_time = utcnow() - timedelta(minutes=30)
     
-    with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time:
+    with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         mock_last_time.return_value = last_recirculation_time
-        
-        cmd = await check_and_control_recirculation(1, targets, telemetry)
+        cmd = await check_and_control_recirculation(1, targets, telemetry, {}, {})
         
         # Не должен возвращать команду
         assert cmd is None
@@ -251,7 +235,7 @@ async def test_check_and_control_recirculation_no_interval():
     
     telemetry = {}
     
-    cmd = await check_and_control_recirculation(1, targets, telemetry)
+    cmd = await check_and_control_recirculation(1, targets, telemetry, {}, {})
     
     # Не должен возвращать команду
     assert cmd is None
@@ -269,24 +253,22 @@ async def test_check_and_control_recirculation_water_level_low():
     telemetry = {}
     
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
-         patch("irrigation_controller.check_water_level") as mock_water_level:
+         patch("irrigation_controller.check_water_level") as mock_water_level, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         
         mock_last_time.return_value = last_recirculation_time
-        mock_fetch.return_value = [
-            {
-                "id": 1,
-                "uid": "nd-recirc-1",
-                "type": "recirculation",
-                "channel": "recirculation_pump",
-            }
-        ]
         mock_water_level.return_value = (False, 0.15)  # Низкий уровень воды
         
-        cmd = await check_and_control_recirculation(1, targets, telemetry)
+        cmd = await check_and_control_recirculation(
+            1,
+            targets,
+            telemetry,
+            {},
+            {"recirculation_pump": {"node_uid": "nd-recirc-1", "channel": "recirculation_pump"}}
+        )
         
         # Не должен возвращать команду из-за низкого уровня воды
         assert cmd is None
@@ -304,17 +286,16 @@ async def test_check_and_control_recirculation_no_nodes():
     telemetry = {}
     
     from datetime import timezone
-    last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
+    last_recirculation_time = utcnow() - timedelta(hours=2)
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
-         patch("irrigation_controller.check_water_level") as mock_water_level:
+         patch("irrigation_controller.check_water_level") as mock_water_level, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         
         mock_last_time.return_value = last_recirculation_time
-        mock_fetch.return_value = []  # Нет узлов
         mock_water_level.return_value = (True, 0.5)
         
-        cmd = await check_and_control_recirculation(1, targets, telemetry)
+        cmd = await check_and_control_recirculation(1, targets, telemetry, {}, {})
         
         # Не должен возвращать команду
         assert cmd is None
@@ -332,23 +313,21 @@ async def test_check_and_control_recirculation_first_time():
     telemetry = {}
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
-         patch("irrigation_controller.fetch") as mock_fetch, \
-         patch("irrigation_controller.check_water_level") as mock_water_level:
+         patch("irrigation_controller.check_water_level") as mock_water_level, \
+         patch("irrigation_controller.ensure_alert", new_callable=AsyncMock):
         
         mock_last_time.return_value = None  # Нет предыдущей рециркуляции
-        mock_fetch.return_value = [
-            {
-                "id": 1,
-                "uid": "nd-recirc-1",
-                "type": "recirculation",
-                "channel": "recirculation_pump",
-            }
-        ]
         mock_water_level.return_value = (True, 0.5)
         
-        cmd = await check_and_control_recirculation(1, targets, telemetry)
+        cmd = await check_and_control_recirculation(
+            1,
+            targets,
+            telemetry,
+            {},
+            {"recirculation_pump": {"node_uid": "nd-recirc-1", "channel": "recirculation_pump"}}
+        )
         
         # Должен вернуть команду (первая рециркуляция)
         assert cmd is not None
-        assert cmd["cmd"] == "recirculate"
-
+        assert cmd["cmd"] == "run_pump"
+        assert cmd["params"]["duration_ms"] == 300000

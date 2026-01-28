@@ -3,26 +3,28 @@
 
 Документ описывает структуру и формат NodeConfig — конфигурации узлов ESP32.
 
-**Связанные документы:**
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — эталонная спецификация NodeConfig
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
-- `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
-- `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
-- Шаблоны: `configs/nodes/*.json`
+**ВАЖНО:** Эталонная версия этого документа находится в `../doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`.  
+Этот файл является копией для удобства разработчиков прошивок.
 
-**Примечание:** Этот файл содержит детальную спецификацию для разработчиков прошивок. Эталонная версия находится в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`.
+**Связанные документы:**
+- `../doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — эталонная спецификация NodeConfig
+- `../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
+- `../doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
+- `../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
+- `../doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- Шаблоны: `configs/nodes/*.json`
 
 ---
 
 ## 1. Общее описание
 
 NodeConfig — это JSON-конфигурация узла ESP32, которая:
+- Формируется в прошивке (жёстко зашита) и сохраняется в NVS
 - Определяет тип узла и его каналы (сенсоры/актуаторы)
-- Задаёт параметры Wi-Fi и MQTT
+- Задаёт параметры Wi‑Fi и MQTT
 - Устанавливает безопасные лимиты и пороги
-- Хранится в NVS (Non-Volatile Storage) на узле
-- Может быть обновлена через MQTT топик `hydro/{gh}/{zone}/{node}/config`
+- Публикуется нодой на сервер после подключения через MQTT топик `hydro/{gh}/{zone}/{node}/config_report`
+- Не редактируется и не отправляется сервером обратно на ноду
 
 ---
 
@@ -37,7 +39,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "type": "ph_node",
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
-  "channels": [...],
+  "channels": [],
   "wifi": {...},
   "mqtt": {...},
   "limits": {...},
@@ -54,7 +56,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `type` | string | Да | Тип узла: `ph_node`, `ec_node`, `climate_node`, `pump_node`, `lighting_node` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
-| `channels` | array | Да | Массив каналов (сенсоры и актуаторы) |
+| `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы). Каналы формируются в прошивке и отправляются нодой на сервер. |
 | `wifi` | object | Да | Параметры Wi-Fi подключения |
 | `mqtt` | object | Да | Параметры MQTT подключения |
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
@@ -115,6 +117,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 
 ### 3.6. `channels`
 
+Поле описывает каналы, зашитые в прошивке. Нода публикует этот список на сервер в составе `config_report`, сервер хранит и использует его для команд и телеметрии.
+
 Массив каналов узла. Каждый канал — это сенсор или актуатор.
 
 #### 3.4.1. Канал сенсора
@@ -133,7 +137,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Поля:**
 - `name` (string, обязательное) — имя канала
 - `type` (string, обязательное) — `"SENSOR"`
-- `metric` (string, обязательное) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LUX`
+- `metric` (string, обязательное) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
 - `poll_interval_ms` (integer, обязательное) — интервал опроса в миллисекундах
 - `unit` (string, необязательное) — единица измерения
 - `precision` (integer, необязательное) — точность (количество знаков после запятой)
@@ -147,20 +151,68 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "actuator_type": "PUMP",
   "safe_limits": {
     "max_duration_ms": 5000,
-    "min_off_ms": 3000
+    "min_off_ms": 3000,
+    "fail_safe_mode": "NO"
   },
   "channel": "pump_in"
+}
+```
+
+Пример для реле:
+
+```json
+{
+  "name": "fan_1",
+  "type": "ACTUATOR",
+  "actuator_type": "FAN",
+  "relay_type": "NO",
+  "gpio": 27
 }
 ```
 
 **Поля:**
 - `name` (string, обязательное) — имя канала
 - `type` (string, обязательное) — `"ACTUATOR"`
-- `actuator_type` (string, обязательное) — тип актуатора: `PUMP`, `VALVE`, `FAN`, `HEATER`, `RELAY`, `LED`
+- `actuator_type` (string, обязательное) — тип актуатора: `PUMP`, `PERISTALTIC_PUMP`, `RELAY`, `VALVE`, `DRIVE`, `FAN`, `HEATER`, `LED`, `PWM`
 - `safe_limits` (object, необязательное) — безопасные лимиты:
   - `max_duration_ms` — максимальная длительность работы в мс
   - `min_off_ms` — минимальное время простоя в мс
+  - `fail_safe_mode` — режим НЗ/НО: `NC` или `NO` (для насосов/приводов)
+- `relay_type` (string, обязательное для `RELAY`/`VALVE`/`FAN`/`HEATER`) — тип реле: `NC` или `NO`
 - `channel` (string, необязательное) — физический канал (для pump_node)
+
+#### 3.4.3. Канал актуатора DRIVE (привод)
+
+```json
+{
+  "name": "vent_drive",
+  "type": "ACTUATOR",
+  "actuator_type": "DRIVE",
+  "gpio_open": 25,
+  "gpio_close": 26,
+  "limit_switches": {
+    "open_gpio": 32,
+    "close_gpio": 33
+  },
+  "drive": {
+    "travel_ms": 15000,
+    "position_percent": 0
+  },
+  "safe_limits": {
+    "max_duration_ms": 20000,
+    "min_off_ms": 1000,
+    "fail_safe_mode": "NO"
+  }
+}
+```
+
+**Поля:**
+- `gpio_open` / `gpio_close` (integer, обязательное) — GPIO для направления открытия/закрытия
+- `limit_switches.open_gpio` / `limit_switches.close_gpio` (integer, обязательное) — GPIO концевиков
+- `drive.travel_ms` (integer, обязательное) — полный ход привода в мс (закрыто → открыто)
+- `drive.position_percent` (integer, необязательное) — текущая/начальная позиция (0–100), рассчитывается по `travel_ms`
+
+**Примечание:** команды для привода используют `direction` (OPEN/CLOSE/STOP) и/или `target_percent`, вычисляя время работы от `travel_ms`. Полное открытие/закрытие подтверждается концевиками.
 
 ### 3.7. `wifi`
 
@@ -180,6 +232,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - `pass` (string, обязательное) — пароль Wi-Fi
 - `auto_reconnect` (boolean, необязательное) — автоматическое переподключение (по умолчанию: `true`)
 - `timeout_sec` (integer, необязательное) — таймаут подключения в секундах (по умолчанию: `30`)
+
+**Примечание:** после первичной настройки допускается присылать `wifi: {"configured": true}` или полностью опускать секцию `wifi`, чтобы сохранить текущие настройки на устройстве.
 
 ### 3.8. `mqtt`
 
@@ -272,10 +326,11 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
     {
       "name": "pump_acid",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "PERISTALTIC_PUMP",
       "safe_limits": {
         "max_duration_ms": 5000,
-        "min_off_ms": 3000
+        "min_off_ms": 3000,
+        "fail_safe_mode": "NO"
       }
     }
   ],
@@ -314,7 +369,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
       "channel": "pump_in",
       "safe_limits": {
         "max_duration_ms": 60000,
-        "min_off_ms": 5000
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
       }
     },
     {
@@ -324,7 +380,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
       "channel": "pump_out",
       "safe_limits": {
         "max_duration_ms": 60000,
-        "min_off_ms": 5000
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
       }
     }
   ],
@@ -399,20 +456,16 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 
 ### 5.1. При первом запуске
 
-1. Узел загружает NodeConfig из NVS (если есть)
-2. Если конфигурации нет, узел переходит в режим provisioning
-3. Backend отправляет конфигурацию через MQTT топик `hydro/{gh}/{zone}/{node}/config`
-4. Узел сохраняет конфигурацию в NVS
-5. Узел отправляет `config_response` с подтверждением
+1. Узел загружает NodeConfig из NVS (если есть), иначе использует встроенный (firmware) вариант
+2. Если конфигурации нет и нет встроенной — узел переходит в режим provisioning
+3. Узел подключается к MQTT и публикует NodeConfig в `hydro/{gh}/{zone}/{node}/config_report`
+4. Сервер сохраняет конфигурацию в БД и синхронизирует каналы
 
 ### 5.2. При обновлении конфигурации
 
-1. Backend публикует новую конфигурацию в топик `hydro/{gh}/{zone}/{node}/config`
-2. Узел получает конфигурацию
-3. Узел валидирует конфигурацию
-4. Узел сохраняет в NVS
-5. Узел перезапускает каналы согласно новой конфигурации
-6. Узел отправляет `config_response` с результатом
+1. Конфигурация обновляется только через прошивку (или локальный provisioning)
+2. После перезапуска узел публикует обновлённый NodeConfig в `config_report`
+3. Сервер обновляет сохранённую конфигурацию и каналы
 
 ### 5.3. Валидация
 
@@ -422,7 +475,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - Допустимые значения (порты, интервалы)
 - Соответствие типа узла и каналов
 
-При ошибке валидации узел отправляет `config_response` с `status: "ERROR"`.
+При ошибке валидации узел логирует проблему и остаётся на текущей конфигурации.
 
 ---
 
@@ -443,14 +496,9 @@ NodeConfig сохраняется в NVS (Non-Volatile Storage) ESP32:
 
 ## 7. Генерация конфигурации
 
-Backend генерирует NodeConfig на основе:
-- Данных из БД (таблицы `nodes`, `node_channels`)
-- Шаблонов из `configs/nodes/*.json`
-- Параметров зоны и теплицы
-
-Инструменты генерации:
-- `tools/gen_node_config/gen_node_config.py` — скрипт генерации
-- Laravel API — генерация через `/api/nodes/{id}/config`
+NodeConfig формируется в прошивке узла и хранится на стороне ноды.
+Сервер принимает конфигурацию через `config_report`, сохраняет в БД и использует
+для команд, телеметрии и UI.
 
 ---
 
@@ -469,17 +517,16 @@ Backend генерирует NodeConfig на основе:
 ## 9. Ссылки
 
 - Шаблоны конфигураций: `configs/nodes/*.json`
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- MQTT протокол: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Структура прошивки: `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
-- Потоки данных: `doc_ai/01_SYSTEM/DATAFLOW_FULL.md`
+- Архитектура нод: `../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- MQTT протокол: `../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Структура прошивки: `../doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
+- Потоки данных: `../doc_ai/01_SYSTEM/DATAFLOW_FULL.md`
 
 ---
 
 ## 10. Примечания
 
-- NodeConfig полностью формируется на backend
-- Узел не имеет собственной логики конфигурации — всё определяется конфигом
-- Конфигурация может быть обновлена "на лету" через MQTT
-- При ошибке применения конфигурации узел остаётся в текущем состоянии и отправляет ошибку
-
+- NodeConfig формируется в прошивке и публикуется нодой на сервер
+- Сервер не редактирует и не отправляет конфиг обратно на ноду
+- Обновление конфигурации происходит через обновление прошивки (или локальный provisioning)
+- При ошибке применения локальной конфигурации узел остаётся в текущем состоянии и сообщает об ошибке

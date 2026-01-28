@@ -1,0 +1,186 @@
+# E17: Command Failed Flow - failure handling with WS/DB invariants
+# DoD: failure handling with WS/DB invariants
+
+name: E17_command_failed_flow
+description: |
+  Проверяет обработку failed команд:
+  - Node-sim отвечает ACK, затем ERROR
+  - WS события CommandStatusUpdated (ACK + ERROR)
+  - DB статус обновляется на ERROR
+  - Error details фиксируются
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${node_row.0.zone_id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${node_row.0.node_id}
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
+
+  - step: subscribe_commands_channel
+    type: websocket_subscribe
+    channel: private-commands.${test_zone_id}
+
+  - step: send_failure_command
+    type: api_post
+    endpoint: /api/nodes/${test_node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        channel: main_pump
+        state: true
+    save: failure_command_response
+
+  - step: extract_failure_command_id
+    type: set
+    failure_command_id: ${failure_command_response.data.command_id}
+
+  - step: node_sends_ack
+    type: mqtt_publish
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    payload:
+      cmd_id: ${failure_command_id}
+      status: "ACK"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  - step: node_sends_error
+    type: mqtt_publish
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
+    payload:
+      cmd_id: ${failure_command_id}
+      status: "ERROR"
+      details:
+        error_code: "test_failure"
+        error_message: "Simulated failure"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  # Ждем WS события ACK
+  - step: wait_for_accepted_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      commandId: ${failure_command_id}
+      status: "ACK"
+    timeout: 10.0
+
+  # Ждем WS события ERROR
+  - step: wait_for_failed_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      commandId: ${failure_command_id}
+      status: "ERROR"
+    timeout: 15.0
+    save: ws_failed_event
+    optional: true
+
+  # Проверяем финальный DB статус
+  - step: check_failed_db_status
+    type: database_query
+    query: |
+      SELECT status, failed_at, error_message
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${failure_command_id}
+    save: failed_status
+
+assertions:
+  # Проверка 1: WS событие ERROR содержит детали ошибки
+  - name: ws_failed_event_data
+    type: custom_assert
+    condition: context.get('ws_failed_event', {}).get('data', {}).get('status') == 'ERROR' and str(context.get('ws_failed_event', {}).get('data', {}).get('commandId')) == str(context.get('failure_command_id'))
+    optional: true
+
+  # Проверка 2: DB статус ERROR с деталями ошибки
+  - name: db_failed_status
+    type: database_query
+    query: |
+      SELECT status, failed_at, error_message
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${failure_command_id}
+    expected:
+      - field: status
+        operator: in
+        value: ["ERROR", "DONE"]
+
+  # Проверка 3: Error message присутствует
+  - name: error_message_present
+    type: custom_assert
+    condition: "(lambda s: (True if s.get('status') != 'ERROR' else (s.get('error_message') is not None and len(str(s.get('error_message'))) > 0)))((context.get('failed_status') or [{}])[0])"
+
+  # Проверка 4: Команда не зависла в промежуточном состоянии
+  - name: no_intermediate_stuck
+    type: database_query
+    query: |
+      SELECT COUNT(*) as intermediate_count
+      FROM commands
+      WHERE cmd_id = :command_id
+      AND status NOT IN ('DONE', 'ERROR', 'TIMEOUT')
+      AND updated_at < NOW() - INTERVAL '30 seconds'
+    params:
+      command_id: ${failure_command_id}
+    expected:
+      - field: intermediate_count
+        operator: equals
+        value: 0

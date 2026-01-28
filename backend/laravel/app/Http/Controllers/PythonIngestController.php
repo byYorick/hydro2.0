@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\NodeTelemetryUpdated;
+use App\Events\TelemetryBatchUpdated;
 use App\Models\DeviceNode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -20,9 +20,18 @@ class PythonIngestController extends Controller
         $expected = Config::get('services.python_bridge.ingest_token') ?? Config::get('services.python_bridge.token');
         $given = $request->bearerToken();
 
+        Log::info('[COMMAND_ACK_AUTH] Token check', [
+            'has_expected_token' => !empty($expected),
+            'has_given_token' => !empty($given),
+            'expected_token_length' => $expected ? strlen($expected) : 0,
+            'given_token_length' => $given ? strlen($given) : 0,
+            'tokens_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
+        ]);
+
         // Если токен не настроен, всегда требуем токен (даже в testing)
         // Это обеспечивает безопасность по умолчанию
         if (! $expected) {
+            Log::error('[COMMAND_ACK_AUTH] Token not configured in Laravel');
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -32,6 +41,10 @@ class PythonIngestController extends Controller
         }
 
         if (! $given || ! hash_equals($expected, (string) $given)) {
+            Log::warning('[COMMAND_ACK_AUTH] Token validation failed', [
+                'has_given' => !empty($given),
+                'token_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
+            ]);
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -39,6 +52,8 @@ class PythonIngestController extends Controller
                 ], 401)
             );
         }
+        
+        Log::info('[COMMAND_ACK_AUTH] Token validated successfully');
     }
 
     public function telemetry(Request $request)
@@ -52,11 +67,12 @@ class PythonIngestController extends Controller
             'ts' => ['nullable', 'date'],
             'channel' => ['nullable', 'string', 'max:64'],
         ]);
+        $metricType = strtoupper(trim((string) $data['metric_type']));
 
         // Проверяем, что zone_id существует
         $zone = \App\Models\Zone::find($data['zone_id']);
         if (! $zone) {
-            \Illuminate\Support\Facades\Log::warning('PythonIngestController: Zone not found', [
+            Log::warning('PythonIngestController: Zone not found', [
                 'zone_id' => $data['zone_id'],
             ]);
 
@@ -72,7 +88,7 @@ class PythonIngestController extends Controller
         if ($nodeId) {
             $node = DeviceNode::find($nodeId);
             if (! $node) {
-                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node not found', [
+                Log::warning('PythonIngestController: Node not found', [
                     'node_id' => $nodeId,
                 ]);
 
@@ -84,7 +100,7 @@ class PythonIngestController extends Controller
 
             // Проверяем, что нода привязана к указанной зоне
             if ($node->zone_id !== $data['zone_id']) {
-                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node zone mismatch', [
+                Log::warning('PythonIngestController: Node zone mismatch', [
                     'node_id' => $nodeId,
                     'node_zone_id' => $node->zone_id,
                     'requested_zone_id' => $data['zone_id'],
@@ -100,13 +116,34 @@ class PythonIngestController extends Controller
         }
         $tsValue = $data['ts'] ?? null;
         $timestamp = $tsValue ? Carbon::parse($tsValue) : now();
+        
+        // Проверка на искаженное время: если timestamp отклоняется от серверного более чем на 5 минут,
+        // используем серверное время для обеспечения единой временной линии
+        if ($tsValue) {
+            $serverTime = now();
+            $deviceTime = $timestamp;
+            $driftSeconds = abs($serverTime->diffInSeconds($deviceTime, false));
+            $maxDriftSeconds = 300; // 5 минут
+            
+            if ($driftSeconds > $maxDriftSeconds) {
+                Log::warning('PythonIngestController: Device timestamp is skewed, using server time', [
+                    'device_ts' => $deviceTime->toIso8601String(),
+                    'server_ts' => $serverTime->toIso8601String(),
+                    'drift_sec' => $driftSeconds,
+                    'max_drift_sec' => $maxDriftSeconds,
+                    'node_id' => $nodeId,
+                    'zone_id' => $data['zone_id'],
+                ]);
+                $timestamp = $serverTime;
+            }
+        }
 
         // Формируем запрос для history-logger
         // Передаём zone_id напрямую (в таблице zones нет uid)
         $sample = [
             'node_uid' => $nodeUid ?? '',
             'zone_id' => $data['zone_id'],  // Передаём zone_id напрямую
-            'metric_type' => $data['metric_type'],
+            'metric_type' => $metricType,
             'value' => $data['value'],
             'ts' => $timestamp->toIso8601String(),
             'channel' => $data['channel'] ?? null,
@@ -130,20 +167,23 @@ class PythonIngestController extends Controller
             }
 
             // Broadcast телеметрии через WebSocket для real-time обновления графиков
-            if ($nodeId) {
+            if ($nodeId && $data['zone_id']) {
                 Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
                     'node_id' => $nodeId,
                     'channel' => $data['channel'] ?? '',
-                    'metric_type' => $data['metric_type'],
+                    'metric_type' => $metricType,
                     'value' => $data['value'],
                 ]);
-                
-                event(new NodeTelemetryUpdated(
-                    nodeId: $nodeId,
-                    channel: $data['channel'] ?? '',
-                    metricType: $data['metric_type'],
-                    value: (float) $data['value'],
-                    timestamp: $timestamp->getTimestamp() * 1000, // Конвертируем в миллисекунды
+
+                event(new TelemetryBatchUpdated(
+                    zoneId: (int) $data['zone_id'],
+                    updates: [[
+                        'node_id' => (int) $nodeId,
+                        'channel' => $data['channel'] ?? null,
+                        'metric_type' => $metricType,
+                        'value' => (float) $data['value'],
+                        'ts' => (int) ($timestamp->getTimestamp() * 1000),
+                    ]]
                 ));
             }
 
@@ -159,59 +199,231 @@ class PythonIngestController extends Controller
 
     public function commandAck(Request $request)
     {
-        $this->ensureToken($request);
+        Log::info('[COMMAND_ACK] STEP 0: commandAck endpoint called', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'ip' => $request->ip(),
+            'headers' => [
+                'authorization' => $request->header('Authorization') ? 'present' : 'missing',
+                'content-type' => $request->header('Content-Type'),
+            ],
+        ]);
+        
+        Log::info('[COMMAND_ACK] STEP 1: Received commandAck request', [
+            'cmd_id' => $request->input('cmd_id'),
+            'status' => $request->input('status'),
+            'has_details' => $request->has('details'),
+        ]);
+        
+        try {
+            $this->ensureToken($request);
+            Log::info('[COMMAND_ACK] STEP 2: Token validated');
+        } catch (\Exception $e) {
+            Log::error('[COMMAND_ACK] STEP 2: Token validation failed', [
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+            ]);
+            throw $e;
+        }
+        
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:accepted,completed,failed,ack'],
+            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY'],
             'details' => ['nullable', 'array'],
+        ]);
+        
+        Log::info('[COMMAND_ACK] STEP 3: Request validated', ['data' => $data]);
+
+        // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY
+        $normalizedStatus = match (strtoupper($data['status'])) {
+            'SENT' => \App\Models\Command::STATUS_SENT,
+            'ACK' => \App\Models\Command::STATUS_ACK,
+            'DONE' => \App\Models\Command::STATUS_DONE,
+            'NO_EFFECT' => \App\Models\Command::STATUS_NO_EFFECT,
+            'ERROR' => \App\Models\Command::STATUS_ERROR,
+            'INVALID' => \App\Models\Command::STATUS_INVALID,
+            'BUSY' => \App\Models\Command::STATUS_BUSY,
+            default => strtoupper($data['status']),
+        };
+        
+        Log::info('[COMMAND_ACK] STEP 4: Status normalized', [
+            'original_status' => $data['status'],
+            'normalized_status' => $normalizedStatus,
         ]);
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
+        Log::info('[COMMAND_ACK] STEP 5: Looking up command in database', ['cmd_id' => $data['cmd_id']]);
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
-            $updates = ['status' => $data['status']];
+            Log::info('[COMMAND_ACK] STEP 5.1: Command found', [
+                'cmd_id' => $data['cmd_id'],
+                'command_id' => $command->id,
+                'current_status' => $command->status,
+            ]);
+            // State machine guard: проверяем валидность перехода статуса
+            $currentStatus = $command->status;
+            $newStatus = $normalizedStatus;
+            
+            // Определяем конечные статусы (нельзя изменять)
+            $finalStatuses = [
+                \App\Models\Command::STATUS_DONE,
+                \App\Models\Command::STATUS_NO_EFFECT,
+                \App\Models\Command::STATUS_ERROR,
+                \App\Models\Command::STATUS_INVALID,
+                \App\Models\Command::STATUS_BUSY,
+            ];
+            
+            // Если команда уже в конечном статусе, не обновляем (запрет отката)
+            if (in_array($currentStatus, $finalStatuses)) {
+                Log::info('commandAck: Command already in final status, skipping update', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Command already in final status',
+                ]);
+            }
+            
+            // Проверяем переходы: запрещаем откат (например, DONE нельзя заменить на SENT)
+            $isRollback = false;
+            
+            // Запрет перехода назад: если текущий статус более продвинутый, чем новый
+            $statusOrder = [
+                \App\Models\Command::STATUS_QUEUED => 0,
+                \App\Models\Command::STATUS_SENT => 2,
+                \App\Models\Command::STATUS_ACK => 3,
+                \App\Models\Command::STATUS_DONE => 4,
+                \App\Models\Command::STATUS_NO_EFFECT => 4,
+                \App\Models\Command::STATUS_ERROR => 4,
+                \App\Models\Command::STATUS_INVALID => 4,
+                \App\Models\Command::STATUS_BUSY => 4,
+            ];
+            
+            $currentOrder = $statusOrder[$currentStatus] ?? 0;
+            $newOrder = $statusOrder[$newStatus] ?? 0;
+            
+            // Запрещаем откат
+            if ($newOrder < $currentOrder) {
+                $isRollback = true;
+            }
+            
+            if ($isRollback) {
+                Log::warning('commandAck: Status rollback prevented by state machine guard', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Status rollback prevented',
+                ]);
+            }
+            
+            $updates = ['status' => $normalizedStatus];
+            
+            // Добавляем детали из details если есть
+            $details = $data['details'] ?? [];
+            if (isset($details['error_code'])) {
+                $updates['error_code'] = $details['error_code'];
+            }
+            if (isset($details['error_message'])) {
+                $updates['error_message'] = $details['error_message'];
+            }
+            if (isset($details['result_code'])) {
+                $updates['result_code'] = $details['result_code'];
+            }
+            if (isset($details['duration_ms'])) {
+                $updates['duration_ms'] = $details['duration_ms'];
+            }
 
-            if (in_array($data['status'], ['accepted', 'ack']) && ! $command->ack_at) {
+            // SENT - команда отправлена в MQTT (подтверждение корреляции)
+            if ($normalizedStatus === \App\Models\Command::STATUS_SENT && ! $command->sent_at) {
+                $updates['sent_at'] = now();
+            }
+            
+            // ACK - команда принята к выполнению
+            if ($normalizedStatus === \App\Models\Command::STATUS_ACK && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'completed' && ! $command->ack_at) {
+            
+            // DONE/NO_EFFECT - команда завершена
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_DONE,
+                \App\Models\Command::STATUS_NO_EFFECT,
+            ], true) && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'failed') {
+            
+            // ERROR/INVALID/BUSY - команда завершилась с ошибкой
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_ERROR,
+                \App\Models\Command::STATUS_INVALID,
+                \App\Models\Command::STATUS_BUSY,
+            ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
 
+            Log::info('[COMMAND_ACK] STEP 8: Updating command in database', [
+                'cmd_id' => $data['cmd_id'],
+                'updates' => $updates,
+            ]);
+            
             $command->update($updates);
+            
+            Log::info('[COMMAND_ACK] STEP 8.1: Command updated successfully', [
+                'cmd_id' => $data['cmd_id'],
+                'new_status' => $command->fresh()->status,
+            ]);
 
             // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
             $zoneId = $command->zone_id;
-            $details = $data['details'] ?? [];
             $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
             $message = $details['message'] ?? null;
 
-            if ($data['status'] === 'failed') {
+            Log::info('[COMMAND_ACK] STEP 9: Dispatching WebSocket event', [
+                'cmd_id' => $data['cmd_id'],
+                'normalized_status' => $normalizedStatus,
+                'zone_id' => $zoneId,
+            ]);
+
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_ERROR,
+                \App\Models\Command::STATUS_INVALID,
+                \App\Models\Command::STATUS_BUSY,
+            ], true)) {
+                Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
                 event(new \App\Events\CommandFailed(
                     commandId: $command->cmd_id,
                     message: $message ?? 'Command failed',
                     error: $errorMessage,
+                    status: $normalizedStatus,
                     zoneId: $zoneId
                 ));
             } else {
+                Log::info('[COMMAND_ACK] STEP 9.2: Dispatching CommandStatusUpdated event');
                 event(new \App\Events\CommandStatusUpdated(
                     commandId: $command->cmd_id,
-                    status: $data['status'],
+                    status: $normalizedStatus,
                     message: $message ?? 'Command status updated',
                     error: $errorMessage,
                     zoneId: $zoneId
                 ));
             }
+            
+            Log::info('[COMMAND_ACK] STEP 10: Event dispatched, returning success');
         } else {
-            \Log::warning('commandAck: Command not found for cmd_id', [
+            Log::warning('[COMMAND_ACK] STEP 5.2: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
+                'normalized_status' => $normalizedStatus,
             ]);
         }
 
+        Log::info('[COMMAND_ACK] STEP 11: Returning response');
         return Response::json(['status' => 'ok']);
     }
 
@@ -224,27 +436,115 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'channel' => ['nullable', 'string', 'max:64'],
             'metric_type' => ['required', 'string', 'max:64'],
             'value' => ['required', 'numeric'],
             'timestamp' => ['required', 'integer'], // timestamp в миллисекундах
         ]);
+        $metricType = strtoupper(trim((string) $data['metric_type']));
 
         Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
             'node_id' => $data['node_id'],
             'channel' => $data['channel'] ?? '',
-            'metric_type' => $data['metric_type'],
+            'metric_type' => $metricType,
             'value' => $data['value'],
         ]);
 
-        event(new NodeTelemetryUpdated(
-            nodeId: $data['node_id'],
-            channel: $data['channel'] ?? '',
-            metricType: $data['metric_type'],
-            value: (float) $data['value'],
-            timestamp: $data['timestamp'],
+        $zoneId = $data['zone_id'] ?? null;
+        if (! $zoneId) {
+            $zoneId = DeviceNode::query()
+                ->whereKey($data['node_id'])
+                ->value('zone_id');
+        }
+
+        if (! $zoneId) {
+            Log::debug('PythonIngestController: Skipping telemetry broadcast (zone not resolved)', [
+                'node_id' => $data['node_id'],
+                'metric_type' => $metricType,
+            ]);
+
+            return Response::json(['status' => 'skipped']);
+        }
+
+        event(new TelemetryBatchUpdated(
+            zoneId: (int) $zoneId,
+            updates: [[
+                'node_id' => (int) $data['node_id'],
+                'channel' => $data['channel'] ?? null,
+                'metric_type' => $metricType,
+                'value' => (float) $data['value'],
+                'ts' => (int) $data['timestamp'],
+            ]]
         ));
 
         return Response::json(['status' => 'ok']);
+    }
+
+    public function alerts(Request $request)
+    {
+        $this->ensureToken($request);
+        $data = $request->validate([
+            'zone_id' => ['nullable', 'integer'],
+            'node_uid' => ['nullable', 'string', 'max:100'],
+            'hardware_id' => ['nullable', 'string', 'max:100'],
+            'source' => ['required', 'string', 'in:biz,infra'],
+            'code' => ['required', 'string', 'max:64'],
+            'type' => ['required', 'string', 'max:64'],
+            'severity' => ['nullable', 'string', 'max:32'],
+            'details' => ['nullable', 'array'],
+            'ts_device' => ['nullable', 'date'],
+        ]);
+        
+        // Валидируем zone_id отдельно, если он указан (для unassigned hardware разрешаем null)
+        if (isset($data['zone_id']) && $data['zone_id'] !== null) {
+            $zoneExists = \App\Models\Zone::where('id', $data['zone_id'])->exists();
+            if (!$zoneExists) {
+                return Response::json([
+                    'status' => 'error',
+                    'message' => 'Zone not found',
+                ], 422);
+            }
+        }
+
+        try {
+            $alertService = app(\App\Services\AlertService::class);
+            
+            // Используем createOrUpdateActive для дедупликации
+            $result = $alertService->createOrUpdateActive([
+                'zone_id' => $data['zone_id'] ?? null,
+                'source' => $data['source'],
+                'code' => $data['code'],
+                'type' => $data['type'],
+                'details' => $data['details'] ?? null,
+                'severity' => $data['severity'] ?? null,
+                'node_uid' => $data['node_uid'] ?? null,
+                'hardware_id' => $data['hardware_id'] ?? null,
+                'ts_device' => $data['ts_device'] ?? null,
+            ]);
+
+            $alert = $result['alert'];
+            $serverTs = now()->toIso8601String();
+
+            return Response::json([
+                'status' => 'ok',
+                'data' => [
+                    'alert_id' => $alert->id,
+                    'event_id' => $result['event_id'],
+                    'server_ts' => $serverTs,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('PythonIngestController: Failed to create/update alert', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data,
+            ]);
+
+            return Response::json([
+                'status' => 'error',
+                'message' => 'Failed to create/update alert: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

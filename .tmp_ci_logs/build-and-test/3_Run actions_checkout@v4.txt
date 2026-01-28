@@ -1,0 +1,72 @@
+﻿2026-01-02T17:44:41.5898117Z ##[group]Run actions/checkout@v4
+2026-01-02T17:44:41.5898676Z with:
+2026-01-02T17:44:41.5898864Z   repository: byYorick/hydro2.0
+2026-01-02T17:44:41.5899244Z   token: ***
+2026-01-02T17:44:41.5899418Z   ssh-strict: true
+2026-01-02T17:44:41.5899607Z   ssh-user: git
+2026-01-02T17:44:41.5899788Z   persist-credentials: true
+2026-01-02T17:44:41.5899994Z   clean: true
+2026-01-02T17:44:41.5900173Z   sparse-checkout-cone-mode: true
+2026-01-02T17:44:41.5900398Z   fetch-depth: 1
+2026-01-02T17:44:41.5900576Z   fetch-tags: false
+2026-01-02T17:44:41.5900753Z   show-progress: true
+2026-01-02T17:44:41.5900935Z   lfs: false
+2026-01-02T17:44:41.5901094Z   submodules: false
+2026-01-02T17:44:41.5901274Z   set-safe-directory: true
+2026-01-02T17:44:41.5901668Z ##[endgroup]
+2026-01-02T17:44:41.7017542Z Syncing repository: byYorick/hydro2.0
+2026-01-02T17:44:41.7018892Z ##[group]Getting Git version info
+2026-01-02T17:44:41.7019296Z Working directory is '/home/runner/work/hydro2.0/hydro2.0'
+2026-01-02T17:44:41.7019820Z [command]/usr/bin/git version
+2026-01-02T17:44:41.7117322Z git version 2.52.0
+2026-01-02T17:44:41.7145637Z ##[endgroup]
+2026-01-02T17:44:41.7161914Z Temporarily overriding HOME='/home/runner/work/_temp/f7f336f5-a058-4e09-b32b-2084578528a4' before making global git config changes
+2026-01-02T17:44:41.7163177Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-02T17:44:41.7176813Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/hydro2.0/hydro2.0
+2026-01-02T17:44:41.7219436Z Deleting the contents of '/home/runner/work/hydro2.0/hydro2.0'
+2026-01-02T17:44:41.7223212Z ##[group]Initializing the repository
+2026-01-02T17:44:41.7227983Z [command]/usr/bin/git init /home/runner/work/hydro2.0/hydro2.0
+2026-01-02T17:44:41.7358496Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-01-02T17:44:41.7359543Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-01-02T17:44:41.7360142Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-01-02T17:44:41.7360585Z hint: call:
+2026-01-02T17:44:41.7360793Z hint:
+2026-01-02T17:44:41.7361317Z hint: 	git config --global init.defaultBranch <name>
+2026-01-02T17:44:41.7361704Z hint:
+2026-01-02T17:44:41.7362046Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-01-02T17:44:41.7362620Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-01-02T17:44:41.7363052Z hint:
+2026-01-02T17:44:41.7363266Z hint: 	git branch -m <name>
+2026-01-02T17:44:41.7363525Z hint:
+2026-01-02T17:44:41.7363979Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-01-02T17:44:41.7365157Z Initialized empty Git repository in /home/runner/work/hydro2.0/hydro2.0/.git/
+2026-01-02T17:44:41.7376208Z [command]/usr/bin/git remote add origin https://github.com/byYorick/hydro2.0
+2026-01-02T17:44:41.7412976Z ##[endgroup]
+2026-01-02T17:44:41.7413517Z ##[group]Disabling automatic garbage collection
+2026-01-02T17:44:41.7418899Z [command]/usr/bin/git config --local gc.auto 0
+2026-01-02T17:44:41.7447789Z ##[endgroup]
+2026-01-02T17:44:41.7448398Z ##[group]Setting up auth
+2026-01-02T17:44:41.7455664Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-01-02T17:44:41.7486271Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-01-02T17:44:41.7838518Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-02T17:44:41.7869448Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-01-02T17:44:41.8088451Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-02T17:44:41.8118834Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-01-02T17:44:41.8349077Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-01-02T17:44:41.8383997Z ##[endgroup]
+2026-01-02T17:44:41.8384722Z ##[group]Fetching the repository
+2026-01-02T17:44:41.8392533Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2b9c11e46f8c06bf86e83f74e52e153844de4799:refs/remotes/origin/refactor/grow-cycle-centric
+2026-01-02T17:44:43.5614124Z From https://github.com/byYorick/hydro2.0
+2026-01-02T17:44:43.5615375Z  * [new ref]         2b9c11e46f8c06bf86e83f74e52e153844de4799 -> origin/refactor/grow-cycle-centric
+2026-01-02T17:44:43.5648350Z ##[endgroup]
+2026-01-02T17:44:43.5648872Z ##[group]Determining the checkout info
+2026-01-02T17:44:43.5650816Z ##[endgroup]
+2026-01-02T17:44:43.5656129Z [command]/usr/bin/git sparse-checkout disable
+2026-01-02T17:44:43.5697289Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-01-02T17:44:43.5722017Z ##[group]Checking out the ref
+2026-01-02T17:44:43.5726481Z [command]/usr/bin/git checkout --progress --force -B refactor/grow-cycle-centric refs/remotes/origin/refactor/grow-cycle-centric
+2026-01-02T17:44:43.9030612Z Switched to a new branch 'refactor/grow-cycle-centric'
+2026-01-02T17:44:43.9031646Z branch 'refactor/grow-cycle-centric' set up to track 'origin/refactor/grow-cycle-centric'.
+2026-01-02T17:44:43.9052109Z ##[endgroup]
+2026-01-02T17:44:43.9092981Z [command]/usr/bin/git log -1 --format=%H
+2026-01-02T17:44:43.9117307Z 2b9c11e46f8c06bf86e83f74e52e153844de4799

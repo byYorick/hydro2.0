@@ -3,7 +3,7 @@
  * Обновляет интерфейс сразу при действии пользователя, до получения ответа от сервера
  */
 
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
 
 interface OptimisticUpdateOptions<T> {
@@ -45,11 +45,13 @@ interface OptimisticUpdateOptions<T> {
   onError?: (error: Error) => void
 }
 
+type TimeoutHandle = ReturnType<typeof setTimeout>
+
 interface PendingUpdate {
   id: string
   applyUpdate: () => void
   rollback: () => void
-  timeoutId: NodeJS.Timeout | null
+  timeoutId: TimeoutHandle | null
   timestamp: number
 }
 
@@ -85,7 +87,7 @@ export function useOptimisticUpdate() {
     }
     
     // Создаем запись о pending обновлении
-    let timeoutId: NodeJS.Timeout | null = null
+    let timeoutId: TimeoutHandle | null = null
     
     let timeoutError: Error | null = null
 
@@ -317,4 +319,3 @@ export function createOptimisticCreate<T extends { id?: number | string }>(
     },
   }
 }
-

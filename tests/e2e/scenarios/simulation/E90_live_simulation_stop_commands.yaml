@@ -1,0 +1,307 @@
+# E90: Live Simulation Orchestration
+# DoD: live-симуляция стартует через digital-twin, создает сим-зону и grow-cycle,
+#      запускает node-sim-manager сессию и корректно завершает
+
+name: E90_live_simulation_orchestration
+description: |
+  Проверяет live-симуляцию с ускоренным временем:
+  - создается отдельная сим-зона и grow-cycle
+  - запускается node-sim-manager сессия
+  - симуляция завершается и пишет мета real_duration_minutes/real_ended_at
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        config_report_on_start: true
+        channels:
+          - ph_sensor
+          - ec_sensor
+          - solution_temp_c
+          - air_temp_c
+          - air_rh
+        actuators:
+          - main_pump
+          - drain_pump
+          - fan
+          - heater
+          - light
+          - mister
+          - fan_pwm
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  - step: set_test_uids
+    type: set
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_row
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    expected_rows: 1
+    save: node_row
+
+  - step: set_zone_and_node
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
+
+  - step: wait_for_node_online
+    type: db_wait
+    query: |
+      SELECT status
+      FROM nodes
+      WHERE id = :node_id
+        AND status = 'online'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    timeout: 90.0
+    expected_rows: 1
+
+  - step: ensure_pwm_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
+      VALUES (:node_id, 'fan_pwm', 'ACTUATOR', 'PWM', 'int', '{"actuator_type": "PWM"}'::jsonb, NOW(), NOW())
+      ON CONFLICT (node_id, channel)
+      DO UPDATE SET
+        type = EXCLUDED.type,
+        metric = EXCLUDED.metric,
+        unit = EXCLUDED.unit,
+        config = EXCLUDED.config,
+        updated_at = NOW();
+    params:
+      node_id: ${node_id}
+
+  - step: fetch_published_recipe
+    type: database_query
+    query: |
+      SELECT recipe_id
+      FROM recipe_revisions
+      WHERE status = 'PUBLISHED'
+      ORDER BY revision_number DESC
+      LIMIT 1
+    expected_rows: 1
+    save: recipe_row
+
+  - step: set_recipe_id
+    type: set
+    recipe_id: ${recipe_row.0.recipe_id}
+
+  - step: capture_anchor_time
+    type: database_query
+    query: |
+      SELECT NOW() - INTERVAL '5 seconds' AS anchor_time
+    expected_rows: 1
+    save: anchor_row
+
+  - step: set_anchor_time
+    type: set
+    anchor_time: ${anchor_row.0.anchor_time}
+
+  - step: start_live_simulation
+    type: api_post
+    endpoint: /api/zones/${zone_id}/simulate
+    payload:
+      duration_hours: 24
+      step_minutes: 10
+      sim_duration_minutes: 1
+      recipe_id: ${recipe_id}
+    save: simulate_response
+
+  - step: set_job_id
+    type: set
+    job_id: ${simulate_response.data.job_id}
+
+  - step: wait_for_simulation_row
+    type: db_wait
+    query: |
+      SELECT
+        id AS simulation_id,
+        zone_id AS simulation_zone_id,
+        scenario->'simulation'->>'node_sim_session_id' AS node_sim_session_id,
+        scenario->'simulation'->>'sim_zone_id' AS sim_zone_id,
+        scenario->'simulation'->>'sim_grow_cycle_id' AS sim_grow_cycle_id,
+        created_at
+      FROM zone_simulations
+      WHERE scenario->'simulation'->>'source_zone_id' = :source_zone_id::text
+        AND created_at >= :anchor_time
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      source_zone_id: ${zone_id}
+      anchor_time: ${anchor_time}
+    timeout: 30.0
+    expected_rows: 1
+    save: simulation_row
+
+  - step: set_simulation_context
+    type: set
+    simulation_id: ${simulation_row.0.simulation_id}
+    simulation_created_at: ${simulation_row.0.created_at}
+    simulation_zone_id: ${simulation_row.0.simulation_zone_id}
+    node_sim_session_id: ${simulation_row.0.node_sim_session_id}
+    sim_zone_id: ${simulation_row.0.sim_zone_id}
+    sim_grow_cycle_id: ${simulation_row.0.sim_grow_cycle_id}
+
+  - step: wait_for_simulation_running
+    type: db_wait
+    query: |
+      SELECT status
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'running'
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: check_node_sim_session_running
+    type: http_request
+    method: GET
+    url: http://node-sim-manager:9100/sessions/${node_sim_session_id}
+    capture_response: node_sim_session
+
+  - step: wait_for_simulation_completion
+    type: db_wait
+    query: |
+      SELECT status
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'completed'
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 90.0
+    expected_rows: 1
+
+  - step: check_node_sim_session_stopped
+    type: http_request
+    method: GET
+    url: http://node-sim-manager:9100/sessions/${node_sim_session_id}
+    capture_response: node_sim_session_after
+
+assertions:
+  - name: simulation_completed_with_meta
+    type: database_query
+    query: |
+      SELECT
+        status,
+        scenario->'simulation'->>'real_duration_minutes' as real_duration_minutes,
+        scenario->'simulation'->>'orchestrator' as orchestrator,
+        scenario->'simulation'->>'real_ended_at' as real_ended_at
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'completed'
+        AND scenario->'simulation'->>'real_ended_at' IS NOT NULL
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "completed"
+      - field: real_duration_minutes
+        operator: equals
+        value: "1"
+      - field: orchestrator
+        operator: equals
+        value: "digital-twin"
+      - field: real_ended_at
+        operator: is_not_null
+
+  - name: simulation_zone_created
+    type: database_query
+    query: |
+      SELECT id, uid, settings->'simulation'->>'source_zone_id' as source_zone_id
+      FROM zones
+      WHERE id = :sim_zone_id
+      LIMIT 1
+    params:
+      sim_zone_id: ${sim_zone_id}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: source_zone_id
+        operator: equals
+        value: "${zone_id}"
+      - field: uid
+        operator: is_not_null
+
+  - name: simulation_grow_cycle_created
+    type: database_query
+    query: |
+      SELECT id, status, zone_id
+      FROM grow_cycles
+      WHERE id = :sim_grow_cycle_id
+      LIMIT 1
+    params:
+      sim_grow_cycle_id: ${sim_grow_cycle_id}
+    timeout: 30.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "RUNNING"
+
+  - name: node_sim_session_running
+    type: json_assertion
+    source: node_sim_session
+    path: json
+    expected:
+      - field: status
+        operator: equals
+        value: "running"
+
+  - name: node_sim_session_stopped
+    type: json_assertion
+    source: node_sim_session_after
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 404]
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator

@@ -1,0 +1,13 @@
+{
+  "zone_id": 1,
+  "type": "alert_created",
+  "entity_type": "alert",
+  "entity_id": "42",
+  "payload_json": {
+    "code": "PH_LOW",
+    "severity": "medium",
+    "ws_event_id": 1234567891
+  },
+  "server_ts": 1737979200000
+}
+

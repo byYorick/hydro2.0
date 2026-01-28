@@ -24,6 +24,18 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - tailwindcss (TAILWINDCSS) - v3
 - vue (VUE) - v3
 
+## Hydro 2.0 System Rules (Global)
+- The system architecture source of truth lives in `../../../doc_ai/SYSTEM_ARCH_FULL.md` and `../../../doc_ai/01_SYSTEM/*`. Use domain specs from `../../../doc_ai/02_HARDWARE_FIRMWARE`, `../../../doc_ai/03_TRANSPORT_MQTT`, `../../../doc_ai/04_BACKEND_CORE`, `../../../doc_ai/05_DATA_AND_STORAGE`, `../../../doc_ai/06_DOMAIN_ZONES_RECIPES`, `../../../doc_ai/07_FRONTEND`, `../../../doc_ai/09_AI_AND_DIGITAL_TWIN`, `../../../doc_ai/10_AI_DEV_GUIDES`.
+- Do not invent or change contracts: no breaking changes to MQTT topics/payloads, command formats, DB schemas, key field names, or required IDs. If a breaking change seems necessary, stop and ask first.
+- Any change must remain compatible across the full pipeline: `ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`. If you change API responses or Inertia props, update Vue pages accordingly.
+- For protocol/data-contract changes, explicitly call out compatibility (e.g., `Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0`).
+- Commands to nodes must go through the Python/MQTT layer; never bypass the scheduler or write direct MQTT commands unless explicitly requested.
+- When adding telemetry fields, ensure storage in both `telemetry_samples` and `telemetry_last` per `../../../doc_ai/05_DATA_AND_STORAGE`.
+- Laravel owns DB schema changes via migrations; avoid manual DDL. If schema changes are needed, call out any required updates to `../../../doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` and `../../../doc_ai/10_AI_DEV_GUIDES/DATABASE_SCHEMA_AI_GUIDE.md`.
+- Do not access MQTT directly from Laravel; node interactions go through the Python service APIs.
+- If the task is to craft or refine AI-agent tasks/prompts, follow `../../../doc_ai/TASKS_FOR_AI_AGENTS.md` and `../../../doc_ai/10_AI_DEV_GUIDES/DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md` (explicit role, context, constraints, acceptance criteria, output format).
+- Use `../../../doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` as the primary behavior checklist for cross-layer changes.
+
 ## Conventions
 - You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, naming.
 - Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.

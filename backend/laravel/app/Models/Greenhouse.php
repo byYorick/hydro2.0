@@ -32,6 +32,20 @@ class Greenhouse extends Model
     {
         return $this->hasMany(Zone::class);
     }
+
+    public function growCycles(): HasMany
+    {
+        return $this->hasMany(GrowCycle::class);
+    }
+
+    /**
+     * Экземпляры инфраструктуры теплицы (климат: вентиляция, проветривание, подогрев)
+     */
+    public function infrastructureInstances(): HasMany
+    {
+        return $this->morphMany(InfrastructureInstance::class, 'owner')
+            ->where('owner_type', 'greenhouse');
+    }
 }
 
 

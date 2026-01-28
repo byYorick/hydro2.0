@@ -74,13 +74,13 @@ return new class extends Migration
 
         // Добавляем дополнительные индексы для оптимизации запросов
         DB::statement("
-            CREATE INDEX IF NOT EXISTS telemetry_samples_node_ts_idx 
-            ON telemetry_samples (node_id, ts DESC);
+            CREATE INDEX IF NOT EXISTS telemetry_samples_sensor_ts_idx 
+            ON telemetry_samples (sensor_id, ts DESC);
         ");
 
         DB::statement("
-            CREATE INDEX IF NOT EXISTS telemetry_samples_metric_ts_idx 
-            ON telemetry_samples (metric_type, ts DESC);
+            CREATE INDEX IF NOT EXISTS telemetry_samples_zone_ts_idx 
+            ON telemetry_samples (zone_id, ts DESC);
         ");
     }
 
@@ -95,8 +95,8 @@ return new class extends Migration
         }
 
         // Удаляем индексы
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_node_ts_idx;");
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_metric_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;");
 
         // Удаляем hypertable (преобразует обратно в обычную таблицу)
         try {

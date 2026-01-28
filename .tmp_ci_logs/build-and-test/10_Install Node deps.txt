@@ -1,0 +1,29 @@
+﻿2026-01-02T17:45:01.3113831Z ##[group]Run npm install
+2026-01-02T17:45:01.3114109Z [36;1mnpm install[0m
+2026-01-02T17:45:01.3146583Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:45:01.3146840Z env:
+2026-01-02T17:45:01.3147034Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:45:01.3147279Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:45:01.3147514Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:45:01.3147714Z ##[endgroup]
+2026-01-02T17:45:04.6653589Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-01-02T17:45:04.8925725Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-01-02T17:45:05.0606326Z npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+2026-01-02T17:45:05.5915746Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-01-02T17:45:05.6305565Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-01-02T17:45:08.7856003Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-01-02T17:45:09.8412516Z 
+2026-01-02T17:45:09.8413254Z added 567 packages, and audited 568 packages in 8s
+2026-01-02T17:45:09.8413710Z 
+2026-01-02T17:45:09.8413972Z 117 packages are looking for funding
+2026-01-02T17:45:09.8414655Z   run `npm fund` for details
+2026-01-02T17:45:09.8499441Z 
+2026-01-02T17:45:09.8500013Z 4 vulnerabilities (2 moderate, 2 high)
+2026-01-02T17:45:09.8500321Z 
+2026-01-02T17:45:09.8500619Z To address issues that do not require attention, run:
+2026-01-02T17:45:09.8501086Z   npm audit fix
+2026-01-02T17:45:09.8501267Z 
+2026-01-02T17:45:09.8501604Z To address all issues (including breaking changes), run:
+2026-01-02T17:45:09.8502068Z   npm audit fix --force
+2026-01-02T17:45:09.8502264Z 
+2026-01-02T17:45:09.8502434Z Run `npm audit` for details.

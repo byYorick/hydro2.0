@@ -2,12 +2,20 @@
 
 namespace Tests\Feature;
 
-use App\Models\Zone;
+use App\Models\Plant;
 use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\User;
-use App\Models\ZoneRecipeInstance;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Models\Zone;
+use App\Models\ZoneSimulation;
+use App\Services\GrowCycleService;
+use Tests\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SimulationControllerTest extends TestCase
@@ -19,7 +27,7 @@ class SimulationControllerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Создаём пользователя для аутентификации с ролью operator для мутационных операций
         $this->user = User::factory()->create(['role' => 'operator']);
     }
@@ -53,7 +61,7 @@ class SimulationControllerTest extends TestCase
     public function test_simulate_zone_success(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'points' => [
@@ -81,52 +89,47 @@ class SimulationControllerTest extends TestCase
                 ],
             ]);
 
-        $response->assertStatus(200);
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
         $response->assertJson([
             'status' => 'ok',
         ]);
         $response->assertJsonStructure([
             'status',
             'data' => [
-                'points',
-                'duration_hours',
-                'step_minutes',
+                'job_id',
+                'status',
+                'message',
             ],
         ]);
 
-        // Проверяем, что запрос был отправлен в Digital Twin
-        Http::assertSent(function ($request) use ($zone) {
-            $data = $request->data();
-            $url = $request->url();
-            return str_contains($url, 'simulate/zone')
-                && $data['zone_id'] === $zone->id
-                && $data['duration_hours'] === 24
-                && $data['step_minutes'] === 10
-                && isset($data['scenario']['recipe_id'])
-                && isset($data['scenario']['initial_state']);
-        });
+        // Симуляция выполняется асинхронно, поэтому проверяем только структуру ответа
+        // Запрос к Digital Twin будет отправлен в job
     }
 
     public function test_simulate_zone_uses_zone_active_recipe_if_no_recipe_id_provided(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => ['points' => [], 'duration_hours' => 72, 'step_minutes' => 10],
             ], 200),
         ]);
 
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        $zone = Zone::factory()->create();
-        
-        // Обновляем проверку, чтобы использовать созданный recipe
-        
-        // Создаём ZoneRecipeInstance для связи зоны с рецептом
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
+        $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
+            'status' => 'PUBLISHED',
         ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+        $zone = Zone::factory()->create();
+
+        $service = app(GrowCycleService::class);
+        $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$zone->id}/simulate", [
@@ -134,20 +137,15 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(200);
-
-        // Проверяем, что использовался recipe_id из ZoneRecipeInstance
-        Http::assertSent(function ($request) use ($recipe) {
-            $data = $request->data();
-            return isset($data['scenario']['recipe_id'])
-                && $data['scenario']['recipe_id'] === $recipe->id;
-        });
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
+        // Запрос к Digital Twin будет отправлен в job
     }
 
     public function test_simulate_zone_handles_digital_twin_error(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'error',
                 'message' => 'Recipe not found',
             ], 404),
@@ -161,18 +159,23 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(500);
+        // Симуляция ставится в очередь асинхронно, ошибка обрабатывается в job
+        $response->assertStatus(202);
         $response->assertJson([
-            'status' => 'error',
+            'status' => 'ok',
         ]);
-        $this->assertStringContainsString('Digital Twin simulation failed', $response->json('message'));
+        $data = $response->json('data');
+        $this->assertNotNull($data);
+        $this->assertStringContainsString('queued', $data['message'] ?? '');
     }
 
     public function test_simulate_zone_handles_connection_error(): void
     {
-        Http::fake(function () {
-            throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
-        });
+        Http::fake([
+            'http://digital-twin:8003/simulate/zone' => function () {
+                throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
+            },
+        ]);
 
         $zone = Zone::factory()->create();
 
@@ -182,17 +185,20 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(500);
+        // Симуляция ставится в очередь асинхронно, ошибка подключения обрабатывается в job
+        $response->assertStatus(202);
         $response->assertJson([
-            'status' => 'error',
+            'status' => 'ok',
         ]);
-        $this->assertStringContainsString('Failed to connect', $response->json('message'));
+        $data = $response->json('data');
+        $this->assertNotNull($data);
+        $this->assertStringContainsString('queued', $data['message'] ?? '');
     }
 
     public function test_simulate_zone_with_minimal_parameters(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => ['points' => [], 'duration_hours' => 72, 'step_minutes' => 10],
             ], 200),
@@ -206,14 +212,111 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(200);
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
 
-        // Проверяем, что использовались дефолтные значения для initial_state
-        Http::assertSent(function ($request) {
-            $data = $request->data();
-            return isset($data['scenario']['initial_state'])
-                && isset($data['scenario']['initial_state']['ph'])
-                && isset($data['scenario']['initial_state']['ec']);
-        });
+        // Симуляция выполняется асинхронно, дефолтные значения будут использованы в job
+    }
+
+    public function test_show_simulation_includes_progress_for_live_run(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $now = now();
+        Carbon::setTestNow($now);
+        $startedAt = $now->copy()->subMinutes(5)->toIso8601String();
+
+        $simulation = ZoneSimulation::create([
+            'zone_id' => $zone->id,
+            'scenario' => [
+                'recipe_id' => 1,
+                'simulation' => [
+                    'real_started_at' => $startedAt,
+                    'sim_started_at' => $startedAt,
+                    'real_duration_minutes' => 10,
+                    'time_scale' => 12,
+                ],
+            ],
+            'duration_hours' => 2,
+            'step_minutes' => 10,
+            'status' => 'running',
+        ]);
+
+        $jobId = 'sim_test_progress';
+        Cache::put("simulation:{$jobId}", [
+            'status' => 'processing',
+            'started_at' => $startedAt,
+            'simulation_id' => $simulation->id,
+            'sim_duration_minutes' => 10,
+        ], 3600);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/simulations/{$jobId}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.status', 'processing');
+        $progress = $response->json('data.progress');
+        $this->assertNotNull($progress);
+        $this->assertGreaterThan(0.45, $progress);
+        $this->assertLessThan(0.55, $progress);
+        $response->assertJsonPath('data.progress_source', 'timer');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_show_simulation_progress_uses_last_action(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $now = now();
+        Carbon::setTestNow($now);
+        $startedAt = $now->copy()->subMinutes(10);
+        $actionAt = $now->copy()->subMinutes(2);
+
+        $simulation = ZoneSimulation::create([
+            'zone_id' => $zone->id,
+            'scenario' => [
+                'recipe_id' => 1,
+                'simulation' => [
+                    'real_started_at' => $startedAt->toIso8601String(),
+                    'sim_started_at' => $startedAt->toIso8601String(),
+                    'real_duration_minutes' => 20,
+                    'time_scale' => 12,
+                ],
+            ],
+            'duration_hours' => 2,
+            'step_minutes' => 10,
+            'status' => 'running',
+        ]);
+
+        DB::table('commands')->insert([
+            'zone_id' => $zone->id,
+            'cmd' => 'dose',
+            'cmd_id' => (string) Str::uuid(),
+            'status' => 'DONE',
+            'created_at' => $actionAt,
+            'updated_at' => $actionAt,
+        ]);
+
+        $jobId = 'sim_test_actions';
+        Cache::put("simulation:{$jobId}", [
+            'status' => 'processing',
+            'started_at' => $startedAt->toIso8601String(),
+            'simulation_id' => $simulation->id,
+            'sim_duration_minutes' => 20,
+        ], 3600);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/simulations/{$jobId}");
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('data.progress_source', 'actions');
+        $progress = $response->json('data.progress');
+        $this->assertNotNull($progress);
+        $this->assertGreaterThan(0.35, $progress);
+        $this->assertLessThan(0.45, $progress);
+        $response->assertJsonPath('data.actions.0.kind', 'command');
+
+        Carbon::setTestNow();
     }
 }

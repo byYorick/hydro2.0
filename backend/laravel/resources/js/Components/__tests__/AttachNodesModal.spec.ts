@@ -64,7 +64,7 @@ vi.mock('@/composables/useApi', () => ({
       },
       delete: (url: string, config?: any) => {
         const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosDeleteMock(finalUrl, data, config)
+        return axiosDeleteMock(finalUrl, undefined, config)
       },
     },
   }),
@@ -287,7 +287,7 @@ describe('AttachNodesModal.vue', () => {
   })
 
   it('показывает состояние загрузки', async () => {
-    let resolveRequest: ((value: unknown) => void) | null = null
+    let resolveRequest: ((value: any) => void) | null = null
     axiosGetMock.mockImplementationOnce(() => new Promise((resolve) => {
       resolveRequest = resolve
     }))
@@ -302,7 +302,7 @@ describe('AttachNodesModal.vue', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Загрузка')
     
-    resolveRequest?.({
+    ;(resolveRequest as any)?.({
       data: { data: sampleNodes },
     })
     await flushPromises()
@@ -369,7 +369,8 @@ describe('AttachNodesModal.vue', () => {
 
   it('обрабатывает ошибки при загрузке узлов', async () => {
     axiosGetMock.mockRejectedValue(new Error('Network error'))
-    
+
+    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(AttachNodesModal, {
       props: {
         show: true,

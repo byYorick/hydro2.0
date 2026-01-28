@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ZoneEventPayload",
+  "description": "Payload события зоны из zone_events (Zone Event Ledger)",
+  "type": "object",
+  "required": ["zone_id", "type", "server_ts"],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "description": "Автоинкрементный ID записи в zone_events",
+      "minimum": 1
+    },
+    "zone_id": {
+      "type": "integer",
+      "description": "ID зоны",
+      "minimum": 1
+    },
+    "type": {
+      "type": "string",
+      "description": "Тип события (telemetry_updated, command_status, alert_created, alert_updated, zone_updated, node_config_updated, etc.)",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "entity_type": {
+      "anyOf": [
+        {"type": "string", "maxLength": 100},
+        {"type": "null"}
+      ],
+      "description": "Тип сущности (command, alert, telemetry, device, zone, node)"
+    },
+    "entity_id": {
+      "anyOf": [
+        {"type": "string", "maxLength": 128},
+        {"type": "integer"},
+        {"type": "null"}
+      ],
+      "description": "ID сущности (может быть строкой или числом)"
+    },
+    "payload_json": {
+      "type": "object",
+      "description": "JSON payload события (десериализованный)",
+      "additionalProperties": true
+    },
+    "server_ts": {
+      "type": "integer",
+      "description": "Временная метка сервера в миллисекундах (Unix timestamp)",
+      "minimum": 0
+    },
+    "created_at": {
+      "anyOf": [
+        {"type": "string", "format": "date-time"},
+        {"type": "string"},
+        {"type": "null"}
+      ],
+      "description": "ISO 8601 timestamp создания записи"
+    },
+    "event_id": {
+      "anyOf": [
+        {"type": "integer"},
+        {"type": "null"}
+      ],
+      "description": "ID события из EventSequenceService (ws_event_id из payload_json)"
+    }
+  },
+  "additionalProperties": false
+}
+

@@ -4,7 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\Alert;
 use App\Services\AlertService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class AlertServiceTest extends TestCase

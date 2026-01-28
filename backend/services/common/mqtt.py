@@ -1,7 +1,6 @@
 import json
 import logging
 import threading
-import time
 from typing import Callable, Optional, List, Tuple
 
 import paho.mqtt.client as mqtt
@@ -12,6 +11,19 @@ logger = logging.getLogger(__name__)
 
 
 class MqttClient:
+    """
+    Синхронный MQTT клиент на основе paho-mqtt.
+    
+    ВАЖНО: Этот клиент работает в отдельном потоке (paho-mqtt внутренний поток).
+    Методы _on_connect() и _on_disconnect() вызываются из MQTT callback thread,
+    поэтому не блокируют event loop основного приложения.
+    
+    Метод start() может вызываться через run_in_executor() из async контекста,
+    блокируя executor thread, но не event loop.
+    
+    Все блокирующие операции используют threading.Event.wait() для неблокирующего
+    ожидания, что позволяет прервать ожидание при установке соединения.
+    """
     def __init__(self, client_id_suffix: str = ""):
         import os
         import sys
@@ -64,6 +76,13 @@ class MqttClient:
             logger.error(f"MQTT connection failed with rc={rc}")
 
     def _on_disconnect(self, client, userdata, rc):
+        """
+        Обработчик отключения MQTT клиента.
+        
+        ВАЖНО: Этот метод вызывается из MQTT callback thread (paho-mqtt внутренний поток),
+        поэтому не блокирует event loop основного приложения. Однако для избежания блокировки
+        обработки других MQTT сообщений используем неблокирующее ожидание через threading.Event.
+        """
         self._connected.clear()
         # reconnect with backoff - только если не было явного отключения (rc != 0)
         # rc == 0 означает нормальное отключение, не переподключаемся
@@ -78,15 +97,18 @@ class MqttClient:
                     # Используем reconnect() вместо создания нового подключения
                     # Это сохраняет client_id и настройки
                     self._client.reconnect()
-                    # Ждем немного для установки соединения
-                    time.sleep(0.5)
-                    if self._connected.is_set():
+                    # Ждем немного для установки соединения (неблокирующее ожидание)
+                    # Используем Event.wait() вместо time.sleep() для возможности прервать ожидание
+                    if self._connected.wait(timeout=0.5):
                         logger.info(f"MQTT client reconnected successfully after {attempts} attempts")
                         break
                 except Exception as e:
                     attempts += 1
                     logger.warning(f"MQTT reconnection attempt {attempts} failed: {e}, retrying in {backoff}s")
-                    time.sleep(backoff)
+                    # Неблокирующее ожидание с возможностью прервать, если соединение установилось
+                    if self._connected.wait(timeout=backoff):
+                        logger.info(f"MQTT client reconnected during backoff wait after {attempts} attempts")
+                        break
                     backoff = min(backoff * 2, max_backoff)
             else:
                 if attempts >= max_attempts:
@@ -179,7 +201,13 @@ class MqttClient:
         return on_message
 
     def start(self):
-        """Start MQTT client and wait for connection. Raises exception if connection fails."""
+        """
+        Start MQTT client and wait for connection. Raises exception if connection fails.
+        
+        ВАЖНО: Этот метод может вызываться через run_in_executor() из async контекста,
+        поэтому блокирует executor thread, но не event loop. Используем неблокирующее
+        ожидание через threading.Event для возможности прервать ожидание.
+        """
         # Если уже подключены, ничего не делаем - используем существующее соединение
         if self._connected.is_set():
             logger.debug("MQTT client already connected, skipping start()")
@@ -206,16 +234,13 @@ class MqttClient:
         except Exception as e:
             logger.error(f"Failed to connect to MQTT broker {self._host}:{self._port} (TLS={s.mqtt_tls}): {e}", exc_info=True)
             raise
-        # wait connected with timeout
+        # wait connected with timeout (неблокирующее ожидание)
         timeout = 10.0  # 10 seconds
-        elapsed = 0.0
-        check_interval = 0.1
-        while elapsed < timeout:
-            if self._connected.is_set():
-                logger.info(f"MQTT client connected to {self._host}:{self._port}")
-                return
-            time.sleep(check_interval)
-            elapsed += check_interval
+        # Используем Event.wait() вместо time.sleep() для неблокирующего ожидания
+        # Это позволяет прервать ожидание, если соединение установилось раньше
+        if self._connected.wait(timeout=timeout):
+            logger.info(f"MQTT client connected to {self._host}:{self._port}")
+            return
         
         # Connection failed
         self._client.loop_stop()

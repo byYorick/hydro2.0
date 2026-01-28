@@ -259,9 +259,151 @@ npm run test
 
 ---
 
+---
+
+## 🔒 Инварианты подписок (Subscription Invariants)
+
+### Self-check режим (DEV only)
+
+В режиме разработки автоматически проверяются инварианты подписок для предотвращения регрессий:
+
+1. **Нет дублей подписок** - проверка, что один и тот же subscription ID не регистрируется дважды
+2. **Уникальность handler'ов** - логирование множественных подписок с одного instance
+3. **Счетчики подписок** - отслеживание количества активных подписок на канал
+
+**Логирование:**
+- Предупреждения при нарушении инвариантов
+- Debug-логи для диагностики подписок
+
+**Файлы:**
+- `composables/useWebSocket.ts` - функция `checkSubscriptionInvariants()`
+
+---
+
+## 🧪 Unit-тесты реестра подписок
+
+### Тесты инвариантов
+
+**Файл:** `composables/__tests__/useWebSocket.subscriptions.spec.ts`
+
+**Покрытие:**
+- ✅ Регистрация подписок без дублей
+- ✅ Resubscribe после отписки
+- ✅ Отписка и очистка
+- ✅ Глобальные каналы (events.global)
+- ✅ Множественные подписки на один канал
+- ✅ unsubscribeAll для instance
+
+**Запуск:**
+```bash
+npm run test -- resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts
+```
+
+---
+
+## 🔄 Симуляция reconnect локально
+
+### Метод 1: Отключение сети (браузер)
+
+1. Откройте DevTools (F12)
+2. Перейдите в Network → Throttling
+3. Выберите "Offline" или установите "Slow 3G"
+4. Наблюдайте логи в консоли:
+   - `[echoClient] Connection state: disconnected`
+   - `[echoClient] Scheduling reconnect`
+   - `[useWebSocket] Resubscribed channel`
+
+### Метод 2: Перезапуск Reverb (Docker)
+
+```bash
+# Остановить Reverb
+docker-compose -f backend/docker-compose.dev.yml stop laravel
+
+# Подождать несколько секунд (соединение разорвется)
+
+# Запустить Reverb снова
+docker-compose -f backend/docker-compose.dev.yml start laravel
+```
+
+**Ожидаемое поведение:**
+- Автоматическое переподключение через 3-60 секунд (экспоненциальный backoff)
+- Автоматическая переподписка на все активные каналы
+- Восстановление подписок без дублей
+
+### Метод 3: Программное отключение (DevTools Console)
+
+```javascript
+// Отключить WebSocket
+window.Echo?.disconnect()
+
+// Подождать несколько секунд
+
+// Включить снова (автоматически переподключится)
+// Или вручную:
+import { initEcho } from '@/utils/echoClient'
+initEcho(true)
+```
+
+### Метод 4: Блокировка порта (Linux)
+
+```bash
+# Блокировать порт 6001 (Reverb)
+sudo iptables -A OUTPUT -p tcp --dport 6001 -j DROP
+
+# Подождать разрыв соединения
+
+# Разблокировать
+sudo iptables -D OUTPUT -p tcp --dport 6001 -j DROP
+```
+
+### Проверка инвариантов при reconnect
+
+После reconnect проверьте в консоли браузера:
+
+1. **Нет дублей подписок:**
+   ```javascript
+   // В DevTools Console
+   import { __testExports } from '@/composables/useWebSocket'
+   const subs = __testExports.activeSubscriptions()
+   const ids = Array.from(subs.keys())
+   console.log('Unique subscription IDs:', new Set(ids).size === ids.length)
+   ```
+
+2. **Корректное количество подписок:**
+   ```javascript
+   const channelSubs = __testExports.channelSubscribers()
+   channelSubs.forEach((set, channel) => {
+     console.log(`Channel ${channel}: ${set.size} subscriptions`)
+   })
+   ```
+
+3. **Глобальные каналы переиспользуются:**
+   ```javascript
+   const registry = __testExports.globalChannelRegistry()
+   registry.forEach((reg, channel) => {
+     console.log(`Global channel ${channel}:`, {
+       refCount: reg.subscriptionRefCount,
+       handlers: reg.handlers.size,
+       isAuthorized: reg.isAuthorized
+     })
+   })
+   ```
+
+### Ожидаемые логи при reconnect
+
+```
+[echoClient] Connection state: disconnected
+[echoClient] Scheduling reconnect { attempts: 1, reason: 'disconnected', delay: 3000 }
+[echoClient] Connection state: connecting
+[echoClient] Connection state: connected { socketId: '...' }
+[useWebSocket] Resubscribed channel { channel: 'commands.1' }
+[useWebSocket] Subscription invariant check { channel: 'commands.1', channelSubscriptions: 1 }
+```
+
+---
+
 ## 📚 Связанные документы
 
-- `backend/laravel/tests/WEBSOCKET_TESTING.md` - Backend WebSocket тесты
-- `backend/laravel/tests/WEBSOCKET_TESTS_SUMMARY.md` - Итоговая сводка backend тестов
-- `backend/laravel/docs/E2E_TESTING.md` - E2E тестирование
-
+- `../tests/WEBSOCKET_TESTING.md` - Backend WebSocket тесты
+- `E2E_TESTING.md` - E2E тестирование
+- `WEBSOCKET_ARCHITECTURE.md` - Архитектура WebSocket

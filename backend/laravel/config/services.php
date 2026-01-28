@@ -54,6 +54,22 @@ return [
         'url' => env('DIGITAL_TWIN_URL', 'http://digital-twin:8003'),
     ],
 
+    'node_sim_manager' => [
+        'url' => env('NODE_SIM_MANAGER_URL', 'http://node-sim-manager:9100'),
+        'token' => env('NODE_SIM_MANAGER_TOKEN'),
+        'timeout' => env('NODE_SIM_MANAGER_TIMEOUT', 10),
+        'mqtt_host' => env('NODE_SIM_MQTT_HOST', env('MQTT_HOST', 'mqtt')),
+        'mqtt_port' => env('NODE_SIM_MQTT_PORT', env('MQTT_PORT', 1883)),
+        'mqtt_username' => env('NODE_SIM_MQTT_USERNAME', env('MQTT_USERNAME')),
+        'mqtt_password' => env('NODE_SIM_MQTT_PASSWORD', env('MQTT_PASSWORD')),
+        'mqtt_tls' => env('NODE_SIM_MQTT_TLS', false),
+        'mqtt_ca_certs' => env('NODE_SIM_MQTT_CA_CERTS'),
+        'mqtt_keepalive' => env('NODE_SIM_MQTT_KEEPALIVE', env('MQTT_KEEPALIVE', 60)),
+        'telemetry_interval_seconds' => env('NODE_SIM_TELEMETRY_INTERVAL', 5.0),
+        'heartbeat_interval_seconds' => env('NODE_SIM_HEARTBEAT_INTERVAL', 30.0),
+        'status_interval_seconds' => env('NODE_SIM_STATUS_INTERVAL', 60.0),
+    ],
+
     'mqtt' => [
         // Для ESP32 нод (внешние подключения) используем MQTT_EXTERNAL_HOST
         // Это должен быть IP адрес хоста, на котором запущен MQTT брокер
@@ -70,6 +86,10 @@ return [
     'wifi' => [
         'ssid' => env('WIFI_SSID', 'HydroFarm'),
         'password' => env('WIFI_PASSWORD', ''),
+    ],
+
+    'node_registration' => [
+        'allowed_ips' => env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
     ],
 
 ];

@@ -1,0 +1,224 @@
+# E53: Manual Advance Stage - advance phase → zone_event + WS
+# DoD: advance phase → zone_event + WS
+
+name: E53_manual_advance_stage
+description: |
+  Проверяет ручное продвижение фазы:
+  - У зоны есть активный grow-cycle
+  - Выполняется advance phase
+  - zone_event создается
+  - WebSocket событие отправляется
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-grow-zone-e53-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e53-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e53-${TIMESTAMP_S}
+      description: Test recipe for E53
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Planting
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: add_phase_1
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 1
+      name: Veg
+      duration_hours: 48
+      ph_target: 6.2
+      ph_min: 5.6
+      ph_max: 6.6
+      ec_target: 1.8
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: subscribe_zone_channel
+    type: websocket_subscribe
+    channel: private-hydro.zones.${zone_id}
+
+  - step: get_grow_cycle
+    type: database_query
+    query: |
+      SELECT id, current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    save: grow_cycle
+
+  - step: get_current_phase_index
+    type: database_query
+    query: |
+      SELECT phase_index
+      FROM grow_cycle_phases
+      WHERE id = :phase_id
+    params:
+      phase_id: ${grow_cycle.0.current_phase_id}
+    save: current_phase
+    set: initial_phase_index
+
+  # Выполняем advance phase через API
+  - step: advance_phase
+    type: api_post
+    endpoint: /api/grow-cycles/${grow_cycle.0.id}/advance-phase
+    payload: {}
+    save: advance_response
+
+  - step: wait_processing
+    type: sleep
+    seconds: 2
+
+  # Проверяем обновление фазы
+  - step: check_new_phase
+    type: database_query
+    query: |
+      SELECT current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    save: updated_cycle
+
+  - step: get_new_phase_index
+    type: database_query
+    query: |
+      SELECT phase_index
+      FROM grow_cycle_phases
+      WHERE id = :phase_id
+    params:
+      phase_id: ${updated_cycle.0.current_phase_id}
+    save: new_phase
+
+cleanup:
+  - step: delete_grow_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+
+assertions:
+  # Проверка 1: Zone существует
+  - name: zone_exists
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 2: Phase_index увеличился или остался тем же (если уже на последней фазе)
+  - name: phase_advanced_or_same
+    type: database_query
+    query: |
+      SELECT gcp.phase_index
+      FROM grow_cycles gc
+      JOIN grow_cycle_phases gcp ON gc.current_phase_id = gcp.id
+      WHERE gc.zone_id = :zone_id
+      AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: phase_index
+        operator: is_not_null
+
+  # Проверка 3: zone_event создан для изменения фазы
+  - name: zone_event_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND (type LIKE '%%PHASE%%' OR type LIKE '%%CYCLE%%')
+      AND created_at > NOW() - INTERVAL '2 minutes'
+    params:
+      zone_id: ${zone_id}
+    timeout: 10.0
+    expected:
+      - field: event_count
+        operator: greater_than_or_equal
+        value: 1

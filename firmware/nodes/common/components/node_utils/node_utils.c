@@ -9,6 +9,10 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_mac.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -177,6 +181,55 @@ esp_err_t node_utils_init_mqtt_config(
     return ESP_OK;
 }
 
+esp_err_t node_utils_bootstrap_network_stack(void) {
+    // NVS init with erase fallback for corrupted pages
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init NVS: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // esp_netif + default loop (idempotent)
+    ret = esp_netif_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init esp_netif: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_event_loop_create_default();
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to create default event loop: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Wi‑Fi station bring-up (ignore if already started)
+    esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ret = esp_wifi_init(&cfg);
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_INIT_STATE) {
+        ESP_LOGE(TAG, "Failed to init Wi-Fi: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) {  // NOT_INIT happens if init failed
+        ESP_LOGE(TAG, "Failed to set Wi-Fi mode: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_wifi_start();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_CONN) {  // CONN means already started
+        ESP_LOGE(TAG, "Failed to start Wi-Fi: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    return ESP_OK;
+}
+
 int64_t node_utils_get_timestamp_seconds(void) {
     return node_utils_now_epoch();
 }
@@ -251,6 +304,10 @@ int64_t node_utils_get_unix_timestamp(void) {
     return 0;
 }
 
+bool node_utils_is_time_synced(void) {
+    return s_time_synced;
+}
+
 esp_err_t node_utils_publish_node_hello(
     const char *node_type,
     const char *capabilities[],
@@ -297,22 +354,43 @@ esp_err_t node_utils_publish_node_hello(
     
     // Публикуем в общий топик для регистрации
     char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s, node_type=%s", hardware_id, node_type);
-        
-        // Публикуем через mqtt_manager_publish_raw
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-        }
-        
-        free(json_str);
+    if (json_str == NULL) {
+        cJSON_Delete(hello);
+        ESP_LOGE(TAG, "Failed to serialize node_hello JSON");
+        return ESP_ERR_NO_MEM;
     }
-    
+
+    ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s, node_type=%s", hardware_id, node_type);
+
+    // Публикуем через mqtt_manager_publish_raw
+    esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
+    if (pub_err == ESP_OK) {
+        ESP_LOGI(TAG, "node_hello published successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
+    }
+
+    free(json_str);
     cJSON_Delete(hello);
-    return ESP_OK;
+    return pub_err;
+}
+
+esp_err_t node_utils_publish_config_report(void) {
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+
+    esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to load NodeConfig for config_report: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Publishing config_report (%zu bytes)", strlen(config_json));
+    err = mqtt_manager_publish_config_report(config_json);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to publish config_report: %s", esp_err_to_name(err));
+    }
+
+    return err;
 }
 
 /**

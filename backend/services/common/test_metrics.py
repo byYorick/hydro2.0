@@ -5,14 +5,14 @@ from common.metrics import Metric, normalize_metric_type, UnknownMetricError, CA
 
 def test_normalize_metric_type_valid():
     """Test normalization of valid metric types."""
-    assert normalize_metric_type("ph") == "ph"
-    assert normalize_metric_type("PH") == "ph"
-    assert normalize_metric_type("  PH  ") == "ph"
-    assert normalize_metric_type("temp_air") == "temp_air"
-    assert normalize_metric_type("TEMP_AIR") == "temp_air"
-    assert normalize_metric_type("  TEMP_AIR  ") == "temp_air"
-    assert normalize_metric_type("ec") == "ec"
-    assert normalize_metric_type("water_level") == "water_level"
+    assert normalize_metric_type("ph") == "PH"
+    assert normalize_metric_type("PH") == "PH"
+    assert normalize_metric_type("  PH  ") == "PH"
+    assert normalize_metric_type("temperature") == "TEMPERATURE"
+    assert normalize_metric_type("TEMPERATURE") == "TEMPERATURE"
+    assert normalize_metric_type("  TEMPERATURE  ") == "TEMPERATURE"
+    assert normalize_metric_type("ec") == "EC"
+    assert normalize_metric_type("water_level") == "WATER_LEVEL"
 
 
 def test_normalize_metric_type_invalid():
@@ -39,4 +39,3 @@ def test_unknown_metric_error():
     error = UnknownMetricError("test_metric")
     assert error.metric_type == "test_metric"
     assert "test_metric" in str(error)
-

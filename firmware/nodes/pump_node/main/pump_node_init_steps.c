@@ -11,42 +11,25 @@
 
 #include "pump_node_init_steps.h"
 #include "pump_node_defaults.h"
+#include "init_steps_utils.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
 #include "pump_driver.h"
 #include "mqtt_manager.h"
+#include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "pump_node_init_steps";
 
-// Вспомогательная функция для получения значения из config_storage с дефолтом
-static esp_err_t get_config_string(const char *key, char *buffer, size_t buffer_size, const char *default_value) {
-    esp_err_t err = ESP_ERR_NOT_FOUND;
-    
-    if (strcmp(key, "node_id") == 0) {
-        err = config_storage_get_node_id(buffer, buffer_size);
-    } else if (strcmp(key, "gh_uid") == 0) {
-        err = config_storage_get_gh_uid(buffer, buffer_size);
-    } else if (strcmp(key, "zone_uid") == 0) {
-        err = config_storage_get_zone_uid(buffer, buffer_size);
-    }
-    
-    if (err != ESP_OK && default_value) {
-        strncpy(buffer, default_value, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
-        return ESP_OK;
-    }
-    
-    return err;
-}
-
 esp_err_t pump_node_init_step_config_storage(pump_node_init_context_t *ctx, 
                                              pump_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 1/6] Loading config...");
+    ESP_LOGI(TAG, "[Step 1/7] Loading config...");
     
     if (result) {
         result->component_name = "config_storage";
@@ -79,7 +62,7 @@ esp_err_t pump_node_init_step_config_storage(pump_node_init_context_t *ctx,
 esp_err_t pump_node_init_step_wifi(pump_node_init_context_t *ctx,
                                    pump_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 2/6] Wi-Fi manager init...");
+    ESP_LOGI(TAG, "[Step 2/7] Wi-Fi manager init...");
     
     if (result) {
         result->component_name = "wifi_manager";
@@ -119,7 +102,7 @@ esp_err_t pump_node_init_step_wifi(pump_node_init_context_t *ctx,
 esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
                                    pump_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 3/6] I2C init...");
+    ESP_LOGI(TAG, "[Step 3/7] I2C init...");
     
     if (result) {
         result->component_name = "i2c_bus";
@@ -158,7 +141,7 @@ esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
 esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
                                     pump_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 4/6] Pumps init...");
+    ESP_LOGI(TAG, "[Step 4/7] Pumps init...");
     
     if (result) {
         result->component_name = "pump_driver";
@@ -187,10 +170,70 @@ esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
     return err;
 }
 
+esp_err_t pump_node_init_step_oled(pump_node_init_context_t *ctx,
+                                   pump_node_init_step_result_t *result) {
+    ESP_LOGI(TAG, "[Step 5/7] OLED UI init...");
+    
+    if (result) {
+        result->component_name = "oled_ui";
+        result->component_initialized = false;
+    }
+    
+    // Проверяем, что I2C шина инициализирована
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGW(TAG, "I2C bus 0 not initialized, cannot initialize OLED");
+        if (result) {
+            result->err = ESP_ERR_INVALID_STATE;
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Получаем node_id из config_storage или используем дефолт
+    char node_id[64];
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), PUMP_NODE_DEFAULT_NODE_ID);
+    ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
+    
+    oled_ui_config_t oled_config = {
+        .i2c_address = PUMP_NODE_OLED_I2C_ADDRESS,
+        .update_interval_ms = PUMP_NODE_OLED_UPDATE_INTERVAL_MS,
+        .enable_task = true
+    };
+    
+    esp_err_t err = oled_ui_init(OLED_UI_NODE_TYPE_UNKNOWN, node_id, &oled_config);
+    if (err == ESP_OK) {
+        err = oled_ui_set_state(OLED_UI_STATE_BOOT);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set OLED state: %s", esp_err_to_name(err));
+        }
+        
+        // Показываем предыдущие шаги, если OLED уже инициализирован
+        if (ctx && ctx->show_oled_steps) {
+            oled_ui_show_init_step(3, "I2C init");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            oled_ui_show_init_step(4, "Pumps init");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            oled_ui_show_init_step(5, "OLED UI init");
+        }
+        
+        ESP_LOGI(TAG, "OLED UI initialized successfully");
+        if (result) {
+            result->err = ESP_OK;
+            result->component_initialized = true;
+        }
+    } else {
+        ESP_LOGW(TAG, "Failed to initialize OLED UI: %s (OLED may not be available)", esp_err_to_name(err));
+        if (result) {
+            result->err = err;
+        }
+    }
+    
+    return err;
+}
+
 esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
                                     pump_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 5/6] MQTT init...");
+    ESP_LOGI(TAG, "[Step 6/7] MQTT init...");
     
     if (result) {
         result->component_name = "mqtt_manager";
@@ -247,9 +290,9 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
     }
     
     // Получение node_id, gh_uid, zone_uid
-    get_config_string("node_id", node_id, sizeof(node_id), PUMP_NODE_DEFAULT_NODE_ID);
-    get_config_string("gh_uid", gh_uid, sizeof(gh_uid), PUMP_NODE_DEFAULT_GH_UID);
-    get_config_string("zone_uid", zone_uid, sizeof(zone_uid), PUMP_NODE_DEFAULT_ZONE_UID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), PUMP_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("gh_uid", gh_uid, sizeof(gh_uid), PUMP_NODE_DEFAULT_GH_UID);
+    init_steps_utils_get_config_string("zone_uid", zone_uid, sizeof(zone_uid), PUMP_NODE_DEFAULT_ZONE_UID);
     
     node_info.node_uid = node_id;
     node_info.gh_uid = gh_uid;
@@ -277,7 +320,7 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
 
 esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
                                        pump_node_init_step_result_t *result) {
-    ESP_LOGI(TAG, "[Step 6/6] Starting...");
+    ESP_LOGI(TAG, "[Step 7/7] Starting...");
     
     if (result) {
         result->component_name = "finalize";
@@ -296,6 +339,12 @@ esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
     }
     ESP_LOGI(TAG, "MQTT client started (callbacks already registered)");
     
+    // Останавливаем анимацию шагов инициализации и переводим OLED в нормальный режим
+    if (ctx && ctx->show_oled_steps && oled_ui_is_initialized()) {
+        oled_ui_stop_init_steps();
+        oled_ui_set_state(OLED_UI_STATE_NORMAL);
+    }
+    
     ESP_LOGI(TAG, "All components initialized successfully");
     
     if (result) {
@@ -304,4 +353,3 @@ esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
     
     return ESP_OK;
 }
-

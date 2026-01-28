@@ -9,6 +9,7 @@ Correction Cooldown Manager - предотвращение лавины корр
 """
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch, execute
 import logging
 
@@ -82,7 +83,7 @@ async def is_in_cooldown(zone_id: int, correction_type: str, cooldown_minutes: i
         return False
     
     cooldown_end = last_correction + timedelta(minutes=cooldown_minutes)
-    return datetime.utcnow() < cooldown_end
+    return utcnow() < cooldown_end
 
 
 async def analyze_trend(
@@ -107,19 +108,21 @@ async def analyze_trend(
         - is_improving: True если значение приближается к цели
         - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow() - timedelta(hours=hours)
     
+    normalized_metric = (metric_type or "").upper()
     rows = await fetch(
         """
-        SELECT value, ts
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = $2
-          AND ts >= $3
-        ORDER BY ts ASC
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = $2
+          AND ts.ts >= $3
+        ORDER BY ts.ts ASC
         """,
         zone_id,
-        metric_type,
+        normalized_metric,
         cutoff_time,
     )
     
@@ -197,7 +200,7 @@ async def should_apply_correction(
     if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
         last_correction = await get_last_correction_time(zone_id, correction_type)
         if last_correction:
-            time_since = datetime.utcnow() - last_correction
+            time_since = utcnow() - last_correction
             return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
         return False, "В cooldown периоде"
     
@@ -236,4 +239,3 @@ async def record_correction(zone_id: int, correction_type: str, details: Dict) -
     logger.info(
         f"Correction recorded: zone_id={zone_id}, type={correction_type}, details={details}"
     )
-

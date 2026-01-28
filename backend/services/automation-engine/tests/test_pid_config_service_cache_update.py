@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -53,8 +54,8 @@ async def test_cache_invalidates_when_config_updated_in_db():
         'adaptation_rate': 0.1,
     }
     
-    old_updated_at = datetime.utcnow() - timedelta(minutes=5)
-    new_updated_at = datetime.utcnow()
+    old_updated_at = utcnow() - timedelta(minutes=5)
+    new_updated_at = utcnow()
     
     with patch('services.pid_config_service.fetch', new_callable=AsyncMock) as mock_fetch:
         # Первый вызов - загружаем старый конфиг
@@ -111,7 +112,7 @@ async def test_cache_uses_default_when_config_deleted():
                     'enable_autotune': True,
                     'adaptation_rate': 0.1,
                 },
-                'updated_at': datetime.utcnow()
+                'updated_at': utcnow()
             }
         ]
         config1 = await get_config(zone_id, correction_type, setpoint)
@@ -151,4 +152,3 @@ async def test_cache_preserves_default_when_no_config_in_db():
         assert config1.dead_zone == config2.dead_zone
         # Fetch вызывается для проверки updated_at, но конфиг не перезагружается
         assert mock_fetch.call_count >= 1
-

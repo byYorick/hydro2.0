@@ -31,7 +31,9 @@ EC-нода для измерения электропроводности и у
 {
   "cmd": "run_pump",
   "cmd_id": "cmd-123",
-  "duration_ms": 2000
+  "params": {
+    "duration_ms": 2000
+  }
 }
 ```
 
@@ -41,8 +43,10 @@ EC-нода для измерения электропроводности и у
 {
   "cmd": "calibrate",
   "cmd_id": "cmd-124",
-  "stage": 1,
-  "tds_value": 1413
+  "params": {
+    "stage": 1,
+    "tds_value": 1413
+  }
 }
 ```
 
@@ -54,7 +58,6 @@ EC-нода для измерения электропроводности и у
 
 ## Документация
 
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
-
+- Архитектура нод: `../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- MQTT спецификация: `../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- NodeConfig: `../../NODE_CONFIG_SPEC.md`

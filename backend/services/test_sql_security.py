@@ -4,7 +4,7 @@
 """
 import pytest
 import asyncio
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 import sys
 import os
 
@@ -27,8 +27,7 @@ async def test_parameterized_queries():
         mock_conn.execute = AsyncMock(return_value="OK")
         mock_conn.fetch = AsyncMock(return_value=[])
         
-        mock_pool_instance = AsyncMock()
-        mock_pool_instance.acquire = AsyncMock()
+        mock_pool_instance = MagicMock()
         mock_pool_instance.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_pool_instance.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
         
@@ -51,8 +50,7 @@ async def test_sql_injection_protection():
         mock_conn = AsyncMock()
         mock_conn.execute = AsyncMock(return_value="OK")
         
-        mock_pool_instance = AsyncMock()
-        mock_pool_instance.acquire = AsyncMock()
+        mock_pool_instance = MagicMock()
         mock_pool_instance.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_pool_instance.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
         
@@ -80,11 +78,14 @@ async def test_handle_heartbeat_field_whitelist():
     """Проверка, что handle_heartbeat использует whitelist для полей."""
     # Импортируем только если модуль доступен
     try:
-        from history_logger.main import handle_heartbeat
+        history_logger_dir = os.path.join(os.path.dirname(__file__), "history-logger")
+        if history_logger_dir not in sys.path:
+            sys.path.insert(0, history_logger_dir)
+        from mqtt_handlers import handle_heartbeat
         
-        with patch("history_logger.main.execute") as mock_execute, \
-             patch("history_logger.main._extract_node_uid") as mock_extract, \
-             patch("history_logger.main._parse_json") as mock_parse:
+        with patch("mqtt_handlers.execute") as mock_execute, \
+             patch("mqtt_handlers._extract_node_uid") as mock_extract, \
+             patch("mqtt_handlers._parse_json") as mock_parse:
             
             mock_extract.return_value = "test-node-uid"
             mock_parse.return_value = {
@@ -129,11 +130,20 @@ async def test_no_string_concatenation_in_sql():
     # Читаем файлы сервисов
     service_files = []
     for root, dirs, files in os.walk("."):
-        if "test" in root or "__pycache__" in root:
+        if (
+            "test" in root
+            or "__pycache__" in root
+            or ".venv" in root
+            or "site-packages" in root
+            or ".git" in root
+            or "node_modules" in root
+        ):
             continue
         for file in files:
             if file.endswith(".py"):
                 filepath = os.path.join(root, file)
+                if filepath.endswith("test_sql_security.py"):
+                    continue
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -161,8 +171,7 @@ async def test_json_field_safety():
         mock_conn = AsyncMock()
         mock_conn.execute = AsyncMock(return_value="OK")
         
-        mock_pool_instance = AsyncMock()
-        mock_pool_instance.acquire = AsyncMock()
+        mock_pool_instance = MagicMock()
         mock_pool_instance.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_pool_instance.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
         
@@ -190,4 +199,3 @@ async def test_json_field_safety():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

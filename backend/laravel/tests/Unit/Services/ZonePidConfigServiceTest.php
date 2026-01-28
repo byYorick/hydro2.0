@@ -6,7 +6,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZonePidConfig;
 use App\Services\ZonePidConfigService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZonePidConfigServiceTest extends TestCase

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Command",
+  "description": "Единый контракт команды для всех сервисов",
+  "type": "object",
+  "required": ["cmd_id", "cmd", "params", "ts", "sig"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Уникальный идентификатор команды (UUID)",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "cmd": {
+      "type": "string",
+      "description": "Тип команды (dose, run_pump, set_relay, set_pwm)",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "params": {
+      "type": "object",
+      "description": "Параметры команды",
+      "additionalProperties": true
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp создания команды в секундах",
+      "minimum": 0
+    },
+    "sig": {
+      "type": "string",
+      "description": "HMAC подпись команды (hex)",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  },
+  "additionalProperties": false
+}

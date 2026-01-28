@@ -1,12 +1,15 @@
 <template>
   <RecycleScroller
+    v-slot="{ item, index }"
     class="virtual-list"
     :items="items"
     :item-size="itemSize"
     :key-field="keyField"
-    v-slot="{ item, index }"
   >
-    <slot :item="item" :index="index" />
+    <slot
+      :item="item"
+      :index="index"
+    ></slot>
   </RecycleScroller>
 </template>
 

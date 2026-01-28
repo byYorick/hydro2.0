@@ -13,7 +13,10 @@ class EventEmitter {
     if (!this.events.has(event)) {
       this.events.set(event, [])
     }
-    this.events.get(event)!.push(listener)
+    const listeners = this.events.get(event)
+    if (listeners) {
+      listeners.push(listener)
+    }
   }
 
   off(event: string, listener: (...args: any[]) => void): void {
@@ -85,16 +88,15 @@ export type StoreEventType =
  */
 export function useStoreEvents() {
   // Динамический импорт Vue hooks для избежания проблем с SSR
-  let onMountedHook: ((fn: () => void) => void) | null = null
   let onUnmountedHook: ((fn: () => void) => void) | null = null
   
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const vue = require('vue')
-    onMountedHook = vue.onMounted
-    onUnmountedHook = vue.onUnmounted
+    const hasInstance = typeof vue.getCurrentInstance === 'function' && !!vue.getCurrentInstance()
+    onUnmountedHook = hasInstance ? vue.onUnmounted : () => {}
   } catch (e) {
     // Если Vue недоступен (например, в SSR), используем заглушки
-    onMountedHook = () => {}
     onUnmountedHook = () => {}
   }
   
@@ -189,4 +191,3 @@ export const recipeEvents = {
   created: (recipe: any) => storeEvents.emit('recipe:created', recipe),
   deleted: (recipeId: number) => storeEvents.emit('recipe:deleted', recipeId),
 }
-

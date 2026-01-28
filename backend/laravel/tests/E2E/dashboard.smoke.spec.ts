@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 async function loginAsAdmin(page) {
   await page.goto('/testing/login/1', { waitUntil: 'load' })
-  await page.waitForURL('**/', { timeout: 60000 })
+  await page.waitForSelector('#app[data-page]', { timeout: 60000 })
 }
 
 async function inertiaComponent(page) {
@@ -30,4 +30,3 @@ test.describe('Dashboard Smoke', () => {
     expect(component).toBe('Zones/Index')
   })
 })
-

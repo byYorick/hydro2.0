@@ -6,10 +6,12 @@ Water Cycle Engine - управление циркуляцией и сменой
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
+from .utils.time import utcnow
 from .db import fetch, execute, create_zone_event
 from .alerts import create_alert, AlertSource, AlertCode
 from .water_flow import check_water_level, check_flow, execute_fill_mode, execute_drain_mode
 from .pump_safety import can_run_pump, check_pump_stuck_on
+from .command_orchestrator import send_command
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +171,7 @@ async def set_solution_started_at(zone_id: int, started_at: Optional[datetime] =
         started_at: Время начала (по умолчанию сейчас)
     """
     if started_at is None:
-        started_at = datetime.utcnow()
+        started_at = utcnow()
     
     await execute(
         """
@@ -224,8 +226,8 @@ def in_schedule_window(now: datetime, schedule: List[Dict[str, str]]) -> bool:
 
 async def tick_recirculation(
     zone_id: int,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,  # Опционально, будет получен из БД
     now: Optional[datetime] = None
 ) -> Optional[Dict[str, Any]]:
     """
@@ -246,7 +248,7 @@ async def tick_recirculation(
         Команда для управления насосом или None
     """
     if now is None:
-        now = datetime.utcnow()
+        now = utcnow()
     
     # Получаем конфигурацию водного цикла
     water_cycle = await get_zone_water_cycle_config(zone_id)
@@ -334,9 +336,16 @@ async def tick_recirculation(
     # Получаем текущий ток из telemetry_last
     current_rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'pump_current' AND node_id = $2
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'PUMP_CURRENT'
+          AND s.node_id = $2
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
         LIMIT 1
         """,
         zone_id,
@@ -347,9 +356,15 @@ async def tick_recirculation(
     # Получаем текущий flow из telemetry_last (используем FLOW_RATE из metrics)
     flow_rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'flow_rate'
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'FLOW_RATE'
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
         LIMIT 1
         """,
         zone_id,
@@ -374,12 +389,12 @@ async def tick_recirculation(
     
     # Формируем команду для насоса
     # Для NC-насоса: relay OPEN = насос OFF, relay CLOSED = насос ON
-    relay_state = "OPEN" if desired_state == "OFF" else "CLOSED"
+    relay_state = desired_state == "ON"
     
     # Если включаем насос, добавляем информацию для мониторинга no_flow
     event_details = {
         'desired_state': desired_state,
-        'relay_state': relay_state,
+        'relay_state': "CLOSED" if relay_state else "OPEN",
         'is_nc_pump': is_nc_pump,
         'max_off_minutes': max_off_minutes,
     }
@@ -389,16 +404,20 @@ async def tick_recirculation(
         event_details['pump_start_time'] = now.isoformat()
         event_details['monitor_no_flow'] = True
     
+    # Возвращаем информацию о команде для отправки через оркестратор
+    # Вызывающий код должен использовать send_command() для отправки
     return {
         'node_uid': node_info["uid"],
         'channel': pump_channel,
-        'cmd': 'set_relay_state',
+        'cmd': 'set_relay',
         'params': {
-            'state': relay_state,  # OPEN или CLOSED
+            'state': relay_state,
             'reason': 'recirculation_control'
         },
         'event_type': 'RECIRCULATION_STATE_CHANGED',
-        'event_details': event_details
+        'event_details': event_details,
+        'zone_id': zone_id,
+        'greenhouse_uid': gh_uid
     }
 
 
@@ -428,7 +447,7 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
         # Если раствор ещё не был начат, не требуется смена
         return False, None
     
-    now = datetime.utcnow()
+    now = utcnow()
     
     # Проверяем interval_days
     interval_days = water_change_cfg.get("interval_days", 7)
@@ -448,12 +467,13 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
         initial_ec_window = solution_started_at + timedelta(hours=2)
         initial_ec_rows = await fetch(
             """
-            SELECT AVG(value) as avg_value
-            FROM telemetry_samples
-            WHERE zone_id = $1 
-              AND metric_type = 'EC'
-              AND created_at >= $2
-              AND created_at <= $3
+            SELECT AVG(ts.value) as avg_value
+            FROM telemetry_samples ts
+            JOIN sensors s ON s.id = ts.sensor_id
+            WHERE ts.zone_id = $1
+              AND s.type = 'EC'
+              AND ts.ts >= $2
+              AND ts.ts <= $3
             """,
             zone_id,
             solution_started_at,
@@ -467,11 +487,12 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
             recent_cutoff = now - timedelta(hours=2)
             current_ec_rows = await fetch(
                 """
-                SELECT AVG(value) as avg_value
-                FROM telemetry_samples
-                WHERE zone_id = $1 
-                  AND metric_type = 'EC'
-                  AND created_at >= $2
+                SELECT AVG(ts.value) as avg_value
+            FROM telemetry_samples ts
+            JOIN sensors s ON s.id = ts.sensor_id
+            WHERE ts.zone_id = $1
+              AND s.type = 'EC'
+              AND ts.ts >= $2
                 """,
                 zone_id,
                 recent_cutoff,
@@ -497,8 +518,8 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
 
 async def execute_water_change(
     zone_id: int,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None  # Опционально, будет получен из БД
 ) -> Dict[str, Any]:
     """
     Выполнить смену воды для зоны.
@@ -527,7 +548,7 @@ async def execute_water_change(
             'WATER_CHANGE_STARTED',
             {
                 'zone_id': zone_id,
-                'start_time': datetime.utcnow().isoformat()
+                'start_time': utcnow().isoformat()
             }
         )
         # После изменения состояния перечитываем его для следующего блока
@@ -551,10 +572,15 @@ async def execute_water_change(
         if rows:
             node_info = rows[0]
             pump_channel = node_info.get("channel") or "pump_recirc"
-            # Отключаем насос (для NC - размыкаем реле)
-            payload = {"cmd": "set_relay_state", "params": {"state": "OPEN"}}
-            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['uid']}/{pump_channel}/command"
-            mqtt_client.publish_json(topic, payload, qos=1, retain=False)
+            # Отключаем насос (для NC - размыкаем реле) через единый оркестратор
+            await send_command(
+                zone_id=zone_id,
+                node_uid=node_info['uid'],
+                channel=pump_channel,
+                cmd="set_relay",
+                params={"state": False},
+                greenhouse_uid=gh_uid,
+            )
         
         # Запускаем drain
         drain_result = await execute_drain_mode(
@@ -617,17 +643,23 @@ async def execute_water_change(
             }
         
         # Проверяем, прошло ли время стабилизации
-        elapsed_minutes = (datetime.utcnow() - solution_started_at).total_seconds() / 60.0
+        elapsed_minutes = (utcnow() - solution_started_at).total_seconds() / 60.0
         
         if elapsed_minutes >= stabilize_minutes:
             # Фиксируем параметры после стабилизации
             # Получаем текущие pH, EC, temperature из telemetry_last
             params_rows = await fetch(
                 """
-                SELECT metric_type, value
-                FROM telemetry_last
-                WHERE zone_id = $1 
-                  AND metric_type IN ('PH', 'EC', 'TEMPERATURE')
+                SELECT s.type as metric_type, tl.last_value as value
+                FROM telemetry_last tl
+                JOIN sensors s ON s.id = tl.sensor_id
+                WHERE s.zone_id = $1
+                  AND s.type IN ('PH', 'EC', 'TEMPERATURE')
+                  AND s.is_active = TRUE
+                ORDER BY s.type,
+                  tl.last_ts DESC NULLS LAST,
+                  tl.updated_at DESC NULLS LAST,
+                  tl.sensor_id DESC
                 """,
                 zone_id,
             )
@@ -646,7 +678,7 @@ async def execute_water_change(
                 {
                     'zone_id': zone_id,
                     'solution_started_at': solution_started_at.isoformat(),
-                    'completed_at': datetime.utcnow().isoformat(),
+                    'completed_at': utcnow().isoformat(),
                     'stabilized_params': stabilized_params
                 }
             )
@@ -675,4 +707,3 @@ async def execute_water_change(
         'success': True,
         'state': current_state
     }
-

@@ -46,36 +46,6 @@ static i2c_bus_state_t s_buses[I2C_BUS_MAX] = {0};
 #define I2C_BUS_DEFAULT_SCL_PIN 22  // ESP32 стандартный SCL
 #define I2C_BUS_DEFAULT_CLOCK_SPEED 100000
 
-/**
- * @brief Внутренняя функция для выполнения I²C операции с retry
- */
-static esp_err_t i2c_bus_operation_with_retry(esp_err_t (*operation)(void), const char *op_name) {
-    esp_err_t err = ESP_OK;
-    
-    for (int retry = 0; retry < I2C_BUS_MAX_RETRY_COUNT; retry++) {
-        err = operation();
-        if (err == ESP_OK) {
-            return ESP_OK;
-        }
-        
-        if (retry < I2C_BUS_MAX_RETRY_COUNT - 1) {
-            ESP_LOGW(TAG, "%s failed (attempt %d/%d): %s, retrying...", 
-                    op_name, retry + 1, I2C_BUS_MAX_RETRY_COUNT, esp_err_to_name(err));
-            vTaskDelay(pdMS_TO_TICKS(10)); // Небольшая задержка перед retry
-        }
-    }
-    
-    ESP_LOGE(TAG, "%s failed after %d attempts: %s", op_name, I2C_BUS_MAX_RETRY_COUNT, esp_err_to_name(err));
-    
-    // Попытка восстановления шины
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Attempting I²C bus recovery...");
-        i2c_bus_recover();
-    }
-    
-    return err;
-}
-
 // Предварительные объявления
 static esp_err_t i2c_bus_deinit_bus(i2c_bus_id_t bus_id);
 static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count);
@@ -590,4 +560,3 @@ esp_err_t i2c_bus_init_from_config(void) {
     
     return result;
 }
-

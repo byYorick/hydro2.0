@@ -7,6 +7,10 @@
 **Дата создания:** 2025-01-27  
 **Статус:** Актуально
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Используемые фронтендом REST API endpoints
@@ -416,7 +420,7 @@
 
 ### 5.1. Полное соответствие ✅
 
-Все используемые фронтендом endpoints присутствуют в `REST_API_REFERENCE.md`:
+Все используемые фронтендом endpoints присутствуют в `../04_BACKEND_CORE/REST_API_REFERENCE.md`:
 - Zones endpoints ✅
 - Nodes endpoints ✅
 - Recipes endpoints ✅
@@ -426,7 +430,7 @@
 
 ### 5.2. Дополнительные endpoints в api.php
 
-В `routes/api.php` есть endpoints, которые не используются фронтендом, но описаны в `REST_API_REFERENCE.md`:
+В `routes/api.php` есть endpoints, которые не используются фронтендом, но описаны в `../04_BACKEND_CORE/REST_API_REFERENCE.md`:
 - AI endpoints (`/api/ai/*`)
 - Simulations endpoints (`/api/simulations/*`)
 - Reports endpoints (`/api/recipes/{id}/analytics`, etc.)
@@ -440,7 +444,7 @@
 
 1. ✅ Создан файл `API_MAPPING.md` (этот документ)
 2. ⏳ Добавить комментарии в `routes/web.php` с описанием всех Inertia props
-3. ⏳ Проверить соответствие всех endpoints с `REST_API_REFERENCE.md`
+3. ⏳ Проверить соответствие всех endpoints с `../04_BACKEND_CORE/REST_API_REFERENCE.md`
 
 ### 6.2. Для Волны 2
 
@@ -464,4 +468,3 @@
 
 **Дата последнего обновления:** 2025-01-27  
 **Версия:** 1.0
-

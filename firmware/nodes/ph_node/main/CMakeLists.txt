@@ -6,6 +6,7 @@ idf_component_register(
         "ph_node_init.c"
         "ph_node_init_steps.c"
         "ph_node_framework_integration.c"
+        "ph_node_channel_map.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -15,6 +16,7 @@ idf_component_register(
         config_apply
         node_framework
         node_utils
+        init_steps_utils
         trema_ph
         i2c_bus
         ina209
@@ -23,6 +25,7 @@ idf_component_register(
         heartbeat_task
         connection_status
         pump_driver
+        factory_reset_button
         driver
         esp_wifi
         nvs_flash
@@ -32,4 +35,5 @@ idf_component_register(
         mqtt
         esp_timer
         json
+        mbedtls
 )

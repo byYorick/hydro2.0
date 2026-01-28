@@ -6,13 +6,17 @@
 
 Он дополняет:
 
-- `TASKS_FOR_AI_AGENTS.md` — общий гайд по структуре задач.
+- `../TASKS_FOR_AI_AGENTS.md` — общий гайд по структуре задач.
 - `OPERATOR_TASKS_FOR_AI_SPEC.md` — как оператору теплицы говорить с ИИ.
-- `DEV_CONVENTIONS.md` — общие правила разработки.
+- `../DEV_CONVENTIONS.md` — общие правила разработки.
 - Архитектурные документы в `01_SYSTEM`, `02_HARDWARE_FIRMWARE`, `03_TRANSPORT_MQTT`, `04_BACKEND_CORE`, `09_AI_AND_DIGITAL_TWIN`, `10_AI_DEV_GUIDES`.
 
 Здесь — практический “бойовой” стандарт: **как разработчик должен ставить задачи ИИ так, чтобы
 результат можно было сразу коммитить в репозиторий**, а не переписывать с нуля.
+
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
@@ -119,7 +123,7 @@
 Пример:
 
 - “Сейчас в `node_pump` нет драйвера INA209. Логика команд к насосам описана только на уровне
-   протокола в `NODE_LOGIC_FULL.md` и `DEVICE_NODE_PROTOCOL.md`.”
+   протокола в `../02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` и `../02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md`.”
 
 #### 5) Цель
 
@@ -136,12 +140,12 @@
 
 Явный список файлов и документов:
 
-- `02_HARDWARE_FIRMWARE/HARDWARE_ARCH_FULL.md` (раздел 8.2)
-- `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` (раздел 4.2.1)
-- `02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md` (раздел об актуации и INA209)
-- `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` (pump_* и pump_bus_current)
-- `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (Command Response)
-- `DEV_CONVENTIONS.md`, `TASKS_FOR_AI_AGENTS.md`
+- `../02_HARDWARE_FIRMWARE/HARDWARE_ARCH_FULL.md` (раздел 8.2)
+- `../02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` (раздел 4.2.1)
+- `../02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md` (раздел об актуации и INA209)
+- `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` (pump_* и pump_bus_current)
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (Command Response)
+- `../DEV_CONVENTIONS.md`, `../TASKS_FOR_AI_AGENTS.md`
 
 Если есть существующие `.c/.h`, нужно:
 
@@ -152,7 +156,7 @@
 
 Примеры ограничений:
 
-- “Соблюдать `DEV_CONVENTIONS.md`.”
+- “Соблюдать `../DEV_CONVENTIONS.md`.”
 - “Не использовать динамическую память в обработчике команд.”
 - “Не менять публичный интерфейс `mqtt_client_node_common.h`.”
 - “Не использовать C++.”
@@ -203,12 +207,12 @@
 ## Контекст
 
 - Компонент: прошивка ноды <название> (например, насосы/pH/EC/климат).
-- Архитектура ноды: см. `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`.
-- Логика: см. `NODE_LOGIC_FULL.md`.
-- Протокол и команды: см. `DEVICE_NODE_PROTOCOL.md`.
-- Каналы: см. `NODE_CHANNELS_REFERENCE.md`.
-- MQTT: см. `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
-- Конвенции: `DEV_CONVENTIONS.md`, `ESP32_C_CODING_STANDARDS.md`.
+- Архитектура ноды: см. `../02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`.
+- Логика: см. `../02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md`.
+- Протокол и команды: см. `../02_HARDWARE_FIRMWARE/DEVICE_NODE_PROTOCOL.md`.
+- Каналы: см. `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.
+- MQTT: см. `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
+- Конвенции: `../DEV_CONVENTIONS.md`, `../02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`.
 
 ## Текущая ситуация
 
@@ -229,7 +233,7 @@
 
 ## Ограничения
 
-- Соблюдать `DEV_CONVENTIONS.md`.
+- Соблюдать `../DEV_CONVENTIONS.md`.
 - Не использовать динамическую память в “горячем” пути.
 - Не менять публичный API существующих модулей, если не указано обратное.
 
@@ -270,7 +274,7 @@
 
 - Упростить код.
 - Разбить на логичные функции/модули.
-- Привести к `DEV_CONVENTIONS.md`.
+- Привести к `../DEV_CONVENTIONS.md`.
 
 ## Ограничения
 
@@ -300,7 +304,7 @@
 
 ## Контекст
 
-- Документ: `path/to/doc.md`.
+- Документ: `<path/to/doc.md>`.
 - Связанные документы:
   - `...`
 - Архитектура и протоколы уже заданы, нельзя их противоречить.
@@ -324,7 +328,7 @@
 
 ## Ожидаемый результат
 
-- Полный обновлённый текст файла `path/to/doc.md`.
+- Полный обновлённый текст файла `<path/to/doc.md>`.
 
 ## Формат ответа
 
@@ -352,7 +356,7 @@
 ## Цель
 
 - Найти:
-  - нарушения `DEV_CONVENTIONS.md`;
+  - нарушения `../DEV_CONVENTIONS.md`;
   - потенциальные баги;
   - расхождения с архитектурой и протоколами.
 

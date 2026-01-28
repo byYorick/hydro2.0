@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
 use App\Services\PythonBridgeService;
 use Illuminate\Http\Request;
@@ -12,21 +13,16 @@ use Illuminate\Support\Facades\Log;
 
 class NodeCommandController extends Controller
 {
-    public function store(Request $request, DeviceNode $node, PythonBridgeService $bridge)
+    public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge)
     {
-        $data = $request->validate([
-            'type' => ['nullable', 'string', 'max:64'],
-            'cmd' => ['nullable', 'string', 'max:64'],
-            'channel' => ['nullable', 'string', 'max:128'],
-            'params' => ['nullable', 'array'],
-        ]);
-
+        $data = $request->validated();
+        
         // Support both 'type' and 'cmd' fields for backward compatibility
         if (!isset($data['cmd']) && isset($data['type'])) {
             $data['cmd'] = $data['type'];
         }
         
-        // Ensure cmd is set
+        // Ensure cmd is set (валидация в Form Request)
         if (!isset($data['cmd'])) {
             return response()->json([
                 'message' => 'The cmd or type field is required.',
@@ -34,24 +30,11 @@ class NodeCommandController extends Controller
             ], 422);
         }
 
-        // Ensure params is an associative array (object), not a list
-        // Python service expects Dict[str, Any], not a list
+        // Ensure params is an associative array (object), not a list (валидация в Form Request)
         if (!isset($data['params']) || $data['params'] === null) {
             $data['params'] = [];
         } elseif (is_array($data['params']) && array_is_list($data['params'])) {
-            // Convert indexed array to empty object
             $data['params'] = [];
-        }
-
-        // Для set_state требуем state от клиента
-        if (($data['cmd'] ?? '') === 'set_state') {
-            if (!array_key_exists('state', $data['params'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'INVALID_ARGUMENT',
-                    'message' => 'set_state requires params.state (0/1 or true/false)',
-                ], 422);
-            }
         }
 
         try {

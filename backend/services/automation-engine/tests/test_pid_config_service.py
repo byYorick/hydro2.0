@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime
+from common.utils.time import utcnow
 
 # Добавляем родительскую директорию в путь для импортов
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -64,7 +65,7 @@ async def test_get_config_loads_from_db():
     
     # Мокаем fetch из services.pid_config_service (где он импортирован)
     with patch('services.pid_config_service.fetch', new_callable=AsyncMock) as mock_fetch:
-        mock_fetch.return_value = [{'config': db_config, 'updated_at': datetime.utcnow()}]
+        mock_fetch.return_value = [{'config': db_config, 'updated_at': utcnow()}]
         
         config = await get_config(zone_id, correction_type, setpoint)
         
@@ -150,4 +151,3 @@ def test_build_default_config_ec():
     assert config.dead_zone == settings.EC_PID_DEAD_ZONE
     assert config.zone_coeffs[PidZone.CLOSE].kp == settings.EC_PID_KP_CLOSE
     assert config.zone_coeffs[PidZone.FAR].kp == settings.EC_PID_KP_FAR
-

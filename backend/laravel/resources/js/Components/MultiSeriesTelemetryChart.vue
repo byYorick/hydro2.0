@@ -1,9 +1,11 @@
 <template>
   <Card class="relative">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-sm font-semibold">{{ title }}</div>
+      <div class="text-sm font-semibold">
+        {{ title }}
+      </div>
       <div class="flex items-center gap-2">
-        <div class="text-xs text-neutral-500 hidden sm:inline">
+        <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
           <span class="mr-2">🖱️ Колесо мыши — zoom</span>
           <span>Перетаскивание — pan</span>
         </div>
@@ -11,48 +13,48 @@
           <Button 
             size="sm" 
             variant="outline" 
-            @click="exportData"
             class="text-xs"
             title="Экспорт данных"
+            @click="exportData"
           >
             📥 Экспорт
           </Button>
           <div class="flex gap-1">
-          <Button 
-            size="sm" 
-            :variant="timeRange === '1H' ? 'default' : 'secondary'" 
-            @click="setRange('1H')"
-          >
-            1H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '24H' ? 'default' : 'secondary'" 
-            @click="setRange('24H')"
-          >
-            24H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '7D' ? 'default' : 'secondary'" 
-            @click="setRange('7D')"
-          >
-            7D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '30D' ? 'default' : 'secondary'" 
-            @click="setRange('30D')"
-          >
-            30D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
-            @click="setRange('ALL')"
-          >
-          ALL
-        </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '1H' ? 'default' : 'secondary'" 
+              @click="setRange('1H')"
+            >
+              1H
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '24H' ? 'default' : 'secondary'" 
+              @click="setRange('24H')"
+            >
+              24H
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '7D' ? 'default' : 'secondary'" 
+              @click="setRange('7D')"
+            >
+              7D
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '30D' ? 'default' : 'secondary'" 
+              @click="setRange('30D')"
+            >
+              30D
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
+              @click="setRange('ALL')"
+            >
+              ALL
+            </Button>
           </div>
         </div>
       </div>
@@ -61,21 +63,21 @@
     <!-- Легенда -->
     <div class="flex items-center gap-4 mb-2 text-xs">
       <div
-        v-for="series in seriesConfig"
-        :key="series.name"
+        v-for="seriesItem in seriesConfig"
+        :key="seriesItem.name"
         class="flex items-center gap-2"
       >
         <div
           class="w-3 h-0.5 rounded"
-          :style="{ backgroundColor: series.color }"
+          :style="{ backgroundColor: seriesItem.color }"
         ></div>
-        <span class="text-neutral-400">{{ series.label }}</span>
+        <span class="text-[color:var(--text-muted)]">{{ seriesItem.label }}</span>
         <span
-          v-if="series.currentValue !== null && series.currentValue !== undefined"
+          v-if="seriesItem.currentValue !== null && seriesItem.currentValue !== undefined"
           class="font-medium"
-          :style="{ color: series.color }"
+          :style="{ color: seriesItem.color }"
         >
-          {{ formatValue(series.currentValue, series.name) }}
+          {{ formatValue(seriesItem.currentValue, seriesItem.name) }}
         </span>
       </div>
     </div>
@@ -90,6 +92,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import type { TelemetrySample } from '@/types'
+import { useTheme } from '@/composables/useTheme'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
@@ -100,6 +103,10 @@ interface SeriesConfig {
   data: TelemetrySample[]
   currentValue?: number | null
   yAxisIndex?: number
+  targetRange?: {
+    min?: number
+    max?: number
+  }
 }
 
 interface Props {
@@ -117,6 +124,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'time-range-change': [range: TimeRange]
 }>()
+
+const { theme } = useTheme()
 
 const setRange = (r: TimeRange): void => {
   emit('time-range-change', r)
@@ -252,6 +261,28 @@ const formatTimestamp = (timestamp: number | string | null): string => {
   return `${dateStr}, ${timeStr}`
 }
 
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    tooltipBg: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
+    borderMuted: resolveCssColor('--border-muted', '#374151'),
+    borderStrong: resolveCssColor('--border-strong', '#4b5563'),
+    textPrimary: resolveCssColor('--text-primary', '#f3f4f6'),
+    textDim: resolveCssColor('--text-dim', '#9ca3af'),
+    badgeNeutralBg: resolveCssColor('--badge-neutral-bg', 'rgba(75, 85, 99, 0.2)'),
+    badgeInfoBg: resolveCssColor('--badge-info-bg', 'rgba(96, 165, 250, 0.2)'),
+    accentCyan: resolveCssColor('--accent-cyan', '#60a5fa'),
+  }
+})
+
 const option = computed(() => {
   const allDataLength = Math.max(...props.series.map(s => s.data?.length || 0))
   const hasLargeDataset = allDataLength > 50
@@ -260,6 +291,8 @@ const option = computed(() => {
   const hasDifferentUnits = props.series.length > 1 && 
     props.series.some(s => s.yAxisIndex !== undefined && s.yAxisIndex !== 0)
   
+  const palette = chartPalette.value
+
   return {
     tooltip: { 
       trigger: 'axis',
@@ -289,14 +322,14 @@ const option = computed(() => {
         
         return `${dateTimeStr}<br/>${lines}`
       },
-      backgroundColor: 'rgba(17, 24, 39, 0.95)',
-      borderColor: '#374151',
+      backgroundColor: palette.tooltipBg,
+      borderColor: palette.borderMuted,
       borderWidth: 1,
       textStyle: {
-        color: '#f3f4f6',
+        color: palette.textPrimary,
         fontSize: 12,
       },
-      extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 8px 12px; border-radius: 6px;',
+      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 8px 12px; border-radius: 6px;',
     },
     legend: {
       show: false, // Используем кастомную легенду
@@ -311,36 +344,36 @@ const option = computed(() => {
     xAxis: {
       type: 'time',
       axisLabel: { 
-        color: '#9ca3af',
+        color: palette.textDim,
         rotate: 0,
         formatter: (value: number) => {
           const date = new Date(value)
           return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
         }
       },
-      axisLine: { lineStyle: { color: '#374151' } },
+      axisLine: { lineStyle: { color: palette.borderMuted } },
       boundaryGap: false,
     },
     yAxis: [
       {
         type: 'value',
         name: props.series[0]?.label || '',
-        nameTextStyle: { color: '#9ca3af' },
+        nameTextStyle: { color: palette.textDim },
         position: 'left',
         axisLabel: { 
-          color: props.series[0]?.color || '#9ca3af',
+          color: props.series[0]?.color || palette.textDim,
           formatter: formatAxisValue,
         },
-        splitLine: { lineStyle: { color: '#1f2937' } },
+        splitLine: { lineStyle: { color: palette.borderMuted } },
         scale: false,
       },
       ...(hasDifferentUnits ? [{
         type: 'value',
         name: props.series.find(s => s.yAxisIndex === 1)?.label || '',
-        nameTextStyle: { color: '#9ca3af' },
+        nameTextStyle: { color: palette.textDim },
         position: 'right',
         axisLabel: { 
-          color: props.series.find(s => s.yAxisIndex === 1)?.color || '#9ca3af',
+          color: props.series.find(s => s.yAxisIndex === 1)?.color || palette.textDim,
           formatter: formatAxisValue,
         },
         splitLine: { show: false },
@@ -369,48 +402,74 @@ const option = computed(() => {
         handleIcon: 'path://M30.9,53.2C16.8,53.2,5.3,41.7,5.3,27.6S16.8,2,30.9,2C45,2,56.4,13.5,56.4,27.6S45,53.2,30.9,53.2z M30.9,3.5C17.6,3.5,6.8,14.4,6.8,27.6c0,13.3,10.8,24.1,24.1,24.1C44.2,51.7,55,40.9,55,27.6C54.9,14.4,44.1,3.5,30.9,3.5z M36.9,35.8c0,0.6-0.4,1-1,1H26.5c-0.6,0-1-0.4-1-1V19.4c0-0.6,0.4-1,1-1h9.4c0.6,0,1,0.4,1,1V35.8z',
         handleSize: '80%',
         handleStyle: {
-          color: '#4b5563',
-          borderColor: '#6b7280',
+          color: palette.borderStrong,
+          borderColor: palette.borderMuted,
         },
         textStyle: {
-          color: '#9ca3af',
+          color: palette.textDim,
           fontSize: 10,
         },
-        borderColor: '#374151',
-        fillerColor: 'rgba(75, 85, 99, 0.2)',
+        borderColor: palette.borderMuted,
+        fillerColor: palette.badgeNeutralBg,
         dataBackground: {
-          lineStyle: { color: '#4b5563' },
-          areaStyle: { color: 'rgba(75, 85, 99, 0.1)' },
+          lineStyle: { color: palette.borderStrong },
+          areaStyle: { color: palette.badgeNeutralBg },
         },
         selectedDataBackground: {
-          lineStyle: { color: '#60a5fa' },
-          areaStyle: { color: 'rgba(96, 165, 250, 0.2)' },
+          lineStyle: { color: palette.accentCyan },
+          areaStyle: { color: palette.badgeInfoBg },
         },
         minValueSpan: allDataLength > 0 && props.series[0]?.data?.length > 0
           ? Math.min(3600000, (props.series[0].data[props.series[0].data.length - 1]?.ts || 0) - (props.series[0].data[0]?.ts || 0) || 3600000)
           : 3600000,
       }] : []),
     ],
-    series: props.series.map((series, index) => ({
-      name: series.label,
-      type: 'line',
-      showSymbol: false,
-      smooth: true,
-      lineStyle: { 
-        width: 2,
-        color: series.color,
-      },
-      itemStyle: {
-        color: series.color,
-      },
-      data: series.data.map(p => [p.ts, p.value]),
-      clip: true,
-      large: hasLargeDataset,
-      largeThreshold: 100,
-      yAxisIndex: series.yAxisIndex || 0,
-      z: props.series.length - index, // Порядок отрисовки
-    })),
-  }
-})
-</script>
+    series: props.series.map((series, index) => {
+      const seriesConfig: any = {
+        name: series.label,
+        type: 'line',
+        showSymbol: false,
+        smooth: true,
+        lineStyle: { 
+          width: 2,
+          color: series.color,
+        },
+        itemStyle: {
+          color: series.color,
+        },
+        data: series.data.map(p => [p.ts, p.value]),
+        clip: true,
+        large: hasLargeDataset,
+        largeThreshold: 100,
+        yAxisIndex: series.yAxisIndex || 0,
+        z: props.series.length - index, // Порядок отрисовки
+      }
 
+      // Добавляем визуализацию целевого диапазона (markArea)
+      if (series.targetRange && series.targetRange.min !== undefined && series.targetRange.max !== undefined) {
+        const targetColor = resolveCssColor('--badge-success-bg', 'rgba(34, 197, 94, 0.15)')
+        seriesConfig.markArea = {
+          silent: true,
+          itemStyle: {
+            color: targetColor,
+            borderColor: resolveCssColor('--accent-green', '#22c55e'),
+            borderWidth: 1,
+            borderType: 'dashed',
+          },
+          data: [
+            [
+              { yAxis: series.targetRange.min },
+              { yAxis: series.targetRange.max },
+            ],
+          ],
+          label: {
+            show: false,
+          },
+        }
+      }
+
+      return seriesConfig
+    }),
+  }
+}) as any
+</script>

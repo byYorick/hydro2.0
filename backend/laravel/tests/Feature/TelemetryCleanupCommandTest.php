@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 use Carbon\Carbon;
+use App\Models\Sensor;
 
 class TelemetryCleanupCommandTest extends TestCase
 {
@@ -19,6 +20,17 @@ class TelemetryCleanupCommandTest extends TestCase
         // Создаем необходимые зависимости
         $zone = \App\Models\Zone::factory()->create();
         $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $sensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
         
         // Создаем старые записи телеметрии
         $oldDate = Carbon::now()->subDays(35);
@@ -28,8 +40,7 @@ class TelemetryCleanupCommandTest extends TestCase
         for ($i = 0; $i < 2500; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'sensor_id' => $sensor->id,
                 'value' => 6.5,
                 'ts' => $oldDate->copy()->addSeconds($i),
                 'created_at' => $oldDate->copy()->addSeconds($i),
@@ -40,8 +51,7 @@ class TelemetryCleanupCommandTest extends TestCase
         for ($i = 0; $i < 100; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'sensor_id' => $sensor->id,
                 'value' => 6.5,
                 'ts' => $newDate->copy()->addSeconds($i),
                 'created_at' => $newDate->copy()->addSeconds($i),
@@ -100,13 +110,23 @@ class TelemetryCleanupCommandTest extends TestCase
         // Создаем необходимые зависимости
         $zone = \App\Models\Zone::factory()->create();
         $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $sensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
         
         // Создаем только новые записи
         for ($i = 0; $i < 100; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'sensor_id' => $sensor->id,
                 'value' => 6.5,
                 'ts' => Carbon::now()->subDays(5)->addSeconds($i),
                 'created_at' => Carbon::now()->subDays(5)->addSeconds($i),
@@ -125,4 +145,3 @@ class TelemetryCleanupCommandTest extends TestCase
         $this->assertEquals(100, $finalCount);
     }
 }
-

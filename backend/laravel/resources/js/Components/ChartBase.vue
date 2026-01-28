@@ -1,11 +1,15 @@
 <template>
-  <div ref="el" :class="containerClass" :style="containerStyle"></div>
+  <div
+    ref="el"
+    :class="containerClass"
+    :style="containerStyle"
+  ></div>
 </template>
 
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
-import type { EChartsOption } from 'echarts'
+import type { ECharts, EChartsOption } from 'echarts'
 
 interface Props {
   option: EChartsOption
@@ -37,7 +41,7 @@ const containerStyle = computed(() => {
 })
 
 const el = ref()
-let chart
+let chart: ECharts | undefined
 
 onMounted(() => {
   if (!el.value) return
@@ -66,15 +70,16 @@ onMounted(() => {
   }
   
   // Улучшаем опции для предотвращения выхода за границы
+  const gridOption = Array.isArray(props.option.grid) ? props.option.grid[0] : props.option.grid
   const safeOption = {
     ...props.option,
     grid: {
-      left: props.option.grid?.left ?? 40,
-      right: props.option.grid?.right ?? 16,
-      top: props.option.grid?.top ?? 16,
-      bottom: props.option.grid?.bottom ?? 32,
-      containLabel: props.option.grid?.containLabel ?? false,
-      ...(props.option.grid || {}), // Сохраняем все настройки grid из опций
+      left: gridOption?.left ?? 40,
+      right: gridOption?.right ?? 16,
+      top: gridOption?.top ?? 16,
+      bottom: gridOption?.bottom ?? 32,
+      containLabel: gridOption?.containLabel ?? false,
+      ...(gridOption || {}), // Сохраняем все настройки grid из опций
     },
   }
   
@@ -108,15 +113,16 @@ watch(
   (opt) => {
     if (chart) {
       // Улучшаем опции для предотвращения выхода за границы
+      const gridOption = Array.isArray(opt.grid) ? opt.grid[0] : opt.grid
       const safeOption = {
         ...opt,
         grid: {
-          left: opt.grid?.left ?? 40,
-          right: opt.grid?.right ?? 16,
-          top: opt.grid?.top ?? 16,
-          bottom: opt.grid?.bottom ?? 32,
-          containLabel: opt.grid?.containLabel ?? false,
-          ...(opt.grid || {}), // Сохраняем все настройки grid из опций
+          left: gridOption?.left ?? 40,
+          right: gridOption?.right ?? 16,
+          top: gridOption?.top ?? 16,
+          bottom: gridOption?.bottom ?? 32,
+          containLabel: gridOption?.containLabel ?? false,
+          ...(gridOption || {}), // Сохраняем все настройки grid из опций
         },
       }
       // Используем notMerge: false для инкрементальных обновлений (добавляем только новые данные)
@@ -130,7 +136,7 @@ watch(
 onBeforeUnmount(() => {
   if (chart) {
     chart.dispose()
-    chart = null
+    chart = undefined
   }
 })
 </script>

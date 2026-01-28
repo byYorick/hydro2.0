@@ -3,14 +3,21 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Inertia\Inertia;
 
 return Application::configure(basePath: dirname(__DIR__))
+    ->withProviders([
+        \App\Providers\AuthServiceProvider::class,
+    ])
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        \App\Console\Commands\CleanupNodeChannelsGpio::class,
+    ])
     ->withMiddleware(function (Middleware $middleware) {
         // Trust all proxies (for Docker/nginx setup)
         $middleware->trustProxies(at: '*');
@@ -25,14 +32,19 @@ return Application::configure(basePath: dirname(__DIR__))
             'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
             'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
             'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
+            'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
+            'ae.legacy.sql.guard' => \App\Http\Middleware\AutomationEngineLegacySqlGuard::class,
         ]);
+        
+        // Rate limiting для регистрации нод будет настроен в AppServiceProvider
 
         // Rate Limiting для API роутов
         // Стандартный лимит: 120 запросов в минуту для всех API роутов
         // Более строгие лимиты применяются на уровне отдельных роутов
         // Увеличен для поддержки множественных компонентов на одной странице
+        $apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
         $middleware->api(prepend: [
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':120,1',
+            \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);
 
         // CSRF protection: исключаем только token-based API роуты и broadcasting
@@ -59,10 +71,146 @@ return Application::configure(basePath: dirname(__DIR__))
             return 'req_'.uniqid().'_'.substr(md5(microtime(true)), 0, 8);
         };
 
+        // Обрабатываем AuthenticationException ПЕРВЫМ (до общего обработчика)
+        // Это важно, чтобы не логировать ошибки аутентификации как критические ошибки
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
+            $correlationId = $generateCorrelationId();
+            $isApi = $request->is('api/*') || $request->expectsJson();
+            $isInertia = $request->header('X-Inertia') !== null;
+
+            // Логируем как предупреждение, а не ошибку (это нормальная ситуация)
+            $logContext = [
+                'correlation_id' => $correlationId,
+                'url' => $request->fullUrl(),
+                'method' => $request->method(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'is_api' => $isApi,
+                'is_inertia' => $isInertia,
+                'has_auth_header' => $request->headers->has('Authorization'),
+                'has_bearer_token' => $request->bearerToken() !== null,
+                'has_session' => $request->hasSession(),
+                'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+            ];
+
+            // Проверяем, был ли запрос с токеном или сессией
+            $authHeader = $request->header('Authorization');
+            if ($authHeader) {
+                $logContext['auth_header_prefix'] = substr($authHeader, 0, 20);
+            }
+
+            \Log::warning('Authentication failed', $logContext);
+
+            // Для API роутов возвращаем JSON с 401
+            if ($isApi) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'UNAUTHENTICATED',
+                    'message' => 'Unauthenticated.',
+                    'correlation_id' => $correlationId,
+                ], 401);
+            }
+
+            // Для Inertia запросов делаем редирект
+            if ($isInertia) {
+                return redirect()->route('login')->with('error', 'Требуется авторизация.');
+            }
+
+            // Для обычных веб-запросов делаем редирект
+            return redirect()->route('login')->with('error', 'Требуется авторизация.');
+        });
+
+        // Обрабатываем ValidationException ПЕРЕД общим обработчиком Throwable
+        // Это важно для правильной обработки ошибок валидации в Inertia.js
+        $exceptions->render(function (\Illuminate\Validation\ValidationException $e, \Illuminate\Http\Request $request) {
+            $isInertia = $request->header('X-Inertia') !== null;
+            $isApi = $request->is('api/*') || ($request->expectsJson() && !$isInertia);
+            
+            // Для Inertia запросов используем redirect()->back() для правильной обработки
+            // Это вернет на предыдущую страницу (страницу логина) с ошибками валидации
+            if ($isInertia && !$isApi) {
+                // Используем redirect()->back() для правильной обработки ошибок валидации
+                // Это вернет на страницу логина с ошибками в форме
+                // Inertia автоматически обработает это и покажет ошибки в форме
+                return redirect()->back()
+                    ->withErrors($e->errors(), $e->errorBag)
+                    ->withInput($request->except('password'));
+            }
+            
+            // Для API запросов возвращаем JSON
+            if ($isApi) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'VALIDATION_ERROR',
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+            
+            // Для обычных веб-запросов используем стандартную обработку Laravel
+            // которая делает back()->withErrors()
+            return redirect()->back()
+                ->withErrors($e->errors(), $e->errorBag)
+                ->withInput();
+        });
+
+        // Обрабатываем ThrottleRequestsException (после AuthenticationException и ValidationException)
+        // Используем HttpException вместо ThrottleRequestsException, так как ThrottleRequestsException наследуется от HttpException
+        $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
+            $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+            
+            if ($request->is('broadcasting/auth')) {
+                \Log::warning('Broadcasting auth: Rate limit exceeded', [
+                    'ip' => $request->ip(),
+                    'channel' => $request->input('channel_name'),
+                    'retry_after' => $retryAfter,
+                ]);
+
+                return response()->json([
+                    'message' => 'Too Many Attempts.',
+                ], 429)->withHeaders([
+                    'Retry-After' => $retryAfter,
+                ]);
+            }
+            
+            // Для API роутов возвращаем JSON с 429
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'RATE_LIMIT_EXCEEDED',
+                    'message' => 'Too many requests. Please try again later.',
+                ], 429)->withHeaders([
+                    'Retry-After' => $retryAfter,
+                ]);
+            }
+            
+            // Для веб-роутов возвращаем стандартный ответ
+            return response()->view('errors.429', [
+                'retry_after' => $retryAfter,
+            ], 429)->withHeaders([
+                'Retry-After' => $retryAfter,
+            ]);
+        });
+
         // Централизованная обработка исключений для API и веб-маршрутов
         $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
             // Пропускаем обработку для broadcasting/auth (обрабатывается отдельно)
             if ($request->is('broadcasting/auth')) {
+                return null;
+            }
+
+            // Пропускаем AuthenticationException (уже обработано выше)
+            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                return null;
+            }
+
+            // Пропускаем ValidationException (уже обработано выше)
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return null;
+            }
+
+            // Пропускаем HttpResponseException, чтобы сохранить исходный HTTP ответ (например, 429)
+            if ($e instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
                 return null;
             }
 
@@ -71,27 +219,31 @@ return Application::configure(basePath: dirname(__DIR__))
             $isApi = $request->is('api/*') || $request->expectsJson();
             $isInertia = $request->header('X-Inertia') !== null;
 
-            // Логируем исключение с контекстом
-            $logContext = [
-                'correlation_id' => $correlationId,
-                'url' => $request->fullUrl(),
-                'method' => $request->method(),
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'user_id' => auth()->id(),
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'is_api' => $isApi,
-                'is_inertia' => $isInertia,
-            ];
+            // НЕ логируем ValidationException как ошибку для Inertia запросов
+            // Это нормальная ситуация валидации формы
+            if (!($e instanceof \Illuminate\Validation\ValidationException && $isInertia)) {
+                // Логируем исключение с контекстом
+                $logContext = [
+                    'correlation_id' => $correlationId,
+                    'url' => $request->fullUrl(),
+                    'method' => $request->method(),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'user_id' => auth()->id(),
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'is_api' => $isApi,
+                    'is_inertia' => $isInertia,
+                ];
 
-            if ($isDev) {
-                $logContext['trace'] = $e->getTraceAsString();
+                if ($isDev) {
+                    $logContext['trace'] = $e->getTraceAsString();
+                }
+
+                \Log::error('Exception', $logContext);
             }
-
-            \Log::error('Exception', $logContext);
 
             // Обработка для API роутов
             if ($isApi) {
@@ -120,6 +272,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 \Log::error('API Exception', $logContext);
 
                 // Обработка специфичных исключений
+                if ($e instanceof \Illuminate\Http\Exceptions\ThrottleRequestsException) {
+                    $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'RATE_LIMIT_EXCEEDED',
+                        'message' => 'Too many requests. Please try again later.',
+                    ], 429)->withHeaders([
+                        'Retry-After' => $retryAfter,
+                    ]);
+                }
+                
                 if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                     return response()->json([
                         'status' => 'error',
@@ -129,11 +292,22 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 404);
                 }
 
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'NOT_FOUND',
+                        'message' => $isDev ? $e->getMessage() : 'Resource not found',
+                        'correlation_id' => $correlationId,
+                    ], 404);
+                }
+
+                // AuthenticationException уже обработано выше, здесь не должно попасть
+                // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return response()->json([
                         'status' => 'error',
                         'code' => 'UNAUTHENTICATED',
-                        'message' => 'Unauthenticated',
+                        'message' => 'Unauthenticated.',
                         'correlation_id' => $correlationId,
                     ], 401);
                 }
@@ -147,14 +321,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 403);
                 }
 
+                // ValidationException уже обработано выше в приоритетном обработчике
+                // Здесь не должно попасть, но оставляем для безопасности
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => 'Validation failed',
-                        'errors' => $e->errors(),
-                        'correlation_id' => $correlationId,
-                    ], 422);
+                    return null; // Пропускаем, уже обработано выше
                 }
 
                 if ($e instanceof \Illuminate\Http\Client\RequestException ||
@@ -166,6 +336,40 @@ return Application::configure(basePath: dirname(__DIR__))
                         'message' => 'External service unavailable',
                         'correlation_id' => $correlationId,
                     ], 503);
+                }
+
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                    $status = $e->getStatusCode();
+                    $message = $isDev ? $e->getMessage() : match ($status) {
+                        401 => 'Unauthenticated.',
+                        403 => 'Forbidden.',
+                        404 => 'Resource not found',
+                        default => 'Request failed.',
+                    };
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'HTTP_ERROR',
+                        'message' => $message,
+                        'correlation_id' => $correlationId,
+                    ], $status);
+                }
+
+                if (method_exists($e, 'getStatusCode')) {
+                    $status = $e->getStatusCode();
+                    $message = $isDev ? $e->getMessage() : match ($status) {
+                        401 => 'Unauthenticated.',
+                        403 => 'Forbidden.',
+                        404 => 'Resource not found',
+                        default => 'Request failed.',
+                    };
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'HTTP_ERROR',
+                        'message' => $message,
+                        'correlation_id' => $correlationId,
+                    ], $status);
                 }
 
                 // Общая обработка для всех остальных исключений
@@ -190,14 +394,17 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($isInertia || $request->is('*')) {
                 // Для Inertia запросов возвращаем Inertia-ответ с ошибкой
                 if ($isInertia) {
+                    $status = $e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException ? 404 : 500;
                     return \Inertia\Inertia::render('Error', [
-                        'status' => 500,
-                        'message' => $isDev ? $e->getMessage() : 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                        'status' => $status,
+                        'message' => $isDev
+                            ? $e->getMessage()
+                            : ($status === 404 ? 'Страница не найдена.' : 'Произошла ошибка. Пожалуйста, попробуйте позже.'),
                         'correlation_id' => $correlationId,
                         'exception' => $isDev ? get_class($e) : null,
                         'file' => $isDev ? $e->getFile() : null,
                         'line' => $isDev ? $e->getLine() : null,
-                    ])->toResponse($request)->setStatusCode(500);
+                    ])->toResponse($request)->setStatusCode($status);
                 }
 
                 // Для обычных веб-запросов возвращаем дружелюбную страницу ошибки
@@ -207,6 +414,8 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 404);
                 }
 
+                // AuthenticationException уже обработано выше, здесь не должно попасть
+                // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return redirect()->route('login')->with('error', 'Требуется авторизация.');
                 }
@@ -218,8 +427,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 403);
                 }
 
+                // ValidationException уже обработано выше в приоритетном обработчике
+                // Здесь не должно попасть, но оставляем для безопасности
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
-                    return back()->withErrors($e->errors())->withInput();
+                    return null; // Пропускаем, уже обработано выше
                 }
 
                 // Общая ошибка для веб-маршрутов
@@ -235,23 +446,6 @@ return Application::configure(basePath: dirname(__DIR__))
             return null;
         });
 
-        // Обрабатываем ThrottleRequestsException для broadcasting/auth (возвращаем 429 вместо 500)
-        $exceptions->render(function (\Illuminate\Routing\Middleware\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('broadcasting/auth')) {
-                $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
-                \Log::warning('Broadcasting auth: Rate limit exceeded', [
-                    'ip' => $request->ip(),
-                    'channel' => $request->input('channel_name'),
-                    'retry_after' => $retryAfter,
-                ]);
-
-                return response()->json([
-                    'message' => 'Too Many Attempts.',
-                ], 429)->withHeaders([
-                    'Retry-After' => $retryAfter,
-                ]);
-            }
-        });
 
         // Обрабатываем исключения для broadcasting/auth
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {

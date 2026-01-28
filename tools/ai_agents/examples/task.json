@@ -1,0 +1,22 @@
+{
+  "title": "Обновить mqtt_client для pH ноды",
+  "context": "ESP32 прошивка pH ноды; спецификация в doc_ai/03_TRANSPORT_MQTT/MQTT_TOPICS_SPEC.md",
+  "goal": "поддержка переподключений и обработка всех команд из MQTT_SPEC",
+  "inputs": [
+    "firmware/nodes/ph_node/main",
+    "doc_ai/03_TRANSPORT_MQTT/MQTT_TOPICS_SPEC.md"
+  ],
+  "expected": [
+    "обновленный mqtt_client_ph.c",
+    "юнит-тест или smoke-инструкция"
+  ],
+  "constraints": [
+    "не менять существующие MQTT топики",
+    "соблюдать ESP32_C_CODING_STANDARDS"
+  ],
+  "format": [
+    "краткое резюме",
+    "диффы или полные файлы с путями"
+  ],
+  "notes": "Пример файла для валидации схемы задач ИИ-агента"
+}

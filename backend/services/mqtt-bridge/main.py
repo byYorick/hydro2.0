@@ -1,10 +1,16 @@
 from fastapi import FastAPI, Path
 from fastapi import HTTPException, Request
 from fastapi import Body, Response
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from typing import Optional
+import hashlib
+import hmac
+from common.hmac_utils import canonical_json_payload
 import logging
 import os
+import asyncio
+import time
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -12,41 +18,114 @@ from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch
+from common.simulation_events import record_simulation_event
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
+from common.logging_setup import setup_standard_logging, install_exception_handlers
+from common.trace_context import clear_trace_id, get_trace_id, set_trace_id, set_trace_id_from_headers
 
 # Настройка логирования
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-)
+setup_standard_logging("mqtt-bridge")
+install_exception_handlers("mqtt-bridge")
 logger = logging.getLogger(__name__)
 
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
-app = FastAPI(title="MQTT Bridge", version="0.1.2")
+# Глобальная переменная для Publisher
+publisher: Optional[Publisher] = None
 
-# Создаем Publisher при старте приложения
-try:
-    publisher = Publisher()
-    logger.info("Publisher initialized successfully, MQTT connected: %s", publisher._mqtt.is_connected())
+
+def _maybe_attach_hmac(payload: dict, cmd: str, ts: Optional[int], sig: Optional[str]) -> None:
+    if sig and ts is None:
+        raise ValueError("sig requires ts")
+    secret = get_settings().node_default_secret
+    if ts is None and sig is None:
+        if not secret:
+            return
+        ts = int(time.time())
+    elif ts is not None and sig is None and not secret:
+        raise ValueError("sig requires node_default_secret")
+
+    if ts is not None:
+        payload["ts"] = ts
+    if sig is None and secret:
+        payload_str = canonical_json_payload(payload)
+        sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
+    if sig:
+        payload["sig"] = sig
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager для управления startup и shutdown событиями."""
+    global publisher
+    
+    # Startup
+    logger.info("Starting MQTT Bridge service")
     send_service_log(
         service="mqtt-bridge",
         level="info",
-        message="MQTT Bridge started",
-        context={"mqtt_connected": bool(publisher._mqtt.is_connected())},
+        message="MQTT Bridge service starting",
+        context={"stage": "startup"},
     )
-except Exception as e:
-    logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+    
+    try:
+        publisher = Publisher()
+        publisher.start()  # Запускаем подключение и фоновые ретраи
+        logger.info("Publisher initialized, MQTT connection in progress...")
+        send_service_log(
+            service="mqtt-bridge",
+            level="info",
+            message="MQTT Bridge Publisher initialized",
+            context={"mqtt_ready": publisher.is_ready()},
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+        send_service_log(
+            service="mqtt-bridge",
+            level="critical",
+            message=f"Failed to initialize Publisher: {e}",
+            context={"error": str(e)},
+        )
+        publisher = None
+    
+    yield
+    
+    # Shutdown
+    logger.info("Stopping MQTT Bridge service")
+    if publisher:
+        try:
+            publisher.stop()
+        except Exception as e:
+            logger.error(f"Error stopping Publisher: {e}", exc_info=True)
+    
+    logger.info("MQTT Bridge service stopped")
     send_service_log(
         service="mqtt-bridge",
-        level="critical",
-        message=f"Failed to initialize Publisher: {e}",
-        context={"error": str(e)},
+        level="info",
+        message="MQTT Bridge service stopped",
+        context={"stage": "shutdown"},
     )
-    publisher = None
+
+
+app = FastAPI(title="MQTT Bridge", version="0.1.3", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = set_trace_id_from_headers(request.headers, fallback_generate=True)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_trace_id()
+    if trace_id:
+        response.headers["X-Trace-Id"] = trace_id
+    return response
+
+
+def _ensure_trace_for_command(cmd_id: Optional[str]) -> None:
+    if cmd_id:
+        set_trace_id(cmd_id, allow_generate=False)
 
 
 def _auth(request: Request):
@@ -125,11 +204,25 @@ async def send_zone_command(
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/commands").inc()
+    
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     if not (req.greenhouse_uid and req.node_uid and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, node_uid and channel are required")
+    
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
-    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    _ensure_trace_for_command(cmd_id)
+    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
+    try:
+        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика
     hardware_id = req.hardware_id
     
@@ -152,9 +245,73 @@ async def send_zone_command(
         else:
             logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
     
-    publisher.publish_command(req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
-    await mark_command_sent(cmd_id)
-    return {"status": "ok", "data": {"command_id": cmd_id}}
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    if req.node_uid:
+        node_rows = await fetch(
+            """
+            SELECT lifecycle_state
+            FROM nodes
+            WHERE uid = $1
+            """,
+            req.node_uid,
+        )
+        if node_rows and len(node_rows) > 0:
+            lifecycle_state = node_rows[0].get("lifecycle_state")
+            # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+            node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
+    
+    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
+    try:
+        publisher.publish_command(
+            req.greenhouse_uid, 
+            zone_id, 
+            req.node_uid, 
+            req.channel, 
+            payload, 
+            hardware_id=hardware_id, 
+            zone_uid=zone_uid,
+            node_preconfig=node_preconfig
+        )
+        # Команда успешно опубликована - помечаем как sent
+        await mark_command_sent(cmd_id)
+        await record_simulation_event(
+            zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="sent",
+            message="Команда опубликована в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": req.node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+            },
+        )
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        await record_simulation_event(
+            zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="failed",
+            level="error",
+            message="Ошибка публикации команды в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": req.node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+                "error": str(e),
+            },
+        )
+        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
 @app.post("/bridge/nodes/{node_uid}/commands")
@@ -165,11 +322,25 @@ async def send_node_command(
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/commands").inc()
+    
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
+    
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
-    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    _ensure_trace_for_command(cmd_id)
+    payload = {"cmd": req.cmd, "cmd_id": cmd_id, "params": req.params or {}}
+    try:
+        _maybe_attach_hmac(payload, req.cmd, req.ts, req.sig)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика
     hardware_id = req.hardware_id
     
@@ -192,9 +363,72 @@ async def send_node_command(
         else:
             logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
     
-    publisher.publish_command(req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
-    await mark_command_sent(cmd_id)
-    return {"status": "ok", "data": {"command_id": cmd_id}}
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    node_rows = await fetch(
+        """
+        SELECT lifecycle_state
+        FROM nodes
+        WHERE uid = $1
+        """,
+        node_uid,
+    )
+    if node_rows and len(node_rows) > 0:
+        lifecycle_state = node_rows[0].get("lifecycle_state")
+        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
+    
+    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
+    try:
+        publisher.publish_command(
+            req.greenhouse_uid, 
+            req.zone_id, 
+            node_uid, 
+            req.channel, 
+            payload, 
+            hardware_id=hardware_id, 
+            zone_uid=zone_uid,
+            node_preconfig=node_preconfig
+        )
+        # Команда успешно опубликована - помечаем как sent
+        await mark_command_sent(cmd_id)
+        await record_simulation_event(
+            req.zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="sent",
+            message="Команда опубликована в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+            },
+        )
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        await record_simulation_event(
+            req.zone_id,
+            service="mqtt-bridge",
+            stage="command_publish",
+            status="failed",
+            level="error",
+            message="Ошибка публикации команды в MQTT",
+            payload={
+                "cmd_id": cmd_id,
+                "cmd": req.cmd,
+                "channel": req.channel,
+                "node_uid": node_uid,
+                "greenhouse_uid": req.greenhouse_uid,
+                "hardware_id": hardware_id,
+                "error": str(e),
+            },
+        )
+        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
 class FillDrainRequest(BaseModel):
@@ -324,6 +558,13 @@ async def publish_node_config(
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/config").inc()
     
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     # Получаем zone_id и gh_uid из запроса или из БД
     zone_id = req.zone_id
     gh_uid = req.greenhouse_uid
@@ -332,7 +573,7 @@ async def publish_node_config(
     if not zone_id or not gh_uid:
         rows = await fetch(
             """
-            SELECT n.zone_id, g.uid as gh_uid
+            SELECT n.zone_id, g.uid as gh_uid, n.lifecycle_state
             FROM nodes n
             LEFT JOIN zones z ON n.zone_id = z.id
             LEFT JOIN greenhouses g ON z.greenhouse_id = g.id
@@ -351,15 +592,26 @@ async def publish_node_config(
     if not gh_uid:
         raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
     
-    # Публикуем конфиг
-    if not publisher:
-        raise HTTPException(status_code=500, detail="Publisher not initialized")
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    node_rows = await fetch(
+        """
+        SELECT lifecycle_state
+        FROM nodes
+        WHERE uid = $1
+        """,
+        node_uid,
+    )
+    if node_rows and len(node_rows) > 0:
+        lifecycle_state = node_rows[0].get("lifecycle_state")
+        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
     
     try:
-        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}")
+        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}, node_preconfig: {node_preconfig}")
         # Преобразуем Pydantic модель в dict для публикации
         config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
-        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id)
+        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id, node_preconfig=node_preconfig)
         logger.info(f"Config published successfully for node {node_uid}")
         return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
     except Exception as e:
@@ -406,4 +658,3 @@ async def zone_calibrate_flow(
     finally:
         # Закрываем соединение MQTT для предотвращения утечек
         mqtt.stop()
-

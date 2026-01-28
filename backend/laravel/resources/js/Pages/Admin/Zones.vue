@@ -1,34 +1,81 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Admin · Zones</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Admin · Zones
+    </h1>
     <Card class="mb-4">
-      <div class="text-sm font-semibold mb-2">Create Zone</div>
-      <form class="grid grid-cols-1 md:grid-cols-4 gap-2" @submit.prevent="onCreate">
-        <input v-model="form.name" placeholder="Name" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-        <input v-model="form.description" placeholder="Description" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-        <select v-model="form.status" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
-          <option value="RUNNING">RUNNING</option>
-          <option value="PAUSED">PAUSED</option>
-          <option value="WARNING">WARNING</option>
-          <option value="ALARM">ALARM</option>
+      <div class="text-sm font-semibold mb-2">
+        Create Zone
+      </div>
+      <form
+        class="grid grid-cols-1 md:grid-cols-4 gap-2"
+        @submit.prevent="onCreate"
+      >
+        <input
+          v-model="form.name"
+          placeholder="Name"
+          class="input-field"
+        />
+        <input
+          v-model="form.description"
+          placeholder="Description"
+          class="input-field"
+        />
+        <select
+          v-model="form.status"
+          class="input-select"
+        >
+          <option value="RUNNING">
+            RUNNING
+          </option>
+          <option value="PAUSED">
+            PAUSED
+          </option>
+          <option value="WARNING">
+            WARNING
+          </option>
+          <option value="ALARM">
+            ALARM
+          </option>
         </select>
-        <select v-model="form.greenhouse_id" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
-          <option :value="null">Выберите теплицу</option>
-          <option v-for="gh in greenhouses" :key="gh.id" :value="gh.id">{{ gh.name }}</option>
+        <select
+          v-model="form.greenhouse_id"
+          class="input-select"
+        >
+          <option :value="null">
+            Выберите теплицу
+          </option>
+          <option
+            v-for="gh in greenhouses"
+            :key="gh.id"
+            :value="gh.id"
+          >
+            {{ gh.name }}
+          </option>
         </select>
         <div class="md:col-span-4">
-          <Button size="sm" type="submit">Create</Button>
+          <Button
+            size="sm"
+            type="submit"
+          >
+            Create
+          </Button>
         </div>
       </form>
     </Card>
 
     <Card>
-      <div class="text-sm font-semibold mb-2">Zones</div>
-      <ul class="text-sm text-neutral-300 space-y-1">
-        <li v-for="z in zones" :key="z.id">
-          {{ z.name }} — {{ z.status }}
-          <span v-if="z.description"> — {{ z.description }}</span>
-          <span v-if="z.greenhouse"> — {{ z.greenhouse.name }}</span>
+      <div class="text-sm font-semibold mb-2">
+        Zones
+      </div>
+      <ul class="text-sm text-[color:var(--text-muted)] space-y-1">
+        <li
+          v-for="z in zones"
+          :key="(z as Zone).id"
+        >
+          {{ (z as Zone).name }} — {{ (z as Zone).status }}
+          <span v-if="(z as Zone).description"> — {{ (z as Zone).description }}</span>
+          <span v-if="(z as Zone).greenhouse"> — {{ (z as Zone).greenhouse!.name }}</span>
         </li>
       </ul>
     </Card>
@@ -44,7 +91,6 @@ import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { usePageProps } from '@/composables/usePageProps'
-import { router } from '@inertiajs/vue3'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
@@ -52,6 +98,7 @@ import type { Greenhouse, Zone } from '@/types'
 
 interface PageProps {
   zones?: Zone[]
+  [key: string]: any
 }
 
 const { zones: zonesProp } = usePageProps<PageProps>(['zones'])
@@ -59,8 +106,8 @@ const zonesStore = useZonesStore()
 
 // Используем store для получения зон, с fallback на props
 const zones = computed(() => {
-  const storeZones = zonesStore.allZones
-  return storeZones.length > 0 ? storeZones : (zonesProp.value || [])
+  const storeZones = zonesStore.allZones as Zone[]
+  return storeZones.length > 0 ? storeZones : (zonesProp?.value || [])
 })
 const { showToast } = useToast()
 const { api } = useApi(showToast)
@@ -74,8 +121,8 @@ const form = reactive<{ name: string; description: string; status: string; green
 
 onMounted(async () => {
   // Инициализируем store из props
-  if (zonesProp.value) {
-    zonesStore.initFromProps({ zones: zonesProp.value })
+  if (zonesProp?.value) {
+    zonesStore.initFromProps({ zones: zonesProp.value as Zone[] })
   }
   
   // Загружаем теплицы
@@ -110,4 +157,3 @@ async function onCreate(): Promise<void> {
   }
 }
 </script>
-

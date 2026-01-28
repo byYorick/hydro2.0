@@ -1,35 +1,54 @@
 <template>
-  <div class="rounded-xl border border-neutral-800 overflow-hidden">
+  <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden">
     <table class="min-w-full text-sm">
-      <thead class="bg-neutral-900 text-neutral-300">
+      <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
         <tr>
-          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Channel</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Type</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Config</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Actions</th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Channel
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Type
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Config
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Actions
+          </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(channel, idx) in channels" :key="idx" class="odd:bg-neutral-950 even:bg-neutral-925">
-          <td class="px-3 py-2 border-b border-neutral-900">{{ channel.channel || channel.name || '-' }}</td>
-          <td class="px-3 py-2 border-b border-neutral-900 uppercase">{{ channel.type || '-' }}</td>
-          <td class="px-3 py-2 border-b border-neutral-900">
-            <div class="text-xs text-neutral-200">
+        <tr
+          v-for="(channel, idx) in (paginatedChannels || [])"
+          :key="idx"
+          class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
+        >
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+            {{ channel.channel || channel.name || '-' }}
+          </td>
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)] uppercase">
+            {{ channel.type || '-' }}
+          </td>
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+            <div class="text-xs text-[color:var(--text-primary)]">
               <span v-if="renderConfig(channel)">{{ renderConfig(channel) }}</span>
               <span v-else>-</span>
             </div>
-            <div v-if="channel.description || channel.config?.description" class="text-[11px] text-neutral-500">
+            <div
+              v-if="channel.description || channel.config?.description"
+              class="text-[11px] text-[color:var(--text-dim)]"
+            >
               {{ channel.description || channel.config?.description }}
             </div>
           </td>
-          <td class="px-3 py-2 border-b border-neutral-900">
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
             <div class="flex gap-2">
               <Button 
                 v-if="isPumpOrValve(channel)"
                 size="sm" 
                 variant="primary" 
-                @click="$emit('test', channel.channel || channel.name, channel.type)"
                 :disabled="testingChannels && testingChannels.has(channel.channel || channel.name)"
+                @click="$emit('test', channel.channel || channel.name, channel.type)"
               >
                 <span v-if="testingChannels && testingChannels.has(channel.channel || channel.name)">Тестирование...</span>
                 <span v-else>{{ getTestButtonLabel(channel.channel || channel.name, channel.type) }}</span>
@@ -45,21 +64,72 @@
             </div>
           </td>
         </tr>
-        <tr v-if="channels.length === 0">
-          <td colspan="4" class="px-3 py-4 text-center text-neutral-400">Нет каналов</td>
+        <tr v-if="!paginatedChannels || paginatedChannels.length === 0">
+          <td
+            colspan="4"
+            class="px-3 py-4 text-center text-[color:var(--text-dim)]"
+          >
+            Нет каналов
+          </td>
         </tr>
       </tbody>
     </table>
+    <Pagination
+      v-if="channels && channels.length > perPage"
+      v-model:current-page="currentPage"
+      v-model:per-page="perPage"
+      :total="channels ? channels.length : 0"
+    />
   </div>
 </template>
 
 <script setup>
+import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
+import Pagination from '@/Components/Pagination.vue'
 
 const props = defineProps({
   channels: { type: Array, default: () => [] }, // [{channel,type,metric,unit}]
   nodeType: { type: String, default: '' }, // Тип ноды: ph_node, ec_node, pump_node
   testingChannels: { type: Set, default: () => new Set() }, // Множество каналов, которые сейчас тестируются
+})
+
+defineEmits(['test'])
+
+const currentPage = ref(1)
+const perPage = ref(10)
+
+function clampCurrentPage(total) {
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  return validPage
+}
+
+watch([() => props.channels.length, perPage], () => {
+  if (props.channels.length > 0) {
+    clampCurrentPage(props.channels.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+const paginatedChannels = computed(() => {
+  // Защита от undefined/null
+  if (!props.channels || !Array.isArray(props.channels)) {
+    return []
+  }
+  
+  const total = props.channels.length
+  if (total === 0) return []
+  
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return props.channels.slice(start, end)
 })
 
 // Проверка, является ли канал насосом или клапаном
@@ -117,7 +187,6 @@ function renderConfig(channel) {
   const cfg = channel.config || {}
   const metric = channel.metric || cfg.metric
   const actuatorType = channel.actuator_type || cfg.actuator_type
-  const gpio = channel.gpio ?? cfg.gpio
   const parts = []
 
   if (metric) {
@@ -126,10 +195,6 @@ function renderConfig(channel) {
 
   if (actuatorType) {
     parts.push(actuatorType)
-  }
-
-  if (gpio !== undefined && gpio !== null && gpio !== '') {
-    parts.push(`GPIO ${gpio}`)
   }
 
   if (parts.length === 0 && channel.unit) {

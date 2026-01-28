@@ -1,0 +1,9 @@
+{
+  "cmd_id": "cmd-12345",
+  "cmd": "dose",
+  "params": {
+    "ml": 1.2
+  },
+  "ts": 1737979200,
+  "sig": "deadbeef"
+}

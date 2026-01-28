@@ -48,8 +48,10 @@ rule_files:
   - '/etc/prometheus/alerts.yml'
 
 # Alertmanager конфигурация
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-          - 'alertmanager:9093'
+# Закомментировано, так как Alertmanager не всегда запущен в dev окружении
+# Раскомментируйте, если Alertmanager запущен
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - 'alertmanager:9093'

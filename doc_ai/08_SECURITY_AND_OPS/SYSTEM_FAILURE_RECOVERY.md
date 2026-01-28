@@ -5,6 +5,10 @@
 Документ описывает систему восстановления после сбоев (Failure Recovery) в архитектуре 2.0.
 Она охватывает все уровни: ESP32 узлы, MQTT, Python Scheduler, Laravel, БД, AI, UI.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Общая идеология восстановления 2.0

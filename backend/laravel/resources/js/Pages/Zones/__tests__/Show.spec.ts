@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ref } from 'vue'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -35,6 +36,52 @@ vi.mock('@/Pages/Zones/ZoneTelemetryChart.vue', () => ({
   },
 }))
 
+vi.mock('@/Pages/Zones/Tabs/ZoneTelemetryTab.vue', () => ({
+  default: {
+    name: 'ZoneTelemetryTab',
+    props: ['chartDataPh', 'chartDataEc', 'chartTimeRange'],
+    emits: ['timeRangeChange'],
+    components: {
+      ZoneTelemetryChart: {
+        name: 'ZoneTelemetryChart',
+        props: ['title', 'data', 'seriesName', 'timeRange'],
+        emits: ['time-range-change'],
+        template: '<div class="zone-chart">{{ title }}</div>',
+      },
+    },
+    template: `
+      <div class="zone-telemetry-tab">
+        <ZoneTelemetryChart
+          title="pH"
+          :data="chartDataPh"
+          seriesName="pH"
+          :timeRange="chartTimeRange"
+          @time-range-change="$emit('timeRangeChange', $event)"
+        />
+        <ZoneTelemetryChart
+          title="EC"
+          :data="chartDataEc"
+          seriesName="EC"
+          :timeRange="chartTimeRange"
+          @time-range-change="$emit('timeRangeChange', $event)"
+        />
+      </div>
+    `,
+  },
+}))
+
+vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
+  name: 'MultiSeriesTelemetryChart',
+  __isTeleport: false,
+  __isKeepAlive: false,
+  default: {
+    name: 'MultiSeriesTelemetryChart',
+    props: ['title', 'series', 'timeRange'],
+    emits: ['time-range-change'],
+    template: '<div class="multi-chart">Multi Chart</div>',
+  },
+}))
+
 vi.mock('@/Components/PhaseProgress.vue', () => ({
   default: { 
     name: 'PhaseProgress', 
@@ -47,7 +94,13 @@ vi.mock('@/Components/ZoneDevicesVisualization.vue', () => ({
   default: { 
     name: 'ZoneDevicesVisualization', 
     props: ['devices', 'zone'],
-    template: '<div class="zone-devices">Devices</div>',
+    template: `
+      <div class="zone-devices">
+        <div v-for="device in devices" :key="device.id">
+          {{ device.uid }} {{ device.status }}
+        </div>
+      </div>
+    `,
   },
 }))
 
@@ -74,15 +127,6 @@ vi.mock('@/Components/ZoneActionModal.vue', () => ({
     props: ['show', 'zone', 'action', 'command'],
     emits: ['close', 'confirm'],
     template: '<div v-if="show" class="zone-action-modal">Action</div>',
-  },
-}))
-
-vi.mock('@/Components/AttachRecipeModal.vue', () => ({
-  default: { 
-    name: 'AttachRecipeModal', 
-    props: ['show', 'zone'],
-    emits: ['close', 'attached'],
-    template: '<div v-if="show" class="attach-recipe-modal">Attach Recipe</div>',
   },
 }))
 
@@ -117,6 +161,24 @@ const sampleZone = {
   name: 'Test Zone',
   status: 'RUNNING',
   description: 'Test Description',
+  activeGrowCycle: {
+    id: 101,
+    status: 'RUNNING',
+    started_at: '2025-01-27T10:00:00Z',
+    recipeRevision: {
+      recipe_id: 1,
+      recipe: { id: 1, name: 'Test Recipe' },
+    },
+    currentPhase: {
+      id: 11,
+      phase_index: 0,
+      name: 'Phase 1',
+    },
+    phases: [
+      { id: 11, phase_index: 0, name: 'Phase 1', duration_hours: 24 },
+      { id: 12, phase_index: 1, name: 'Phase 2', duration_hours: 24 },
+    ],
+  },
   recipeInstance: {
     recipe: { id: 1, name: 'Test Recipe' },
     current_phase_index: 0,
@@ -141,6 +203,7 @@ const sampleEvents = [
 
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPostMock = vi.hoisted(() => vi.fn())
+const fetchHistoryMock = vi.hoisted(() => vi.fn())
 
 vi.mock('axios', () => {
   const axiosInstance = {
@@ -189,50 +252,72 @@ vi.mock('@inertiajs/vue3', () => ({
   },
 }))
 
-vi.mock('@/stores/zones', () => ({
-  useZonesStore: () => ({
-    allZones: [],
-    cacheVersion: 0,
-    initFromProps: vi.fn(),
-    upsert: vi.fn(),
-    remove: vi.fn(),
-    invalidateCache: vi.fn(),
-    zoneById: vi.fn((id: number) => {
-      // Возвращаем undefined для любых ID в тестах, так как store пустой
-      return undefined
-    }),
+const zonesStoreMock = {
+  allZones: [],
+  cacheVersion: 0,
+  initFromProps: vi.fn(),
+  upsert: vi.fn(),
+  remove: vi.fn(),
+  invalidateCache: vi.fn(),
+  zoneById: vi.fn((id: number) => {
+    // Возвращаем зону из props, если ID совпадает
+    const props = usePageMockInstance.props
+    if (id === props.zoneId || id === props.zone?.id) {
+      return props.zone
+    }
+    return undefined
   }),
+}
+
+vi.mock('@/stores/zones', () => ({
+  useZonesStore: () => zonesStoreMock,
 }))
 
 // Моки для composables
 vi.mock('@/composables/useHistory', () => ({
   useHistory: () => ({
-    loadHistory: vi.fn(),
+    addToHistory: vi.fn(),
+    removeFromHistory: vi.fn(),
+    clearHistory: vi.fn(),
+    getRecentHistory: vi.fn(() => []),
+    isInHistory: vi.fn(() => false),
     history: { value: [] },
-    loading: { value: false },
+    zoneHistory: { value: [] },
+    deviceHistory: { value: [] },
   }),
 }))
 
-vi.mock('@/composables/useCommands', () => ({
-  useCommands: () => ({
-    sendCommand: vi.fn(),
-    loading: { value: {} },
-  }),
-}))
+vi.mock('@/composables/useCommands', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ref } = require('vue')
+  return {
+    useCommands: () => ({
+      sendZoneCommand: vi.fn(),
+      reloadZoneAfterCommand: vi.fn(),
+      updateCommandStatus: vi.fn(),
+      pendingCommands: ref([]), // Массив для совместимости с .find()
+      loading: ref(false),
+      error: ref(null),
+    }),
+  }
+})
 
 vi.mock('@/composables/useTelemetry', () => ({
   useTelemetry: () => ({
     telemetry: { value: null },
     loading: { value: false },
     refresh: vi.fn(),
+    fetchHistory: fetchHistoryMock,
   }),
 }))
 
 vi.mock('@/composables/useZones', () => ({
   useZones: () => ({
+    fetchZone: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
     nextPhase: vi.fn(),
+    reloadZone: vi.fn(),
     loading: { value: {} },
   }),
 }))
@@ -248,6 +333,7 @@ vi.mock('@/composables/useApi', () => ({
 
 vi.mock('@/composables/useWebSocket', () => ({
   useWebSocket: () => ({
+    subscribeToZoneCommands: vi.fn(() => () => {}),
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
     connectionState: { value: 'connected' },
@@ -262,9 +348,28 @@ vi.mock('@/composables/useErrorHandler', () => ({
 
 vi.mock('@/composables/useOptimisticUpdate', () => ({
   useOptimisticUpdate: () => ({
+    performUpdate: vi.fn(async (_id: string, options: any) => {
+      if (options?.applyUpdate) options.applyUpdate()
+      if (options?.syncWithServer) {
+        const result = await options.syncWithServer()
+        if (options?.onSuccess) options.onSuccess(result)
+        return result
+      }
+      if (options?.onSuccess) options.onSuccess({})
+      return {}
+    }),
     update: vi.fn(),
   }),
   createOptimisticZoneUpdate: vi.fn(),
+}))
+
+vi.mock('@/composables/useModal', () => ({
+  useModal: () => ({
+    open: vi.fn(),
+    close: vi.fn(),
+    toggle: vi.fn(),
+    isModalOpen: vi.fn(() => false),
+  }),
 }))
 
 vi.mock('@/composables/useOptimizedUpdates', () => ({
@@ -286,22 +391,57 @@ vi.mock('@/composables/useModal', () => ({
   useModal: () => ({
     open: vi.fn(),
     close: vi.fn(),
-    isOpen: (key: string) => ({ value: false }),
+    toggle: vi.fn(),
+    isModalOpen: vi.fn(() => false),
+    isOpen: { value: false },
+    closeAll: vi.fn(),
   }),
 }))
 
-vi.mock('@/composables/useLoading', () => ({
-  useLoading: () => ({
-    loading: { value: {} },
-    setLoading: vi.fn(),
-    clearLoading: vi.fn(),
-  }),
-}))
+vi.mock('@/composables/useLoading', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ref } = require('vue')
+  return {
+    useLoading: (initialState?: any) => {
+      const defaultState = {
+        irrigate: false,
+        nextPhase: false,
+        cycles: {
+          PH_CONTROL: false,
+          EC_CONTROL: false,
+          IRRIGATION: false,
+          LIGHTING: false,
+          CLIMATE: false,
+        },
+      }
+      const state = initialState || defaultState
+      // Используем настоящий ref из Vue
+      const loading = ref(state)
+      return {
+        loading,
+        setLoading: vi.fn(),
+        startLoading: vi.fn(),
+        stopLoading: vi.fn(),
+        clearLoading: vi.fn(),
+        resetLoading: vi.fn(),
+        isLoading: vi.fn(() => false),
+        withLoading: vi.fn((fn: any) => fn()),
+      }
+    },
+  }
+})
 
 vi.mock('@/composables/usePageProps', () => ({
-  usePageProps: () => ({
-    props: usePageMockInstance.props,
-  }),
+  usePageProps: (keys?: string[]) => {
+    const props = usePageMockInstance.props
+    const result: any = {}
+    if (keys) {
+      keys.forEach(key => {
+        result[key] = { value: props[key] }
+      })
+    }
+    return result
+  },
 }))
 
 vi.mock('@/utils/logger', () => ({
@@ -371,6 +511,17 @@ describe('Zones/Show.vue', () => {
   beforeEach(() => {
     axiosGetMock.mockClear()
     axiosPostMock.mockClear()
+    fetchHistoryMock.mockClear()
+    usePageMockInstance.props.auth.user.role = 'operator'
+    
+    // Мокируем window.location для zoneId computed
+    Object.defineProperty(window, 'location', {
+      value: {
+        pathname: '/zones/1',
+      },
+      writable: true,
+      configurable: true,
+    })
     
     // Моки для загрузки графиков - возвращаем правильную структуру данных
     axiosGetMock.mockImplementation((url: string, config?: any) => {
@@ -384,6 +535,12 @@ describe('Zones/Show.vue', () => {
       })
     })
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
+    
+    // Мок для fetchHistory
+    fetchHistoryMock.mockResolvedValue([
+      { ts: '2025-01-27T10:00:00Z', value: 5.8 },
+      { ts: '2025-01-27T11:00:00Z', value: 5.9 },
+    ])
   })
 
   it('отображает информацию о зоне', () => {
@@ -418,10 +575,11 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.exists()).toBe(true)
     
     await new Promise(resolve => setTimeout(resolve, 200))
+    await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем, что графики загружают данные
-    expect(axiosGetMock).toHaveBeenCalled()
-    // Проверяем, что компонент отрендерился (моки компонентов могут не находиться через findAllComponents)
+    // Проверяем, что fetchHistory был вызван для загрузки данных графиков
+    expect(fetchHistoryMock).toHaveBeenCalled()
+    // Проверяем, что компонент отрендерился
     expect(wrapper.html()).toBeTruthy()
   })
 
@@ -456,7 +614,8 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toContain('Климат')
   })
 
-  it('показывает кнопки управления только для операторов и админов', () => {
+  it('показывает кнопки управления для агронома', () => {
+    usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
@@ -470,15 +629,18 @@ describe('Zones/Show.vue', () => {
   it('загружает графики с правильными параметрами времени', async () => {
     mount(ZonesShow)
     
+    await new Promise(resolve => setTimeout(resolve, 200))
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    expect(axiosGetMock).toHaveBeenCalled()
-    const historyCalls = axiosGetMock.mock.calls.filter((call: any) => call[0]?.includes('/telemetry/history'))
-    expect(historyCalls.length).toBeGreaterThan(0)
+    // Проверяем, что fetchHistory был вызван
+    expect(fetchHistoryMock).toHaveBeenCalled()
+    const calls = fetchHistoryMock.mock.calls
+    expect(calls.length).toBeGreaterThan(0)
     
-    // Проверяем, что вызов содержит параметр metric
-    const firstCall = historyCalls[0]
-    expect(firstCall[0]).toContain('/telemetry/history')
+    // Проверяем, что вызов содержит правильные параметры
+    const firstCall = calls[0]
+    expect(firstCall[0]).toBe(1) // zoneId
+    expect(firstCall[1]).toMatch(/^(ph|ec|PH|EC)$/i) // metric (может быть в любом регистре)
   })
 
   it('загружает данные истории для графиков при монтировании', async () => {
@@ -486,15 +648,15 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.exists()).toBe(true)
     
     await new Promise(resolve => setTimeout(resolve, 200))
+    await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем, что был вызван axios для загрузки данных
-    // Моки могут не вызвать реальную функцию, поэтому проверяем что компонент инициализировался
-    expect(axiosGetMock).toHaveBeenCalled()
+    // Проверяем, что fetchHistory был вызван для загрузки данных графиков
+    expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
-  it('отправляет команду при клике на Pause/Resume', async () => {
+  it('отображает управление циклом для агронома', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
-    
+    usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -526,13 +688,12 @@ describe('Zones/Show.vue', () => {
     
     // Проверяем что компонент инициализировался
     expect(wrapper.text()).toBeTruthy()
-    // Моки асинхронных компонентов могут не работать, поэтому просто проверяем инициализацию
-    expect(axiosGetMock).toHaveBeenCalled()
+    // Проверяем, что fetchHistory был вызван (для загрузки графиков)
+    expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
   it('обрабатывает ошибки загрузки графиков', async () => {
-    axiosGetMock.mockImplementationOnce(() => Promise.reject(new Error('Network error')))
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchHistoryMock.mockRejectedValueOnce(new Error('Network error'))
     
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
@@ -541,9 +702,8 @@ describe('Zones/Show.vue', () => {
     
     // Проверяем, что ошибка была обработана (компонент не упал)
     expect(wrapper.exists()).toBe(true)
-    expect(axiosGetMock).toHaveBeenCalled()
-    
-    consoleErrorSpy.mockRestore()
+    // Проверяем, что fetchHistory был вызван (даже если произошла ошибка)
+    expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
   it('правильно вычисляет вариант статуса', () => {
@@ -587,4 +747,3 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toBeTruthy()
   })
 })
-

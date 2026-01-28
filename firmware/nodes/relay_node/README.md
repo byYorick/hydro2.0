@@ -32,7 +32,7 @@
 2. **Wi-Fi Manager** - инициализация Wi-Fi
 3. **I2C Buses** - инициализация I²C для OLED (если используется)
 4. **OLED UI** - инициализация OLED дисплея (опционально)
-5. **Relay Driver** - инициализация драйвера реле из NodeConfig
+5. **Relay Driver** - инициализация драйвера реле по встроенной карте каналов (см. `relay_node_hw_map.h`)
 6. **MQTT Manager** - инициализация MQTT клиента
 7. **Finalization** - запуск MQTT и установка OLED в нормальный режим
 
@@ -40,7 +40,7 @@
 
 ### Актуаторы (реле)
 
-Каналы реле настраиваются через NodeConfig. Примеры каналов:
+Состав каналов фиксирован в прошивке (карта `relay_node_hw_map.h`) и не редактируется через сервер. Примеры каналов:
 
 - `pump_transfer` - перекачивающий насос
 - `pump_drain` - дренажный насос
@@ -54,18 +54,20 @@
 
 Все команды обрабатываются через `node_framework` и отправляются на топик:
 ```
-gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
+hydro/{gh_uid}/{zone_uid}/{node_id}/{channel}/command
 ```
 
-### set_state
+### set_relay
 
 Установка состояния реле (OPEN/CLOSED):
 
 ```json
 {
-  "cmd": "set_state",
+  "cmd": "set_relay",
   "cmd_id": "cmd-123",
-  "state": 1
+  "params": {
+    "state": 1
+  }
 }
 ```
 
@@ -95,7 +97,8 @@ gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
 ```json
 {
   "cmd": "toggle",
-  "cmd_id": "cmd-124"
+  "cmd_id": "cmd-124",
+  "params": {}
 }
 ```
 
@@ -190,48 +193,7 @@ gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
 
 ## Конфигурация
 
-Каналы реле настраиваются через NodeConfig (отправляется через MQTT):
-
-```json
-{
-  "node_id": "nd-relay-1",
-  "gh_uid": "gh-1",
-  "zone_uid": "zn-4",
-  "channels": [
-    {
-      "name": "pump_transfer",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 4,
-      "fail_safe_mode": "NO"
-    },
-    {
-      "name": "pump_drain",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 5,
-      "fail_safe_mode": "NO"
-    },
-    {
-      "name": "valve_tank1_in",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 18,
-      "fail_safe_mode": "NC"
-    }
-  ]
-}
-```
-
-**Параметры канала:**
-- `name` (string): имя канала (уникальное в рамках ноды)
-- `type` (string): должен быть "ACTUATOR"
-- `actuator_type` (string): должен быть "RELAY"
-- `gpio` (integer): GPIO пин для управления реле (0-39 для ESP32, 0-21 для ESP32C3)
-- `fail_safe_mode` (string, опционально): 
-  - "NO" (Normaly-Open) - нормально разомкнутое реле
-  - "NC" (Normaly-Closed) - нормально замкнутое реле
-  - По умолчанию: "NO"
+Каналы реле полностью зашиты в прошивке (см. `relay_node_hw_map.h`) и не передаются сервером. NodeConfig от сервера содержит только идентификаторы теплицы/зоны, Wi‑Fi/MQTT параметры и прочие общие настройки, без описания каналов.
 
 ## Watchdog таймер
 
@@ -315,9 +277,8 @@ idf.py monitor
 
 ## Документация
 
-- **Архитектура нод**: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- **MQTT спецификация**: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- **NodeConfig**: `firmware/NODE_CONFIG_SPEC.md`
+- **Архитектура нод**: `../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- **MQTT спецификация**: `../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - **Relay Driver**: `firmware/nodes/common/components/relay_driver/include/relay_driver.h`
 
 ## Известные ограничения
@@ -330,36 +291,20 @@ idf.py monitor
 
 ## Примеры использования
 
-### Инициализация каналов через NodeConfig
-
-```json
-{
-  "channels": [
-    {
-      "name": "pump_transfer",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 4,
-      "fail_safe_mode": "NO"
-    }
-  ]
-}
-```
-
 ### Управление реле через команды
 
 ```bash
 # Включить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"set_state","cmd_id":"cmd-001","state":1}'
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
+  -m '{"cmd":"set_relay","cmd_id":"cmd-001","params":{"state":1}}'
 
 # Выключить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"set_state","cmd_id":"cmd-002","state":0}'
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
+  -m '{"cmd":"set_relay","cmd_id":"cmd-002","params":{"state":0}}'
 
 # Переключить реле
-mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump_transfer" \
-  -m '{"cmd":"toggle","cmd_id":"cmd-003"}'
+mosquitto_pub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/pump_transfer/command" \
+  -m '{"cmd":"toggle","cmd_id":"cmd-003","params":{}}'
 ```
 
 ## Отладка
@@ -376,12 +321,12 @@ mosquitto_pub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/pump
 
 ```bash
 # Подписка на STATUS сообщения
-mosquitto_sub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/status"
+mosquitto_sub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/status"
 ```
 
 ### Проверка команд
 
 ```bash
 # Подписка на ответы команд
-mosquitto_sub -h 192.168.1.10 -t "gh/gh-1/zone/zn-4/node/nd-relay-1/command/+/response"
+mosquitto_sub -h 192.168.1.10 -t "hydro/gh-1/zn-4/nd-relay-1/+/command_response"
 ```

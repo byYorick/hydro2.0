@@ -12,7 +12,7 @@ Backend-сервисы для гидропонной системы управл
 
 ### Быстрые гайды
 - **Мониторинг:** `MONITORING_QUICK_START.md` - быстрый старт
-- **Анализ логов:** `LOGS_ANALYSIS.md`
+- **Просмотр логов:** `docs/LOGS_VIEWING.md`
 
 ### История изменений
 - **Changelog:** `CHANGELOG.md` - важные изменения
@@ -28,12 +28,12 @@ Laravel выполняет роль API Gateway и предоставляет:
 
 ### Python-сервисы
 - `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
-- `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL (метрики: 9300)
+- `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL (метрики: 9301)
 - `automation-engine` — контроллер зон, проверка targets, публикация команд (метрики: 9401)
 - `scheduler` — расписания поливов/света из recipe phases
 - `device-registry` — реестр устройств (статус: PLANNED)
 
-**Документация сервисов:** `services/*/README.md`
+**Документация сервисов:** `services/<service>/README.md`
 
 ## Мониторинг
 
@@ -94,13 +94,13 @@ Laravel выполняет роль API Gateway и предоставляет:
 
 ### Актуальные документы
 - `MONITORING_QUICK_START.md` - быстрый старт мониторинга
-- `LOGS_ANALYSIS.md` - анализ логов Grafana и БД
+- `docs/LOGS_VIEWING.md` - просмотр логов Grafana и БД
 - `CHANGELOG.md` - история важных изменений
 
 ### Документация в подкаталогах
 - `docs/` - документация по мониторингу, развертыванию, архитектуре
 - `laravel/docs/` - документация Laravel (WebSocket, тестирование, оптимизация)
-- `services/*/README.md` - документация Python-сервисов
+- `services/<service>/README.md` - документация Python-сервисов
 
 ### Примечание
 Временные отчеты об исправлениях были удалены. Важные изменения всегда отражаются в `CHANGELOG.md`.
@@ -133,4 +133,3 @@ docker-compose -f docker-compose.dev.yml exec mqtt-bridge pytest
 ---
 
 **Полная документация проекта:** `../doc_ai/INDEX.md`
-

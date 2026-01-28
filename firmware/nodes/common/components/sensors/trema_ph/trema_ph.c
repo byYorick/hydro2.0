@@ -21,36 +21,64 @@ static const uint8_t kExpectedModelId = 0x1A;
 static bool use_stub_values = false;
 static float stub_ph = 6.5f;  // Neutral pH
 
+static bool s_i2c_logs_suppressed = false;
+static bool s_missing_reported = false;
+static esp_err_t s_last_missing_err = ESP_OK;
+
 // Buffer for I2C communication
 static uint8_t data[4];
 
 // Sensor initialization flag
 static bool sensor_initialized = false;
 
+static void trema_ph_suppress_i2c_logs(void)
+{
+    if (s_i2c_logs_suppressed) {
+        return;
+    }
+
+    // Убираем спам от esp-idf i2c.master, оставляем верхнеуровневые сообщения
+    esp_log_level_set("i2c.master", ESP_LOG_NONE);
+    s_i2c_logs_suppressed = true;
+}
+
+static void trema_ph_report_missing(esp_err_t err)
+{
+    if (!s_missing_reported || err != s_last_missing_err) {
+        ESP_LOGW(TAG, "pH sensor not connected (err=%s, code=0x%x)", esp_err_to_name(err), err);
+        s_missing_reported = true;
+        s_last_missing_err = err;
+    }
+}
+
 bool trema_ph_init(void)
 {
     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
-        ESP_LOGE(TAG, "I²C bus 1 not initialized");
+        trema_ph_suppress_i2c_logs();
+        trema_ph_report_missing(ESP_ERR_INVALID_STATE);
         return false;
     }
     
     // Try to communicate with the sensor
     // Read the model register to verify sensor presence
     uint8_t reg_model = REG_MODEL;
+    trema_ph_suppress_i2c_logs();
     esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, data, 1, 1000);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to read from pH sensor: %s", esp_err_to_name(err));
+        trema_ph_report_missing(err);
         return false;
     }
     
     // Check if we got a valid response
     if (data[0] != kExpectedModelId) {
-        ESP_LOGW(TAG, "Invalid pH sensor model ID: 0x%02X", data[0]);
+        trema_ph_report_missing(ESP_ERR_INVALID_RESPONSE);
         return false;
     }
     
     sensor_initialized = true;
     use_stub_values = false;
+    s_missing_reported = false;
+    s_last_missing_err = ESP_OK;
     ESP_LOGI(TAG, "pH sensor initialized successfully");
     return true;
 }
@@ -63,7 +91,6 @@ bool trema_ph_read(float *ph)
     
     if (!sensor_initialized) {
         if (!trema_ph_init()) {
-            ESP_LOGD(TAG, "PH sensor not connected, returning stub value");
             *ph = stub_ph;
             use_stub_values = true;
             return false;
@@ -71,7 +98,7 @@ bool trema_ph_read(float *ph)
     }
     
     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
-        ESP_LOGE(TAG, "I²C bus 1 not initialized");
+        trema_ph_report_missing(ESP_ERR_INVALID_STATE);
         *ph = stub_ph;
         use_stub_values = true;
         return false;
@@ -98,7 +125,7 @@ bool trema_ph_read(float *ph)
     }
     
     if (err != ESP_OK) {
-        ESP_LOGD(TAG, "PH sensor read failed: %s, returning stub value", esp_err_to_name(err));
+        trema_ph_report_missing(err);
         *ph = stub_ph;
         use_stub_values = true;
         
@@ -122,13 +149,15 @@ bool trema_ph_read(float *ph)
     
     // Validate pH range
     if (*ph < 0.0f || *ph > 14.0f) {
-        ESP_LOGW(TAG, "Invalid pH value: %.3f, using stub value", *ph);
+        trema_ph_report_missing(ESP_ERR_INVALID_RESPONSE);
         *ph = stub_ph;
         use_stub_values = true;
         return false;
     }
     
     use_stub_values = false;
+    s_missing_reported = false;
+    s_last_missing_err = ESP_OK;
     
     // Обновление метрик диагностики (если доступно)
     #ifdef __has_include
@@ -376,4 +405,3 @@ bool trema_ph_log_connection_status(void)
     ESP_LOGW(TAG, "I²C bus 1 responded with unexpected model_id=0x%02X", model_id);
     return false;
 }
-

@@ -22,40 +22,48 @@
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
+#include "node_state_manager.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_mac.h"
-#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char *TAG = "relay_node_init";
+
+// Вспомогательная функция для инициализации I2C шины
+static esp_err_t init_i2c_bus_if_needed(void) {
+    if (i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        return ESP_OK; // Уже инициализирован
+    }
+    
+    ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED)...");
+    i2c_bus_config_t i2c0_config = {
+        .sda_pin = RELAY_NODE_I2C_BUS_0_SDA,
+        .scl_pin = RELAY_NODE_I2C_BUS_0_SCL,
+        .clock_speed = RELAY_NODE_I2C_CLOCK_SPEED,
+        .pullup_enable = true
+    };
+    
+    esp_err_t err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d", 
+                 i2c0_config.sda_pin, i2c0_config.scl_pin);
+    } else {
+        ESP_LOGW(TAG, "Failed to initialize I2C bus 0: %s (OLED may not be available)", esp_err_to_name(err));
+    }
+    
+    return err;
+}
 
 // Setup mode function
 void relay_node_run_setup_mode(void) {
     ESP_LOGI(TAG, "Starting setup mode for RELAY node");
     
     // Инициализируем I2C шину для OLED перед запуском setup mode
-    // Это нужно, чтобы OLED мог работать в setup mode
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGI(TAG, "Initializing I2C bus 0 for OLED in setup mode...");
-        i2c_bus_config_t i2c0_config = {
-            .sda_pin = RELAY_NODE_I2C_BUS_0_SDA,
-            .scl_pin = RELAY_NODE_I2C_BUS_0_SCL,
-            .clock_speed = 100000,
-            .pullup_enable = true
-        };
-        esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
-        if (i2c_err == ESP_OK) {
-            ESP_LOGI(TAG, "I2C bus 0 initialized for setup mode OLED");
-        } else {
-            ESP_LOGW(TAG, "Failed to initialize I2C bus 0 for setup mode: %s", esp_err_to_name(i2c_err));
-        }
-    }
+    init_i2c_bus_if_needed();
     
     setup_portal_full_config_t config = {
         .node_type_prefix = "RELAY",
@@ -79,38 +87,43 @@ static void update_oled_connections(void) {
         return;
     }
     
-    // Получение текущей модели и обновление только статуса соединений
+    // Обновление модели OLED UI - обновляем только изменяемые поля
     oled_ui_model_t model = {0};
+    
+    // Обновляем соединения
     model.connections.wifi_connected = conn_status.wifi_connected;
     model.connections.mqtt_connected = conn_status.mqtt_connected;
     model.connections.wifi_rssi = conn_status.wifi_rssi;
-    // Глушим "I2C error" на релейной ноде и показываем базовый статус
+    
+    // Статус сенсоров для релейной ноды (нет I2C датчиков)
     model.sensor_status.has_error = false;
     model.sensor_status.i2c_connected = true;
     model.sensor_status.using_stub = false;
-    memset(model.sensor_status.error_msg, 0, sizeof(model.sensor_status.error_msg));
     model.alert = false;
-    memset(model.alert_message, 0, sizeof(model.alert_message));
 
-    // WiFi/MQTT параметры для OLED
+    // WiFi/MQTT параметры
     config_storage_wifi_t wifi_cfg = {0};
     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
         strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
+        model.wifi_ssid[sizeof(model.wifi_ssid) - 1] = '\0';
     }
     config_storage_mqtt_t mqtt_cfg = {0};
     if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
         strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
+        model.mqtt_host[sizeof(model.mqtt_host) - 1] = '\0';
         model.mqtt_port = mqtt_cfg.port;
     }
 
-    // Теплица/зона на экране: используем UID, если названия не храним
+    // GH/Zone идентификаторы
     char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
     char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
     if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
         strncpy(model.gh_name, gh_uid, sizeof(model.gh_name) - 1);
+        model.gh_name[sizeof(model.gh_name) - 1] = '\0';
     }
     if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
         strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
+        model.zone_name[sizeof(model.zone_name) - 1] = '\0';
     }
     
     oled_ui_update_model(&model);
@@ -120,58 +133,14 @@ static void update_oled_connections(void) {
  * @brief Публикация node_hello сообщения для регистрации узла
  */
 static void relay_node_publish_hello(void) {
-    // Получаем MAC адрес как hardware_id
-    uint8_t mac[6] = {0};
-    esp_err_t err = esp_efuse_mac_get_default(mac);
+    const char *capabilities[] = {"relay", "water_storage"};
+    esp_err_t err = node_utils_publish_node_hello("relay", capabilities, 2);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
-        return;
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish node_hello");
+    } else {
+        ESP_LOGI(TAG, "node_hello published successfully");
     }
-    
-    // Формируем hardware_id из MAC адреса
-    char hardware_id[32];
-    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    
-    // Получаем версию прошивки
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
-    // Создаем JSON сообщение node_hello
-    cJSON *hello = cJSON_CreateObject();
-    if (!hello) {
-        ESP_LOGE(TAG, "Failed to create node_hello JSON");
-        return;
-    }
-    
-    cJSON_AddStringToObject(hello, "message_type", "node_hello");
-    cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
-    cJSON_AddStringToObject(hello, "node_type", "relay");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
-    
-    // Добавляем capabilities
-    cJSON *capabilities = cJSON_CreateArray();
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("relay"));
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("water_storage"));
-    cJSON_AddItemToObject(hello, "capabilities", capabilities);
-    
-    // Публикуем в общий топик для регистрации
-    char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s", hardware_id);
-        
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-        }
-        
-        free(json_str);
-    }
-    
-    cJSON_Delete(hello);
 }
 
 void relay_node_mqtt_connection_cb(bool connected, void *user_ctx) {
@@ -195,6 +164,9 @@ void relay_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();
+
+        // Публикуем текущий NodeConfig на сервер
+        node_utils_publish_config_report();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - relay_node is offline");
     }
@@ -228,6 +200,7 @@ esp_err_t relay_node_init_components(void) {
     esp_err_t err = relay_node_init_step_config_storage(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 1 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "config_storage", err, "Config storage initialization failed");
         return err;
     }
     
@@ -240,37 +213,35 @@ esp_err_t relay_node_init_components(void) {
         return ESP_ERR_NOT_FOUND; // setup mode will reboot device
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 2 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "wifi_manager", err, "WiFi manager initialization failed");
         return err;
     }
     
     // Регистрация Wi-Fi callback и подключение
     wifi_manager_register_connection_cb(relay_node_wifi_connection_cb, NULL);
     
-    config_storage_wifi_t wifi_cfg;
-    if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
-        wifi_manager_config_t wifi_config;
-        static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
-        static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
-        
-        strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
-        wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
-        strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
-        wifi_password[sizeof(wifi_password) - 1] = '\0';
-        wifi_config.ssid = wifi_ssid;
-        wifi_config.password = wifi_password;
-        ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
-        
+    wifi_manager_config_t wifi_config;
+    static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
+    static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
+    
+    err = node_utils_init_wifi_config(&wifi_config, wifi_ssid, wifi_password);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_config.ssid);
         err = wifi_manager_connect(&wifi_config);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_WARNING, "wifi", err, "Failed to connect to Wi-Fi, will retry");
             // Continue - Wi-Fi will try to reconnect automatically
         }
+    } else {
+        ESP_LOGW(TAG, "WiFi config not found, will retry later");
     }
     
     // [Step 3/7] I2C Buses
     err = relay_node_init_step_i2c(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 3 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "i2c_bus", err, "I2C bus initialization failed");
         // Continue - I2C может быть не критичен
     }
     
@@ -287,6 +258,7 @@ esp_err_t relay_node_init_components(void) {
         ESP_LOGW(TAG, "Step 5: No relay channels in config (will initialize when config received)");
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 5 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, "Relay driver initialization failed");
         // Continue - реле могут быть настроены позже
     }
     
@@ -294,6 +266,7 @@ esp_err_t relay_node_init_components(void) {
     err = relay_node_init_step_mqtt(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 6 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "mqtt_manager", err, "MQTT manager initialization failed");
         return err;
     }
     
@@ -302,12 +275,13 @@ esp_err_t relay_node_init_components(void) {
     if (fw_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s. Entering safe mode and restarting...", 
                  esp_err_to_name(fw_err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", fw_err, "Node framework initialization failed, restarting");
         // На всякий случай убеждаемся, что реле останутся в разомкнутом состоянии
         if (relay_driver_is_initialized()) {
             // Проходим по актуаторам из конфига, чтобы раскрыть их — в init шаге он уже должен быть загружен
             relay_driver_init_from_config();
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
         return fw_err;
     }
@@ -322,6 +296,7 @@ esp_err_t relay_node_init_components(void) {
     err = relay_node_init_step_finalize(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 7 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "init_finalize", err, "Initialization finalization failed");
         return err;
     }
     

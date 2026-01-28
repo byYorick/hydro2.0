@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TelemetrySensor",
+  "description": "Canonical sensor identity payload",
+  "type": "object",
+  "required": ["greenhouse_id", "scope", "type", "label"],
+  "properties": {
+    "greenhouse_id": {
+      "type": "integer",
+      "description": "Greenhouse ID"
+    },
+    "zone_id": {
+      "type": "integer",
+      "description": "Zone ID (optional)"
+    },
+    "node_id": {
+      "type": "integer",
+      "description": "Node ID (optional)"
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["inside", "outside"],
+      "description": "Sensor scope"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Sensor type (TEMPERATURE, HUMIDITY, CO2, PH, EC, etc.)"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Human-friendly label"
+    },
+    "specs": {
+      "type": "object",
+      "description": "Optional sensor specs",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

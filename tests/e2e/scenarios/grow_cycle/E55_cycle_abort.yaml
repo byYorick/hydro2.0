@@ -1,0 +1,129 @@
+# E55: Cycle Abort - abort running cycle → ABORTED
+# DoD: abort running cycle → ABORTED
+
+name: E55_cycle_abort
+description: |
+  Проверяет прерывание grow-cycle:
+  - Цикл в статусе RUNNING
+  - Вызывается abort
+  - Статус цикла = ABORTED
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-grow-zone-e55-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e55-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e55-${TIMESTAMP_S}
+      description: Test recipe
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 1
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    save: abort_response
+
+  - step: wait_after_abort
+    type: sleep
+    seconds: 1
+
+assertions:
+  # Проверка 1: Цикл прерван со статусом ABORTED
+  - name: cycle_status_aborted
+    type: database_query
+    query: |
+      SELECT status
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: status
+        operator: equals
+        value: ABORTED
+
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

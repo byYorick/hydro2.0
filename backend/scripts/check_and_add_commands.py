@@ -11,7 +11,7 @@ import httpx
 print("Добавляю команды...")
 for _ in range(5000):
     zone_id = random.choice([1, 2, 3, 4, 5])
-    metric = random.choice(['PH', 'EC', 'TEMP_AIR', 'TEMP_WATER', 'HUMIDITY'])
+    metric = random.choice(['PH', 'EC', 'TEMPERATURE', 'HUMIDITY'])
     COMMANDS_SENT.labels(zone_id=zone_id, metric=metric).inc()
 
 print(f"Добавлено 5000 команд")
@@ -44,4 +44,3 @@ except Exception as e:
     print(f"Ошибка: {e}")
 
 print("\n✓ Проверка завершена")
-

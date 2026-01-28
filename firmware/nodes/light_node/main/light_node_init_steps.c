@@ -11,6 +11,9 @@
 
 #include "light_node_init_steps.h"
 #include "light_node_defaults.h"
+#include "light_node_channel_map.h"
+#include "light_node_config_utils.h"
+#include "init_steps_utils.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -21,30 +24,12 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "light_node_init_steps";
 
-// Вспомогательная функция для получения значения из config_storage с дефолтом
-static esp_err_t get_config_string(const char *key, char *buffer, size_t buffer_size, const char *default_value) {
-    esp_err_t err = ESP_ERR_NOT_FOUND;
-    
-    if (strcmp(key, "node_id") == 0) {
-        err = config_storage_get_node_id(buffer, buffer_size);
-    } else if (strcmp(key, "gh_uid") == 0) {
-        err = config_storage_get_gh_uid(buffer, buffer_size);
-    } else if (strcmp(key, "zone_uid") == 0) {
-        err = config_storage_get_zone_uid(buffer, buffer_size);
-    }
-    
-    if (err != ESP_OK && default_value) {
-        strncpy(buffer, default_value, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
-        return ESP_OK;
-    }
-    
-    return err;
-}
+static void light_node_patch_config_task(void *pvParameters);
 
 esp_err_t light_node_init_step_config_storage(light_node_init_context_t *ctx, 
                                               light_node_init_step_result_t *result) {
@@ -75,8 +60,41 @@ esp_err_t light_node_init_step_config_storage(light_node_init_context_t *ctx,
         result->err = ESP_OK;
         result->component_initialized = true;
     }
+    if (xTaskCreate(light_node_patch_config_task, "light_cfg_patch", 8192, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to start config patch task");
+    }
     
     return ESP_OK;
+}
+
+static void light_node_patch_config_task(void *pvParameters) {
+    (void)pvParameters;
+
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    bool changed = false;
+    char *patched = light_node_build_patched_config(config_json, strlen(config_json), false, &changed);
+    if (!patched) {
+        if (changed) {
+            ESP_LOGW(TAG, "Failed to build patched config");
+        }
+        vTaskDelete(NULL);
+        return;
+    }
+
+    esp_err_t patch_err = config_storage_save(patched, strlen(patched));
+    free(patched);
+    if (patch_err == ESP_OK) {
+        ESP_LOGI(TAG, "Config patched with firmware channels");
+    } else if (patch_err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to patch config: %s", esp_err_to_name(patch_err));
+    }
+
+    vTaskDelete(NULL);
 }
 
 esp_err_t light_node_init_step_wifi(light_node_init_context_t *ctx,
@@ -214,7 +232,7 @@ esp_err_t light_node_init_step_oled(light_node_init_context_t *ctx,
     
     // Получаем node_id из config_storage или используем дефолт
     char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
-    get_config_string("node_id", node_id, sizeof(node_id), LIGHT_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), LIGHT_NODE_DEFAULT_NODE_ID);
     ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
     
     oled_ui_config_t oled_config = {
@@ -314,9 +332,9 @@ esp_err_t light_node_init_step_mqtt(light_node_init_context_t *ctx,
     }
     
     // Получение node_id, gh_uid, zone_uid
-    get_config_string("node_id", node_id, sizeof(node_id), LIGHT_NODE_DEFAULT_NODE_ID);
-    get_config_string("gh_uid", gh_uid, sizeof(gh_uid), LIGHT_NODE_DEFAULT_GH_UID);
-    get_config_string("zone_uid", zone_uid, sizeof(zone_uid), LIGHT_NODE_DEFAULT_ZONE_UID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), LIGHT_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("gh_uid", gh_uid, sizeof(gh_uid), LIGHT_NODE_DEFAULT_GH_UID);
+    init_steps_utils_get_config_string("zone_uid", zone_uid, sizeof(zone_uid), LIGHT_NODE_DEFAULT_ZONE_UID);
     
     node_info.node_uid = node_id;
     node_info.gh_uid = gh_uid;
@@ -385,4 +403,3 @@ esp_err_t light_node_init_step_finalize(light_node_init_context_t *ctx,
     
     return ESP_OK;
 }
-

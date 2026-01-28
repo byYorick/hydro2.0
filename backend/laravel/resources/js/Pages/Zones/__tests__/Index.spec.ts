@@ -141,6 +141,9 @@ const mountZones = () =>
 describe('Zones/Index.vue', () => {
   beforeEach(() => {
     initFromPropsMock.mockClear()
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/')
+    }
   })
 
   it('фильтрует по статусу', async () => {
@@ -169,5 +172,3 @@ describe('Zones/Index.vue', () => {
     expect(wrapper.text()).toContain('Нет зон по текущим фильтрам')
   })
 })
-
-

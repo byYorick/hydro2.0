@@ -130,12 +130,14 @@ services:
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       # MQTT configuration
-      # MQTT_EXTERNAL_HOST - IP адрес хоста для внешних подключений (ESP32 ноды)
+      # MQTT_EXTERNAL_HOST - host для внешних подключений (ESP32 ноды)
       # Если не указан, будет использоваться MQTT_HOST (имя сервиса для внутренних подключений)
-      # По умолчанию используем IP хоста, определенный автоматически при запуске
-      - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-192.168.1.115}
+      # По умолчанию используем host.docker.internal (для Linux может потребоваться явная настройка)
+      - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-host.docker.internal}
       - MQTT_HOST=${MQTT_HOST:-mqtt}
       - MQTT_PORT=${MQTT_PORT:-1883}
+      - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
+      - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)
       - PHP_OPCACHE_ENABLE=0
       - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
@@ -200,9 +202,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
   history-logger:
     build:
@@ -242,11 +244,11 @@ services:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9300)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
   automation-engine:
     build:
@@ -277,13 +279,14 @@ services:
       laravel:
         condition: service_healthy
     ports:
-      - "9401:9401"
+      - "9401:9401"  # Prometheus metrics
+      - "9405:9405"  # FastAPI REST API
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
   scheduler:
     build:
@@ -311,10 +314,10 @@ services:
       - "9402:9402"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
@@ -405,6 +408,29 @@ services:
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8003/health\").read()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  node-sim-manager:
+    build:
+      context: ./services
+      dockerfile: node-sim-manager/Dockerfile
+    environment:
+      - APP_ENV=local
+      - LOG_LEVEL=INFO
+      - NODE_SIM_ROOT=/node-sim
+    volumes:
+      - ../tests/node_sim:/node-sim:ro
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    ports:
+      - "9100:9100"
     restart: unless-stopped
 
   telemetry-aggregator:
@@ -426,6 +452,12 @@ services:
         condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9404)); s.close()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   python-tests:
@@ -467,6 +499,55 @@ services:
     profiles:
       - tests
     command: ["python", "-m", "pytest", "automation-engine/tests/test_pid_config_service.py", "automation-engine/tests/test_pid_config_service_cache_update.py", "automation-engine/tests/test_pid_config_type_safety.py", "automation-engine/tests/test_zone_automation_pid_cleanup.py", "automation-engine/test_pid_integration.py", "-v"]
+
+  node-emulator:
+    build:
+      context: ./services
+      dockerfile: node-emulator/Dockerfile
+    environment:
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_USER=node_emulator
+      - MQTT_PASS=node_emulator_pass
+      - API_URL=http://laravel
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+    networks:
+      - default
+    profiles:
+      - load-test
+
+  integration-tests:
+    build:
+      context: ./services
+      dockerfile: Dockerfile.test
+    environment:
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_USER=node_emulator
+      - MQTT_PASS=node_emulator_pass
+      - LARAVEL_URL=http://laravel
+      - LARAVEL_API_TOKEN=dev-token-12345
+      - PROMETHEUS_URL=http://prometheus:9090
+      - HISTORY_LOGGER_URL=http://history-logger:9300
+      - PYTHONPATH=/app
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    volumes:
+      - ./integration_tests:/app/integration_tests:ro
+      - ./services:/app/services:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    profiles:
+      - tests
+    command: ["python", "integration_tests/test_error_reporting.py"]
 
 volumes:
   postgres_data:

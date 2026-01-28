@@ -19,6 +19,7 @@ ALERT_TYPE_MAPPING: Dict[str, Tuple[str, str]] = {
     'NO_FLOW': (AlertSource.BIZ.value, AlertCode.BIZ_NO_FLOW.value),
     'WATER_LEVEL_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_DRY_RUN.value),
     'LIGHT_FAILURE': (AlertSource.BIZ.value, AlertCode.BIZ_LIGHT_FAILURE.value),
+    'MISSING_BINDING': (AlertSource.BIZ.value, AlertCode.BIZ_CONFIG_ERROR.value),
 }
 
 
@@ -66,7 +67,7 @@ async def ensure_alert(zone_id: int, alert_type: str, details: Dict[str, Any]) -
         await execute(
             """
             UPDATE alerts
-            SET details = $1, updated_at = NOW()
+            SET details = $1
             WHERE id = $2
             """,
             details_json,
@@ -169,4 +170,3 @@ async def find_active_alert(zone_id: int, alert_type: str) -> Optional[Dict[str,
             'created_at': rows[0]["created_at"],
         }
     return None
-

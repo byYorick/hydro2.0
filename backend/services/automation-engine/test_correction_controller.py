@@ -1,7 +1,40 @@
 """Tests for correction_controller."""
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+from types import SimpleNamespace
+from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
+
+
+class _PidZone:
+    def __init__(self, value: str):
+        self.value = value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _PidZone) and other.value == self.value
+
+
+class _PidStub:
+    def __init__(self, output: float):
+        self._zone = _PidZone("close")
+        self.config = SimpleNamespace(
+            dead_zone=0.0,
+            close_zone=0.0,
+            far_zone=0.0,
+            zone_coeffs={self._zone: SimpleNamespace(kp=1.0, ki=0.0, kd=0.0)},
+        )
+        self.integral = 0.0
+        self.prev_error = 0.0
+        self._output = output
+
+    def compute(self, current: float, dt_seconds: float) -> float:
+        return self._output
+
+    def get_zone(self):
+        return self._zone
 
 
 @pytest.mark.asyncio
@@ -12,7 +45,8 @@ async def test_ph_controller_check_and_correct_no_target():
     telemetry = {"PH": 6.5}
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -20,11 +54,12 @@ async def test_ph_controller_check_and_correct_no_target():
 async def test_ph_controller_check_and_correct_no_current():
     """Test pH controller when current value is not available."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {}
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -32,11 +67,12 @@ async def test_ph_controller_check_and_correct_no_current():
 async def test_ph_controller_check_and_correct_small_diff():
     """Test pH controller when difference is too small."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.4}  # diff = 0.1, меньше порога 0.2
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -44,7 +80,7 @@ async def test_ph_controller_check_and_correct_small_diff():
 async def test_ph_controller_check_and_correct_cooldown():
     """Test pH controller when in cooldown period."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}  # diff = 0.3, больше порога
     nodes = {
         "irrig:default": {
@@ -57,7 +93,8 @@ async def test_ph_controller_check_and_correct_cooldown():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (False, "В cooldown периоде")
         with patch("correction_controller.create_zone_event") as mock_event:
-            result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+            telemetry_ts = {"PH": datetime.now(timezone.utc)}
+            result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
             
             assert result is None
             mock_event.assert_called_once()
@@ -69,25 +106,31 @@ async def test_ph_controller_check_and_correct_cooldown():
 async def test_ph_controller_check_and_correct_low_ph():
     """Test pH controller when pH is too low (add base)."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.2}  # diff = -0.3, pH слишком низкий
-    nodes = {
-        "irrig:default": {
-            "node_uid": "nd-irrig-1",
-            "channel": "default",
-            "type": "irrig"
+    nodes = {}
+    actuators = {
+        "ph_base_pump": {
+            "node_uid": "nd-ph-1",
+            "channel": "pump_base",
+            "role": "ph_base_pump"
         }
     }
     
-    with patch("correction_controller.should_apply_correction") as mock_should:
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+
+        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
-        assert result['cmd'] == 'adjust_ph'
+        assert result['cmd'] == 'dose'
         assert result['params']['type'] == 'add_base'
-        assert result['params']['amount'] == pytest.approx(3.0, abs=0.01)  # abs(-0.3) * 10
+        assert result['params']['ml'] == pytest.approx(3.0, abs=0.01)  # abs(-0.3) * 10
         assert result['event_type'] == 'PH_CORRECTED'
         assert result['event_details']['correction_type'] == 'add_base'
 
@@ -96,25 +139,31 @@ async def test_ph_controller_check_and_correct_low_ph():
 async def test_ph_controller_check_and_correct_high_ph():
     """Test pH controller when pH is too high (add acid)."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}  # diff = 0.3, pH слишком высокий
-    nodes = {
-        "irrig:default": {
-            "node_uid": "nd-irrig-1",
-            "channel": "default",
-            "type": "irrig"
+    nodes = {}
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-2",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump"
         }
     }
     
-    with patch("correction_controller.should_apply_correction") as mock_should:
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+
+        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
-        assert result['cmd'] == 'adjust_ph'
+        assert result['cmd'] == 'dose'
         assert result['params']['type'] == 'add_acid'
-        assert result['params']['amount'] == pytest.approx(3.0, abs=0.01)  # abs(0.3) * 10
+        assert result['params']['ml'] == pytest.approx(3.0, abs=0.01)  # abs(0.3) * 10
         assert result['event_type'] == 'PH_CORRECTED'
 
 
@@ -122,20 +171,26 @@ async def test_ph_controller_check_and_correct_high_ph():
 async def test_ph_controller_check_and_correct_no_water():
     """Test pH controller when water level is low."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}
-    nodes = {
-        "irrig:default": {
-            "node_uid": "nd-irrig-1",
-            "channel": "default",
-            "type": "irrig"
+    nodes = {}
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-2",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump"
         }
     }
     
-    with patch("correction_controller.should_apply_correction") as mock_should:
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=False)
+
+        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=False, actuators=actuators)
         
         assert result is None  # Не должно быть корректировки при низком уровне воды
 
@@ -144,14 +199,15 @@ async def test_ph_controller_check_and_correct_no_water():
 async def test_ph_controller_check_and_correct_no_nodes():
     """Test pH controller when no irrigation nodes available."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}
     nodes = {}  # Нет узлов
     
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
         
         assert result is None
 
@@ -160,25 +216,32 @@ async def test_ph_controller_check_and_correct_no_nodes():
 async def test_ec_controller_check_and_correct_low_ec():
     """Test EC controller when EC is too low (add nutrients)."""
     controller = CorrectionController(CorrectionType.EC)
-    targets = {"ec": 1.8}
+    targets = {"ec": {"target": 1.8}}
     telemetry = {"EC": 1.5}  # diff = -0.3, EC слишком низкий
-    nodes = {
-        "irrig:default": {
-            "node_uid": "nd-irrig-1",
-            "channel": "default",
-            "type": "irrig"
+    nodes = {}
+    actuators = {
+        "ec_nutrient_pump": {
+            "node_uid": "nd-ec-1",
+            "channel": "pump_nutrient",
+            "role": "ec_nutrient_pump"
         }
     }
     
-    with patch("correction_controller.should_apply_correction") as mock_should:
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
-        assert result['cmd'] == 'adjust_ec'
+        assert result['cmd'] == 'run_pump'
         assert result['params']['type'] == 'add_nutrients'
-        assert result['params']['amount'] == pytest.approx(30.0, abs=0.01)  # abs(-0.3) * 100
+        assert result['params']['ml'] == pytest.approx(30.0, abs=0.01)  # abs(-0.3) * 100
+        assert result['params']['duration_ms'] > 0
         assert result['event_type'] == 'EC_DOSING'
 
 
@@ -186,26 +249,25 @@ async def test_ec_controller_check_and_correct_low_ec():
 async def test_ec_controller_check_and_correct_high_ec():
     """Test EC controller when EC is too high (dilute)."""
     controller = CorrectionController(CorrectionType.EC)
-    targets = {"ec": 1.8}
+    targets = {"ec": {"target": 1.8}}
     telemetry = {"EC": 2.1}  # diff = 0.3, EC слишком высокий
-    nodes = {
-        "irrig:default": {
-            "node_uid": "nd-irrig-1",
-            "channel": "default",
-            "type": "irrig"
+    nodes = {}
+    actuators = {
+        "ec_nutrient_pump": {
+            "node_uid": "nd-ec-1",
+            "channel": "pump_nutrient",
+            "role": "ec_nutrient_pump"
         }
     }
     
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
+        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
-        assert result is not None
-        assert result['cmd'] == 'adjust_ec'
-        assert result['params']['type'] == 'dilute'
-        assert result['params']['amount'] == pytest.approx(30.0, abs=0.01)  # abs(0.3) * 100
-        assert result['event_type'] == 'EC_DOSING'
+        # Для dilute актюатор не выбирается, команда не отправляется
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -216,17 +278,17 @@ async def test_ph_controller_apply_correction():
     gh_uid = "gh-1"
     
     command = {
-        'node_uid': 'nd-irrig-1',
-        'channel': 'default',
-        'cmd': 'adjust_ph',
-        'params': {'amount': 3.0, 'type': 'add_acid'},
+        'node_uid': 'nd-ph-1',
+        'channel': 'pump_acid',
+        'cmd': 'dose',
+        'params': {'ml': 3.0, 'type': 'add_acid'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_acid',
             'current_ph': 6.8,
             'target_ph': 6.5,
             'diff': 0.3,
-            'dose_ml': 3.0
+            'ml': 3.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -266,17 +328,17 @@ async def test_ph_controller_apply_correction_high_ph_detected():
     gh_uid = "gh-1"
     
     command = {
-        'node_uid': 'nd-irrig-1',
-        'channel': 'default',
-        'cmd': 'adjust_ph',
-        'params': {'amount': 4.0, 'type': 'add_acid'},
+        'node_uid': 'nd-ph-1',
+        'channel': 'pump_acid',
+        'cmd': 'dose',
+        'params': {'ml': 4.0, 'type': 'add_acid'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_acid',
             'current_ph': 6.9,
             'target_ph': 6.5,
             'diff': 0.4,  # > 0.3, должно создать PH_TOO_HIGH_DETECTED
-            'dose_ml': 4.0
+            'ml': 4.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -308,17 +370,17 @@ async def test_ph_controller_apply_correction_low_ph_detected():
     gh_uid = "gh-1"
     
     command = {
-        'node_uid': 'nd-irrig-1',
-        'channel': 'default',
-        'cmd': 'adjust_ph',
-        'params': {'amount': 4.0, 'type': 'add_base'},
+        'node_uid': 'nd-ph-1',
+        'channel': 'pump_base',
+        'cmd': 'dose',
+        'params': {'ml': 4.0, 'type': 'add_base'},
         'event_type': 'PH_CORRECTED',
         'event_details': {
             'correction_type': 'add_base',
             'current_ph': 6.1,
             'target_ph': 6.5,
             'diff': -0.4,  # < -0.3, должно создать PH_TOO_LOW_DETECTED
-            'dose_ml': 4.0
+            'ml': 4.0
         },
         'zone_id': 1,
         'correction_type_str': 'ph',
@@ -350,17 +412,17 @@ async def test_ec_controller_apply_correction():
     gh_uid = "gh-1"
     
     command = {
-        'node_uid': 'nd-irrig-1',
-        'channel': 'default',
-        'cmd': 'adjust_ec',
-        'params': {'amount': 30.0, 'type': 'add_nutrients'},
+        'node_uid': 'nd-ec-1',
+        'channel': 'pump_nutrient',
+        'cmd': 'run_pump',
+        'params': {'ml': 30.0, 'duration_ms': 1000, 'type': 'add_nutrients'},
         'event_type': 'EC_DOSING',
         'event_details': {
             'correction_type': 'add_nutrients',
             'current_ec': 1.5,
             'target_ec': 1.8,
             'diff': -0.3,
-            'dose_ml': 30.0
+            'ml': 30.0
         },
         'zone_id': 1,
         'correction_type_str': 'ec',

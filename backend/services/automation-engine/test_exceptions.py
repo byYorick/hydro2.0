@@ -66,10 +66,10 @@ def test_telemetry_error():
 
 def test_command_publish_error():
     """Test CommandPublishError."""
-    error = CommandPublishError(1, "irrigate", "MQTT disconnected", {"node": "nd-1"})
-    assert "Failed to publish command 'irrigate' for zone 1" in str(error)
+    error = CommandPublishError(1, "run_pump", "MQTT disconnected", {"node": "nd-1"})
+    assert "Failed to publish command 'run_pump' for zone 1" in str(error)
     assert error.zone_id == 1
-    assert error.command == "irrigate"
+    assert error.command == "run_pump"
     assert error.reason == "MQTT disconnected"
 
 
@@ -89,4 +89,3 @@ def test_mqtt_error():
     assert "MQTT error" in str(error)
     assert error.topic == topic
     assert error.details["topic"] == topic
-

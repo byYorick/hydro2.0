@@ -1,11 +1,14 @@
 <template>
-  <span :class="classes" v-bind="$attrs"><slot /></span>
+  <span
+    :class="classes"
+    v-bind="$attrs"
+  ><slot></slot></span>
 </template>
 
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
 
-type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+export type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary'
 type BadgeSize = 'xs' | 'sm'
 
 interface Props {
@@ -21,17 +24,18 @@ const props = withDefaults(defineProps<Props>(), {
 const attrs = useAttrs()
 
 const classes = computed(() => {
-  const base = 'inline-flex items-center justify-center rounded-full font-semibold tracking-wide px-3 py-1 bg-opacity-70'
+  const base = 'badge'
   const variants: Record<BadgeVariant, string> = {
-    success: 'bg-emerald-900 text-emerald-300 border border-emerald-800',
-    warning: 'bg-amber-900 text-amber-300 border border-amber-800',
-    danger: 'bg-red-900 text-red-300 border border-red-800',
-    info: 'bg-sky-900 text-sky-300 border border-sky-800',
-    neutral: 'bg-neutral-800 text-neutral-300 border border-neutral-700',
+    success: 'badge--success',
+    warning: 'badge--warning',
+    danger: 'badge--danger',
+    info: 'badge--info',
+    neutral: 'badge--neutral',
+    secondary: 'badge--secondary',
   }
   const sizes: Record<BadgeSize, string> = {
-    xs: 'text-[0.65rem]',
-    sm: 'text-[0.75rem]',
+    xs: 'badge--xs',
+    sm: 'badge--sm',
   }
   return [base, variants[props.variant] ?? variants.neutral, sizes[props.size] ?? sizes.xs, attrs.class]
     .filter(Boolean)

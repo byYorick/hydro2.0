@@ -28,6 +28,16 @@ typedef enum {
 } error_level_t;
 
 /**
+ * @brief Счетчики ошибок по уровням
+ */
+typedef struct {
+    uint32_t warning_count;     ///< Количество предупреждений
+    uint32_t error_count;       ///< Количество ошибок
+    uint32_t critical_count;    ///< Количество критических ошибок
+    uint32_t total_count;       ///< Общее количество ошибок
+} node_state_manager_error_counts_t;
+
+/**
  * @brief Инициализация менеджера состояния
  * 
  * @return ESP_OK при успехе
@@ -98,6 +108,15 @@ esp_err_t node_state_manager_report_error_legacy(
 uint32_t node_state_manager_get_error_count(const char *component);
 
 /**
+ * @brief Получение количества ошибок по уровням
+ *
+ * @param component Компонент (NULL для всех компонентов)
+ * @param out_counts Указатель на структуру с результатами
+ * @return ESP_OK при успехе
+ */
+esp_err_t node_state_manager_get_error_counts(const char *component, node_state_manager_error_counts_t *out_counts);
+
+/**
  * @brief Callback для отключения актуаторов при входе в safe_mode
  * 
  * @param user_ctx Пользовательский контекст
@@ -122,4 +141,3 @@ esp_err_t node_state_manager_register_safe_mode_callback(
 #endif
 
 #endif // NODE_STATE_MANAGER_H
-

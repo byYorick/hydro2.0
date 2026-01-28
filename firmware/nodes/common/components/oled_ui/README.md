@@ -84,6 +84,6 @@ oled_ui_handle_button();    // Нажатие кнопки
 
 ## Документация
 
-- Спецификация UI: `doc_ai/02_HARDWARE_FIRMWARE/NODE_OLED_UI_SPEC.md`
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Спецификация UI: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_OLED_UI_SPEC.md`
+- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
 

@@ -1,37 +1,71 @@
-hydro2.0 Monorepo (skeleton)
+# hydro2.0
 
-Скелет проекта, созданный по спецификации `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
+Монорепозиторий системы управления гидропонной теплицей: прошивки ESP32, backend,
+мобильное приложение, инфраструктура и полная документация.
 
-Структура верхнего уровня:
-- `doc_ai/` — **основная документация** (эталон, не изменяется)
-- `docs/` — mirror структуры из `doc_ai/` (для совместимости)
-- `firmware/` — прошивки для ESP32 (ESP-IDF)
-- `backend/` — серверные сервисы (API, MQTT-мост, автоматизация, история)
-- `mobile/` — мобильное приложение
-- `infra/` — инфраструктура и деплой
-- `tools/` — утилиты и генераторы
-- `configs/` — общие конфиги системы
+## Быстрые ссылки
 
-**Документация:**
-- Основная документация: `doc_ai/` — эталонная документация проекта
-- Папка `docs/` является mirror структуры из `doc_ai/` для совместимости
-- Все изменения в документации вносятся только в `doc_ai/`
-- **Начните с:** `doc_ai/INDEX.md` — главный индекс документации
-- Статус реализации: `doc_ai/IMPLEMENTATION_STATUS.md`
-- Roadmap: `doc_ai/ROADMAP_2.0.md`
+- `doc_ai/INDEX.md` — главный индекс документации
+- `QUICK_START.md` — быстрый старт для разработчиков
+- `doc_ai/DEV_CONVENTIONS.md` — конвенции разработки
+- `backend/README.md` — backend сервисы
+- `firmware/README.md` — прошивки ESP32
+- `mobile/README.md` — мобильное приложение
+- `infra/README.md` — инфраструктура и деплой
 
-**Приоритеты разработки:**
-- См. приоритеты: `doc_ai/DEVELOPMENT_PRIORITIES.md`
+## Документация
 
-**WebSocket (Real-time обновления):**
+- `doc_ai/` — source of truth, правки вносятся здесь
+- `docs/` — mirror для совместимости, руками не редактируется
+
+## Структура репозитория
+
+- `backend/` — Laravel API Gateway + Python-сервисы (MQTT, автоматизация, история)
+- `firmware/` — ESP-IDF прошивки нод
+- `mobile/` — Android приложение
+- `infra/` — docker/k8s/terraform/ansible
+- `tools/` — утилиты и скрипты (в т.ч. smoke-тесты)
+- `tests/` — e2e сценарии и node-sim
+- `configs/` — общие конфиги проекта
+
+Подробности структуры: `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
+
+## Быстрый старт (backend dev)
+
+```bash
+cd backend
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+Основные сервисы:
+- Laravel API: http://localhost:8080
+- mqtt-bridge: http://localhost:9000
+- history-logger metrics: http://localhost:9301/metrics
+- automation-engine metrics: http://localhost:9401/metrics
+- scheduler metrics: http://localhost:9402/metrics
+
+Больше деталей: `backend/README.md` и `backend/services/README.md`.
+
+## WebSocket (realtime)
+
 - Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
 - Smoke test: `tools/ws-smoke-test.sh`
+- Переменные окружения:
+  - Dev через nginx (рекомендуется, `backend/docker-compose.dev.yml`):
+    - Frontend: только `VITE_REVERB_APP_KEY`
+    - Не задаём `VITE_REVERB_HOST`/`VITE_REVERB_PORT`, клиент берёт `window.location`
+  - Прямое подключение (без nginx прокси):
+    - Frontend: `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`
+    - Убедитесь, что CORS/origins настроены для этого режима
+  - Backend: `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_PORT`
+- Запуск:
+  - В dev-стеке Reverb стартует автоматически (REVERB_AUTO_START=true)
+  - Вручную запускать `php artisan reverb:start` нужно только вне docker-compose
 
-**Конфигурация WebSocket:**
-- Frontend переменные: `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`
-- Backend переменные: `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_PORT`
-- Запуск Reverb: `php artisan reverb:start`
+## Тестирование
 
-См. подробности в `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
-
-
+- Контрактные проверки протокола: `make protocol-check`
+- Laravel тесты: `docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test`
+- Python тесты: `docker compose -f backend/docker-compose.dev.yml exec mqtt-bridge pytest`
+- E2E сценарии: `tests/e2e/README.md`
+- Node simulator: `tests/node_sim/README.md`

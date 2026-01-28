@@ -1,33 +1,51 @@
 <template>
-  <Modal :open="show" title="Привязать узлы к зоне" @close="$emit('close')">
-    <div v-if="loading" class="text-sm text-neutral-400">Загрузка...</div>
-    <div v-else class="space-y-4">
-      <div class="text-xs text-neutral-400 mb-2">
+  <Modal
+    :open="show"
+    title="Привязать узлы к зоне"
+    @close="$emit('close')"
+  >
+    <div
+      v-if="loading"
+      class="text-sm text-[color:var(--text-muted)]"
+    >
+      Загрузка...
+    </div>
+    <div
+      v-else
+      class="space-y-4"
+    >
+      <div class="text-xs text-[color:var(--text-muted)] mb-2">
         Выберите узлы для привязки к зоне {{ zoneId }}
       </div>
       
-      <div v-if="availableNodes.length === 0" class="text-sm text-neutral-400">
+      <div
+        v-if="availableNodes.length === 0"
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         Нет доступных узлов для привязки
       </div>
       
-      <div v-else class="space-y-2 max-h-[400px] overflow-y-auto">
+      <div
+        v-else
+        class="space-y-2 max-h-[400px] overflow-y-auto"
+      >
         <label
           v-for="node in availableNodes"
           :key="node.id"
           :for="`attach-node-${node.id}`"
-          class="flex items-center gap-2 p-2 rounded border border-neutral-700 hover:border-neutral-600 cursor-pointer"
+          class="flex items-center gap-2 p-2 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] hover:border-[color:var(--border-strong)] cursor-pointer"
         >
           <input
             :id="`attach-node-${node.id}`"
+            v-model="selectedNodeIds"
             :name="`node_${node.id}`"
             type="checkbox"
             :value="node.id"
-            v-model="selectedNodeIds"
-            class="rounded"
+            class="h-4 w-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--accent-green)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)]"
           />
           <div class="flex-1">
             <div class="text-sm font-semibold">{{ node.uid || node.name || `Node ${node.id}` }}</div>
-            <div class="text-xs text-neutral-400">
+            <div class="text-xs text-[color:var(--text-muted)]">
               {{ node.type || 'unknown' }} — {{ node.status || 'offline' }}
             </div>
           </div>
@@ -36,11 +54,17 @@
     </div>
     
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onAttach"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="selectedNodeIds.length === 0 || attaching"
+        @click="onAttach"
       >
         {{ attaching ? 'Привязка...' : `Привязать (${selectedNodeIds.length})` }}
       </Button>
@@ -64,15 +88,6 @@ const { api } = useApi(showToast)
 interface Props {
   show: boolean
   zoneId: number
-}
-
-interface Node {
-  id: number
-  uid: string
-  name?: string
-  type?: string
-  status?: string
-  zone_id?: number | null
 }
 
 const props = defineProps<Props>()
@@ -158,4 +173,3 @@ async function onAttach() {
   }
 }
 </script>
-

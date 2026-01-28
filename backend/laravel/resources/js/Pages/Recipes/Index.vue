@@ -1,59 +1,107 @@
 <template>
   <AppLayout>
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold">Рецепты</h1>
-      <Button size="sm" variant="primary" @click="openRecipeWizard">
-        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+      <h1 class="text-lg font-semibold">
+        Рецепты
+      </h1>
+      <Button
+        size="sm"
+        variant="primary"
+        @click="openRecipeWizard"
+      >
+        <svg
+          class="w-4 h-4 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 4v16m8-8H4"
+          />
         </svg>
         Новый цикл
       </Button>
     </div>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="Название или культура..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
+        <input
+          v-model="query"
+          placeholder="Название или культура..."
+          class="input-field flex-1 sm:w-56"
+        />
       </div>
     </div>
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+    <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
         <table class="w-full border-collapse">
-          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+          <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
             <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Название</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Описание</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Фаз</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Название
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Описание
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Фаз
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Действия
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(r, index) in rows"
               :key="r[0]"
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
-              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+              class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
             >
               <td class="px-3 py-2">
-                <Link :href="`/recipes/${r[0]}`" class="text-sky-400 hover:underline truncate block">{{ r[1] }}</Link>
+                <Link
+                  :href="`/recipes/${r[0]}`"
+                  class="text-[color:var(--accent-cyan)] hover:underline truncate block"
+                >
+                  {{ r[1] }}
+                </Link>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                 <span class="truncate block">{{ r[2] || 'Без описания' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[3] || 0 }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                {{ r[3] || 0 }}
+              </td>
               <td class="px-3 py-2">
                 <Link :href="`/recipes/${r[0]}`">
-                  <Button size="sm" variant="secondary">Открыть</Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Открыть
+                  </Button>
                 </Link>
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="4" class="px-3 py-6 text-sm text-neutral-400 text-center">
+              <td
+                colspan="4"
+                class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center"
+              >
                 {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:per-page="perPage"
+        :total="filtered.length"
+      />
     </div>
 
     <!-- Мастер создания рецепта -->
@@ -66,22 +114,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import RecipeCreateWizard from '@/Components/RecipeCreateWizard.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
-const headers = ['Название', 'Описание', 'Фаз', 'Действия']
 const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
 const query = ref<string>('')
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 
 const { isOpen: showRecipeWizard, open: openRecipeWizard, close: closeRecipeWizard } = useSimpleModal()
 
-function onRecipeCreated(recipe: Recipe): void {
+function onRecipeCreated(_recipe: Recipe): void {
   // Обновляем страницу для отображения нового рецепта
   router.reload({ only: ['recipes'] })
 }
@@ -99,15 +149,49 @@ const filtered = computed(() => {
   })
 })
 
+function clampCurrentPage(total: number): number {
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  return validPage
+}
+
+watch([filtered, perPage], () => {
+  if (filtered.value.length > 0) {
+    clampCurrentPage(filtered.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+// Пагинированные рецепты
+const paginatedRecipes = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
+  
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filtered.value.slice(start, end)
+})
+
 // Преобразуем рецепты в строки таблицы
 const rows = computed(() => {
-  return filtered.value.map(r => [
+  return paginatedRecipes.value.map(r => [
     r.id,
     r.name || '-',
     r.description || 'Без описания',
     r.phases_count || 0,
     r.id // Добавляем ID в конец для удобства доступа
   ])
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch(query, () => {
+  currentPage.value = 1
 })
 
 </script>
@@ -147,4 +231,3 @@ td:last-child {
   text-align: center;
 }
 </style>
-

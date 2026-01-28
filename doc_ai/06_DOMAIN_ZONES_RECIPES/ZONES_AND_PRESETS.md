@@ -5,6 +5,10 @@
 Документ описывает полную модель зон (Zones), пресетов, рецептов и фаз роста в архитектуре 2.0.
 Это единое ядро логики управления гидропонными теплицами.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 # 1. Основные сущности
@@ -49,7 +53,7 @@ capabilities
 
 ```
 water_tank_volume
-sensors: pH, EC, TEMP, HUM, PAR
+sensors: pH, EC, TEMPERATURE, HUM, PAR
 actuators: pumps, valves, fans, heater, light
 ```
 
@@ -329,7 +333,7 @@ update targets
 
 - PH_HIGH / PH_LOW
 - EC_HIGH / EC_LOW
-- TEMP_HIGH / TEMP_LOW
+- TEMPERATURE_HIGH / TEMPERATURE_LOW
 - HUM_HIGH / HUM_LOW
 - LEVEL_LOW
 - NO_FLOW

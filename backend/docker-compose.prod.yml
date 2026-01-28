@@ -175,6 +175,8 @@ services:
       # ВАЖНО: Токены для безопасности сервисов
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
+      - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
+      - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
     volumes:
       - ./laravel:/app
     ports:
@@ -408,6 +410,21 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+  node-sim-manager:
+    build:
+      context: ./services
+      dockerfile: node-sim-manager/Dockerfile
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+      - NODE_SIM_ROOT=/node-sim
+    volumes:
+      - ../tests/node_sim:/node-sim:ro
+    depends_on:
+      - mqtt
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
   telemetry-aggregator:
     build:
       context: ./services
@@ -440,5 +457,3 @@ volumes:
   grafana_data:
   alertmanager_data:
   wal_archive:
-
-

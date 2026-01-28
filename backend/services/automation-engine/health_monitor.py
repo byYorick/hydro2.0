@@ -2,10 +2,15 @@
 Zone Health Monitor - анализ состояния зоны и расчет health_score.
 Согласно ZONE_CONTROLLER_FULL.md раздел 8
 """
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch, execute
 from common.water_flow import check_water_level, check_flow
+from repositories.telemetry_repository import TelemetryRepository
+
+logger = logging.getLogger(__name__)
 
 
 async def calculate_ph_stability(zone_id: int, hours: int = 2) -> float:
@@ -15,16 +20,17 @@ async def calculate_ph_stability(zone_id: int, hours: int = 2) -> float:
     Returns:
         Оценка стабильности 0-100 (100 = идеальная стабильность)
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow().replace(tzinfo=None) - timedelta(hours=hours)
     
     rows = await fetch(
         """
-        SELECT value, created_at
-        FROM telemetry_samples
-        WHERE zone_id = $1 
-          AND metric_type = 'PH'
-          AND created_at >= $2
-        ORDER BY created_at ASC
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'PH'
+          AND ts.ts >= $2
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_time,
@@ -64,16 +70,17 @@ async def calculate_ec_stability(zone_id: int, hours: int = 2) -> float:
     Returns:
         Оценка стабильности 0-100
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow().replace(tzinfo=None) - timedelta(hours=hours)
     
     rows = await fetch(
         """
-        SELECT value, created_at
-        FROM telemetry_samples
-        WHERE zone_id = $1 
-          AND metric_type = 'EC'
-          AND created_at >= $2
-        ORDER BY created_at ASC
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'EC'
+          AND ts.ts >= $2
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_time,
@@ -111,39 +118,29 @@ async def calculate_climate_quality(zone_id: int) -> float:
         Оценка качества 0-100
     """
     # Получаем текущие значения и цели из рецепта
-    telemetry_rows = await fetch(
-        """
-        SELECT metric_type, value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type IN ('TEMP_AIR', 'HUMIDITY')
-        """,
-        zone_id,
-    )
-    
-    if not telemetry_rows:
-        return 50.0
-    
-    telemetry = {row["metric_type"]: row["value"] for row in telemetry_rows}
-    temp_air = telemetry.get("TEMP_AIR")
+    telemetry_repo = TelemetryRepository()
+    telemetry = await telemetry_repo.get_last_telemetry(zone_id)
+    temp_air = telemetry.get("TEMPERATURE")
     humidity = telemetry.get("HUMIDITY")
-    
-    # Получаем цели из рецепта
-    recipe_rows = await fetch(
-        """
-        SELECT rp.targets
-        FROM zone_recipe_instances zri
-        JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-        WHERE zri.zone_id = $1
-        """,
-        zone_id,
-    )
-    
-    if not recipe_rows or not recipe_rows[0]["targets"]:
+    if temp_air is None and humidity is None:
         return 50.0
     
-    targets = recipe_rows[0]["targets"]
-    target_temp = targets.get("temp_air")
-    target_humidity = targets.get("humidity_air")
+    # Получаем цели из активного цикла выращивания (новая модель)
+    try:
+        from repositories.laravel_api_repository import LaravelApiRepository
+        laravel_api = LaravelApiRepository()
+        effective_targets = await laravel_api.get_effective_targets(zone_id)
+        
+        if not effective_targets or 'error' in effective_targets:
+            return 50.0
+        
+        targets = effective_targets.get('targets', {})
+        climate_request = targets.get('climate_request', {})
+        target_temp = climate_request.get('temp_air_target')
+        target_humidity = climate_request.get('humidity_target')
+    except Exception as e:
+        logger.warning(f'Failed to get effective targets for health monitor zone {zone_id}: {e}')
+        return 50.0
     
     score = 100.0
     
@@ -319,4 +316,3 @@ async def update_zone_health_in_db(zone_id: int, health_data: Dict[str, Any]) ->
         health_data['health_status'],
         zone_id,
     )
-

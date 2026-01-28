@@ -2,7 +2,7 @@
 
 ## Обзор
 
-Полностью реализована система мониторинга и логирования для сервисов `history-logger` и `automation-engine` согласно документации в `doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`.
+Полностью реализована система мониторинга и логирования для сервисов `history-logger` и `automation-engine` согласно документации в `../../doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`.
 
 ## Выполненные задачи
 
@@ -159,7 +159,6 @@ curl http://localhost:9090/api/v1/rules
 
 ## Ссылки
 
-- Документация по мониторингу: `doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`
+- Документация по мониторингу: `../../doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`
 - Prometheus документация: https://prometheus.io/docs/
 - Grafana документация: https://grafana.com/docs/
-

@@ -4,10 +4,11 @@
       v-if="show"
       ref="toastElement"
       :data-toast-id="message"
+      :data-testid="`toast-${variant}`"
       :class="[
-        'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-2xl',
+        'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)]',
         variantClasses[variant]
-        ]"
+      ]"
       style="position: fixed !important; z-index: 10000 !important; display: block !important; visibility: visible !important; opacity: 1 !important;"
     >
       <div class="flex items-start gap-3">
@@ -56,13 +57,23 @@
           </svg>
         </div>
         <div class="flex-1">
-          <p class="text-sm font-medium">{{ message }}</p>
+          <p
+            class="text-sm font-medium"
+            data-testid="toast-message"
+          >
+            {{ message }}
+          </p>
         </div>
         <button
+          class="flex-shrink-0 rounded-md p-1 hover:bg-[color:var(--bg-elevated)]"
           @click="show = false"
-          class="flex-shrink-0 rounded-md p-1 hover:bg-black/20"
         >
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -79,6 +90,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import type { ToastVariant } from '@/composables/useToast'
+import { logger } from '@/utils/logger'
 
 interface Props {
   message: string
@@ -99,14 +111,14 @@ const show = ref<boolean>(true) // Start visible
 const toastElement = ref<HTMLElement | null>(null)
 
 const variantClasses: Record<ToastVariant, string> = {
-  success: 'bg-emerald-900/90 text-emerald-100 border-emerald-700',
-  error: 'bg-red-900/90 text-red-100 border-red-700',
-  warning: 'bg-amber-900/90 text-amber-100 border-amber-700',
-  info: 'bg-sky-900/90 text-sky-100 border-sky-700',
+  success: 'bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border-[color:var(--badge-success-border)]',
+  error: 'bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border-[color:var(--badge-danger-border)]',
+  warning: 'bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)] border-[color:var(--badge-warning-border)]',
+  info: 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]',
 }
 
 onMounted(() => {
-  console.log('=== [Toast] Компонент смонтирован ===', { 
+  logger.debug('[Toast] Компонент смонтирован', { 
     message: props.message, 
     variant: props.variant,
     duration: props.duration,
@@ -122,9 +134,9 @@ onMounted(() => {
     try {
       // Используем ref вместо querySelector для надежного доступа к элементу
       const el = toastElement.value
-      console.log('[Toast] DOM элемент найден:', el)
+      logger.debug('[Toast] DOM элемент найден', el)
       if (el) {
-        console.log('[Toast] Стили элемента:', {
+        logger.debug('[Toast] Стили элемента', {
           display: window.getComputedStyle(el).display,
           visibility: window.getComputedStyle(el).visibility,
           opacity: window.getComputedStyle(el).opacity,
@@ -136,18 +148,18 @@ onMounted(() => {
       }
     } catch (error) {
       // Игнорируем ошибки при отладке - это не критично
-      console.debug('[Toast] Не удалось найти DOM элемент для отладки:', error)
+      logger.debug('[Toast] Не удалось найти DOM элемент для отладки', error)
     }
   }, 100)
   
   // Component starts visible, so we just need to set up auto-close
   if (props.duration > 0) {
     setTimeout(() => {
-      console.log('[Toast] Автоматическое закрытие через', props.duration, 'мс')
+      logger.debug(`[Toast] Автоматическое закрытие через ${props.duration} мс`)
       show.value = false
     }, props.duration)
   }
-  console.log('[Toast] show.value после onMounted:', show.value)
+  logger.debug('[Toast] show.value после onMounted', show.value)
 })
 
 // Emit close event when hidden
@@ -189,4 +201,3 @@ watch(show, (newVal) => {
   transform: translateX(100%);
 }
 </style>
-

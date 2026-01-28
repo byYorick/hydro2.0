@@ -17,10 +17,10 @@ defineExpose({ focus: () => input.value?.focus() });
 </script>
 
 <template>
-    <input
-        v-bind="$attrs"
-        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-        v-model="model"
-        ref="input"
-    />
+  <input
+    v-bind="$attrs"
+    ref="input"
+    v-model="model"
+    class="input-field w-full"
+  />
 </template>

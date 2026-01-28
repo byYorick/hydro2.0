@@ -20,14 +20,11 @@
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
-#include "esp_timer.h"
+#include "node_state_manager.h"
 #include "esp_log.h"
 #include "esp_err.h"
-#include "esp_mac.h"
-#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -90,64 +87,12 @@ static void update_oled_connections(void) {
  * @brief Публикация node_hello сообщения для регистрации узла
  */
 static void ec_node_publish_hello(void) {
-    // Получаем MAC адрес как hardware_id
-    uint8_t mac[6] = {0};
-    esp_err_t err = esp_efuse_mac_get_default(mac);
+    static const char *capabilities[] = {"ec", "temperature"};
+    esp_err_t err = node_utils_publish_node_hello("ec", capabilities, 2);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
-        return;
+        ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish node_hello");
     }
-    
-    // Формируем hardware_id из MAC адреса
-    char hardware_id[32];
-    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    
-    // Получаем версию прошивки
-    // Используем версию ESP-IDF, так как версия прошивки не хранится в config_storage
-    char fw_version[64];
-    const char *idf_ver = esp_get_idf_version();
-    // esp_get_idf_version() уже возвращает версию с префиксом "v", не добавляем еще один
-    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
-    
-    // Создаем JSON сообщение node_hello
-    cJSON *hello = cJSON_CreateObject();
-    if (!hello) {
-        ESP_LOGE(TAG, "Failed to create node_hello JSON");
-        return;
-    }
-    
-    cJSON_AddStringToObject(hello, "message_type", "node_hello");
-    cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
-    cJSON_AddStringToObject(hello, "node_type", "ec");
-    cJSON_AddStringToObject(hello, "fw_version", fw_version);
-    
-    // Добавляем capabilities
-    cJSON *capabilities = cJSON_CreateArray();
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("ec"));
-    cJSON_AddItemToArray(capabilities, cJSON_CreateString("temperature"));
-    cJSON_AddItemToObject(hello, "capabilities", capabilities);
-    
-    // Публикуем в общий топик для регистрации
-    char *json_str = cJSON_PrintUnformatted(hello);
-    if (json_str) {
-        // Используем внутреннюю функцию публикации через mqtt_manager
-        // Публикуем в hydro/node_hello для начальной регистрации
-        // Это будет обработано history-logger и зарегистрирует узел
-        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s", hardware_id);
-        
-        // Публикуем через mqtt_manager_publish_raw
-        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
-        if (pub_err == ESP_OK) {
-            ESP_LOGI(TAG, "node_hello published successfully");
-        } else {
-            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
-        }
-        
-        free(json_str);
-    }
-    
-    cJSON_Delete(hello);
 }
 
 void ec_node_mqtt_connection_cb(bool connected, void *user_ctx) {
@@ -172,6 +117,9 @@ void ec_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();
+
+        // Публикуем текущий NodeConfig на сервер
+        node_utils_publish_config_report();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ec_node is offline");
     }
@@ -205,6 +153,7 @@ esp_err_t ec_node_init_components(void) {
     esp_err_t err = ec_node_init_step_config_storage(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 1 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "config_storage", err, "Config storage initialization failed");
         return err;
     }
     
@@ -217,6 +166,7 @@ esp_err_t ec_node_init_components(void) {
         return ESP_ERR_NOT_FOUND; // setup mode will reboot device
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 2 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "wifi_manager", err, "WiFi manager initialization failed");
         return err;
     }
     
@@ -240,6 +190,7 @@ esp_err_t ec_node_init_components(void) {
         err = wifi_manager_connect(&wifi_config);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_WARNING, "wifi", err, "Failed to connect to Wi-Fi, will retry");
             // Continue - Wi-Fi will try to reconnect automatically
         }
     }
@@ -248,6 +199,7 @@ esp_err_t ec_node_init_components(void) {
     err = ec_node_init_step_i2c(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 3 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "i2c_bus", err, "I2C bus initialization failed");
         // Continue - I2C может быть не критичен
     }
     
@@ -255,6 +207,7 @@ esp_err_t ec_node_init_components(void) {
     err = ec_node_init_step_ec_sensor(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Step 4 failed: %s (will retry later)", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_WARNING, "ec_sensor", err, "EC sensor initialization failed, will retry");
         // Continue - датчик может быть не подключен
     }
     
@@ -271,6 +224,7 @@ esp_err_t ec_node_init_components(void) {
         ESP_LOGW(TAG, "Step 6: No pump channels in config (will initialize when config received)");
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 6 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "pump_driver", err, "Pump driver initialization failed");
         // Continue - насосы могут быть настроены позже
     }
     
@@ -278,15 +232,16 @@ esp_err_t ec_node_init_components(void) {
     err = ec_node_init_step_mqtt(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 7 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "mqtt_manager", err, "MQTT manager initialization failed");
         return err;
     }
     
     // Инициализация node_framework (перед регистрацией MQTT callbacks)
     esp_err_t fw_err = ec_node_framework_init_integration();
     if (fw_err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to initialize node_framework: %s (using legacy handlers)", 
-                esp_err_to_name(fw_err));
-        // Fallback на старые обработчики - но их нет в ec_node, поэтому просто логируем
+        ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(fw_err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", fw_err, "Node framework initialization failed");
+        return fw_err;
     } else {
         // Используем node_framework обработчики
         ec_node_framework_register_mqtt_handlers();
@@ -299,9 +254,9 @@ esp_err_t ec_node_init_components(void) {
     err = ec_node_init_step_finalize(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 8 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "init_finalize", err, "Initialization finalization failed");
         return err;
     }
     
     return ESP_OK;
 }
-

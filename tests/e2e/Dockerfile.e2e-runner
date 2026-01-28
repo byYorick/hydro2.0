@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+RUN apt-get update && \
+    apt-get install -y docker.io docker-compose && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /e2e/requirements.txt
+RUN pip install --no-cache-dir -r /e2e/requirements.txt
+
+WORKDIR /e2e

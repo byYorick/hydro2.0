@@ -3,6 +3,8 @@
 namespace App\Events;
 
 use App\Models\DeviceNode;
+use App\Services\EventSequenceService;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -11,9 +13,13 @@ use Illuminate\Queue\SerializesModels;
 
 class NodeConfigUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
 
     public string $queue = 'broadcasts';
+
+    public int $eventId;
+
+    public int $serverTs;
 
     /**
      * Create a new event instance.
@@ -21,7 +27,10 @@ class NodeConfigUpdated implements ShouldBroadcast
     public function __construct(
         public DeviceNode $node
     ) {
-        //
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -29,6 +38,10 @@ class NodeConfigUpdated implements ShouldBroadcast
      */
     public function broadcastOn(): PrivateChannel
     {
+        if ($this->node->zone_id) {
+            return new PrivateChannel("hydro.zones.{$this->node->zone_id}");
+        }
+
         return new PrivateChannel('hydro.devices');
     }
 
@@ -60,6 +73,30 @@ class NodeConfigUpdated implements ShouldBroadcast
                 'first_seen_at' => $this->node->first_seen_at?->toIso8601String(),
                 'was_recently_created' => $this->node->wasRecentlyCreated,
             ],
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
         ];
+    }
+
+    /**
+     * Записывает событие в zone_events после успешного broadcast.
+     */
+    public function broadcasted(): void
+    {
+        if ($this->node->zone_id) {
+            $this->recordZoneEvent(
+                zoneId: $this->node->zone_id,
+                type: 'device_status',
+                entityType: 'device',
+                entityId: $this->node->id,
+                payload: [
+                    'uid' => $this->node->uid,
+                    'status' => $this->node->status,
+                    'lifecycle_state' => $this->node->lifecycle_state?->value ?? 'UNPROVISIONED',
+                ],
+                eventId: $this->eventId,
+                serverTs: $this->serverTs
+            );
+        }
     }
 }

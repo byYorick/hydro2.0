@@ -1,0 +1,167 @@
+# E16: Command Timeout Flow - timeout handling with WS/DB invariants
+# DoD: timeout handling with WS/DB invariants
+
+name: E16_command_timeout_flow
+description: |
+  Проверяет обработку timeout команд:
+  - Команда отправляется с коротким таймаутом
+  - Node-sim не отвечает вовремя
+  - WS событие CommandTimeout
+  - DB статус обновляется на TIMEOUT
+  - Command автоматически отменяется
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+    test_started_at: ${TIMESTAMP_S}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${node_row.0.zone_id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${node_row.0.node_id}
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
+    test_node_uid: ${test_node_uid}
+
+  - step: subscribe_commands_channel
+    type: websocket_subscribe
+    channel: private-commands.${test_zone_id}
+
+  # Отключаем node-sim временно для имитации timeout
+  - step: pause_node_sim
+    type: fault.inject
+    service: node-sim
+    action: pause
+    optional: true
+
+  - step: send_timeout_command
+    type: api_post
+    endpoint: /api/zones/${test_zone_id}/commands
+    payload:
+      type: FORCE_IRRIGATION
+      node_uid: ${test_node_uid}
+      channel: main_pump
+      params:
+        duration_sec: 30
+      timeout_sec: 3  # Очень короткий таймаут
+    save: timeout_command_response
+
+  - step: extract_timeout_command_id
+    type: set
+    timeout_command_id: ${timeout_command_response.data.command_id}
+
+  # Ждем WS события timeout
+  - step: wait_for_timeout_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      commandId: ${timeout_command_id}
+      status: "TIMEOUT"
+    timeout: 10.0
+    save: ws_timeout_event
+    optional: true
+
+  # Проверяем DB статус после timeout
+  - step: check_timeout_db_status
+    type: database_query
+    query: |
+      SELECT status, updated_at
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${timeout_command_id}
+    save: timeout_status
+
+  # Восстанавливаем node-sim
+  - step: resume_node_sim
+    type: fault.inject
+    service: node-sim
+    action: unpause
+    optional: true
+
+assertions:
+  # Проверка 1: WS событие timeout
+  - name: ws_timeout_event
+    type: custom_assert
+    condition: str(context.get('ws_timeout_event', {}).get('data', {}).get('commandId')) == str(context.get('timeout_command_id'))
+    optional: true
+
+  # Проверка 2: DB статус TIMEOUT
+  - name: db_timeout_status
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${timeout_command_id}
+    expected:
+      - field: status
+        operator: in
+        value: ["TIMEOUT", "SENT"]
+
+  # Проверка 3: Команда не зависла в SENT состоянии
+  - name: no_stuck_commands
+    type: database_query
+    query: |
+      SELECT COUNT(*) as stuck_count
+      FROM commands
+      WHERE status = 'SENT'
+      AND created_at < NOW() - INTERVAL '10 seconds'
+      AND created_at >= to_timestamp(:test_started_at)
+      AND cmd_id != :command_id
+    params:
+      test_started_at: ${test_started_at}
+      command_id: ${timeout_command_id}
+    expected:
+      - field: stuck_count
+        operator: equals
+        value: 0

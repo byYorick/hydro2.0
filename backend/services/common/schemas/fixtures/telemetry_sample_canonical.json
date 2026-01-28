@@ -1,0 +1,12 @@
+{
+  "sensor_id": 101,
+  "ts": "2025-01-15T10:12:00Z",
+  "value": 6.45,
+  "quality": "GOOD",
+  "metadata": {
+    "unit": "pH",
+    "source": "history-logger"
+  },
+  "zone_id": 12,
+  "cycle_id": 3
+}

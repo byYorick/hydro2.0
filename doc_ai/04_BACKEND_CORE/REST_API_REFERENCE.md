@@ -6,6 +6,10 @@
 
 Он дополняет `API_SPEC_FRONTEND_BACKEND_FULL.md`, но сфокусирован именно на списке URL и их назначении.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Auth
@@ -61,7 +65,7 @@
 | GET | /api/nodes | auth:sanctum | Список узлов |
 | POST | /api/nodes | auth:sanctum (operator/admin) | Зарегистрировать узел |
 | GET | /api/nodes/{id} | auth:sanctum | Детали узла |
-| PATCH | /api/nodes/{id} | auth:sanctum (operator/admin) | Обновить конфигурацию |
+| PATCH | /api/nodes/{id} | auth:sanctum (operator/admin) | Обновить метаданные узла (name, zone_id) |
 | DELETE| /api/nodes/{id} | auth:sanctum (admin) | Удалить узел |
 
 Доп. действия:
@@ -69,6 +73,7 @@
 | Метод | Путь | Auth | Описание |
 |-------|------------------------------------|------|--------------------------------------------------|
 | GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
+| GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin) | Отправка низкоуровневых команд |
 
 ---
@@ -174,7 +179,9 @@
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/simulations/zone/{zone} | auth:sanctum (operator/admin) | Запуск симуляции |
-| GET | /api/simulations/{id} | auth:sanctum | Результат симуляции |
+| GET | /api/simulations/{job_id} | auth:sanctum | Статус симуляции + отчет |
+| GET | /api/simulations/{simulation}/events | auth:sanctum | События процесса симуляции |
+| GET | /api/simulations/{simulation}/events/stream | auth:sanctum | SSE-стрим событий симуляции |
 
 ---
 

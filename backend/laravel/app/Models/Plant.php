@@ -51,9 +51,12 @@ class Plant extends Model
             ->withTimestamps();
     }
 
+    /**
+     * @deprecated Используйте GrowCycle::where('plant_id', $this->id) вместо этого relationship
+     */
     public function cycles(): HasMany
     {
-        return $this->hasMany(PlantCycle::class);
+        return $this->hasMany(GrowCycle::class, 'plant_id');
     }
 
     public function priceVersions(): HasMany

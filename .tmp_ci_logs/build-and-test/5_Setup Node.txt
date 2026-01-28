@@ -1,0 +1,22 @@
+﻿2026-01-02T17:44:47.8029281Z ##[group]Run actions/setup-node@v4
+2026-01-02T17:44:47.8029541Z with:
+2026-01-02T17:44:47.8029711Z   node-version: 20
+2026-01-02T17:44:47.8029887Z   cache: npm
+2026-01-02T17:44:47.8030154Z   cache-dependency-path: backend/laravel/package-lock.json
+2026-01-02T17:44:47.8030454Z   always-auth: false
+2026-01-02T17:44:47.8030647Z   check-latest: false
+2026-01-02T17:44:47.8031014Z   token: ***
+2026-01-02T17:44:47.8031179Z env:
+2026-01-02T17:44:47.8031352Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:44:47.8031577Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:44:47.8031784Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:44:47.8031964Z ##[endgroup]
+2026-01-02T17:44:47.9975331Z Found in cache @ /opt/hostedtoolcache/node/20.19.6/x64
+2026-01-02T17:44:47.9982139Z ##[group]Environment details
+2026-01-02T17:44:50.2995424Z node: v20.19.6
+2026-01-02T17:44:50.2995722Z npm: 10.8.2
+2026-01-02T17:44:50.2995934Z yarn: 1.22.22
+2026-01-02T17:44:50.2997090Z ##[endgroup]
+2026-01-02T17:44:50.3043226Z [command]/opt/hostedtoolcache/node/20.19.6/x64/bin/npm config get cache
+2026-01-02T17:44:50.5643441Z /home/runner/.npm
+2026-01-02T17:44:50.8476004Z npm cache is not found

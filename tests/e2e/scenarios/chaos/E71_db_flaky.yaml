@@ -1,0 +1,127 @@
+# E71: DB Flaky - DB ограничения → queues/DLQ фиксируют
+# DoD: ограничить коннекты/вызвать ошибки, system не падает, queues/DLQ фиксируют
+
+name: E71_db_flaky
+description: |
+  Проверяет работу при проблемах с БД:
+  - Ограничиваются коннекты/вызываются ошибки БД
+  - Система не падает
+  - queues/DLQ фиксируют данные для последующей обработки
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${node_row.0.zone_id}
+
+  # Симулируем проблемы с БД (pause PostgreSQL на короткое время) - опционально
+  - step: pause_postgres
+    type: fault.inject
+    service: postgres
+    action: pause
+    duration_s: 10
+    optional: true
+
+  - step: wait_during_pause
+    type: sleep
+    seconds: 5
+
+  # Публикуем ошибку (не должна обработаться из-за паузы БД)
+  - step: publish_error_during_db_pause
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/error
+    payload:
+      level: ERROR
+      component: test
+      error_code: db_flaky_test
+      message: Test error during DB pause
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+
+  # Восстанавливаем БД - опционально
+  - step: unpause_postgres
+    type: fault.inject
+    service: postgres
+    action: unpause
+    optional: true
+
+  - step: wait_after_recovery
+    type: sleep
+    seconds: 10
+
+assertions:
+  # Проверка 1: Система не упала (zone существует)
+  - name: system_still_responding
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 2: Данные попали в очередь/DLQ и обработались после восстановления (опционально)
+  - name: data_queued_and_processed
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND code LIKE '%%db_flaky_test%%'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    params:
+      zone_id: ${zone_id}
+    timeout: 15.0
+    optional: true
+
+cleanup:
+  - step: ensure_postgres_running
+    type: fault.inject
+    service: postgres
+    action: unpause
+    optional: true

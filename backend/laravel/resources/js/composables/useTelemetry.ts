@@ -1,8 +1,8 @@
 /**
  * Composable для работы с телеметрией с кешированием и rate limiting
  */
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
-import { useApi, type ToastHandler } from './useApi'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance, type Ref, type ComputedRef } from 'vue'
+import type { ToastHandler } from './useApi'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
@@ -124,7 +124,6 @@ function cleanupCache(): void {
  * Composable для работы с телеметрией
  */
 export function useTelemetry(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { rateLimitedGet } = useRateLimitedApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
@@ -141,8 +140,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data as ZoneTelemetry
       }
     }
@@ -201,8 +200,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
         return cached.data as TelemetrySample[]
       }
     }
@@ -271,8 +270,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
         return cached.data as TelemetrySample[]
       }
     }
@@ -342,6 +341,74 @@ export function useTelemetry(showToast?: ToastHandler) {
     saveCacheToStorage()
   }
 
+  // Обработчик события reconciliation для обновления телеметрии при переподключении
+  function handleReconciliation(event: CustomEvent) {
+    const { telemetry } = event.detail || {}
+    
+    if (!telemetry || !Array.isArray(telemetry)) {
+      return
+    }
+
+    logger.debug('[useTelemetry] Processing reconciliation telemetry data', {
+      count: telemetry.length,
+    })
+
+    // Группируем телеметрию по zone_id и обновляем кеш
+    const telemetryByZone = new Map<number, ZoneTelemetry>()
+    
+    for (const item of telemetry) {
+      if (!item.zone_id) continue
+      
+      const zoneId = item.zone_id
+      let zoneTelemetry = telemetryByZone.get(zoneId)
+      if (!zoneTelemetry) {
+        zoneTelemetry = {} as ZoneTelemetry
+        telemetryByZone.set(zoneId, zoneTelemetry)
+      }
+
+      const key = item.metric_type || 'unknown'
+      zoneTelemetry[key] = {
+        zone_id: zoneId,
+        node_id: item.node_id,
+        channel: item.channel,
+        metric_type: item.metric_type,
+        value: item.value,
+        ts: item.ts ? new Date(item.ts) : new Date(),
+      } as any
+    }
+
+    // Обновляем кеш для каждой зоны
+    for (const [zoneId, zoneTelemetry] of telemetryByZone.entries()) {
+      const cacheKey = `telemetry_last_${zoneId}`
+      telemetryCache.set(cacheKey, {
+        data: zoneTelemetry,
+        timestamp: Date.now(),
+      })
+    }
+
+    saveCacheToStorage()
+    logger.info('[useTelemetry] Reconciliation completed', {
+      zonesUpdated: telemetryByZone.size,
+    })
+  }
+
+  const hasInstance = !!getCurrentInstance()
+
+  if (hasInstance) {
+    // Подписываемся на событие reconciliation при монтировании
+    onMounted(() => {
+      if (typeof window !== 'undefined') {
+        window.addEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+      }
+    })
+
+    onUnmounted(() => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+      }
+    })
+  }
+
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,
     error: computed(() => error.value) as ComputedRef<Error | null>,
@@ -363,4 +430,3 @@ export function clearTelemetryCache(): void {
     logger.warn('[Telemetry] Failed to clear sessionStorage:', err)
   }
 }
-

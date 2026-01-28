@@ -6,23 +6,25 @@ idf_component_register(
         "ec_node_init.c"
         "ec_node_init_steps.c"
         "ec_node_framework_integration.c"
+        "ec_node_channel_map.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
         mqtt_manager
-        mqtt_client
         wifi_manager
         config_storage
         config_apply
         node_framework
         node_utils
+        init_steps_utils
         trema_ec
         i2c_bus
         oled_ui
         setup_portal
-        connection_status
         heartbeat_task
+        connection_status
         pump_driver
+        factory_reset_button
         driver
         esp_wifi
         nvs_flash
@@ -32,5 +34,5 @@ idf_component_register(
         mqtt
         esp_timer
         json
+        mbedtls
 )
-

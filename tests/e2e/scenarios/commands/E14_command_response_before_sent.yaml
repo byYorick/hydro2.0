@@ -1,0 +1,204 @@
+# E14: Command Response Before Sent - Быстрый response, stub/UPSERT
+# DoD: симулировать "быстрый response", убедиться: stub/UPSERT не ломает финал
+
+name: E14_command_response_before_sent
+description: |
+  Проверяет обработку быстрого ответа от узла:
+  - Узел отвечает на команду до того, как она была помечена как SENT
+  - Система должна корректно обработать такой ответ (stub/UPSERT)
+  - Финальный статус команды остается корректным
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
+
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_zone_and_node
+    type: set
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
+
+  - step: subscribe_zone_channel
+    type: websocket_subscribe
+    channel: hydro.zones.${test_zone_id}
+
+  # Симулируем быстрый ответ: публикуем command_response через MQTT сразу после отправки команды
+  # Это создает race condition, где response может прийти до обновления статуса на SENT
+  - step: send_command
+    type: api_post
+    endpoint: /api/nodes/${test_node_id}/commands
+    payload:
+      cmd: set_relay
+      channel: main_pump
+      params:
+        state: true
+    save: command_response
+    optional: true  # Может вернуть 503 если bridge недоступен
+
+  - step: set_command_id_from_response
+    type: set
+    command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+
+  # Получаем command_id из базы данных
+  - step: get_command_id_from_db
+    type: database_query
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    save: command_from_db
+
+  - step: set_command_id
+    type: set
+    command_id: ${command_from_db.0.cmd_id}
+
+  # Сразу после отправки команды отправляем response через MQTT (симулируем быстрый ответ)
+  - step: publish_fast_response
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response
+    payload:
+      cmd_id: ${command_id}
+      status: ACK
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  # Далее отправляем DONE
+  - step: publish_done_response
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response
+    payload:
+      cmd_id: ${command_id}
+      status: DONE
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+
+  - step: wait_after_second_response
+    type: sleep
+    seconds: 2
+
+  # Проверяем, что финальный статус корректен (не нарушен из-за race condition)
+  - step: wait_for_final_status
+    type: sleep
+    seconds: 2
+
+assertions:
+  # Проверка: Команда достигает финального статуса DONE (DoD требует проверку финализации)
+  # Response before sent не должен ломать систему, но финальный статус должен быть DONE
+  - name: final_status_is_done
+    type: db.wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    timeout: 90.0
+    expected_rows: 1
+    save: command_status
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+
+  # Проверка статуса через database_query (более надежно)
+  - name: assert_status_is_done
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    timeout: 5.0
+    expected_rows: 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    expected:
+      - field: status
+        operator: equals
+        value: "DONE"
+
+  - name: no_status_corruption
+    type: database_query
+    query: |
+      SELECT COUNT(*) as error_count
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      AND cmd_id = :cmd_id
+      AND status NOT IN ('QUEUED', 'SENT', 'ACK', 'DONE', 'ERROR', 'TIMEOUT')
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+      cmd_id: ${command_id}
+    expected:
+      - field: error_count
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере

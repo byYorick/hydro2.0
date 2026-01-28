@@ -10,15 +10,20 @@ return new class extends Migration
     {
         Schema::create('telemetry_samples', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('sensor_id');
             $table->foreignId('zone_id')->nullable()->constrained('zones')->nullOnDelete();
-            $table->foreignId('node_id')->nullable()->constrained('nodes')->nullOnDelete();
-            $table->string('channel')->nullable();
-            $table->string('metric_type');
-            $table->float('value')->nullable();
-            $table->jsonb('raw')->nullable();
-            $table->timestamp('ts')->index();
+            $table->unsignedBigInteger('cycle_id')->nullable();
+            $table->decimal('value', 10, 4);
+            $table->enum('quality', ['GOOD', 'BAD', 'UNCERTAIN'])->default('GOOD');
+            $table->jsonb('metadata')->nullable();
+            $table->timestamp('ts');
             $table->timestamp('created_at')->useCurrent();
-            $table->index(['zone_id', 'metric_type', 'ts'], 'telemetry_samples_zone_metric_ts_idx');
+
+            $table->index(['sensor_id', 'ts'], 'telemetry_samples_sensor_ts_idx');
+            $table->index(['zone_id', 'ts'], 'telemetry_samples_zone_ts_idx');
+            $table->index(['cycle_id', 'ts'], 'telemetry_samples_cycle_ts_idx');
+            $table->index('ts', 'telemetry_samples_ts_idx');
+            $table->index('quality', 'telemetry_samples_quality_idx');
         });
     }
 
@@ -27,5 +32,3 @@ return new class extends Migration
         Schema::dropIfExists('telemetry_samples');
     }
 };
-
-

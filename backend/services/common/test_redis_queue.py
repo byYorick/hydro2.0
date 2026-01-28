@@ -112,7 +112,8 @@ async def test_telemetry_queue_pop_batch_success(mock_redis_client):
         test_json = json.dumps(test_item).encode('utf-8')
         
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         mock_pipeline.execute = AsyncMock(return_value=[test_json])
         mock_redis_client.pipeline.return_value = mock_pipeline
         
@@ -186,7 +187,8 @@ async def test_telemetry_queue_pop_batch_invalid_json(mock_redis_client):
         queue._client = mock_redis_client
         
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         # Возвращаем невалидный JSON
         mock_pipeline.execute = AsyncMock(return_value=[b"invalid json"])
         mock_redis_client.pipeline.return_value = mock_pipeline
@@ -200,10 +202,14 @@ async def test_telemetry_queue_pop_batch_invalid_json(mock_redis_client):
 @pytest.mark.asyncio
 async def test_get_redis_client_connection():
     """Тест получения Redis клиента."""
-    with patch('common.redis_queue.redis.Redis') as mock_redis_class:
+    with patch('common.redis_queue.redis_async.Redis') as mock_redis_class:
         mock_client = AsyncMock()
         mock_client.ping = AsyncMock(return_value=True)
         mock_redis_class.return_value = mock_client
+        
+        # Сбрасываем глобальный клиент
+        import common.redis_queue
+        common.redis_queue._redis_client = None
         
         client = await get_redis_client()
         
@@ -214,10 +220,14 @@ async def test_get_redis_client_connection():
 @pytest.mark.asyncio
 async def test_get_redis_client_connection_failure():
     """Тест обработки ошибки подключения к Redis."""
-    with patch('common.redis_queue.redis.Redis') as mock_redis_class:
+    with patch('common.redis_queue.redis_async.Redis') as mock_redis_class:
         mock_client = AsyncMock()
         mock_client.ping = AsyncMock(side_effect=Exception("Connection failed"))
         mock_redis_class.return_value = mock_client
+        
+        # Сбрасываем глобальный клиент
+        import common.redis_queue
+        common.redis_queue._redis_client = None
         
         with pytest.raises(Exception):
             await get_redis_client()
@@ -226,10 +236,14 @@ async def test_get_redis_client_connection_failure():
 @pytest.mark.asyncio
 async def test_close_redis_client(mock_redis_client):
     """Тест закрытия Redis клиента."""
-    with patch('common.redis_queue._redis_client', mock_redis_client):
-        await close_redis_client()
-        
-        mock_redis_client.close.assert_called_once()
+    import common.redis_queue
+    common.redis_queue._redis_client = mock_redis_client
+    mock_redis_client.aclose = AsyncMock()
+    
+    await close_redis_client()
+    
+    mock_redis_client.aclose.assert_called_once()
+    assert common.redis_queue._redis_client is None
 
 
 @pytest.mark.asyncio
@@ -252,7 +266,8 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
         
         # В очереди только 1 элемент, запрашиваем 100
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         mock_pipeline.execute = AsyncMock(return_value=[test_json, None])  # Второй lpop вернет None
         mock_redis_client.pipeline.return_value = mock_pipeline
         
@@ -260,4 +275,3 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
         
         assert len(items) == 1
         assert items[0].node_uid == "nd-ph-1"
-

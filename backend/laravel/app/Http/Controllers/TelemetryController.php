@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
-use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -14,81 +14,121 @@ class TelemetryController extends Controller
     public function zoneLast(int $zoneId)
     {
         // Проверяем авторизацию
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
                 'message' => 'Authentication required',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+        if (! ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
             Log::warning('TelemetryController: Unauthorized access attempt to zone telemetry', [
                 'user_id' => Auth::id(),
                 'zone_id' => $zoneId,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',
                 'message' => 'Access denied',
             ], 403);
         }
-        
+
+        $metricMap = [
+            'PH' => 'ph',
+            'EC' => 'ec',
+            'TEMPERATURE' => 'temperature',
+            'HUMIDITY' => 'humidity',
+        ];
+
         $rows = TelemetryLast::query()
-            ->where('zone_id', $zoneId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->where('sensors.is_active', true)
+            ->select([
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts',
+                'telemetry_last.updated_at',
+                'telemetry_last.sensor_id',
+            ])
+            ->orderByRaw('telemetry_last.last_ts DESC NULLS LAST')
+            ->orderByRaw('telemetry_last.updated_at DESC NULLS LAST')
+            ->orderByDesc('telemetry_last.sensor_id')
             ->get();
+
+        $data = [];
+        foreach ($rows as $row) {
+            $metricType = strtoupper((string) $row->metric_type);
+            $key = $metricMap[$metricType] ?? null;
+            if ($key === null || array_key_exists($key, $data)) {
+                continue;
+            }
+            $data[$key] = $row->value !== null ? (float) $row->value : null;
+        }
 
         return response()->json([
             'status' => 'ok',
-            'data' => $rows,
+            'data' => $data,
         ]);
     }
 
     public function zoneHistory(Request $request, int $zoneId)
     {
         // Проверяем авторизацию
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
                 'message' => 'Authentication required',
             ], 401);
         }
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+        if (! ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
             Log::warning('TelemetryController: Unauthorized access attempt to zone history', [
                 'user_id' => Auth::id(),
                 'zone_id' => $zoneId,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',
                 'message' => 'Access denied',
             ], 403);
         }
-        
+
         $validated = $request->validate([
             'metric' => ['required', 'string', 'max:64'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
         ]);
 
-        $q = TelemetrySample::query()->where('zone_id', $zoneId)
-            ->where('metric_type', $validated['metric'])
-            ->orderBy('ts', 'asc');
+        $metric = strtoupper($validated['metric']);
+        $q = TelemetrySample::query()
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->where('sensors.type', $metric)
+            ->orderBy('telemetry_samples.ts', 'asc');
 
-        if (!empty($validated['from'])) {
-            $q->where('ts', '>=', $validated['from']);
+        if (! empty($validated['from'])) {
+            $q->where('telemetry_samples.ts', '>=', $validated['from']);
         }
-        if (!empty($validated['to'])) {
-            $q->where('ts', '<=', $validated['to']);
+        if (! empty($validated['to'])) {
+            $q->where('telemetry_samples.ts', '<=', $validated['to']);
         }
 
-        $rows = $q->limit(5000)->get(['ts', 'value', 'node_id', 'channel']);
+        $rows = $q->limit(5000)->get([
+            'telemetry_samples.ts',
+            'telemetry_samples.value',
+            'sensors.node_id',
+            'sensors.label as channel',
+            'sensors.type as metric_type',
+        ]);
 
         return response()->json([
             'status' => 'ok',
@@ -99,30 +139,42 @@ class TelemetryController extends Controller
     public function nodeLast(int $nodeId)
     {
         // Проверяем авторизацию
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
                 'message' => 'Authentication required',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
+        if (! ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
             Log::warning('TelemetryController: Unauthorized access attempt to node telemetry', [
                 'user_id' => Auth::id(),
                 'node_id' => $nodeId,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',
                 'message' => 'Access denied',
             ], 403);
         }
-        
+
         $rows = TelemetryLast::query()
-            ->where('node_id', $nodeId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.node_id', $nodeId)
+            ->whereNotNull('sensors.node_id')
+            ->select([
+                'sensors.zone_id',
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as ts',
+                'telemetry_last.last_quality as quality',
+                'telemetry_last.updated_at',
+            ])
             ->get();
 
         return response()->json([
@@ -137,28 +189,28 @@ class TelemetryController extends Controller
     public function nodeHistory(Request $request, int $nodeId)
     {
         // Проверяем авторизацию
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
                 'message' => 'Authentication required',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
+        if (! ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
             Log::warning('TelemetryController: Unauthorized access attempt to node history', [
                 'user_id' => Auth::id(),
                 'node_id' => $nodeId,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',
                 'message' => 'Access denied',
             ], 403);
         }
-        
+
         $validated = $request->validate([
             'metric' => ['required', 'string', 'max:64'],
             'channel' => ['nullable', 'string', 'max:64'],
@@ -166,22 +218,31 @@ class TelemetryController extends Controller
             'to' => ['nullable', 'date'],
         ]);
 
-        $q = TelemetrySample::query()->where('node_id', $nodeId)
-            ->where('metric_type', $validated['metric'])
-            ->orderBy('ts', 'asc');
+        $metric = strtoupper($validated['metric']);
+        $q = TelemetrySample::query()
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('sensors.node_id', $nodeId)
+            ->whereNotNull('sensors.node_id')
+            ->where('sensors.type', $metric)
+            ->orderBy('telemetry_samples.ts', 'asc');
 
-        if (!empty($validated['channel'])) {
-            $q->where('channel', $validated['channel']);
+        if (! empty($validated['channel'])) {
+            $q->where('sensors.label', $validated['channel']);
         }
 
-        if (!empty($validated['from'])) {
-            $q->where('ts', '>=', $validated['from']);
+        if (! empty($validated['from'])) {
+            $q->where('telemetry_samples.ts', '>=', $validated['from']);
         }
-        if (!empty($validated['to'])) {
-            $q->where('ts', '<=', $validated['to']);
+        if (! empty($validated['to'])) {
+            $q->where('telemetry_samples.ts', '<=', $validated['to']);
         }
 
-        $rows = $q->limit(5000)->get(['ts', 'value', 'channel']);
+        $rows = $q->limit(5000)->get([
+            'telemetry_samples.ts',
+            'telemetry_samples.value',
+            'sensors.label as channel',
+            'sensors.type as metric_type',
+        ]);
 
         return response()->json([
             'status' => 'ok',
@@ -191,21 +252,20 @@ class TelemetryController extends Controller
 
     /**
      * Получить агрегированные данные телеметрии
-     * 
-     * @param Request $request
+     *
      * @return \Illuminate\Http\JsonResponse
      */
     public function aggregates(Request $request)
     {
         // Проверяем авторизацию
-        if (!Auth::check()) {
+        if (! Auth::check()) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UNAUTHENTICATED',
                 'message' => 'Authentication required',
             ], 401);
         }
-        
+
         $validated = $request->validate([
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
             'metric' => ['required', 'string'],
@@ -213,14 +273,14 @@ class TelemetryController extends Controller
         ]);
 
         $zoneId = $validated['zone_id'];
-        
+
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+        if (! ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
             Log::warning('TelemetryController: Unauthorized access attempt to zone aggregates', [
                 'user_id' => Auth::id(),
                 'zone_id' => $zoneId,
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'FORBIDDEN',
@@ -231,17 +291,17 @@ class TelemetryController extends Controller
         $period = $validated['period'];
 
         // Валидация метрики после преобразования
-        $allowedMetrics = ['PH', 'EC', 'TEMP', 'HUMIDITY', 'WATER_LEVEL', 'FLOW_RATE'];
-        if (!in_array($metric, $allowedMetrics)) {
+        $allowedMetrics = ['PH', 'EC', 'TEMPERATURE', 'HUMIDITY', 'WATER_LEVEL', 'FLOW_RATE', 'PUMP_CURRENT'];
+        if (! in_array($metric, $allowedMetrics)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Invalid metric. Allowed: ' . implode(', ', array_map('strtolower', $allowedMetrics)),
+                'message' => 'Invalid metric. Allowed: '.implode(', ', array_map('strtolower', $allowedMetrics)),
             ], 400);
         }
 
         // Определяем временной диапазон
         $now = now();
-        $from = match($period) {
+        $from = match ($period) {
             '1h' => $now->copy()->subHour(),
             '24h' => $now->copy()->subDay(),
             '7d' => $now->copy()->subWeek(),
@@ -250,7 +310,7 @@ class TelemetryController extends Controller
         };
 
         // Определяем таблицу агрегации и интервал в зависимости от периода
-        $table = match($period) {
+        $table = match ($period) {
             '1h' => 'telemetry_agg_1m', // Для 1 часа используем минутные агрегаты
             '24h' => 'telemetry_agg_1h', // Для 24 часов используем часовые агрегаты
             '7d', '30d' => 'telemetry_agg_1h', // Для длительных периодов тоже часовые
@@ -300,7 +360,7 @@ class TelemetryController extends Controller
         } catch (\Exception $e) {
             // Если таблица агрегации не существует или произошла ошибка,
             // возвращаем данные из raw samples с более простой агрегацией
-            \Log::warning('Failed to get aggregates from aggregated table, falling back to raw samples', [
+            Log::warning('Failed to get aggregates from aggregated table, falling back to raw samples', [
                 'error' => $e->getMessage(),
                 'table' => $table,
             ]);
@@ -308,16 +368,17 @@ class TelemetryController extends Controller
             // Fallback: используем raw samples с date_trunc
             $query = "
                 SELECT 
-                    date_trunc('hour', ts) as ts,
-                    AVG(value) as avg_value,
-                    MIN(value) as min_value,
-                    MAX(value) as max_value
+                    date_trunc('hour', telemetry_samples.ts) as ts,
+                    AVG(telemetry_samples.value) as avg_value,
+                    MIN(telemetry_samples.value) as min_value,
+                    MAX(telemetry_samples.value) as max_value
                 FROM telemetry_samples
-                WHERE zone_id = ?
-                    AND metric_type = ?
-                    AND ts >= ?
-                    AND ts <= ?
-                GROUP BY date_trunc('hour', ts)
+                JOIN sensors ON telemetry_samples.sensor_id = sensors.id
+                WHERE sensors.zone_id = ?
+                    AND sensors.type = ?
+                    AND telemetry_samples.ts >= ?
+                    AND telemetry_samples.ts <= ?
+                GROUP BY date_trunc('hour', telemetry_samples.ts)
                 ORDER BY ts ASC
             ";
 
@@ -345,5 +406,3 @@ class TelemetryController extends Controller
         }
     }
 }
-
-

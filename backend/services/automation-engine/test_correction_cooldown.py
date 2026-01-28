@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, Mock
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -25,7 +26,7 @@ async def test_get_last_correction_time_ph():
     """Тест получения времени последней корректировки pH."""
     with patch("correction_cooldown.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"created_at": datetime.utcnow() - timedelta(minutes=5)}
+            {"created_at": utcnow() - timedelta(minutes=5)}
         ]
         
         result = await get_last_correction_time(1, "ph")
@@ -50,7 +51,7 @@ async def test_get_last_correction_time_no_corrections():
 async def test_is_in_cooldown_true():
     """Тест проверки cooldown - в периоде cooldown."""
     with patch("correction_cooldown.get_last_correction_time") as mock_get:
-        mock_get.return_value = datetime.utcnow() - timedelta(minutes=5)
+        mock_get.return_value = utcnow() - timedelta(minutes=5)
         
         result = await is_in_cooldown(1, "ph", cooldown_minutes=10)
         
@@ -61,7 +62,7 @@ async def test_is_in_cooldown_true():
 async def test_is_in_cooldown_false():
     """Тест проверки cooldown - вне периода cooldown."""
     with patch("correction_cooldown.get_last_correction_time") as mock_get:
-        mock_get.return_value = datetime.utcnow() - timedelta(minutes=15)
+        mock_get.return_value = utcnow() - timedelta(minutes=15)
         
         result = await is_in_cooldown(1, "ph", cooldown_minutes=10)
         
@@ -86,7 +87,7 @@ async def test_analyze_trend_improving():
         # Симулируем значения, которые приближаются к цели (6.5)
         target = 6.5
         values = [6.0, 6.2, 6.3, 6.4]  # Приближаются к 6.5
-        now = datetime.utcnow()
+        now = utcnow()
         mock_fetch.return_value = [
             {"value": v, "ts": now - timedelta(hours=2-i*0.5)}
             for i, v in enumerate(values)
@@ -105,7 +106,7 @@ async def test_analyze_trend_not_enough_data():
     """Тест анализа тренда - недостаточно данных."""
     with patch("correction_cooldown.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"value": 6.0, "ts": datetime.utcnow() - timedelta(hours=1)}
+            {"value": 6.0, "ts": utcnow() - timedelta(hours=1)}
         ]
         
         is_improving, slope = await analyze_trend(1, "PH", 6.5, 6.5, hours=2)
@@ -121,7 +122,7 @@ async def test_should_apply_correction_in_cooldown():
     with patch("correction_cooldown.is_in_cooldown") as mock_cooldown, \
          patch("correction_cooldown.get_last_correction_time") as mock_get_time:
         mock_cooldown.return_value = True
-        mock_get_time.return_value = datetime.utcnow() - timedelta(minutes=5)
+        mock_get_time.return_value = utcnow() - timedelta(minutes=5)
         
         should, reason = await should_apply_correction(1, "ph", 6.0, 6.5, -0.5)
         
@@ -183,4 +184,3 @@ async def test_should_apply_correction_small_deviation():
         
         assert should is False
         assert "допустимого" in reason.lower() or "acceptable" in reason.lower()
-

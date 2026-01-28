@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CommandResponse",
+  "description": "Единый контракт ответа на команду для всех сервисов",
+  "type": "object",
+  "required": ["cmd_id", "status", "ts"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Идентификатор команды, на которую приходит ответ",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "description": "Статус выполнения команды",
+      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp ответа в миллисекундах",
+      "minimum": 0
+    },
+    "details": {
+      "type": "object",
+      "description": "Дополнительные детали ответа",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

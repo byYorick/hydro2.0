@@ -13,18 +13,370 @@
 #include "node_state_manager.h"
 #include "relay_node_app.h"
 #include "relay_node_defaults.h"
+#include "relay_node_hw_map.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
 #include "esp_log.h"
+#include <string.h>
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include "freertos/timers.h"
 #include "cJSON.h"
+#include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 
 static const char *TAG = "relay_node_fw";
 
+#define RELAY_NODE_MAX_AUTO_OFF_CHANNELS 16
+#define RELAY_NODE_MAX_CHANNEL_NAME_LEN 64
+#define RELAY_NODE_MAX_CMD_ID_LEN 64
+#define RELAY_NODE_MAX_AUTO_OFF_DURATION_MS 300000U
+
+typedef struct {
+    char channel_name[RELAY_NODE_MAX_CHANNEL_NAME_LEN];
+    char cmd_id[RELAY_NODE_MAX_CMD_ID_LEN];
+    TimerHandle_t timer;
+    bool in_use;
+} relay_node_auto_off_entry_t;
+
+typedef struct {
+    char channel_name[RELAY_NODE_MAX_CHANNEL_NAME_LEN];
+    char cmd_id[RELAY_NODE_MAX_CMD_ID_LEN];
+} relay_node_done_event_t;
+
+static relay_node_auto_off_entry_t s_auto_off_entries[RELAY_NODE_MAX_AUTO_OFF_CHANNELS] = {0};
+static QueueHandle_t s_auto_off_done_queue = NULL;
+
 // Forward declaration для callback safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx);
+static cJSON *relay_node_channels_callback(void *user_ctx);
+static void relay_node_config_handler_wrapper(
+    const char *topic,
+    const char *data,
+    int data_len,
+    void *user_ctx
+);
+static void relay_node_build_error_details(
+    esp_err_t err,
+    const char *channel,
+    int requested_state,
+    const char *action,
+    const char **error_code_out,
+    const char **error_message_out,
+    cJSON **extra_out
+);
+
+static bool relay_node_parse_state(const cJSON *state_item, int *state_out) {
+    if (!state_item || !state_out) {
+        return false;
+    }
+
+    if (cJSON_IsNumber(state_item)) {
+        *state_out = state_item->valueint != 0 ? 1 : 0;
+        return true;
+    }
+
+    if (cJSON_IsBool(state_item)) {
+        *state_out = cJSON_IsTrue(state_item) ? 1 : 0;
+        return true;
+    }
+
+    if (cJSON_IsString(state_item) && state_item->valuestring) {
+        const char *value = state_item->valuestring;
+        if (strcasecmp(value, "open") == 0 ||
+            strcasecmp(value, "off") == 0 ||
+            strcasecmp(value, "false") == 0) {
+            *state_out = 0;
+            return true;
+        }
+        if (strcasecmp(value, "closed") == 0 ||
+            strcasecmp(value, "on") == 0 ||
+            strcasecmp(value, "true") == 0) {
+            *state_out = 1;
+            return true;
+        }
+        char *endptr = NULL;
+        long parsed = strtol(value, &endptr, 10);
+        if (endptr && *endptr == '\0') {
+            *state_out = parsed != 0 ? 1 : 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void relay_node_auto_off_task(void *pvParameters) {
+    (void) pvParameters;
+    relay_node_done_event_t event;
+
+    while (true) {
+        if (xQueueReceive(s_auto_off_done_queue, &event, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+
+        if (!event.cmd_id[0] || !event.channel_name[0]) {
+            continue;
+        }
+
+        cJSON *done_response = node_command_handler_create_response(
+            event.cmd_id,
+            "DONE",
+            NULL,
+            NULL,
+            NULL
+        );
+        if (done_response) {
+            char *json_str = cJSON_PrintUnformatted(done_response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(event.channel_name, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(done_response);
+        }
+        node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "DONE");
+    }
+}
+
+static void relay_node_auto_off_timer_cb(TimerHandle_t timer) {
+    relay_node_auto_off_entry_t *entry = (relay_node_auto_off_entry_t *) pvTimerGetTimerID(timer);
+    if (!entry || !entry->channel_name[0]) {
+        return;
+    }
+
+    esp_err_t err = relay_driver_set_state(entry->channel_name, RELAY_STATE_OPEN);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Auto-off failed for channel %s: %s",
+                 entry->channel_name, esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Auto-off: relay %s opened", entry->channel_name);
+    }
+
+    if (entry->cmd_id[0] && s_auto_off_done_queue) {
+        relay_node_done_event_t event = {0};
+        strncpy(event.channel_name, entry->channel_name, sizeof(event.channel_name) - 1);
+        event.channel_name[sizeof(event.channel_name) - 1] = '\0';
+        strncpy(event.cmd_id, entry->cmd_id, sizeof(event.cmd_id) - 1);
+        event.cmd_id[sizeof(event.cmd_id) - 1] = '\0';
+        if (xQueueSend(s_auto_off_done_queue, &event, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "Auto-off done queue full for channel %s", entry->channel_name);
+        }
+        entry->cmd_id[0] = '\0';
+    }
+}
+
+static relay_node_auto_off_entry_t *relay_node_get_auto_off_entry(const char *channel, bool create) {
+    if (!channel || !channel[0]) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_MAX_AUTO_OFF_CHANNELS; i++) {
+        if (s_auto_off_entries[i].in_use &&
+            strcmp(s_auto_off_entries[i].channel_name, channel) == 0) {
+            return &s_auto_off_entries[i];
+        }
+    }
+
+    if (!create) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_MAX_AUTO_OFF_CHANNELS; i++) {
+        if (!s_auto_off_entries[i].in_use) {
+            relay_node_auto_off_entry_t *entry = &s_auto_off_entries[i];
+            entry->in_use = true;
+            strncpy(entry->channel_name, channel, sizeof(entry->channel_name) - 1);
+            entry->channel_name[sizeof(entry->channel_name) - 1] = '\0';
+            return entry;
+        }
+    }
+
+    ESP_LOGW(TAG, "Auto-off table full, cannot schedule for channel %s", channel);
+    return NULL;
+}
+
+static void relay_node_schedule_auto_off(const char *channel, const char *cmd_id, uint32_t duration_ms) {
+    relay_node_auto_off_entry_t *entry = relay_node_get_auto_off_entry(channel, true);
+    if (!entry) {
+        return;
+    }
+
+    if (cmd_id && cmd_id[0]) {
+        strncpy(entry->cmd_id, cmd_id, sizeof(entry->cmd_id) - 1);
+        entry->cmd_id[sizeof(entry->cmd_id) - 1] = '\0';
+    } else {
+        entry->cmd_id[0] = '\0';
+    }
+
+    if (!entry->timer) {
+        entry->timer = xTimerCreate("relay_off",
+                                    pdMS_TO_TICKS(1000),
+                                    pdFALSE,
+                                    entry,
+                                    relay_node_auto_off_timer_cb);
+        if (!entry->timer) {
+            ESP_LOGW(TAG, "Failed to create auto-off timer for channel %s", channel);
+            return;
+        }
+    }
+
+    if (xTimerChangePeriod(entry->timer, pdMS_TO_TICKS(duration_ms), 0) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to set auto-off timer for channel %s", channel);
+        return;
+    }
+
+    if (xTimerStart(entry->timer, 0) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to start auto-off timer for channel %s", channel);
+    }
+}
+
+static void relay_node_cancel_auto_off(const char *channel, bool clear_cmd_id) {
+    relay_node_auto_off_entry_t *entry = relay_node_get_auto_off_entry(channel, false);
+    if (!entry || !entry->timer) {
+        return;
+    }
+
+    xTimerStop(entry->timer, 0);
+    if (clear_cmd_id) {
+        entry->cmd_id[0] = '\0';
+    }
+}
+
+static bool relay_node_is_valve_channel(const char *channel_name) {
+    if (channel_name == NULL) {
+        return false;
+    }
+    return strncmp(channel_name, "valve", 5) == 0;
+}
+
+static cJSON *relay_node_build_channels_from_hw_map(void) {
+    cJSON *channels = cJSON_CreateArray();
+    if (!channels) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_HW_CHANNELS_COUNT; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (!hw->channel_name) {
+            continue;
+        }
+
+        cJSON *entry = cJSON_CreateObject();
+        if (!entry) {
+            cJSON_Delete(channels);
+            return NULL;
+        }
+
+        cJSON_AddStringToObject(entry, "name", hw->channel_name);
+        cJSON_AddStringToObject(entry, "channel", hw->channel_name);
+        cJSON_AddStringToObject(entry, "type", "ACTUATOR");
+        const char *actuator_type = relay_node_is_valve_channel(hw->channel_name) ? "VALVE" : "RELAY";
+        cJSON_AddStringToObject(entry, "actuator_type", actuator_type);
+        cJSON_AddStringToObject(entry, "metric", actuator_type);
+        cJSON_AddBoolToObject(entry, "active_high", hw->active_high);
+        cJSON_AddStringToObject(entry, "relay_type", hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+
+        cJSON *safe_limits = cJSON_CreateObject();
+        if (safe_limits) {
+            cJSON_AddStringToObject(safe_limits, "fail_safe_mode", hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+            cJSON_AddItemToObject(entry, "safe_limits", safe_limits);
+        }
+        cJSON_AddItemToArray(channels, entry);
+    }
+
+    return channels;
+}
+
+static cJSON *relay_node_channels_callback(void *user_ctx) {
+    (void)user_ctx;
+    return relay_node_build_channels_from_hw_map();
+}
+
+static void relay_node_build_error_details(
+    esp_err_t err,
+    const char *channel,
+    int requested_state,
+    const char *action,
+    const char **error_code_out,
+    const char **error_message_out,
+    cJSON **extra_out
+) {
+    const char *error_code = "relay_gpio_error";
+    const char *error_message = "Relay GPIO error";
+
+    switch (err) {
+        case ESP_ERR_INVALID_STATE:
+            error_code = "relay_not_initialized";
+            error_message = "Relay driver not initialized";
+            break;
+        case ESP_ERR_INVALID_ARG:
+            error_code = "relay_invalid_channel";
+            error_message = "Invalid relay channel";
+            break;
+        case ESP_ERR_NOT_FOUND:
+            error_code = "relay_channel_not_found";
+            error_message = "Relay channel not found";
+            break;
+        case ESP_ERR_TIMEOUT:
+            error_code = "relay_mutex_timeout";
+            error_message = "Relay command timeout";
+            break;
+        default:
+            break;
+    }
+
+    if (error_code_out) {
+        *error_code_out = error_code;
+    }
+    if (error_message_out) {
+        *error_message_out = error_message;
+    }
+
+    if (extra_out) {
+        cJSON *extra = cJSON_CreateObject();
+        if (extra) {
+            if (channel) {
+                cJSON_AddStringToObject(extra, "channel", channel);
+            }
+            cJSON_AddStringToObject(extra, "action", action ? action : "set_relay");
+            cJSON_AddNumberToObject(extra, "requested_state", requested_state);
+            cJSON_AddStringToObject(extra, "esp_err", esp_err_to_name(err));
+        }
+        *extra_out = extra;
+    }
+}
+
+// Реализация резолвера аппаратной карты для драйвера реле
+bool relay_driver_resolve_hw_gpio(const char *channel_name, int *gpio_pin_out, bool *active_high_out, relay_type_t *relay_type_out) {
+    if (channel_name == NULL || gpio_pin_out == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_HW_CHANNELS_COUNT; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (strcmp(hw->channel_name, channel_name) == 0) {
+            *gpio_pin_out = hw->gpio_pin;
+            if (active_high_out) {
+                *active_high_out = hw->active_high;
+            }
+            if (relay_type_out) {
+                *relay_type_out = hw->relay_type;
+            }
+            ESP_LOGI(TAG, "Resolved GPIO for channel %s -> %d (active_high=%s, type=%s)",
+                     channel_name, hw->gpio_pin,
+                     hw->active_high ? "true" : "false",
+                     hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+            return true;
+        }
+    }
+
+    ESP_LOGW(TAG, "No hardware mapping for channel %s", channel_name);
+    return false;
+}
 
 // Callback для инициализации каналов из NodeConfig
 static esp_err_t relay_node_init_channel_callback(
@@ -56,18 +408,10 @@ static esp_err_t relay_node_init_channel_callback(
         cJSON *actuator_type = cJSON_GetObjectItem(channel_config, "actuator_type");
         if (actuator_type && cJSON_IsString(actuator_type)) {
             const char *act_type = actuator_type->valuestring;
-            if (strcmp(act_type, "RELAY") == 0) {
-                cJSON *gpio_item = cJSON_GetObjectItem(channel_config, "gpio");
-                if (gpio_item && cJSON_IsNumber(gpio_item)) {
-                    int gpio = gpio_item->valueint;
-                    ESP_LOGI(TAG, "Relay channel %s configured on GPIO %d (will be initialized via relay_driver_init_from_config)", 
-                            channel_name, gpio);
-                    return ESP_OK;
-                } else {
-                    // Не считаем это критичной ошибкой: пропускаем канал без GPIO, чтобы нода не падала на частичных конфигурациях
-                    ESP_LOGW(TAG, "Relay channel %s has no GPIO specified, skipping initialization", channel_name);
-                    return ESP_OK;
-                }
+            if (strcmp(act_type, "RELAY") == 0 || strcmp(act_type, "VALVE") == 0) {
+                // GPIO теперь задаётся только в прошивке; наличие или отсутствие в конфиге не критично
+                ESP_LOGI(TAG, "Relay channel %s acknowledged (GPIO resolved in firmware)", channel_name);
+                return ESP_OK;
             }
         }
     }
@@ -76,7 +420,8 @@ static esp_err_t relay_node_init_channel_callback(
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-// Обработчик команды set_state
+// Обработчик команды set_relay с командным автоматом
+// Состояния: ACCEPTED -> DONE/FAILED
 static esp_err_t handle_set_state(
     const char *channel,
     const cJSON *params,
@@ -89,49 +434,89 @@ static esp_err_t handle_set_state(
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Извлекаем cmd_id из params
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
+
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
     int state = 0;
-    if (cJSON_IsNumber(state_item)) {
-        state = state_item->valueint;
-    } else if (cJSON_IsBool(state_item)) {
-        state = cJSON_IsTrue(state_item) ? 1 : 0;
-    } else if (cJSON_IsString(state_item) && state_item->valuestring) {
-        state = atoi(state_item->valuestring);
-    } else {
-        ESP_LOGW(TAG, "set_state invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
+    if (!relay_node_parse_state(state_item, &state)) {
+        ESP_LOGW(TAG, "set_relay invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
+            cmd_id,
+            "FAILED",
             "invalid_params",
             "Missing or invalid state",
             NULL
         );
         return ESP_ERR_INVALID_ARG;
     }
+
+    cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
+    uint32_t duration_ms = 0;
+    if (cJSON_IsNumber(duration_item)) {
+        duration_ms = (uint32_t) cJSON_GetNumberValue(duration_item);
+    } else if (cJSON_IsString(duration_item) && duration_item->valuestring) {
+        duration_ms = (uint32_t) atoi(duration_item->valuestring);
+    }
+
+    if (duration_ms > RELAY_NODE_MAX_AUTO_OFF_DURATION_MS) {
+        duration_ms = RELAY_NODE_MAX_AUTO_OFF_DURATION_MS;
+    }
+    
+    bool use_delayed_done = (state == 1 && duration_ms > 0);
+
+    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды (если DONE будет сразу)
+    if (cmd_id && !use_delayed_done) {
+        node_command_handler_publish_accepted(cmd_id, channel);
+    }
+    
     relay_state_t relay_state = (state == 0) ? RELAY_STATE_OPEN : RELAY_STATE_CLOSED;
 
+    // Шаг 2: Выполняем команду
     esp_err_t err = relay_driver_set_state(channel, relay_state);
+    
+    // Шаг 3: Отправляем финальный ответ DONE или FAILED
+    const char *final_status;
+    const char *error_code = NULL;
+    const char *error_message = NULL;
+    cJSON *error_details = NULL;
+    
     if (err != ESP_OK) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "relay_error",
-            "Failed to set relay state",
-            NULL
+        final_status = "FAILED";
+        relay_node_build_error_details(
+            err,
+            channel,
+            state,
+            "set_relay",
+            &error_code,
+            &error_message,
+            &error_details
         );
-        return err;
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
+        relay_node_cancel_auto_off(channel, true);
+    } else {
+        if (use_delayed_done) {
+            final_status = "ACCEPTED";
+            relay_node_schedule_auto_off(channel, cmd_id, duration_ms);
+        } else {
+            final_status = "DONE";
+            relay_node_cancel_auto_off(channel, true);
+        }
     }
 
     *response = node_command_handler_create_response(
-        NULL,
-        "ACK",
-        NULL,
-        NULL,
-        NULL
+        cmd_id,
+        final_status,
+        error_code,
+        error_message,
+        error_details
     );
+    if (error_details) {
+        cJSON_Delete(error_details);
+    }
 
-    ESP_LOGI(TAG, "Relay %s set to state %d", channel, state);
-    return ESP_OK;
+    ESP_LOGI(TAG, "Relay %s set to state %d (%s)", channel, state, final_status);
+    return err;
 }
 
 // Обработчик команды toggle
@@ -141,24 +526,43 @@ static esp_err_t handle_toggle(
     cJSON **response,
     void *user_ctx
 ) {
-    (void)params;
     (void)user_ctx;
 
     if (channel == NULL || response == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Извлекаем cmd_id из params
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
+
     relay_state_t current_state;
     esp_err_t get_err = relay_driver_get_state(channel, &current_state);
     
     if (get_err != ESP_OK) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "relay_not_found",
-            "Relay channel not found",
-            NULL
+        const char *error_code = NULL;
+        const char *error_message = NULL;
+        cJSON *error_details = NULL;
+
+        relay_node_build_error_details(
+            get_err,
+            channel,
+            -1,
+            "toggle",
+            &error_code,
+            &error_message,
+            &error_details
         );
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", get_err, error_message);
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "FAILED",
+            error_code,
+            error_message,
+            error_details
+        );
+        if (error_details) {
+            cJSON_Delete(error_details);
+        }
         return get_err;
     }
 
@@ -166,21 +570,38 @@ static esp_err_t handle_toggle(
     esp_err_t err = relay_driver_set_state(channel, new_state);
     
     if (err != ESP_OK) {
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "relay_error",
-            "Failed to toggle relay",
-            NULL
+        const char *error_code = NULL;
+        const char *error_message = NULL;
+        cJSON *error_details = NULL;
+
+        relay_node_build_error_details(
+            err,
+            channel,
+            new_state == RELAY_STATE_CLOSED ? 1 : 0,
+            "toggle",
+            &error_code,
+            &error_message,
+            &error_details
         );
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "FAILED",
+            error_code,
+            error_message,
+            error_details
+        );
+        if (error_details) {
+            cJSON_Delete(error_details);
+        }
         return err;
     }
 
     cJSON *extra = cJSON_CreateObject();
     cJSON_AddNumberToObject(extra, "state", new_state);
     *response = node_command_handler_create_response(
-        NULL,
-        "ACK",
+        cmd_id,
+        "DONE",
         NULL,
         NULL,
         extra
@@ -194,6 +615,15 @@ static esp_err_t handle_toggle(
 // Инициализация node_framework для relay_node
 esp_err_t relay_node_framework_init(void) {
     ESP_LOGI(TAG, "Initializing node_framework for relay_node...");
+
+    if (!s_auto_off_done_queue) {
+        s_auto_off_done_queue = xQueueCreate(8, sizeof(relay_node_done_event_t));
+        if (s_auto_off_done_queue) {
+            xTaskCreate(relay_node_auto_off_task, "relay_auto_off", 4096, NULL, 4, NULL);
+        } else {
+            ESP_LOGW(TAG, "Failed to create auto-off done queue");
+        }
+    }
 
     node_framework_config_t config = {
         .node_type = "relay",
@@ -209,13 +639,14 @@ esp_err_t relay_node_framework_init(void) {
     esp_err_t err = node_framework_init(&config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", err, "Node framework initialization failed");
         return err;
     }
 
     // Регистрация обработчиков команд
-    err = node_command_handler_register("set_state", handle_set_state, NULL);
+    err = node_command_handler_register("set_relay", handle_set_state, NULL);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to register set_state handler: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "Failed to register set_relay handler: %s", esp_err_to_name(err));
     }
 
     err = node_command_handler_register("toggle", handle_toggle, NULL);
@@ -228,6 +659,8 @@ esp_err_t relay_node_framework_init(void) {
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register safe mode callback: %s", esp_err_to_name(err));
     }
+
+    node_config_handler_set_channels_callback(relay_node_channels_callback, NULL);
 
     ESP_LOGI(TAG, "node_framework initialized for relay_node");
     return ESP_OK;
@@ -242,6 +675,46 @@ static void relay_node_command_handler_wrapper(
     void *user_ctx
 ) {
     node_command_handler_process(topic, channel, data, data_len, user_ctx);
+}
+
+static void relay_node_config_handler_wrapper(
+    const char *topic,
+    const char *data,
+    int data_len,
+    void *user_ctx
+) {
+    if (data == NULL || data_len <= 0) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON *config = cJSON_ParseWithLength(data, data_len);
+    if (config == NULL) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON_DeleteItemFromObject(config, "channels");
+    cJSON *channels = relay_node_build_channels_from_hw_map();
+    if (channels == NULL) {
+        ESP_LOGW(TAG, "Failed to build firmware relay channels");
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON_AddItemToObject(config, "channels", channels);
+    char *patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+
+    if (patched == NULL) {
+        ESP_LOGW(TAG, "Failed to serialize patched relay config");
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    node_config_handler_process(topic, patched, (int)strlen(patched), user_ctx);
+    free(patched);
 }
 
 // Callback для отключения актуаторов в safe_mode
@@ -260,14 +733,14 @@ static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx) {
 // Регистрация MQTT обработчиков через node_framework
 void relay_node_framework_register_mqtt_handlers(void) {
     // Регистрация обработчика конфигов
-    mqtt_manager_register_config_cb(node_config_handler_process, NULL);
+    mqtt_manager_register_config_cb(relay_node_config_handler_wrapper, NULL);
     
     // Регистрация обработчика команд
     mqtt_manager_register_command_cb(relay_node_command_handler_wrapper, NULL);
     
     // Регистрация MQTT callbacks в node_config_handler для config_apply_mqtt
     node_config_handler_set_mqtt_callbacks(
-        node_config_handler_process,
+        relay_node_config_handler_wrapper,
         relay_node_command_handler_wrapper,
         NULL,
         NULL,

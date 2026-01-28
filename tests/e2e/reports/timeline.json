@@ -1,0 +1,202 @@
+{
+  "test_suite": "E61_fail_closed_corrections",
+  "generated_at": "2026-01-01T21:38:46.390020",
+  "test_cases": [
+    {
+      "name": "stop_node_simulator_initial",
+      "status": "passed",
+      "duration": 15.278101921081543,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "stop_node_simulator_initial",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.695681"
+    },
+    {
+      "name": "set_test_uids",
+      "status": "passed",
+      "duration": 1.5974044799804688e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_test_uids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.695882"
+    },
+    {
+      "name": "get_automation_zone",
+      "status": "passed",
+      "duration": 0.07056927680969238,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_automation_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.766481"
+    },
+    {
+      "name": "set_zone_id_from_uid",
+      "status": "passed",
+      "duration": 0.009018182754516602,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id_from_uid",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.775563"
+    },
+    {
+      "name": "set_zone_id",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.775689"
+    },
+    {
+      "name": "check_active_cycle",
+      "status": "passed",
+      "duration": 0.0029234886169433594,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_active_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.778651"
+    },
+    {
+      "name": "create_plant_if_needed",
+      "status": "passed",
+      "duration": 0.060003042221069336,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_plant_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.838739"
+    },
+    {
+      "name": "create_recipe_if_needed",
+      "status": "passed",
+      "duration": 0.06431984901428223,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.903151"
+    },
+    {
+      "name": "create_revision_if_needed",
+      "status": "passed",
+      "duration": 0.06473541259765625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_revision_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:35.967958"
+    },
+    {
+      "name": "add_phase_if_needed",
+      "status": "passed",
+      "duration": 0.0636749267578125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "add_phase_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:36.031730"
+    },
+    {
+      "name": "publish_revision_if_needed",
+      "status": "passed",
+      "duration": 0.06394481658935547,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_revision_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:36.095736"
+    },
+    {
+      "name": "create_cycle_if_needed",
+      "status": "failed",
+      "duration": 0.07119059562683105,
+      "error_message": "Client error '422 Unprocessable Content' for url 'http://localhost:8081/api/zones/1/grow-cycles'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422",
+      "steps": [
+        {
+          "name": "create_cycle_if_needed",
+          "status": "failed",
+          "error": "Client error '422 Unprocessable Content' for url 'http://localhost:8081/api/zones/1/grow-cycles'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:36.167155"
+    },
+    {
+      "name": "no_dosing_commands",
+      "status": "passed",
+      "duration": 0.004304409027099609,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_dosing_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:36.171481"
+    },
+    {
+      "name": "skipped_event_created",
+      "status": "failed",
+      "duration": 10.08517336845398,
+      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
+      "steps": [
+        {
+          "name": "skipped_event_created",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
+        }
+      ],
+      "timestamp": "2026-01-01T21:38:46.256782"
+    }
+  ],
+  "timeline": [],
+  "artifacts": {
+    "E61_fail_closed_corrections": {
+      "ws_messages": [],
+      "mqtt_messages": [],
+      "api_responses": [],
+      "context_vars": {
+        "zone_id": 1,
+        "node_id": 1
+      }
+    }
+  }
+}

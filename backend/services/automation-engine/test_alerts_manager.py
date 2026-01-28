@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from datetime import datetime
+from common.utils.time import utcnow
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -95,7 +96,7 @@ async def test_find_active_alert():
                 "type": "TEMP_HIGH",
                 "details": '{"temp": 30.0}',
                 "status": "ACTIVE",
-                "created_at": datetime.utcnow(),
+                "created_at": utcnow(),
             }
         ]
         
@@ -116,4 +117,3 @@ async def test_find_active_alert_not_found():
         alert = await find_active_alert(1, "TEMP_HIGH")
         
         assert alert is None
-

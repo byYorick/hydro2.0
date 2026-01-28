@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Alert;
 use App\Models\Zone;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class AlertsTest extends TestCase

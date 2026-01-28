@@ -108,130 +108,181 @@ class NodeRegistryService
      *   - node_type: string
      *   - fw_version: string|null
      *   - hardware_revision: string|null
-     *   - capabilities: array
+     *   - capabilities: array (используются только как метаданные, каналы по ним не создаются)
      *   - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
      * @return DeviceNode
      */
     public function registerNodeFromHello(array $helloData): DeviceNode
     {
-        return DB::transaction(function () use ($helloData) {
-            $hardwareId = $helloData['hardware_id'] ?? null;
-            if (!$hardwareId) {
-                throw new \InvalidArgumentException('hardware_id is required');
-            }
-            
-            // Ищем узел по hardware_id
-            $node = DeviceNode::where('hardware_id', $hardwareId)->first();
-            
-            // Если узел не найден, создаём новый
-            if (!$node) {
-                // Генерируем uid на основе hardware_id и типа узла
-                $nodeType = $helloData['node_type'] ?? 'unknown';
-                $uid = $this->generateNodeUid($hardwareId, $nodeType);
-                
-                // Проверяем уникальность uid
-                $counter = 1;
-                while (DeviceNode::where('uid', $uid)->exists()) {
-                    $uid = $this->generateNodeUid($hardwareId, $nodeType, $counter);
-                    $counter++;
+        $maxRetries = 5;
+        $attempt = 0;
+        $uidAttempt = 0;
+        $maxUidAttempts = 5;
+        
+        while ($attempt < $maxRetries) {
+            $transactionLevelBefore = DB::transactionLevel();
+            DB::beginTransaction();
+
+            try {
+                if (DB::getDriverName() === 'pgsql' && $transactionLevelBefore === 0) {
+                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
                 }
-                
-                $node = new DeviceNode();
-                $node->uid = $uid;
-                $node->hardware_id = $hardwareId;
-                $node->type = $nodeType;
-                $node->first_seen_at = now();
-                // Новые ноды с временными конфигами регистрируются как REGISTERED_BACKEND
-                // Когда нода получит реальные конфиги и будет привязана к зоне, состояние изменится на ASSIGNED_TO_ZONE
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            }
-            
-            // Обновляем атрибуты
-            if (isset($helloData['fw_version'])) {
-                $node->fw_version = $helloData['fw_version'];
-            }
-            
-            if (isset($helloData['hardware_revision'])) {
-                $node->hardware_revision = $helloData['hardware_revision'];
-            }
-            
-            // Обработка provisioning_meta
-            $provisioningMeta = $helloData['provisioning_meta'] ?? [];
-            
-            if (isset($provisioningMeta['node_name'])) {
-                $node->name = $provisioningMeta['node_name'];
-            }
-            
-            // КРИТИЧНО: Автопривязка к зоне через greenhouse_token УДАЛЕНА
-            // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
-            // Если указан greenhouse_token или zone_id, игнорируем их и логируем предупреждение
-            if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
-                Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+
+                $hardwareId = $helloData['hardware_id'] ?? null;
+                if (!$hardwareId) {
+                    throw new \InvalidArgumentException('hardware_id is required');
+                }
+
+                $node = DeviceNode::where('hardware_id', $hardwareId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$node) {
+                    $nodeType = $helloData['node_type'] ?? 'unknown';
+                    $uid = $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
+
+                    $node = new DeviceNode();
+                    $node->uid = $uid;
+                    $node->hardware_id = $hardwareId;
+                    $node->type = $nodeType;
+                    $node->first_seen_at = now();
+                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+
+                    $node->save();
+
+                    Log::info('Node created successfully', [
+                        'node_id' => $node->id,
+                        'uid' => $uid,
+                        'hardware_id' => $hardwareId,
+                        'attempt' => $uidAttempt,
+                    ]);
+                }
+
+                $this->updateNodeAttributes($node, $helloData);
+
+                $provisioningMeta = $helloData['provisioning_meta'] ?? [];
+                if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
+                    Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                        'node_id' => $node->id,
+                        'hardware_id' => $hardwareId,
+                        'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
+                        'has_zone_id' => isset($provisioningMeta['zone_id']),
+                        'zone_id' => $provisioningMeta['zone_id'] ?? null,
+                    ]);
+                }
+
+                if (!$node->zone_id && !$node->pending_zone_id) {
+                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    Log::info('NodeRegistryService: Reset lifecycle_state to REGISTERED_BACKEND for unbound node', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'hardware_id' => $hardwareId,
+                    ]);
+                } elseif (!$node->lifecycle_state) {
+                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                }
+
+                $node->validated = true;
+                $node->save();
+
+                $this->attachUnassignedErrors($node);
+
+                $cachePrefixes = ['devices_list_', 'nodes_list_', 'node_stats_'];
+                foreach ($cachePrefixes as $prefix) {
+                    if (config('cache.default') === 'redis') {
+                        Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                            'node_id' => $node->id,
+                            'cache_driver' => config('cache.default'),
+                        ]);
+                    } else {
+                        Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                            'node_id' => $node->id,
+                            'cache_driver' => config('cache.default'),
+                        ]);
+                    }
+                }
+
+                Log::info('Node registered from node_hello', [
                     'node_id' => $node->id,
+                    'uid' => $node->uid,
                     'hardware_id' => $hardwareId,
-                    'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
-                    'has_zone_id' => isset($provisioningMeta['zone_id']),
-                    'zone_id' => $provisioningMeta['zone_id'] ?? null,
+                    'zone_id' => $node->zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                    'channels_count' => $node->channels()->count(),
                 ]);
-            }
-            
-            // Устанавливаем lifecycle_state
-            // Всегда оставляем REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
-            // только после успешной публикации конфига через PublishNodeConfigOnUpdate
-            if (!$node->id || !$node->lifecycle_state) {
-                // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
-                // (нода с временными конфигами еще не привязана к реальной зоне)
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            }
-            // Для существующих узлов не меняем lifecycle_state здесь
-            // Переход в ASSIGNED_TO_ZONE произойдет только после успешной публикации конфига
-            
-            // Отмечаем как validated
-            $node->validated = true;
-            
-            $node->save();
-            
-            // Создаём каналы из capabilities
-            $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
-            
-            // Очищаем кеш списка устройств и статистики для всех пользователей
-            // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
-            // Это предотвращает DoS через частые node_hello запросы
-            // Очищаем только кеш, связанный с устройствами
-            $cachePrefixes = ['devices_list_', 'nodes_list_', 'node_stats_'];
-            foreach ($cachePrefixes as $prefix) {
-                // Laravel Cache не поддерживает поиск по префиксу напрямую
-                // Используем tags, если они доступны, или ограничиваем очистку
-                // В production лучше использовать Redis с поддержкой SCAN
-                if (config('cache.default') === 'redis') {
-                    // Для Redis можно использовать более точную очистку через tags
-                    // Но пока просто не очищаем весь кеш - это безопаснее
-                    // Кеш устареет естественным образом через TTL
-                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
-                        'node_id' => $node->id,
-                        'cache_driver' => config('cache.default'),
+
+                DB::commit();
+                return $node;
+            } catch (\Illuminate\Database\QueryException $e) {
+                DB::rollBack();
+
+                if ($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) {
+                    $uidAttempt++;
+
+                    if ($uidAttempt >= $maxUidAttempts) {
+                        Log::error('Failed to generate unique UID after max attempts', [
+                            'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                            'max_attempts' => $maxUidAttempts,
+                        ]);
+                        throw new \RuntimeException('Failed to register node: UID generation failed after ' . $maxUidAttempts . ' attempts');
+                    }
+
+                    Log::warning('UID collision detected, retrying', [
+                        'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                        'attempt' => $uidAttempt,
                     ]);
-                } else {
-                    // Для других драйверов кеша не очищаем глобально
-                    // Кеш устареет естественным образом
-                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
-                        'node_id' => $node->id,
-                        'cache_driver' => config('cache.default'),
-                    ]);
+
+                    usleep(100000 * $uidAttempt);
+                    continue;
                 }
+
+                if ($e->getCode() === '40001' || str_contains($e->getMessage(), 'serialization failure')) {
+                    $attempt++;
+
+                    if ($attempt >= $maxRetries) {
+                        Log::error('Failed to register node after max retries due to serialization failure', [
+                            'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                            'max_retries' => $maxRetries,
+                        ]);
+                        throw new \RuntimeException('Failed to register node: serialization failure after ' . $maxRetries . ' attempts');
+                    }
+
+                    Log::warning('Serialization failure detected, retrying transaction', [
+                        'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                        'attempt' => $attempt,
+                    ]);
+
+                    usleep(50000 * $attempt);
+                    continue;
+                }
+
+                throw $e;
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
             }
-            
-            Log::info('Node registered from node_hello', [
-                'node_id' => $node->id,
-                'uid' => $node->uid,
-                'hardware_id' => $hardwareId,
-                'zone_id' => $node->zone_id,
-                'lifecycle_state' => $node->lifecycle_state?->value,
-                'channels_count' => $node->channels()->count(),
-            ]);
-            
-            return $node;
-        });
+        }
+        
+        throw new \RuntimeException('Failed to register node: max retries exceeded');
+    }
+    
+    /**
+     * Обновить атрибуты узла из helloData.
+     */
+    private function updateNodeAttributes(DeviceNode $node, array $helloData): void
+    {
+        if (isset($helloData['fw_version'])) {
+            $node->fw_version = $helloData['fw_version'];
+        }
+        
+        if (isset($helloData['hardware_revision'])) {
+            $node->hardware_revision = $helloData['hardware_revision'];
+        }
+        
+        $provisioningMeta = $helloData['provisioning_meta'] ?? [];
+        if (isset($provisioningMeta['node_name'])) {
+            $node->name = $provisioningMeta['node_name'];
+        }
     }
     
     /**
@@ -267,74 +318,6 @@ class NodeRegistryService
         }
         
         return $uid;
-    }
-    
-    /**
-     * Синхронизировать каналы узла из capabilities.
-     * 
-     * @param DeviceNode $node Узел
-     * @param array $capabilities Массив строк capabilities (например: ["temperature", "humidity", "co2"])
-     * @return void
-     */
-    private function syncNodeChannelsFromCapabilities(DeviceNode $node, array $capabilities): void
-    {
-        if (empty($capabilities)) {
-            Log::debug('NodeRegistryService: No capabilities provided, skipping channel sync', [
-                'node_id' => $node->id,
-            ]);
-            return;
-        }
-        
-        // Маппинг capability -> channel configuration
-        $capabilityConfig = [
-            'temperature' => ['type' => 'sensor', 'metric' => 'TEMP_AIR', 'unit' => '°C'],
-            'humidity' => ['type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
-            'co2' => ['type' => 'sensor', 'metric' => 'CO2', 'unit' => 'ppm'],
-            'lighting' => ['type' => 'actuator', 'metric' => 'LIGHT', 'unit' => ''],
-            'ventilation' => ['type' => 'actuator', 'metric' => 'VENTILATION', 'unit' => ''],
-            'ph_sensor' => ['type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
-            'ec_sensor' => ['type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-            'pump_A' => ['type' => 'actuator', 'metric' => 'PUMP_A', 'unit' => ''],
-            'pump_B' => ['type' => 'actuator', 'metric' => 'PUMP_B', 'unit' => ''],
-            'pump_C' => ['type' => 'actuator', 'metric' => 'PUMP_C', 'unit' => ''],
-            'pump_D' => ['type' => 'actuator', 'metric' => 'PUMP_D', 'unit' => ''],
-        ];
-        
-        foreach ($capabilities as $capability) {
-            if (!is_string($capability)) {
-                Log::warning('NodeRegistryService: Invalid capability type', [
-                    'node_id' => $node->id,
-                    'capability' => $capability,
-                ]);
-                continue;
-            }
-            
-            $config = $capabilityConfig[$capability] ?? [
-                'type' => 'sensor',
-                'metric' => strtoupper($capability),
-                'unit' => '',
-            ];
-            
-            // Создаём или обновляем канал
-            \App\Models\NodeChannel::updateOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'channel' => $capability,
-                ],
-                [
-                    'type' => $config['type'],
-                    'metric' => $config['metric'],
-                    'unit' => $config['unit'],
-                    'config' => [],
-                ]
-            );
-            
-            Log::debug('NodeRegistryService: Channel synced from capability', [
-                'node_id' => $node->id,
-                'capability' => $capability,
-                'channel_type' => $config['type'],
-            ]);
-        }
     }
     
     /**
@@ -376,5 +359,243 @@ class NodeRegistryService
         
         // В будущем можно добавить поиск по uid, если он появится в таблице zones
         return null;
+    }
+    
+    /**
+     * Привязать накопленные ошибки неназначенного узла к зарегистрированному узлу.
+     * 
+     * После успешного attach:
+     * - Создает alerts для каждой ошибки
+     * - Архивирует записи в unassigned_node_errors_archive
+     * - Создает zone_event для прозрачности
+     * 
+     * @param DeviceNode $node Зарегистрированный узел
+     */
+    protected function attachUnassignedErrors(DeviceNode $node): void
+    {
+        if (!$node->hardware_id) {
+            return;
+        }
+        
+        try {
+            // Получаем все непривязанные ошибки для этого hardware_id
+            $errors = DB::table('unassigned_node_errors')
+                ->where('hardware_id', $node->hardware_id)
+                ->whereNull('node_id')
+                ->get();
+            
+            if ($errors->isEmpty()) {
+                return;
+            }
+            
+            $alertsCreated = 0;
+            
+            // Если у ноды есть zone_id, создаем alerts для ошибок
+            if ($node->zone_id) {
+                $alertService = app(\App\Services\AlertService::class);
+                
+                foreach ($errors as $error) {
+                    // Определяем source и code для алерта
+                    // Используем infra_node_error как базовый код, добавляем error_code если есть
+                    $alertCode = 'infra_node_error';
+                    if ($error->error_code) {
+                        $alertCode = 'infra_node_error_' . str_replace('-', '_', $error->error_code);
+                    }
+                    
+                    // Преобразуем даты из строк в ISO8601 формат если нужно
+                    $firstSeenAt = $error->first_seen_at;
+                    if (is_string($firstSeenAt)) {
+                        $firstSeenAt = \Carbon\Carbon::parse($firstSeenAt)->toIso8601String();
+                    } elseif ($firstSeenAt instanceof \Carbon\Carbon || $firstSeenAt instanceof \DateTime) {
+                        $firstSeenAt = $firstSeenAt->toIso8601String();
+                    }
+                    
+                    $lastSeenAt = $error->last_seen_at;
+                    if (is_string($lastSeenAt)) {
+                        $lastSeenAt = \Carbon\Carbon::parse($lastSeenAt)->toIso8601String();
+                    } elseif ($lastSeenAt instanceof \Carbon\Carbon || $lastSeenAt instanceof \DateTime) {
+                        $lastSeenAt = $lastSeenAt->toIso8601String();
+                    }
+                    
+                    // Создаем или обновляем алерт с сохранением count, first_seen_at, last_seen_at
+                    // Проверяем, существует ли уже активный алерт с таким code
+                    $existingAlert = \App\Models\Alert::where('zone_id', $node->zone_id)
+                        ->where('code', $alertCode)
+                        ->where('status', 'ACTIVE')
+                        ->first();
+                    
+                    if ($existingAlert) {
+                        // Обновляем существующий алерт, сохраняя максимальный count и earliest first_seen_at
+                        $existingDetails = $existingAlert->details ?? [];
+                        $existingCount = $existingDetails['count'] ?? 0;
+                        $newCount = max($existingCount, $error->count ?? 1);
+                        
+                        // Сохраняем earliest first_seen_at
+                        $existingFirstSeenAt = $existingDetails['first_seen_at'] ?? null;
+                        if ($existingFirstSeenAt && $firstSeenAt) {
+                            try {
+                                $existingFirstSeen = \Carbon\Carbon::parse($existingFirstSeenAt);
+                                $newFirstSeen = \Carbon\Carbon::parse($firstSeenAt);
+                                if ($newFirstSeen->lt($existingFirstSeen)) {
+                                    $firstSeenAt = $newFirstSeen->toIso8601String();
+                                } else {
+                                    $firstSeenAt = $existingFirstSeenAt;
+                                }
+                            } catch (\Exception $e) {
+                                // Если не удалось распарсить, используем новый
+                            }
+                        }
+                        
+                        $alertService->createOrUpdateActive([
+                            'zone_id' => $node->zone_id,
+                            'source' => 'infra',
+                            'code' => $alertCode,
+                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'severity' => $error->severity ?? 'ERROR',
+                            'details' => [
+                                'error_message' => $error->error_message,
+                                'error_code' => $error->error_code,
+                                'severity' => $error->severity ?? 'ERROR',
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'count' => $newCount, // Используем максимальный count
+                                'first_seen_at' => $firstSeenAt,
+                                'last_seen_at' => $lastSeenAt,
+                                'topic' => $error->topic,
+                                'payload' => $error->last_payload,
+                            ],
+                        ]);
+                    } else {
+                        // Создаем новый алерт через AlertService для консистентности
+                        // AlertService автоматически установит error_count из details.count
+                        $newAlert = $alertService->create([
+                            'zone_id' => $node->zone_id,
+                            'source' => 'infra',
+                            'code' => $alertCode,
+                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'status' => 'ACTIVE',
+                            'details' => [
+                                'error_message' => $error->error_message,
+                                'error_code' => $error->error_code,
+                                'severity' => $error->severity ?? 'ERROR',
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'count' => $error->count ?? 1, // Сохраняем исходный count
+                                'first_seen_at' => $firstSeenAt,
+                                'last_seen_at' => $lastSeenAt,
+                                'topic' => $error->topic,
+                                'payload' => $error->last_payload,
+                            ],
+                        ]);
+                        
+                        // Устанавливаем error_count напрямую, если колонка существует
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('alerts', 'error_count')) {
+                            $newAlert->error_count = $error->count ?? 1;
+                            $newAlert->save();
+                        }
+                    }
+                    $alertsCreated++;
+                }
+                
+                Log::info('Created alerts from unassigned errors', [
+                    'node_id' => $node->id,
+                    'node_uid' => $node->uid,
+                    'zone_id' => $node->zone_id,
+                    'hardware_id' => $node->hardware_id,
+                    'errors_count' => $errors->count(),
+                    'alerts_created' => $alertsCreated,
+                    'errors_details' => $errors->map(fn($e) => [
+                        'error_code' => $e->error_code,
+                        'error_message' => $e->error_message,
+                        'count' => $e->count ?? 1,
+                    ])->toArray(),
+                ]);
+                
+                // Архивируем ошибки только после успешного создания alerts (когда есть zone_id)
+                // Проверяем наличие таблицы архива перед архивированием
+                if (DB::getSchemaBuilder()->hasTable('unassigned_node_errors_archive')) {
+                    foreach ($errors as $error) {
+                    DB::table('unassigned_node_errors_archive')->insert([
+                        'hardware_id' => $error->hardware_id,
+                        'error_message' => $error->error_message,
+                        'error_code' => $error->error_code,
+                        'severity' => $error->severity,
+                        'topic' => $error->topic,
+                        'last_payload' => $error->last_payload,
+                        'count' => $error->count,
+                        'first_seen_at' => $error->first_seen_at,
+                        'last_seen_at' => $error->last_seen_at,
+                        'node_id' => $node->id,
+                        'attached_at' => now(),
+                        'attached_zone_id' => $node->zone_id,
+                        'archived_at' => now(),
+                    ]);
+                    }
+                }
+                
+                // Удаляем записи из unassigned_node_errors только после успешного архивирования
+                $deleted = DB::table('unassigned_node_errors')
+                    ->where('hardware_id', $node->hardware_id)
+                    ->whereNull('node_id')
+                    ->delete();
+                
+                if ($deleted > 0) {
+                    Log::info('Archived and removed unassigned errors', [
+                        'node_id' => $node->id,
+                        'hardware_id' => $node->hardware_id,
+                        'errors_archived' => $deleted,
+                    ]);
+                    
+                    // Создаем zone_event для прозрачности операции
+                    try {
+                        // Используем DB::table для zone_events, так как структура изменена (payload_json вместо details)
+                        DB::table('zone_events')->insert([
+                            'zone_id' => $node->zone_id,
+                            'type' => 'unassigned_attached',
+                            'entity_type' => 'unassigned_error',
+                            'entity_id' => (string) $node->id,
+                            'payload_json' => json_encode([
+                                'node_id' => $node->id,
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'errors_count' => $deleted,
+                                'alerts_created' => $alertsCreated,
+                            ]),
+                            'server_ts' => now()->timestamp * 1000,
+                            'created_at' => now(),
+                        ]);
+                    } catch (\Exception $e) {
+                        // Логируем ошибку создания zone_event, но не прерываем процесс
+                        Log::warning('Failed to create zone_event for unassigned_attached', [
+                            'node_id' => $node->id,
+                            'zone_id' => $node->zone_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to attach unassigned errors to node', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid ?? null,
+                'hardware_id' => $node->hardware_id,
+                'zone_id' => $node->zone_id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Ошибка не должна блокировать привязку узла
+            // Ошибки остаются в unassigned_node_errors и могут быть обработаны позже
+        }
+    }
+
+    /**
+     * Public wrapper: attach накопленные ошибки неназначенного узла к ноде.
+     * Используется при завершении привязки (binding completion), когда zone_id становится известен.
+     */
+    public function attachUnassignedErrorsForNode(DeviceNode $node): void
+    {
+        $this->attachUnassignedErrors($node);
     }
 }

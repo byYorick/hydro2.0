@@ -33,7 +33,7 @@
                │
     ┌──────────▼──────────┐
     │   Infrastructure    │
-    │  - CommandBus (MQTT)│
+    │  - CommandBus (REST)│
     │  - Error Handler    │
     │  - Retry Mechanism  │
     └─────────────────────┘
@@ -57,7 +57,7 @@
 - `IrrigationController` - управление поливом и рециркуляцией
 
 #### 4. **Infrastructure** (`infrastructure/`)
-- `CommandBus` - централизованная публикация команд через MQTT
+- `CommandBus` - централизованная публикация команд через history-logger REST API
 - `error_handler.py` - централизованная обработка ошибок
 - `exceptions.py` - кастомные исключения
 - `utils/retry.py` - retry механизм для критических операций
@@ -150,8 +150,9 @@ pytest automation-engine/ --cov=automation-engine --cov-report=html
 - `config_fetch_success_total` - успешные получения конфигурации
 - `zone_checks_total` - количество проверок зон
 - `zone_check_seconds` - длительность проверки зоны
-- `automation_commands_sent_total` - отправленные команды
-- `mqtt_publish_errors_total` - ошибки публикации MQTT
+- `automation_commands_sent_total{zone_id, metric}` - отправленные команды
+- `rest_command_errors_total{error_type}` - ошибки REST запросов к history-logger
+- `command_rest_latency_seconds` - задержка REST запросов
 - `automation_errors_total` - общие ошибки автоматизации
 
 ## 🔧 Использование
@@ -162,17 +163,22 @@ pytest automation-engine/ --cov=automation-engine --cov-report=html
 from services import ZoneAutomationService
 from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
 from infrastructure import CommandBus
-from common.mqtt import MqttClient
 
 # Инициализация
-mqtt = MqttClient(client_id_suffix="-auto")
-mqtt.start()
-
 zone_repo = ZoneRepository()
 telemetry_repo = TelemetryRepository()
 node_repo = NodeRepository()
 recipe_repo = RecipeRepository()
-command_bus = CommandBus(mqtt, "gh-1")
+
+# CommandBus использует REST API для публикации команд
+history_logger_url = "http://history-logger:9300"
+history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+command_bus = CommandBus(
+    mqtt=None,  # Deprecated, не используется
+    gh_uid="gh-1",
+    history_logger_url=history_logger_url,
+    history_logger_token=history_logger_token
+)
 
 # Создание сервиса
 zone_service = ZoneAutomationService(
@@ -194,7 +200,7 @@ ph_controller = CorrectionController(CorrectionType.PH)
 # Проверка и корректировка
 command = await ph_controller.check_and_correct(
     zone_id=1,
-    targets={"ph": 6.5},
+    targets={"ph": {"target": 6.5}},
     telemetry={"PH": 6.2},
     nodes={"irrig:default": {"node_uid": "nd-1", "channel": "default", "type": "irrig"}},
     water_level_ok=True
@@ -242,7 +248,11 @@ automation-engine/
 │   └── zone_automation_service.py
 ├── infrastructure/              # Инфраструктура
 │   ├── __init__.py
-│   └── command_bus.py
+│   ├── command_bus.py          # REST API для команд
+│   ├── command_validator.py    # Валидация команд
+│   ├── command_tracker.py      # Отслеживание команд
+│   └── command_audit.py        # Аудит команд
+├── api.py                       # REST API для scheduler
 ├── utils/                       # Утилиты
 │   ├── __init__.py
 │   └── retry.py
@@ -254,7 +264,6 @@ automation-engine/
 ├── irrigation_controller.py    # Контроллер полива
 ├── health_monitor.py            # Мониторинг здоровья
 ├── alerts_manager.py            # Управление алертами
-├── recipe_utils.py              # Утилиты рецептов
 ├── correction_cooldown.py      # Cooldown для корректировок
 └── test_*.py                    # Тесты
 ```
@@ -270,8 +279,6 @@ automation-engine/
 - ✅ **Этап E**: Оптимизация производительности (параллелизм, batch запросы)
 - ✅ **Этап F**: Улучшение качества кода (конфигурация, обработка ошибок)
 - ✅ **Этап G**: Тестирование (72+ тестов)
-
-Подробности в `REFACTORING_PLAN.md`.
 
 ## 📈 Улучшения производительности
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+// Удалены неиспользуемые импорты
 import Checkbox from '@/Components/Checkbox.vue';
+// @ts-ignore
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -22,6 +23,7 @@ interface LoginFormData {
     email: string
     password: string
     remember: boolean
+    [key: string]: any
 }
 
 const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
@@ -32,124 +34,135 @@ const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
     },
     {
         resetFieldsOnSuccess: ['password'],
-        showSuccessToast: false, // Auth формы обычно не показывают Toast
-        showErrorToast: false,
+        showSuccessToast: false, // Auth формы обычно не показывают Toast при успехе
+        showErrorToast: true, // Показываем toast при ошибке аутентификации
+        errorMessage: 'Неверный email или пароль. Проверьте правильность введенных данных.',
+        preserveUrl: true, // Сохраняем позицию прокрутки при ошибке
+        preserveState: true, // Сохраняем состояние формы при ошибке
     }
 );
 
 const submit = (): void => {
     submitForm('post', route('login'));
+    // preserveUrl и preserveState уже настроены в useInertiaForm
+    // Toast уведомления обрабатываются автоматически
+    // Форма остается на странице логина при ошибке валидации
 };
-
-// Проверяем, есть ли ошибки аутентификации
-const hasAuthError = computed(() => {
-    return !!(form.errors.email || form.errors.password);
-});
-
-// Получаем общее сообщение об ошибке
-const authErrorMessage = computed(() => {
-    if (form.errors.email) {
-        return form.errors.email;
-    }
-    if (form.errors.password) {
-        return form.errors.password;
-    }
-    return null;
-});
 </script>
 
 <template>
-    <GuestLayout>
-        <Head title="Вход" />
+  <GuestLayout>
+    <Head title="Вход" />
 
-        <div v-if="status" class="mb-4 rounded-md bg-green-50 p-4 text-sm font-medium text-green-800 dark:bg-green-900/20 dark:text-green-400">
-            {{ status }}
-        </div>
+    <!-- Сообщение об успехе (например, после регистрации или сброса пароля) -->
+    <div
+      v-if="status"
+      class="mb-4 rounded-md bg-[color:var(--badge-success-bg)] p-4 text-sm font-medium text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]"
+    >
+      {{ status }}
+    </div>
 
-        <div 
-            v-if="hasAuthError && authErrorMessage" 
-            class="mb-4 rounded-md bg-red-50 p-4 text-sm font-medium text-red-800 dark:bg-red-900/20 dark:text-red-400"
+    <!-- Ошибки валидации показываются под полями и в toast -->
+    <!-- Основные ошибки аутентификации показываются через toast -->
+    <!-- Блок ошибки убран, чтобы избежать дублирования с toast -->
+
+    <form
+      data-testid="login-form"
+      @submit.prevent="submit"
+    >
+      <div>
+        <InputLabel
+          for="email"
+          value="Email"
+        />
+
+        <TextInput
+          id="email"
+          v-model="form.email"
+          type="email"
+          data-testid="login-email"
+          :class="[
+            'mt-1 block w-full',
+            (form.errors as any).email
+              ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
+              : ''
+          ]"
+          required
+          autofocus
+          autocomplete="username"
+        />
+
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).email"
+        />
+      </div>
+
+      <div class="mt-4">
+        <InputLabel
+          for="password"
+          value="Пароль"
+        />
+
+        <TextInput
+          id="password"
+          v-model="form.password"
+          type="password"
+          data-testid="login-password"
+          :class="[
+            'mt-1 block w-full',
+            (form.errors as any).password
+              ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
+              : ''
+          ]"
+          required
+          autocomplete="current-password"
+        />
+
+        <InputError
+          class="mt-2"
+          :message="(form.errors as any).password"
+        />
+      </div>
+
+      <div class="mt-4 block">
+        <label class="flex items-center">
+          <Checkbox
+            v-model:checked="form.remember"
+            name="remember"
+          />
+          <span class="ms-2 text-sm text-[color:var(--text-muted)]">Запомнить меня</span>
+        </label>
+      </div>
+
+      <div class="mt-4 flex items-center justify-between">
+        <Link
+          :href="route('register')"
+          class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
         >
-            {{ authErrorMessage }}
+          Нет аккаунта? Зарегистрироваться
+        </Link>
+
+        <div class="flex items-center gap-4">
+          <Link
+            v-if="canResetPassword"
+            :href="route('password.request')"
+            class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
+          >
+            Забыли пароль?
+          </Link>
+
+          <Button 
+            variant="primary"
+            data-testid="login-submit"
+            class="ms-4"
+            :class="{ 'opacity-25': form.processing }"
+            :disabled="form.processing"
+          >
+            Войти
+          </Button>
         </div>
-
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="email" value="Email" />
-
-                <TextInput
-                    id="email"
-                    type="email"
-                    :class="[
-                        'mt-1 block w-full',
-                        form.errors.email 
-                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : ''
-                    ]"
-                    v-model="form.email"
-                    required
-                    autofocus
-                    autocomplete="username"
-                />
-
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel for="password" value="Пароль" />
-
-                <TextInput
-                    id="password"
-                    type="password"
-                    :class="[
-                        'mt-1 block w-full',
-                        form.errors.password 
-                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : ''
-                    ]"
-                    v-model="form.password"
-                    required
-                    autocomplete="current-password"
-                />
-
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
-
-            <div class="mt-4 block">
-                <label class="flex items-center">
-                    <Checkbox name="remember" v-model:checked="form.remember" />
-                    <span class="ms-2 text-sm text-gray-600"
-                        >Запомнить меня</span
-                    >
-                </label>
-            </div>
-
-            <div class="mt-4 flex items-center justify-between">
-                <Link
-                    :href="route('register')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Нет аккаунта? Зарегистрироваться
-                </Link>
-
-                <div class="flex items-center gap-4">
-                    <Link
-                        v-if="canResetPassword"
-                        :href="route('password.request')"
-                        class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    >
-                        Забыли пароль?
-                    </Link>
-
-                    <Button variant="primary"
-                        class="ms-4"
-                        :class="{ 'opacity-25': form.processing }"
-                        :disabled="form.processing"
-                    >
-                        Войти
-                    </Button>
-                </div>
-            </div>
-        </form>
-    </GuestLayout>
+      </div>
+    </form>
+  </GuestLayout>
 </template>

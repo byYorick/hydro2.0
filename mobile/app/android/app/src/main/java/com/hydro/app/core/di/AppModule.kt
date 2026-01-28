@@ -1,6 +1,7 @@
 package com.hydro.app.core.di
 
 import android.content.Context
+import com.hydro.app.core.auth.SessionManager
 import com.hydro.app.core.prefs.PreferencesDataSource
 import dagger.Module
 import dagger.Provides
@@ -16,6 +17,12 @@ object AppModule {
 	@Singleton
 	fun providePreferences(@ApplicationContext context: Context): PreferencesDataSource {
 		return PreferencesDataSource(context)
+	}
+
+	@Provides
+	@Singleton
+	fun provideSessionManager(prefs: PreferencesDataSource): SessionManager {
+		return SessionManager(prefs)
 	}
 }
 

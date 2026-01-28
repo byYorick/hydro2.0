@@ -1,8 +1,8 @@
 # Default SDK configuration for ph_node
 
 # Enable Wi-Fi
-CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM=10
-CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
 
 # Enable MQTT
 CONFIG_MQTT_PROTOCOL_311=y
@@ -11,24 +11,11 @@ CONFIG_MQTT_TRANSPORT_WEBSOCKET=y
 
 # FreeRTOS
 CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 
 # Logging
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
-
-# GPIO Configuration for pumps
-# GPIO pins for pump control (can be overridden in code via NodeConfig)
-# Default values: pump_acid = GPIO 12, pump_base = GPIO 13
-# These can be configured via hardware.gpio in NodeConfig JSON
-CONFIG_PH_NODE_PUMP_ACID_GPIO=12
-CONFIG_PH_NODE_PUMP_BASE_GPIO=13
-
-# I2C Configuration
-# I2C pins for sensors and OLED (can be overridden in code via NodeConfig)
-# Default values: SDA = GPIO 8, SCL = GPIO 9
-# These can be configured via hardware.i2c in NodeConfig JSON
-CONFIG_PH_NODE_I2C_SDA_GPIO=8
-CONFIG_PH_NODE_I2C_SCL_GPIO=9
 
 # Flash size
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
@@ -45,4 +32,3 @@ CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
 # Устанавливаем таймаут 10 секунд (согласно DEVICE_NODE_PROTOCOL.md)
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
-

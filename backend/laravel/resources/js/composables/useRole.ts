@@ -7,8 +7,12 @@ import type { UserRole } from '@/types/User'
  * Централизованная логика проверки прав доступа
  */
 export function useRole() {
-  const page = usePage()
-  const user = computed(() => page.props.auth?.user as { role?: UserRole } | undefined)
+  const page = usePage<{
+    auth?: {
+      user?: { role?: UserRole }
+    }
+  }>()
+  const user = computed(() => page.props.auth?.user)
   
   const role = computed(() => user.value?.role as UserRole | undefined)
   
@@ -84,4 +88,3 @@ export function useRole() {
     hasAnyRole,
   }
 }
-

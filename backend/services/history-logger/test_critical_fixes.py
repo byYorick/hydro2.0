@@ -8,6 +8,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
+from common.utils.time import utcnow
 import asyncio
 import httpx
 import sys
@@ -19,9 +20,8 @@ services_dir = os.path.dirname(current_dir)
 sys.path.insert(0, services_dir)
 
 from common.redis_queue import TelemetryQueueItem
+from utils import MAX_PAYLOAD_SIZE
 
-# Импортируем только то, что доступно на уровне модуля
-MAX_PAYLOAD_SIZE = 64 * 1024  # 64KB
 REDIS_PUSH_MAX_RETRIES = 3
 
 
@@ -30,7 +30,7 @@ class TestPayloadValidation:
     
     def test_parse_json_valid_payload(self):
         """Тест парсинга валидного payload."""
-        from main import _parse_json
+        from utils import _parse_json
         payload = b'{"metric_type": "PH", "value": 6.5}'
         result = _parse_json(payload)
         
@@ -40,7 +40,7 @@ class TestPayloadValidation:
     
     def test_parse_json_payload_too_large(self):
         """Тест отклонения слишком большого payload."""
-        from main import _parse_json
+        from utils import _parse_json
         # Создаем payload больше максимального размера
         large_payload = b'{"data": "' + (b'x' * (MAX_PAYLOAD_SIZE + 1)) + b'"}'
         
@@ -50,7 +50,7 @@ class TestPayloadValidation:
     
     def test_parse_json_payload_at_limit(self):
         """Тест парсинга payload на границе лимита."""
-        from main import _parse_json
+        from utils import _parse_json
         # Создаем payload точно на лимите
         payload = b'{"data": "' + (b'x' * (MAX_PAYLOAD_SIZE - 100)) + b'"}'
         
@@ -61,7 +61,7 @@ class TestPayloadValidation:
     
     def test_parse_json_invalid_json(self):
         """Тест обработки невалидного JSON."""
-        from main import _parse_json
+        from utils import _parse_json
         payload = b'invalid json {'
         result = _parse_json(payload)
         
@@ -69,7 +69,7 @@ class TestPayloadValidation:
     
     def test_parse_json_empty_payload(self):
         """Тест обработки пустого payload."""
-        from main import _parse_json
+        from utils import _parse_json
         payload = b'{}'
         result = _parse_json(payload)
         
@@ -83,19 +83,19 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_success_first_attempt(self):
         """Тест успешного push с первой попытки."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)
         
-        with patch('main.telemetry_queue', mock_queue):
+        with patch('state.telemetry_queue', mock_queue):
             result = await _push_with_retry(queue_item)
         
         assert result is True
@@ -104,20 +104,20 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_success_after_retry(self):
         """Тест успешного push после retry."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
         # Первая попытка падает, вторая успешна
         mock_queue.push = AsyncMock(side_effect=[Exception("Redis error"), True])
         
-        with patch('main.telemetry_queue', mock_queue):
+        with patch('state.telemetry_queue', mock_queue):
             result = await _push_with_retry(queue_item, max_retries=2)
         
         assert result is True
@@ -126,19 +126,19 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_all_attempts_fail(self):
         """Тест провала всех попыток."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(side_effect=Exception("Redis error"))
         
-        with patch('main.telemetry_queue', mock_queue):
+        with patch('state.telemetry_queue', mock_queue):
             result = await _push_with_retry(queue_item, max_retries=3)
         
         assert result is False
@@ -147,20 +147,20 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_queue_full(self):
         """Тест обработки переполненной очереди (не повторяем)."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
         # Очередь переполнена - push возвращает False
         mock_queue.push = AsyncMock(return_value=False)
         
-        with patch('main.telemetry_queue', mock_queue):
+        with patch('state.telemetry_queue', mock_queue):
             result = await _push_with_retry(queue_item, max_retries=3)
         
         assert result is False
@@ -170,13 +170,13 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_exponential_backoff(self):
         """Тест exponential backoff при retry."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
         mock_queue = AsyncMock()
@@ -188,8 +188,8 @@ class TestRedisRetryLogic:
             sleep_times.append(seconds)
             # Не вызываем реальный asyncio.sleep, чтобы избежать рекурсии
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main.asyncio.sleep', side_effect=mock_sleep):
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('telemetry_processing.asyncio.sleep', side_effect=mock_sleep):
             await _push_with_retry(queue_item, max_retries=3)
         
         # Проверяем, что backoff увеличивается: 2^0=1, 2^1=2
@@ -201,16 +201,16 @@ class TestRedisRetryLogic:
     @pytest.mark.asyncio
     async def test_push_with_retry_no_queue(self):
         """Тест обработки отсутствия очереди."""
-        from main import _push_with_retry
+        from telemetry_processing import _push_with_retry
         queue_item = TelemetryQueueItem(
             node_uid="nd-ph-1",
             zone_uid="zn-1",
             metric_type="PH",
             value=6.5,
-            ts=datetime.utcnow()
+            ts=utcnow()
         )
         
-        with patch('main.telemetry_queue', None):
+        with patch('state.telemetry_queue', None):
             result = await _push_with_retry(queue_item)
         
         assert result is False
@@ -222,7 +222,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_success_first_attempt(self):
         """Тест успешной регистрации узла с первой попытки."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-001", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -231,7 +231,7 @@ class TestLaravelApiRetry:
         mock_response.json.return_value = {"data": {"uid": "nd-test-001"}}
         mock_response.text = "OK"
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client:
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
@@ -249,7 +249,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_retry_on_server_error(self):
         """Тест retry при серверной ошибке (5xx)."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-002", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -269,9 +269,9 @@ class TestLaravelApiRetry:
             sleep_times.append(seconds)
             # Не вызываем реальный asyncio.sleep
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client, \
-             patch('main.asyncio.sleep', side_effect=mock_sleep):
+             patch('mqtt_handlers.asyncio.sleep', side_effect=mock_sleep):
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
             
@@ -291,7 +291,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_no_retry_on_client_error(self):
         """Тест отсутствия retry при клиентской ошибке (4xx)."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-003", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -299,7 +299,7 @@ class TestLaravelApiRetry:
         mock_response.status_code = 400
         mock_response.text = "Bad Request"
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client:
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
@@ -317,7 +317,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_no_retry_on_401(self):
         """Тест отсутствия retry при 401 (неавторизован)."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-004", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -325,7 +325,7 @@ class TestLaravelApiRetry:
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client:
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "invalid-token"
@@ -343,7 +343,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_retry_on_timeout(self):
         """Тест retry при timeout."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-005", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -358,9 +358,9 @@ class TestLaravelApiRetry:
             sleep_times.append(seconds)
             # Не вызываем реальный asyncio.sleep
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client, \
-             patch('main.asyncio.sleep', side_effect=mock_sleep):
+             patch('mqtt_handlers.asyncio.sleep', side_effect=mock_sleep):
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
             
@@ -380,7 +380,7 @@ class TestLaravelApiRetry:
     @pytest.mark.asyncio
     async def test_handle_node_hello_all_retries_fail(self):
         """Тест провала всех попыток."""
-        from main import handle_node_hello
+        from mqtt_handlers import handle_node_hello
         topic = "hydro/node_hello"
         payload = b'{"message_type": "node_hello", "hardware_id": "test-006", "node_type": "ph", "fw_version": "1.0.0"}'
         
@@ -391,9 +391,9 @@ class TestLaravelApiRetry:
         async def mock_sleep(seconds):
             pass  # Не делаем ничего
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client, \
-             patch('main.asyncio.sleep', side_effect=mock_sleep):
+             patch('mqtt_handlers.asyncio.sleep', side_effect=mock_sleep):
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
             
@@ -415,7 +415,8 @@ class TestGracefulShutdown:
     @pytest.mark.asyncio
     async def test_background_tasks_tracking(self):
         """Тест отслеживания фоновых задач."""
-        from main import background_tasks, lifespan, telemetry_queue, shutdown_event
+        from app import lifespan
+        from state import background_tasks, telemetry_queue, shutdown_event
         from fastapi import FastAPI
         from unittest.mock import AsyncMock, patch
         
@@ -433,9 +434,9 @@ class TestGracefulShutdown:
         
         app = FastAPI()
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main.get_mqtt_client', new_callable=AsyncMock) as mock_get_mqtt, \
-             patch('main.close_redis_client', new_callable=AsyncMock):
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('app.get_mqtt_client', new_callable=AsyncMock) as mock_get_mqtt, \
+             patch('app.close_redis_client', new_callable=AsyncMock):
             mock_get_mqtt.return_value = mock_mqtt
             
             # Запускаем lifespan в контексте
@@ -452,7 +453,8 @@ class TestGracefulShutdown:
     @pytest.mark.asyncio
     async def test_shutdown_event_set(self):
         """Тест установки shutdown_event при shutdown."""
-        from main import shutdown_event, lifespan, telemetry_queue, background_tasks
+        from app import lifespan
+        from state import background_tasks, telemetry_queue, shutdown_event
         from fastapi import FastAPI
         from unittest.mock import AsyncMock, patch
         
@@ -475,10 +477,10 @@ class TestGracefulShutdown:
         
         app = FastAPI()
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main.get_mqtt_client', new_callable=AsyncMock) as mock_get_mqtt, \
-             patch('main.close_redis_client', new_callable=AsyncMock), \
-             patch('main.process_telemetry_queue', side_effect=mock_process_telemetry_queue):
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('app.get_mqtt_client', new_callable=AsyncMock) as mock_get_mqtt, \
+             patch('app.close_redis_client', new_callable=AsyncMock), \
+             patch('app.process_telemetry_queue', side_effect=mock_process_telemetry_queue):
             mock_get_mqtt.return_value = mock_mqtt
             
             # Запускаем lifespan
@@ -502,7 +504,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_handle_telemetry_with_retry(self):
         """Тест обработки телеметрии с retry логикой."""
-        from main import handle_telemetry
+        from telemetry_processing import handle_telemetry
         
         mock_queue = AsyncMock()
         # Первая попытка падает, вторая успешна
@@ -511,8 +513,11 @@ class TestIntegration:
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
         payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2}'
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('asyncio.sleep', side_effect=lambda x: asyncio.sleep(0)):
+        async def mock_sleep(_seconds):
+            return None
+
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('telemetry_processing.asyncio.sleep', side_effect=mock_sleep):
             await handle_telemetry(topic, payload)
             
             # Проверяем, что push был вызван 2 раза (retry)
@@ -521,16 +526,16 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_handle_telemetry_large_payload_rejected(self):
         """Тест отклонения большого payload в handle_telemetry."""
-        from main import handle_telemetry, MAX_PAYLOAD_SIZE
+        from telemetry_processing import handle_telemetry
+        from utils import MAX_PAYLOAD_SIZE
         
         mock_queue = AsyncMock()
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
         # Создаем payload больше максимального размера
         large_payload = b'{"data": "' + (b'x' * (MAX_PAYLOAD_SIZE + 1)) + b'"}'
         
-        with patch('main.telemetry_queue', mock_queue):
+        with patch('state.telemetry_queue', mock_queue):
             await handle_telemetry(topic, large_payload)
             
             # Push не должен быть вызван (payload отклонен)
             assert mock_queue.push.call_count == 0
-

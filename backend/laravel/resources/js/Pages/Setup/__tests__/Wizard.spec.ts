@@ -112,7 +112,7 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('Шаг 1: Выбрать или создать теплицу')
     expect(wrapper.text()).toContain('Шаг 2: Создать рецепт с фазами')
     expect(wrapper.text()).toContain('Шаг 3: Выбрать или создать зону')
-    expect(wrapper.text()).toContain('Шаг 4: Привязать рецепт к зоне')
+    expect(wrapper.text()).toContain('Шаг 4: Запустить цикл выращивания')
     expect(wrapper.text()).toContain('Шаг 5: Привязать узлы к зоне')
   })
 
@@ -610,4 +610,3 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.exists()).toBe(true)
   })
 })
-

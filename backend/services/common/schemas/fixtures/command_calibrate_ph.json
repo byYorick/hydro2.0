@@ -1,0 +1,9 @@
+{
+  "cmd_id": "cmd-99999",
+  "cmd": "set_pwm",
+  "params": {
+    "value": 128
+  },
+  "ts": 1737979200,
+  "sig": "deadbeef"
+}

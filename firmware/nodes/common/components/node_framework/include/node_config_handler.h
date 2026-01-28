@@ -6,7 +6,7 @@
  * - Парсинг JSON
  * - Валидация обязательных полей
  * - Применение конфигурации
- * - Формирование config_response
+ * - Формирование ответа на изменения конфига и публикация config_report
  */
 
 #ifndef NODE_CONFIG_HANDLER_H
@@ -77,7 +77,7 @@ esp_err_t node_config_handler_apply_with_result(
 );
 
 /**
- * @brief Публикация ответа на конфиг
+ * @brief Публикация результата применения конфига
  * 
  * @param status Статус: "ACK" или "ERROR"
  * @param error_msg Сообщение об ошибке (если status == "ERROR")
@@ -90,6 +90,27 @@ esp_err_t node_config_handler_publish_response(
     const char *error_msg,
     const char **restarted_components,
     size_t component_count
+);
+
+/**
+ * @brief Callback для формирования списка каналов в ответе на конфиг.
+ *
+ * Владелец callback должен вернуть cJSON массив. node_config_handler берет
+ * владение объектом и освободит его после публикации.
+ */
+typedef cJSON *(*node_config_channels_callback_t)(void *user_ctx);
+
+/**
+ * @brief Регистрация callback для формирования channels в ответе на конфиг.
+ *
+ * Если callback не задан, handler попытается взять channels из сохраненного NodeConfig.
+ *
+ * @param callback Callback для формирования channels (может быть NULL)
+ * @param user_ctx Пользовательский контекст
+ */
+void node_config_handler_set_channels_callback(
+    node_config_channels_callback_t callback,
+    void *user_ctx
 );
 
 // Forward declarations для типов из mqtt_manager.h
@@ -126,4 +147,3 @@ void node_config_handler_set_mqtt_callbacks(
 #endif
 
 #endif // NODE_CONFIG_HANDLER_H
-

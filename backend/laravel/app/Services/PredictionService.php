@@ -13,21 +13,32 @@ class PredictionService
     /**
      * Прогнозирование параметра для зоны
      *
-     * @param  string  $metricType  ph, ec, temp_air, humidity_air
+     * @param  string  $metricType  PH, EC, TEMPERATURE, HUMIDITY
      * @param  int  $horizonMinutes  горизонт прогноза в минутах (по умолчанию 60)
      */
     public function predict(Zone $zone, string $metricType, int $horizonMinutes = 60): ?ParameterPrediction
     {
         try {
+            $sensorType = $this->metricTypeToSensorType($metricType);
+            if (! $sensorType) {
+                Log::warning('Unsupported metric type for prediction', [
+                    'zone_id' => $zone->id,
+                    'metric_type' => $metricType,
+                ]);
+
+                return null;
+            }
+
             // Получаем последние данные за 2 часа для анализа тренда
             $from = Carbon::now()->subHours(2);
 
             $samples = TelemetrySample::query()
-                ->where('zone_id', $zone->id)
-                ->where('metric_type', $metricType)
-                ->where('ts', '>=', $from)
-                ->orderBy('ts', 'asc')
-                ->get(['ts', 'value'])
+                ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zone->id)
+                ->where('sensors.type', $sensorType)
+                ->where('telemetry_samples.ts', '>=', $from)
+                ->orderBy('telemetry_samples.ts', 'asc')
+                ->get(['telemetry_samples.ts', 'telemetry_samples.value'])
                 ->filter(fn ($s) => $s->value !== null);
 
             if ($samples->count() < 3) {
@@ -150,6 +161,22 @@ class PredictionService
     }
 
     /**
+     * Привести metric_type к типу сенсора.
+     */
+    private function metricTypeToSensorType(string $metricType): ?string
+    {
+        $normalized = strtoupper(trim($metricType));
+
+        return match ($normalized) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
+            default => null,
+        };
+    }
+
+    /**
      * Получить последний прогноз для зоны и метрики
      */
     public function getLatestPrediction(Zone $zone, string $metricType): ?ParameterPrediction
@@ -169,7 +196,7 @@ class PredictionService
      * @param  array  $metricTypes  массив типов метрик для прогнозирования
      * @return int количество созданных прогнозов
      */
-    public function generatePredictionsForActiveZones(array $metricTypes = ['ph', 'ec']): int
+    public function generatePredictionsForActiveZones(array $metricTypes = ['PH', 'EC']): int
     {
         $zones = Zone::query()
             ->whereIn('status', ['online', 'warning'])

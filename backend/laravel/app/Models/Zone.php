@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\GrowCycleStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,10 +51,39 @@ class Zone extends Model
         return $this->hasMany(DeviceNode::class, 'zone_id');
     }
 
-    public function recipeInstance(): HasOne
+    /**
+     * Активный цикл выращивания (RUNNING или PAUSED)
+     */
+    public function activeGrowCycle(): HasOne
     {
-        return $this->hasOne(ZoneRecipeInstance::class);
+        return $this->hasOne(GrowCycle::class)
+            ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
     }
+
+    /**
+     * Экземпляры инфраструктуры зоны
+     */
+    public function infrastructureInstances(): HasMany
+    {
+        return $this->morphMany(InfrastructureInstance::class, 'owner')
+            ->where('owner_type', 'zone');
+    }
+
+    /**
+     * Привязки каналов через инфраструктуру зоны
+     */
+    public function channelBindings(): HasMany
+    {
+        return $this->hasManyThrough(
+            ChannelBinding::class,
+            InfrastructureInstance::class,
+            'owner_id', // Foreign key on infrastructure_instances
+            'infrastructure_instance_id', // Foreign key on channel_bindings
+            'id', // Local key on zones
+            'id' // Local key on infrastructure_instances
+        )->where('infrastructure_instances.owner_type', 'zone');
+    }
+
 
     public function alerts(): HasMany
     {
@@ -88,6 +118,54 @@ class Zone extends Model
     public function pidConfigs(): HasMany
     {
         return $this->hasMany(ZonePidConfig::class);
+    }
+
+    public function growCycles(): HasMany
+    {
+        return $this->hasMany(GrowCycle::class);
+    }
+
+
+    /**
+     * Проверка валидности инфраструктуры зоны (новая модель)
+     * Все required-оборудование должно быть привязано к каналам
+     */
+    public function isInfrastructureValid(): bool
+    {
+        $requiredAssets = $this->infrastructureInstances()
+            ->where('required', true)
+            ->get();
+
+        foreach ($requiredAssets as $asset) {
+            if ($asset->channelBindings()->count() === 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Получить список незаполненных required-оборудований (новая модель)
+     */
+    public function getMissingRequiredAssets(): array
+    {
+        $requiredAssets = $this->infrastructureInstances()
+            ->where('required', true)
+            ->get();
+
+        $missing = [];
+        foreach ($requiredAssets as $asset) {
+            if ($asset->channelBindings()->count() === 0) {
+                $missing[] = [
+                    'id' => $asset->id,
+                    'type' => $asset->asset_type,
+                    'label' => $asset->label,
+                ];
+            }
+        }
+
+        return $missing;
     }
 
     /**

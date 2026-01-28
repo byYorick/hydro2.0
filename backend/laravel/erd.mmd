@@ -1,0 +1,843 @@
+erDiagram
+  aggregator_state {
+    bigint id PK
+    character_varying aggregation_type
+    timestamp_without_time_zone last_ts
+    timestamp_without_time_zone updated_at
+  }
+  ai_logs {
+    bigint id PK
+    bigint zone_id FK
+    character_varying action
+    jsonb details
+    timestamp_without_time_zone created_at
+  }
+  alerts {
+    bigint id PK
+    bigint zone_id FK
+    character_varying source
+    character_varying code
+    character_varying type
+    jsonb details
+    character_varying status
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone resolved_at
+    integer error_count
+  }
+  cache {
+    character_varying key PK
+    text value
+    integer expiration
+  }
+  cache_locks {
+    character_varying key PK
+    character_varying owner
+    integer expiration
+  }
+  channel_bindings {
+    bigint id PK
+    bigint infrastructure_instance_id FK
+    bigint node_channel_id FK
+    character_varying direction
+    character_varying role
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  command_acks {
+    bigint id PK
+    bigint command_id FK
+    character_varying ack_type
+    numeric measured_current
+    numeric measured_flow
+    text error_message
+    jsonb metadata
+    timestamp_without_time_zone created_at
+  }
+  commands {
+    bigint id PK
+    bigint zone_id FK
+    bigint node_id FK
+    character_varying channel
+    character_varying cmd
+    jsonb params
+    character_varying status
+    character_varying cmd_id
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    timestamp_without_time_zone sent_at
+    timestamp_without_time_zone ack_at
+    timestamp_without_time_zone failed_at
+    character_varying source
+    character_varying error_code
+    character_varying error_message
+    integer result_code
+    integer duration_ms
+    bigint cycle_id FK
+    character_varying context_type
+    character_varying command_type
+    jsonb payload
+    character_varying request_id
+  }
+  failed_jobs {
+    bigint id PK
+    character_varying uuid
+    text connection
+    text queue
+    text payload
+    text exception
+    timestamp_without_time_zone failed_at
+  }
+  firmware_files {
+    bigint id PK
+    character_varying node_type
+    character_varying version
+    character_varying file_path
+    character_varying checksum_sha256
+    text release_notes
+    timestamp_without_time_zone created_at
+  }
+  greenhouses {
+    bigint id PK
+    character_varying uid
+    character_varying name
+    character_varying timezone
+    character_varying type
+    json coordinates
+    text description
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    character_varying provisioning_token
+  }
+  grow_cycle_overrides {
+    bigint id PK
+    bigint grow_cycle_id FK
+    character_varying parameter
+    character_varying value_type
+    text value
+    text reason
+    bigint created_by FK
+    timestamp_without_time_zone applies_from
+    timestamp_without_time_zone applies_until
+    boolean is_active
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  grow_cycle_phase_steps {
+    bigint id PK
+    bigint grow_cycle_phase_id FK
+    bigint recipe_revision_phase_step_id FK
+    integer step_index
+    character_varying name
+    integer offset_hours
+    character_varying action
+    text description
+    numeric ph_target
+    numeric ph_min
+    numeric ph_max
+    numeric ec_target
+    numeric ec_min
+    numeric ec_max
+    character_varying irrigation_mode
+    integer irrigation_interval_sec
+    integer irrigation_duration_sec
+    integer lighting_photoperiod_hours
+    time_without_time_zone lighting_start_time
+    integer mist_interval_sec
+    integer mist_duration_sec
+    character_varying mist_mode
+    numeric temp_air_target
+    numeric humidity_target
+    integer co2_target
+    jsonb extensions
+    timestamp_without_time_zone started_at
+    timestamp_without_time_zone ended_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  grow_cycle_phases {
+    bigint id PK
+    bigint grow_cycle_id FK
+    bigint recipe_revision_phase_id FK
+    integer phase_index
+    character_varying name
+    numeric ph_target
+    numeric ph_min
+    numeric ph_max
+    numeric ec_target
+    numeric ec_min
+    numeric ec_max
+    character_varying irrigation_mode
+    integer irrigation_interval_sec
+    integer irrigation_duration_sec
+    integer lighting_photoperiod_hours
+    time_without_time_zone lighting_start_time
+    integer mist_interval_sec
+    integer mist_duration_sec
+    character_varying mist_mode
+    numeric temp_air_target
+    numeric humidity_target
+    integer co2_target
+    character_varying progress_model
+    integer duration_hours
+    integer duration_days
+    numeric base_temp_c
+    numeric target_gdd
+    numeric dli_target
+    jsonb extensions
+    timestamp_without_time_zone started_at
+    timestamp_without_time_zone ended_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  grow_cycle_transitions {
+    bigint id PK
+    bigint grow_cycle_id FK
+    bigint from_phase_id FK
+    bigint to_phase_id FK
+    bigint from_step_id FK
+    bigint to_step_id FK
+    character_varying trigger_type
+    text comment
+    bigint triggered_by FK
+    jsonb metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  grow_cycles {
+    bigint id PK
+    bigint greenhouse_id FK
+    bigint zone_id FK
+    bigint plant_id FK
+    bigint recipe_id FK
+    character_varying status
+    timestamp_without_time_zone started_at
+    timestamp_without_time_zone recipe_started_at
+    timestamp_without_time_zone expected_harvest_at
+    timestamp_without_time_zone actual_harvest_at
+    character_varying batch_label
+    text notes
+    jsonb settings
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    timestamp_without_time_zone planting_at
+    bigint recipe_revision_id FK
+    timestamp_without_time_zone phase_started_at
+    timestamp_without_time_zone step_started_at
+    jsonb progress_meta
+    bigint current_phase_id FK
+    bigint current_step_id FK
+  }
+  grow_stage_templates {
+    bigint id PK
+    character_varying name
+    character_varying code
+    integer order_index
+    integer default_duration_days
+    jsonb ui_meta
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  harvests {
+    bigint id PK
+    bigint zone_id FK
+    bigint recipe_id FK
+    date harvest_date
+    numeric yield_weight_kg
+    integer yield_count
+    numeric quality_score
+    jsonb notes
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  infrastructure_instances {
+    bigint id PK
+    character_varying owner_type
+    bigint owner_id
+    character_varying asset_type
+    character_varying label
+    boolean required
+    numeric capacity_liters
+    numeric flow_rate
+    jsonb specs
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  job_batches {
+    character_varying id PK
+    character_varying name
+    integer total_jobs
+    integer pending_jobs
+    integer failed_jobs
+    text failed_job_ids
+    text options
+    integer cancelled_at
+    integer created_at
+    integer finished_at
+  }
+  jobs {
+    bigint id PK
+    character_varying queue
+    text payload
+    smallint attempts
+    integer reserved_at
+    integer available_at
+    integer created_at
+  }
+  migrations {
+    integer id PK
+    character_varying migration
+    integer batch
+  }
+  node_channels {
+    bigint id PK
+    bigint node_id FK
+    character_varying channel
+    character_varying type
+    character_varying metric
+    character_varying unit
+    jsonb config
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  node_logs {
+    bigint id PK
+    bigint node_id FK
+    character_varying level
+    text message
+    jsonb context
+    timestamp_without_time_zone created_at
+  }
+  nodes {
+    bigint id PK
+    bigint zone_id FK
+    character_varying uid
+    character_varying name
+    character_varying type
+    character_varying fw_version
+    timestamp_without_time_zone last_seen_at
+    character_varying status
+    jsonb config
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    character_varying lifecycle_state
+    character_varying hardware_id
+    timestamp_without_time_zone last_heartbeat_at
+    integer uptime_seconds
+    integer free_heap_bytes
+    integer rssi
+    character_varying hardware_revision
+    timestamp_without_time_zone first_seen_at
+    boolean validated
+    bigint pending_zone_id FK
+  }
+  parameter_predictions {
+    bigint id PK
+    bigint zone_id FK
+    character_varying metric_type
+    double_precision predicted_value
+    double_precision confidence
+    integer horizon_minutes
+    timestamp_without_time_zone predicted_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  password_reset_tokens {
+    character_varying email PK
+    character_varying token
+    timestamp_without_time_zone created_at
+  }
+  pending_alerts {
+    bigint id PK
+    bigint zone_id FK
+    character_varying source
+    character_varying code
+    character_varying type
+    jsonb details
+    integer attempts
+    integer max_attempts
+    timestamp_without_time_zone last_attempt_at
+    character_varying status
+    text last_error
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    timestamp_with_time_zone next_retry_at
+  }
+  personal_access_tokens {
+    bigint id PK
+    character_varying tokenable_type
+    bigint tokenable_id
+    character_varying name
+    character_varying token
+    text abilities
+    timestamp_without_time_zone last_used_at
+    timestamp_without_time_zone expires_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plant_cost_items {
+    bigint id PK
+    bigint plant_id FK
+    bigint plant_price_version_id FK
+    character_varying type
+    numeric amount
+    character_varying currency
+    character_varying notes
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plant_price_versions {
+    bigint id PK
+    bigint plant_id FK
+    date effective_from
+    date effective_to
+    character_varying currency
+    numeric seedling_cost
+    numeric substrate_cost
+    numeric nutrient_cost
+    numeric labor_cost
+    numeric protection_cost
+    numeric logistics_cost
+    numeric other_cost
+    numeric wholesale_price
+    numeric retail_price
+    character_varying source
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plant_recipe {
+    bigint id PK
+    bigint plant_id FK
+    bigint recipe_id FK
+    character_varying season
+    character_varying site_type
+    boolean is_default
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plant_sale_prices {
+    bigint id PK
+    bigint plant_id FK
+    bigint plant_price_version_id FK
+    character_varying channel
+    numeric price
+    character_varying currency
+    boolean is_active
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plant_zone {
+    bigint id PK
+    bigint plant_id FK
+    bigint zone_id FK
+    timestamp_without_time_zone assigned_at
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  plants {
+    bigint id PK
+    character_varying slug
+    character_varying name
+    character_varying species
+    character_varying variety
+    character_varying substrate_type
+    character_varying growing_system
+    character_varying photoperiod_preset
+    character_varying seasonality
+    character_varying icon_path
+    text description
+    json environment_requirements
+    json growth_phases
+    json recommended_recipes
+    json metadata
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  presets {
+    bigint id PK
+    character_varying name
+    character_varying plant_type
+    jsonb ph_optimal_range
+    jsonb ec_range
+    jsonb vpd_range
+    jsonb light_intensity_range
+    jsonb climate_ranges
+    jsonb irrigation_behavior
+    character_varying growth_profile
+    bigint default_recipe_id FK
+    text description
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  recipe_analytics {
+    bigint id PK
+    bigint recipe_id FK
+    bigint zone_id FK
+    timestamp_without_time_zone start_date
+    timestamp_without_time_zone end_date
+    integer total_duration_hours
+    numeric avg_ph_deviation
+    numeric avg_ec_deviation
+    integer alerts_count
+    jsonb final_yield
+    numeric efficiency_score
+    jsonb additional_metrics
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  recipe_revision_phase_steps {
+    bigint id PK
+    bigint phase_id FK
+    integer step_index
+    character_varying name
+    integer offset_hours
+    character_varying action
+    text description
+    numeric ph_target
+    numeric ph_min
+    numeric ph_max
+    numeric ec_target
+    numeric ec_min
+    numeric ec_max
+    character_varying irrigation_mode
+    integer irrigation_interval_sec
+    integer irrigation_duration_sec
+    integer lighting_photoperiod_hours
+    time_without_time_zone lighting_start_time
+    integer mist_interval_sec
+    integer mist_duration_sec
+    character_varying mist_mode
+    numeric temp_air_target
+    numeric humidity_target
+    integer co2_target
+    jsonb extensions
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  recipe_revision_phases {
+    bigint id PK
+    bigint recipe_revision_id FK
+    bigint stage_template_id FK
+    integer phase_index
+    character_varying name
+    numeric ph_target
+    numeric ph_min
+    numeric ph_max
+    numeric ec_target
+    numeric ec_min
+    numeric ec_max
+    character_varying irrigation_mode
+    integer irrigation_interval_sec
+    integer irrigation_duration_sec
+    integer lighting_photoperiod_hours
+    time_without_time_zone lighting_start_time
+    integer mist_interval_sec
+    integer mist_duration_sec
+    character_varying mist_mode
+    numeric temp_air_target
+    numeric humidity_target
+    integer co2_target
+    character_varying progress_model
+    integer duration_hours
+    integer duration_days
+    numeric base_temp_c
+    numeric target_gdd
+    numeric dli_target
+    jsonb extensions
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  recipe_revisions {
+    bigint id PK
+    bigint recipe_id FK
+    integer revision_number
+    character_varying status
+    text description
+    bigint created_by FK
+    timestamp_without_time_zone published_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  recipes {
+    bigint id PK
+    character_varying name
+    text description
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    jsonb metadata
+  }
+  scheduler_logs {
+    bigint id PK
+    character_varying task_name
+    character_varying status
+    jsonb details
+    timestamp_without_time_zone created_at
+  }
+  sensors {
+    bigint id PK
+    bigint greenhouse_id FK
+    bigint zone_id FK
+    bigint node_id FK
+    character_varying scope
+    character_varying type
+    character_varying label
+    character_varying unit
+    jsonb specs
+    boolean is_active
+    timestamp_without_time_zone last_read_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  sessions {
+    character_varying id PK
+    bigint user_id
+    character_varying ip_address
+    text user_agent
+    text payload
+    integer last_activity
+  }
+  system_logs {
+    bigint id PK
+    character_varying level
+    text message
+    jsonb context
+    timestamp_without_time_zone created_at
+  }
+  telemetry_agg_1h {
+    bigint id PK
+    bigint zone_id FK
+    bigint node_id FK
+    character_varying channel
+    character_varying metric_type
+    double_precision value_avg
+    double_precision value_min
+    double_precision value_max
+    double_precision value_median
+    integer sample_count
+    timestamp_without_time_zone ts PK
+    timestamp_without_time_zone created_at
+  }
+  telemetry_agg_1m {
+    bigint id PK
+    bigint zone_id FK
+    bigint node_id FK
+    character_varying channel
+    character_varying metric_type
+    double_precision value_avg
+    double_precision value_min
+    double_precision value_max
+    double_precision value_median
+    integer sample_count
+    timestamp_without_time_zone ts PK
+    timestamp_without_time_zone created_at
+  }
+  telemetry_daily {
+    bigint id PK
+    bigint zone_id FK
+    bigint node_id FK
+    character_varying channel
+    character_varying metric_type
+    double_precision value_avg
+    double_precision value_min
+    double_precision value_max
+    double_precision value_median
+    integer sample_count
+    date date
+    timestamp_without_time_zone created_at
+  }
+  telemetry_last {
+    bigint sensor_id PK
+    numeric last_value
+    timestamp_without_time_zone last_ts
+    character_varying last_quality
+    timestamp_without_time_zone updated_at
+  }
+  telemetry_samples {
+    bigint id PK
+    bigint sensor_id FK
+    timestamp_without_time_zone ts
+    bigint zone_id FK
+    bigint cycle_id FK
+    numeric value
+    character_varying quality
+    jsonb metadata
+    timestamp_without_time_zone created_at
+  }
+  unassigned_node_errors {
+    bigint id PK
+    character_varying hardware_id
+    text error_message
+    character_varying error_code
+    character_varying severity
+    character_varying topic
+    jsonb last_payload
+    integer count
+    timestamp_without_time_zone first_seen_at
+    timestamp_without_time_zone last_seen_at
+    bigint node_id FK
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  unassigned_node_errors_archive {
+    bigint id PK
+    character_varying hardware_id
+    text error_message
+    character_varying error_code
+    character_varying severity
+    character_varying topic
+    jsonb last_payload
+    integer count
+    timestamp_without_time_zone first_seen_at
+    timestamp_without_time_zone last_seen_at
+    bigint node_id FK
+    timestamp_without_time_zone archived_at
+    timestamp_without_time_zone attached_at
+    bigint attached_zone_id FK
+  }
+  users {
+    bigint id PK
+    character_varying name
+    character_varying email
+    timestamp_without_time_zone email_verified_at
+    character_varying password
+    character_varying remember_token
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    character_varying role
+  }
+  zone_events {
+    bigint id PK
+    bigint zone_id FK
+    character_varying type
+    jsonb payload_json
+    timestamp_without_time_zone created_at
+    character_varying entity_type
+    text entity_id
+    bigint server_ts
+    jsonb details
+    timestamp_without_time_zone processed_at
+  }
+  zone_model_params {
+    bigint id PK
+    bigint zone_id FK
+    character_varying model_type
+    jsonb params
+    timestamp_without_time_zone calibrated_at
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  zone_pid_configs {
+    bigint id PK
+    bigint zone_id FK
+    character_varying type
+    jsonb config
+    timestamp_without_time_zone updated_at
+    bigint updated_by FK
+  }
+  zone_simulations {
+    bigint id PK
+    bigint zone_id FK
+    jsonb scenario
+    jsonb results
+    integer duration_hours
+    integer step_minutes
+    character_varying status
+    text error_message
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+  }
+  zones {
+    bigint id PK
+    bigint greenhouse_id FK
+    character_varying name
+    text description
+    character_varying status
+    timestamp_without_time_zone created_at
+    timestamp_without_time_zone updated_at
+    bigint preset_id FK
+    jsonb hardware_profile
+    jsonb capabilities
+    numeric health_score
+    character_varying health_status
+    character_varying uid
+    jsonb settings
+  }
+  zones ||--o{ ai_logs : "zone_id -> id"
+  zones ||--o{ alerts : "zone_id -> id"
+  infrastructure_instances ||--o{ channel_bindings : "infrastructure_instance_id -> id"
+  node_channels ||--o{ channel_bindings : "node_channel_id -> id"
+  commands ||--o{ command_acks : "command_id -> id"
+  grow_cycles ||--o{ commands : "cycle_id -> id"
+  nodes ||--o{ commands : "node_id -> id"
+  zones ||--o{ commands : "zone_id -> id"
+  users ||--o{ grow_cycle_overrides : "created_by -> id"
+  grow_cycles ||--o{ grow_cycle_overrides : "grow_cycle_id -> id"
+  grow_cycle_phases ||--o{ grow_cycle_phase_steps : "grow_cycle_phase_id -> id"
+  recipe_revision_phase_steps ||--o{ grow_cycle_phase_steps : "recipe_revision_phase_step_id -> id"
+  grow_cycles ||--o{ grow_cycle_phases : "grow_cycle_id -> id"
+  recipe_revision_phases ||--o{ grow_cycle_phases : "recipe_revision_phase_id -> id"
+  recipe_revision_phases ||--o{ grow_cycle_transitions : "from_phase_id -> id"
+  recipe_revision_phase_steps ||--o{ grow_cycle_transitions : "from_step_id -> id"
+  grow_cycles ||--o{ grow_cycle_transitions : "grow_cycle_id -> id"
+  recipe_revision_phases ||--o{ grow_cycle_transitions : "to_phase_id -> id"
+  recipe_revision_phase_steps ||--o{ grow_cycle_transitions : "to_step_id -> id"
+  users ||--o{ grow_cycle_transitions : "triggered_by -> id"
+  grow_cycle_phases ||--o{ grow_cycles : "current_phase_id -> id"
+  grow_cycle_phase_steps ||--o{ grow_cycles : "current_step_id -> id"
+  greenhouses ||--o{ grow_cycles : "greenhouse_id -> id"
+  plants ||--o{ grow_cycles : "plant_id -> id"
+  recipes ||--o{ grow_cycles : "recipe_id -> id"
+  recipe_revisions ||--o{ grow_cycles : "recipe_revision_id -> id"
+  zones ||--o{ grow_cycles : "zone_id -> id"
+  recipes ||--o{ harvests : "recipe_id -> id"
+  zones ||--o{ harvests : "zone_id -> id"
+  nodes ||--o{ node_channels : "node_id -> id"
+  nodes ||--o{ node_logs : "node_id -> id"
+  zones ||--o{ nodes : "pending_zone_id -> id"
+  zones ||--o{ nodes : "zone_id -> id"
+  zones ||--o{ parameter_predictions : "zone_id -> id"
+  zones ||--o{ pending_alerts : "zone_id -> id"
+  plants ||--o{ plant_cost_items : "plant_id -> id"
+  plant_price_versions ||--o{ plant_cost_items : "plant_price_version_id -> id"
+  plants ||--o{ plant_price_versions : "plant_id -> id"
+  plants ||--o{ plant_recipe : "plant_id -> id"
+  recipes ||--o{ plant_recipe : "recipe_id -> id"
+  plants ||--o{ plant_sale_prices : "plant_id -> id"
+  plant_price_versions ||--o{ plant_sale_prices : "plant_price_version_id -> id"
+  plants ||--o{ plant_zone : "plant_id -> id"
+  zones ||--o{ plant_zone : "zone_id -> id"
+  recipes ||--o{ presets : "default_recipe_id -> id"
+  recipes ||--o{ recipe_analytics : "recipe_id -> id"
+  zones ||--o{ recipe_analytics : "zone_id -> id"
+  recipe_revision_phases ||--o{ recipe_revision_phase_steps : "phase_id -> id"
+  recipe_revisions ||--o{ recipe_revision_phases : "recipe_revision_id -> id"
+  grow_stage_templates ||--o{ recipe_revision_phases : "stage_template_id -> id"
+  users ||--o{ recipe_revisions : "created_by -> id"
+  recipes ||--o{ recipe_revisions : "recipe_id -> id"
+  greenhouses ||--o{ sensors : "greenhouse_id -> id"
+  nodes ||--o{ sensors : "node_id -> id"
+  zones ||--o{ sensors : "zone_id -> id"
+  nodes ||--o{ telemetry_agg_1h : "node_id -> id"
+  zones ||--o{ telemetry_agg_1h : "zone_id -> id"
+  nodes ||--o{ telemetry_agg_1m : "node_id -> id"
+  zones ||--o{ telemetry_agg_1m : "zone_id -> id"
+  nodes ||--o{ telemetry_daily : "node_id -> id"
+  zones ||--o{ telemetry_daily : "zone_id -> id"
+  sensors ||--o{ telemetry_last : "sensor_id -> id"
+  grow_cycles ||--o{ telemetry_samples : "cycle_id -> id"
+  sensors ||--o{ telemetry_samples : "sensor_id -> id"
+  zones ||--o{ telemetry_samples : "zone_id -> id"
+  nodes ||--o{ unassigned_node_errors : "node_id -> id"
+  zones ||--o{ unassigned_node_errors_archive : "attached_zone_id -> id"
+  nodes ||--o{ unassigned_node_errors_archive : "node_id -> id"
+  zones ||--o{ zone_events : "zone_id -> id"
+  zones ||--o{ zone_model_params : "zone_id -> id"
+  users ||--o{ zone_pid_configs : "updated_by -> id"
+  zones ||--o{ zone_pid_configs : "zone_id -> id"
+  zones ||--o{ zone_simulations : "zone_id -> id"
+  greenhouses ||--o{ zones : "greenhouse_id -> id"
+  presets ||--o{ zones : "preset_id -> id"

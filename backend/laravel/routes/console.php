@@ -49,17 +49,21 @@ Schedule::call(function () {
     ->dailyAt('03:30')
     ->description('Ротация старых бэкапов (удаление старше 30 дней)');
 
-// Архивирование команд: еженедельно в воскресенье в 1:00
-Schedule::command('commands:archive --days=90')
-    ->weeklyOn(0, '01:00')
-    ->description('Архивирование старых команд (90 дней hot → 3 года archive)');
-
-// Архивирование событий: еженедельно в воскресенье в 1:30
-Schedule::command('zone-events:archive --days=180')
-    ->weeklyOn(0, '01:30')
-    ->description('Архивирование старых событий (180 дней hot → 5 лет archive)');
+// Retention policies для commands и zone_events настроены через TimescaleDB/PostgreSQL
+// Старые данные удаляются автоматически согласно retention policies
+// Архивные таблицы удалены - используем партиционирование вместо дублей
 
 // Очистка логов: еженедельно в воскресенье в 2:00
 Schedule::command('logs:cleanup --days=30')
     ->weeklyOn(0, '02:00')
     ->description('Очистка старых логов (7-30 дней hot logs)');
+
+// Обработка timeout команд: каждые 30 секунд
+Schedule::command('commands:process-timeouts')
+    ->everyThirtySeconds()
+    ->description('Автоматическая обработка timeout для команд в статусе SENT');
+
+// Автоматический replay DLQ алертов: ежедневно в 4:00
+Schedule::command('alerts:dlq-replay --older-than-hours=24')
+    ->dailyAt('04:00')
+    ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');

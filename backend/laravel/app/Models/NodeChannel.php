@@ -24,6 +24,13 @@ class NodeChannel extends Model
         'config' => 'array',
     ];
 
+    /**
+     * Атрибуты, которые должны быть скрыты при сериализации.
+     */
+    protected $hidden = [
+        'config', // Никогда не сериализуется в JSON (защита параметров актуаторов)
+    ];
+
     public function node(): BelongsTo
     {
         return $this->belongsTo(DeviceNode::class, 'node_id');

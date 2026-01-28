@@ -23,7 +23,7 @@ def add_metrics():
     # Commands
     for _ in range(20):
         zone_id = random.choice([1, 2, 3, 4, 5])
-        metric = random.choice(['PH', 'EC', 'TEMP_AIR', 'TEMP_WATER', 'HUMIDITY'])
+        metric = random.choice(['PH', 'EC', 'TEMPERATURE', 'HUMIDITY'])
         COMMANDS_SENT.labels(zone_id=zone_id, metric=metric).inc()
     
     # Config fetch
@@ -45,4 +45,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Ошибка: {e}")
             time.sleep(30)
-

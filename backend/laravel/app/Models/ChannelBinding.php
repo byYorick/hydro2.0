@@ -1,0 +1,68 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class ChannelBinding extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'infrastructure_instance_id',
+        'node_channel_id',
+        'direction',
+        'role',
+    ];
+
+    /**
+     * Экземпляр инфраструктуры, к которому привязан канал
+     */
+    public function infrastructureInstance(): BelongsTo
+    {
+        return $this->belongsTo(InfrastructureInstance::class);
+    }
+
+    /**
+     * Канал ноды (нормализованная связь)
+     */
+    public function nodeChannel(): BelongsTo
+    {
+        return $this->belongsTo(NodeChannel::class);
+    }
+
+    /**
+     * Нода через канал (accessor для удобства)
+     */
+    public function getNodeAttribute()
+    {
+        return $this->nodeChannel?->node;
+    }
+
+    /**
+     * Scope для фильтрации по направлению
+     */
+    public function scopeActuators($query)
+    {
+        return $query->where('direction', 'actuator');
+    }
+
+    /**
+     * Scope для фильтрации по направлению
+     */
+    public function scopeSensors($query)
+    {
+        return $query->where('direction', 'sensor');
+    }
+
+    /**
+     * Scope для фильтрации по роли
+     */
+    public function scopeWithRole($query, string $role)
+    {
+        return $query->where('role', $role);
+    }
+}
+

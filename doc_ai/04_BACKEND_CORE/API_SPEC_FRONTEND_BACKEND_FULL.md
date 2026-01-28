@@ -1,13 +1,24 @@
 # API_SPEC_FRONTEND_BACKEND_FULL.md
 # Полная детальная спецификация API между Frontend и Backend (2.0)
+# **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
 
 Документ описывает REST и WebSocket-API, которые использует frontend (Web/Android)
 для работы с системой 2.0.
+
+**КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
+- ✅ Новые эндпоинты для GrowCycle: `/api/grow-cycles/*`
+- ✅ Удалены legacy эндпоинты: `/api/zones/*/attach-recipe`
+- ✅ Новый internal API: `/api/internal/effective-targets/batch`
+- ✅ Версионирование рецептов: `/api/recipe-revisions/*`
 
 Задача документа:
 - зафиксировать **контракты**;
 - помочь ИИ-агентам не плодить несогласованные эндпоинты;
 - обеспечить обратную совместимость при эволюции API.
+
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
@@ -100,7 +111,149 @@
 
 ---
 
-## 3. Greenhouses / Zones / Nodes
+## 3. Grow Cycles API (НОВОЕ после рефакторинга)
+
+**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `agronomist`.
+
+**Центр API для управления циклами выращивания.**
+
+### 3.1. GET /api/zones/{zone}/grow-cycle
+
+- **Описание:** Получить активный цикл зоны с effective targets
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Ответ:**
+```json
+{
+  "status": "ok",
+  "data": {
+    "id": 123,
+    "zone_id": 5,
+    "plant": {"id": 1, "name": "Tomato"},
+    "recipe_revision": {
+      "id": 456,
+      "recipe": {"name": "Standard Tomato"},
+      "version": 2
+    },
+    "current_phase": {
+      "id": 789,
+      "name": "VEG",
+      "started_at": "2025-01-01T10:00:00Z",
+      "progress": 0.3
+    },
+    "status": "RUNNING",
+    "effective_targets": {
+      "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
+      "ec": {"target": 1.5, "min": 1.3, "max": 1.7}
+      // ... остальные цели
+    }
+  }
+}
+```
+
+### 3.2. POST /api/zones/{zone}/grow-cycles
+
+- **Описание:** Создать новый цикл выращивания
+- **Тело запроса:**
+```json
+{
+  "recipe_revision_id": 456,
+  "plant_id": 1,
+  "planting_at": "2025-01-01T08:00:00Z",
+  "batch_label": "Batch 2025-001",
+  "notes": "Test cycle"
+}
+```
+
+### 3.3. POST /api/grow-cycles/{id}/pause
+
+- **Описание:** Приостановить цикл
+
+### 3.4. POST /api/grow-cycles/{id}/resume
+
+- **Описание:** Возобновить цикл
+
+### 3.5. POST /api/grow-cycles/{id}/set-phase
+
+- **Описание:** Ручной переход на фазу
+- **Тело:** `{"phase_index": 1, "comment": "Early transition due to plant health"}`
+
+### 3.6. POST /api/grow-cycles/{id}/advance-phase
+
+- **Описание:** Перейти на следующую фазу
+
+### 3.7. POST /api/grow-cycles/{id}/change-recipe-revision
+
+- **Описание:** Сменить ревизию рецепта
+- **Тело:** `{"recipe_revision_id": 789, "apply_at_next_phase": true}`
+
+### 3.8. POST /api/grow-cycles/{id}/harvest
+
+- **Описание:** Завершить цикл сбором урожая
+- **Тело:** `{"actual_harvest_at": "2025-02-01T12:00:00Z", "yield_kg": 15.5}`
+
+---
+
+## 4. Recipe Revisions API (НОВОЕ)
+
+**Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`.
+
+### 4.1. GET /api/recipes/{recipe}/revisions
+
+- **Описание:** Список ревизий рецепта
+
+### 4.2. POST /api/recipes/{recipe}/revisions
+
+- **Описание:** Создать новую ревизию из существующей
+- **Тело:** `{"from_revision_id": 456, "description": "Optimized for summer conditions"}`
+
+### 4.3. PATCH /api/recipe-revisions/{id}
+
+- **Описание:** Редактировать DRAFT ревизию
+
+### 4.4. POST /api/recipe-revisions/{id}/publish
+
+- **Описание:** Опубликовать DRAFT ревизию
+
+### 4.5. GET /api/recipe-revisions/{id}
+
+- **Описание:** Получить ревизию с фазами
+
+---
+
+## 5. Internal API (для Python сервисов)
+
+**Аутентификация:** Token-based (LARAVEL_API_TOKEN)
+
+### 5.1. POST /api/internal/effective-targets/batch
+
+- **Описание:** Batch получение effective targets для зон
+- **Тело:** `{"zone_ids": [1, 2, 3]}`
+- **Ответ:** Массив effective targets по зонам
+
+### 5.2. POST /api/internal/realtime/telemetry-batch
+
+- **Описание:** Batched realtime ingest телеметрии для WebSocket
+- **Тело:**
+```json
+{
+  "updates": [
+    {
+      "zone_id": 1,
+      "node_id": 10,
+      "channel": "ph_sensor",
+      "metric_type": "PH",
+      "value": 6.2,
+      "timestamp": 1700000000000
+    }
+  ]
+}
+```
+- **Ограничения:** `REALTIME_BATCH_MAX_UPDATES`, `REALTIME_BATCH_MAX_BYTES`
+- **Ответ:** `{"status":"ok","broadcasted":1,"updates":1}`
+
+---
+
+## 6. Greenhouses / Zones / Nodes (ОБНОВЛЕНО)
 
 **Аутентификация:** Все эндпоинты требуют `auth:sanctum`.
 
@@ -179,7 +332,7 @@
 ### 3.9.2. PATCH /api/nodes/{id}
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Обновление конфигурации узла.
+- Обновление метаданных узла (name, zone_id).
 
 ### 3.9.3. DELETE /api/nodes/{id}
 
@@ -189,7 +342,7 @@
 ### 3.9.4. GET /api/nodes/{id}/config
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- Получение конфигурации узла (NodeConfig) для отправки на ESP32.
+- Получение сохраненного NodeConfig (read-only), полученного от ноды через `config_report`.
 
 Ответ:
 ```json
@@ -207,16 +360,14 @@
 ### 3.9.5. POST /api/nodes/{id}/config/publish
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Публикация конфигурации узла через MQTT для отправки на ESP32.
+- Публикация конфигурации узла через MQTT **отключена**.
+- Узлы отправляют конфиг самостоятельно (config_report), сервер хранит и использует его.
 
 Ответ:
 ```json
 {
- "status": "ok",
- "data": {
-   "published_at": "2025-11-17T10:00:00Z",
-   "topic": "hydro/nodes/nd-001/config"
- }
+ "status": "error",
+ "message": "Config publishing from server is disabled. Nodes send config_report on connect."
 }
 ```
 
@@ -385,7 +536,7 @@
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - Параметры:
-  - `metric` — например, `PH`, `EC`, `TEMP_AIR`;
+  - `metric` — например, `PH`, `EC`, `TEMPERATURE`;
   - `from`, `to` — временной диапазон.
 - Ответ — массив точек для графика.
 
@@ -403,6 +554,9 @@
 ### 6.1. POST /api/zones/{id}/commands
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Валидация:** Используется `StoreZoneCommandRequest` для валидации входных данных
+- **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
+- **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Отправка команд на зону (через Python-сервис).
 - Примеры команд:
  - `FORCE_IRRIGATION` - принудительный полив (требует `params.duration_sec`);
@@ -439,6 +593,9 @@
 ### 6.2. POST /api/nodes/{id}/commands
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Валидация:** Используется `StoreNodeCommandRequest` для валидации входных данных
+- **Авторизация:** Проверка прав через `DeviceNodePolicy::sendCommand`
+- **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Низкоуровневые команды для конкретного узла (диагностика, калибровка).
 
 ---
@@ -554,7 +711,7 @@
 ```json
 {
   "zone_id": 1,
-  "metric_type": "ph",
+  "metric_type": "PH",
   "horizon_minutes": 60
 }
 ```
@@ -594,6 +751,7 @@
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
 - Запуск симуляции Digital Twin для зоны.
+  - `full_simulation` (bool, optional) — выполнить полный цикл с созданием сущностей и отчетом.
 
 Тело запроса:
 ```json
@@ -602,14 +760,98 @@
   "duration_hours": 24,
   "parameters": {
     "target_ph": 6.5
+  },
+  "full_simulation": false
+}
+```
+
+### 12.2. GET /api/simulations/{job_id}
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- Получение статуса симуляции (job), прогресса и отчета.
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "status": "processing",
+    "simulation_id": 55,
+    "report": {
+      "id": 12,
+      "simulation_id": 55,
+      "zone_id": 12,
+      "status": "completed",
+      "started_at": "2026-01-26T09:10:00Z",
+      "finished_at": "2026-01-26T09:11:00Z",
+      "summary_json": { "simulation_zone_id": 99 },
+      "phases_json": [],
+      "metrics_json": { "phases_count": 3 },
+      "errors_json": null
+    }
   }
 }
 ```
 
-### 12.2. GET /api/simulations/{id}
+### 12.3. GET /api/simulations/{simulation}/events
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- Получение результата симуляции.
+- Возвращает события процесса симуляции (этапы, статусы, ошибки).
+
+Параметры запроса (query):
+```
+limit (1..200, default 100)
+order (asc|desc, default asc)
+service (string)
+stage (string)
+status (string)
+level (info|warning|error)
+after_id (int)
+since (ISO8601 date/time)
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": [
+    {
+      "id": 101,
+      "simulation_id": 55,
+      "zone_id": 12,
+      "service": "digital-twin",
+      "stage": "live_start",
+      "status": "completed",
+      "level": "info",
+      "message": "Live-симуляция запущена",
+      "payload": { "node_sim_session_id": "sim-12-1700000000" },
+      "occurred_at": "2026-01-26T09:10:00Z",
+      "created_at": "2026-01-26T09:10:00Z"
+    }
+  ],
+  "meta": {
+    "limit": 100,
+    "order": "asc",
+    "last_id": 101
+  }
+}
+```
+
+### 12.4. GET /api/simulations/{simulation}/events/stream
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- SSE-стрим новых событий симуляции.
+
+Параметры запроса (query):
+```
+last_id (int)
+service (string)
+stage (string)
+status (string)
+level (info|warning|error)
+```
+
+События приходят с именем `simulation_event`.
 
 ---
 
@@ -624,9 +866,9 @@
 
 **Основные каналы:**
 
-- `hydro.zones.{id}` — обновления по зоне (событие `ZoneUpdated`);
+- `hydro.zones.{id}` — обновления по зоне (`ZoneUpdated`, `NodeConfigUpdated`, `TelemetryBatchUpdated`);
 - `hydro.alerts` — новые алерты (событие `AlertCreated`);
-- `nodes.{id}.status` — статусы узлов (событие `NodeStatusUpdated`).
+- `hydro.devices` — обновления устройств без зоны (fallback для `NodeConfigUpdated`).
 
 **Формат событий:**
 ```json
@@ -645,6 +887,66 @@
 
 ---
 
+## 13. Node Registration API
+
+**Аутентификация:** Токен-базированная (service token), не требует `auth:sanctum`.
+
+### 13.1. POST /api/nodes/register
+
+- **Аутентификация:** Требуется service token (Bearer token) или IP whitelist
+- **Rate Limiting:** Максимум 10 запросов в минуту по IP
+- **IP Whitelist:** Настраивается через `services.node_registration.allowed_ips` (поддержка CIDR)
+- **Валидация:** Используется `RegisterNodeRequest` для валидации входных данных
+- Регистрация нового узла ESP32 в системе.
+
+**Безопасность:**
+- Обязательная проверка токена (если настроен)
+- Rate limiting по IP (10 запросов/минуту)
+- IP whitelist (если настроен)
+- Защита от дублирования через уникальные ограничения в БД
+
+Тело запроса (node_hello):
+```json
+{
+  "message_type": "node_hello",
+  "hardware_id": "ESP32-ABC123",
+  "node_type": "ph",
+  "fw_version": "2.0.1",
+  "hardware_revision": "v1.0",
+  "capabilities": {...},
+  "provisioning_meta": {...}
+}
+```
+
+Тело запроса (обычная регистрация):
+```json
+{
+  "node_uid": "nd-001",
+  "firmware_version": "2.0.1",
+  "hardware_revision": "v1.0",
+  "hardware_id": "ESP32-ABC123",
+  "name": "pH Sensor Node",
+  "type": "ph"
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "id": 1,
+    "uid": "nd-001",
+    "name": "pH Sensor Node",
+    "type": "ph",
+    "status": "offline",
+    "lifecycle_state": "REGISTERED_BACKEND"
+  }
+}
+```
+
+---
+
 ## 14. Правила для ИИ-агентов
 
 1. Все новые эндпоинты должны описываться здесь и в `REST_API_REFERENCE.md`.
@@ -652,5 +954,7 @@
 3. Все действия, влияющие на железо, должны проходить через Python-сервис (не ходить напрямую в MQTT из backend).
 4. При добавлении нового эндпоинта обязательно указать требования аутентификации.
 5. Публичные эндпоинты должны быть явно помечены как таковые.
+6. Все мутирующие операции должны использовать FormRequest для валидации и Policy для авторизации.
+7. Критичные операции (публикация конфигов, регистрация узлов) должны использовать блокировки и дедупликацию.
 
 Этот документ задаёт **единый контракт** между UI и backend и служит опорой для дальнейшего развития системы.

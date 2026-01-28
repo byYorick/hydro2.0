@@ -2,12 +2,14 @@
   <Card>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold">Настройки PID</div>
+        <div class="text-sm font-semibold">
+          Настройки PID
+        </div>
         <div class="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-sky-600 text-white': selectedType === 'ph' }"
+            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ph' }"
             @click="selectedType = 'ph'"
           >
             pH
@@ -15,7 +17,7 @@
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-sky-600 text-white': selectedType === 'ec' }"
+            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ec' }"
             @click="selectedType = 'ec'"
           >
             EC
@@ -23,11 +25,14 @@
         </div>
       </div>
 
-      <form @submit.prevent="onSubmit" class="space-y-4">
+      <form
+        class="space-y-4"
+        @submit.prevent="onSubmit"
+      >
         <!-- Основные параметры -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Целевое значение (target)
             </label>
             <input
@@ -36,16 +41,16 @@
               step="0.01"
               :min="selectedType === 'ph' ? 0 : 0"
               :max="selectedType === 'ph' ? 14 : 10"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
               {{ selectedType === 'ph' ? 'Диапазон: 0-14' : 'Диапазон: 0-10' }}
             </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Мертвая зона (dead_zone)
             </label>
             <input
@@ -54,14 +59,16 @@
               step="0.01"
               min="0"
               max="2"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">Диапазон: 0-2</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Диапазон: 0-2
+            </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Ближняя зона (close_zone)
             </label>
             <input
@@ -70,14 +77,16 @@
               step="0.01"
               min="0"
               max="5"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">Должна быть больше dead_zone</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Должна быть больше dead_zone
+            </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Дальняя зона (far_zone)
             </label>
             <input
@@ -86,50 +95,54 @@
               step="0.01"
               min="0"
               max="10"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">Должна быть больше close_zone</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Должна быть больше close_zone
+            </p>
           </div>
         </div>
 
         <!-- Коэффициенты для близкой зоны -->
-        <div class="border-t border-neutral-800 pt-4">
-          <div class="text-xs font-medium text-neutral-300 mb-3">Коэффициенты для близкой зоны</div>
+        <div class="border-t border-[color:var(--border-muted)] pt-4">
+          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
+            Коэффициенты для близкой зоны
+          </div>
           <div class="grid grid-cols-3 gap-4">
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Kp</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
               <input
                 v-model.number="form.zone_coeffs.close.kp"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1000"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Ki</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ki</label>
               <input
                 v-model.number="form.zone_coeffs.close.ki"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Kd</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kd</label>
               <input
                 v-model.number="form.zone_coeffs.close.kd"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
@@ -137,42 +150,44 @@
         </div>
 
         <!-- Коэффициенты для дальней зоны -->
-        <div class="border-t border-neutral-800 pt-4">
-          <div class="text-xs font-medium text-neutral-300 mb-3">Коэффициенты для дальней зоны</div>
+        <div class="border-t border-[color:var(--border-muted)] pt-4">
+          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
+            Коэффициенты для дальней зоны
+          </div>
           <div class="grid grid-cols-3 gap-4">
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Kp</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
               <input
                 v-model.number="form.zone_coeffs.far.kp"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1000"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Ki</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ki</label>
               <input
                 v-model.number="form.zone_coeffs.far.ki"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Kd</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kd</label>
               <input
                 v-model.number="form.zone_coeffs.far.kd"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+                class="input-field w-full"
                 required
               />
             </div>
@@ -180,9 +195,9 @@
         </div>
 
         <!-- Дополнительные параметры -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-neutral-800 pt-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[color:var(--border-muted)] pt-4">
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Максимальный выход (max_output)
             </label>
             <input
@@ -191,13 +206,13 @@
               step="0.1"
               min="0"
               max="1000"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Минимальный интервал (min_interval_ms)
             </label>
             <input
@@ -206,14 +221,16 @@
               step="1000"
               min="1000"
               max="3600000"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">В миллисекундах (1000-3600000)</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              В миллисекундах (1000-3600000)
+            </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-300 mb-1">
+            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Скорость адаптации (adaptation_rate)
             </label>
             <input
@@ -222,20 +239,25 @@
               step="0.01"
               min="0"
               max="1"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
+              class="input-field w-full"
               required
             />
-            <p class="text-xs text-neutral-400 mt-1">Диапазон: 0-1</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Диапазон: 0-1
+            </p>
           </div>
 
           <div class="flex items-center gap-2 pt-6">
             <input
+              id="autotune"
               v-model="form.enable_autotune"
               type="checkbox"
-              id="autotune"
-              class="rounded border-neutral-700 bg-neutral-900 text-sky-600 focus:ring-sky-500"
+              class="rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-cyan)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="autotune" class="text-xs font-medium text-neutral-300">
+            <label
+              for="autotune"
+              class="text-xs font-medium text-[color:var(--text-muted)]"
+            >
               Включить автонастройку (autotune)
             </label>
           </div>
@@ -244,21 +266,32 @@
         <!-- Safeguard предупреждение -->
         <div
           v-if="needsConfirmation"
-          class="rounded-md border border-amber-500/50 bg-amber-500/10 p-3"
+          class="rounded-md border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3"
         >
-          <div class="text-xs font-medium text-amber-400 mb-1">Внимание!</div>
-          <div class="text-xs text-amber-300">
+          <div class="text-xs font-medium text-[color:var(--badge-warning-text)] mb-1">
+            Внимание!
+          </div>
+          <div class="text-xs text-[color:var(--badge-warning-text)]">
             Обнаружены агрессивные настройки (высокие коэффициенты или короткий интервал).
             Пожалуйста, подтвердите сохранение.
           </div>
         </div>
 
         <!-- Кнопки -->
-        <div class="flex justify-end gap-2 pt-4 border-t border-neutral-800">
-          <Button type="button" variant="outline" size="sm" @click="onReset">
+        <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            @click="onReset"
+          >
             Сбросить
           </Button>
-          <Button type="submit" size="sm" :disabled="loading || (needsConfirmation && !confirmed)">
+          <Button
+            type="submit"
+            size="sm"
+            :disabled="loading || (needsConfirmation && !confirmed)"
+          >
             {{ loading ? 'Сохранение...' : 'Сохранить' }}
           </Button>
         </div>
@@ -352,4 +385,3 @@ onMounted(() => {
   loadConfig()
 })
 </script>
-

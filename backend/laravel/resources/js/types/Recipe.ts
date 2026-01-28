@@ -12,6 +12,11 @@ export interface RecipePhaseTargets {
     min: number
     max: number
   }
+  temp_air?: number
+  humidity_air?: number
+  light_hours?: number
+  irrigation_interval_sec?: number
+  irrigation_duration_sec?: number
 }
 
 /**
@@ -36,6 +41,9 @@ export interface Recipe {
   description?: string
   phases?: RecipePhase[]
   phases_count?: number
+  latest_published_revision_id?: number | null
+  latest_draft_revision_id?: number | null
+  plants?: Array<{ id: number; name: string }>
   created_at?: string
   updated_at?: string
 }
@@ -54,4 +62,3 @@ export interface RecipeInstance {
   created_at?: string
   updated_at?: string
 }
-

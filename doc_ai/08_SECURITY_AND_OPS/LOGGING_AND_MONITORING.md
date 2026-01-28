@@ -3,6 +3,10 @@
 
 Документ описывает, как система 2.0 должна собирать логи, метрики и алерты.
 
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+
 ---
 
 ## 1. Цели
@@ -36,7 +40,7 @@
  "node_id": 11,
  "event": "COMMAND_SENT",
  "details": {
- "command_type": "DOSE",
+ "command_type": "dose",
  "channel": "pump_acid",
  "ml": 1.0
  }
@@ -256,7 +260,7 @@
 
 ### Подробное руководство
 
-Полное руководство пользователя доступно в: `doc_ai/08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`
+Полное руководство пользователя доступно в: `../08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`
 
 ---
 

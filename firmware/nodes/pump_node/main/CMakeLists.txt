@@ -10,17 +10,21 @@ idf_component_register(
         "."
     REQUIRES 
         mqtt_manager
-        mqtt_client
         wifi_manager
         config_storage
-        pump_driver
         config_apply
-        setup_portal
         node_framework
-        heartbeat_task
         node_utils
-        connection_status
+        init_steps_utils
+        pump_driver
+        i2c_bus
         ina209
+        oled_ui
+        setup_portal
+        heartbeat_task
+        connection_status
+        factory_reset_button
+        driver
         esp_wifi
         nvs_flash
         esp_netif
@@ -29,4 +33,5 @@ idf_component_register(
         mqtt
         esp_timer
         json
+        mbedtls
 )

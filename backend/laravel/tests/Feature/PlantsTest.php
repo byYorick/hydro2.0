@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Plant;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;

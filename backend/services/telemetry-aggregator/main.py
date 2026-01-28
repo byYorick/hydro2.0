@@ -8,9 +8,12 @@ import logging
 import os
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.env import get_settings
 from common.db import fetch, execute
+from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram, start_http_server
+from common.logging_setup import setup_standard_logging, install_exception_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,28 @@ AGGREGATION_ERRORS = Counter("aggregation_errors_total", "Aggregation errors", [
 CLEANUP_RUNS = Counter("cleanup_runs_total", "Cleanup runs")
 CLEANUP_DELETED = Counter("cleanup_deleted_total", "Deleted records", ["table"])
 CLEANUP_LAT = Histogram("cleanup_seconds", "Cleanup duration seconds")
+
+# Состояние backoff при ошибках
+_error_count = 0
+_last_error_time: Optional[datetime] = None
+_backoff_until: Optional[datetime] = None
+
+
+def _build_zone_stats(rows: list[Dict[str, Any]], ts_key: str) -> Dict[int, Dict[str, Any]]:
+    stats: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        zone_id = row.get("zone_id")
+        if zone_id is None:
+            continue
+        entry = stats.get(zone_id)
+        if entry is None:
+            entry = {"count": 0, "max_ts": None}
+            stats[zone_id] = entry
+        entry["count"] += 1
+        ts_value = row.get(ts_key)
+        if ts_value is not None and (entry["max_ts"] is None or ts_value > entry["max_ts"]):
+            entry["max_ts"] = ts_value
+    return stats
 
 
 async def get_last_ts(aggregation_type: str) -> Optional[datetime]:
@@ -68,6 +93,87 @@ async def update_last_ts(aggregation_type: str, last_ts: datetime) -> None:
     )
 
 
+async def _check_error_backoff() -> bool:
+    """
+    Проверить, нужно ли применять backoff из-за серии ошибок.
+    
+    Returns:
+        True если нужно применить backoff, False если можно продолжать
+    """
+    global _error_count, _last_error_time, _backoff_until
+    
+    now = utcnow()
+    
+    # Если есть активный backoff, проверяем, не истек ли он
+    if _backoff_until and now < _backoff_until:
+        remaining = (_backoff_until - now).total_seconds()
+        logger.warning(
+            f"Error backoff active: skipping aggregation, {remaining:.1f}s remaining",
+            extra={
+                'backoff_until': _backoff_until.isoformat(),
+                'error_count': _error_count
+            }
+        )
+        return True
+    
+    # Если backoff истек, сбрасываем счетчик
+    if _backoff_until and now >= _backoff_until:
+        logger.info(
+            f"Error backoff expired, resetting error count",
+            extra={'previous_error_count': _error_count}
+        )
+        _error_count = 0
+        _backoff_until = None
+    
+    return False
+
+
+async def _record_error() -> None:
+    """
+    Записать ошибку и применить backoff при серии исключений.
+    """
+    global _error_count, _last_error_time, _backoff_until
+    
+    _error_count += 1
+    _last_error_time = utcnow()
+    
+    # Применяем exponential backoff при серии ошибок
+    # Пороги: 3 ошибки -> 30s, 5 ошибок -> 2min, 10 ошибок -> 10min
+    if _error_count >= 10:
+        backoff_seconds = 600  # 10 минут
+    elif _error_count >= 5:
+        backoff_seconds = 120  # 2 минуты
+    elif _error_count >= 3:
+        backoff_seconds = 30  # 30 секунд
+    else:
+        backoff_seconds = 0
+    
+    if backoff_seconds > 0:
+        _backoff_until = utcnow() + timedelta(seconds=backoff_seconds)
+        logger.error(
+            f"Error backoff activated: {_error_count} consecutive errors, "
+            f"backing off for {backoff_seconds}s to reduce infrastructure pressure",
+            extra={
+                'error_count': _error_count,
+                'backoff_seconds': backoff_seconds,
+                'backoff_until': _backoff_until.isoformat()
+            }
+        )
+
+
+async def _record_success() -> None:
+    """Сбросить счетчик ошибок при успешной операции."""
+    global _error_count, _backoff_until
+    
+    if _error_count > 0:
+        logger.info(
+            f"Aggregation succeeded, resetting error count (was {_error_count})",
+            extra={'previous_error_count': _error_count}
+        )
+        _error_count = 0
+        _backoff_until = None
+
+
 async def aggregate_1m() -> int:
     """
     Агрегировать телеметрию по 1 минуте.
@@ -75,13 +181,17 @@ async def aggregate_1m() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="1m").time():
         try:
             last_ts = await get_last_ts("1m")
             
             # Если нет последней метки, берём последний час
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(hours=1)
+                last_ts = utcnow() - timedelta(hours=1)
             
             # Агрегируем данные из telemetry_samples
             # Пробуем использовать time_bucket (TimescaleDB), если не работает - используем date_trunc
@@ -93,19 +203,25 @@ async def aggregate_1m() -> int:
                         value_avg, value_min, value_max, value_median, sample_count, ts
                     )
                     SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value)::float as value_avg,
-                        MIN(value)::float as value_min,
-                        MAX(value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)::float as value_median,
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel' as channel,
+                        s.type::text as metric_type,
+                        AVG(ts.value)::float as value_avg,
+                        MIN(ts.value)::float as value_min,
+                        MAX(ts.value)::float as value_max,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
                         COUNT(*)::int as sample_count,
-                        time_bucket('1 minute', ts) as ts
-                    FROM telemetry_samples
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, time_bucket('1 minute', ts)
+                        time_bucket('1 minute', ts.ts) as ts
+                    FROM telemetry_samples ts
+                    LEFT JOIN sensors s ON s.id = ts.sensor_id
+                    WHERE ts.ts > $1 AND ts.ts <= NOW()
+                    GROUP BY
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel',
+                        s.type::text,
+                        time_bucket('1 minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET
                         value_avg = EXCLUDED.value_avg,
@@ -113,7 +229,7 @@ async def aggregate_1m() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -126,19 +242,25 @@ async def aggregate_1m() -> int:
                         value_avg, value_min, value_max, value_median, sample_count, ts
                     )
                     SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value)::float as value_avg,
-                        MIN(value)::float as value_min,
-                        MAX(value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)::float as value_median,
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel' as channel,
+                        s.type::text as metric_type,
+                        AVG(ts.value)::float as value_avg,
+                        MIN(ts.value)::float as value_min,
+                        MAX(ts.value)::float as value_max,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
                         COUNT(*)::int as sample_count,
-                        date_trunc('minute', ts) as ts
-                    FROM telemetry_samples
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, date_trunc('minute', ts)
+                        date_trunc('minute', ts.ts) as ts
+                    FROM telemetry_samples ts
+                    LEFT JOIN sensors s ON s.id = ts.sensor_id
+                    WHERE ts.ts > $1 AND ts.ts <= NOW()
+                    GROUP BY
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel',
+                        s.type::text,
+                        date_trunc('minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET
                         value_avg = EXCLUDED.value_avg,
@@ -146,7 +268,7 @@ async def aggregate_1m() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -158,14 +280,41 @@ async def aggregate_1m() -> int:
                 # Берём максимальную временную метку
                 max_ts = max(row["ts"] for row in rows)
                 await update_last_ts("1m", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "ts")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_1m",
+                        status="ok",
+                        message="Агрегация 1m завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_ts": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="1m").inc(count)
             logger.info(f"Aggregated 1m: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="1m").inc()
-            logger.error(f"Error aggregating 1m: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating 1m: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -176,13 +325,17 @@ async def aggregate_1h() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="1h").time():
         try:
             last_ts = await get_last_ts("1h")
             
             # Если нет последней метки, берём последние 24 часа
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(hours=24)
+                last_ts = utcnow() - timedelta(hours=24)
             
             # Агрегируем данные из telemetry_agg_1m
             try:
@@ -213,7 +366,7 @@ async def aggregate_1h() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -246,7 +399,7 @@ async def aggregate_1h() -> int:
                         value_max = EXCLUDED.value_max,
                         value_median = EXCLUDED.value_median,
                         sample_count = EXCLUDED.sample_count
-                    RETURNING ts
+                    RETURNING zone_id, ts
                     """,
                     last_ts,
                 )
@@ -257,14 +410,41 @@ async def aggregate_1h() -> int:
             if count > 0:
                 max_ts = max(row["ts"] for row in rows)
                 await update_last_ts("1h", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "ts")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_1h",
+                        status="ok",
+                        message="Агрегация 1h завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_ts": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="1h").inc(count)
             logger.info(f"Aggregated 1h: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="1h").inc()
-            logger.error(f"Error aggregating 1h: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating 1h: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -275,13 +455,17 @@ async def aggregate_daily() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="daily").time():
         try:
             last_ts = await get_last_ts("daily")
             
             # Если нет последней метки, берём последние 7 дней
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(days=7)
+                last_ts = utcnow() - timedelta(days=7)
             
             # Агрегируем данные из telemetry_agg_1h
             rows = await fetch(
@@ -311,7 +495,7 @@ async def aggregate_daily() -> int:
                     value_max = EXCLUDED.value_max,
                     value_median = EXCLUDED.value_median,
                     sample_count = EXCLUDED.sample_count
-                RETURNING date
+                RETURNING zone_id, date
                 """,
                 last_ts,
             )
@@ -323,14 +507,41 @@ async def aggregate_daily() -> int:
                 max_date = max(row["date"] for row in rows)
                 max_ts = datetime.combine(max_date, datetime.min.time())
                 await update_last_ts("daily", max_ts)
+
+                zone_stats = _build_zone_stats(rows, "date")
+                for zone_id, info in zone_stats.items():
+                    max_bucket = info.get("max_ts")
+                    await record_simulation_event(
+                        zone_id,
+                        service="telemetry-aggregator",
+                        stage="aggregate_daily",
+                        status="ok",
+                        message="Дневная агрегация завершена",
+                        payload={
+                            "records": info.get("count", 0),
+                            "max_date": max_bucket.isoformat() if max_bucket else None,
+                        },
+                    )
             
             AGGREGATION_RECORDS.labels(type="daily").inc(count)
             logger.info(f"Aggregated daily: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="daily").inc()
-            logger.error(f"Error aggregating daily: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating daily: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -375,9 +586,9 @@ async def cleanup_old_data():
             retention_1m_days = int(os.getenv('RETENTION_1M_DAYS', '30'))
             retention_1h_days = int(os.getenv('RETENTION_1H_DAYS', '365'))
             
-            cutoff_samples = datetime.utcnow() - timedelta(days=retention_samples_days)
-            cutoff_1m = datetime.utcnow() - timedelta(days=retention_1m_days)
-            cutoff_1h = datetime.utcnow() - timedelta(days=retention_1h_days)
+            cutoff_samples = utcnow() - timedelta(days=retention_samples_days)
+            cutoff_1m = utcnow() - timedelta(days=retention_1m_days)
+            cutoff_1h = utcnow() - timedelta(days=retention_1h_days)
             
             # Удаляем старые raw samples
             deleted_samples = await execute(
@@ -426,7 +637,14 @@ async def cleanup_old_data():
                 '1h_deleted': deleted_1h_count,
             }
         except Exception as e:
-            logger.error(f"Error cleaning up old data: {e}", exc_info=True)
+            logger.error(
+                f"Error cleaning up old data: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e)
+                }
+            )
             return None
 
 
@@ -445,30 +663,44 @@ async def main():
     
     logger.info(f"Telemetry aggregator started (interval: {aggregation_interval_seconds}s, cleanup: {cleanup_interval_seconds}s)")
     
-    last_cleanup = datetime.utcnow()
+    last_cleanup = utcnow()
     
     while True:
         try:
             await run_aggregation()
             
             # Периодически запускаем очистку старых данных
-            now = datetime.utcnow()
+            now = utcnow()
             if (now - last_cleanup).total_seconds() >= cleanup_interval_seconds:
                 await cleanup_old_data()
                 last_cleanup = now
+            
+            # Сбрасываем счетчик ошибок при успешном цикле
+            await _record_success()
         except Exception as e:
-            logger.error(f"Error in aggregation cycle: {e}")
+            await _record_error()
+            logger.error(
+                f"Error in aggregation cycle: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
         
-        await asyncio.sleep(aggregation_interval_seconds)
+        # Применяем backoff: если активен, используем его вместо обычного интервала
+        if _backoff_until and utcnow() < _backoff_until:
+            backoff_remaining = (_backoff_until - utcnow()).total_seconds()
+            # Ждем до окончания backoff или минимальный интервал
+            sleep_time = min(backoff_remaining, aggregation_interval_seconds)
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        else:
+            await asyncio.sleep(aggregation_interval_seconds)
 
 
 if __name__ == "__main__":
-    import os
-    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-    )
+    setup_standard_logging("telemetry-aggregator")
+    install_exception_handlers("telemetry-aggregator")
     asyncio.run(main())
-

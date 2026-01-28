@@ -1,0 +1,159 @@
+# E81: Water Change Schedule - scheduled water change execution
+# DoD: scheduled water change execution
+
+name: E81_water_change_schedule
+description: |
+  Проверяет выполнение запланированной смены воды:
+  - Создается расписание смены воды
+  - Scheduler создает последовательность команд
+  - Drain -> Fill -> Mix команды выполняются в правильном порядке
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data[0].id}
+
+  # Создаем расписание смены воды (ежедневно в определенное время)
+  - step: create_water_change_schedule
+    type: api_post
+    endpoint: /api/zones/${zone_id}/water-change-schedules
+    payload:
+      name: test-water-change-${TIMESTAMP_S}
+      enabled: true
+      cron_expression: "0 */4 * * *"  # Каждые 4 часа для теста
+      drain_duration_sec: 120
+      fill_duration_sec: 180
+      mix_duration_sec: 60
+      drain_to_percent: 80
+    save: schedule_response
+
+  - step: set_schedule_id
+    type: set
+    schedule_id: ${schedule_response.data.id}
+
+  # Ждем выполнения расписания
+  - step: wait_for_water_change_execution
+    type: wait_until
+    condition: |
+      # Проверяем, что была создана последовательность команд смены воды
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as cmd_count FROM commands WHERE zone_id = :zone_id AND type IN (:drain, :fill, :mix) AND created_at > NOW() - INTERVAL \"10 minutes\"',
+        'params': {'zone_id': context['zone_id'], 'drain': 'DRAIN_RESERVOIR', 'fill': 'FILL_RESERVOIR', 'mix': 'MIX_RESERVOIR'}
+      }))
+      result and result[0]['cmd_count'] >= 3  # Минимум drain + fill + mix
+    timeout: 600.0  # 10 минут
+    interval: 60.0
+
+  # Проверяем последовательность команд
+  - step: check_command_sequence
+    type: database_query
+    query: |
+      SELECT
+        type,
+        status,
+        created_at,
+        ROW_NUMBER() OVER (ORDER BY created_at) as sequence_order
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type IN ('DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR')
+      AND created_at > NOW() - INTERVAL '10 minutes'
+      ORDER BY created_at
+    params:
+      zone_id: ${zone_id}
+    save: command_sequence
+
+  # Проверяем статусы выполнения
+  - step: check_execution_status
+    type: database_query
+    query: |
+      SELECT
+        COUNT(CASE WHEN type = 'DRAIN_RESERVOIR' AND status = 'DONE' THEN 1 END) as drain_completed,
+        COUNT(CASE WHEN type = 'FILL_RESERVOIR' AND status = 'DONE' THEN 1 END) as fill_completed,
+        COUNT(CASE WHEN type = 'MIX_RESERVOIR' AND status = 'DONE' THEN 1 END) as mix_completed
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type IN ('DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR')
+      AND created_at > NOW() - INTERVAL '10 minutes'
+    params:
+      zone_id: ${zone_id}
+    save: execution_status
+
+assertions:
+  # Проверка 1: Все типы команд были созданы
+  - name: all_command_types_created
+    type: custom_assert
+    condition: |
+      sequence = context.get('command_sequence', {}).get('data', [])
+      types = {cmd['type'] for cmd in sequence}
+      required_types = {'DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR'}
+      return required_types.issubset(types)
+
+  # Проверка 2: Правильная последовательность (drain -> fill -> mix)
+  - name: correct_sequence_order
+    type: custom_assert
+    condition: |
+      sequence = context.get('command_sequence', {}).get('data', [])
+      if len(sequence) < 3:
+          return False
+      # Проверяем порядок типов команд
+      type_order = [cmd['type'] for cmd in sequence]
+      # Должен быть drain, затем fill, затем mix
+      drain_idx = next((i for i, t in enumerate(type_order) if t == 'DRAIN_RESERVOIR'), -1)
+      fill_idx = next((i for i, t in enumerate(type_order) if t == 'FILL_RESERVOIR'), -1)
+      mix_idx = next((i for i, t in enumerate(type_order) if t == 'MIX_RESERVOIR'), -1)
+      return drain_idx < fill_idx < mix_idx
+
+  # Проверка 3: Команды выполнены успешно
+  - name: commands_executed_successfully
+    type: json_assertion
+    data: ${execution_status}
+    expected:
+      - field: drain_completed
+        operator: greater_than
+        value: 0
+      - field: fill_completed
+        operator: greater_than
+        value: 0
+      - field: mix_completed
+        operator: greater_than
+        value: 0
+
+  # Проверка 4: Временные интервалы между командами разумные
+  - name: reasonable_time_gaps
+    type: custom_assert
+    condition: |
+      sequence = context.get('command_sequence', {}).get('data', [])
+      if len(sequence) < 2:
+          return True  # Если только одна команда - ок
+      # Проверяем, что команды не идут одновременно
+      for i in range(1, len(sequence)):
+          prev_time = sequence[i-1]['created_at']
+          curr_time = sequence[i]['created_at']
+          if prev_time and curr_time:
+              gap = (curr_time - prev_time).total_seconds()
+              if gap < 10:  # Минимум 10 секунд между командами
+                  return False
+      return True
+
+cleanup:
+  - step: disable_schedule
+    type: api_patch
+    endpoint: /api/water-change-schedules/${schedule_id}
+    payload:
+      enabled: false
+    optional: true
+
+  - step: delete_schedule
+    type: api_delete
+    endpoint: /api/water-change-schedules/${schedule_id}
+    optional: true

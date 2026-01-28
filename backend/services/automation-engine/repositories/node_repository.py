@@ -20,7 +20,7 @@ class NodeRepository:
         """
         rows = await fetch(
             """
-            SELECT n.id, n.uid, n.type, nc.channel
+            SELECT n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
             FROM nodes n
             LEFT JOIN node_channels nc ON nc.node_id = n.id
             WHERE n.zone_id = $1 AND n.status = 'online'
@@ -37,6 +37,7 @@ class NodeRepository:
                     "node_id": row["id"],
                     "node_uid": row["uid"],
                     "type": node_type,
+                    "node_channel_id": row["node_channel_id"],
                     "channel": channel,
                 }
         return result
@@ -56,7 +57,7 @@ class NodeRepository:
         
         rows = await fetch(
             """
-            SELECT n.zone_id, n.id, n.uid, n.type, nc.channel
+            SELECT n.zone_id, n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
             FROM nodes n
             LEFT JOIN node_channels nc ON nc.node_id = n.id
             WHERE n.zone_id = ANY($1::int[]) AND n.status = 'online'
@@ -78,6 +79,7 @@ class NodeRepository:
                     "node_id": row["id"],
                     "node_uid": row["uid"],
                     "type": node_type,
+                    "node_channel_id": row["node_channel_id"],
                     "channel": channel,
                 }
         
@@ -101,7 +103,7 @@ class NodeRepository:
         """
         rows = await fetch(
             """
-            SELECT n.id, n.uid, n.type, nc.channel
+            SELECT n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
             FROM nodes n
             LEFT JOIN node_channels nc ON nc.node_id = n.id
             WHERE n.zone_id = $1 AND n.type = $2 AND n.status = 'online'
@@ -115,7 +117,7 @@ class NodeRepository:
                 "node_id": row["id"],
                 "node_uid": row["uid"],
                 "type": row["type"],
+                "node_channel_id": row["node_channel_id"],
                 "channel": row["channel"] or "default",
             })
         return result
-

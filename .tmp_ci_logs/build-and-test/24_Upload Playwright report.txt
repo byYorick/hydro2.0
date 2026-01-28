@@ -1,0 +1,25 @@
+﻿2026-01-02T17:50:22.4781574Z ##[group]Run actions/upload-artifact@v4
+2026-01-02T17:50:22.4781859Z with:
+2026-01-02T17:50:22.4782049Z   name: playwright-report
+2026-01-02T17:50:22.4782293Z   path: backend/laravel/playwright-report
+2026-01-02T17:50:22.4782559Z   retention-days: 7
+2026-01-02T17:50:22.4782782Z   if-no-files-found: warn
+2026-01-02T17:50:22.4782995Z   compression-level: 6
+2026-01-02T17:50:22.4783194Z   overwrite: false
+2026-01-02T17:50:22.4783396Z   include-hidden-files: false
+2026-01-02T17:50:22.4783621Z env:
+2026-01-02T17:50:22.4783795Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:50:22.4784021Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:50:22.4784391Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:50:22.4784714Z ##[endgroup]
+2026-01-02T17:50:22.6999352Z With the provided path, there will be 3 files uploaded
+2026-01-02T17:50:22.7004882Z Artifact name is valid!
+2026-01-02T17:50:22.7007242Z Root directory input is valid!
+2026-01-02T17:50:22.9686988Z Beginning upload of artifact content to blob storage
+2026-01-02T17:50:23.5321183Z Uploaded bytes 198347
+2026-01-02T17:50:23.6085837Z Finished uploading artifact content to blob storage!
+2026-01-02T17:50:23.6089556Z SHA256 digest of uploaded artifact zip is 2ab73bf3cf1e01e084812d7ac22caff4e875e499ee2d3087af03b6442bb5c204
+2026-01-02T17:50:23.6091552Z Finalizing artifact upload
+2026-01-02T17:50:23.7676393Z Artifact playwright-report.zip successfully finalized. Artifact ID 5009733306
+2026-01-02T17:50:23.7678342Z Artifact playwright-report has been successfully uploaded! Final size is 198347 bytes. Artifact ID is 5009733306
+2026-01-02T17:50:23.7685491Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20663345422/artifacts/5009733306

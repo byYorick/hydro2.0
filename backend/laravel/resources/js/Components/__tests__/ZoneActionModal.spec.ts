@@ -169,7 +169,7 @@ describe('ZoneActionModal', () => {
     await form.trigger('submit.prevent')
 
     expect(wrapper.emitted('submit')).toBeTruthy()
-    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+    expect((wrapper.emitted('submit') as any)[0][0]).toMatchObject({
       actionType: 'FORCE_IRRIGATION',
       params: {
         duration_sec: 30
@@ -193,7 +193,7 @@ describe('ZoneActionModal', () => {
     await form.trigger('submit.prevent')
 
     expect(wrapper.emitted('submit')).toBeTruthy()
-    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+    expect((wrapper.emitted('submit') as any)[0][0]).toMatchObject({
       actionType: 'FORCE_PH_CONTROL',
       params: {
         target_ph: 6.5
@@ -229,7 +229,7 @@ describe('ZoneActionModal', () => {
     })
 
     const input = wrapper.find('input[type="number"]')
-    expect(input.element.value).toBe('60')
+    expect((input.element as HTMLInputElement).value).toBe('60')
   })
 
   it('resets form when show changes to true', async () => {
@@ -242,10 +242,45 @@ describe('ZoneActionModal', () => {
     })
 
     await wrapper.setProps({ show: true })
-    
+
     const input = wrapper.find('input[type="number"]')
     // Should reset to default value
-    expect(input.element.value).toBe('10')
+    expect((input.element as HTMLInputElement).value).toBe('10')
+  })
+
+  it('handles API errors gracefully', async () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'FORCE_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    const form = wrapper.find('form')
+    await form.trigger('submit.prevent')
+
+    // Should still emit close event even on error
+    expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
+  it('validates required fields before submission', async () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'FORCE_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    const input = wrapper.find('input[type="number"]')
+    await input.setValue(0)
+
+    const form = wrapper.find('form')
+    await form.trigger('submit.prevent')
+
+    // Should block submit when validation fails
+    expect(wrapper.emitted('submit')).toBeFalsy()
+    expect(wrapper.text()).toContain('Длительность полива')
   })
 })
-

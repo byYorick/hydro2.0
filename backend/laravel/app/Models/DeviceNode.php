@@ -45,6 +45,13 @@ class DeviceNode extends Model
         'lifecycle_state' => NodeLifecycleState::class,
     ];
 
+    /**
+     * Атрибуты, которые должны быть скрыты при сериализации.
+     */
+    protected $hidden = [
+        'config', // Никогда не сериализуется в JSON (защита Wi-Fi паролей и MQTT кредов)
+    ];
+
     protected $attributes = [
         'lifecycle_state' => NodeLifecycleState::UNPROVISIONED->value,
         'status' => 'offline',
@@ -57,43 +64,55 @@ class DeviceNode extends Model
     {
         parent::boot();
 
-        // КРИТИЧНО: Публикуем конфиг ТОЛЬКО при привязке узла к зоне (изменение pending_zone_id)
+        // Публикуем событие для новых нод, чтобы они появлялись в UI (unassigned list)
+        static::created(function (DeviceNode $node) {
+            \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node created)', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'zone_id' => $node->zone_id,
+                'pending_zone_id' => $node->pending_zone_id,
+                'lifecycle_state' => $node->lifecycle_state?->value,
+            ]);
+
+            \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
+                event(new NodeConfigUpdated($node));
+            });
+        });
+
+        // КРИТИЧНО: Отправляем обновление на фронтенд только при привязке узла к зоне (изменение pending_zone_id)
         // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
-        // Это предотвращает публикацию конфига до коммита или при откате транзакции
         static::saved(function (DeviceNode $node) {
-            // ВАЖНО: Конфиг публикуется ТОЛЬКО при изменении pending_zone_id (привязка к зоне через UI)
-            // Не публикуем конфиг при:
+            $isNewNode = $node->wasRecentlyCreated;
+
+            // ВАЖНО: Обновление фронтенда отправляется ТОЛЬКО при изменении pending_zone_id (привязка к зоне через UI)
+            // Не отправляем событие при:
             // - Изменении других полей (config, zone_id, type, uid)
             // - Обновлении узла от history-logger (завершение привязки)
             // - Первичной регистрации узла (node_hello)
-            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
+            $shouldBroadcastOnAttach = !$isNewNode && $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
             
-            // ВАЖНО: НЕ публикуем конфиг для новых узлов без zone_id или pending_zone_id
-            // Если нода отправила node_hello, значит у неё уже есть рабочие настройки WiFi/MQTT
-            // Публикация произойдет только после привязки к зоне (установки pending_zone_id)
-            $skipNewNodeWithoutZone = $node->wasRecentlyCreated && !$node->zone_id && !$node->pending_zone_id;
-            
-            // НЕ публикуем конфиг если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
-            // (завершение привязки уже произошло)
+            // НЕ отправляем событие если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
             $skipAlreadyAssigned = $node->lifecycleState() === NodeLifecycleState::ASSIGNED_TO_ZONE && $node->zone_id;
             
-            if ($skipNewNodeWithoutZone) {
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping config publish for new node without zone assignment', [
+            if ($isNewNode) {
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast on save (handled on create)', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
-                    'reason' => 'Node sent node_hello, already has working WiFi/MQTT config',
+                    'zone_id' => $node->zone_id,
+                    'pending_zone_id' => $node->pending_zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
+                    'reason' => 'NodeConfigUpdated dispatched in created hook',
                 ]);
             } elseif ($skipAlreadyAssigned) {
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping config publish for already assigned node', [
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast for already assigned node', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                     'zone_id' => $node->zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
                     'reason' => 'Node already assigned and configured',
                 ]);
-            } elseif ($needsConfigPublish) {
-                // Публикуем конфиг ТОЛЬКО при привязке узла к зоне (изменение pending_zone_id)
+            } elseif ($shouldBroadcastOnAttach) {
+                // Отправляем событие только при привязке узла к зоне (изменение pending_zone_id)
                 \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node attached to zone)', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
@@ -108,18 +127,18 @@ class DeviceNode extends Model
                     event(new NodeConfigUpdated($node));
                 });
             } else {
-                // Логируем, что конфиг не публикуется при других изменениях
+                // Логируем, что событие не отправляется при других изменениях
                 $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
                 $hasRelevantChanges = $node->wasChanged($changedFields);
                 
                 if ($hasRelevantChanges) {
-                    \Illuminate\Support\Facades\Log::debug('DeviceNode: Config publish skipped (not a zone attachment)', [
+                    \Illuminate\Support\Facades\Log::debug('DeviceNode: Node update broadcast skipped (not a zone attachment)', [
                         'node_id' => $node->id,
                         'uid' => $node->uid,
                         'changed_fields' => array_filter($changedFields, fn($field) => $node->wasChanged($field)),
                         'pending_zone_id' => $node->pending_zone_id,
                         'zone_id' => $node->zone_id,
-                        'reason' => 'Config publish only happens when pending_zone_id changes (zone attachment)',
+                        'reason' => 'Node update broadcast only happens when pending_zone_id changes (zone attachment)',
                     ]);
                 }
             }

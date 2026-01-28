@@ -1,244 +1,355 @@
 <template>
-  <Modal :open="show" :title="title" @close="$emit('close')">
-    <form @submit.prevent="onSubmit" class="space-y-4">
-      <div v-if="hasActiveCycle" class="mb-4 p-3 rounded-md bg-amber-900/20 border border-amber-700/50">
-        <div class="text-sm text-amber-300 font-medium mb-1">Корректировка активного цикла</div>
-        <div class="text-xs text-amber-400">
+  <Modal
+    :open="show"
+    :title="title"
+    @close="$emit('close')"
+  >
+    <form
+      class="space-y-4"
+      @submit.prevent="onSubmit"
+    >
+      <div
+        v-if="hasActiveCycle"
+        class="mb-4 p-3 rounded-md bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)]"
+      >
+        <div class="text-sm text-[color:var(--badge-warning-text)] font-medium mb-1">
+          Корректировка активного цикла
+        </div>
+        <div class="text-xs text-[color:var(--badge-warning-text)]">
           В зоне уже выполняется цикл выращивания. Изменения будут применены к текущему циклу.
         </div>
       </div>
 
       <!-- pH Control (обязательный) -->
-      <div class="space-y-2 p-3 rounded-md border border-neutral-700 bg-neutral-900/50">
+      <div class="space-y-2 p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <input
               id="cycle-ph-enabled"
-              v-model="form.subsystems.ph.enabled"
+              v-model="form.ph.enabled"
               type="checkbox"
               :disabled="true"
-              class="w-4 h-4 rounded border-neutral-600 bg-neutral-800"
+              class="w-4 h-4 rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-green)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="cycle-ph-enabled" class="text-sm font-medium">Контроль pH</label>
-            <Badge variant="warning" class="text-xs">Обязательно</Badge>
+            <label
+              for="cycle-ph-enabled"
+              class="text-sm font-medium"
+            >Контроль pH</label>
+            <Badge
+              variant="warning"
+              class="text-xs"
+            >
+              Обязательно
+            </Badge>
           </div>
         </div>
-        <div v-if="form.subsystems.ph.enabled" class="grid grid-cols-2 gap-3 mt-2">
+        <div
+          v-if="form.ph.enabled"
+          class="grid grid-cols-2 gap-3 mt-2"
+        >
           <div>
-            <label for="cycle-ph-min" class="block text-xs text-neutral-400 mb-1">pH мин</label>
+            <label
+              for="cycle-ph-min"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >pH мин</label>
             <input
               id="cycle-ph-min"
-              v-model.number="form.subsystems.ph.targets.min"
+              v-model.number="form.ph.targets.min"
               type="number"
               min="4.0"
               max="9.0"
               step="0.1"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
           <div>
-            <label for="cycle-ph-max" class="block text-xs text-neutral-400 mb-1">pH макс</label>
+            <label
+              for="cycle-ph-max"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >pH макс</label>
             <input
               id="cycle-ph-max"
-              v-model.number="form.subsystems.ph.targets.max"
+              v-model.number="form.ph.targets.max"
               type="number"
               min="4.0"
               max="9.0"
               step="0.1"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
         </div>
       </div>
 
       <!-- EC Control (обязательный) -->
-      <div class="space-y-2 p-3 rounded-md border border-neutral-700 bg-neutral-900/50">
+      <div class="space-y-2 p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <input
               id="cycle-ec-enabled"
-              v-model="form.subsystems.ec.enabled"
+              v-model="form.ec.enabled"
               type="checkbox"
               :disabled="true"
-              class="w-4 h-4 rounded border-neutral-600 bg-neutral-800"
+              class="w-4 h-4 rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-green)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="cycle-ec-enabled" class="text-sm font-medium">Контроль EC</label>
-            <Badge variant="warning" class="text-xs">Обязательно</Badge>
+            <label
+              for="cycle-ec-enabled"
+              class="text-sm font-medium"
+            >Контроль EC</label>
+            <Badge
+              variant="warning"
+              class="text-xs"
+            >
+              Обязательно
+            </Badge>
           </div>
         </div>
-        <div v-if="form.subsystems.ec.enabled" class="grid grid-cols-2 gap-3 mt-2">
+        <div
+          v-if="form.ec.enabled"
+          class="grid grid-cols-2 gap-3 mt-2"
+        >
           <div>
-            <label for="cycle-ec-min" class="block text-xs text-neutral-400 mb-1">EC мин</label>
+            <label
+              for="cycle-ec-min"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >EC мин</label>
             <input
               id="cycle-ec-min"
-              v-model.number="form.subsystems.ec.targets.min"
+              v-model.number="form.ec.targets.min"
               type="number"
               min="0.1"
               max="10.0"
               step="0.1"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
           <div>
-            <label for="cycle-ec-max" class="block text-xs text-neutral-400 mb-1">EC макс</label>
+            <label
+              for="cycle-ec-max"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >EC макс</label>
             <input
               id="cycle-ec-max"
-              v-model.number="form.subsystems.ec.targets.max"
+              v-model.number="form.ec.targets.max"
               type="number"
               min="0.1"
               max="10.0"
               step="0.1"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
         </div>
       </div>
 
       <!-- Climate (опциональный) -->
-      <div class="space-y-2 p-3 rounded-md border border-neutral-700 bg-neutral-900/50">
+      <div class="space-y-2 p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <input
               id="cycle-climate-enabled"
-              v-model="form.subsystems.climate.enabled"
+              v-model="form.climate.enabled"
               type="checkbox"
-              class="w-4 h-4 rounded border-neutral-600 bg-neutral-800"
+              class="w-4 h-4 rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-green)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="cycle-climate-enabled" class="text-sm font-medium">Климат</label>
-            <Badge variant="neutral" class="text-xs">Опционально</Badge>
+            <label
+              for="cycle-climate-enabled"
+              class="text-sm font-medium"
+            >Климат</label>
+            <Badge
+              variant="neutral"
+              class="text-xs"
+            >
+              Опционально
+            </Badge>
           </div>
         </div>
-        <div v-if="form.subsystems.climate.enabled" class="grid grid-cols-2 gap-3 mt-2">
+        <div
+          v-if="form.climate.enabled"
+          class="grid grid-cols-2 gap-3 mt-2"
+        >
           <div>
-            <label for="cycle-climate-temp" class="block text-xs text-neutral-400 mb-1">Температура (°C)</label>
+            <label
+              for="cycle-climate-temp"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Температура (°C)</label>
             <input
               id="cycle-climate-temp"
-              v-model.number="form.subsystems.climate.targets.temperature"
+              v-model.number="form.climate.targets.temperature"
               type="number"
               min="10"
               max="35"
               step="0.5"
-              :required="form.subsystems.climate.enabled"
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              :required="form.climate.enabled"
+              class="input-field h-8 w-full"
             />
           </div>
           <div>
-            <label for="cycle-climate-humidity" class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
+            <label
+              for="cycle-climate-humidity"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Влажность (%)</label>
             <input
               id="cycle-climate-humidity"
-              v-model.number="form.subsystems.climate.targets.humidity"
+              v-model.number="form.climate.targets.humidity"
               type="number"
               min="30"
               max="90"
               step="1"
-              :required="form.subsystems.climate.enabled"
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              :required="form.climate.enabled"
+              class="input-field h-8 w-full"
             />
           </div>
         </div>
       </div>
 
       <!-- Lighting (опциональный) -->
-      <div class="space-y-2 p-3 rounded-md border border-neutral-700 bg-neutral-900/50">
+      <div class="space-y-2 p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <input
               id="cycle-lighting-enabled"
-              v-model="form.subsystems.lighting.enabled"
+              v-model="form.lighting.enabled"
               type="checkbox"
-              class="w-4 h-4 rounded border-neutral-600 bg-neutral-800"
+              class="w-4 h-4 rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-green)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="cycle-lighting-enabled" class="text-sm font-medium">Освещение</label>
-            <Badge variant="neutral" class="text-xs">Опционально</Badge>
+            <label
+              for="cycle-lighting-enabled"
+              class="text-sm font-medium"
+            >Освещение</label>
+            <Badge
+              variant="neutral"
+              class="text-xs"
+            >
+              Опционально
+            </Badge>
           </div>
         </div>
-        <div v-if="form.subsystems.lighting.enabled" class="grid grid-cols-2 gap-3 mt-2">
+        <div
+          v-if="form.lighting.enabled"
+          class="grid grid-cols-2 gap-3 mt-2"
+        >
           <div>
-            <label for="cycle-lighting-hours-on" class="block text-xs text-neutral-400 mb-1">Часов включено</label>
+            <label
+              for="cycle-lighting-hours-on"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Часов включено</label>
             <input
               id="cycle-lighting-hours-on"
-              v-model.number="form.subsystems.lighting.targets.hours_on"
+              v-model.number="form.lighting.targets.hours_on"
               type="number"
               min="0"
               max="24"
               step="0.5"
-              :required="form.subsystems.lighting.enabled"
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              :required="form.lighting.enabled"
+              class="input-field h-8 w-full"
             />
           </div>
           <div>
-            <label for="cycle-lighting-hours-off" class="block text-xs text-neutral-400 mb-1">Часов выключено</label>
+            <label
+              for="cycle-lighting-hours-off"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Часов выключено</label>
             <input
               id="cycle-lighting-hours-off"
-              v-model.number="form.subsystems.lighting.targets.hours_off"
+              v-model.number="form.lighting.targets.hours_off"
               type="number"
               min="0"
               max="24"
               step="0.5"
-              :required="form.subsystems.lighting.enabled"
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              :required="form.lighting.enabled"
+              class="input-field h-8 w-full"
             />
           </div>
         </div>
       </div>
 
       <!-- Irrigation (обязательный) -->
-      <div class="space-y-2 p-3 rounded-md border border-neutral-700 bg-neutral-900/50">
+      <div class="space-y-2 p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <input
               id="cycle-irrigation-enabled"
-              v-model="form.subsystems.irrigation.enabled"
+              v-model="form.irrigation.enabled"
               type="checkbox"
               :disabled="true"
-              class="w-4 h-4 rounded border-neutral-600 bg-neutral-800"
+              class="w-4 h-4 rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-green)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="cycle-irrigation-enabled" class="text-sm font-medium">Полив</label>
-            <Badge variant="warning" class="text-xs">Обязательно</Badge>
+            <label
+              for="cycle-irrigation-enabled"
+              class="text-sm font-medium"
+            >Полив</label>
+            <Badge
+              variant="warning"
+              class="text-xs"
+            >
+              Обязательно
+            </Badge>
           </div>
         </div>
-        <div v-if="form.subsystems.irrigation.enabled" class="grid grid-cols-2 gap-3 mt-2">
+        <div
+          v-if="form.irrigation.enabled"
+          class="grid grid-cols-2 gap-3 mt-2"
+        >
           <div>
-            <label for="cycle-irrigation-interval" class="block text-xs text-neutral-400 mb-1">Интервал (мин)</label>
+            <label
+              for="cycle-irrigation-interval"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Интервал (мин)</label>
             <input
               id="cycle-irrigation-interval"
-              v-model.number="form.subsystems.irrigation.targets.interval_minutes"
+              v-model.number="form.irrigation.targets.interval_minutes"
               type="number"
               min="5"
               max="1440"
               step="5"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
           <div>
-            <label for="cycle-irrigation-duration" class="block text-xs text-neutral-400 mb-1">Длительность (сек)</label>
+            <label
+              for="cycle-irrigation-duration"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Длительность (сек)</label>
             <input
               id="cycle-irrigation-duration"
-              v-model.number="form.subsystems.irrigation.targets.duration_seconds"
+              v-model.number="form.irrigation.targets.duration_seconds"
               type="number"
               min="1"
               max="3600"
               step="1"
               required
-              class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+              class="input-field h-8 w-full"
             />
           </div>
         </div>
       </div>
 
-      <div v-if="error" class="text-sm text-red-400">{{ error }}</div>
+      <div
+        v-if="error"
+        class="text-sm text-[color:var(--accent-red)]"
+      >
+        {{ error }}
+      </div>
     </form>
     
     <template #footer>
-      <Button type="button" variant="secondary" @click="$emit('close')" :disabled="loading">
+      <Button
+        type="button"
+        variant="secondary"
+        :disabled="loading"
+        @click="$emit('close')"
+      >
         Отмена
       </Button>
-      <Button type="button" @click="onSubmit" :disabled="loading">
+      <Button
+        type="button"
+        :disabled="loading"
+        @click="onSubmit"
+      >
         {{ loading ? 'Отправка...' : (hasActiveCycle ? 'Скорректировать цикл' : 'Запустить цикл') }}
       </Button>
     </template>
@@ -608,4 +719,3 @@ function onSubmit(): void {
   emit('close')
 }
 </script>
-

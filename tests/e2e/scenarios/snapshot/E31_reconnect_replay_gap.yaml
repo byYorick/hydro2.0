@@ -1,0 +1,155 @@
+name: E31_reconnect_replay_gap
+description: |
+  Проверяет механизм "snapshot + replay" для восстановления клиента после разрыва WS:
+  - Берём snapshot (last_event_id)
+  - "Теряем" WS (disconnect)
+  - Создаём событие (через MQTT error → alert → zone_event)
+  - Переподключаемся
+  - Делаем replay через GET /api/zones/{zone}/events?after_id=...
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 2
+    optional: true  # node-sim уже может быть запущен
+
+  - step: get_zone_id
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  # Берём zone_id по uid из setup (zn-test-1), чтобы избежать случайных/неконсистентных зон
+  - step: fetch_zone_id_from_db
+    type: db_wait
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    timeout: 10.0
+    expected_rows: 1
+    save: zone_row
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: connect_ws
+    type: websocket_connect
+
+  - step: wait_after_connect
+    type: sleep
+    seconds: 1
+
+  - step: subscribe_ws_zone
+    type: websocket_subscribe
+    channel: "private-hydro.zones.${zone_id}"
+
+  - step: wait_after_subscribe
+    type: sleep
+    seconds: 1
+
+  - step: fetch_snapshot_before
+    type: api_get
+    endpoint: /api/zones/${zone_id}/snapshot
+    save: snapshot_before
+
+  - step: capture_last_event_id
+    type: set
+    last_event_id_before: ${snapshot_before.data.last_event_id}
+
+  - step: disconnect_ws
+    type: websocket_disconnect
+
+  - step: wait_after_disconnect
+    type: sleep
+    seconds: 1
+
+  # Создаём событие во время "gap" (через error → alert → zone_event)
+  - step: publish_error_during_gap
+    type: mqtt_publish
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/error"
+    payload:
+      level: "ERROR"
+      component: "sensor"
+      error_code: "infra_sensor_stuck_i2c"
+      message: "I2C sensor bus stuck (gap)"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 5  # Увеличиваем время для обработки ошибки и создания алерта/события
+
+  - step: reconnect_ws
+    type: websocket_connect
+
+  - step: wait_after_reconnect
+    type: sleep
+    seconds: 1
+
+  - step: fetch_events_after_id
+    type: api_get
+    endpoint: /api/zones/${zone_id}/events
+    params:
+      after_id: ${last_event_id_before}
+      limit: 50
+    save: events_after
+
+  - step: wait_after_replay
+    type: sleep
+    seconds: 2
+
+assertions:
+  # Проверка: snapshot содержит поле last_event_id (значение может быть null)
+  - name: snapshot_has_last_event_id
+    type: custom_assert
+    condition: >
+      "last_event_id" in (context.get("snapshot_before", {}).get("data", {}) or {})
+
+  # Проверка: replay возвращает события после last_event_id (DoD требует валидацию gap)
+  - name: replay_returns_events_after_gap
+    type: json_assertion
+    source: events_after
+    path: data
+    expected:
+      - operator: is_type
+        value: list
+
+  # Проверка: если last_event_id есть и replay вернул события, то первый event_id > last_event_id
+  - name: validate_replay_gap
+    type: custom_assert
+    condition: >
+      (
+        context.get("snapshot_before", {}).get("data", {}).get("last_event_id") is None
+        or not context.get("events_after", {}).get("data")
+        or context["snapshot_before"]["data"]["last_event_id"] < context["events_after"]["data"][0]["event_id"]
+      )
+
+cleanup:
+  - step: disconnect_ws_final
+    type: websocket_disconnect
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере

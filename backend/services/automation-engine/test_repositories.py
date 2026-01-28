@@ -96,7 +96,7 @@ async def test_zone_repository_get_zone_data_batch():
             "zone_id": 1,
             "recipe_id": 10,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
             "phase_name": "Germination",
             "metric_type": "PH",
             "value": 6.3,
@@ -161,8 +161,8 @@ async def test_node_repository_get_zone_nodes():
     
     with patch("repositories.node_repository.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "default"},
-            {"id": 2, "uid": "nd-light-1", "type": "light", "channel": "default"},
+            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "node_channel_id": 11, "channel": "default"},
+            {"id": 2, "uid": "nd-light-1", "type": "light", "node_channel_id": 22, "channel": "default"},
         ]
         
         result = await repo.get_zone_nodes(1)
@@ -170,6 +170,7 @@ async def test_node_repository_get_zone_nodes():
         assert "irrig:default" in result
         assert "light:default" in result
         assert result["irrig:default"]["node_uid"] == "nd-irrig-1"
+        assert result["irrig:default"]["node_channel_id"] == 11
         mock_fetch.assert_called_once()
 
 
@@ -180,8 +181,8 @@ async def test_node_repository_get_zones_nodes_batch():
     
     with patch("repositories.node_repository.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"zone_id": 1, "id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "default"},
-            {"zone_id": 2, "id": 2, "uid": "nd-irrig-2", "type": "irrig", "channel": "default"},
+            {"zone_id": 1, "id": 1, "uid": "nd-irrig-1", "type": "irrig", "node_channel_id": 11, "channel": "default"},
+            {"zone_id": 2, "id": 2, "uid": "nd-irrig-2", "type": "irrig", "node_channel_id": 22, "channel": "default"},
         ]
         
         result = await repo.get_zones_nodes_batch([1, 2])
@@ -195,52 +196,66 @@ async def test_node_repository_get_zones_nodes_batch():
 @pytest.mark.asyncio
 async def test_recipe_repository_get_zone_recipe_and_targets():
     """Test getting recipe and targets for zone."""
-    repo = RecipeRepository()
-    
-    with patch("repositories.recipe_repository.fetch") as mock_fetch:
-        mock_fetch.return_value = [{
+    with patch("repositories.recipe_repository.LaravelApiRepository") as mock_api_cls:
+        mock_api = AsyncMock()
+        mock_api.get_effective_targets.return_value = {
             "zone_id": 1,
-            "current_phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
-            "phase_name": "Germination",
-        }]
-        
+            "cycle_id": 10,
+            "phase": {"id": 2, "code": "GERMINATION", "name": "Germination"},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
+        }
+        mock_api_cls.return_value = mock_api
+        repo = RecipeRepository()
+
         result = await repo.get_zone_recipe_and_targets(1)
-        
+
         assert result is not None
         assert result["zone_id"] == 1
-        assert result["targets"]["ph"] == 6.5
-        mock_fetch.assert_called_once()
+        assert result["targets"]["ph"]["target"] == 6.5
+        mock_api.get_effective_targets.assert_awaited_once_with(1)
 
 
 @pytest.mark.asyncio
 async def test_recipe_repository_get_zone_recipe_and_targets_none():
     """Test getting recipe when zone has no active recipe."""
-    repo = RecipeRepository()
-    
-    with patch("repositories.recipe_repository.fetch") as mock_fetch:
-        mock_fetch.return_value = []
-        
+    with patch("repositories.recipe_repository.LaravelApiRepository") as mock_api_cls:
+        mock_api = AsyncMock()
+        mock_api.get_effective_targets.return_value = None
+        mock_api_cls.return_value = mock_api
+        repo = RecipeRepository()
+
         result = await repo.get_zone_recipe_and_targets(1)
-        
+
         assert result is None
+        mock_api.get_effective_targets.assert_awaited_once_with(1)
 
 
 @pytest.mark.asyncio
 async def test_recipe_repository_get_zones_recipes_batch():
     """Test batch getting recipes for multiple zones."""
-    repo = RecipeRepository()
-    
-    with patch("repositories.recipe_repository.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {"zone_id": 1, "current_phase_index": 0, "targets": {"ph": 6.5}, "phase_name": "Germination"},
-            {"zone_id": 2, "current_phase_index": 1, "targets": {"ph": 6.8}, "phase_name": "Vegetation"},
-        ]
-        
+    with patch("repositories.recipe_repository.LaravelApiRepository") as mock_api_cls:
+        mock_api = AsyncMock()
+        mock_api.get_effective_targets_batch.return_value = {
+            1: {
+                "zone_id": 1,
+                "cycle_id": 10,
+                "phase": {"id": 2, "code": "GERMINATION", "name": "Germination"},
+                "targets": {"ph": {"target": 6.5}},
+            },
+            2: {
+                "zone_id": 2,
+                "cycle_id": 11,
+                "phase": {"id": 3, "code": "VEGETATION", "name": "Vegetation"},
+                "targets": {"ph": {"target": 6.8}},
+            },
+        }
+        mock_api_cls.return_value = mock_api
+        repo = RecipeRepository()
+
         result = await repo.get_zones_recipes_batch([1, 2])
-        
+
         assert 1 in result
         assert 2 in result
-        assert result[1]["targets"]["ph"] == 6.5
-        assert result[2]["targets"]["ph"] == 6.8
-
+        assert result[1]["targets"]["ph"]["target"] == 6.5
+        assert result[2]["targets"]["ph"]["target"] == 6.8
+        mock_api.get_effective_targets_batch.assert_awaited_once_with([1, 2])

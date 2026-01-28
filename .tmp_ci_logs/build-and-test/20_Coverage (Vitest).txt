@@ -1,0 +1,636 @@
+﻿2026-01-02T17:47:22.6966778Z ##[group]Run npm run test -- --coverage --reporter=dot
+2026-01-02T17:47:22.6967164Z [36;1mnpm run test -- --coverage --reporter=dot[0m
+2026-01-02T17:47:22.7000565Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:47:22.7000803Z env:
+2026-01-02T17:47:22.7000995Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:47:22.7001241Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:47:22.7001488Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:47:22.7001692Z ##[endgroup]
+2026-01-02T17:47:22.8104116Z 
+2026-01-02T17:47:22.8104501Z > test
+2026-01-02T17:47:22.8105039Z > vitest run --coverage --reporter=dot
+2026-01-02T17:47:22.8105358Z 
+2026-01-02T17:47:23.5649622Z 
+2026-01-02T17:47:23.5653042Z [1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/home/runner/work/hydro2.0/hydro2.0/backend/laravel[39m
+2026-01-02T17:47:23.5654087Z       [2mCoverage enabled with [22m[33mv8[39m
+2026-01-02T17:47:23.5654686Z 
+2026-01-02T17:47:27.0177982Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mзагружает данные истории для pH и EC при монтировании
+2026-01-02T17:47:27.0203160Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.0204826Z 
+2026-01-02T17:47:27.1449884Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mправильно формирует параметры времени для разных диапазонов
+2026-01-02T17:47:27.1453510Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.1455644Z 
+2026-01-02T17:47:27.2249379Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотображает графики с данными
+2026-01-02T17:47:27.2257262Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.2260557Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.2263641Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.2267312Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.2269085Z 
+2026-01-02T17:47:27.4958373Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mобрабатывает изменение диапазона времени через событие
+2026-01-02T17:47:27.4961843Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.4963522Z 
+2026-01-02T17:47:27.8052973Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотображает события с цветовой кодировкой
+2026-01-02T17:47:27.8057401Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.8059392Z 
+2026-01-02T17:47:27.8479718Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mотправляет команду FORCE_IRRIGATION при клике на Irrigate Now
+2026-01-02T17:47:27.8485526Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.8487724Z 
+2026-01-02T17:47:27.8978209Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотображает блок Cycles
+2026-01-02T17:47:27.8981913Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.8984057Z 
+2026-01-02T17:47:27.9949934Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mпоказывает кнопки управления только для операторов и админов
+2026-01-02T17:47:27.9957413Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:27.9962928Z 
+2026-01-02T17:47:28.0986582Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mзагружает графики с правильными параметрами времени
+2026-01-02T17:47:28.0996389Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:28.1008547Z 
+2026-01-02T17:47:28.1837065Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mзагружает графики с правильными параметрами времени
+2026-01-02T17:47:28.1856045Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:28.1859891Z 
+2026-01-02T17:47:28.6247157Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mотправляет команду FORCE_IRRIGATION при клике на Irrigate Now
+2026-01-02T17:47:28.6250686Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:28.6255079Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:28.6257956Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:28.6260442Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:28.6262363Z 
+2026-01-02T17:47:28.8317681Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mотправляет команду FORCE_* при запуске цикла
+2026-01-02T17:47:28.8320432Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:28.8321543Z 
+2026-01-02T17:47:28.8339004Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mотправляет команду FORCE_* при запуске цикла
+2026-01-02T17:47:28.8342950Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:28.8345757Z 
+2026-01-02T17:47:29.3535368Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mкорректно обрабатывает отсутствие данных графиков
+2026-01-02T17:47:29.3542005Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.3546378Z 
+2026-01-02T17:47:29.3626978Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mкорректно обрабатывает отсутствие данных графиков
+2026-01-02T17:47:29.3630499Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:29.3654668Z 
+2026-01-02T17:47:29.4841885Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mзагружает графики с правильными параметрами времени
+2026-01-02T17:47:29.4845170Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4847475Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4849803Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4852165Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4854790Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4857127Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4859435Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4881616Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4884469Z [ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.4885578Z 
+2026-01-02T17:47:29.4986455Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mкорректно обрабатывает отсутствие данных графиков
+2026-01-02T17:47:29.5056622Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.5057739Z 
+2026-01-02T17:47:29.5059240Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mкорректно обрабатывает отсутствие данных графиков
+2026-01-02T17:47:29.5062592Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:29.5064185Z 
+2026-01-02T17:47:29.6763574Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mзагружает данные истории для графиков при монтировании
+2026-01-02T17:47:29.6767037Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:29.6768667Z 
+2026-01-02T17:47:29.7285801Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mобрабатывает ошибки загрузки графиков gracefully
+2026-01-02T17:47:29.7289650Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.7291470Z 
+2026-01-02T17:47:29.7293046Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.integration.spec.ts[2m > [22m[2mZones/Show.vue - Интеграционные тесты[2m > [22m[2mобрабатывает ошибки загрузки графиков gracefully
+2026-01-02T17:47:29.7296476Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:29.7298174Z 
+2026-01-02T17:47:29.7556946Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mзагружает данные истории для графиков при монтировании
+2026-01-02T17:47:29.7560602Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:29.7561547Z 
+2026-01-02T17:47:30.0199436Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при клике на Pause/Resume
+2026-01-02T17:47:30.0203183Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.0205918Z 
+2026-01-02T17:47:30.0860401Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при клике на Pause/Resume
+2026-01-02T17:47:30.0863508Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.0865810Z 
+2026-01-02T17:47:30.1579562Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду полива при клике на Irrigate Now
+2026-01-02T17:47:30.1583242Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.1585205Z 
+2026-01-02T17:47:30.2237322Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду полива при клике на Irrigate Now
+2026-01-02T17:47:30.2239837Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.2252417Z 
+2026-01-02T17:47:30.2985707Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mобрабатывает изменение диапазона времени графика
+2026-01-02T17:47:30.2990248Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.2991841Z 
+2026-01-02T17:47:30.3573092Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mобрабатывает изменение диапазона времени графика
+2026-01-02T17:47:30.3575904Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.3576669Z 
+2026-01-02T17:47:30.5269554Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mобрабатывает ошибки загрузки графиков
+2026-01-02T17:47:30.5273894Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.5275724Z 
+2026-01-02T17:47:30.5926280Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mобрабатывает ошибки загрузки графиков
+2026-01-02T17:47:30.5928839Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.5930409Z 
+2026-01-02T17:47:30.7847687Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mформатирует время для циклов
+2026-01-02T17:47:30.7852027Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.7853605Z 
+2026-01-02T17:47:30.8559994Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mформатирует время для циклов
+2026-01-02T17:47:30.8586188Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.8587779Z 
+2026-01-02T17:47:30.9067710Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при запуске цикла
+2026-01-02T17:47:30.9071270Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:30.9073250Z 
+2026-01-02T17:47:30.9651054Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при запуске цикла
+2026-01-02T17:47:30.9655963Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:30.9659608Z 
+2026-01-02T17:47:31.0137606Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при запуске цикла
+2026-01-02T17:47:31.0141307Z [22m[39m[Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:31.0143769Z 
+2026-01-02T17:47:31.0762786Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/Show.spec.ts[2m > [22m[2mZones/Show.vue[2m > [22m[2mотправляет команду при запуске цикла
+2026-01-02T17:47:31.0765417Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:31.0766504Z 
+2026-01-02T17:47:38.9178958Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould enable DataZoom for large datasets (>100 points)
+2026-01-02T17:47:38.9182838Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:38.9184893Z 
+2026-01-02T17:47:39.0038642Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould not enable DataZoom for small datasets (<=50 points)
+2026-01-02T17:47:39.0041460Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:39.0042584Z 
+2026-01-02T17:47:39.1125715Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould include both inside and slider DataZoom types
+2026-01-02T17:47:39.1130149Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:39.1131196Z 
+2026-01-02T17:47:39.1843094Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould adjust grid bottom padding for DataZoom slider
+2026-01-02T17:47:39.1847566Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:39.1852062Z 
+2026-01-02T17:47:39.2746245Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould set large and largeThreshold for large datasets
+2026-01-02T17:47:39.2753096Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:39.2758308Z 
+2026-01-02T17:47:39.3616425Z [90mstderr[2m | resources/js/Pages/Zones/__tests__/ZoneTelemetryChart.datazoom.spec.ts[2m > [22m[2mZoneTelemetryChart - DataZoom (P2-3)[2m > [22m[2mshould not set large flag for small datasets
+2026-01-02T17:47:39.3619302Z [22m[39m[ECharts] Can't get DOM width or height. Please check dom.clientWidth and dom.clientHeight. They should not be 0.For example, you may need to call this in the callback of window.onload.
+2026-01-02T17:47:39.3620408Z 
+2026-01-02T17:47:45.9124940Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould use RecycleScroller for device list
+2026-01-02T17:47:45.9127049Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:45.9127909Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:45.9128435Z   at <ErrorBoundary> 
+2026-01-02T17:47:45.9128810Z   at <AppLayout> 
+2026-01-02T17:47:45.9129699Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:45.9130128Z   at <VTUROOT>
+2026-01-02T17:47:45.9130353Z 
+2026-01-02T17:47:45.9967331Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould pass rows to RecycleScroller
+2026-01-02T17:47:45.9973181Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:45.9974500Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:45.9975352Z   at <ErrorBoundary> 
+2026-01-02T17:47:45.9975896Z   at <AppLayout> 
+2026-01-02T17:47:45.9976503Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:45.9977088Z   at <VTUROOT>
+2026-01-02T17:47:45.9977427Z 
+2026-01-02T17:47:46.0296984Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould set item-size prop
+2026-01-02T17:47:46.0299382Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:46.0300495Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:46.0301234Z   at <ErrorBoundary> 
+2026-01-02T17:47:46.0301638Z   at <AppLayout> 
+2026-01-02T17:47:46.0302058Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:46.0302478Z   at <VTUROOT>
+2026-01-02T17:47:46.0302678Z 
+2026-01-02T17:47:46.0579880Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould set key-field prop
+2026-01-02T17:47:46.0582120Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:46.0583528Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:46.0584396Z   at <ErrorBoundary> 
+2026-01-02T17:47:46.0585038Z   at <AppLayout> 
+2026-01-02T17:47:46.0585453Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:46.0585842Z   at <VTUROOT>
+2026-01-02T17:47:46.0586051Z 
+2026-01-02T17:47:46.0989192Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould optimize filtering with memoized query
+2026-01-02T17:47:46.0991645Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:46.0992639Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:46.0995340Z   at <ErrorBoundary> 
+2026-01-02T17:47:46.0996107Z   at <AppLayout> 
+2026-01-02T17:47:46.0998658Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:46.0999785Z   at <VTUROOT>
+2026-01-02T17:47:46.1000521Z 
+2026-01-02T17:47:46.1481314Z [90mstderr[2m | resources/js/Pages/Devices/__tests__/Index.virtualization.spec.ts[2m > [22m[2mDevices Index - Virtualization (P2-1)[2m > [22m[2mshould return all devices when no filters are applied
+2026-01-02T17:47:46.1483721Z [22m[39m[Vue warn]: Property "$page" was accessed during render but is not defined on instance. 
+2026-01-02T17:47:46.1485132Z   at <Transition name="page" mode="out-in" > 
+2026-01-02T17:47:46.1485804Z   at <ErrorBoundary> 
+2026-01-02T17:47:46.1486307Z   at <AppLayout> 
+2026-01-02T17:47:46.1487072Z   at <Index ref="VTU_COMPONENT" > 
+2026-01-02T17:47:46.1487624Z   at <VTUROOT>
+2026-01-02T17:47:46.1487855Z 
+2026-01-02T17:47:49.2908973Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould save telemetry data to sessionStorage
+2026-01-02T17:47:49.2916924Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.2924898Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.2929995Z 
+2026-01-02T17:47:49.2953516Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould load telemetry data from sessionStorage on initialization
+2026-01-02T17:47:49.2966737Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.2970593Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.2972217Z 
+2026-01-02T17:47:49.2986856Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould clear expired entries from sessionStorage
+2026-01-02T17:47:49.2993910Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3015184Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3017768Z 
+2026-01-02T17:47:49.3028165Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould handle sessionStorage overflow by removing old entries
+2026-01-02T17:47:49.3031734Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3035340Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3037290Z 
+2026-01-02T17:47:49.3039669Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould clear cache from sessionStorage when clearCache is called
+2026-01-02T17:47:49.3043231Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3046854Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3048374Z 
+2026-01-02T17:47:49.3117442Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould handle corrupted sessionStorage data gracefully
+2026-01-02T17:47:49.3126963Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3130625Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3132155Z 
+2026-01-02T17:47:49.3139288Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.cache.spec.ts[2m > [22m[2museTelemetry - SessionStorage Cache (P2-2)[2m > [22m[2mshould save history data to sessionStorage
+2026-01-02T17:47:49.3149578Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3152918Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:47:49.3154666Z 
+2026-01-02T17:47:58.1234885Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mInitialization[2m > [22m[2mshould initialize Echo with correct configuration
+2026-01-02T17:47:58.1241438Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1247575Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1250497Z 
+2026-01-02T17:47:58.1256477Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mInitialization[2m > [22m[2mshould not initialize when WebSocket is disabled
+2026-01-02T17:47:58.1267064Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1268803Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1269590Z 
+2026-01-02T17:47:58.1274955Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mInitialization[2m > [22m[2mshould return existing instance if already initialized
+2026-01-02T17:47:58.1282546Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1284520Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1286222Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1287031Z 
+2026-01-02T17:47:58.1291364Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mInitialization[2m > [22m[2mshould force reinitialize when forceReinit is true
+2026-01-02T17:47:58.1293808Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1295837Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1304537Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1305675Z 
+2026-01-02T17:47:58.1307537Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould track connection state changes
+2026-01-02T17:47:58.1309949Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1310793Z 
+2026-01-02T17:47:58.1322969Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould track connection state changes
+2026-01-02T17:47:58.1335242Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1336074Z 
+2026-01-02T17:47:58.1337893Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould emit connected state when connection succeeds
+2026-01-02T17:47:58.1340202Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1340970Z 
+2026-01-02T17:47:58.1351006Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould emit connected state when connection succeeds
+2026-01-02T17:47:58.1354667Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1356559Z 
+2026-01-02T17:47:58.1362200Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould emit disconnected state and schedule reconnect
+2026-01-02T17:47:58.1365291Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1366373Z 
+2026-01-02T17:47:58.1385460Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould emit disconnected state and schedule reconnect
+2026-01-02T17:47:58.1405999Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1407207Z 
+2026-01-02T17:47:58.1427925Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould handle multiple state listeners
+2026-01-02T17:47:58.1430702Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1431831Z 
+2026-01-02T17:47:58.1433884Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConnection State Management[2m > [22m[2mshould handle multiple state listeners
+2026-01-02T17:47:58.1436763Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1437897Z 
+2026-01-02T17:47:58.1439921Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould use exponential backoff for reconnection
+2026-01-02T17:47:58.1442835Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1443829Z 
+2026-01-02T17:47:58.1446115Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould use exponential backoff for reconnection
+2026-01-02T17:47:58.1449428Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1450252Z 
+2026-01-02T17:47:58.1455613Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould reset reconnect attempts on successful connection
+2026-01-02T17:47:58.1458092Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1458933Z 
+2026-01-02T17:47:58.1462798Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould reset reconnect attempts on successful connection
+2026-01-02T17:47:58.1466007Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1467352Z 
+2026-01-02T17:47:58.1473354Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould cap reconnect delay at MAX_RECONNECT_DELAY
+2026-01-02T17:47:58.1482075Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1482855Z 
+2026-01-02T17:47:58.1484937Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mReconnection Logic[2m > [22m[2mshould cap reconnect delay at MAX_RECONNECT_DELAY
+2026-01-02T17:47:58.1495725Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1496550Z 
+2026-01-02T17:47:58.1498230Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould capture connection errors
+2026-01-02T17:47:58.1500523Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1501367Z 
+2026-01-02T17:47:58.1506619Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould capture connection errors
+2026-01-02T17:47:58.1508966Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1509793Z 
+2026-01-02T17:47:58.1511395Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould handle failed state
+2026-01-02T17:47:58.1513618Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1514610Z 
+2026-01-02T17:47:58.1521329Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould handle failed state
+2026-01-02T17:47:58.1523588Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1524960Z 
+2026-01-02T17:47:58.1532797Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould handle unavailable state
+2026-01-02T17:47:58.1535369Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1536202Z 
+2026-01-02T17:47:58.1537845Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mError Handling[2m > [22m[2mshould handle unavailable state
+2026-01-02T17:47:58.1540139Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1540959Z 
+2026-01-02T17:47:58.1558333Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConfiguration Resolution[2m > [22m[2mshould use environment variables for configuration
+2026-01-02T17:47:58.1563742Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1565582Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1566345Z 
+2026-01-02T17:47:58.1572874Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mConfiguration Resolution[2m > [22m[2mshould fallback to defaults when env vars are missing
+2026-01-02T17:47:58.1575784Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1577445Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1578200Z 
+2026-01-02T17:47:58.1591735Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mCleanup[2m > [22m[2mshould cleanup connection handlers on teardown
+2026-01-02T17:47:58.1599297Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1601020Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1601818Z 
+2026-01-02T17:47:58.1607455Z [90mstderr[2m | resources/js/utils/__tests__/echoClient.integration.spec.ts[2m > [22m[2mechoClient - Integration Tests[2m > [22m[2mCleanup[2m > [22m[2mshould disconnect on teardown
+2026-01-02T17:47:58.1609746Z [22m[39m[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1611417Z [vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+2026-01-02T17:47:58.1612188Z 
+2026-01-02T17:48:00.6635719Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould initialize with loading false
+2026-01-02T17:48:00.6643013Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6650471Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6655661Z 
+2026-01-02T17:48:00.6664541Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould fetch last telemetry from API
+2026-01-02T17:48:00.6672899Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6676558Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6678105Z 
+2026-01-02T17:48:00.6687758Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould cache last telemetry
+2026-01-02T17:48:00.6699702Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6703004Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6705016Z 
+2026-01-02T17:48:00.6706348Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould force refresh when requested
+2026-01-02T17:48:00.6709505Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6712864Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6714585Z 
+2026-01-02T17:48:00.6720678Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould handle fetch last telemetry error
+2026-01-02T17:48:00.6733943Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6737533Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6739035Z 
+2026-01-02T17:48:00.6744977Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould fetch history from API
+2026-01-02T17:48:00.6770772Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6774137Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6776146Z 
+2026-01-02T17:48:00.6777288Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould cache history
+2026-01-02T17:48:00.6780204Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6783507Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6785180Z 
+2026-01-02T17:48:00.6816304Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould handle fetch history error
+2026-01-02T17:48:00.6819670Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6823146Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6825361Z 
+2026-01-02T17:48:00.6834185Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould fetch aggregates from API
+2026-01-02T17:48:00.6837554Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6840774Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6842238Z 
+2026-01-02T17:48:00.6843384Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould cache aggregates
+2026-01-02T17:48:00.6846499Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6849671Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6851098Z 
+2026-01-02T17:48:00.6852281Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould handle fetch aggregates error
+2026-01-02T17:48:00.6855440Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6858630Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6860305Z 
+2026-01-02T17:48:00.6861484Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould clear cache for specific zone
+2026-01-02T17:48:00.6864588Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6867846Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6869265Z 
+2026-01-02T17:48:00.6870328Z [90mstderr[2m | resources/js/composables/__tests__/useTelemetry.spec.ts[2m > [22m[2museTelemetry[2m > [22m[2mshould clear all cache
+2026-01-02T17:48:00.6873197Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6876548Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.6878165Z 
+2026-01-02T17:48:00.9563166Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould initialize with unknown statuses
+2026-01-02T17:48:00.9569658Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9575390Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9579487Z 
+2026-01-02T17:48:00.9584147Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould check health and update core/db status
+2026-01-02T17:48:00.9588981Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9594230Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9598145Z 
+2026-01-02T17:48:00.9617779Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould handle health check error
+2026-01-02T17:48:00.9706936Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9710247Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9712240Z 
+2026-01-02T17:48:00.9713752Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould check WebSocket status when Echo is available
+2026-01-02T17:48:00.9717272Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9720684Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9722252Z 
+2026-01-02T17:48:00.9723722Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould show disconnected when Echo is not available
+2026-01-02T17:48:00.9727197Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9730716Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9732428Z 
+2026-01-02T17:48:00.9733972Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould show disconnected when Pusher connection is failed
+2026-01-02T17:48:00.9739616Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9742865Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9744476Z 
+2026-01-02T17:48:00.9745908Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould check MQTT status based on WebSocket
+2026-01-02T17:48:00.9749074Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9752251Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9753652Z 
+2026-01-02T17:48:00.9755163Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould start monitoring on mount
+2026-01-02T17:48:00.9758378Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9762151Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9763707Z 
+2026-01-02T17:48:00.9765294Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould stop monitoring on unmount
+2026-01-02T17:48:00.9768533Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9771849Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9773402Z 
+2026-01-02T17:48:00.9775114Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould provide computed flags for status checks
+2026-01-02T17:48:00.9778211Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9781744Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9783195Z 
+2026-01-02T17:48:00.9785043Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould update WebSocket status when connection state changes
+2026-01-02T17:48:00.9788204Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9791267Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9792699Z 
+2026-01-02T17:48:00.9794038Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould poll health status periodically
+2026-01-02T17:48:00.9797416Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9800584Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9802021Z 
+2026-01-02T17:48:00.9803498Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould stop polling when stopMonitoring is called
+2026-01-02T17:48:00.9806986Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9810628Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9812136Z 
+2026-01-02T17:48:00.9813537Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould handle health check with db fail
+2026-01-02T17:48:00.9816889Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9820335Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9821882Z 
+2026-01-02T17:48:00.9823287Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould handle health check with app fail
+2026-01-02T17:48:00.9826996Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9830626Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9832124Z 
+2026-01-02T17:48:00.9833616Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould update lastUpdate timestamp after health check
+2026-01-02T17:48:00.9837128Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9840529Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9842069Z 
+2026-01-02T17:48:00.9843616Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould handle MQTT status when WebSocket is disconnected
+2026-01-02T17:48:00.9847187Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9850516Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9852052Z 
+2026-01-02T17:48:00.9853521Z [90mstderr[2m | resources/js/composables/__tests__/useSystemStatus.spec.ts[2m > [22m[2museSystemStatus[2m > [22m[2mshould handle MQTT status when WebSocket is unknown
+2026-01-02T17:48:00.9857466Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9860853Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:00.9862390Z 
+2026-01-02T17:48:04.7079383Z [90mstderr[2m | resources/js/composables/__tests__/useAnimations.spec.ts[2m > [22m[2museAnimations[2m > [22m[2museNumberAnimation[2m > [22m[2mshould initialize with target value
+2026-01-02T17:48:04.7085660Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7091545Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7093125Z 
+2026-01-02T17:48:04.7100285Z [90mstderr[2m | resources/js/composables/__tests__/useAnimations.spec.ts[2m > [22m[2museAnimations[2m > [22m[2museNumberAnimation[2m > [22m[2mshould handle null values
+2026-01-02T17:48:04.7104127Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7107778Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7117004Z 
+2026-01-02T17:48:04.7118714Z [90mstderr[2m | resources/js/composables/__tests__/useAnimations.spec.ts[2m > [22m[2museAnimations[2m > [22m[2museNumberAnimation[2m > [22m[2mshould start animation when value changes
+2026-01-02T17:48:04.7122217Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7125902Z [Vue warn]: onUnmounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-01-02T17:48:04.7127465Z 
+2026-01-02T17:48:05.9282807Z [90mstderr[2m | resources/js/ws/__tests__/invariants.spec.ts[2m > [22m[2mws/invariants[2m > [22m[2mcheckInvariants[2m > [22m[2mобнаруживает дублирование подписок
+2026-01-02T17:48:05.9289008Z [22m[39m[WS Invariants] ⚠️ Duplicate subscription detected:
+2026-01-02T17:48:05.9293576Z   Channel: commands.1
+2026-01-02T17:48:05.9298162Z   Event: .App\Events\CommandStatusUpdated
+2026-01-02T17:48:05.9302575Z   Handler ID: handler-1
+2026-01-02T17:48:05.9307050Z   Component: component-1
+2026-01-02T17:48:05.9311338Z   This may cause duplicate events!
+2026-01-02T17:48:05.9315953Z 
+2026-01-02T17:48:08.9073585Z [90mstderr[2m | resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts[2m > [22m[2mWebSocket Subscription Registry[2m > [22m[2mno duplicates invariant[2m > [22m[2mshould detect duplicate subscription on same channel
+2026-01-02T17:48:08.9083002Z [22m[39m[WS Invariants] ⚠️ Duplicate subscription detected:
+2026-01-02T17:48:08.9083626Z   Channel: commands.1
+2026-01-02T17:48:08.9084125Z   Event: .App\Events\CommandStatusUpdated
+2026-01-02T17:48:08.9084901Z   Handler ID: sub-1
+2026-01-02T17:48:08.9085307Z   Component: component-1
+2026-01-02T17:48:08.9085772Z   This may cause duplicate events!
+2026-01-02T17:48:08.9086086Z 
+2026-01-02T17:48:12.2153575Z [33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[2m[90m-[39m[22m[33m[39m[2m[90m-[39m[22m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[2m[90m-[39m[22m[33m[39m[2m[90m-[39m[22m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m[33m[39m[32m·[39m
+2026-01-02T17:48:12.2182671Z 
+2026-01-02T17:48:12.2183046Z [2m Test Files [22m [1m[32m79 passed[39m[22m[90m (79)[39m
+2026-01-02T17:48:12.2183682Z [2m      Tests [22m [1m[32m812 passed[39m[22m[2m | [22m[33m15 skipped[39m[90m (827)[39m
+2026-01-02T17:48:12.2184134Z [2m   Start at [22m 17:47:23
+2026-01-02T17:48:12.2185009Z [2m   Duration [22m 48.63s[2m (transform 5.88s, setup 9.06s, import 20.60s, tests 32.79s, environment 57.02s)[22m
+2026-01-02T17:48:12.2185374Z 
+2026-01-02T17:48:12.2185605Z [34m % [39m[2mCoverage report from [22m[33mv8[39m
+2026-01-02T17:48:12.2282409Z -------------------|---------|----------|---------|---------|-------------------
+2026-01-02T17:48:12.2283310Z File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+2026-01-02T17:48:12.2283995Z -------------------|---------|----------|---------|---------|-------------------
+2026-01-02T17:48:12.2293407Z All files          |   58.74 |    47.64 |   60.06 |   59.61 |                   
+2026-01-02T17:48:12.2294139Z  Components        |   57.56 |    46.56 |   53.12 |   59.13 |                   
+2026-01-02T17:48:12.2295552Z   ...ctionCard.vue |   48.67 |    40.95 |   39.13 |   52.47 | ...56,360-363,375 
+2026-01-02T17:48:12.2296280Z   ...nsSection.vue |   76.92 |    39.13 |      50 |      75 | 16-24             
+2026-01-02T17:48:12.2296995Z   ...odesModal.vue |   80.35 |    64.86 |   85.71 |   81.13 | ...55-158,165-167 
+2026-01-02T17:48:12.2297721Z   ...cipeModal.vue |   77.19 |     74.5 |   77.77 |   78.84 | ...65,182,197-207 
+2026-01-02T17:48:12.2298433Z   ...ionEngine.vue |   77.77 |    66.66 |      50 |   77.77 | 14,57             
+2026-01-02T17:48:12.2299114Z   Badge.vue        |     100 |       50 |     100 |     100 | 40                
+2026-01-02T17:48:12.2300148Z   Breadcrumbs.vue  |   45.45 |     6.66 |      40 |   46.87 | 8-18,97-119       
+2026-01-02T17:48:12.2300894Z   Button.vue       |     100 |       50 |     100 |     100 | 44                
+2026-01-02T17:48:12.2301536Z   Card.vue         |     100 |       50 |     100 |     100 | 25                
+2026-01-02T17:48:12.2302205Z   ChartBase.vue    |   60.41 |       30 |      40 |   63.04 | ...14-130,137-139 
+2026-01-02T17:48:12.2303331Z   ...ndPalette.vue |   54.19 |     46.5 |      64 |   55.06 | ...52-554,558-645 
+2026-01-02T17:48:12.2304054Z   ConfirmModal.vue |   66.66 |      100 |   57.14 |   66.66 | 5,16,24           
+2026-01-02T17:48:12.2305280Z   DataTableV2.vue  |   56.25 |    36.44 |    62.5 |   62.36 | ...31,336,340-341 
+2026-01-02T17:48:12.2306007Z   EmptyState.vue   |   70.58 |    36.36 |   66.66 |   70.58 | 60,66-72          
+2026-01-02T17:48:12.2306728Z   ...ncedToast.vue |     100 |    59.45 |     100 |     100 | 14,40-109,140-142 
+2026-01-02T17:48:12.2307441Z   ...rBoundary.vue |   75.67 |    77.77 |      75 |      75 | ...7,92-94,98-106 
+2026-01-02T17:48:12.2308141Z   ...tesWidget.vue |   34.37 |      7.4 |    5.88 |   34.48 | ...,60-95,124-145 
+2026-01-02T17:48:12.2308895Z   FilterBar.vue    |     100 |      100 |     100 |     100 |                   
+2026-01-02T17:48:12.2309597Z   ...gressRing.vue |      76 |       30 |     100 |   71.42 | 84-88,97-101      
+2026-01-02T17:48:12.2310524Z   ...ageHeader.vue |   63.15 |    43.75 |     100 |    64.7 | 38-46,58          
+2026-01-02T17:48:12.2311231Z   ...eTimeline.vue |   75.47 |    63.33 |   88.88 |   82.22 | 101,132,138-149   
+2026-01-02T17:48:12.2311923Z   ...StatusBar.vue |   76.39 |    73.33 |   83.33 |    76.1 | ...19-520,550-560 
+2026-01-02T17:48:12.2312621Z   ...oryWidget.vue |   54.54 |        0 |      10 |      55 | ...,56-93,119-124 
+2026-01-02T17:48:12.2313364Z   LoadingState.vue |     100 |     87.5 |     100 |     100 | 38,88             
+2026-01-02T17:48:12.2314103Z   ...etryChart.vue |   61.17 |    64.86 |   66.66 |    64.1 | ...01,207,221-240 
+2026-01-02T17:48:12.2314953Z   ...avigation.vue |     100 |    81.25 |     100 |     100 | ...94,116,180,202 
+2026-01-02T17:48:12.2315628Z   Modal.vue        |   71.42 |       90 |   33.33 |   71.42 | 8,24              
+2026-01-02T17:48:12.2316293Z   ...etryChart.vue |   43.38 |    51.82 |   56.09 |   44.53 | ...61,266,303-323 
+2026-01-02T17:48:12.2316992Z   NavLink.vue      |     100 |    72.72 |     100 |     100 | 5                 
+2026-01-02T17:48:12.2317681Z   ...nfigModal.vue |   84.48 |    76.36 |   93.33 |   86.53 | ...96-197,209-211 
+2026-01-02T17:48:12.2319307Z   ...ycleBadge.vue |       0 |        0 |       0 |       0 | 2-84              
+2026-01-02T17:48:12.2320141Z   PageHeader.vue   |     100 |     62.5 |     100 |     100 | 9-18,32           
+2026-01-02T17:48:12.2320929Z   Pagination.vue   |   26.88 |      5.1 |   13.04 |   27.71 | ...34-236,241-262 
+2026-01-02T17:48:12.2321695Z   ...onfigForm.vue |   51.61 |    87.73 |   29.62 |   51.61 | ...60-376,380-381 
+2026-01-02T17:48:12.2322476Z   PidLogsTable.vue |   20.31 |        0 |       0 |   20.96 | ...81,100,166-262 
+2026-01-02T17:48:12.2323255Z   ...ateWizard.vue |   26.44 |     3.88 |    9.37 |   26.27 | ...63-369,378-504 
+2026-01-02T17:48:12.2324005Z   ...avigation.vue |     100 |      100 |     100 |     100 |                   
+2026-01-02T17:48:12.2325018Z   ...tatusCard.vue |   17.85 |        0 |       0 |   17.85 | 2,83-186          
+2026-01-02T17:48:12.2325731Z   ...etonBlock.vue |       0 |        0 |       0 |       0 | 2-41              
+2026-01-02T17:48:12.2326416Z   ...eProgress.vue |   65.27 |    31.57 |   78.26 |   68.93 | ...85,387,394-397 
+2026-01-02T17:48:12.2327122Z   ...Indicator.vue |   57.14 |    44.44 |     100 |   57.14 | 54,61,66-76       
+2026-01-02T17:48:12.2327863Z   ...ringModal.vue |   24.29 |     2.41 |   10.52 |   26.04 | ...67-383,390-391 
+2026-01-02T17:48:12.2328384Z   Tabs.vue         |   88.09 |    71.42 |     100 |   97.22 | 89                
+2026-01-02T17:48:12.2328960Z   ...atesChart.vue |   67.27 |    47.61 |      80 |    65.9 | ...17-120,152-163 
+2026-01-02T17:48:12.2329632Z   ThemeToggle.vue  |      75 |       50 |       0 |      75 | 7                 
+2026-01-02T17:48:12.2330075Z   ...Container.vue |      50 |      100 |       0 |      50 | 16-20             
+2026-01-02T17:48:12.2330612Z   ...orsWidget.vue |   62.29 |       40 |      80 |   65.45 | ...66-176,190-191 
+2026-01-02T17:48:12.2331013Z   UserMenu.vue     |   52.94 |        0 |   18.75 |   53.06 | ...90-200,206-207 
+2026-01-02T17:48:12.2331405Z   VirtualList.vue  |       0 |      100 |       0 |       0 | 2-3               
+2026-01-02T17:48:12.2331854Z   VirtualTable.vue |       0 |      100 |       0 |       0 | 2-3               
+2026-01-02T17:48:12.2332824Z   ...tionModal.vue |   79.01 |    83.33 |   52.63 |   78.48 | ...99-306,414-421 
+2026-01-02T17:48:12.2333237Z   ...isonModal.vue |   68.96 |    62.74 |    65.9 |   73.07 | ...14,329-379,384 
+2026-01-02T17:48:12.2333631Z   ...alization.vue |   41.66 |    36.06 |   32.25 |   45.04 | ...64,366,381-462 
+2026-01-02T17:48:12.2334126Z   ...tionModal.vue |    7.89 |        0 |       0 |    8.95 | ...67-175,220-422 
+2026-01-02T17:48:12.2334914Z   ZoneTargets.vue  |   94.77 |    87.87 |     100 |   98.27 | 311,445           
+2026-01-02T17:48:12.2335378Z   ZonesHeatmap.vue |   93.02 |     72.5 |   84.61 |      95 | 10-11             
+2026-01-02T17:48:12.2336069Z  ...ents/GrowCycle |   34.69 |    15.11 |   30.33 |   35.94 |                   
+2026-01-02T17:48:12.2336489Z   ...trolPanel.vue |      50 |       27 |   53.84 |   50.58 | ...86-410,422-425 
+2026-01-02T17:48:12.2337068Z   ...cleWizard.vue |   29.85 |      9.9 |   20.63 |   31.15 | ...53,859,868-869 
+2026-01-02T17:48:12.2337457Z  Layouts           |   85.18 |    42.85 |    37.5 |   85.18 |                   
+2026-01-02T17:48:12.2337841Z   AppLayout.vue    |   85.18 |    42.85 |    37.5 |   85.18 | 29,40-59,76       
+2026-01-02T17:48:12.2338236Z  Pages/Alerts      |   64.87 |    38.69 |   57.89 |   67.59 |                   
+2026-01-02T17:48:12.2338721Z   Index.vue        |   64.87 |    38.69 |   57.89 |   67.59 | ...55-657,663-664 
+2026-01-02T17:48:12.2339279Z  Pages/Devices     |   51.56 |    38.69 |   59.25 |   53.16 |                   
+2026-01-02T17:48:12.2339784Z   Add.vue          |   40.88 |     32.2 |   46.15 |   41.72 | ...40,352-491,503 
+2026-01-02T17:48:12.2340154Z   Index.vue        |   56.35 |    52.03 |   57.89 |   56.17 | ...15,425,441-453 
+2026-01-02T17:48:12.2340653Z   Show.vue         |   53.84 |    36.15 |   68.18 |   56.71 | ...03-907,912-942 
+2026-01-02T17:48:12.2341247Z  Pages/Greenhouses |   86.36 |       95 |   66.66 |   86.04 |                   
+2026-01-02T17:48:12.2341998Z   Create.vue       |   86.36 |       95 |   66.66 |   86.04 | ...86,180-181,184 
+2026-01-02T17:48:12.2342703Z  Pages/Recipes     |   77.16 |    67.87 |   71.21 |   76.73 |                   
+2026-01-02T17:48:12.2343425Z   Edit.vue         |   67.91 |     65.8 |   56.75 |   67.18 | ...70,591,605-634 
+2026-01-02T17:48:12.2344100Z   Index.vue        |   92.59 |    81.81 |   83.33 |   91.83 | 101-102,137,162   
+2026-01-02T17:48:12.2346525Z   Show.vue         |   90.32 |     62.5 |     100 |      96 | 91                
+2026-01-02T17:48:12.2347485Z  Pages/Setup       |   66.94 |    65.23 |   62.68 |   68.44 |                   
+2026-01-02T17:48:12.2348396Z   Wizard.vue       |   66.94 |    65.23 |   62.68 |   68.44 | ...94,915,922-940 
+2026-01-02T17:48:12.2349283Z  Pages/Zones       |   49.55 |    53.57 |   52.47 |   48.23 |                   
+2026-01-02T17:48:12.2350169Z   Index.vue        |   81.87 |    71.07 |   71.18 |   79.69 | ...88,436,442,457 
+2026-01-02T17:48:12.2351004Z   Show.vue         |   39.43 |     46.9 |   47.05 |   38.34 | ...1047,1068-1164 
+2026-01-02T17:48:12.2351742Z   ...ctionsBar.vue |   77.77 |       65 |   69.23 |      75 | ...40,149,153-156 
+2026-01-02T17:48:12.2352499Z   ...ailModals.vue |   18.51 |    39.39 |       0 |   18.51 | ...04,111,121-134 
+2026-01-02T17:48:12.2353217Z   ...etryChart.vue |      50 |     64.7 |   65.21 |   50.72 | ...32,164-188,227 
+2026-01-02T17:48:12.2353988Z  Pages/Zones/Tabs  |    59.4 |    58.69 |   48.52 |   60.86 |                   
+2026-01-02T17:48:12.2354956Z   ...mationTab.vue |     100 |       50 |     100 |     100 | 5-15              
+2026-01-02T17:48:12.2355697Z   ZoneCycleTab.vue |   36.66 |    52.27 |   29.41 |   41.17 | 11-15,28,194-277  
+2026-01-02T17:48:12.2356493Z   ...evicesTab.vue |   66.66 |      100 |       0 |      60 | 9-10              
+2026-01-02T17:48:12.2357262Z   ...EventsTab.vue |    64.4 |    59.37 |      60 |   63.46 | ...61,149,153-169 
+2026-01-02T17:48:12.2358040Z   ...erviewTab.vue |   78.18 |    59.25 |      65 |      80 | ...15-138,323-342 
+2026-01-02T17:48:12.2359159Z   ...emetryTab.vue |   56.86 |     73.8 |   42.85 |   57.44 | ...72,176,180-198 
+2026-01-02T17:48:12.2359900Z  commands          |   76.72 |    47.69 |   73.33 |   78.64 |                   
+2026-01-02T17:48:12.2360605Z   registry.ts      |   76.72 |    47.69 |   73.33 |   78.64 | ...59-471,484-528 
+2026-01-02T17:48:12.2361326Z  composables       |      65 |    53.14 |   70.33 |   65.48 |                   
+2026-01-02T17:48:12.2362112Z   useAnimations.ts |   68.85 |    18.18 |   81.25 |   68.85 | 36-60,66,74,78-79 
+2026-01-02T17:48:12.2362850Z   useApi.ts        |    37.5 |      100 |   16.66 |    37.5 | 24-28             
+2026-01-02T17:48:12.2363866Z   useCommands.ts   |   33.33 |    16.51 |   58.82 |    33.1 | ...98,311-393,414 
+2026-01-02T17:48:12.2364841Z   ...rorHandler.ts |    90.8 |    72.97 |      90 |   90.69 | 135,138-147,221   
+2026-01-02T17:48:12.2365573Z   useFavorites.ts  |   36.17 |    11.11 |   29.41 |   36.58 | ...1,50,64,78-139 
+2026-01-02T17:48:12.2366333Z   ...Validation.ts |     100 |     91.3 |     100 |     100 | 27-34             
+2026-01-02T17:48:12.2367066Z   useHistory.ts    |   59.45 |    38.46 |   41.17 |   68.75 | ...-87,94,101-115 
+2026-01-02T17:48:12.2367805Z   ...dShortcuts.ts |   73.07 |    61.95 |      80 |    72.6 | ...87-198,212-219 
+2026-01-02T17:48:12.2368550Z   useLoading.ts    |   23.07 |     9.09 |      40 |      24 | 24-25,49-86,105   
+2026-01-02T17:48:12.2369272Z   useModal.ts      |    30.3 |    28.57 |   30.76 |    30.3 | ...0,64-75,97-113 
+2026-01-02T17:48:12.2369951Z   ...eLifecycle.ts |   83.72 |    55.55 |      75 |   83.72 | ...22,135,172-173 
+2026-01-02T17:48:12.2370658Z   ...sticUpdate.ts |   84.33 |    54.71 |   93.75 |   84.33 | ...65,195-202,311 
+2026-01-02T17:48:12.2371380Z   ...zedUpdates.ts |    97.7 |    90.32 |     100 |   97.67 | 97-98             
+2026-01-02T17:48:12.2372113Z   usePageProps.ts  |   58.33 |       75 |      50 |   66.66 | 19,40-41          
+2026-01-02T17:48:12.2372848Z   ...erformance.ts |      68 |     62.5 |   69.23 |   63.63 | 59-72             
+2026-01-02T17:48:12.2373596Z   usePidConfig.ts  |   26.78 |    15.38 |      40 |   26.78 | 31,48-148         
+2026-01-02T17:48:12.2374517Z   ...LimitedApi.ts |    92.3 |    82.05 |     100 |      92 | 108-110,136       
+2026-01-02T17:48:12.2375269Z   useRole.ts       |   97.56 |    95.65 |     100 |     100 | 56                
+2026-01-02T17:48:12.2375996Z   ...toreEvents.ts |   82.25 |    66.66 |   79.31 |   83.33 | ...,98-99,137-149 
+2026-01-02T17:48:12.2376733Z   ...stemStatus.ts |   54.88 |     51.8 |   66.66 |   56.65 | ...15-416,432-445 
+2026-01-02T17:48:12.2377484Z   useTelemetry.ts  |   71.79 |    62.79 |    87.5 |   72.36 | ...36,347-390,426 
+2026-01-02T17:48:12.2378255Z   useTheme.ts      |   65.21 |    42.85 |   57.14 |   63.63 | ...25,35-37,45-49 
+2026-01-02T17:48:12.2378965Z   useToast.ts      |   67.92 |    55.55 |   92.85 |      68 | 65-76,115-122     
+2026-01-02T17:48:12.2379692Z   useUrlState.ts   |   91.83 |    74.19 |     100 |   95.55 | 64,81             
+2026-01-02T17:48:12.2380419Z   useWebSocket.ts  |   66.15 |    55.14 |   68.35 |   66.86 | ...1348,1356,1358 
+2026-01-02T17:48:12.2381110Z   ...izardState.ts |   26.66 |     3.22 |    7.14 |   26.66 | ...47-149,154-165 
+2026-01-02T17:48:12.2381830Z   ...Validation.ts |   78.57 |    81.25 |     100 |   78.57 | ...24,127,169-181 
+2026-01-02T17:48:12.2382541Z   useZones.ts      |   37.14 |    27.02 |   45.45 |   37.68 | ...-77,87-172,178 
+2026-01-02T17:48:12.2383247Z  constants         |   57.89 |        0 |       0 |   57.89 |                   
+2026-01-02T17:48:12.2383924Z   messages.ts      |   33.33 |        0 |       0 |   33.33 | 53-69             
+2026-01-02T17:48:12.2384822Z   timeouts.ts      |     100 |      100 |     100 |     100 |                   
+2026-01-02T17:48:12.2385536Z   validation.ts    |     100 |      100 |     100 |     100 |                   
+2026-01-02T17:48:12.2386230Z  stores            |   90.37 |    65.96 |   95.49 |   93.28 |                   
+2026-01-02T17:48:12.2387213Z   alerts.ts        |     100 |       75 |     100 |     100 | 14,26-36          
+2026-01-02T17:48:12.2387907Z   devices.ts       |   85.84 |    55.81 |   89.47 |   88.88 | ...52,271-279,330 
+2026-01-02T17:48:12.2388678Z   recipes.ts       |   92.59 |    61.29 |     100 |   94.11 | 12,24,101         
+2026-01-02T17:48:12.2389334Z   zones.ts         |   91.48 |    80.64 |   96.96 |   96.55 | 281-283           
+2026-01-02T17:48:12.2389954Z  types             |      50 |    17.64 |      50 |      50 |                   
+2026-01-02T17:48:12.2390619Z   ...nciliation.ts |      50 |    17.64 |      50 |      50 | 192               
+2026-01-02T17:48:12.2391559Z  utils             |   45.42 |    38.98 |   59.83 |   45.07 |                   
+2026-01-02T17:48:12.2392244Z   apiClient.ts     |   43.75 |    27.77 |      50 |   43.75 | ...-93,99,104-150 
+2026-01-02T17:48:12.2392991Z   apiHelpers.ts    |   36.84 |     38.7 |   33.33 |   36.84 | 17,34-74          
+2026-01-02T17:48:12.2393772Z   echoClient.ts    |   29.55 |    21.11 |   39.58 |   29.41 | ...1167,1192-1254 
+2026-01-02T17:48:12.2394745Z   env.ts           |   31.81 |    35.71 |   33.33 |   31.81 | 17,23-58          
+2026-01-02T17:48:12.2395343Z   formatTime.js    |   13.63 |    13.33 |      50 |   13.33 | 11-24,34,51-73    
+2026-01-02T17:48:12.2396069Z   growStages.ts    |   88.18 |    84.94 |   94.73 |   87.62 | ...53,358,364,414 
+2026-01-02T17:48:12.2396748Z   i18n.js          |   83.33 |       50 |   83.33 |   83.33 | 52-59             
+2026-01-02T17:48:12.2397409Z   logger.ts        |   57.42 |    53.26 |   69.56 |    57.6 | ...80-281,330-343 
+2026-01-02T17:48:12.2398041Z   route.ts         |       0 |        0 |       0 |       0 | 12-17             
+2026-01-02T17:48:12.2398748Z   routerGuards.ts  |   88.57 |    76.92 |   83.33 |   88.57 | 83-92,143-148,185 
+2026-01-02T17:48:12.2399526Z   transliterate.ts |   76.47 |    72.72 |     100 |   76.47 | 41,61,67-69       
+2026-01-02T17:48:12.2400244Z  ws                |   87.65 |    64.28 |   92.85 |   87.34 |                   
+2026-01-02T17:48:12.2400940Z   invariants.ts    |   87.65 |    64.28 |   92.85 |   87.34 | ...48,253-255,262 
+2026-01-02T17:48:12.2401701Z -------------------|---------|----------|---------|---------|-------------------

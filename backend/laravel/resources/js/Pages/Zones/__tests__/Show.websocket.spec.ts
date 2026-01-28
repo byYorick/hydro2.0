@@ -253,7 +253,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     if (commandHandler) {
       const commandEvent = {
         commandId: 123,
-        status: 'completed',
+        status: 'DONE',
         message: 'Command completed successfully',
         zoneId: 1,
       }
@@ -263,7 +263,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       // Should update command status
       expect(mockUpdateCommandStatus).toHaveBeenCalledWith(
         123,
-        'completed',
+        'DONE',
         'Command completed successfully'
       )
       
@@ -305,7 +305,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     if (commandHandler) {
       const failedEvent = {
         commandId: 456,
-        status: 'failed',
+        status: 'ERROR',
         message: 'Command failed',
         error: 'Timeout error',
         zoneId: 1,
@@ -315,7 +315,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       
       expect(mockUpdateCommandStatus).toHaveBeenCalledWith(
         456,
-        'failed',
+        'ERROR',
         'Command failed'
       )
       
@@ -441,14 +441,14 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       // First command
       commandHandler({
         commandId: 1,
-        status: 'running',
+        status: 'SENT',
         zoneId: 1,
       })
 
       // Second command
       commandHandler({
         commandId: 2,
-        status: 'completed',
+        status: 'DONE',
         message: 'Done',
         zoneId: 1,
       })
@@ -458,4 +458,3 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     }
   })
 })
-

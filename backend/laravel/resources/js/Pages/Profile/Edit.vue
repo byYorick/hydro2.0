@@ -21,7 +21,7 @@ defineProps({
 })
 
 const page = usePage()
-const user = computed(() => page.props.auth?.user as User | undefined)
+const user = computed(() => (page.props as any).auth?.user as User | undefined)
 
 const getRoleBadgeVariant = (role?: string): 'danger' | 'warning' | 'info' | 'success' | 'neutral' => {
   switch (role) {
@@ -57,15 +57,21 @@ const formatDate = (dateString?: string | null): string => {
     <div class="max-w-4xl mx-auto space-y-4">
       <!-- Информация о пользователе -->
       <Card>
-        <h2 class="text-base font-semibold text-neutral-100 mb-4">Информация о пользователе</h2>
+        <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">
+          Информация о пользователе
+        </h2>
         <div class="space-y-4">
           <div class="flex items-center gap-4">
-            <div class="w-16 h-16 rounded-full bg-neutral-700 flex items-center justify-center text-xl font-medium text-neutral-300">
+            <div class="w-16 h-16 rounded-full bg-[color:var(--bg-surface-strong)] flex items-center justify-center text-xl font-medium text-[color:var(--text-muted)]">
               {{ user?.name ? user.name.substring(0, 2).toUpperCase() : '?' }}
             </div>
             <div class="flex-1">
-              <div class="text-lg font-semibold text-neutral-100">{{ user?.name }}</div>
-              <div class="text-sm text-neutral-400">{{ user?.email }}</div>
+              <div class="text-lg font-semibold text-[color:var(--text-primary)]">
+                {{ user?.name }}
+              </div>
+              <div class="text-sm text-[color:var(--text-muted)]">
+                {{ user?.email }}
+              </div>
             </div>
             <div v-if="user?.role">
               <Badge
@@ -77,10 +83,12 @@ const formatDate = (dateString?: string | null): string => {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-neutral-800">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-[color:var(--border-muted)]">
             <div>
-              <div class="text-xs text-neutral-500 mb-1">Роль</div>
-              <div class="text-sm text-neutral-200">
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Роль
+              </div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 <Badge
                   :variant="getRoleBadgeVariant(user?.role)"
                   size="xs"
@@ -90,8 +98,10 @@ const formatDate = (dateString?: string | null): string => {
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-500 mb-1">Email подтвержден</div>
-              <div class="text-sm text-neutral-200">
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Email подтвержден
+              </div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 <Badge
                   :variant="user?.email_verified_at ? 'success' : 'warning'"
                   size="xs"
@@ -101,12 +111,20 @@ const formatDate = (dateString?: string | null): string => {
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-500 mb-1">Дата регистрации</div>
-              <div class="text-sm text-neutral-200">{{ formatDate(user?.created_at) }}</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Дата регистрации
+              </div>
+              <div class="text-sm text-[color:var(--text-primary)]">
+                {{ formatDate(user?.created_at) }}
+              </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-500 mb-1">Последнее обновление</div>
-              <div class="text-sm text-neutral-200">{{ formatDate(user?.updated_at) }}</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Последнее обновление
+              </div>
+              <div class="text-sm text-[color:var(--text-primary)]">
+                {{ formatDate(user?.updated_at) }}
+              </div>
             </div>
           </div>
         </div>
@@ -114,7 +132,9 @@ const formatDate = (dateString?: string | null): string => {
 
       <!-- Общая информация -->
       <Card>
-        <h2 class="text-base font-semibold text-neutral-100 mb-4">Общая информация</h2>
+        <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">
+          Общая информация
+        </h2>
         <UpdateProfileInformationForm
           :must-verify-email="mustVerifyEmail"
           :status="status"
@@ -124,13 +144,17 @@ const formatDate = (dateString?: string | null): string => {
 
       <!-- Безопасность -->
       <Card>
-        <h2 class="text-base font-semibold text-neutral-100 mb-4">Безопасность</h2>
+        <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">
+          Безопасность
+        </h2>
         <UpdatePasswordForm class="max-w-xl" />
       </Card>
 
       <!-- Опасная зона -->
       <Card>
-        <h2 class="text-base font-semibold text-neutral-100 mb-4">Опасная зона</h2>
+        <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">
+          Опасная зона
+        </h2>
         <DeleteUserForm class="max-w-xl" />
       </Card>
     </div>

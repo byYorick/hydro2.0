@@ -3,13 +3,17 @@
 # WebSocket / MQTT-bridge • Типы событий • Контракты
 
 Документ дополняет:
-- `SYSTEM_ARCH_FULL.md`
-- `MQTT_SPEC_FULL.md`
+- `../SYSTEM_ARCH_FULL.md`
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - `API_SPEC_FRONTEND_BACKEND_FULL.md`
-- `ANDROID_APP_API_INTEGRATION.md`
+- `../12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
 
 и описывает, как изменения состояния системы доставляются в UI
 в **реальном или околореальном времени**.
+
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
@@ -30,7 +34,7 @@
 
 ### 2.1. Backend — центральная точка истины
 
-- Узлы публикуют телеметрию и статусы в MQTT (см. `MQTT_SPEC_FULL.md`).
+- Узлы публикуют телеметрию и статусы в MQTT (см. `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`).
 - Backend:
  - подписывается на MQTT-топики,
  - агрегирует и нормализует данные,
@@ -85,16 +89,19 @@
 2. `node_status_updated`
  - изменение статуса узла (online/offline/degraded/maintenance).
 
-3. `alert_created`
+3. `telemetry_batch_updated`
+ - пакетное обновление телеметрии по зоне (batched realtime).
+
+4. `alert_created`
  - новый алерт.
 
-4. `alert_updated`
+5. `alert_updated`
  - изменение статуса алерта (подтверждён, закрыт и т.п.).
 
-5. `recipe_assigned_to_zone`
+6. `recipe_assigned_to_zone`
  - назначен новый рецепт зоне.
 
-6. `recipe_stage_changed`
+7. `recipe_stage_changed`
  - переход стадии рецепта.
 
 При необходимости добавляются новые типы, но без ломки старых.
@@ -146,7 +153,29 @@
 }
 ```
 
-### 4.3. alert_created
+### 4.3. telemetry_batch_updated
+
+```json
+{
+ "event_type": "telemetry_batch_updated",
+ "event_id": "uuid-777",
+ "occurred_at": "2025-01-01T12:00:10Z",
+ "payload": {
+ "zone_id": "zone-1",
+ "updates": [
+   {
+     "node_id": "node-1234",
+     "metric_type": "PH",
+     "channel": "ph_sensor",
+     "value": 6.2,
+     "ts": 1735732810000
+   }
+ ]
+ }
+}
+```
+
+### 4.4. alert_created
 
 ```json
 {
@@ -186,6 +215,7 @@
  ],
  "event_types": [
  "zone_state_updated",
+ "telemetry_batch_updated",
  "node_status_updated",
  "alert_created",
  "alert_updated"
@@ -225,7 +255,7 @@ Backend-реализация (на уровне принципов):
 ## 7. Связь с push-уведомлениями
 
 - События `alert_created` и `alert_updated` также используются
- слоем уведомлений (см. `ALERTS_AND_NOTIFICATIONS_CHANNELS.md`).
+ слоем уведомлений (см. `../06_DOMAIN_ZONES_RECIPES/ALERTS_AND_NOTIFICATIONS_CHANNELS.md`).
 - Push-уведомления выбирают подмножество этих событий
  по правилам пользователя (критичность, зоны).
 
@@ -237,7 +267,7 @@ Backend-реализация (на уровне принципов):
  не описав их здесь и в связанных спеках.
 2. Любые изменения в структуре payload должны быть:
  - отражены в этом документе,
- - синхронизированы с фронтендом и Android (`ANDROID_APP_API_INTEGRATION.md`).
+ - синхронизированы с фронтендом и Android (`../12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`).
 3. При добавлении нового event_type:
  - описать, при каких условиях backend его генерирует,
  - описать ожидаемую реакцию UI (обновление дашборда, список алертов и т.п.).

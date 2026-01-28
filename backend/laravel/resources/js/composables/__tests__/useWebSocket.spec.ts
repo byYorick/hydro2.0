@@ -7,6 +7,7 @@ let useWebSocketModule: UseWebSocketModule
 vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
   getEcho: vi.fn(() => null),
+  getEchoInstance: vi.fn(() => null),
   getReconnectAttempts: vi.fn(() => 0),
   getLastError: vi.fn(() => null),
   getConnectionState: vi.fn(() => 'disconnected'),
@@ -156,7 +157,7 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
-        status: 'completed',
+        status: 'DONE',
         message: 'Command completed',
         zoneId: 1,
         zone_id: 1
@@ -167,7 +168,7 @@ describe('useWebSocket', () => {
       const call = onCommandUpdate.mock.calls[0]?.[0]
       expect(call).toMatchObject({
         commandId: 123,
-        status: 'completed',
+        status: 'DONE',
         message: 'Command completed',
         zoneId: 1
       })
@@ -194,6 +195,7 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
+        status: 'ERROR',
         message: 'Command failed',
         error: 'Some error',
         zoneId: 1,
@@ -301,4 +303,3 @@ describe('useWebSocket', () => {
     expect(mockEcho.leave).toHaveBeenCalled()
   })
 })
-

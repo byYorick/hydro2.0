@@ -1,0 +1,612 @@
+﻿2026-01-02T17:45:23.7202477Z ##[group]Run mkdir -p test-results
+2026-01-02T17:45:23.7202801Z [36;1mmkdir -p test-results[0m
+2026-01-02T17:45:23.7203232Z [36;1mphp artisan test --testsuite=Unit,Feature --no-coverage --log-junit test-results/phpunit.xml[0m
+2026-01-02T17:45:23.7236322Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:45:23.7236554Z env:
+2026-01-02T17:45:23.7236721Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:45:23.7236947Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:45:23.7237163Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:45:23.7237356Z   APP_ENV: testing
+2026-01-02T17:45:23.7237538Z   DB_CONNECTION: pgsql
+2026-01-02T17:45:23.7237912Z   DB_DATABASE: hydro_test
+2026-01-02T17:45:23.7238105Z   DB_USERNAME: hydro
+2026-01-02T17:45:23.7238289Z   DB_PASSWORD: hydro
+2026-01-02T17:45:23.7238471Z   DB_HOST: 127.0.0.1
+2026-01-02T17:45:23.7238644Z   DB_PORT: 5432
+2026-01-02T17:45:23.7238828Z   BROADCAST_CONNECTION: log
+2026-01-02T17:45:23.7239029Z   BROADCAST_DRIVER: log
+2026-01-02T17:45:23.7239217Z   CACHE_STORE: array
+2026-01-02T17:45:23.7239421Z   SESSION_DRIVER: array
+2026-01-02T17:45:23.7239604Z   QUEUE_CONNECTION: sync
+2026-01-02T17:45:23.7239791Z ##[endgroup]
+2026-01-02T17:45:26.6574387Z 
+2026-01-02T17:45:26.6575202Z    PASS  Tests\Unit\CleanupNodeChannelsGpioCommandTest
+2026-01-02T17:45:26.6578254Z   ✓ command removes gpio and pin from configs                            2.43s  
+2026-01-02T17:45:26.9273899Z 
+2026-01-02T17:45:26.9274909Z    PASS  Tests\Unit\Console\BackupListCommandTest
+2026-01-02T17:45:26.9287582Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:26.9300091Z   ✓ command has description                                              0.04s  
+2026-01-02T17:45:26.9312268Z   ✓ command accepts verify option                                        0.04s  
+2026-01-02T17:45:26.9324144Z   ✓ format timestamp formats correctly                                   0.03s  
+2026-01-02T17:45:26.9335826Z   ✓ format bytes formats correctly                                       0.03s  
+2026-01-02T17:45:26.9347865Z   ✓ verify backup checks correctly                                       0.03s  
+2026-01-02T17:45:26.9359861Z   ✓ command handles missing backup directory                             0.04s  
+2026-01-02T17:45:27.1995216Z 
+2026-01-02T17:45:27.1995921Z    PASS  Tests\Unit\Console\DatabaseBackupCommandTest
+2026-01-02T17:45:27.2008975Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:27.2021065Z   ✓ command has description                                              0.04s  
+2026-01-02T17:45:27.2033386Z   ✓ command accepts compress option                                      0.05s  
+2026-01-02T17:45:27.2045116Z   ✓ command accepts output option                                        0.04s  
+2026-01-02T17:45:27.2057484Z   ✓ format bytes formats correctly                                       0.03s  
+2026-01-02T17:45:27.2069901Z   ✓ command handles database connection error                            0.04s  
+2026-01-02T17:45:29.4330147Z 
+2026-01-02T17:45:29.4330900Z    PASS  Tests\Unit\Console\E2EAuthBootstrapCommandTest
+2026-01-02T17:45:29.4343101Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:29.4354852Z   ✓ creates user if not exists                                           0.29s  
+2026-01-02T17:45:29.4366559Z   ✓ uses existing user if exists                                         0.51s  
+2026-01-02T17:45:29.4378084Z   ✓ outputs token                                                        0.28s  
+2026-01-02T17:45:29.4389675Z   ✓ creates token for user                                               0.52s  
+2026-01-02T17:45:29.4401689Z   ✓ accepts custom email                                                 0.28s  
+2026-01-02T17:45:29.4413895Z   ✓ accepts custom role                                                  0.29s  
+2026-01-02T17:45:29.6783558Z 
+2026-01-02T17:45:29.6784150Z    PASS  Tests\Unit\Console\FullBackupCommandTest
+2026-01-02T17:45:29.6796897Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:29.6809540Z   ✓ command has description                                              0.05s  
+2026-01-02T17:45:29.6821225Z   ✓ command accepts skip docker option                                   0.05s  
+2026-01-02T17:45:29.6833371Z   ✓ command accepts skip mqtt option                                     0.05s  
+2026-01-02T17:45:29.6845138Z   ✓ command handles missing script                                       0.05s  
+2026-01-02T17:45:29.8729164Z 
+2026-01-02T17:45:29.8729933Z    PASS  Tests\Unit\Console\TelemetryAggregateCommandTest
+2026-01-02T17:45:29.8743079Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:29.8754804Z   ✓ command accepts from option                                          0.05s  
+2026-01-02T17:45:29.8767578Z   ✓ command accepts to option                                            0.04s  
+2026-01-02T17:45:29.8779973Z   ✓ command output contains info                                         0.04s  
+2026-01-02T17:45:30.0127659Z 
+2026-01-02T17:45:30.0128455Z    PASS  Tests\Unit\Console\TelemetryCleanupCommandTest
+2026-01-02T17:45:30.0141042Z   ✓ command signature exists                                             0.05s  
+2026-01-02T17:45:30.0152038Z   ✓ command accepts days option                                          0.04s  
+2026-01-02T17:45:30.0164136Z   ✓ command output contains info                                         0.05s  
+2026-01-02T17:45:30.1419054Z 
+2026-01-02T17:45:30.1419700Z    PASS  Tests\Unit\DigitalTwinClientTest
+2026-01-02T17:45:30.1432464Z   ✓ simulate zone sends correct request                                  0.04s  
+2026-01-02T17:45:30.1444008Z   ✓ simulate zone handles error response                                 0.03s  
+2026-01-02T17:45:30.1456301Z   ✓ simulate zone handles connection error                               0.03s  
+2026-01-02T17:45:30.1469435Z   ✓ simulate zone uses default parameters                                0.03s  
+2026-01-02T17:45:31.0795477Z 
+2026-01-02T17:45:31.0796207Z    PASS  Tests\Unit\EffectiveTargetsServiceTest
+2026-01-02T17:45:31.0808204Z   ✓ it returns effective targets with correct structure                  0.37s  
+2026-01-02T17:45:31.0820153Z   ✓ it applies overrides to targets                                      0.14s  
+2026-01-02T17:45:31.0832228Z   ✓ it returns batch results for multiple cycles                         0.18s  
+2026-01-02T17:45:31.0844725Z   ✓ it handles missing current phase gracefully                          0.11s  
+2026-01-02T17:45:31.0856719Z   ✓ it includes irrigation targets in response                           0.13s  
+2026-01-02T17:45:31.1453249Z 
+2026-01-02T17:45:31.1453886Z    PASS  Tests\Unit\Events\CommandStatusUpdatedTest
+2026-01-02T17:45:31.1467045Z   ✓ broadcasts to zone channel when zone id provided                     0.04s  
+2026-01-02T17:45:31.1479163Z   ✓ falls back to global channel when zone id missing                    0.03s  
+2026-01-02T17:45:31.1548406Z 
+2026-01-02T17:45:31.1548705Z    PASS  Tests\Unit\ExampleTest
+2026-01-02T17:45:31.1556833Z   ✓ that true is true
+2026-01-02T17:45:31.2809088Z 
+2026-01-02T17:45:31.2809685Z    PASS  Tests\Unit\GrowStageTemplateTest
+2026-01-02T17:45:31.2822133Z   ✓ it has phases relationship                                           0.07s  
+2026-01-02T17:45:31.2833956Z   ✓ it casts ui meta to array                                            0.05s  
+2026-01-02T17:45:31.4005024Z 
+2026-01-02T17:45:31.4005630Z    PASS  Tests\Unit\MetricTypeTest
+2026-01-02T17:45:31.4018672Z   ✓ metric type values                                                   0.03s  
+2026-01-02T17:45:31.4030830Z   ✓ metric type is valid                                                 0.03s  
+2026-01-02T17:45:31.4042514Z   ✓ metric type normalize                                                0.03s  
+2026-01-02T17:45:31.4054682Z   ✓ metric type cases                                                    0.03s  
+2026-01-02T17:45:32.2144997Z 
+2026-01-02T17:45:32.2157985Z    PASS  Tests\Unit\Middleware\VerifyPythonServiceTokenTest
+2026-01-02T17:45:32.2159710Z   ✓ allows authenticated user via sanctum                                0.06s  
+2026-01-02T17:45:32.2171473Z   ✓ rejects request without token when token configured                  0.05s  
+2026-01-02T17:45:32.2183592Z   ✓ rejects request with invalid token                                   0.04s  
+2026-01-02T17:45:32.2195712Z   ✓ allows request with valid py api token                               0.05s  
+2026-01-02T17:45:32.2208453Z   ✓ allows request with valid laravel api token                          0.05s  
+2026-01-02T17:45:32.2220961Z   ✓ uses viewer user when available                                      0.17s  
+2026-01-02T17:45:32.2232994Z   ✓ uses operator when no viewer                                         0.17s  
+2026-01-02T17:45:32.2245131Z   ✓ allows request without user when token valid                         0.17s  
+2026-01-02T17:45:32.2257154Z   ✓ rejects when no tokens configured                                    0.04s  
+2026-01-02T17:45:32.4801852Z 
+2026-01-02T17:45:32.4802362Z    PASS  Tests\Unit\Models\ZonePidConfigTest
+2026-01-02T17:45:32.4815304Z   ✓ zone pid config belongs to zone                                      0.08s  
+2026-01-02T17:45:32.4826989Z   ✓ zone pid config belongs to user                                      0.06s  
+2026-01-02T17:45:32.4838404Z   ✓ zone pid config accessors                                            0.06s  
+2026-01-02T17:45:32.4849800Z   ✓ zone has pid configs relationship                                    0.06s  
+2026-01-02T17:45:32.5437614Z 
+2026-01-02T17:45:32.5438262Z    PASS  Tests\Unit\NodeConfigServiceTest
+2026-01-02T17:45:32.5450503Z   ✓ get stored config sanitizes credentials and gpio                     0.06s  
+2026-01-02T17:45:32.8848112Z 
+2026-01-02T17:45:32.8848821Z    PASS  Tests\Unit\Policies\DeviceNodePolicyTest
+2026-01-02T17:45:32.8861049Z   ✓ viewer can view nodes                                                0.07s  
+2026-01-02T17:45:32.8872657Z   ✓ operator can update nodes                                            0.06s  
+2026-01-02T17:45:32.8884569Z   ✓ viewer cannot update nodes                                           0.07s  
+2026-01-02T17:45:32.8896268Z   ✓ operator can publish config                                          0.07s  
+2026-01-02T17:45:32.8907925Z   ✓ operator can send commands                                           0.07s  
+2026-01-02T17:45:41.1755824Z 
+2026-01-02T17:45:41.1756481Z    PASS  Tests\Unit\RecipeAnalyticsServiceTest
+2026-01-02T17:45:41.1769483Z   ✓ calculate analytics uses chunking                                    7.99s  
+2026-01-02T17:45:41.1781278Z   ✓ calculate analytics no telemetry                                     0.14s  
+2026-01-02T17:45:41.1793225Z   ✓ calculate analytics with alerts                                      0.16s  
+2026-01-02T17:45:41.4663117Z 
+2026-01-02T17:45:41.4663779Z    PASS  Tests\Unit\RecipeRevisionPhaseTest
+2026-01-02T17:45:41.4676537Z   ✓ it belongs to revision                                               0.08s  
+2026-01-02T17:45:41.4688207Z   ✓ it belongs to stage template                                         0.07s  
+2026-01-02T17:45:41.4700751Z   ✓ it casts extensions to array                                         0.07s  
+2026-01-02T17:45:41.4712455Z   ✓ it appends targets attribute                                         0.07s  
+2026-01-02T17:45:41.6217380Z 
+2026-01-02T17:45:41.6218078Z    PASS  Tests\Unit\Requests\StoreNodeRequestTest
+2026-01-02T17:45:41.6230616Z   ✓ validates required uid                                               0.05s  
+2026-01-02T17:45:41.6242505Z   ✓ validates uid is unique                                              0.05s  
+2026-01-02T17:45:41.6254534Z   ✓ validates zone id exists                                             0.05s  
+2026-01-02T17:45:41.8096437Z 
+2026-01-02T17:45:41.8097097Z    PASS  Tests\Unit\Services\AlertServiceTest
+2026-01-02T17:45:41.8109631Z   ✓ create alert                                                         0.06s  
+2026-01-02T17:45:41.8120957Z   ✓ acknowledge alert                                                    0.06s  
+2026-01-02T17:45:41.8132242Z   ✓ acknowledge already resolved alert throws exception                  0.05s  
+2026-01-02T17:45:43.1404039Z 
+2026-01-02T17:45:43.1404923Z    PASS  Tests\Unit\Services\ConfigPublishLockServiceTest
+2026-01-02T17:45:43.1417207Z   ✓ acquire optimistic lock returns node and version                     0.06s  
+2026-01-02T17:45:43.1428708Z   ✓ check optimistic lock returns true when version unchanged            0.05s  
+2026-01-02T17:45:43.1440036Z   ✓ check optimistic lock returns false when version changed             1.06s  
+2026-01-02T17:45:43.1451708Z   ✓ is duplicate returns false for new config                            0.05s  
+2026-01-02T17:45:43.1463005Z   ✓ is duplicate returns true for published config                       0.05s  
+2026-01-02T17:45:43.1474604Z   ✓ mark as published stores config hash in cache                        0.05s  
+2026-01-02T17:45:43.3034848Z 
+2026-01-02T17:45:43.3035721Z    PASS  Tests\Unit\Services\ConfigSignatureServiceTest
+2026-01-02T17:45:43.3047928Z   ✓ sign config adds timestamp and signature                             0.04s  
+2026-01-02T17:45:43.3060544Z   ✓ verify signature returns true for valid signature                    0.04s  
+2026-01-02T17:45:43.3071901Z   ✓ verify signature returns false for invalid signature                 0.03s  
+2026-01-02T17:45:43.3082990Z   ✓ verify signature returns false for expired timestamp                 0.03s  
+2026-01-02T17:45:43.3094529Z   ✓ verify signature returns false for missing fields                    0.03s  
+2026-01-02T17:45:43.4821977Z 
+2026-01-02T17:45:43.4822542Z    PASS  Tests\Unit\Services\NodeLifecycleServiceTest
+2026-01-02T17:45:43.4835253Z   ✓ transitions node to active state and sets status online              0.06s  
+2026-01-02T17:45:43.4846763Z   ✓ prevents invalid transitions and keeps state unchanged               0.05s  
+2026-01-02T17:45:43.4858790Z   ✓ sets node offline when transitioning to maintenance                  0.06s  
+2026-01-02T17:45:43.9219651Z 
+2026-01-02T17:45:43.9220317Z    PASS  Tests\Unit\Services\NodeServiceBindingTest
+2026-01-02T17:45:43.9232232Z   ✓ attach node to zone sets pending zone id                             0.07s  
+2026-01-02T17:45:43.9243318Z   ✓ attach node clears old zone id                                       0.07s  
+2026-01-02T17:45:43.9254834Z   ✓ complete binding from history logger                                 0.07s  
+2026-01-02T17:45:43.9268197Z   ✓ detach node clears pending zone id                                   0.06s  
+2026-01-02T17:45:43.9279639Z   ✓ detach node with pending zone id                                     0.06s  
+2026-01-02T17:45:43.9290998Z   ✓ detach already detached node                                         0.05s  
+2026-01-02T17:45:43.9302794Z   ✓ cannot attach in invalid lifecycle state                             0.06s  
+2026-01-02T17:45:44.2477643Z 
+2026-01-02T17:45:44.2478278Z    PASS  Tests\Unit\Services\NodeServiceTest
+2026-01-02T17:45:44.2490742Z   ✓ create node                                                          0.06s  
+2026-01-02T17:45:44.2502472Z   ✓ update node                                                          0.06s  
+2026-01-02T17:45:44.2514741Z   ✓ delete node without dependencies                                     0.07s  
+2026-01-02T17:45:44.2526921Z   ✓ delete node attached to zone throws exception                        0.06s  
+2026-01-02T17:45:44.2538456Z   ✓ detach node                                                          0.07s  
+2026-01-02T17:45:44.6232116Z 
+2026-01-02T17:45:44.6232945Z    PASS  Tests\Unit\Services\PredictionServiceTest
+2026-01-02T17:45:44.6245379Z   ✓ predict with sufficient data                                         0.09s  
+2026-01-02T17:45:44.6257646Z   ✓ predict with insufficient data returns null                          0.07s  
+2026-01-02T17:45:44.6269616Z   ✓ get latest prediction                                                0.06s  
+2026-01-02T17:45:44.6281721Z   ✓ generate predictions for active zones                                0.15s  
+2026-01-02T17:45:45.3969199Z 
+2026-01-02T17:45:45.3969989Z    PASS  Tests\Unit\Services\PythonBridgeServiceTest
+2026-01-02T17:45:45.3982751Z   ✓ send zone command with explicit node uid and channel                 0.09s  
+2026-01-02T17:45:45.3994720Z   ✓ send zone command validates node exists and belongs to zone          0.08s  
+2026-01-02T17:45:45.4006386Z   ✓ send zone command throws exception when node not found               0.08s  
+2026-01-02T17:45:45.4018166Z   ✓ send zone command throws exception when node not in zone             0.09s  
+2026-01-02T17:45:45.4029957Z   ✓ send zone command throws exception when channel not found            0.09s  
+2026-01-02T17:45:45.4041434Z   ✓ send zone command throws exception when no node or channel           0.08s  
+2026-01-02T17:45:45.4109809Z   ✓ send zone command throws exception when node has no channels         0.09s  
+2026-01-02T17:45:45.4111035Z   ✓ send zone command throws exception when only node uid specified      0.08s  
+2026-01-02T17:45:45.4111981Z   ✓ send zone command throws exception when only channel specified       0.08s  
+2026-01-02T17:45:45.7250593Z 
+2026-01-02T17:45:45.7251198Z    PASS  Tests\Unit\Services\RecipeServiceTest
+2026-01-02T17:45:45.7263399Z   ✓ create recipe                                                        0.07s  
+2026-01-02T17:45:45.7275338Z   ✓ update recipe                                                        0.07s  
+2026-01-02T17:45:45.7286575Z   ✓ delete recipe without dependencies                                   0.07s  
+2026-01-02T17:45:45.7298226Z   ✓ delete recipe used in active grow cycle throws exception             0.11s  
+2026-01-02T17:45:46.2272703Z 
+2026-01-02T17:45:46.2273457Z    PASS  Tests\Unit\Services\ZonePidConfigServiceTest
+2026-01-02T17:45:46.2286123Z   ✓ get config returns null when not exists                              0.07s  
+2026-01-02T17:45:46.2298054Z   ✓ get config returns existing config                                   0.06s  
+2026-01-02T17:45:46.2309491Z   ✓ create or update creates new config                                  0.07s  
+2026-01-02T17:45:46.2321216Z   ✓ create or update updates existing config                             0.07s  
+2026-01-02T17:45:46.2332332Z   ✓ get default config returns ph config                                 0.04s  
+2026-01-02T17:45:46.2343580Z   ✓ get default config returns ec config                                 0.04s  
+2026-01-02T17:45:46.2355509Z   ✓ validate config throws exception for invalid zones                   0.04s  
+2026-01-02T17:45:46.2366690Z   ✓ validate config throws exception for invalid ph target               0.04s  
+2026-01-02T17:45:46.2377744Z   ✓ get all configs returns all for zone                                 0.06s  
+2026-01-02T17:45:46.8868726Z 
+2026-01-02T17:45:46.8869359Z    PASS  Tests\Unit\Services\ZoneServiceTest
+2026-01-02T17:45:46.8881696Z   ✓ create zone                                                          0.07s  
+2026-01-02T17:45:46.8893145Z   ✓ update zone                                                          0.08s  
+2026-01-02T17:45:46.8904851Z   ✓ delete zone without dependencies                                     0.08s  
+2026-01-02T17:45:46.8916195Z   ✓ delete zone with active recipe throws exception                      0.10s  
+2026-01-02T17:45:46.8928170Z   ✓ delete zone with attached nodes throws exception                     0.07s  
+2026-01-02T17:45:46.8939745Z   ✓ pause zone                                                           0.08s  
+2026-01-02T17:45:46.8951360Z   ✓ pause already paused zone throws exception                           0.05s  
+2026-01-02T17:45:46.8962482Z   ✓ resume zone                                                          0.07s  
+2026-01-02T17:45:46.8973853Z   ✓ resume not paused zone throws exception                              0.05s  
+2026-01-02T17:45:47.0519630Z 
+2026-01-02T17:45:47.0520250Z    PASS  Tests\Feature\AdminRecipesTest
+2026-01-02T17:45:47.0532571Z   ✓ admin recipes page uses revision phases count                        0.16s  
+2026-01-02T17:45:49.9834831Z 
+2026-01-02T17:45:49.9835434Z    PASS  Tests\Feature\AiControllerTest
+2026-01-02T17:45:49.9847751Z   ✓ predict endpoint                                                     0.57s  
+2026-01-02T17:45:49.9859261Z   ✓ predict endpoint without sufficient data                             0.54s  
+2026-01-02T17:45:49.9870640Z   ✓ explain zone endpoint                                                0.63s  
+2026-01-02T17:45:49.9881832Z   ✓ recommend endpoint                                                   0.63s  
+2026-01-02T17:45:49.9893121Z   ✓ diagnostics endpoint                                                 0.55s  
+2026-01-02T17:45:50.2468239Z 
+2026-01-02T17:45:50.2468920Z    PASS  Tests\Feature\AlertWebhookControllerTest
+2026-01-02T17:45:50.2481038Z   ✓ webhook creates alert on firing                                      0.08s  
+2026-01-02T17:45:50.2492314Z   ✓ webhook resolves alert on resolved                                   0.07s  
+2026-01-02T17:45:50.2503712Z   ✓ webhook handles empty alerts array                                   0.05s  
+2026-01-02T17:45:50.2515023Z   ✓ webhook handles missing alerts key                                   0.05s  
+2026-01-02T17:45:50.8104051Z 
+2026-01-02T17:45:50.8104810Z    PASS  Tests\Feature\AlertsTest
+2026-01-02T17:45:50.8117429Z   ✓ alerts requires auth                                                 0.06s  
+2026-01-02T17:45:50.8128890Z   ✓ get alerts list                                                      0.09s  
+2026-01-02T17:45:50.8140526Z   ✓ get alert details                                                    0.08s  
+2026-01-02T17:45:50.8151843Z   ✓ acknowledge alert                                                    0.08s  
+2026-01-02T17:45:50.8163722Z   ✓ acknowledge already resolved alert returns error                     0.07s  
+2026-01-02T17:45:50.8175090Z   ✓ filter alerts by zone                                                0.09s  
+2026-01-02T17:45:50.8186857Z   ✓ filter alerts by status                                              0.08s  
+2026-01-02T17:45:51.5555290Z 
+2026-01-02T17:45:51.5556117Z    PASS  Tests\Feature\Auth\AuthenticationTest
+2026-01-02T17:45:51.5568482Z   ✓ login screen can be rendered                                         0.09s  
+2026-01-02T17:45:51.5580337Z   ✓ users can authenticate using the login screen                        0.30s  
+2026-01-02T17:45:51.5592098Z   ✓ users can not authenticate with invalid password                     0.29s  
+2026-01-02T17:45:51.5604126Z   ✓ users can logout                                                     0.06s  
+2026-01-02T17:45:51.7813818Z 
+2026-01-02T17:45:51.7815004Z    PASS  Tests\Feature\Auth\EmailVerificationTest
+2026-01-02T17:45:51.7827814Z   ✓ email verification screen can be rendered                            0.09s  
+2026-01-02T17:45:51.7839337Z   ✓ email can be verified                                                0.07s  
+2026-01-02T17:45:51.7850870Z   ✓ email is not verified with invalid hash                              0.07s  
+2026-01-02T17:45:52.4610481Z 
+2026-01-02T17:45:52.4611146Z    PASS  Tests\Feature\Auth\PasswordConfirmationTest
+2026-01-02T17:45:52.4623894Z   ✓ confirm password screen can be rendered                              0.09s  
+2026-01-02T17:45:52.4636063Z   ✓ password can be confirmed                                            0.29s  
+2026-01-02T17:45:52.4648103Z   ✓ password is not confirmed with invalid password                      0.29s  
+2026-01-02T17:45:53.9341893Z 
+2026-01-02T17:45:53.9342542Z    PASS  Tests\Feature\Auth\PasswordResetTest
+2026-01-02T17:45:53.9355222Z   ✓ reset password link screen can be rendered                           0.08s  
+2026-01-02T17:45:53.9367038Z   ✓ reset password link can be requested                                 0.29s  
+2026-01-02T17:45:53.9379052Z   ✓ reset password screen can be rendered                                0.33s  
+2026-01-02T17:45:53.9390824Z   ✓ password can be reset with valid token                               0.76s  
+2026-01-02T17:45:54.9834178Z 
+2026-01-02T17:45:54.9835320Z    PASS  Tests\Feature\Auth\PasswordUpdateTest
+2026-01-02T17:45:54.9847442Z   ✓ password can be updated                                              0.75s  
+2026-01-02T17:45:54.9858463Z   ✓ correct password must be provided to update password                 0.29s  
+2026-01-02T17:45:55.3640036Z 
+2026-01-02T17:45:55.3640658Z    PASS  Tests\Feature\Auth\RegistrationTest
+2026-01-02T17:45:55.3653516Z   ✓ registration screen can be rendered                                  0.08s  
+2026-01-02T17:45:55.3665638Z   ✓ new users can register                                               0.29s  
+2026-01-02T17:45:55.9063604Z 
+2026-01-02T17:45:55.9064196Z    PASS  Tests\Feature\AuthTest
+2026-01-02T17:45:55.9077537Z   ✓ login me logout flow                                                 0.54s  
+2026-01-02T17:45:56.0121863Z 
+2026-01-02T17:45:56.0122473Z    PASS  Tests\Feature\ChannelBindingsTest
+2026-01-02T17:45:56.0135279Z   ✓ operator can create channel binding with node channel                0.10s  
+2026-01-02T17:45:56.4709471Z 
+2026-01-02T17:45:56.4710131Z    PASS  Tests\Feature\CommandStatusControllerTest
+2026-01-02T17:45:56.4722990Z   ✓ command status requires auth                                         0.06s  
+2026-01-02T17:45:56.4735125Z   ✓ command status returns 404 for nonexistent command                   0.07s  
+2026-01-02T17:45:56.4747160Z   ✓ command status allows access for admin                               0.08s  
+2026-01-02T17:45:56.4759256Z   ✓ command status allows access for viewer with zone access             0.08s  
+2026-01-02T17:45:56.4771256Z   ✓ command status allows access via node                                0.09s  
+2026-01-02T17:45:56.4782962Z   ✓ command status denies access for command without zone or node        0.08s  
+2026-01-02T17:45:56.6437659Z 
+2026-01-02T17:45:56.6438266Z    PASS  Tests\Feature\CommandsTest
+2026-01-02T17:45:56.6450872Z   ✓ zone command requires auth                                           0.06s  
+2026-01-02T17:45:56.6462754Z   ✓ zone command validation                                              0.10s  
+2026-01-02T17:45:56.9317414Z 
+2026-01-02T17:45:56.9318046Z    PASS  Tests\Feature\DatabaseIndexesTest
+2026-01-02T17:45:56.9331171Z   ✓ telemetry samples indexes exist                                      0.06s  
+2026-01-02T17:45:56.9342753Z   ✓ commands indexes exist                                               0.06s  
+2026-01-02T17:45:56.9354483Z   ✓ alerts indexes exist                                                 0.05s  
+2026-01-02T17:45:56.9366218Z   ✓ zone events indexes exist                                            0.05s  
+2026-01-02T17:45:56.9377781Z   ✓ indexes are used in queries                                          0.07s  
+2026-01-02T17:45:57.0548066Z 
+2026-01-02T17:45:57.0548933Z    PASS  Tests\Feature\ExampleTest
+2026-01-02T17:45:57.0561193Z   ✓ the application returns a successful response                        0.12s  
+2026-01-02T17:46:01.7495761Z 
+2026-01-02T17:46:01.7496433Z    PASS  Tests\Feature\ExtendedSeedersTest
+2026-01-02T17:46:01.7509371Z   ✓ extended seeders work with new schema                                4.69s  
+2026-01-02T17:46:02.9520412Z 
+2026-01-02T17:46:02.9521072Z    PASS  Tests\Feature\GrowCycleControllerTest
+2026-01-02T17:46:02.9533662Z   ✓ it creates a grow cycle                                              0.14s  
+2026-01-02T17:46:02.9545907Z   ✓ it creates and starts cycle immediately                              0.14s  
+2026-01-02T17:46:02.9558660Z   ✓ it gets active cycle with dto                                        0.15s  
+2026-01-02T17:46:02.9570794Z   ✓ it advances phase                                                    0.17s  
+2026-01-02T17:46:02.9582508Z   ✓ it pauses a cycle                                                    0.15s  
+2026-01-02T17:46:02.9594513Z   ✓ it resumes a cycle                                                   0.14s  
+2026-01-02T17:46:02.9606454Z   ✓ it harvests a cycle                                                  0.15s  
+2026-01-02T17:46:02.9618602Z   ✓ it aborts a cycle                                                    0.15s  
+2026-01-02T17:46:04.3138460Z 
+2026-01-02T17:46:04.3139137Z    PASS  Tests\Feature\GrowCyclePolicyTest
+2026-01-02T17:46:04.3151379Z   ✓ agronomist can manage cycles                                         0.12s  
+2026-01-02T17:46:04.3162595Z   ✓ operator cannot manage cycles                                        0.11s  
+2026-01-02T17:46:04.3173770Z   ✓ agronomist can create cycle                                          0.23s  
+2026-01-02T17:46:04.3185205Z   ✓ operator cannot create cycle                                         0.11s  
+2026-01-02T17:46:04.3196629Z   ✓ agronomist can update cycle                                          0.11s  
+2026-01-02T17:46:04.3207949Z   ✓ operator cannot update cycle                                         0.11s  
+2026-01-02T17:46:04.3219264Z   ✓ anyone can view cycle                                                0.11s  
+2026-01-02T17:46:04.3230671Z   ✓ agronomist can switch phase                                          0.12s  
+2026-01-02T17:46:04.3242190Z   ✓ operator cannot switch phase                                         0.11s  
+2026-01-02T17:46:04.3254100Z   ✓ agronomist can change recipe revision                                0.11s  
+2026-01-02T17:46:04.3265901Z   ✓ operator cannot change recipe revision                               0.11s  
+2026-01-02T17:46:05.0457123Z 
+2026-01-02T17:46:05.0457795Z    PASS  Tests\Feature\GrowCycleServiceTest
+2026-01-02T17:46:05.0470608Z   ✓ it creates a grow cycle                                              0.14s  
+2026-01-02T17:46:05.0482610Z   ✓ it starts a cycle                                                    0.14s  
+2026-01-02T17:46:05.0494830Z   ✓ it computes expected harvest                                         0.14s  
+2026-01-02T17:46:05.0507298Z   ✓ it advances stage automatically                                      0.15s  
+2026-01-02T17:46:05.0519530Z   ✓ it advances to specific stage                                        0.16s  
+2026-01-02T17:46:05.4418086Z 
+2026-01-02T17:46:05.4418759Z    PASS  Tests\Feature\InternalApiControllerTest
+2026-01-02T17:46:05.4431463Z   ✓ it returns effective targets batch for multiple cycles               0.20s  
+2026-01-02T17:46:05.4443468Z   ✓ it validates zone ids                                                0.14s  
+2026-01-02T17:46:05.4455284Z   ✓ it requires authentication                                           0.05s  
+2026-01-02T17:46:05.6207262Z 
+2026-01-02T17:46:05.6208135Z    PASS  Tests\Feature\InternalRealtimeTelemetryBatchTest
+2026-01-02T17:46:05.6221084Z   ✓ batches updates by zone and broadcasts                               0.09s  
+2026-01-02T17:46:05.6233500Z   ✓ rejects payloads exceeding size limit                                0.08s  
+2026-01-02T17:46:06.2401853Z 
+2026-01-02T17:46:06.2402467Z    PASS  Tests\Feature\N1OptimizationTest
+2026-01-02T17:46:06.2415494Z   ✓ zone index uses eager loading                                        0.09s  
+2026-01-02T17:46:06.2427684Z   ✓ zone health uses eager loading                                       0.09s  
+2026-01-02T17:46:06.2439793Z   ✓ node index uses eager loading                                        0.10s  
+2026-01-02T17:46:06.2451982Z   ✓ alert index uses eager loading                                       0.08s  
+2026-01-02T17:46:06.2463902Z   ✓ zone service change phase uses eager loading                         0.14s  
+2026-01-02T17:46:06.2475895Z   ✓ zone harvests uses eager loading                                     0.11s  
+2026-01-02T17:46:06.9043449Z 
+2026-01-02T17:46:06.9044056Z    WARN  Tests\Feature\NodeControllerTest
+2026-01-02T17:46:06.9055535Z   ✓ nodes index requires authentication                                  0.06s  
+2026-01-02T17:46:06.9068183Z   ✓ nodes index returns nodes for authenticated user                     0.09s  
+2026-01-02T17:46:06.9080266Z   ✓ nodes index does not include config                                  0.09s  
+2026-01-02T17:46:06.9092241Z   ✓ nodes show does not include config                                   0.08s  
+2026-01-02T17:46:06.9104731Z   ✓ nodes search escapes special characters                              0.08s  
+2026-01-02T17:46:06.9118601Z   - node registration with service token → Service token not configured  0.05s  
+2026-01-02T17:46:06.9132166Z   - node registration rate limited → Service token not configured        0.05s  
+2026-01-02T17:46:06.9144217Z   ✓ node update requires authorization                                   0.08s  
+2026-01-02T17:46:06.9156543Z   ✓ node update allows operator                                          0.09s  
+2026-01-02T17:46:07.3439226Z 
+2026-01-02T17:46:07.3439849Z    PASS  Tests\Feature\NodeRegistryServiceTest
+2026-01-02T17:46:07.3452965Z   ✓ register node creates new node                                       0.07s  
+2026-01-02T17:46:07.3465169Z   ✓ register node updates existing node                                  0.06s  
+2026-01-02T17:46:07.3477390Z   ✓ register node with zone uid ignored                                  0.06s  
+2026-01-02T17:46:07.3489429Z   ✓ register node with numeric zone uid ignored                          0.06s  
+2026-01-02T17:46:07.3501413Z   ✓ register node sets validated to true                                 0.06s  
+2026-01-02T17:46:07.3513283Z   ✓ register node sets first seen at on first registration               0.06s  
+2026-01-02T17:46:07.3525147Z   ✓ register node preserves first seen at on update                      0.06s  
+2026-01-02T17:46:08.3101890Z 
+2026-01-02T17:46:08.3102460Z    PASS  Tests\Feature\NodesTest
+2026-01-02T17:46:08.3115172Z   ✓ nodes requires auth                                                  0.06s  
+2026-01-02T17:46:08.3126893Z   ✓ create node                                                          0.08s  
+2026-01-02T17:46:08.3138573Z   ✓ get nodes list                                                       0.09s  
+2026-01-02T17:46:08.3150294Z   ✓ get node details                                                     0.08s  
+2026-01-02T17:46:08.3161886Z   ✓ update node                                                          0.08s  
+2026-01-02T17:46:08.3174092Z   ✓ delete node without dependencies                                     0.09s  
+2026-01-02T17:46:08.3185925Z   ✓ delete node attached to zone returns error                           0.09s  
+2026-01-02T17:46:08.3197617Z   ✓ filter nodes by zone                                                 0.10s  
+2026-01-02T17:46:08.3209432Z   ✓ register node requires token when configured                         0.05s  
+2026-01-02T17:46:08.3221206Z   ✓ register node with valid token                                       0.07s  
+2026-01-02T17:46:08.3233060Z   ✓ register node with invalid token                                     0.05s  
+2026-01-02T17:46:08.3244767Z   ✓ register node without token when not configured                      0.05s  
+2026-01-02T17:46:08.3256439Z   ✓ register node hello with token                                       0.07s  
+2026-01-02T17:46:08.8470667Z 
+2026-01-02T17:46:08.8471258Z    PASS  Tests\Feature\PlantsTest
+2026-01-02T17:46:08.8484090Z   ✓ admin can view plants page                                           0.13s  
+2026-01-02T17:46:08.8496017Z   ✓ agronomist can view plants page                                      0.10s  
+2026-01-02T17:46:08.8508149Z   ✓ admin can create plant                                               0.07s  
+2026-01-02T17:46:08.8520478Z   ✓ admin can update plant                                               0.07s  
+2026-01-02T17:46:08.8532683Z   ✓ admin can add price version                                          0.07s  
+2026-01-02T17:46:08.8544685Z   ✓ profitability endpoint returns data                                  0.08s  
+2026-01-02T17:46:09.3729194Z 
+2026-01-02T17:46:09.3729792Z    PASS  Tests\Feature\PresetsTest
+2026-01-02T17:46:09.3742375Z   ✓ presets requires auth                                                0.07s  
+2026-01-02T17:46:09.3753919Z   ✓ create preset                                                        0.07s  
+2026-01-02T17:46:09.3765678Z   ✓ get presets list                                                     0.08s  
+2026-01-02T17:46:09.3777696Z   ✓ get preset details                                                   0.08s  
+2026-01-02T17:46:09.3789214Z   ✓ update preset                                                        0.07s  
+2026-01-02T17:46:09.3800927Z   ✓ delete preset without dependencies                                   0.07s  
+2026-01-02T17:46:09.3812484Z   ✓ delete preset used in zones returns error                            0.08s  
+2026-01-02T17:46:10.1966097Z 
+2026-01-02T17:46:10.1966682Z    PASS  Tests\Feature\ProfileTest
+2026-01-02T17:46:10.1980461Z   ✓ profile page is displayed                                            0.10s  
+2026-01-02T17:46:10.1992636Z   ✓ profile information can be updated                                   0.07s  
+2026-01-02T17:46:10.2005348Z   ✓ email verification status is unchanged when the email address is un… 0.07s  
+2026-01-02T17:46:10.2017098Z   ✓ user can delete their account                                        0.30s  
+2026-01-02T17:46:10.2029681Z   ✓ correct password must be provided to delete account                  0.29s  
+2026-01-02T17:46:10.8651447Z 
+2026-01-02T17:46:10.8652093Z    PASS  Tests\Feature\PythonIngestControllerTest
+2026-01-02T17:46:10.8665174Z   ✓ telemetry endpoint requires auth                                     0.06s  
+2026-01-02T17:46:10.8677371Z   ✓ telemetry endpoint proxies to history logger                         0.09s  
+2026-01-02T17:46:10.8689728Z   ✓ telemetry endpoint does not write to database                        0.08s  
+2026-01-02T17:46:10.8701121Z   ✓ telemetry endpoint handles history logger error                      0.07s  
+2026-01-02T17:46:10.8712927Z   ✓ telemetry endpoint validation                                        0.09s  
+2026-01-02T17:46:10.8725154Z   ✓ telemetry endpoint validates node belongs to zone                    0.08s  
+2026-01-02T17:46:10.8737079Z   ✓ telemetry endpoint allows zone without node                          0.06s  
+2026-01-02T17:46:10.8749013Z   ✓ command ack endpoint does not update status                          0.07s  
+2026-01-02T17:46:10.8760809Z   ✓ command ack endpoint requires auth                                   0.05s  
+2026-01-02T17:46:11.4689077Z 
+2026-01-02T17:46:11.4689727Z    PASS  Tests\Feature\RecipeRevisionControllerTest
+2026-01-02T17:46:11.4702002Z   ✓ it shows recipe revision with phases                                 0.13s  
+2026-01-02T17:46:11.4713545Z   ✓ it creates new revision from existing                                0.12s  
+2026-01-02T17:46:11.4725971Z   ✓ it updates draft revision                                            0.09s  
+2026-01-02T17:46:11.4738073Z   ✓ it publishes draft revision                                          0.10s  
+2026-01-02T17:46:11.4749626Z   ✓ it prevents non agronomist from creating revision                    0.07s  
+2026-01-02T17:46:11.4760906Z   ✓ it prevents updating published revision                              0.09s  
+2026-01-02T17:46:11.9115991Z 
+2026-01-02T17:46:11.9116630Z    PASS  Tests\Feature\RecipeStageMapControllerTest
+2026-01-02T17:46:11.9128612Z   ✓ it gets stage map for recipe                                         0.12s  
+2026-01-02T17:46:11.9140237Z   ✓ it auto generates stage map when missing                             0.10s  
+2026-01-02T17:46:11.9151876Z   ✓ it updates stage map                                                 0.07s  
+2026-01-02T17:46:11.9163328Z   ✓ it requires authentication to update                                 0.07s  
+2026-01-02T17:46:11.9174852Z   ✓ it validates stage map data                                          0.07s  
+2026-01-02T17:46:12.8587709Z 
+2026-01-02T17:46:12.8588319Z    PASS  Tests\Feature\RecipesTest
+2026-01-02T17:46:12.8600643Z   ✓ recipes requires auth                                                0.06s  
+2026-01-02T17:46:12.8611856Z   ✓ create recipe                                                        0.08s  
+2026-01-02T17:46:12.8623174Z   ✓ get recipes list                                                     0.11s  
+2026-01-02T17:46:12.8634725Z   ✓ get recipe details                                                   0.11s  
+2026-01-02T17:46:12.8646096Z   ✓ update recipe                                                        0.08s  
+2026-01-02T17:46:12.8657543Z   ✓ delete recipe without dependencies                                   0.09s  
+2026-01-02T17:46:12.8668792Z   ✓ delete recipe used in zones returns error                            0.12s  
+2026-01-02T17:46:12.8679828Z   ✓ add phase to recipe                                                  0.10s  
+2026-01-02T17:46:12.8690920Z   ✓ update phase                                                         0.10s  
+2026-01-02T17:46:12.8702136Z   ✓ delete phase                                                         0.09s  
+2026-01-02T17:46:13.3493221Z 
+2026-01-02T17:46:13.3493805Z    PASS  Tests\Feature\ReportsTest
+2026-01-02T17:46:13.3506433Z   ✓ recipe analytics requires auth                                       0.09s  
+2026-01-02T17:46:13.3518655Z   ✓ get recipe analytics                                                 0.10s  
+2026-01-02T17:46:13.3530053Z   ✓ get zone harvests                                                    0.10s  
+2026-01-02T17:46:13.3541587Z   ✓ create harvest                                                       0.10s  
+2026-01-02T17:46:13.3553004Z   ✓ compare recipes                                                      0.10s  
+2026-01-02T17:46:13.6253942Z 
+2026-01-02T17:46:13.6254831Z    PASS  Tests\Feature\SecurityMiddlewareTest
+2026-01-02T17:46:13.6267752Z   ✓ verify python service token requires token in production             0.05s  
+2026-01-02T17:46:13.6279548Z   ✓ verify python service token denies access when token not configured  0.05s  
+2026-01-02T17:46:13.6291051Z   ✓ verify alertmanager webhook requires secret                          0.06s  
+2026-01-02T17:46:13.6302380Z   ✓ node registration requires token                                     0.05s  
+2026-01-02T17:46:13.6313828Z   ✓ node registration denies when token not configured                   0.06s  
+2026-01-02T17:46:13.8700388Z 
+2026-01-02T17:46:13.8701089Z    PASS  Tests\Feature\ServiceLogApiTest
+2026-01-02T17:46:13.8715419Z   ✓ returns logs with service and level filters                          0.10s  
+2026-01-02T17:46:13.8727697Z   ✓ supports search and date filters                                     0.07s  
+2026-01-02T17:46:13.8739690Z   ✓ forbids access for viewer role                                       0.06s  
+2026-01-02T17:46:14.5045051Z 
+2026-01-02T17:46:14.5045782Z    PASS  Tests\Feature\SimulationControllerTest
+2026-01-02T17:46:14.5058262Z   ✓ simulate zone requires authentication                                0.08s  
+2026-01-02T17:46:14.5070318Z   ✓ simulate zone validates input                                        0.07s  
+2026-01-02T17:46:14.5082473Z   ✓ simulate zone success                                                0.08s  
+2026-01-02T17:46:14.5094172Z   ✓ simulate zone uses zone active recipe if no recipe id provided       0.14s  
+2026-01-02T17:46:14.5106223Z   ✓ simulate zone handles digital twin error                             0.08s  
+2026-01-02T17:46:14.5118100Z   ✓ simulate zone handles connection error                               0.08s  
+2026-01-02T17:46:14.5129596Z   ✓ simulate zone with minimal parameters                                0.08s  
+2026-01-02T17:46:15.0219914Z 
+2026-01-02T17:46:15.0220588Z    PASS  Tests\Feature\SystemControllerTest
+2026-01-02T17:46:15.0232866Z   ✓ system health is public                                              0.07s  
+2026-01-02T17:46:15.0243604Z   ✓ system config full requires auth                                     0.05s  
+2026-01-02T17:46:15.0254910Z   ✓ system config full with auth                                         0.10s  
+2026-01-02T17:46:15.0266188Z   ✓ system config full includes all relations                            0.09s  
+2026-01-02T17:46:15.0277172Z   ✓ system config full filters zones by user access                      0.11s  
+2026-01-02T17:46:15.0287942Z   ✓ system config full excludes node config                              0.10s  
+2026-01-02T17:46:17.9076406Z 
+2026-01-02T17:46:17.9077110Z    PASS  Tests\Feature\TelemetryCleanupCommandTest
+2026-01-02T17:46:17.9090025Z   ✓ telemetry cleanup uses chunking                                      2.64s  
+2026-01-02T17:46:17.9102109Z   ✓ telemetry cleanup empty table                                        0.05s  
+2026-01-02T17:46:17.9114387Z   ✓ telemetry cleanup no old records                                     0.18s  
+2026-01-02T17:46:18.3496506Z 
+2026-01-02T17:46:18.3497129Z    PASS  Tests\Feature\TelemetryLedgerFilterTest
+2026-01-02T17:46:18.3509984Z   ✓ first value is always recorded                                       0.06s  
+2026-01-02T17:46:18.3522031Z   ✓ significant change is recorded                                       0.05s  
+2026-01-02T17:46:18.3534641Z   ✓ insignificant change is not recorded                                 0.05s  
+2026-01-02T17:46:18.3546117Z   ✓ too frequent updates are not recorded                                0.05s  
+2026-01-02T17:46:18.3557586Z   ✓ different metrics have different thresholds                          0.05s  
+2026-01-02T17:46:18.3568940Z   ✓ different zones have independent filtering                           0.05s  
+2026-01-02T17:46:18.3580362Z   ✓ negative change is handled correctly                                 0.06s  
+2026-01-02T17:46:18.3591808Z   ✓ unknown metric uses default threshold                                0.05s  
+2026-01-02T17:46:19.0679689Z 
+2026-01-02T17:46:19.0680329Z    PASS  Tests\Feature\TelemetryTest
+2026-01-02T17:46:19.0692851Z   ✓ zone telemetry endpoints require auth                                0.07s  
+2026-01-02T17:46:19.0704156Z   ✓ zone telemetry history validation                                    0.07s  
+2026-01-02T17:46:19.0715588Z   ✓ node telemetry requires auth                                         0.06s  
+2026-01-02T17:46:19.0727553Z   ✓ node telemetry allows access for authorized user                     0.09s  
+2026-01-02T17:46:19.0739619Z   ✓ zone telemetry history returns samples                               0.09s  
+2026-01-02T17:46:19.0751288Z   ✓ zone telemetry last returns object                                   0.10s  
+2026-01-02T17:46:19.0762940Z   ✓ node telemetry history returns samples                               0.09s  
+2026-01-02T17:46:19.0774231Z   ✓ telemetry aggregates requires auth                                   0.06s  
+2026-01-02T17:46:19.0785471Z   ✓ telemetry aggregates validates zone access                           0.08s  
+2026-01-02T17:46:19.3434160Z 
+2026-01-02T17:46:19.3435044Z    WARN  Tests\Feature\TimescaleDBRetentionTest
+2026-01-02T17:46:19.3447407Z   ✓ timescaledb extension exists                                         0.06s  
+2026-01-02T17:46:19.3461220Z   - telemetry samples is hypertable → Cannot check hypertable: telemetr… 0.05s  
+2026-01-02T17:46:19.3474720Z   - telemetry samples retention policy → Cannot check retention policy:… 0.05s  
+2026-01-02T17:46:19.3489196Z   - telemetry agg 1m retention policy → Cannot check retention policy:…  0.05s  
+2026-01-02T17:46:19.3502640Z   - telemetry agg 1h retention policy → Cannot check retention policy:…  0.06s  
+2026-01-02T17:46:20.0936348Z 
+2026-01-02T17:46:20.0937043Z    PASS  Tests\Feature\UnassignedNodeErrorsAttachTest
+2026-01-02T17:46:20.0949269Z   ✓ unassigned errors become alerts after node registration              0.11s  
+2026-01-02T17:46:20.0960692Z   ✓ unassigned errors not archived if node not attached to zone          0.06s  
+2026-01-02T17:46:20.0972340Z   ✓ preserves earliest first seen at when updating existing alert        0.09s  
+2026-01-02T17:46:20.0983685Z   ✓ handles errors without error code                                    0.09s  
+2026-01-02T17:46:20.0995194Z   ✓ creates zone event with correct data                                 0.11s  
+2026-01-02T17:46:20.1006518Z   ✓ handles multiple errors efficiently                                  0.28s  
+2026-01-02T17:46:20.6481145Z 
+2026-01-02T17:46:20.6481788Z    PASS  Tests\Feature\UnassignedNodeErrorsTest
+2026-01-02T17:46:20.6494100Z   ✓ unassigned errors table exists                                       0.06s  
+2026-01-02T17:46:20.6505322Z   ✓ can insert unassigned error                                          0.06s  
+2026-01-02T17:46:20.6519939Z   ✓ unique constraint on hardware id and code                            0.05s  
+2026-01-02T17:46:20.6531498Z   ✓ get zone unassigned errors requires auth                             0.06s  
+2026-01-02T17:46:20.6542779Z   ✓ get zone unassigned errors                                           0.09s  
+2026-01-02T17:46:20.6554507Z   ✓ unassigned errors attached to node on registration                   0.09s  
+2026-01-02T17:46:20.6566048Z   ✓ unassigned errors filtered by severity                               0.09s  
+2026-01-02T17:46:20.6577243Z   ✓ unassigned errors with null error code                               0.05s  
+2026-01-02T17:46:21.3691873Z 
+2026-01-02T17:46:21.3694426Z    PASS  Tests\Feature\ZoneEventLedgerTest
+2026-01-02T17:46:21.3705283Z   ✓ zone events table has correct structure                              0.06s  
+2026-01-02T17:46:21.3716807Z   ✓ command status updated records to zone events                        0.07s  
+2026-01-02T17:46:21.3728197Z   ✓ alert created records to zone events                                 0.06s  
+2026-01-02T17:46:21.3739602Z   ✓ events api returns events in order                                   0.09s  
+2026-01-02T17:46:21.3751007Z   ✓ events api supports after id pagination                              0.10s  
+2026-01-02T17:46:21.3762364Z   ✓ events api requires authentication                                   0.06s  
+2026-01-02T17:46:21.3773639Z   ✓ events api requires zone access                                      0.09s  
+2026-01-02T17:46:21.3785015Z   ✓ parallel events maintain strict order                                0.07s  
+2026-01-02T17:46:21.3796429Z   ✓ catch up after websocket disconnect                                  0.11s  
+2026-01-02T17:46:22.2507320Z 
+2026-01-02T17:46:22.2508011Z    PASS  Tests\Feature\ZonePidConfigControllerTest
+2026-01-02T17:46:22.2520494Z   ✓ can get pid config for zone and type                                 0.09s  
+2026-01-02T17:46:22.2531791Z   ✓ can get all pid configs for zone                                     0.07s  
+2026-01-02T17:46:22.2543130Z   ✓ can create pid config                                                0.09s  
+2026-01-02T17:46:22.2554624Z   ✓ can update existing pid config                                       0.09s  
+2026-01-02T17:46:22.2566022Z   ✓ validates pid config fields                                          0.08s  
+2026-01-02T17:46:22.2577079Z   ✓ rate limiting on update                                              0.29s  
+2026-01-02T17:46:22.2588264Z   ✓ creates pid config updated event                                     0.09s  
+2026-01-02T17:46:22.2599278Z   ✓ rejects invalid type                                                 0.07s  
+2026-01-02T17:46:22.6464824Z 
+2026-01-02T17:46:22.6465542Z    PASS  Tests\Feature\ZonePidConfigValidationTest
+2026-01-02T17:46:22.6477817Z   ✓ validates zone order dead less than close                            0.08s  
+2026-01-02T17:46:22.6490071Z   ✓ validates zone order close less than far                             0.07s  
+2026-01-02T17:46:22.6502227Z   ✓ validates enable autotune is required                                0.07s  
+2026-01-02T17:46:22.6514151Z   ✓ validates adaptation rate is required                                0.07s  
+2026-01-02T17:46:22.6526258Z   ✓ accepts valid zone order                                             0.08s  
+2026-01-02T17:46:22.9392156Z 
+2026-01-02T17:46:22.9393409Z    PASS  Tests\Feature\ZonePidLogControllerTest
+2026-01-02T17:46:22.9406455Z   ✓ can get pid logs                                                     0.09s  
+2026-01-02T17:46:22.9418684Z   ✓ can filter pid logs by type                                          0.10s  
+2026-01-02T17:46:22.9431194Z   ✓ pid logs supports pagination                                         0.10s  
+2026-01-02T17:46:23.8028118Z 
+2026-01-02T17:46:23.8028760Z    PASS  Tests\Feature\ZoneSnapshotTest
+2026-01-02T17:46:23.8041018Z   ✓ snapshot includes last event id and server ts                        0.11s  
+2026-01-02T17:46:23.8052141Z   ✓ snapshot is atomic                                                   0.12s  
+2026-01-02T17:46:23.8063539Z   ✓ snapshot includes devices online state                               0.10s  
+2026-01-02T17:46:23.8075003Z   ✓ snapshot includes active alerts                                      0.10s  
+2026-01-02T17:46:23.8086590Z   ✓ snapshot includes latest telemetry per channel                       0.11s  
+2026-01-02T17:46:23.8097749Z   ✓ snapshot includes commands recent                                    0.12s  
+2026-01-02T17:46:23.8108866Z   ✓ snapshot catch up after event gap                                    0.13s  
+2026-01-02T17:46:23.8120188Z   ✓ snapshot requires authentication                                     0.06s  
+2026-01-02T17:46:26.2671071Z 
+2026-01-02T17:46:26.2671657Z    PASS  Tests\Feature\ZonesTest
+2026-01-02T17:46:26.2684096Z   ✓ zones requires auth                                                  0.06s  
+2026-01-02T17:46:26.2696799Z   ✓ create zone                                                          0.08s  
+2026-01-02T17:46:26.2708015Z   ✓ get zones list                                                       0.09s  
+2026-01-02T17:46:26.2719439Z   ✓ get zone details                                                     0.08s  
+2026-01-02T17:46:26.2731014Z   ✓ update zone                                                          0.10s  
+2026-01-02T17:46:26.2742460Z   ✓ delete zone without dependencies                                     0.10s  
+2026-01-02T17:46:26.2755165Z   ✓ delete zone with active recipe returns error                         0.14s  
+2026-01-02T17:46:26.2767390Z   ✓ attach recipe to zone                                                0.14s  
+2026-01-02T17:46:26.2779506Z   ✓ change phase                                                         0.17s  
+2026-01-02T17:46:26.2791571Z   ✓ pause zone                                                           0.15s  
+2026-01-02T17:46:26.2803524Z   ✓ resume zone                                                          0.15s  
+2026-01-02T17:46:26.2815759Z   ✓ fill zone                                                            0.14s  
+2026-01-02T17:46:26.2827969Z   ✓ drain zone success                                                   0.15s  
+2026-01-02T17:46:26.2840110Z   ✓ drain zone python service down                                       0.14s  
+2026-01-02T17:46:26.2852056Z   ✓ next phase success                                                   0.17s  
+2026-01-02T17:46:26.2864138Z   ✓ next phase no current phase                                          0.13s  
+2026-01-02T17:46:26.2876460Z   ✓ next phase last phase                                                0.14s  
+2026-01-02T17:46:26.2888535Z   ✓ zone show includes phase progress                                    0.15s  
+2026-01-02T17:46:26.2900672Z   ✓ phase progress calculation                                           0.16s  
+2026-01-02T17:46:26.2923660Z 
+2026-01-02T17:46:26.2927224Z   Tests:    6 skipped, 419 passed (1385 assertions)
+2026-01-02T17:46:26.2928127Z   Duration: 62.26s
+2026-01-02T17:46:26.2928344Z 

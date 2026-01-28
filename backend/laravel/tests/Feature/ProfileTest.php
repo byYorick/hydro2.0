@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -80,7 +80,7 @@ class ProfileTest extends TestCase
 
         $response
             ->assertSessionHasNoErrors()
-            ->assertRedirect('/');
+            ->assertRedirect('/login');
 
         $this->assertGuest();
         $this->assertNull($user->fresh());

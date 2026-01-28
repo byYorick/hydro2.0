@@ -11,6 +11,8 @@
 
 #include "ec_node_init_steps.h"
 #include "ec_node_defaults.h"
+#include "ec_node_channel_map.h"
+#include "init_steps_utils.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -26,25 +28,12 @@
 
 static const char *TAG = "ec_node_init_steps";
 
-// Вспомогательная функция для получения значения из config_storage с дефолтом
-static esp_err_t get_config_string(const char *key, char *buffer, size_t buffer_size, const char *default_value) {
-    esp_err_t err = ESP_ERR_NOT_FOUND;
-    
-    if (strcmp(key, "node_id") == 0) {
-        err = config_storage_get_node_id(buffer, buffer_size);
-    } else if (strcmp(key, "gh_uid") == 0) {
-        err = config_storage_get_gh_uid(buffer, buffer_size);
-    } else if (strcmp(key, "zone_uid") == 0) {
-        err = config_storage_get_zone_uid(buffer, buffer_size);
-    }
-    
-    if (err != ESP_OK && default_value) {
-        strncpy(buffer, default_value, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
-        return ESP_OK;
-    }
-    
-    return err;
+static esp_err_t ec_node_patch_pump_config(void) {
+    return init_steps_utils_patch_pump_config(
+        ec_node_build_config_channels,
+        EC_NODE_PUMP_CURRENT_MIN_MA,
+        EC_NODE_PUMP_CURRENT_MAX_MA
+    );
 }
 
 esp_err_t ec_node_init_step_config_storage(ec_node_init_context_t *ctx, 
@@ -214,7 +203,7 @@ esp_err_t ec_node_init_step_oled(ec_node_init_context_t *ctx,
     
     // Получаем node_id из config_storage или используем дефолт
     char node_id[64];
-    get_config_string("node_id", node_id, sizeof(node_id), EC_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), EC_NODE_DEFAULT_NODE_ID);
     ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
     
     oled_ui_config_t oled_config = {
@@ -264,7 +253,14 @@ esp_err_t ec_node_init_step_pumps(ec_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    esp_err_t err = pump_driver_init_from_config();
+    esp_err_t err = ec_node_patch_pump_config();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Pump config patched with firmware channels/limits");
+    } else if (err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to patch pump config: %s", esp_err_to_name(err));
+    }
+
+    err = pump_driver_init_from_config();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Pump driver initialized successfully from config");
         if (result) {
@@ -346,9 +342,9 @@ esp_err_t ec_node_init_step_mqtt(ec_node_init_context_t *ctx,
     }
     
     // Получение node_id, gh_uid, zone_uid
-    get_config_string("node_id", node_id, sizeof(node_id), EC_NODE_DEFAULT_NODE_ID);
-    get_config_string("gh_uid", gh_uid, sizeof(gh_uid), EC_NODE_DEFAULT_GH_UID);
-    get_config_string("zone_uid", zone_uid, sizeof(zone_uid), EC_NODE_DEFAULT_ZONE_UID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), EC_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("gh_uid", gh_uid, sizeof(gh_uid), EC_NODE_DEFAULT_GH_UID);
+    init_steps_utils_get_config_string("zone_uid", zone_uid, sizeof(zone_uid), EC_NODE_DEFAULT_ZONE_UID);
     
     node_info.node_uid = node_id;
     node_info.gh_uid = gh_uid;
@@ -409,4 +405,3 @@ esp_err_t ec_node_init_step_finalize(ec_node_init_context_t *ctx,
     
     return ESP_OK;
 }
-

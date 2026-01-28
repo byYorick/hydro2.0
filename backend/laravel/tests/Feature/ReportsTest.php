@@ -7,7 +7,7 @@ use App\Models\Recipe;
 use App\Models\Zone;
 use App\Models\RecipeAnalytics;
 use App\Models\Harvest;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ReportsTest extends TestCase

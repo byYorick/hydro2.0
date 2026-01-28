@@ -5,7 +5,7 @@ namespace Tests\Unit\Models;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZonePidConfig;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZonePidConfigTest extends TestCase
