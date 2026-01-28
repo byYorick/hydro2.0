@@ -57,11 +57,11 @@ class SimulationOrchestratorService
                 'preset_id' => $sourceZone->preset_id,
                 'name' => 'SIM ' . ($sourceZone->name ?: ('Zone ' . $sourceZone->id)),
                 'description' => $sourceZone->description,
-                'status' => 'offline',
+                'status' => 'RUNNING',
                 'health_score' => $sourceZone->health_score,
                 'health_status' => $sourceZone->health_status,
                 'hardware_profile' => $sourceZone->hardware_profile,
-                'capabilities' => $sourceZone->capabilities,
+                'capabilities' => $this->buildSimulationCapabilities($sourceZone, $fullSimulation),
                 'water_state' => $sourceZone->water_state,
                 'solution_started_at' => $sourceZone->solution_started_at,
                 'settings' => $this->buildSimulationSettings($sourceZone),
@@ -111,6 +111,26 @@ class SimulationOrchestratorService
         );
 
         return $settings;
+    }
+
+    private function buildSimulationCapabilities(Zone $sourceZone, bool $fullSimulation): array
+    {
+        $capabilities = $sourceZone->capabilities ?? [];
+        if (! is_array($capabilities)) {
+            $capabilities = [];
+        }
+
+        if ($fullSimulation) {
+            $capabilities = array_merge($capabilities, [
+                'ph_control' => true,
+                'ec_control' => true,
+                'climate_control' => true,
+                'light_control' => true,
+                'irrigation_control' => true,
+            ]);
+        }
+
+        return $capabilities;
     }
 
     /**
@@ -524,7 +544,7 @@ class SimulationOrchestratorService
     private function buildReportMetrics(int $simulationId, int $zoneId, GrowCycle $cycle, array $phases, Carbon $finishedAt): array
     {
         $startedAt = $cycle->started_at ?? $cycle->created_at ?? now();
-        $durationSeconds = $finishedAt->diffInSeconds($startedAt);
+        $durationSeconds = max(0, $finishedAt->diffInSeconds($startedAt, false));
 
         return [
             'phases_count' => count($phases),

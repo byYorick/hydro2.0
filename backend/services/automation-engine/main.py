@@ -68,6 +68,7 @@ from repositories import (
     GrowCycleRepository,
     InfrastructureRepository
 )
+from repositories.laravel_api_repository import LaravelApiRepository
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
 from config.settings import get_settings as get_automation_settings
@@ -594,6 +595,7 @@ async def main():
     # Инициализация Circuit Breakers
     db_circuit_breaker = CircuitBreaker("database", failure_threshold=5, timeout=60.0)
     api_circuit_breaker = CircuitBreaker("laravel_api", failure_threshold=5, timeout=60.0)
+    command_api_circuit_breaker = CircuitBreaker("history_logger_api", failure_threshold=5, timeout=30.0)
     mqtt_circuit_breaker = CircuitBreaker("mqtt", failure_threshold=3, timeout=30.0)
     
     # Инициализация Command Tracker
@@ -641,23 +643,44 @@ async def main():
         async with httpx.AsyncClient() as client:
             active_zones: List[Dict[str, Any]] = []
             global _zone_service
+            last_config: Optional[Dict[str, Any]] = None
+            last_config_ts = 0.0
+            laravel_api_repo = LaravelApiRepository()
             
             while not _shutdown_event.is_set():
                 try:
-                    # Fetch config через Circuit Breaker
-                    try:
-                        cfg = await fetch_full_config(
-                            client, s.laravel_api_url, s.laravel_api_token, api_circuit_breaker
-                        )
-                    except CircuitBreakerOpenError:
-                        logger.warning("API Circuit Breaker is OPEN, using cached config or skipping")
-                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                        continue
+                    # Fetch config через Circuit Breaker (c кешированием)
+                    cfg: Optional[Dict[str, Any]] = None
+                    now = time.monotonic()
+                    if last_config and (now - last_config_ts) < automation_settings.CONFIG_FETCH_MIN_INTERVAL_SECONDS:
+                        cfg = last_config
+                    else:
+                        try:
+                            cfg = await fetch_full_config(
+                                client, s.laravel_api_url, s.laravel_api_token, api_circuit_breaker
+                            )
+                        except CircuitBreakerOpenError:
+                            if last_config:
+                                logger.warning("API Circuit Breaker is OPEN, using cached config")
+                                cfg = last_config
+                                last_config_ts = now
+                            else:
+                                logger.warning("API Circuit Breaker is OPEN, no cached config available")
+                                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                                continue
                     
-                    if not cfg:
-                        logger.warning("Config fetch returned None, sleeping before retry")
-                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                        continue
+                        if not cfg:
+                            if last_config:
+                                logger.warning("Config fetch returned None, using cached config")
+                                cfg = last_config
+                                last_config_ts = now
+                            else:
+                                logger.warning("Config fetch returned None, sleeping before retry")
+                                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                                continue
+                    else:
+                        last_config = cfg
+                        last_config_ts = now
                     
                     # Validate config structure
                     is_valid, error_msg = validate_config(cfg)
@@ -680,7 +703,10 @@ async def main():
                     telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
                     node_repo = NodeRepository()
                     recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
-                    grow_cycle_repo = GrowCycleRepository(db_circuit_breaker=db_circuit_breaker)
+                    grow_cycle_repo = GrowCycleRepository(
+                        laravel_api_repo=laravel_api_repo,
+                        db_circuit_breaker=db_circuit_breaker
+                    )
                     infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
                     
                     # Инициализация Command Audit
@@ -700,7 +726,7 @@ async def main():
                             command_validator=command_validator,
                             command_tracker=_command_tracker,
                             command_audit=command_audit,
-                            api_circuit_breaker=api_circuit_breaker
+                            api_circuit_breaker=command_api_circuit_breaker
                         )
                         await _command_bus.start()
                         logger.info("CommandBus initialized with long-lived HTTP client")

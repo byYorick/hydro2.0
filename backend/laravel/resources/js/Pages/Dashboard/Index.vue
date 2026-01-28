@@ -755,7 +755,7 @@ function restoreTelemetryPreferences(): void {
 // Телеметрия для мини-графиков
 const { fetchAggregates } = useTelemetry()
 const { subscribeToGlobalEvents } = useWebSocket()
-const telemetryMetricKeys = ['ph', 'ec', 'temp', 'humidity'] as const
+const telemetryMetricKeys = ['ph', 'ec', 'temperature', 'humidity'] as const
 type TelemetryMetricKey = typeof telemetryMetricKeys[number]
 
 interface TelemetryMiniChartState {
@@ -768,7 +768,7 @@ interface TelemetryMiniChartState {
 const telemetryData = shallowRef<Record<TelemetryMetricKey, TelemetryMiniChartState>>({
   ph: { data: [], currentValue: null, loading: false },
   ec: { data: [], currentValue: null, loading: false },
-  temp: { data: [], currentValue: null, loading: false },
+  temperature: { data: [], currentValue: null, loading: false },
   humidity: { data: [], currentValue: null, loading: false },
 })
 
@@ -855,7 +855,7 @@ const telemetryPalette = computed(() => {
   return {
     ph: resolveCssColor('--accent-cyan', '#3b82f6'),
     ec: resolveCssColor('--accent-green', '#10b981'),
-    temp: resolveCssColor('--accent-amber', '#f59e0b'),
+    temperature: resolveCssColor('--accent-amber', '#f59e0b'),
     humidity: resolveCssColor('--accent-lime', '#8b5cf6'),
   }
 })
@@ -884,13 +884,13 @@ const telemetryMetrics = computed(() => {
       color: palette.ec
     },
     {
-      key: 'temp',
+      key: 'temperature',
       label: 'Температура',
-      data: data.temp.data,
-      currentValue: data.temp.currentValue === null ? undefined : data.temp.currentValue,
+      data: data.temperature.data,
+      currentValue: data.temperature.currentValue === null ? undefined : data.temperature.currentValue,
       unit: '°C',
-      loading: data.temp.loading,
-      color: palette.temp
+      loading: data.temperature.loading,
+      color: palette.temperature
     },
     {
       key: 'humidity',

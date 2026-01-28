@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ZoneSimulation;
+use App\Jobs\RunSimulationReportJob;
 use App\Services\DigitalTwinClient;
 use App\Services\SimulationOrchestratorService;
 use App\Models\Zone;
@@ -152,10 +153,7 @@ class RunSimulationJob implements ShouldQueue
                 ]);
 
                 if ($simulationId && $fullSimulation) {
-                    $simulation = $this->resolveSimulation($simulationId);
-                    if ($simulation) {
-                        $orchestrator->executeFullSimulation($simulation, $context);
-                    }
+                    RunSimulationReportJob::dispatch($simulationId);
                 }
 
                 return;

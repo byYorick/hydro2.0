@@ -1,0 +1,237 @@
+# E92: Digital Twin Model Simulation
+# DoD: модельная симуляция проходит через Laravel -> Digital Twin -> БД
+
+name: E92_digital_twin_model_simulation
+description: |
+  Проверяет model-симуляцию через Digital Twin:
+  - создается зона-источник
+  - запускается симуляция (без live/pipeline)
+  - формируется запись zone_simulations со статусом completed и результатами
+  - события job идут в порядке running → completed
+
+actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: set_greenhouse_ids
+    type: set
+    greenhouse_id: ${greenhouses_response.data.data[0].id}
+    greenhouse_uid: ${greenhouses_response.data.data[0].uid}
+
+  - step: set_zone_uid
+    type: set
+    zone_uid: zn-dt-${TIMESTAMP_S}
+
+  - step: create_zone
+    type: api_post
+    endpoint: /api/zones
+    payload:
+      name: e2e-dt-zone-${TIMESTAMP_S}
+      uid: ${zone_uid}
+      greenhouse_id: ${greenhouse_id}
+    save: zone_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_response.data.id}
+
+  - step: fetch_published_recipe
+    type: database_query
+    query: |
+      SELECT recipe_id
+      FROM recipe_revisions
+      WHERE status = 'PUBLISHED'
+      ORDER BY revision_number DESC
+      LIMIT 1
+    expected_rows: 1
+    save: recipe_row
+
+  - step: set_recipe_id
+    type: set
+    recipe_id: ${recipe_row.0.recipe_id}
+
+  - step: capture_anchor_time
+    type: database_query
+    query: |
+      SELECT NOW() - INTERVAL '5 seconds' AS anchor_time
+    expected_rows: 1
+    save: anchor_row
+
+  - step: set_anchor_time
+    type: set
+    anchor_time: ${anchor_row.0.anchor_time}
+
+  - step: start_model_simulation
+    type: api_post
+    endpoint: /api/zones/${zone_id}/simulate
+    payload:
+      duration_hours: 6
+      step_minutes: 10
+      recipe_id: ${recipe_id}
+      initial_state:
+        ph: 6.1
+        ec: 1.3
+        temp_air: 22.5
+        temp_water: 20.0
+        humidity_air: 58.0
+    save: simulate_response
+
+  - step: set_job_id
+    type: set
+    job_id: ${simulate_response.data.job_id}
+
+  - step: wait_for_simulation_row
+    type: db_wait
+    query: |
+      SELECT
+        id AS simulation_id,
+        status,
+        scenario->'simulation'->>'engine' AS engine,
+        scenario->'simulation'->>'mode' AS mode,
+        created_at
+      FROM zone_simulations
+      WHERE zone_id = :zone_id
+        AND created_at >= :anchor_time
+        AND scenario->'simulation'->>'engine' = 'digital_twin'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      anchor_time: ${anchor_time}
+    timeout: 30.0
+    expected_rows: 1
+    save: simulation_row
+
+  - step: set_simulation_id
+    type: set
+    simulation_id: ${simulation_row.0.simulation_id}
+
+  - step: wait_for_simulation_completed
+    type: db_wait
+    query: |
+      SELECT
+        status,
+        jsonb_array_length(results->'points') AS points_count
+      FROM zone_simulations
+      WHERE id = :simulation_id
+        AND status = 'completed'
+        AND results IS NOT NULL
+        AND jsonb_array_length(results->'points') > 0
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    timeout: 60.0
+    expected_rows: 1
+
+  - step: wait_for_cache_update
+    type: wait
+    seconds: 2
+
+  - step: fetch_simulation_status
+    type: api_get
+    endpoint: /api/simulations/${job_id}
+    save: simulation_status_response
+
+assertions:
+  - name: simulation_meta_engine_mode
+    type: database_query
+    query: |
+      SELECT
+        scenario->'simulation'->>'engine' AS engine,
+        scenario->'simulation'->>'mode' AS mode
+      FROM zone_simulations
+      WHERE id = :simulation_id
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    expected:
+      - field: engine
+        operator: equals
+        value: "digital_twin"
+      - field: mode
+        operator: equals
+        value: "model"
+
+  - name: simulation_results_has_points
+    type: database_query
+    query: |
+      SELECT
+        status,
+        jsonb_array_length(results->'points') AS points_count
+      FROM zone_simulations
+      WHERE id = :simulation_id
+      LIMIT 1
+    params:
+      simulation_id: ${simulation_id}
+    expected:
+      - field: status
+        operator: equals
+        value: "completed"
+      - field: points_count
+        operator: greater_than
+        value: 0
+
+  - name: simulation_event_sequence
+    type: database_query
+    query: |
+      SELECT
+        SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_count,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+        EXTRACT(EPOCH FROM (
+          MIN(CASE WHEN status = 'completed' THEN occurred_at END)
+          - MIN(CASE WHEN status = 'running' THEN occurred_at END)
+        )) AS completion_gap_sec
+      FROM simulation_events
+      WHERE simulation_id = :simulation_id
+        AND stage = 'job'
+    params:
+      simulation_id: ${simulation_id}
+    expected:
+      - field: running_count
+        operator: equals
+        value: 1
+      - field: completed_count
+        operator: equals
+        value: 1
+      - field: completion_gap_sec
+        operator: greater_than_or_equal
+        value: 0
+
+  - name: simulation_api_status
+    type: json_assertion
+    source: simulation_status_response
+    path: data
+    expected:
+      - field: status
+        operator: in
+        value: ["queued", "processing", "completed"]
+      - field: simulation.engine
+        operator: equals
+        value: "digital_twin"
+        optional: true
+      - field: simulation.mode
+        operator: equals
+        value: "model"
+        optional: true
+      - field: result.status
+        operator: equals
+        value: "ok"
+        optional: true
+
+  - name: simulation_api_points_length
+    type: json_assertion
+    source: simulation_status_response
+    path: data.result.data.points
+    expected:
+      - field: length
+        operator: greater_than
+        value: 0
+        optional: true
+
+cleanup:
+  - step: delete_source_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true

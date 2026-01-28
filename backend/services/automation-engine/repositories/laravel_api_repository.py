@@ -4,7 +4,9 @@ Laravel API Repository - доступ к данным через Laravel API в�
 """
 import json
 import logging
-from typing import Dict, Any, Optional, List
+import os
+import time
+from typing import Dict, Any, Optional, List, Tuple
 from common.env import get_settings
 from common.http_client_pool import make_request
 
@@ -19,6 +21,8 @@ class LaravelApiRepository:
         self.settings = get_settings()
         self.base_url = self.settings.laravel_api_url or 'http://laravel'
         self.api_token = self.settings.laravel_api_token
+        self._effective_targets_cache_ttl = float(os.getenv("EFFECTIVE_TARGETS_CACHE_TTL_SEC", "30"))
+        self._effective_targets_cache: Dict[int, Tuple[Dict[str, Any], float]] = {}
         
         if not self.api_token:
             logger.warning('LARAVEL_API_TOKEN not configured, API calls may fail')
@@ -62,10 +66,23 @@ class LaravelApiRepository:
         """
         if not zone_ids:
             return {}
+
+        now = time.monotonic()
+        cached_results: Dict[int, Optional[Dict[str, Any]]] = {}
+        missing_zone_ids: List[int] = []
+        for zone_id in zone_ids:
+            cached = self._effective_targets_cache.get(zone_id)
+            if cached and now - cached[1] < self._effective_targets_cache_ttl:
+                cached_results[zone_id] = cached[0]
+            else:
+                missing_zone_ids.append(zone_id)
+
+        if not missing_zone_ids:
+            return cached_results
         
         url = f"{self.base_url}/api/internal/effective-targets/batch"
         payload = {
-            'zone_ids': zone_ids,
+            'zone_ids': missing_zone_ids,
         }
         
         try:
@@ -80,26 +97,31 @@ class LaravelApiRepository:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('status') == 'ok':
-                    return self._normalize_zone_keys(data.get('data', {}))
+                    normalized = self._normalize_zone_keys(data.get('data', {}))
+                    for zone_id, value in normalized.items():
+                        cached_results[zone_id] = value
+                        if isinstance(zone_id, int):
+                            self._effective_targets_cache[zone_id] = (value, now)
+                    return cached_results
                 else:
                     logger.error(f'Laravel API returned error status: {data.get("message")}')
-                    return {}
+                    return cached_results
             elif response.status_code == 401:
                 logger.error('Laravel API authentication failed - check LARAVEL_API_TOKEN')
-                return {}
+                return cached_results
             elif response.status_code == 422:
                 errors = response.json().get('errors', {})
                 logger.error(f'Laravel API validation failed: {errors}')
-                return {}
+                return cached_results
             else:
                 logger.error(
                     f'Laravel API request failed: HTTP {response.status_code} - {response.text[:200]}'
                 )
-                return {}
+                return cached_results
                     
         except Exception as e:
             logger.error(f'Error calling Laravel API: {e}', exc_info=True)
-            return {}
+            return cached_results
     
     async def get_effective_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         """

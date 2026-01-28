@@ -12,6 +12,7 @@ from common.db import execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
+from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id, inject_trace_id_header, set_trace_id_from_payload
 from common.utils.time import utcnow
 from metrics import (
@@ -1135,14 +1136,14 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         COMMAND_RESPONSE_RECEIVED.inc()
 
+        zone_id = None
+        cmd_name = None
         try:
             existing_cmd = await fetch(
-                "SELECT status FROM commands WHERE cmd_id = $1", cmd_id
+                "SELECT status, zone_id, cmd FROM commands WHERE cmd_id = $1", cmd_id
             )
             if not existing_cmd:
                 node_id = None
-                zone_id = None
-
                 if node_uid:
                     node_rows = await fetch(
                         "SELECT id, zone_id FROM nodes WHERE uid = $1", node_uid
@@ -1151,12 +1152,12 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                         node_id = node_rows[0]["id"]
                         zone_id = node_rows[0]["zone_id"]
 
-                cmd_name = "unknown"
                 status_value = (
                     normalized_status.value
                     if hasattr(normalized_status, "value")
                     else str(normalized_status)
                 )
+                cmd_name = "unknown"
 
                 await execute(
                     """
@@ -1179,6 +1180,9 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                     node_uid,
                     channel,
                 )
+            else:
+                zone_id = existing_cmd[0].get("zone_id")
+                cmd_name = existing_cmd[0].get("cmd")
         except Exception as e:
             logger.warning(
                 "[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id=%s: %s",
@@ -1213,6 +1217,34 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 cmd_id,
                 node_uid,
                 channel,
+            )
+
+        if zone_id:
+            status_value = (
+                normalized_status.value
+                if hasattr(normalized_status, "value")
+                else str(normalized_status)
+            )
+            event_status = status_value.lower()
+            level = "info"
+            if event_status in ("error", "failed", "timeout"):
+                level = "error"
+
+            await record_simulation_event(
+                zone_id,
+                service="history-logger",
+                stage="command_response",
+                status=event_status,
+                level=level,
+                message="Получен ответ на команду",
+                payload={
+                    "cmd_id": cmd_id,
+                    "cmd": cmd_name,
+                    "channel": channel,
+                    "node_uid": node_uid,
+                    "raw_status": raw_status,
+                    "delivery": "delivered" if success else "queued",
+                },
             )
 
     except Exception as e:

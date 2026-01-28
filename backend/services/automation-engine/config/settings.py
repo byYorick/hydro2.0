@@ -15,6 +15,7 @@ class AutomationSettings:
     # Интервалы обработки
     MAIN_LOOP_SLEEP_SECONDS: int = 15
     CONFIG_FETCH_RETRY_SLEEP_SECONDS: int = 15
+    CONFIG_FETCH_MIN_INTERVAL_SECONDS: int = int(os.getenv("CONFIG_FETCH_MIN_INTERVAL_SECONDS", "30"))
     
     # Параллельная обработка зон
     MAX_CONCURRENT_ZONES: int = int(os.getenv("MAX_CONCURRENT_ZONES", "50"))  # Максимум для масштабирования

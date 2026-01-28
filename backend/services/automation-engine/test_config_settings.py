@@ -20,6 +20,7 @@ def test_automation_settings_defaults():
     settings = reload_settings()
     
     assert settings.MAIN_LOOP_SLEEP_SECONDS == 15
+    assert settings.CONFIG_FETCH_MIN_INTERVAL_SECONDS == 30
     # MAX_CONCURRENT_ZONES по умолчанию 50 из env или может быть переопределено
     assert settings.MAX_CONCURRENT_ZONES >= 5
     assert settings.PH_CORRECTION_THRESHOLD == 0.2

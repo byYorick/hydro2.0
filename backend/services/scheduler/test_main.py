@@ -132,7 +132,8 @@ async def test_get_zone_nodes_for_type():
 @pytest.mark.asyncio
 async def test_send_command_via_automation_engine_success():
     """Test successful command sending via automation-engine REST API."""
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("main.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json = Mock(return_value={"status": "ok"})
@@ -153,6 +154,7 @@ async def test_send_command_via_automation_engine_success():
         
         assert result is True
         mock_client.post.assert_called_once()
+        mock_record.assert_awaited_once()
         call_args = mock_client.post.call_args
         assert "automation-engine:9405/scheduler/command" in call_args[0][0]
         assert call_args[1]["json"]["zone_id"] == 1
@@ -165,7 +167,8 @@ async def test_send_command_via_automation_engine_success():
 @pytest.mark.asyncio
 async def test_send_command_via_automation_engine_error():
     """Test command sending with HTTP error."""
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("main.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
@@ -184,12 +187,14 @@ async def test_send_command_via_automation_engine_error():
         )
         
         assert result is False
+        mock_record.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_send_command_via_automation_engine_timeout():
     """Test command sending with timeout."""
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("main.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
@@ -204,6 +209,7 @@ async def test_send_command_via_automation_engine_timeout():
         )
         
         assert result is False
+        mock_record.assert_awaited_once()
 
 
 @pytest.mark.asyncio

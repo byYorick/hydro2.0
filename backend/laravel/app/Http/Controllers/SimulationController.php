@@ -198,7 +198,7 @@ class SimulationController extends Controller
         }
 
         $realStarted = Carbon::parse($realStartedAt);
-        $anchorTime = $lastActionAt ? Carbon::parse($lastActionAt) : now();
+        $anchorTime = $simulation->status === 'running' ? now() : ($lastActionAt ? Carbon::parse($lastActionAt) : now());
         $elapsedSeconds = $realStarted->greaterThan($anchorTime) ? 0 : $realStarted->diffInSeconds($anchorTime);
         $elapsedMinutes = $elapsedSeconds / 60;
         $progress = min(1.0, $elapsedMinutes / (float) $realDurationMinutes);
@@ -220,7 +220,7 @@ class SimulationController extends Controller
             'elapsed_minutes' => round(min($elapsedMinutes, (float) $realDurationMinutes), 2),
             'real_duration_minutes' => (int) $realDurationMinutes,
             'sim_now' => $simNow,
-            'progress_source' => $lastActionAt ? 'actions' : 'timer',
+            'progress_source' => $simulation->status === 'running' ? 'timer' : ($lastActionAt ? 'actions' : 'timer'),
         ];
     }
 

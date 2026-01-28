@@ -29,6 +29,7 @@ from common.water_cycle import (
     WATER_STATE_WATER_CHANGE_STABILIZE,
 )
 from common.service_logs import send_service_log
+from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id, get_trace_id, inject_trace_id_header, set_trace_id
 from common.logging_setup import setup_standard_logging, install_exception_handlers
 
@@ -219,6 +220,19 @@ async def send_command_via_automation_engine(
                 logger.debug(
                     f"Scheduler command sent successfully: zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}"
                 )
+                await record_simulation_event(
+                    zone_id,
+                    service="scheduler",
+                    stage="command",
+                    status="sent",
+                    message="Команда отправлена в automation-engine",
+                    payload={
+                        "node_uid": node_uid,
+                        "channel": channel,
+                        "cmd": cmd,
+                        "params": params or {},
+                    },
+                )
                 return True
             else:
                 try:
@@ -230,19 +244,80 @@ async def send_command_via_automation_engine(
                     f"Scheduler command failed: {response.status_code} - {error_msg}, "
                     f"zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}"
                 )
+                await record_simulation_event(
+                    zone_id,
+                    service="scheduler",
+                    stage="command",
+                    status="failed",
+                    level="error",
+                    message="Ошибка отправки команды в automation-engine",
+                    payload={
+                        "node_uid": node_uid,
+                        "channel": channel,
+                        "cmd": cmd,
+                        "params": params or {},
+                        "error": error_msg,
+                        "status_code": response.status_code,
+                    },
+                )
                 return False
                 
     except httpx.TimeoutException as e:
         COMMAND_REST_ERRORS.labels(error_type="timeout").inc()
         logger.error(f"Scheduler command timeout: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}")
+        await record_simulation_event(
+            zone_id,
+            service="scheduler",
+            stage="command",
+            status="failed",
+            level="error",
+            message="Таймаут отправки команды в automation-engine",
+            payload={
+                "node_uid": node_uid,
+                "channel": channel,
+                "cmd": cmd,
+                "params": params or {},
+                "error": str(e),
+            },
+        )
         return False
     except httpx.RequestError as e:
         COMMAND_REST_ERRORS.labels(error_type="request_error").inc()
         logger.error(f"Scheduler command request error: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}")
+        await record_simulation_event(
+            zone_id,
+            service="scheduler",
+            stage="command",
+            status="failed",
+            level="error",
+            message="Ошибка запроса команды в automation-engine",
+            payload={
+                "node_uid": node_uid,
+                "channel": channel,
+                "cmd": cmd,
+                "params": params or {},
+                "error": str(e),
+            },
+        )
         return False
     except Exception as e:
         COMMAND_REST_ERRORS.labels(error_type=type(e).__name__).inc()
         logger.error(f"Scheduler command error: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}", exc_info=True)
+        await record_simulation_event(
+            zone_id,
+            service="scheduler",
+            stage="command",
+            status="failed",
+            level="error",
+            message="Неожиданная ошибка отправки команды в automation-engine",
+            payload={
+                "node_uid": node_uid,
+                "channel": channel,
+                "cmd": cmd,
+                "params": params or {},
+                "error": str(e),
+            },
+        )
         return False
     finally:
         if created_trace:
@@ -276,7 +351,7 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
         """
         SELECT z.id as zone_id
         FROM zones z
-        WHERE z.status IN ('online', 'warning')
+        WHERE z.status IN ('online', 'warning', 'RUNNING', 'PAUSED')
         """
     )
     

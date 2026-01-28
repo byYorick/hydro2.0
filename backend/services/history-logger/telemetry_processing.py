@@ -11,6 +11,7 @@ import httpx
 import state
 from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
+from common.simulation_events import record_simulation_event_throttled
 from common.redis_queue import TelemetryQueueItem
 from common.utils.time import utcnow
 from common.trace_context import clear_trace_id, set_trace_id_from_payload
@@ -42,6 +43,9 @@ from utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+SIMULATION_TELEMETRY_EVENTS_ENABLED = os.getenv("SIMULATION_TELEMETRY_EVENTS", "0") in ("1", "true", "True", "yes", "Yes")
+SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC = float(os.getenv("SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC", "10"))
 
 # Конфигурация retry логики для Redis
 REDIS_PUSH_MAX_RETRIES = 3
@@ -1363,6 +1367,37 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 processed_count,
                 len(telemetry_last_updates),
             )
+            if processed_count > 0 and SIMULATION_TELEMETRY_EVENTS_ENABLED:
+                zone_stats: Dict[int, Dict[str, object]] = {}
+                for item in resolved_with_sensor:
+                    zone_id = item.get("zone_id")
+                    if zone_id is None:
+                        continue
+                    sample = item.get("sample")
+                    metric_type = getattr(sample, "metric_type", None)
+                    channel = getattr(sample, "channel", None)
+                    stats = zone_stats.setdefault(zone_id, {"count": 0, "metrics": set(), "channels": set()})
+                    stats["count"] = int(stats["count"]) + 1
+                    if metric_type:
+                        stats["metrics"].add(metric_type)
+                    if channel:
+                        stats["channels"].add(channel)
+
+                for zone_id, stats in zone_stats.items():
+                    await record_simulation_event_throttled(
+                        zone_id,
+                        service="history-logger",
+                        stage="telemetry",
+                        status="received",
+                        message="Телеметрия принята",
+                        payload={
+                            "samples": stats["count"],
+                            "metrics": sorted(stats["metrics"]),
+                            "channels": sorted(stats["channels"]),
+                        },
+                        min_interval_seconds=SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC,
+                        throttle_key=f"telemetry:{zone_id}",
+                    )
         except Exception as e:
             error_type = type(e).__name__
             DATABASE_ERRORS.labels(error_type=error_type).inc()

@@ -224,6 +224,7 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
+      - MQTT_ZONE_FORMAT=uid
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
@@ -231,6 +232,8 @@ services:
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - SIMULATION_TELEMETRY_EVENTS=1
+      - SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC=10
     depends_on:
       mqtt:
         condition: service_healthy

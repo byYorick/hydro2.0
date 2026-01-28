@@ -19,9 +19,10 @@ async def test_handle_command_response_existing_command_sends_status():
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
          patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_RECEIVED") as mock_received, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
-        mock_fetch.return_value = [{"status": "QUEUED"}]
+        mock_fetch.return_value = [{"status": "QUEUED", "zone_id": 12, "cmd": "irrigation"}]
         mock_send.return_value = True
 
         await handle_command_response(topic, payload)
@@ -40,6 +41,7 @@ async def test_handle_command_response_existing_command_sends_status():
         assert details["node_uid"] == "nd-irrig-1"
         assert details["channel"] == "pump1"
         assert details["gh_uid"] == "gh-1"
+        mock_record.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -54,6 +56,7 @@ async def test_handle_command_response_creates_stub_for_missing_command():
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
          patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_RECEIVED") as mock_received:
         mock_fetch.side_effect = [
             [],
@@ -75,6 +78,7 @@ async def test_handle_command_response_creates_stub_for_missing_command():
         assert insert_args[7] == "device"
         assert insert_args[8] == "cmd-2"
         mock_send.assert_awaited_once()
+        mock_record.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -87,12 +91,14 @@ async def test_handle_command_response_missing_cmd_id():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
 
         mock_error.inc.assert_called_once()
         mock_fetch.assert_not_called()
         mock_send.assert_not_called()
+        mock_record.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -105,9 +111,11 @@ async def test_handle_command_response_unknown_status():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
 
         mock_error.inc.assert_called_once()
         mock_fetch.assert_not_called()
         mock_send.assert_not_called()
+        mock_record.assert_not_called()
