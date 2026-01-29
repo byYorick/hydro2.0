@@ -150,7 +150,7 @@ class SimulationOrchestratorService
                 'fw_version' => $node->fw_version,
                 'hardware_revision' => $node->hardware_revision,
                 'hardware_id' => 'sim-' . Str::uuid()->toString(),
-                'status' => 'offline',
+                'status' => 'online',
                 'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
                 'validated' => $node->validated,
                 'config' => $node->config,
@@ -341,7 +341,7 @@ class SimulationOrchestratorService
             'fw_version' => 'sim',
             'hardware_revision' => 'sim',
             'hardware_id' => 'sim-hw-' . Str::uuid()->toString(),
-            'status' => 'offline',
+            'status' => 'online',
             'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
             'validated' => true,
             'config' => [

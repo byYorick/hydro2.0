@@ -648,6 +648,7 @@ async def main():
             laravel_api_repo = LaravelApiRepository()
             
             while not _shutdown_event.is_set():
+                simulation_clocks = {}
                 try:
                     # Fetch config через Circuit Breaker (c кешированием)
                     cfg: Optional[Dict[str, Any]] = None
@@ -678,9 +679,9 @@ async def main():
                                 logger.warning("Config fetch returned None, sleeping before retry")
                                 await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                                 continue
-                    else:
-                        last_config = cfg
-                        last_config_ts = now
+                        else:
+                            last_config = cfg
+                            last_config_ts = now
                     
                     # Validate config structure
                     is_valid, error_msg = validate_config(cfg)
@@ -810,7 +811,6 @@ async def main():
                             )
                         
                         # Логируем состояние системы (каждые 5 минут)
-                        import time
                         if int(time.time()) % 300 == 0:  # Каждые 5 минут
                             await log_system_state(
                                 _zone_service,

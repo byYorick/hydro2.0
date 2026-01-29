@@ -295,8 +295,18 @@ class NodeRegistryService
      */
      private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
     {
-        // Используем первые 8 символов hardware_id и тип узла
-        $shortId = substr(str_replace([':', '-', '_'], '', $hardwareId), 0, 8);
+        // Нормализуем hardware_id, убирая разделители и префиксы
+        $normalized = strtolower(str_replace([':', '-', '_'], '', $hardwareId));
+        if (str_starts_with($normalized, 'esp32')) {
+            $normalized = substr($normalized, strlen('esp32'));
+        }
+
+        // Берём до 12 символов, чтобы использовать полный MAC (6 байт) без префикса
+        if ($normalized === '') {
+            $shortId = substr(md5($hardwareId), 0, 12);
+        } else {
+            $shortId = strlen($normalized) > 12 ? substr($normalized, 0, 12) : $normalized;
+        }
         
         // Определяем префикс типа узла
         $typePrefix = 'node';

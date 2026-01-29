@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\Zone;
+use App\Models\DeviceNode;
 use App\Services\SimulationOrchestratorService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -36,5 +37,12 @@ class SimulationOrchestratorServiceTest extends TestCase
         $this->assertTrue($simZone->capabilities['climate_control'] ?? false);
         $this->assertTrue($simZone->capabilities['light_control'] ?? false);
         $this->assertTrue($simZone->capabilities['irrigation_control'] ?? false);
+
+        $nodes = DeviceNode::query()->where('zone_id', $simZone->id)->get();
+        $this->assertNotEmpty($nodes);
+        $this->assertSame(
+            $nodes->count(),
+            $nodes->where('status', 'online')->count()
+        );
     }
 }

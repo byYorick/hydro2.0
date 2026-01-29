@@ -74,6 +74,124 @@ def _scale_telemetry_config(
     return scaled
 
 
+def _apply_initial_state_to_nodes(
+    nodes: List[Dict[str, Any]],
+    scenario: Dict[str, Any],
+) -> None:
+    initial_state = scenario.get("initial_state") or {}
+    if not isinstance(initial_state, dict) or not initial_state:
+        return
+
+    def to_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    key_map = {
+        "ph": ["ph_sensor", "ph"],
+        "ec": ["ec_sensor", "ec"],
+        "temp_air": ["air_temp_c", "temp_air", "temperature"],
+        "temp_water": ["solution_temp_c", "temp_water", "water_temp_c"],
+        "humidity_air": ["air_rh", "humidity", "rh", "humidity_air"],
+    }
+
+    for node in nodes:
+        sensors = node.get("sensors") or []
+        sensor_map = {
+            str(sensor).lower(): sensor
+            for sensor in sensors
+            if isinstance(sensor, str)
+        }
+        if not sensor_map:
+            continue
+
+        initial_sensors: Dict[str, float] = {}
+        for state_key, candidates in key_map.items():
+            if state_key not in initial_state:
+                continue
+            value = to_float(initial_state.get(state_key))
+            if value is None:
+                continue
+            for candidate in candidates:
+                actual = sensor_map.get(candidate.lower())
+                if actual:
+                    initial_sensors[actual] = value
+                    break
+
+        if initial_sensors:
+            node["initial_sensors"] = initial_sensors
+
+
+def _apply_drift_to_nodes(
+    nodes: List[Dict[str, Any]],
+    scenario: Dict[str, Any],
+) -> None:
+    node_sim = scenario.get("node_sim") or {}
+    if not isinstance(node_sim, dict):
+        return
+
+    drift = node_sim.get("drift_per_minute") or {}
+    if not isinstance(drift, dict):
+        drift = {}
+    drift_noise = node_sim.get("drift_noise_per_minute")
+
+    def to_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    key_map = {
+        "ph": ["ph_sensor", "ph"],
+        "ec": ["ec_sensor", "ec"],
+        "temp_air": ["air_temp_c", "temp_air", "temperature"],
+        "temp_water": ["solution_temp_c", "temp_water", "water_temp_c"],
+        "humidity_air": ["air_rh", "humidity", "rh", "humidity_air"],
+    }
+
+    noise_value = to_float(drift_noise)
+
+    for node in nodes:
+        sensors = node.get("sensors") or []
+        sensor_map = {
+            str(sensor).lower(): sensor
+            for sensor in sensors
+            if isinstance(sensor, str)
+        }
+        if not sensor_map:
+            continue
+
+        drift_map: Dict[str, float] = {}
+        for drift_key, raw_value in drift.items():
+            value = to_float(raw_value)
+            if value is None:
+                continue
+            if drift_key in key_map:
+                for candidate in key_map[drift_key]:
+                    actual = sensor_map.get(candidate.lower())
+                    if actual:
+                        drift_map[actual] = value
+                        break
+                continue
+            actual = sensor_map.get(str(drift_key).lower())
+            if actual:
+                drift_map[actual] = value
+
+        if drift_map:
+            node["drift_per_minute"] = drift_map
+        if noise_value is not None:
+            node["drift_noise_per_minute"] = noise_value
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Digital twin service started")
@@ -681,6 +799,8 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
         if request.telemetry:
             telemetry_config.update(request.telemetry)
         telemetry_config = _scale_telemetry_config(telemetry_config, time_scale)
+        _apply_initial_state_to_nodes(nodes, scenario_payload)
+        _apply_drift_to_nodes(nodes, scenario_payload)
 
         payload = {
             "session_id": session_id,

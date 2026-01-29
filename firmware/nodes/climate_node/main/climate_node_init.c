@@ -108,12 +108,12 @@ void climate_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - climate_node is online");
         
-        // Публикуем node_hello при каждом подключении для регистрации/обновления
-        // Это позволяет backend обновить информацию о ноде, даже если она уже была зарегистрирована
-        // Backend обрабатывает дубликаты корректно (обновляет существующую ноду по hardware_id)
-        ESP_LOGI(TAG, "Publishing node_hello for registration/update");
-        climate_node_publish_hello();
-        ESP_LOGI(TAG, "node_hello publish call completed");
+        // Публикуем node_hello только если узел еще не зарегистрирован (временные ID)
+        if (node_utils_should_send_node_hello()) {
+            ESP_LOGI(TAG, "Publishing node_hello for registration");
+            climate_node_publish_hello();
+            ESP_LOGI(TAG, "node_hello publish call completed");
+        }
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();

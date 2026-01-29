@@ -78,6 +78,24 @@ class SessionResponse(BaseModel):
 _sessions: Dict[str, SessionState] = {}
 _sessions_lock = asyncio.Lock()
 
+def _build_node_overrides_log(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    overrides: List[Dict[str, Any]] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        initial_sensors = node.get("initial_sensors") or {}
+        drift_per_minute = node.get("drift_per_minute") or {}
+        drift_noise = node.get("drift_noise_per_minute")
+        if not initial_sensors and not drift_per_minute and drift_noise is None:
+            continue
+        overrides.append({
+            "node_uid": node.get("node_uid"),
+            "initial_sensors": initial_sensors,
+            "drift_per_minute": drift_per_minute,
+            "drift_noise_per_minute": drift_noise,
+        })
+    return overrides
+
 
 def _resolve_node_sim_root() -> Path:
     configured = os.getenv("NODE_SIM_ROOT")
@@ -126,6 +144,16 @@ def _start_process(config_path: Path, log_level_override: str) -> subprocess.Pop
 async def start_session(request: StartSessionRequest) -> SessionResponse:
     if not request.nodes:
         raise HTTPException(status_code=400, detail="nodes list is required")
+
+    node_overrides = _build_node_overrides_log(request.nodes)
+    logger.info(
+        "Starting node-sim session",
+        extra={
+            "session_id": request.session_id,
+            "nodes_count": len(request.nodes),
+            "node_overrides": node_overrides,
+        },
+    )
 
     async with _sessions_lock:
         existing = _sessions.get(request.session_id)

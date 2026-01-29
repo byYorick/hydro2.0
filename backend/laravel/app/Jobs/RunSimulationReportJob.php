@@ -197,8 +197,10 @@ class RunSimulationReportJob implements ShouldQueue
             $phasesReport[$lastIndex]['status'] = 'completed';
         }
 
+        $isLiveSimulation = isset($simMeta['mode']) && $simMeta['mode'] === 'live';
+
         if ($currentPhase->phase_index >= $lastPhaseIndex) {
-            $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport);
+            $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport, [], $isLiveSimulation);
             return;
         }
 
@@ -210,7 +212,7 @@ class RunSimulationReportJob implements ShouldQueue
                 'grow_cycle_id' => $growCycle->id,
                 'error' => $e->getMessage(),
             ]);
-            $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport);
+            $this->finalizeSimulationReport($simulation, $simZone, $growCycle, $phasesReport, [], $isLiveSimulation);
             return;
         }
 
@@ -227,7 +229,8 @@ class RunSimulationReportJob implements ShouldQueue
                         'message' => 'New phase missing after advance.',
                         'type' => 'RuntimeException',
                     ],
-                ]
+                ],
+                $isLiveSimulation
             );
             return;
         }
@@ -344,7 +347,8 @@ class RunSimulationReportJob implements ShouldQueue
         Zone $simZone,
         GrowCycle $growCycle,
         array $phasesReport,
-        array $errors = []
+        array $errors = [],
+        bool $skipHarvest = false
     ): void {
         $report = $simulation->report()->first();
         if (! $report) {
@@ -359,7 +363,7 @@ class RunSimulationReportJob implements ShouldQueue
             }
         }
 
-        if (empty($errors)) {
+        if (empty($errors) && ! $skipHarvest) {
             try {
                 $growCycle = app(GrowCycleService::class)->harvest($growCycle, ['batch_label' => 'SIM'], $this->resolveSimulationUserId());
                 $this->recordSimulationEvent(

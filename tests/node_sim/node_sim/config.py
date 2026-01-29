@@ -31,6 +31,11 @@ class NodeConfig:
     node_type: str = "unknown"
     mode: str = "preconfig"  # preconfig | configured
     config_report_on_start: bool = True
+    # начальные значения сенсоров (ключи = channel имена, значения = float)
+    initial_sensors: Dict[str, float] = field(default_factory=dict)
+    # дрифт сенсоров (ключи = channel, значения = единицы/мин)
+    drift_per_minute: Dict[str, float] = field(default_factory=dict)
+    drift_noise_per_minute: float = 0.0
     # sensors = список "channel" ключей, которые идут в MQTT topic сегмент {channel}
     # (например, ph_sensor, ec_sensor, air_temp_c, air_rh, co2_ppm, lux, solution_temp_c)
     sensors: List[str] = field(default_factory=lambda: ["ph_sensor", "ec_sensor", "solution_temp_c", "air_temp_c", "air_rh"])
@@ -123,6 +128,9 @@ class SimConfig:
             node_type=node_data.get("node_type", "unknown"),
             mode=node_data.get("mode", "preconfig"),
             config_report_on_start=node_data.get("config_report_on_start", True),
+            initial_sensors=node_data.get("initial_sensors", {}) or {},
+            drift_per_minute=node_data.get("drift_per_minute", {}) or {},
+            drift_noise_per_minute=node_data.get("drift_noise_per_minute", 0.0),
             # Поддержка старого поля channels: считаем, что это те же MQTT channel keys
             sensors=node_data.get("sensors", node_data.get("channels", ["ph_sensor", "ec_sensor", "solution_temp_c"])),
             actuators=node_data.get("actuators", ["main_pump", "drain_pump", "fan", "heater", "light", "mister"])
@@ -188,6 +196,12 @@ class SimConfig:
             errors.append("telemetry.interval_seconds must be > 0")
         if self.telemetry.heartbeat_interval_seconds <= 0:
             errors.append("telemetry.heartbeat_interval_seconds must be > 0")
+
+        # Валидация initial_sensors
+        if self.node.initial_sensors and not isinstance(self.node.initial_sensors, dict):
+            errors.append("node.initial_sensors must be a dict")
+        if self.node.drift_per_minute and not isinstance(self.node.drift_per_minute, dict):
+            errors.append("node.drift_per_minute must be a dict")
 
         # Валидация режимов отказов
         if self.failure_mode:

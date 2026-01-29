@@ -197,8 +197,8 @@ async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dic
     """Create a zone event according to DATA_MODEL_REFERENCE.md section 8.1."""
     await execute(
         """
-        INSERT INTO zone_events (zone_id, type, payload_json, details, created_at)
-        VALUES ($1, $2, $3, $3, NOW())
+        INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+        VALUES ($1, $2, $3, NOW())
         """,
         zone_id, event_type, details
     )

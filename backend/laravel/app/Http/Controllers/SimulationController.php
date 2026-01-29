@@ -32,6 +32,10 @@ class SimulationController extends Controller
             'duration_hours' => 'integer|min:1|max:720',
             'step_minutes' => 'integer|min:1|max:60',
             'initial_state' => 'array',
+            'node_sim' => 'array',
+            'node_sim.drift_per_minute' => 'array',
+            'node_sim.drift_per_minute.*' => 'numeric',
+            'node_sim.drift_noise_per_minute' => 'nullable|numeric',
             'recipe_id' => 'nullable|exists:recipes,id',
             'sim_duration_minutes' => 'nullable|integer|min:1|max:10080',
             'full_simulation' => 'nullable|boolean',
@@ -51,6 +55,24 @@ class SimulationController extends Controller
             'recipe_id' => $recipeId,
             'initial_state' => $data['initial_state'] ?? [],
         ];
+        if (!empty($data['node_sim']) && is_array($data['node_sim'])) {
+            $nodeSim = $data['node_sim'];
+            if (isset($nodeSim['drift_per_minute']) && is_array($nodeSim['drift_per_minute'])) {
+                $nodeSim['drift_per_minute'] = array_filter(
+                    $nodeSim['drift_per_minute'],
+                    fn($value) => $value !== null && $value !== ''
+                );
+                if (empty($nodeSim['drift_per_minute'])) {
+                    unset($nodeSim['drift_per_minute']);
+                }
+            }
+            if (array_key_exists('drift_noise_per_minute', $nodeSim) && $nodeSim['drift_noise_per_minute'] === null) {
+                unset($nodeSim['drift_noise_per_minute']);
+            }
+            if (!empty($nodeSim)) {
+                $scenario['node_sim'] = $nodeSim;
+            }
+        }
         if (array_key_exists('full_simulation', $data)) {
             $scenario['full_simulation'] = (bool) $data['full_simulation'];
         }

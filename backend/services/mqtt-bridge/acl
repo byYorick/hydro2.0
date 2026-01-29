@@ -22,6 +22,8 @@ topic readwrite hydro/+/+/events/#
 # Pattern: hydro/{greenhouse_uid}/{zone_uid}/{node_uid}/#
 user esp32_node
 topic write hydro/+/+/+/+/telemetry
+topic write hydro/node_hello
+topic write hydro/+/+/+/node_hello
 topic write hydro/+/+/+/status
 topic write hydro/+/+/+/heartbeat
 topic write hydro/+/+/+/lwt
