@@ -1,6 +1,8 @@
 """Tests for zone_automation_service."""
+from datetime import datetime, timezone
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
+from common.simulation_clock import SimulationClock
 from services.zone_automation_service import ZoneAutomationService
 from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository, GrowCycleRepository, InfrastructureRepository
 from infrastructure.command_bus import CommandBus
@@ -231,3 +233,42 @@ async def test_process_zone_phase_transition():
         await service.process_zone(1)
 
         mock_phase_check.assert_called_once_with(1, None)
+
+
+@pytest.mark.asyncio
+async def test_check_phase_transitions_skips_for_live_simulation():
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+    grow_cycle_repo.get_current_phase_timing = AsyncMock(return_value={
+        "grow_cycle_id": 1,
+        "phase_index": 0,
+        "max_phase_index": 0,
+        "duration_hours": 1,
+        "phase_started_at": datetime.now(timezone.utc),
+    })
+
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+    sim_clock = SimulationClock(
+        real_start=datetime.now(timezone.utc),
+        sim_start=datetime.now(timezone.utc),
+        time_scale=60.0,
+        mode="live",
+    )
+
+    await service._check_phase_transitions(1, sim_clock)
+
+    grow_cycle_repo.get_current_phase_timing.assert_not_called()

@@ -20,23 +20,26 @@ MQTT брокер настроен с обязательной аутентиф�
 - **Назначение:** Automation Engine сервис
 - **Пароль:** Настраивается через `MQTT_AUTOMATION_ENGINE_PASS`
 - **Доступ:**
-  - Чтение: `hydro/+/+/telemetry/#`, `hydro/+/+/status/#`
-  - Запись: `hydro/+/+/commands/#`
+  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/+/command_response`
   - Чтение/Запись: `hydro/+/+/events/#`
+  - Публикация команд удалена — команды через history-logger REST API
 
 ### 3. history_logger
 - **Назначение:** History Logger сервис
 - **Пароль:** Настраивается через `MQTT_HISTORY_LOGGER_PASS`
 - **Доступ:**
-  - Чтение: `hydro/+/+/telemetry/#`
-  - Запись: `hydro/+/+/events/#`
+  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`,
+    `hydro/+/+/+/lwt`, `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`,
+    `hydro/+/+/+/config_report`, `hydro/+/+/+/node_hello`,
+    `hydro/+/+/+/+/command_response`, `hydro/node_hello`, `hydro/time/request`
+  - Запись: `hydro/+/+/+/+/command`, `hydro/+/+/events/#`
 
 ### 4. scheduler
 - **Назначение:** Scheduler сервис
 - **Пароль:** Настраивается через `MQTT_SCHEDULER_PASS`
 - **Доступ:**
-  - Чтение: `hydro/+/+/status/#`, `hydro/+/+/telemetry/#`
-  - Запись: `hydro/+/+/commands/#`
+  - Чтение: `hydro/+/+/+/status`, `hydro/+/+/+/+/telemetry`
+  - Публикация команд удалена — команды через automation-engine REST API
 
 ### 5. mqtt_bridge
 - **Назначение:** MQTT Bridge сервис
@@ -47,9 +50,12 @@ MQTT брокер настроен с обязательной аутентиф�
 - **Назначение:** ESP32 узлы
 - **Пароль:** Настраивается через `MQTT_ESP32_NODE_PASS`
 - **Доступ:**
-  - Чтение/Запись: `hydro/+/+/esp32_node/#`
-  - Запись: `hydro/+/+/+/status`
-  - Чтение: `hydro/+/+/+/commands/#`
+  - Запись: `hydro/+/+/+/+/telemetry`
+  - Запись: `hydro/node_hello`, `hydro/+/+/+/node_hello`
+  - Запись: `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`, `hydro/+/+/+/lwt`,
+    `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`, `hydro/+/+/+/config_report`,
+    `hydro/+/+/+/+/command_response`
+  - Чтение: `hydro/+/+/+/config`, `hydro/+/+/+/+/command`
 
 ## Генерация паролей
 
@@ -115,9 +121,21 @@ topic [read|write|readwrite] <topic_pattern>
 user python_service
 topic readwrite hydro/#
 
-# Только чтение телеметрии
+# History logger - читает телеметрию и системные топики, публикует команды
 user history_logger
-topic read hydro/+/+/telemetry/#
+topic read hydro/+/+/+/+/telemetry
+topic read hydro/+/+/+/status
+topic read hydro/+/+/+/heartbeat
+topic read hydro/+/+/+/lwt
+topic read hydro/+/+/+/diagnostics
+topic read hydro/+/+/+/error
+topic read hydro/+/+/+/config_report
+topic read hydro/+/+/+/node_hello
+topic read hydro/+/+/+/+/command_response
+topic read hydro/node_hello
+topic read hydro/time/request
+topic write hydro/+/+/+/+/command
+topic write hydro/+/+/events/#
 
 # Запись команд
 user automation_engine
@@ -296,4 +314,3 @@ mosquitto_pub -h localhost -p 1883 -u automation_engine -P automation_pass -t 'h
 5. **Проверьте подключения:**
    - Проверьте логи всех сервисов
    - Убедитесь, что нет ошибок аутентификации
-

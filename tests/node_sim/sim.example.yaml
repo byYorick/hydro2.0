@@ -18,6 +18,15 @@ node:
   node_type: ph  # ph, ec, climate, pump, irrig, light, unknown
   mode: preconfig  # preconfig | configured
   config_report_on_start: true  # публиковать config_report при старте
+  # начальные значения сенсоров (ключи = channel)
+  initial_sensors:
+    ph_sensor: 6.8
+    ec_sensor: 2.1
+  # дрифт сенсоров (единицы/мин)
+  drift_per_minute:
+    ph_sensor: 0.05
+    ec_sensor: 0.08
+  drift_noise_per_minute: 0.01
   channels:
     - ph_sensor
     - ec_sensor

@@ -375,6 +375,32 @@ esp_err_t node_utils_publish_node_hello(
     return pub_err;
 }
 
+bool node_utils_should_send_node_hello(void) {
+    char node_id[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+
+    bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
+    bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
+    bool has_zone_uid = (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK);
+
+    if (!has_node_id || !has_gh_uid || !has_zone_uid) {
+        return true;
+    }
+
+    if (node_id[0] == '\0' || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return true;
+    }
+
+    if (strcmp(node_id, "node-temp") == 0 ||
+        strcmp(gh_uid, "gh-temp") == 0 ||
+        strcmp(zone_uid, "zn-temp") == 0) {
+        return true;
+    }
+
+    return false;
+}
+
 esp_err_t node_utils_publish_config_report(void) {
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
 

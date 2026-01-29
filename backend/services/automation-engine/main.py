@@ -663,6 +663,7 @@ async def main():
             laravel_api_repo = LaravelApiRepository()
             
             while not _shutdown_event.is_set():
+                simulation_clocks = {}
                 try:
                     # Fetch config через Circuit Breaker (c кешированием)
                     cfg: Optional[Dict[str, Any]] = None

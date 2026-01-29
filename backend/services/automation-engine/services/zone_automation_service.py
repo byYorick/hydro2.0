@@ -569,6 +569,8 @@ class ZoneAutomationService:
         """
         if not sim_clock:
             return
+        if sim_clock.mode == "live":
+            return
 
         phase_info = await self.grow_cycle_repo.get_current_phase_timing(zone_id)
         if not phase_info:

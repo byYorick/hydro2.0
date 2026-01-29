@@ -103,7 +103,25 @@ class MultiNodeOrchestrator:
             mode=node_config.mode,
             sensors=node_config.sensors,
             actuators=node_config.actuators,
+            drift_per_minute=node_config.drift_per_minute,
+            drift_noise_per_minute=node_config.drift_noise_per_minute,
         )
+
+        if node_config.initial_sensors:
+            for sensor_name, value in node_config.initial_sensors.items():
+                if sensor_name not in node.sensors:
+                    logger.warning(
+                        "Initial sensor value skipped (sensor not in node.sensors)",
+                        extra={"node_uid": node.node_uid, "sensor": sensor_name},
+                    )
+                    continue
+                try:
+                    node.set_sensor_value(sensor_name, float(value))
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Initial sensor value skipped (invalid value)",
+                        extra={"node_uid": node.node_uid, "sensor": sensor_name, "value": value},
+                    )
         
         # Публикуем config_report один раз при старте (если включено)
         if node_config.config_report_on_start:
@@ -350,6 +368,9 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
             node_type=node_data.get("node_type", "unknown"),
             mode=node_data.get("mode", "preconfig"),
             config_report_on_start=node_data.get("config_report_on_start", True),
+            initial_sensors=node_data.get("initial_sensors", {}) or {},
+            drift_per_minute=node_data.get("drift_per_minute", {}) or {},
+            drift_noise_per_minute=node_data.get("drift_noise_per_minute", 0.0),
             sensors=node_data.get("sensors", node_data.get("channels", default_node.sensors)),
             actuators=node_data.get("actuators", default_node.actuators),
         )

@@ -165,7 +165,7 @@
                 v-model.number="form.initial_state.ph"
                 name="initial_state_ph"
                 type="number"
-                step="0.1"
+                step="0.0001"
                 class="input-field h-8 w-full"
               />
             </div>
@@ -182,7 +182,7 @@
                 v-model.number="form.initial_state.ec"
                 name="initial_state_ec"
                 type="number"
-                step="0.1"
+                step="0.0001"
                 class="input-field h-8 w-full"
               />
             </div>
@@ -199,7 +199,7 @@
                 v-model.number="form.initial_state.temp_air"
                 name="initial_state_temp_air"
                 type="number"
-                step="0.1"
+                step="0.0001"
                 class="input-field h-8 w-full"
               />
             </div>
@@ -216,7 +216,7 @@
                 v-model.number="form.initial_state.temp_water"
                 name="initial_state_temp_water"
                 type="number"
-                step="0.1"
+                step="0.0001"
                 class="input-field h-8 w-full"
               />
             </div>
@@ -233,7 +233,108 @@
                 v-model.number="form.initial_state.humidity_air"
                 name="initial_state_humidity_air"
                 type="number"
-                step="0.1"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-[color:var(--border-muted)] pt-4">
+          <div class="text-sm font-medium mb-2">
+            Дрифт параметров (node-sim)
+          </div>
+          <p class="text-xs text-[color:var(--text-muted)] mb-2">
+            Задайте скорость изменения в единицах за минуту. Отрицательные значения допустимы.
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                for="simulation-drift-ph"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Дрифт pH (ед/мин)</label>
+              <input
+                id="simulation-drift-ph"
+                v-model.number="driftPh"
+                @input="driftTouched.ph = true"
+                name="node_sim_drift_ph"
+                type="number"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+            <div>
+              <label
+                for="simulation-drift-ec"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Дрифт EC (мСм/см/мин)</label>
+              <input
+                id="simulation-drift-ec"
+                v-model.number="driftEc"
+                @input="driftTouched.ec = true"
+                name="node_sim_drift_ec"
+                type="number"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+            <div>
+              <label
+                for="simulation-drift-temp-air"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Дрифт температуры воздуха (°C/мин)</label>
+              <input
+                id="simulation-drift-temp-air"
+                v-model.number="driftTempAir"
+                @input="driftTouched.temp_air = true"
+                name="node_sim_drift_temp_air"
+                type="number"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+            <div>
+              <label
+                for="simulation-drift-temp-water"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Дрифт температуры воды (°C/мин)</label>
+              <input
+                id="simulation-drift-temp-water"
+                v-model.number="driftTempWater"
+                @input="driftTouched.temp_water = true"
+                name="node_sim_drift_temp_water"
+                type="number"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+            <div>
+              <label
+                for="simulation-drift-humidity"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Дрифт влажности (%/мин)</label>
+              <input
+                id="simulation-drift-humidity"
+                v-model.number="driftHumidity"
+                @input="driftTouched.humidity_air = true"
+                name="node_sim_drift_humidity_air"
+                type="number"
+                step="0.0001"
+                class="input-field h-8 w-full"
+              />
+            </div>
+            <div>
+              <label
+                for="simulation-drift-noise"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Шум дрейфа (ед/мин)</label>
+              <input
+                id="simulation-drift-noise"
+                v-model.number="driftNoise"
+                @input="driftTouched.noise = true"
+                name="node_sim_drift_noise"
+                type="number"
+                step="0.0001"
                 class="input-field h-8 w-full"
               />
             </div>
@@ -725,6 +826,13 @@ const form = reactive<SimulationForm>({
   },
 })
 
+const driftPh = ref<number | null>(null)
+const driftEc = ref<number | null>(null)
+const driftTempAir = ref<number | null>(null)
+const driftTempWater = ref<number | null>(null)
+const driftHumidity = ref<number | null>(null)
+const driftNoise = ref<number | null>(null)
+
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 const error = ref<string | null>(null)
 const results = ref<SimulationResults | null>(null)
@@ -756,6 +864,61 @@ const simulationEventsLastId = ref(0)
 let simulationEventsSource: EventSource | null = null
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
+const driftTouched = reactive({
+  ph: false,
+  ec: false,
+  temp_air: false,
+  temp_water: false,
+  humidity_air: false,
+  noise: false,
+})
+
+const DRIFT_RELATIVE_RATES = {
+  ph: 0.01,
+  ec: 0.01,
+  temp_air: 0.002,
+  temp_water: 0.002,
+  humidity_air: 0.002,
+} as const
+
+const roundDrift = (value: number, precision = 3): number => {
+  const factor = 10 ** precision
+  return Math.round(value * factor) / factor
+}
+
+const applyAutoDrift = () => {
+  const state = form.initial_state
+  const driftMap = {
+    ph: driftPh,
+    ec: driftEc,
+    temp_air: driftTempAir,
+    temp_water: driftTempWater,
+    humidity_air: driftHumidity,
+  } as const
+
+  (Object.keys(DRIFT_RELATIVE_RATES) as Array<keyof typeof DRIFT_RELATIVE_RATES>).forEach((key) => {
+    if (driftTouched[key]) return
+    const baseValue = state[key]
+    if (baseValue === null || baseValue === undefined) {
+      driftMap[key].value = null
+      return
+    }
+    driftMap[key].value = roundDrift(baseValue * DRIFT_RELATIVE_RATES[key])
+  })
+
+  if (!driftTouched.noise && driftNoise.value === null) {
+    const values = Object.values(driftMap)
+      .map((refValue) => refValue.value)
+      .filter((value): value is number => typeof value === 'number' && !Number.isNaN(value))
+    if (values.length) {
+      const maxAbs = Math.max(...values.map((value) => Math.abs(value)))
+      if (maxAbs > 0) {
+        driftNoise.value = roundDrift(maxAbs * 0.1)
+      }
+    }
+  }
+}
+
 const applyInitialTelemetry = (telemetry: Props['initialTelemetry']) => {
   if (!telemetry) return
   if (form.initial_state.ph === null && telemetry.ph != null) {
@@ -770,6 +933,7 @@ const applyInitialTelemetry = (telemetry: Props['initialTelemetry']) => {
   if (form.initial_state.humidity_air === null && telemetry.humidity != null) {
     form.initial_state.humidity_air = telemetry.humidity
   }
+  applyAutoDrift()
 }
 
 watch(
@@ -778,6 +942,14 @@ watch(
     applyInitialTelemetry(telemetry)
   },
   { immediate: true }
+)
+
+watch(
+  () => form.initial_state,
+  () => {
+    applyAutoDrift()
+  },
+  { deep: true }
 )
 
 watch(
@@ -1391,6 +1563,19 @@ watch(
       if (effectiveRecipeId.value) {
         loadRecipeDefaults(effectiveRecipeId.value)
       }
+      driftPh.value = null
+      driftEc.value = null
+      driftTempAir.value = null
+      driftTempWater.value = null
+      driftHumidity.value = null
+      driftNoise.value = null
+      driftTouched.ph = false
+      driftTouched.ec = false
+      driftTouched.temp_air = false
+      driftTouched.temp_water = false
+      driftTouched.humidity_air = false
+      driftTouched.noise = false
+      applyAutoDrift()
     } else {
       clearSimulationPolling()
       simulationProgressValue.value = null
@@ -1472,6 +1657,10 @@ async function onSubmit(): Promise<void> {
       full_simulation?: boolean
       recipe_id?: number
       initial_state?: Partial<SimulationForm['initial_state']>
+      node_sim?: {
+        drift_per_minute?: Record<string, number>
+        drift_noise_per_minute?: number
+      }
     }
     
     const payload: SimulationPayload = {
@@ -1501,6 +1690,24 @@ async function onSubmit(): Promise<void> {
     
     if (Object.keys(initialState).length > 0) {
       payload.initial_state = initialState
+    }
+
+    const driftPerMinute: Record<string, number> = {}
+    if (driftPh.value !== null) driftPerMinute.ph = driftPh.value
+    if (driftEc.value !== null) driftPerMinute.ec = driftEc.value
+    if (driftTempAir.value !== null) driftPerMinute.temp_air = driftTempAir.value
+    if (driftTempWater.value !== null) driftPerMinute.temp_water = driftTempWater.value
+    if (driftHumidity.value !== null) driftPerMinute.humidity_air = driftHumidity.value
+
+    const nodeSimPayload: SimulationPayload['node_sim'] = {}
+    if (Object.keys(driftPerMinute).length > 0) {
+      nodeSimPayload.drift_per_minute = driftPerMinute
+    }
+    if (driftNoise.value !== null) {
+      nodeSimPayload.drift_noise_per_minute = driftNoise.value
+    }
+    if (Object.keys(nodeSimPayload).length > 0) {
+      payload.node_sim = nodeSimPayload
     }
     
     const response = await api.post<{ status: string; data?: any }>(

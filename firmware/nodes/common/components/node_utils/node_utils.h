@@ -157,6 +157,16 @@ esp_err_t node_utils_publish_node_hello(
 );
 
 /**
+ * @brief Нужно ли отправлять node_hello при текущем состоянии конфига
+ *
+ * Возвращает true, если в конфиге отсутствуют/временные node_id, gh_uid или zone_uid.
+ * Используется для единой стратегии регистрации узлов.
+ *
+ * @return true если node_hello требуется, иначе false
+ */
+bool node_utils_should_send_node_hello(void);
+
+/**
  * @brief Публикация NodeConfig отчета на сервер
  *
  * Отправляет полный NodeConfig, сохраненный в NVS, в топик

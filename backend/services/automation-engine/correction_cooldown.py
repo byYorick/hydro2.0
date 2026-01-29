@@ -108,7 +108,7 @@ async def analyze_trend(
         - is_improving: True если значение приближается к цели
         - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
     """
-    cutoff_time = utcnow() - timedelta(hours=hours)
+    cutoff_time = (utcnow() - timedelta(hours=hours)).replace(tzinfo=None)
     
     normalized_metric = (metric_type or "").upper()
     rows = await fetch(

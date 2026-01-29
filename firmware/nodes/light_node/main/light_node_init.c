@@ -30,7 +30,6 @@
 #include <stdio.h>
 
 static const char *TAG = "light_node_init";
-static bool s_node_hello_sent = false;
 
 // Setup mode function
 void light_node_run_setup_mode(void) {
@@ -99,9 +98,9 @@ void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - light_node is online");
 
-        if (!s_node_hello_sent) {
+        // Публикуем node_hello только если узел еще не зарегистрирован (временные ID)
+        if (node_utils_should_send_node_hello()) {
             light_node_publish_hello();
-            s_node_hello_sent = true;
         }
         
         node_utils_request_time();

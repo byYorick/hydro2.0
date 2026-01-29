@@ -86,6 +86,10 @@ class NodeModel:
     overcurrent_mode: bool = False  # Режим перегрузки
     overcurrent_current: float = 500.0  # Ток в режиме перегрузки (мА)
     no_flow_timeout_s: float = 5.0  # Таймаут отсутствия потока (секунды)
+
+    # Дрифт сенсоров (единицы в минуту)
+    drift_per_minute: Dict[str, float] = field(default_factory=dict)
+    drift_noise_per_minute: float = 0.0
     
     # Токи для разных актуаторов (базовые значения в мА)
     actuator_base_currents: Dict[str, float] = field(default_factory=lambda: {
@@ -158,6 +162,28 @@ class NodeModel:
         # Обновляем время последнего обновления
         for sensor_state in self.sensor_states.values():
             sensor_state.last_update = now
+
+    def apply_drift(self, elapsed_s: float) -> None:
+        """Применить дрифт значений сенсоров."""
+        if not self.drift_per_minute or elapsed_s <= 0:
+            return
+
+        minutes = elapsed_s / 60.0
+        now = time.time()
+        for sensor, rate in self.drift_per_minute.items():
+            if sensor not in self.sensor_states:
+                continue
+            try:
+                rate_f = float(rate)
+            except (TypeError, ValueError):
+                continue
+
+            delta = rate_f * minutes
+            if self.drift_noise_per_minute:
+                delta += random.uniform(-self.drift_noise_per_minute, self.drift_noise_per_minute) * minutes
+
+            self.sensor_states[sensor].value += delta
+            self.sensor_states[sensor].last_update = now
     
     def set_actuator(self, actuator: str, state: bool, pwm_value: int = 255):
         """

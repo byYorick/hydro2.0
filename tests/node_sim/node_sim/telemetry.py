@@ -52,10 +52,12 @@ class TelemetryPublisher:
         self._running = False
         self._telemetry_task: Optional[asyncio.Task] = None
         self._on_demand_callback: Optional[Callable[[], None]] = None
+        self._last_drift_ts: Optional[float] = None
     
     async def start(self):
         """Запустить публикацию телеметрии."""
         self._running = True
+        self._last_drift_ts = time.time()
         
         # Запускаем задачу публикации телеметрии
         self._telemetry_task = asyncio.create_task(self._telemetry_loop())
@@ -111,6 +113,15 @@ class TelemetryPublisher:
     
     async def _publish_all_telemetry(self):
         """Опубликовать телеметрию для всех каналов."""
+        now = time.time()
+        if self._last_drift_ts is None:
+            self._last_drift_ts = now
+        else:
+            elapsed = now - self._last_drift_ts
+            if elapsed > 0 and hasattr(self.node, "apply_drift"):
+                self.node.apply_drift(elapsed)
+                self._last_drift_ts = now
+
         # Публикуем телеметрию для каждого сенсора
         for sensor in self.node.sensors:
             # Пропускаем ina209_ma и flow_present - они публикуются отдельно
