@@ -274,6 +274,7 @@ services:
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
     depends_on:
       mqtt:
         condition: service_healthy
@@ -308,6 +309,9 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - LARAVEL_API_URL=http://laravel
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
     depends_on:
       mqtt:
         condition: service_healthy

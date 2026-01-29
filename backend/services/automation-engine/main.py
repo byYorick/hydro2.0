@@ -460,6 +460,21 @@ async def fetch_full_config(
                 logger.error(f"Config fetch failed: Unauthorized (401) - invalid or missing token. Attempt {attempt + 1}/{max_retries}")
                 # Don't retry on 401 - it's a configuration issue
                 return None
+            elif e.response.status_code == 429:
+                retry_after = e.response.headers.get("Retry-After")
+                try:
+                    retry_after_sec = float(retry_after) if retry_after else retry_delay * (attempt + 1)
+                except ValueError:
+                    retry_after_sec = retry_delay * (attempt + 1)
+                logger.warning(
+                    f"Config fetch rate-limited (429). Retrying after {retry_after_sec:.1f}s. "
+                    f"Attempt {attempt + 1}/{max_retries}"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_after_sec)
+                    continue
+                else:
+                    return None
             elif e.response.status_code >= 500:
                 logger.warning(f"Config fetch failed: Server error {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
@@ -678,9 +693,9 @@ async def main():
                                 logger.warning("Config fetch returned None, sleeping before retry")
                                 await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                                 continue
-                    else:
-                        last_config = cfg
-                        last_config_ts = now
+                        else:
+                            last_config = cfg
+                            last_config_ts = now
                     
                     # Validate config structure
                     is_valid, error_msg = validate_config(cfg)
@@ -810,7 +825,6 @@ async def main():
                             )
                         
                         # Логируем состояние системы (каждые 5 минут)
-                        import time
                         if int(time.time()) % 300 == 0:  # Каждые 5 минут
                             await log_system_state(
                                 _zone_service,
