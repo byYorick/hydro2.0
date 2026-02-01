@@ -70,6 +70,8 @@
         :zone-id="zoneId"
         :default-recipe-id="defaultRecipeId"
         :initial-telemetry="telemetry"
+        :active-simulation-id="activeSimulationId"
+        :active-simulation-status="activeSimulationStatus"
       />
     </div>
   </AppLayout>
@@ -90,11 +92,14 @@ interface Props {
   zone: Zone
   telemetry?: ZoneTelemetry | null
   active_grow_cycle?: any
+  active_simulation?: { id: number; status: string } | null
 }
 
 const props = defineProps<Props>()
 
 const defaultRecipeId = computed(() => props.active_grow_cycle?.recipeRevision?.recipe_id ?? null)
+const activeSimulationId = computed(() => props.active_simulation?.id ?? null)
+const activeSimulationStatus = computed(() => props.active_simulation?.status ?? null)
 
 const statusVariant = computed<BadgeVariant>(() => {
   switch (props.zone.status) {

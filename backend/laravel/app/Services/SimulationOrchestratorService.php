@@ -73,6 +73,7 @@ class SimulationOrchestratorService
             if ($fullSimulation) {
                 $createdNode = $this->createExtraSimulationNode($simZone);
             }
+            $this->ensureSimulationDosingInfrastructure($simZone, $createdNode);
 
             $cycle = $this->createSimulationGrowCycle(
                 $sourceZone,
@@ -372,6 +373,110 @@ class SimulationOrchestratorService
         }
 
         return $node;
+    }
+
+    private function ensureSimulationDosingInfrastructure(Zone $simZone, ?DeviceNode $preferredNode = null): void
+    {
+        $capabilities = $simZone->capabilities ?? [];
+        $phControl = (bool) ($capabilities['ph_control'] ?? false);
+        $ecControl = (bool) ($capabilities['ec_control'] ?? false);
+
+        if (! $phControl && ! $ecControl) {
+            return;
+        }
+
+        $zoneNodeIds = DeviceNode::query()
+            ->where('zone_id', $simZone->id)
+            ->pluck('id')
+            ->all();
+
+        if (empty($zoneNodeIds)) {
+            return;
+        }
+
+        $existingRoles = ChannelBinding::query()
+            ->join('infrastructure_instances as ii', 'ii.id', '=', 'channel_bindings.infrastructure_instance_id')
+            ->where('ii.owner_type', 'zone')
+            ->where('ii.owner_id', $simZone->id)
+            ->pluck('channel_bindings.role')
+            ->all();
+        $existingRoleSet = array_fill_keys($existingRoles, true);
+
+        $targetNode = $preferredNode;
+        if (! $targetNode) {
+            $targetNode = DeviceNode::query()
+                ->where('zone_id', $simZone->id)
+                ->orderByRaw("CASE WHEN type = 'ph' THEN 0 WHEN type = 'ec' THEN 1 WHEN type = 'irrig' THEN 2 ELSE 3 END")
+                ->orderBy('id')
+                ->first();
+        }
+
+        if (! $targetNode) {
+            return;
+        }
+
+        $definitions = [
+            'ph_acid_pump' => [
+                'channel' => 'pump_acid',
+                'label' => 'Насос дозирования кислоты',
+                'required' => true,
+                'enabled' => $phControl,
+            ],
+            'ph_base_pump' => [
+                'channel' => 'pump_base',
+                'label' => 'Насос дозирования щёлочи',
+                'required' => true,
+                'enabled' => $phControl,
+            ],
+            'ec_nutrient_pump' => [
+                'channel' => 'pump_nutrient',
+                'label' => 'Насос питательных веществ',
+                'required' => true,
+                'enabled' => $ecControl,
+            ],
+        ];
+
+        foreach ($definitions as $role => $definition) {
+            if (! $definition['enabled'] || isset($existingRoleSet[$role])) {
+                continue;
+            }
+
+            $nodeChannel = NodeChannel::query()
+                ->whereIn('node_id', $zoneNodeIds)
+                ->where('channel', $definition['channel'])
+                ->first();
+
+            if (! $nodeChannel) {
+                $nodeChannel = NodeChannel::create([
+                    'node_id' => $targetNode->id,
+                    'channel' => $definition['channel'],
+                    'type' => 'ACTUATOR',
+                    'metric' => 'PUMP',
+                    'unit' => '',
+                ]);
+            }
+
+            $instance = InfrastructureInstance::firstOrCreate(
+                [
+                    'owner_type' => 'zone',
+                    'owner_id' => $simZone->id,
+                    'label' => $definition['label'],
+                ],
+                [
+                    'asset_type' => 'PUMP',
+                    'required' => $definition['required'],
+                ],
+            );
+
+            ChannelBinding::updateOrCreate(
+                ['node_channel_id' => $nodeChannel->id],
+                [
+                    'infrastructure_instance_id' => $instance->id,
+                    'direction' => 'actuator',
+                    'role' => $role,
+                ],
+            );
+        }
     }
 
     /**

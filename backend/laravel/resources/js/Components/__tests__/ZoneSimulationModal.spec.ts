@@ -95,10 +95,74 @@ describe('ZoneSimulationModal.vue', () => {
     const driftHumidity = wrapper.find('#simulation-drift-humidity').element as HTMLInputElement
     const driftNoise = wrapper.find('#simulation-drift-noise').element as HTMLInputElement
 
-    expect(Number(driftPh.value)).toBeCloseTo(0.06, 3)
-    expect(Number(driftEc.value)).toBeCloseTo(0.012, 3)
+    expect(Number(driftPh.value)).toBeCloseTo(0.24, 3)
+    expect(Number(driftEc.value)).toBeCloseTo(0.084, 3)
     expect(Number(driftTempAir.value)).toBeCloseTo(0.04, 3)
     expect(Number(driftHumidity.value)).toBeCloseTo(0.12, 3)
-    expect(Number(driftNoise.value)).toBeCloseTo(0.012, 3)
+    expect(Number(driftNoise.value)).toBeCloseTo(0.024, 3)
+  })
+
+  it('показывает новые события симуляции сверху', async () => {
+    const originalEventSource = global.EventSource
+    const addListenerMock = vi.fn()
+    const closeMock = vi.fn()
+
+    class MockEventSource {
+      addEventListener = addListenerMock
+      close = closeMock
+      constructor() {}
+    }
+
+    // @ts-expect-error - EventSource mock for tests
+    global.EventSource = MockEventSource
+
+    const events = [
+      {
+        id: 1,
+        service: 'laravel',
+        stage: 'job',
+        status: 'running',
+        message: 'Старое событие',
+        occurred_at: '2026-02-01T10:00:00Z',
+      },
+      {
+        id: 2,
+        service: 'automation-engine',
+        stage: 'command_publish',
+        status: 'sent',
+        message: 'Новое событие',
+        occurred_at: '2026-02-01T10:01:00Z',
+      },
+    ]
+
+    apiGetMock.mockImplementation((url: string) => {
+      if (url.includes('/simulations/42/events')) {
+        return Promise.resolve({ data: { data: events } })
+      }
+      return Promise.resolve({ data: { data: { data: [] } } })
+    })
+
+    try {
+      const wrapper = mount(ZoneSimulationModal, {
+        props: {
+          show: true,
+          zoneId: 1,
+          activeSimulationId: 42,
+          activeSimulationStatus: 'running',
+        },
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await wrapper.vm.$nextTick()
+
+      const list = wrapper.find('ul.max-h-64')
+      const items = list.findAll('li')
+
+      expect(items.length).toBeGreaterThanOrEqual(2)
+      expect(items[0].text()).toContain('Новое событие')
+      expect(items[1].text()).toContain('Старое событие')
+    } finally {
+      global.EventSource = originalEventSource
+    }
   })
 })

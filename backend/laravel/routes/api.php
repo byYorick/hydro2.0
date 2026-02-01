@@ -33,7 +33,11 @@ use App\Http\Controllers\ZonePidLogController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-$apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
+$defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
+    ? '1000,1'
+    : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
+$apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
+$internalApiThrottle = env('INTERNAL_API_THROTTLE', $apiThrottle);
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
@@ -318,7 +322,7 @@ Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function ()
 });
 
 // Internal API для Python сервисов (требует verify.python.service middleware)
-Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$apiThrottle])->group(function () {
+Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$internalApiThrottle])->group(function () {
     Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
     Route::post('grow-cycles/{growCycle}/advance-phase', [\App\Http\Controllers\InternalApiController::class, 'advanceGrowCyclePhase']);
     Route::post('grow-cycles/{growCycle}/harvest', [\App\Http\Controllers\InternalApiController::class, 'harvestGrowCycle']);

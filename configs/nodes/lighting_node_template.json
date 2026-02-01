@@ -1,0 +1,40 @@
+{
+  "node_id": "nd-light-1",
+  "type": "lighting_node",
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-1",
+  "channels": [
+    {
+      "name": "light",
+      "type": "SENSOR",
+      "metric": "LIGHT_INTENSITY",
+      "poll_interval_ms": 5000,
+      "unit": "lux",
+      "precision": 0
+    },
+    {
+      "name": "white_light",
+      "type": "ACTUATOR",
+      "actuator_type": "LED",
+      "relay_type": "NO",
+      "gpio": 22
+    },
+    {
+      "name": "uv_light",
+      "type": "ACTUATOR",
+      "actuator_type": "LED",
+      "relay_type": "NO",
+      "gpio": 23
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  }
+}

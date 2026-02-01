@@ -42,7 +42,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Стандартный лимит: 120 запросов в минуту для всех API роутов
         // Более строгие лимиты применяются на уровне отдельных роутов
         // Увеличен для поддержки множественных компонентов на одной странице
-        $apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
+        $defaultApiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true)
+            ? '1000,1'
+            : (env('APP_ENV') === 'local' ? '2000,1' : '120,1');
+        $apiThrottle = env('API_THROTTLE', $defaultApiThrottle);
         $middleware->api(prepend: [
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);

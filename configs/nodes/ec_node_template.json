@@ -1,20 +1,28 @@
 {
   "node_id": "nd-ec-1",
   "type": "ec_node",
-  "version": 1,
+  "version": 3,
   "gh_uid": "gh-1",
   "zone_uid": "zn-1",
   "channels": [
     {
+      "name": "ec_sensor",
+      "type": "SENSOR",
+      "metric": "EC",
+      "poll_interval_ms": 3000,
+      "unit": "mS/cm",
+      "precision": 2
+    },
+    {
       "name": "pump_nutrient",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "PERISTALTIC_PUMP",
       "gpio": 26,
       "ml_per_second": 3.0,
-      "max_duration_ms": 15000,
       "safe_limits": {
         "max_duration_ms": 15000,
-        "min_off_ms": 5000
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
       }
     }
   ],
@@ -28,5 +36,3 @@
     "keepalive": 30
   }
 }
-
-

@@ -247,6 +247,27 @@
           <p class="text-xs text-[color:var(--text-muted)] mb-2">
             Задайте скорость изменения в единицах за минуту. Отрицательные значения допустимы.
           </p>
+          <div class="flex flex-wrap items-center gap-2 mb-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="applyAggressiveDrift"
+            >
+              Пресет: агрессивный
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              @click="resetDriftValues"
+            >
+              Сбросить дрифт
+            </Button>
+            <span class="text-[11px] text-[color:var(--text-dim)]">
+              pH≈0.24, EC≈0.105 ед/мин
+            </span>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label
@@ -472,6 +493,8 @@
           </div>
           <ul
             v-else
+            ref="simulationEventsListRef"
+            @scroll="onSimulationEventsScroll"
             class="mt-3 space-y-3 max-h-64 overflow-y-auto pr-1"
           >
             <li
@@ -661,7 +684,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted, nextTick } from 'vue'
 import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
@@ -683,6 +706,8 @@ interface Props {
     temperature?: number | null
     humidity?: number | null
   } | null
+  activeSimulationId?: number | null
+  activeSimulationStatus?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -690,6 +715,8 @@ const props = withDefaults(defineProps<Props>(), {
   mode: 'modal',
   defaultRecipeId: null,
   initialTelemetry: null,
+  activeSimulationId: null,
+  activeSimulationStatus: null,
 })
 
 defineEmits<{
@@ -861,7 +888,12 @@ const simulationEvents = ref<SimulationEvent[]>([])
 const simulationEventsLoading = ref(false)
 const simulationEventsError = ref<string | null>(null)
 const simulationEventsLastId = ref(0)
+const simulationEventsListRef = ref<HTMLElement | null>(null)
+const simulationEventsPinnedTop = ref(true)
 let simulationEventsSource: EventSource | null = null
+let simulationEventsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let simulationEventsReconnectAttempts = 0
+let simulationEventsPollTimer: ReturnType<typeof setInterval> | null = null
 let simulationPollTimer: ReturnType<typeof setInterval> | null = null
 
 const driftTouched = reactive({
@@ -874,11 +906,22 @@ const driftTouched = reactive({
 })
 
 const DRIFT_RELATIVE_RATES = {
-  ph: 0.01,
-  ec: 0.01,
+  ph: 0.04,
+  ec: 0.07,
   temp_air: 0.002,
   temp_water: 0.002,
   humidity_air: 0.002,
+} as const
+
+const DRIFT_PRESETS = {
+  aggressive: {
+    ph: 0.24,
+    ec: 0.105,
+    temp_air: 0.004,
+    temp_water: 0.004,
+    humidity_air: 0.004,
+    noise: 0.02,
+  },
 } as const
 
 const roundDrift = (value: number, precision = 3): number => {
@@ -917,6 +960,38 @@ const applyAutoDrift = () => {
       }
     }
   }
+}
+
+const applyAggressiveDrift = () => {
+  const preset = DRIFT_PRESETS.aggressive
+  driftPh.value = preset.ph
+  driftEc.value = preset.ec
+  driftTempAir.value = preset.temp_air
+  driftTempWater.value = preset.temp_water
+  driftHumidity.value = preset.humidity_air
+  driftNoise.value = preset.noise
+  driftTouched.ph = true
+  driftTouched.ec = true
+  driftTouched.temp_air = true
+  driftTouched.temp_water = true
+  driftTouched.humidity_air = true
+  driftTouched.noise = true
+}
+
+const resetDriftValues = () => {
+  driftPh.value = null
+  driftEc.value = null
+  driftTempAir.value = null
+  driftTempWater.value = null
+  driftHumidity.value = null
+  driftNoise.value = null
+  driftTouched.ph = false
+  driftTouched.ec = false
+  driftTouched.temp_air = false
+  driftTouched.temp_water = false
+  driftTouched.humidity_air = false
+  driftTouched.noise = false
+  applyAutoDrift()
 }
 
 const applyInitialTelemetry = (telemetry: Props['initialTelemetry']) => {
@@ -1129,6 +1204,16 @@ const simulationStatusLabel = computed(() => {
       return ''
   }
 })
+
+function mapActiveSimulationStatus(status?: string | null): 'queued' | 'processing' | 'completed' | 'failed' | null {
+  if (!status) return null
+  const normalized = status.toLowerCase()
+  if (normalized === 'pending') return 'queued'
+  if (normalized === 'running') return 'processing'
+  if (normalized === 'completed') return 'completed'
+  if (normalized === 'failed') return 'failed'
+  return 'processing'
+}
 
 const reportSummaryEntries = computed(() => {
   const summary = simulationReport.value?.summary_json
@@ -1382,7 +1467,10 @@ function resetSimulationEvents(): void {
   simulationEventsError.value = null
   simulationEventsLoading.value = false
   simulationEventsLastId.value = 0
+  simulationEventsPinnedTop.value = true
   stopSimulationEventStream()
+  clearSimulationEventReconnect()
+  stopSimulationEventPolling()
 }
 
 function stopSimulationEventStream(): void {
@@ -1392,23 +1480,76 @@ function stopSimulationEventStream(): void {
   }
 }
 
+function clearSimulationEventReconnect(): void {
+  if (simulationEventsReconnectTimer) {
+    clearTimeout(simulationEventsReconnectTimer)
+    simulationEventsReconnectTimer = null
+  }
+}
+
+function stopSimulationEventPolling(): void {
+  if (simulationEventsPollTimer) {
+    clearInterval(simulationEventsPollTimer)
+    simulationEventsPollTimer = null
+  }
+}
+
+function startSimulationEventPolling(simulationId: number): void {
+  stopSimulationEventPolling()
+  simulationEventsPollTimer = setInterval(() => {
+    if (!simulationEventsLoading.value) {
+      loadSimulationEvents(simulationId)
+    }
+  }, 5000)
+}
+
+function scheduleSimulationEventReconnect(simulationId: number): void {
+  if (simulationEventsReconnectTimer) return
+  const delay = Math.min(30000, 2000 * 2 ** simulationEventsReconnectAttempts)
+  simulationEventsReconnectAttempts += 1
+  simulationEventsReconnectTimer = setTimeout(() => {
+    simulationEventsReconnectTimer = null
+    startSimulationEventStream(simulationId)
+  }, delay)
+}
+
+function compareSimulationEvents(a: SimulationEvent, b: SimulationEvent): number {
+  const aTime = a.occurred_at || a.created_at || ''
+  const bTime = b.occurred_at || b.created_at || ''
+  if (aTime === bTime) {
+    return b.id - a.id
+  }
+  return aTime > bTime ? -1 : 1
+}
+
+function scrollEventsToTop(force = false): void {
+  if (!force && !simulationEventsPinnedTop.value) {
+    return
+  }
+  const container = simulationEventsListRef.value
+  if (!container) return
+  container.scrollTop = 0
+}
+
+function onSimulationEventsScroll(): void {
+  const container = simulationEventsListRef.value
+  if (!container) return
+  simulationEventsPinnedTop.value = container.scrollTop <= 8
+}
+
 function appendSimulationEvent(event: SimulationEvent): void {
   if (simulationEvents.value.some((item) => item.id === event.id)) {
     return
   }
   simulationEvents.value.push(event)
-  simulationEvents.value.sort((a, b) => {
-    const aTime = a.occurred_at || a.created_at || ''
-    const bTime = b.occurred_at || b.created_at || ''
-    if (aTime === bTime) {
-      return a.id - b.id
-    }
-    return aTime < bTime ? -1 : 1
-  })
+  simulationEvents.value.sort(compareSimulationEvents)
   simulationEventsLastId.value = Math.max(simulationEventsLastId.value, event.id)
   if (simulationEvents.value.length > 200) {
-    simulationEvents.value = simulationEvents.value.slice(-200)
+    simulationEvents.value = simulationEvents.value.slice(0, 200)
   }
+  nextTick(() => {
+    scrollEventsToTop()
+  })
 }
 
 async function loadSimulationEvents(simulationId: number): Promise<void> {
@@ -1417,16 +1558,13 @@ async function loadSimulationEvents(simulationId: number): Promise<void> {
   try {
     const response = await api.get<{ status: string; data?: SimulationEvent[]; meta?: any }>(
       `/simulations/${simulationId}/events`,
-      { params: { order: 'asc', limit: 200 } }
+      { params: { order: 'desc', limit: 200 } }
     )
     const items = Array.isArray(response.data?.data) ? response.data?.data : []
-    simulationEvents.value = items
-    const lastId = response.data?.meta?.last_id
-    if (typeof lastId === 'number') {
-      simulationEventsLastId.value = lastId
-    } else if (items.length) {
-      simulationEventsLastId.value = Math.max(...items.map((item) => item.id))
-    }
+    simulationEvents.value = items.sort(compareSimulationEvents)
+    simulationEventsLastId.value = items.length ? Math.max(...items.map((item) => item.id)) : 0
+    await nextTick()
+    scrollEventsToTop()
   } catch (err) {
     logger.debug('[ZoneSimulationModal] Failed to load simulation events', err)
     simulationEventsError.value = 'Не удалось загрузить события симуляции'
@@ -1437,7 +1575,13 @@ async function loadSimulationEvents(simulationId: number): Promise<void> {
 
 function startSimulationEventStream(simulationId: number): void {
   stopSimulationEventStream()
+  clearSimulationEventReconnect()
+  stopSimulationEventPolling()
   if (typeof window === 'undefined') return
+  if (typeof EventSource === 'undefined') {
+    startSimulationEventPolling(simulationId)
+    return
+  }
 
   const params = new URLSearchParams()
   if (simulationEventsLastId.value > 0) {
@@ -1446,6 +1590,11 @@ function startSimulationEventStream(simulationId: number): void {
   const url = `/api/simulations/${simulationId}/events/stream?${params.toString()}`
   const source = new EventSource(url)
   simulationEventsSource = source
+
+  source.addEventListener('open', () => {
+    simulationEventsReconnectAttempts = 0
+    stopSimulationEventPolling()
+  })
 
   source.addEventListener('simulation_event', (event) => {
     try {
@@ -1460,10 +1609,14 @@ function startSimulationEventStream(simulationId: number): void {
 
   source.addEventListener('close', () => {
     stopSimulationEventStream()
+    startSimulationEventPolling(simulationId)
+    scheduleSimulationEventReconnect(simulationId)
   })
 
   source.addEventListener('error', () => {
     stopSimulationEventStream()
+    startSimulationEventPolling(simulationId)
+    scheduleSimulationEventReconnect(simulationId)
   })
 }
 
@@ -1554,6 +1707,37 @@ function startSimulationPolling(jobId: string): void {
     pollSimulationStatus(jobId)
   }, 2000)
 }
+
+function attachActiveSimulation(simulationId: number, status?: string | null): void {
+  if (simulationDbId.value !== simulationId) {
+    simulationDbId.value = simulationId
+    simulationEvents.value = []
+    simulationEventsError.value = null
+    simulationEventsLoading.value = false
+    simulationEventsLastId.value = 0
+    simulationEventsPinnedTop.value = true
+  }
+
+  if (!simulationEvents.value.length && !simulationEventsLoading.value) {
+    loadSimulationEvents(simulationId)
+  }
+  startSimulationEventStream(simulationId)
+
+  const mappedStatus = mapActiveSimulationStatus(status)
+  if (mappedStatus && !simulationJobId.value) {
+    simulationStatus.value = mappedStatus
+  }
+}
+
+watch(
+  () => [props.activeSimulationId, props.activeSimulationStatus, isVisible.value, loading.value] as const,
+  ([activeId, activeStatus, isVisibleNow, isLoading]) => {
+    if (!isVisibleNow || isLoading) return
+    if (!activeId || simulationJobId.value) return
+    attachActiveSimulation(activeId, activeStatus)
+  },
+  { immediate: true }
+)
 
 watch(
   () => props.show,

@@ -8,7 +8,7 @@ Correction Cooldown Manager - предотвращение лавины корр
 - Cooldown период (10 минут по умолчанию)
 """
 from typing import Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
 from common.db import fetch, execute
 import logging
@@ -23,6 +23,21 @@ MIN_TREND_POINTS = 3
 
 # Порог улучшения тренда (если значение приближается к цели, не корректируем)
 TREND_IMPROVEMENT_THRESHOLD = 0.05  # 0.05 единицы улучшения за последние измерения
+
+
+def _to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Нормализует datetime к UTC без tzinfo для операций с БД (timestamp без TZ)."""
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None):
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _now_naive_utc() -> datetime:
+    """Текущее время в UTC без tzinfo для сравнения с timestamp без TZ."""
+    now = _to_naive_utc(utcnow())
+    return now if now is not None else utcnow().replace(tzinfo=None)
 
 
 async def get_last_correction_time(zone_id: int, correction_type: str) -> Optional[datetime]:
@@ -62,7 +77,7 @@ async def get_last_correction_time(zone_id: int, correction_type: str) -> Option
     )
     
     if rows and len(rows) > 0:
-        return rows[0]["created_at"]
+        return _to_naive_utc(rows[0]["created_at"])
     return None
 
 
@@ -82,8 +97,11 @@ async def is_in_cooldown(zone_id: int, correction_type: str, cooldown_minutes: i
     if last_correction is None:
         return False
     
+    last_correction = _to_naive_utc(last_correction)
+    if last_correction is None:
+        return False
     cooldown_end = last_correction + timedelta(minutes=cooldown_minutes)
-    return utcnow() < cooldown_end
+    return _now_naive_utc() < cooldown_end
 
 
 async def analyze_trend(
@@ -108,7 +126,7 @@ async def analyze_trend(
         - is_improving: True если значение приближается к цели
         - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
     """
-    cutoff_time = (utcnow() - timedelta(hours=hours)).replace(tzinfo=None)
+    cutoff_time = _now_naive_utc() - timedelta(hours=hours)
     
     normalized_metric = (metric_type or "").upper()
     rows = await fetch(
@@ -200,7 +218,8 @@ async def should_apply_correction(
     if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
         last_correction = await get_last_correction_time(zone_id, correction_type)
         if last_correction:
-            time_since = utcnow() - last_correction
+            last_correction = _to_naive_utc(last_correction)
+            time_since = _now_naive_utc() - last_correction
             return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
         return False, "В cooldown периоде"
     

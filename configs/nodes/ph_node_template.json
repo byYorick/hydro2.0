@@ -1,7 +1,58 @@
 {
-  "nodeId": "ph-001",
+  "node_id": "nd-ph-1",
   "type": "ph_node",
-  "channels": []
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-1",
+  "channels": [
+    {
+      "name": "ph_sensor",
+      "type": "SENSOR",
+      "metric": "PH",
+      "poll_interval_ms": 3000,
+      "unit": "pH",
+      "precision": 2
+    },
+    {
+      "name": "solution_temp_c",
+      "type": "SENSOR",
+      "metric": "TEMPERATURE",
+      "poll_interval_ms": 5000,
+      "unit": "C",
+      "precision": 1
+    },
+    {
+      "name": "pump_acid",
+      "type": "ACTUATOR",
+      "actuator_type": "PERISTALTIC_PUMP",
+      "gpio": 12,
+      "ml_per_second": 1.5,
+      "safe_limits": {
+        "max_duration_ms": 15000,
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
+      }
+    },
+    {
+      "name": "pump_base",
+      "type": "ACTUATOR",
+      "actuator_type": "PERISTALTIC_PUMP",
+      "gpio": 13,
+      "ml_per_second": 1.5,
+      "safe_limits": {
+        "max_duration_ms": 15000,
+        "min_off_ms": 5000,
+        "fail_safe_mode": "NO"
+      }
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  }
 }
-
-

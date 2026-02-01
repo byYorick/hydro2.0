@@ -1,0 +1,39 @@
+{
+  "node_id": "nd-relay-1",
+  "type": "relay_node",
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-1",
+  "channels": [
+    {
+      "name": "fill_valve",
+      "type": "ACTUATOR",
+      "actuator_type": "VALVE",
+      "relay_type": "NO",
+      "gpio": 32
+    },
+    {
+      "name": "water_control",
+      "type": "ACTUATOR",
+      "actuator_type": "VALVE",
+      "relay_type": "NO",
+      "gpio": 33
+    },
+    {
+      "name": "drain_valve",
+      "type": "ACTUATOR",
+      "actuator_type": "VALVE",
+      "relay_type": "NO",
+      "gpio": 25
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  }
+}

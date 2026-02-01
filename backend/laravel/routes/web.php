@@ -11,6 +11,7 @@ use App\Models\Recipe;
 use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
+use App\Models\ZoneSimulation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -969,6 +970,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
          * - zone: { id, name, status, greenhouse_id, greenhouse, activeGrowCycle }
          * - telemetry: { ph, ec, temperature, humidity }
          * - active_grow_cycle: object|null
+         * - active_simulation: { id, status }|null
          */
         Route::get('/{zoneId}/simulation', function (string $zoneId) {
             $zoneIdInt = (int) $zoneId;
@@ -1023,12 +1025,26 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 })
                 ->toArray();
 
+            $activeSimulation = ZoneSimulation::query()
+                ->where(function ($query) use ($zoneIdInt): void {
+                    $query
+                        ->where('zone_id', $zoneIdInt)
+                        ->orWhere('scenario->simulation->source_zone_id', $zoneIdInt);
+                })
+                ->whereIn('status', ['pending', 'running'])
+                ->orderByDesc('created_at')
+                ->first();
+
             return Inertia::render('Zones/Simulation', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zoneId' => $zoneIdInt,
                 'zone' => $zone,
                 'telemetry' => $telemetryLast,
                 'active_grow_cycle' => $zone->activeGrowCycle,
+                'active_simulation' => $activeSimulation ? [
+                    'id' => $activeSimulation->id,
+                    'status' => $activeSimulation->status,
+                ] : null,
             ]);
         })->name('zones.simulation');
 

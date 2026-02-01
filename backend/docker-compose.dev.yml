@@ -273,6 +273,8 @@ services:
       - LARAVEL_API_URL=http://laravel
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
     depends_on:

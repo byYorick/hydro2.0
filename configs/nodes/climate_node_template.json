@@ -1,7 +1,56 @@
 {
-  "nodeId": "climate-001",
+  "node_id": "nd-climate-1",
   "type": "climate_node",
-  "channels": []
+  "version": 3,
+  "gh_uid": "gh-1",
+  "zone_uid": "zn-1",
+  "channels": [
+    {
+      "name": "air_temp_c",
+      "type": "SENSOR",
+      "metric": "TEMPERATURE",
+      "poll_interval_ms": 5000,
+      "unit": "C",
+      "precision": 1
+    },
+    {
+      "name": "air_rh",
+      "type": "SENSOR",
+      "metric": "HUMIDITY",
+      "poll_interval_ms": 5000,
+      "unit": "%",
+      "precision": 1
+    },
+    {
+      "name": "co2_ppm",
+      "type": "SENSOR",
+      "metric": "CO2",
+      "poll_interval_ms": 10000,
+      "unit": "ppm",
+      "precision": 0
+    },
+    {
+      "name": "fan_air",
+      "type": "ACTUATOR",
+      "actuator_type": "FAN",
+      "relay_type": "NO",
+      "gpio": 27
+    },
+    {
+      "name": "heater_air",
+      "type": "ACTUATOR",
+      "actuator_type": "HEATER",
+      "relay_type": "NO",
+      "gpio": 14
+    }
+  ],
+  "wifi": {
+    "ssid": "HydroFarm",
+    "pass": "12345678"
+  },
+  "mqtt": {
+    "host": "192.168.1.10",
+    "port": 1883,
+    "keepalive": 30
+  }
 }
-
-
