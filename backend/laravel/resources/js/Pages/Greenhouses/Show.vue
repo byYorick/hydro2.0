@@ -70,7 +70,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              :disabled="!canManageGreenhouse || zones.length === 0 || climateSubmitting"
+              :disabled="!canManageGreenhouse || climateSubmitting"
               @click="openClimateModal"
             >
               Управление климатом
@@ -97,7 +97,7 @@
           Климат применится ко всем {{ climateZoneIds.length }} зонам теплицы.
           В обслуживании сейчас {{ maintenanceExitTargets.length }} / {{ climateNodes.length }} климат-узлов.
           <span v-if="!canManageGreenhouse">
-            Доступно только для роли «агроном».
+            Доступно только для ролей «оператор», «агроном», «инженер», «админ».
           </span>
         </div>
         <div
@@ -371,7 +371,12 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage<PageProps>()
 const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
-const canManageGreenhouse = computed(() => role.value === 'agronomist')
+const canManageGreenhouse = computed(() => (
+  role.value === 'agronomist'
+  || role.value === 'admin'
+  || role.value === 'operator'
+  || role.value === 'engineer'
+))
 
 const { showToast } = useToast()
 const { api } = useApi()

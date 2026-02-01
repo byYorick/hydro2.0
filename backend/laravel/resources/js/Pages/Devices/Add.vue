@@ -108,6 +108,16 @@
                 >
                   {{ getStateLabel(node.lifecycle_state) }}
                 </Badge>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  :disabled="deleting[node.id] || assigning[node.id]"
+                  :data-test="`delete-node-${node.id}`"
+                  @click="deleteNode(node)"
+                >
+                  <span v-if="deleting[node.id]">Удаление...</span>
+                  <span v-else>Удалить</span>
+                </Button>
               </div>
             </div>
 
@@ -222,6 +232,7 @@ const newNodes = ref<Device[]>([])
 const greenhouses = ref<Greenhouse[]>([])
 const zones = ref<Zone[]>([])
 const assigning = reactive<Record<number, boolean>>({})
+const deleting = reactive<Record<number, boolean>>({})
 const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
 const pendingAssignments = reactive<Record<number, string>>({})
 let refreshInterval: ReturnType<typeof setInterval> | null = null
@@ -483,6 +494,37 @@ async function assignNode(node: any) {
     }
   } finally {
     assigning[node.id] = false
+  }
+}
+
+async function deleteNode(node: Device): Promise<void> {
+  if (!node?.id) return
+
+  const label = node.name || node.uid || `Node #${node.id}`
+  if (typeof window !== 'undefined') {
+    const ok = window.confirm(`Удалить ноду "${label}"? Это действие нельзя отменить.`)
+    if (!ok) {
+      return
+    }
+  }
+
+  deleting[node.id] = true
+  try {
+    await api.delete(`/nodes/${node.id}`)
+    showToast(`Нода "${label}" удалена.`, 'success', TOAST_TIMEOUT.NORMAL)
+
+    newNodes.value = newNodes.value.filter(n => n.id !== node.id)
+    delete assignmentForms[node.id]
+    delete pendingAssignments[node.id]
+  } catch (err) {
+    logger.error('[Devices/Add] Failed to delete node:', err)
+    handleError(err, {
+      component: 'Devices/Add',
+      action: 'deleteNode',
+      nodeId: node.id,
+    })
+  } finally {
+    deleting[node.id] = false
   }
 }
 

@@ -597,7 +597,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       commandType = 'test_sensor'
       params = {}
     } else if (isRelayNode) {
-      commandType = 'set_state'
+      commandType = 'set_relay'
       params = { state: 1, duration_ms: 3000 }
     } else if (isValve) {
       commandType = 'set_relay'

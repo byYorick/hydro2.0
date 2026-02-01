@@ -11,6 +11,8 @@ from command_service import (
     _get_zone_uid_from_id,
     _mqtt_client_context,
     _validate_target_level,
+    publish_config_mqtt,
+    publish_config_temp_mqtt,
     publish_command_mqtt,
 )
 from common.command_status_queue import send_status_to_laravel
@@ -26,6 +28,7 @@ from models import (
     CalibrateFlowRequest,
     CommandRequest,
     FillDrainRequest,
+    NodeConfigPublishRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,19 +41,186 @@ def _apply_trace_id(trace_id: Optional[str]) -> None:
         set_trace_id(trace_id, allow_generate=False)
 
 
+def _ensure_node_secret(config: dict) -> dict:
+    node_secret = config.get("node_secret")
+    if isinstance(node_secret, str) and node_secret:
+        return config
+    secret = get_settings().node_default_secret
+    if not secret:
+        raise HTTPException(status_code=500, detail="node_default_secret is not configured")
+    config["node_secret"] = secret
+    logger.warning("NodeConfig missing node_secret, injecting default secret for publish")
+    return config
+
+
+def _log_config_publish_context(
+    *,
+    node_uid: str,
+    topic: str,
+    config_payload: dict,
+    is_temp: bool,
+) -> None:
+    import json as json_lib
+
+    has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
+    payload_size = len(json_lib.dumps(config_payload, separators=(",", ":")))
+    logger.info(
+        "[CONFIG_PUBLISH] node_uid=%s topic=%s temp=%s node_secret_present=%s payload_size=%s",
+        node_uid,
+        topic,
+        is_temp,
+        has_secret,
+        payload_size,
+    )
+
+
 @router.post("/nodes/{node_uid}/config")
-async def publish_node_config(request: Request, node_uid: str):
+async def publish_node_config(
+    request: Request,
+    node_uid: str,
+    req: NodeConfigPublishRequest = Body(...),
+):
     """
-    Публикация NodeConfig отключена: ноды отправляют config_report при подключении.
+    Публикация NodeConfig в MQTT.
+    Разрешена только с параметрами теплица/зона (greenhouse_uid + zone_id/zone_uid).
     """
-    logger.warning(
-        "[PUBLISH_CONFIG] Config publish endpoint is disabled. node_uid=%s",
+    _auth_ingest(request)
+
+    if not req.zone_id and not req.zone_uid:
+        raise HTTPException(
+            status_code=400,
+            detail="zone_id or zone_uid is required",
+        )
+
+    zone_uid = req.zone_uid
+    if not zone_uid and req.zone_id:
+        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+
+    if not zone_uid:
+        raise HTTPException(
+            status_code=400,
+            detail="zone_uid could not be resolved",
+        )
+
+    if not req.zone_id:
+        raise HTTPException(
+            status_code=400,
+            detail="zone_id is required to resolve greenhouse_uid",
+        )
+
+    node_rows = await fetch(
+        """
+        SELECT id, zone_id, pending_zone_id, hardware_id
+        FROM nodes
+        WHERE uid = $1
+        """,
         node_uid,
     )
-    raise HTTPException(
-        status_code=410,
-        detail="Config publishing from server is disabled. Nodes send config_report on connect.",
+    if not node_rows:
+        raise HTTPException(
+            status_code=404,
+            detail="node_uid not found",
+        )
+    node = node_rows[0]
+    node_zone_id = node.get("zone_id")
+    pending_zone_id = node.get("pending_zone_id")
+    hardware_id = node.get("hardware_id")
+
+    logger.info(
+        "[CONFIG_PUBLISH] Decision inputs: node_uid=%s, node_zone_id=%s, pending_zone_id=%s, req_zone_id=%s",
+        node_uid,
+        node_zone_id,
+        pending_zone_id,
+        req.zone_id,
     )
+
+    if node_zone_id and node_zone_id != req.zone_id:
+        raise HTTPException(
+            status_code=409,
+            detail="node is already bound to another zone",
+        )
+
+    if pending_zone_id and pending_zone_id != req.zone_id and not node_zone_id:
+        raise HTTPException(
+            status_code=409,
+            detail="pending_zone_id does not match requested zone_id",
+        )
+
+    gh_uid = req.greenhouse_uid
+    if not gh_uid:
+        gh_uid = await _get_gh_uid_from_zone_id(req.zone_id)
+
+    mqtt = await get_mqtt_client()
+    config_payload = _ensure_node_secret(dict(req.config))
+    use_temp_topic = pending_zone_id == req.zone_id and not node_zone_id
+    if pending_zone_id == req.zone_id and node_zone_id:
+        logger.warning(
+            "[CONFIG_PUBLISH] Inconsistent node state: pending_zone_id set while zone_id already set. Forcing temp publish. node_uid=%s, node_zone_id=%s, pending_zone_id=%s",
+            node_uid,
+            node_zone_id,
+            pending_zone_id,
+        )
+        use_temp_topic = True
+
+    if use_temp_topic:
+        if not hardware_id:
+            raise HTTPException(
+                status_code=409,
+                detail="hardware_id is required for temp config publish",
+            )
+        logger.info(
+            "[CONFIG_PUBLISH] Using temp topic publish: node_uid=%s, hardware_id=%s, zone_id=%s, zone_uid=%s",
+            node_uid,
+            hardware_id,
+            req.zone_id,
+            zone_uid,
+        )
+        temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
+        _log_config_publish_context(
+            node_uid=node_uid,
+            topic=temp_topic,
+            config_payload=config_payload,
+            is_temp=True,
+        )
+        await publish_config_temp_mqtt(
+            mqtt_client=mqtt,
+            hardware_id=hardware_id,
+            config_payload=config_payload,
+        )
+    else:
+        zone_segment = zone_uid or f"zn-{req.zone_id}"
+        topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+        _log_config_publish_context(
+            node_uid=node_uid,
+            topic=topic,
+            config_payload=config_payload,
+            is_temp=False,
+        )
+        logger.info(
+            "[CONFIG_PUBLISH] Using normal topic publish: node_uid=%s, zone_id=%s, zone_uid=%s, gh_uid=%s",
+            node_uid,
+            req.zone_id,
+            zone_uid,
+            gh_uid,
+        )
+        await publish_config_mqtt(
+            mqtt_client=mqtt,
+            gh_uid=gh_uid,
+            zone_id=req.zone_id,
+            node_uid=node_uid,
+            config_payload=config_payload,
+            zone_uid=zone_uid,
+        )
+
+    return {
+        "status": "ok",
+        "data": {
+            "node_uid": node_uid,
+            "greenhouse_uid": gh_uid,
+            "zone_id": req.zone_id,
+            "zone_uid": zone_uid,
+        },
+    }
 
 
 @router.post("/zones/{zone_id}/commands")

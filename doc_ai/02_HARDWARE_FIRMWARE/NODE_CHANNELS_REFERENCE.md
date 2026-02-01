@@ -85,6 +85,18 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - Тип: `SENSOR`
 - Единицы: lux или PPFD (фиксируется в конфиге).
 
+### 2.7. Уровень воды
+
+- Ключ: `water_level`
+- Тип: `SENSOR`
+- Единицы: relative (0.0–1.0) или cm (фиксируется в конфиге).
+
+### 2.8. Расход (поток)
+
+- Ключ: `flow_present`
+- Тип: `SENSOR`
+- Единицы: L/min
+
 ---
 
 ## 3. Актуаторные каналы (ACTUATOR)

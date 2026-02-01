@@ -1192,6 +1192,10 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             )
 
         details = dict(data.get("details") or {})
+        if "error_code" in data and data.get("error_code") is not None:
+            details["error_code"] = data.get("error_code")
+        if "error_message" in data and data.get("error_message") is not None:
+            details["error_message"] = data.get("error_message")
         details.update({
             "raw_status": str(raw_status),
             "node_uid": node_uid,

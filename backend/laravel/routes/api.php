@@ -90,7 +90,7 @@ if (app()->environment('testing', 'e2e')) {
     ]);
 }
 // configFull доступен для Python сервисов через токен или для авторизованных пользователей через Sanctum
-Route::middleware('throttle:30,1')->group(function () {
+Route::middleware('throttle:120,1')->group(function () {
     // Используем middleware, который проверяет либо Sanctum токен, либо Python service token
     Route::get('system/config/full', [SystemController::class, 'configFull'])
         ->middleware('verify.python.service');
@@ -300,7 +300,7 @@ Route::middleware([
     Route::get('simulations/{jobId}', [SimulationController::class, 'show']);
     Route::get('simulations/{simulation}/events', [SimulationEventController::class, 'index']);
     Route::get('simulations/{simulation}/events/stream', [SimulationEventController::class, 'stream'])
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:60,1');
 
     // Admin (минимальный CRUD поверх ресурсов): зоны быстрый create, рецепт быстрый update
     Route::middleware('role:admin')->prefix('admin')->group(function () {

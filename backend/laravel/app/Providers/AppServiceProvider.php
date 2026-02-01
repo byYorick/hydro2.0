@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Events\NodeConfigUpdated;
 use App\Events\ZoneUpdated;
+use App\Listeners\PublishNodeConfigOnUpdate;
 use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
 use App\Models\ZoneEvent;
@@ -79,6 +81,10 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(
             ZoneUpdated::class,
             PublishZoneConfigUpdate::class
+        );
+        Event::listen(
+            NodeConfigUpdated::class,
+            PublishNodeConfigOnUpdate::class
         );
 
         // Регистрация Observer для Command

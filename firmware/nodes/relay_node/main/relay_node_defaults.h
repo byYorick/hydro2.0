@@ -40,7 +40,7 @@ extern "C" {
 // Factory reset (long-press) defaults
 #define RELAY_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits
 #define RELAY_NODE_FACTORY_RESET_ACTIVE_LOW     1
-#define RELAY_NODE_FACTORY_RESET_HOLD_MS        20000U
+#define RELAY_NODE_FACTORY_RESET_HOLD_MS        10000U
 #define RELAY_NODE_FACTORY_RESET_POLL_INTERVAL  50U
 
 #ifdef __cplusplus

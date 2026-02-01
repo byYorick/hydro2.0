@@ -16,6 +16,20 @@ use Illuminate\Support\Str;
 
 class PythonBridgeService
 {
+    private function normalizeRelayCommand(DeviceNode $node, array $payload): array
+    {
+        $cmd = $payload['type'] ?? ($payload['cmd'] ?? null);
+        if ($cmd === 'set_state') {
+            $nodeType = strtolower((string) ($node->type ?? ''));
+            if (str_contains($nodeType, 'relay')) {
+                $payload['cmd'] = 'set_relay';
+                $payload['type'] = 'set_relay';
+            }
+        }
+
+        return $payload;
+    }
+
     public function sendZoneCommand(Zone $zone, array $payload): string
     {
         $cmdId = Str::uuid()->toString();
@@ -88,6 +102,14 @@ class PythonBridgeService
                 throw new \InvalidArgumentException(
                     "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
                 );
+            }
+
+            $payload = $this->normalizeRelayCommand($node, $payload);
+            $normalizedCmd = $payload['type'] ?? ($payload['cmd'] ?? null);
+            if ($normalizedCmd && $normalizedCmd !== $command->cmd) {
+                $command->cmd = $normalizedCmd;
+                $command->save();
+                $commandType = $normalizedCmd;
             }
 
             // Валидируем, что канал существует у ноды
@@ -169,6 +191,7 @@ class PythonBridgeService
 
     public function sendNodeCommand(DeviceNode $node, array $payload): string
     {
+        $payload = $this->normalizeRelayCommand($node, $payload);
         $cmdId = Str::uuid()->toString();
         
         // Получаем channel из payload или из params (для обратной совместимости)

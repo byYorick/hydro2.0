@@ -9,7 +9,24 @@
       class="space-y-4"
       @submit.prevent="onSubmit"
     >
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
+        <span>Шаг {{ currentStep }} из 2: {{ stepTitle }}</span>
+        <div class="flex items-center gap-1">
+          <span
+            class="h-2 w-2 rounded-full"
+            :class="currentStep >= 1 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+          ></span>
+          <span
+            class="h-2 w-2 rounded-full"
+            :class="currentStep >= 2 ? 'bg-[color:var(--accent-primary)]' : 'bg-[color:var(--border-muted)]'"
+          ></span>
+        </div>
+      </div>
+
+      <div
+        v-if="currentStep === 1"
+        class="grid grid-cols-1 md:grid-cols-2 gap-4"
+      >
         <div class="md:col-span-2">
           <label
             for="plant-name"
@@ -179,49 +196,54 @@
             autocomplete="off"
           ></textarea>
         </div>
+      </div>
 
-        <div class="md:col-span-2">
-          <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">
-            Диапазоны параметров
-          </p>
-          <div
-            v-for="metric in rangeMetrics"
-            :key="metric.key"
-            class="grid grid-cols-2 gap-3"
+      <div
+        v-else
+        class="space-y-4"
+      >
+        <div class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] px-3 py-2 text-xs text-[color:var(--text-muted)]">
+          Растение: <span class="text-[color:var(--text-primary)] font-semibold">{{ form.name }}</span>
+        </div>
+        <div>
+          <label
+            for="recipe-name"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
           >
-            <div>
-              <label
-                :for="`plant-${metric.key}-min`"
-                class="block text-xs text-[color:var(--text-muted)] mb-1"
-              >{{ metric.label }} (мин)</label>
-              <input
-                :id="`plant-${metric.key}-min`"
-                v-model.number="form.environment_requirements[metric.key].min"
-                :name="`${metric.key}_min`"
-                type="number"
-                step="0.1"
-                placeholder="Мин"
-                class="input-field h-9 w-full"
-                autocomplete="off"
-              />
-            </div>
-            <div>
-              <label
-                :for="`plant-${metric.key}-max`"
-                class="block text-xs text-[color:var(--text-muted)] mb-1"
-              >{{ metric.label }} (макс)</label>
-              <input
-                :id="`plant-${metric.key}-max`"
-                v-model.number="form.environment_requirements[metric.key].max"
-                :name="`${metric.key}_max`"
-                type="number"
-                step="0.1"
-                placeholder="Макс"
-                class="input-field h-9 w-full"
-                autocomplete="off"
-              />
-            </div>
+            Название рецепта <span class="text-[color:var(--accent-red)]">*</span>
+          </label>
+          <input
+            id="recipe-name"
+            v-model="form.recipe_name"
+            name="recipe_name"
+            type="text"
+            required
+            placeholder="Рецепт для салата"
+            class="input-field h-9 w-full"
+            :class="errors.recipe_name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            autocomplete="off"
+          />
+          <div
+            v-if="errors.recipe_name"
+            class="text-xs text-[color:var(--accent-red)] mt-1"
+          >
+            {{ errors.recipe_name }}
           </div>
+        </div>
+        <div>
+          <label
+            for="recipe-description"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Описание рецепта</label>
+          <textarea
+            id="recipe-description"
+            v-model="form.recipe_description"
+            name="recipe_description"
+            rows="3"
+            placeholder="Краткое описание рецепта..."
+            class="input-field w-full"
+            autocomplete="off"
+          ></textarea>
         </div>
       </div>
 
@@ -235,11 +257,20 @@
 
     <template #footer>
       <Button
+        v-if="currentStep === 2 && !createdPlantId"
         type="button"
-        :disabled="loading || !form.name.trim()"
+        variant="secondary"
+        :disabled="loading"
+        @click="goBack"
+      >
+        Назад
+      </Button>
+      <Button
+        type="button"
+        :disabled="loading || isPrimaryDisabled"
         @click="onSubmit"
       >
-        {{ loading ? 'Создание...' : 'Создать' }}
+        {{ loading ? 'Создание...' : primaryLabel }}
       </Button>
     </template>
   </Modal>
@@ -254,11 +285,6 @@ import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-
-interface EnvironmentRange {
-  min?: number | string | null
-  max?: number | string | null
-}
 
 interface TaxonomyOption {
   id: string
@@ -285,6 +311,9 @@ const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
 const errors = reactive<Record<string, string>>({})
+const currentStep = ref<number>(1)
+const createdPlantId = ref<number | null>(null)
+const createdPlantData = ref<any | null>(null)
 
 const taxonomies = computed(() => ({
   substrate_type: props.taxonomies?.substrate_type ?? [],
@@ -298,19 +327,6 @@ const seasonOptions = [
   { value: 'seasonal', label: 'Сезонное выращивание' },
 ]
 
-const rangeMetrics = [
-  { key: 'temperature', label: 'Температура (°C)' },
-  { key: 'humidity', label: 'Влажность (%)' },
-  { key: 'ph', label: 'pH' },
-  { key: 'ec', label: 'EC (мСм/см)' },
-]
-
-const emptyEnvironment = () =>
-  rangeMetrics.reduce((acc, metric) => {
-    acc[metric.key] = { min: '', max: '' }
-    return acc
-  }, {} as Record<string, EnvironmentRange>)
-
 const form = reactive({
   name: '',
   species: '',
@@ -320,7 +336,8 @@ const form = reactive({
   photoperiod_preset: '',
   seasonality: '',
   description: '',
-  environment_requirements: emptyEnvironment(),
+  recipe_name: '',
+  recipe_description: '',
 })
 
 // Сброс формы при открытии модального окна
@@ -339,7 +356,11 @@ function resetForm() {
   form.photoperiod_preset = ''
   form.seasonality = ''
   form.description = ''
-  form.environment_requirements = emptyEnvironment()
+  form.recipe_name = ''
+  form.recipe_description = ''
+  currentStep.value = 1
+  createdPlantId.value = null
+  createdPlantData.value = null
   Object.keys(errors).forEach(key => delete errors[key])
 }
 
@@ -348,7 +369,44 @@ function handleClose() {
   emit('close')
 }
 
+const stepTitle = computed(() => (currentStep.value === 1 ? 'Данные растения' : 'Рецепт выращивания'))
+const primaryLabel = computed(() => {
+  if (currentStep.value === 1) {
+    return 'Далее'
+  }
+
+  return createdPlantId.value ? 'Создать рецепт' : 'Создать'
+})
+const isPrimaryDisabled = computed(() => {
+  if (currentStep.value === 1) {
+    return !form.name.trim()
+  }
+
+  return !form.recipe_name.trim()
+})
+
+function goBack() {
+  currentStep.value = 1
+  errors.general = ''
+  errors.recipe_name = ''
+}
+
 async function onSubmit() {
+  if (currentStep.value === 1) {
+    if (!form.name || !form.name.trim()) {
+      showToast('Введите название растения', 'error', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
+    currentStep.value = 2
+    return
+  }
+
+  if (!form.recipe_name || !form.recipe_name.trim()) {
+    showToast('Введите название рецепта', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   if (!form.name || !form.name.trim()) {
     showToast('Введите название растения', 'error', TOAST_TIMEOUT.NORMAL)
     return
@@ -356,21 +414,10 @@ async function onSubmit() {
 
   loading.value = true
   errors.name = ''
+  errors.recipe_name = ''
   errors.general = ''
   
   try {
-    // Очищаем пустые значения из environment_requirements
-    const cleanedEnv: Record<string, EnvironmentRange> = {}
-    Object.keys(form.environment_requirements).forEach(key => {
-      const range = form.environment_requirements[key]
-      if (range.min !== '' || range.max !== '') {
-        cleanedEnv[key] = {
-          min: range.min === '' ? null : range.min,
-          max: range.max === '' ? null : range.max,
-        }
-      }
-    })
-    
     const payload: any = {
       name: form.name.trim(),
       species: form.species.trim() || null,
@@ -381,22 +428,53 @@ async function onSubmit() {
       seasonality: form.seasonality || null,
       description: form.description.trim() || null,
     }
-    
-    // Добавляем environment_requirements только если есть данные
-    if (Object.keys(cleanedEnv).length > 0) {
-      payload.environment_requirements = cleanedEnv
+
+    if (!createdPlantId.value) {
+      try {
+        const response = await api.post('/plants', payload)
+        const plant = (response.data as any)?.data || response.data
+        createdPlantId.value = plant?.id ?? null
+        createdPlantData.value = plant
+        logger.info('Plant created:', response.data)
+      } catch (error: any) {
+        logger.error('Failed to create plant:', error)
+        if (error.response?.data?.errors) {
+          Object.keys(error.response.data.errors).forEach(key => {
+            errors[key] = error.response.data.errors[key][0]
+          })
+        } else if (error.response?.data?.message) {
+          errors.general = error.response.data.message
+        }
+        currentStep.value = 1
+        return
+      }
     }
-    
-    const response = await api.post('/plants', payload)
-    
-    logger.info('Plant created:', response.data)
-    showToast('Растение успешно создано', 'success', TOAST_TIMEOUT.NORMAL)
-    
-    const plant = (response.data as any)?.data || response.data
-    emit('created', plant)
+
+    try {
+      await api.post('/recipes', {
+        name: form.recipe_name.trim(),
+        description: form.recipe_description.trim() || null,
+        plant_id: createdPlantId.value,
+      })
+    } catch (error: any) {
+      logger.error('Failed to create recipe:', error)
+      if (error.response?.data?.errors) {
+        Object.keys(error.response.data.errors).forEach(key => {
+          if (key === 'name') {
+            errors.recipe_name = error.response.data.errors[key][0]
+          } else {
+            errors[key] = error.response.data.errors[key][0]
+          }
+        })
+      } else if (error.response?.data?.message) {
+        errors.general = error.response.data.message
+      }
+      return
+    }
+
+    showToast('Растение и рецепт успешно созданы', 'success', TOAST_TIMEOUT.NORMAL)
+    emit('created', createdPlantData.value)
     handleClose()
-    
-    // Обновляем страницу для отображения нового растения
     router.reload({ only: ['plants'] })
   } catch (error: any) {
     logger.error('Failed to create plant:', error)

@@ -1,32 +1,28 @@
 {
-  "node_id": "nd-irrig-1",
+  "node_id": "nd-pump-1",
   "type": "pump_node",
   "version": 3,
   "gh_uid": "gh-1",
-  "zone_uid": "zn-1",
+  "zone_uid": "zn-3",
   "channels": [
     {
-      "name": "pump_irrigation",
+      "name": "pump_acid",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
-      "gpio": 25,
-      "ml_per_second": 10.0,
+      "pin": 25,
       "safe_limits": {
-        "max_duration_ms": 60000,
-        "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "max_duration_ms": 30000,
+        "min_off_ms": 5000
       }
     },
     {
-      "name": "pump_in",
+      "name": "pump_base",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
-      "gpio": 26,
-      "ml_per_second": 10.0,
+      "pin": 26,
       "safe_limits": {
-        "max_duration_ms": 60000,
-        "min_off_ms": 5000,
-        "fail_safe_mode": "NO"
+        "max_duration_ms": 30000,
+        "min_off_ms": 5000
       }
     },
     {

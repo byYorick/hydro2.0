@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\DeviceNode;
 use App\Models\User;
 use App\Models\Zone;
+use App\Jobs\PublishNodeConfigJob;
+use Illuminate\Support\Facades\Queue;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -157,5 +159,27 @@ class NodeControllerTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertEquals('Updated Name', $node->fresh()->name);
+    }
+
+    public function test_publish_config_dispatches_job(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create(['role' => 'operator']);
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/config/publish", [
+            'config' => [
+                'channels' => [],
+            ],
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'ok');
+
+        Queue::assertPushed(PublishNodeConfigJob::class, function (PublishNodeConfigJob $job) use ($node) {
+            return $job->nodeId === $node->id;
+        });
     }
 }

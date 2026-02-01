@@ -72,6 +72,17 @@ class CommandRequest(BaseModel):
         return self.cmd or ""
 
 
+class NodeConfigPublishRequest(BaseModel):
+    """Request model for publishing node config to MQTT."""
+
+    model_config = {"extra": "forbid"}
+
+    greenhouse_uid: str = Field(..., max_length=128, description="Greenhouse UID")
+    zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
+    zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
+    config: Dict[str, Any] = Field(..., description="Node config payload")
+
+
 class FillDrainRequest(BaseModel):
     """Request model for fill/drain operations."""
 

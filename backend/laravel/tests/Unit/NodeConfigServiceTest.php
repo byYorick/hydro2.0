@@ -53,4 +53,45 @@ class NodeConfigServiceTest extends TestCase
         $this->assertArrayNotHasKey('gpio', $config['channels'][0]);
         $this->assertSame('NC', $config['channels'][0]['safe_limits']['fail_safe_mode']);
     }
+
+    public function test_generate_node_config_includes_credentials_and_strips_gpio(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'config' => [
+                'node_id' => 'nd-ph-1',
+                'version' => 3,
+                'type' => 'ph_node',
+                'wifi' => [
+                    'ssid' => 'HydroFarm',
+                    'pass' => 'super-secret',
+                ],
+                'mqtt' => [
+                    'host' => 'mqtt',
+                    'port' => 1883,
+                    'password' => 'super-secret',
+                ],
+                'channels' => [
+                    [
+                        'name' => 'pump_acid',
+                        'type' => 'ACTUATOR',
+                        'gpio' => 26,
+                        'safe_limits' => [
+                            'max_duration_ms' => 1000,
+                            'min_off_ms' => 2000,
+                            'fail_safe_mode' => 'NC',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame('HydroFarm', $config['wifi']['ssid']);
+        $this->assertSame('super-secret', $config['wifi']['pass']);
+        $this->assertSame('mqtt', $config['mqtt']['host']);
+        $this->assertArrayNotHasKey('gpio', $config['channels'][0]);
+    }
 }

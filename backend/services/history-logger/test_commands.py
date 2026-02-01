@@ -243,6 +243,78 @@ async def test_publish_node_command_missing_fields(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_publish_node_config_missing_zone_id(client, auth_headers):
+    """Config publish требует zone_id."""
+    payload = {
+        "greenhouse_uid": "gh-1",
+        "zone_uid": "zn-1",
+        "config": {"version": 1},
+    }
+
+    response = client.post("/nodes/nd-test/config", json=payload, headers=auth_headers)
+
+    assert response.status_code == 400
+    assert "zone_id" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_publish_node_config_success(client, auth_headers, mock_mqtt_client):
+    """Config publish использует только параметры теплица/зона."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_service.get_settings") as mock_settings, \
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="uid")
+        mock_fetch.return_value = [
+            {"id": 1, "zone_id": 1, "pending_zone_id": None, "hardware_id": "esp32-test"}
+        ]
+
+        payload = {
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "zone_uid": "zn-1",
+            "config": {"version": 1},
+        }
+
+        response = client.post("/nodes/nd-test/config", json=payload, headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["data"]["greenhouse_uid"] == "gh-1"
+        assert data["data"]["zone_uid"] == "zn-1"
+        assert mock_mqtt_client._client._client.publish.called
+        publish_call = mock_mqtt_client._client._client.publish.call_args
+        assert publish_call.args[0] == "hydro/gh-1/zn-1/nd-test/config"
+
+
+@pytest.mark.asyncio
+async def test_publish_node_config_temp_topic(client, auth_headers, mock_mqtt_client):
+    """Config publish в temp-топик при pending_zone_id."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_service.get_settings") as mock_settings, \
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="uid")
+        mock_fetch.return_value = [
+            {"id": 1, "zone_id": None, "pending_zone_id": 1, "hardware_id": "esp32-temp"}
+        ]
+
+        payload = {
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "zone_uid": "zn-1",
+            "config": {"version": 1},
+        }
+
+        response = client.post("/nodes/nd-test/config", json=payload, headers=auth_headers)
+
+        assert response.status_code == 200
+        publish_call = mock_mqtt_client._client._client.publish.call_args
+        assert publish_call.args[0] == "hydro/gh-temp/zn-temp/esp32-temp/config"
+
+
+@pytest.mark.asyncio
 async def test_publish_command_with_trace_id(client, auth_headers, mock_mqtt_client):
     """Test command publication with trace_id."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \

@@ -19,7 +19,16 @@ services:
       retries: 3
       start_period: 10s
   db:
-    image: timescale/timescaledb:latest-pg16
+    build:
+      context: ./services/db
+      dockerfile: Dockerfile
+    image: hydro-dev-db
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_cron
+      - -c
+      - cron.database_name=hydro_dev
     environment:
       POSTGRES_PASSWORD: hydro
       POSTGRES_USER: hydro
@@ -29,6 +38,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
+      - ./configs/dev/postgres/init:/docker-entrypoint-initdb.d:ro
     # WAL архивирование отключено в dev окружении для упрощения
     # В production используйте правильную команду архивирования
     healthcheck:
@@ -197,6 +207,8 @@ services:
         condition: service_healthy
       laravel:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9000:9000"
     healthcheck:
@@ -319,6 +331,10 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9402:9402"
     healthcheck:
@@ -376,7 +392,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     logging:
-      driver: "none"
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -395,7 +414,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     logging:
-      driver: "none"
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   digital-twin:
     build:

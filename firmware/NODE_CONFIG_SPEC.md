@@ -53,7 +53,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 |------|-----|--------------|----------|
 | `node_id` | string | Да | Уникальный идентификатор узла (UID) |
 | `version` | integer | Да | Версия формата конфигурации |
-| `type` | string | Да | Тип узла: `ph_node`, `ec_node`, `climate_node`, `pump_node`, `lighting_node` |
+| `type` | string | Да | Тип узла: `ph_node`, `ec_node`, `climate_node`, `pump_node`, `lighting_node`, `relay_node`, `water_sensor_node` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
 | `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы). Каналы формируются в прошивке и отправляются нодой на сервер. |
@@ -94,6 +94,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - `climate_node` — нода климата (температура, влажность, CO₂)
 - `pump_node` — нода управления насосами
 - `lighting_node` — нода управления освещением
+- `relay_node` — релейная нода (клапаны/реле)
+- `water_sensor_node` — нода уровня воды и расхода (water_level/flow_present)
 
 ### 3.4. `gh_uid`
 

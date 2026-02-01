@@ -281,6 +281,11 @@ async function publishConfig() {
         }
       })
 
+    logger.info('[RelayConfigWizard] Publishing config', {
+      nodeId: props.nodeId,
+      channelsCount: sanitizedChannels.length,
+    })
+
     const response = await api.post(`/nodes/${props.nodeId}/config/publish`, {
       config: {
         channels: sanitizedChannels,
@@ -288,12 +293,20 @@ async function publishConfig() {
     })
 
     if (response.data?.status === 'ok') {
+      logger.info('[RelayConfigWizard] Config publish accepted', {
+        nodeId: props.nodeId,
+        status: response.data?.status,
+      })
       showToast('Конфиг отправлен на ноду', 'success', TOAST_TIMEOUT.NORMAL)
       emit('published')
       emit('close')
     }
   } catch (error) {
-    logger.error('[RelayConfigWizard] Failed to publish config', error)
+    logger.error('[RelayConfigWizard] Failed to publish config', {
+      nodeId: props.nodeId,
+      status: (error as any)?.response?.status,
+      message: (error as any)?.response?.data?.message,
+    })
     errorMessage.value = (error as any)?.response?.data?.message || 'Ошибка при отправке конфига'
   } finally {
     saving.value = false
