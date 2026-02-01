@@ -15,7 +15,7 @@ class PlantTaxonomySeeder extends Seeder
      */
     public function run(): void
     {
-        $taxonomyPath = base_path('../configs/plant_taxonomies.json');
+        $taxonomyPath = base_path('config/plant_taxonomies.json');
         $taxonomies = [];
 
         if (File::exists($taxonomyPath)) {

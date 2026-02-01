@@ -41,31 +41,6 @@
               autocomplete="off"
             ></textarea>
           </div>
-          <div>
-            <label
-              for="zone-status"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Статус</label>
-            <select
-              id="zone-status"
-              v-model="form.status"
-              name="status"
-              class="input-select h-9 w-full"
-            >
-              <option value="RUNNING">
-                Запущена
-              </option>
-              <option value="PAUSED">
-                Приостановлена
-              </option>
-              <option value="WARNING">
-                Предупреждение
-              </option>
-              <option value="ALARM">
-                Тревога
-              </option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -142,7 +117,6 @@ const { api } = useApi(showToast)
 const form = reactive({
   name: '',
   description: '',
-  status: 'RUNNING'
 })
 
 const creating = ref(false)
@@ -154,7 +128,6 @@ watch(() => props.show, (show) => {
     // Сброс формы при открытии
     form.name = ''
     form.description = ''
-    form.status = 'RUNNING'
     createdZone.value = null
     error.value = null
   }
@@ -175,7 +148,6 @@ async function onCreate(): Promise<void> {
       {
         name: form.name.trim(),
         description: form.description.trim() || null,
-        status: form.status,
         greenhouse_id: props.greenhouseId
       }
     )

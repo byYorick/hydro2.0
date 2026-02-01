@@ -142,6 +142,7 @@ Route::middleware([
     Route::get('recipes/{recipe}/stage-map', [RecipeController::class, 'getStageMap']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
+    Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
     Route::get('plants', [PlantController::class, 'index']);
     Route::post('plants', [PlantController::class, 'store']);
     Route::get('plants/{plant}', [PlantController::class, 'show']);
@@ -165,6 +166,7 @@ Route::middleware([
         Route::put('zones/{zone}', [ZoneController::class, 'update']);
         Route::patch('zones/{zone}', [ZoneController::class, 'update']);
         Route::delete('zones/{zone}', [ZoneController::class, 'destroy']);
+        Route::put('plant-taxonomies/{taxonomy}', [PlantController::class, 'updateTaxonomy']);
         // Infrastructure instances
         Route::post('infrastructure-instances', [InfrastructureInstanceController::class, 'store']);
         Route::patch('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'update']);

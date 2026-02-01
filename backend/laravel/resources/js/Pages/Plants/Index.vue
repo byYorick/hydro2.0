@@ -220,8 +220,8 @@
               </option>
               <option
                 v-for="option in seasonOptions"
-                :key="option.value"
-                :value="option.value"
+                :key="option.id"
+                :value="option.id"
               >
                 {{ option.label }}
               </option>
@@ -404,6 +404,7 @@ const taxonomies = computed(() => ({
   substrate_type: props.taxonomies?.substrate_type ?? [],
   growing_system: props.taxonomies?.growing_system ?? [],
   photoperiod_preset: props.taxonomies?.photoperiod_preset ?? [],
+  seasonality: props.taxonomies?.seasonality ?? [],
 }))
 
 const taxonomyIndex = computed(() => {
@@ -417,11 +418,16 @@ const taxonomyIndex = computed(() => {
   return map
 })
 
-const seasonOptions = [
-  { value: 'all_year', label: 'Круглый год' },
-  { value: 'multi_cycle', label: 'Несколько циклов' },
-  { value: 'seasonal', label: 'Сезонное выращивание' },
+const defaultSeasonality = [
+  { id: 'all_year', label: 'Круглый год' },
+  { id: 'multi_cycle', label: 'Несколько циклов' },
+  { id: 'seasonal', label: 'Сезонное выращивание' },
 ]
+const seasonOptions = computed(() => (
+  (taxonomies.value.seasonality && taxonomies.value.seasonality.length > 0)
+    ? taxonomies.value.seasonality
+    : defaultSeasonality
+))
 
 const rangeMetrics = [
   { key: 'temperature', label: 'Температура (°C)' },

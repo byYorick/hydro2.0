@@ -22,6 +22,8 @@ class ZoneService
                 $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
             }
 
+            $data['status'] = 'NEW';
+
             $zone = Zone::create($data);
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
 

@@ -13,6 +13,7 @@ export function translateStatus(status) {
     'PAUSED': 'Приостановлено',
     'WARNING': 'Предупреждение',
     'ALARM': 'Тревога',
+    'NEW': 'Новая',
     'SETUP': 'Настройка',
     'OFFLINE': 'Офлайн',
     'ONLINE': 'Онлайн',
@@ -102,4 +103,3 @@ export function translateDeviceType(type) {
   }
   return translations[type] || type
 }
-

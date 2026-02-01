@@ -484,8 +484,8 @@
                 </option>
                 <option
                   v-for="option in seasonOptions"
-                  :key="option.value"
-                  :value="option.value"
+                  :key="option.id"
+                  :value="option.id"
                 >
                   {{ option.label }}
                 </option>
@@ -651,6 +651,7 @@ const taxonomies = computed(() => ({
   substrate_type: (taxonomiesProp.value as any)?.substrate_type ?? [],
   growing_system: (taxonomiesProp.value as any)?.growing_system ?? [],
   photoperiod_preset: (taxonomiesProp.value as any)?.photoperiod_preset ?? [],
+  seasonality: (taxonomiesProp.value as any)?.seasonality ?? [],
 }))
 
 const { showToast } = useToast()
@@ -669,11 +670,16 @@ const taxonomyIndex = computed(() => {
   return map
 })
 
-const seasonOptions = [
-  { value: 'all_year', label: 'Круглый год' },
-  { value: 'multi_cycle', label: 'Несколько циклов' },
-  { value: 'seasonal', label: 'Сезонное выращивание' },
+const defaultSeasonality = [
+  { id: 'all_year', label: 'Круглый год' },
+  { id: 'multi_cycle', label: 'Несколько циклов' },
+  { id: 'seasonal', label: 'Сезонное выращивание' },
 ]
+const seasonOptions = computed(() => (
+  (taxonomies.value.seasonality && taxonomies.value.seasonality.length > 0)
+    ? taxonomies.value.seasonality
+    : defaultSeasonality
+))
 
 const rangeMetrics = [
   { key: 'temperature', label: 'Температура (°C)' },
@@ -712,8 +718,8 @@ function taxonomyLabel(key: string, value?: string | null): string {
 
 function seasonalityLabel(value?: string | null): string {
   if (!value) return '—'
-  const option = seasonOptions.find(opt => opt.value === value)
-  return option?.label ?? value
+  const fallback = seasonOptions.value.find(option => option.id === value)
+  return taxonomyIndex.value.seasonality?.[value] ?? fallback?.label ?? value
 }
 
 function metricLabel(metric: string): string {

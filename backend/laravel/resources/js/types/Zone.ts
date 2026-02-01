@@ -8,7 +8,7 @@ import type { ZoneTelemetry } from './Telemetry'
 /**
  * Статус зоны
  */
-export type ZoneStatus = 'RUNNING' | 'PAUSED' | 'ALARM' | 'WARNING' | 'IDLE'
+export type ZoneStatus = 'RUNNING' | 'PAUSED' | 'ALARM' | 'WARNING' | 'IDLE' | 'NEW'
 
 /**
  * Модель зоны

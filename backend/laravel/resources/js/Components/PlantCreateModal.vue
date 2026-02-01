@@ -86,51 +86,99 @@
         </div>
 
         <div>
-          <label
-            for="plant-substrate"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Субстрат</label>
-          <select
-            id="plant-substrate"
-            v-model="form.substrate_type"
-            name="substrate_type"
-            class="input-select h-9 w-full"
-          >
-            <option value="">
-              Не выбрано
-            </option>
-            <option
-              v-for="option in taxonomies.substrate_type"
-              :key="option.id"
-              :value="option.id"
+          <div class="flex items-center justify-between mb-1">
+            <label
+              for="plant-substrate"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >Субстрат</label>
+          </div>
+          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+            <select
+              id="plant-substrate"
+              v-model="form.substrate_type"
+              name="substrate_type"
+              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
             >
-              {{ option.label }}
-            </option>
-          </select>
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomies.substrate_type"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
+              @click="openTaxonomyWizard('substrate_type')"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </Button>
+          </div>
         </div>
 
         <div>
-          <label
-            for="plant-system"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Система</label>
-          <select
-            id="plant-system"
-            v-model="form.growing_system"
-            name="growing_system"
-            class="input-select h-9 w-full"
-          >
-            <option value="">
-              Не выбрано
-            </option>
-            <option
-              v-for="option in taxonomies.growing_system"
-              :key="option.id"
-              :value="option.id"
+          <div class="flex items-center justify-between mb-1">
+            <label
+              for="plant-system"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >Система</label>
+          </div>
+          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+            <select
+              id="plant-system"
+              v-model="form.growing_system"
+              name="growing_system"
+              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
             >
-              {{ option.label }}
-            </option>
-          </select>
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomies.growing_system"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
+              @click="openTaxonomyWizard('growing_system')"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </Button>
+          </div>
         </div>
 
         <div>
@@ -158,27 +206,51 @@
         </div>
 
         <div>
-          <label
-            for="plant-seasonality"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Сезонность</label>
-          <select
-            id="plant-seasonality"
-            v-model="form.seasonality"
-            name="seasonality"
-            class="input-select h-9 w-full"
-          >
-            <option value="">
-              Не выбрано
-            </option>
-            <option
-              v-for="option in seasonOptions"
-              :key="option.value"
-              :value="option.value"
+          <div class="flex items-center justify-between mb-1">
+            <label
+              for="plant-seasonality"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >Сезонность</label>
+          </div>
+          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+            <select
+              id="plant-seasonality"
+              v-model="form.seasonality"
+              name="seasonality"
+              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
             >
-              {{ option.label }}
-            </option>
-          </select>
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in seasonOptions"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
+              @click="openTaxonomyWizard('seasonality')"
+            >
+              <svg
+                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </Button>
+          </div>
         </div>
 
         <div class="md:col-span-2">
@@ -274,6 +346,15 @@
       </Button>
     </template>
   </Modal>
+
+  <TaxonomyWizardModal
+    :show="taxonomyWizard.open"
+    :title="taxonomyWizard.title"
+    :taxonomy-key="taxonomyWizard.key"
+    :items="taxonomyWizardItems"
+    @close="closeTaxonomyWizard"
+    @saved="handleTaxonomySaved"
+  />
 </template>
 
 <script setup lang="ts">
@@ -281,6 +362,7 @@ import { reactive, ref, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import TaxonomyWizardModal from '@/Components/TaxonomyWizardModal.vue'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -315,17 +397,30 @@ const currentStep = ref<number>(1)
 const createdPlantId = ref<number | null>(null)
 const createdPlantData = ref<any | null>(null)
 
+const defaultSeasonality = [
+  { id: 'all_year', label: 'Круглый год' },
+  { id: 'multi_cycle', label: 'Несколько циклов' },
+  { id: 'seasonal', label: 'Сезонное выращивание' },
+]
+
+const localTaxonomies = ref<Record<string, TaxonomyOption[]>>({})
+
 const taxonomies = computed(() => ({
-  substrate_type: props.taxonomies?.substrate_type ?? [],
-  growing_system: props.taxonomies?.growing_system ?? [],
-  photoperiod_preset: props.taxonomies?.photoperiod_preset ?? [],
+  substrate_type: localTaxonomies.value.substrate_type ?? [],
+  growing_system: localTaxonomies.value.growing_system ?? [],
+  photoperiod_preset: localTaxonomies.value.photoperiod_preset ?? [],
 }))
 
-const seasonOptions = [
-  { value: 'all_year', label: 'Круглый год' },
-  { value: 'multi_cycle', label: 'Несколько циклов' },
-  { value: 'seasonal', label: 'Сезонное выращивание' },
-]
+const seasonOptions = computed(() => localTaxonomies.value.seasonality ?? defaultSeasonality)
+
+type TaxonomyKey = 'substrate_type' | 'growing_system' | 'seasonality'
+const taxonomyWizard = reactive<{ open: boolean; key: TaxonomyKey; title: string }>({
+  open: false,
+  key: 'substrate_type',
+  title: '',
+})
+
+const taxonomyWizardItems = computed(() => localTaxonomies.value[taxonomyWizard.key] ?? [])
 
 const form = reactive({
   name: '',
@@ -347,6 +442,15 @@ watch(() => props.show, (newVal: boolean) => {
   }
 })
 
+watch(() => props.taxonomies, (value) => {
+  localTaxonomies.value = {
+    substrate_type: value?.substrate_type ?? [],
+    growing_system: value?.growing_system ?? [],
+    photoperiod_preset: value?.photoperiod_preset ?? [],
+    seasonality: value?.seasonality ?? defaultSeasonality,
+  }
+}, { immediate: true, deep: true })
+
 function resetForm() {
   form.name = ''
   form.species = ''
@@ -362,6 +466,27 @@ function resetForm() {
   createdPlantId.value = null
   createdPlantData.value = null
   Object.keys(errors).forEach(key => delete errors[key])
+}
+
+function openTaxonomyWizard(key: TaxonomyKey): void {
+  taxonomyWizard.key = key
+  taxonomyWizard.title = key === 'substrate_type'
+    ? 'Справочник: субстрат'
+    : key === 'growing_system'
+      ? 'Справочник: система'
+      : 'Справочник: сезонность'
+  taxonomyWizard.open = true
+}
+
+function closeTaxonomyWizard(): void {
+  taxonomyWizard.open = false
+}
+
+function handleTaxonomySaved(payload: { key: string; items: TaxonomyOption[] }): void {
+  localTaxonomies.value = {
+    ...localTaxonomies.value,
+    [payload.key]: payload.items,
+  }
 }
 
 function handleClose() {

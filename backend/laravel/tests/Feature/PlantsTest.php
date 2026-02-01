@@ -6,6 +6,7 @@ use App\Models\Plant;
 use App\Models\User;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -140,9 +141,37 @@ class PlantsTest extends TestCase
             ->assertJsonPath('data.margin_retail', 45.0);
     }
 
+    public function test_admin_can_update_plant_taxonomy(): void
+    {
+        $user = $this->makeUser();
+        $path = base_path('config/plant_taxonomies.json');
+        $original = File::exists($path) ? File::get($path) : null;
+
+        try {
+            $payload = [
+                'items' => [
+                    ['id' => 'coco', 'label' => 'Кокос'],
+                    ['id' => 'rockwool', 'label' => 'Минвата'],
+                ],
+            ];
+
+            $response = $this->actingAs($user)->putJson('/api/plant-taxonomies/substrate_type', $payload);
+
+            $response->assertOk()
+                ->assertJsonPath('data.key', 'substrate_type')
+                ->assertJsonCount(2, 'data.items');
+
+            $updated = json_decode(File::get($path), true);
+            $this->assertSame('Кокос', $updated['substrate_type'][0]['label']);
+        } finally {
+            if ($original !== null) {
+                File::put($path, $original);
+            }
+        }
+    }
+
     private function makeUser(string $role = 'admin'): User
     {
         return User::factory()->create(['role' => $role]);
     }
 }
-
