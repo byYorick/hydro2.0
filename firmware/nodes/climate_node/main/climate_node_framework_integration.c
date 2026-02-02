@@ -34,6 +34,7 @@ static const char *TAG = "climate_node_fw";
 
 // Forward declaration для callback safe_mode
 static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx);
+static esp_err_t climate_node_post_apply_config(const cJSON *config, const cJSON *previous_config, void *user_ctx);
 
 static bool climate_node_parse_state(const cJSON *state_item, bool *state_out) {
     if (!state_item || !state_out) {
@@ -737,6 +738,8 @@ esp_err_t climate_node_framework_init_integration(void) {
         ESP_LOGW(TAG, "Failed to register safe mode callback: %s", esp_err_to_name(err));
     }
 
+    node_config_handler_set_post_apply_callback(climate_node_post_apply_config, NULL);
+
     ESP_LOGI(TAG, "climate_node framework integration initialized successfully");
     return ESP_OK;
 }
@@ -761,19 +764,30 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
                     if (ch && cJSON_IsObject(ch)) {
                         cJSON *name = cJSON_GetObjectItem(ch, "name");
                         cJSON *type = cJSON_GetObjectItem(ch, "type");
+                        cJSON *actuator = cJSON_GetObjectItem(ch, "actuator_type");
                         if (cJSON_IsString(name) && cJSON_IsString(type)) {
                             const char *channel_name = name->valuestring;
                             const char *channel_type = type->valuestring;
+                            const char *actuator_type = cJSON_IsString(actuator) ? actuator->valuestring : NULL;
+                            const bool is_actuator = (strcasecmp(channel_type, "ACTUATOR") == 0);
+                            const char *kind = actuator_type ? actuator_type : channel_type;
+
+                            if (!is_actuator && actuator_type == NULL) {
+                                continue;
+                            }
                             
-                            // Отключаем реле
-                            if (strcmp(channel_type, "relay") == 0 || 
-                                strcmp(channel_type, "RELAY") == 0) {
+                            // Отключаем реле (RELAY/VALVE/FAN/HEATER/LED)
+                            if (kind &&
+                                (strcasecmp(kind, "RELAY") == 0 ||
+                                 strcasecmp(kind, "VALVE") == 0 ||
+                                 strcasecmp(kind, "FAN") == 0 ||
+                                 strcasecmp(kind, "HEATER") == 0 ||
+                                 strcasecmp(kind, "LED") == 0)) {
                                 relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
                             }
                             
                             // Отключаем PWM (устанавливаем duty в 0%)
-                            if (strcmp(channel_type, "pwm") == 0 || 
-                                strcmp(channel_type, "PWM") == 0) {
+                            if (kind && strcasecmp(kind, "PWM") == 0) {
                                 pwm_driver_set_duty_percent(channel_name, 0.0f);
                             }
                         }
@@ -785,6 +799,59 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
     }
     
     return ESP_OK;
+}
+
+static bool climate_node_has_pwm_channels(const cJSON *config) {
+    if (config == NULL) {
+        return false;
+    }
+
+    const cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels == NULL || !cJSON_IsArray(channels)) {
+        return false;
+    }
+
+    const int count = cJSON_GetArraySize(channels);
+    for (int i = 0; i < count; i++) {
+        const cJSON *channel = cJSON_GetArrayItem(channels, i);
+        if (!channel || !cJSON_IsObject(channel)) {
+            continue;
+        }
+        const cJSON *type = cJSON_GetObjectItem(channel, "type");
+        const cJSON *actuator = cJSON_GetObjectItem(channel, "actuator_type");
+        if (!cJSON_IsString(type) || !cJSON_IsString(actuator)) {
+            continue;
+        }
+        if (strcasecmp(type->valuestring, "ACTUATOR") != 0) {
+            continue;
+        }
+        if (strcasecmp(actuator->valuestring, "PWM") == 0 ||
+            strcasecmp(actuator->valuestring, "FAN") == 0 ||
+            strcasecmp(actuator->valuestring, "LED") == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static esp_err_t climate_node_post_apply_config(const cJSON *config, const cJSON *previous_config, void *user_ctx) {
+    (void)previous_config;
+    (void)user_ctx;
+
+    if (!climate_node_has_pwm_channels(config)) {
+        esp_err_t deinit_err = pwm_driver_deinit();
+        if (deinit_err == ESP_OK) {
+            ESP_LOGI(TAG, "PWM driver deinitialized (no PWM channels in config)");
+        }
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    esp_err_t err = pwm_driver_init_from_config();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "PWM driver reinitialized after config apply");
+    }
+    return err;
 }
 
 /**

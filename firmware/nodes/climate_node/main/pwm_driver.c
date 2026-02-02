@@ -45,6 +45,11 @@ static void pwm_driver_reset_state(void) {
     }
 }
 
+esp_err_t pwm_driver_deinit(void) {
+    pwm_driver_reset_state();
+    return ESP_OK;
+}
+
 static esp_err_t pwm_driver_configure_timer(uint32_t frequency_hz, int resolution_bits) {
     if (resolution_bits < 4) {
         resolution_bits = PWM_DRIVER_DEFAULT_RES_BITS;

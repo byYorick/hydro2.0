@@ -35,6 +35,8 @@ static void *s_channel_init_ctx = NULL;
 // Callback для формирования channels в ответе на конфиг
 static node_config_channels_callback_t s_channels_cb = NULL;
 static void *s_channels_ctx = NULL;
+static node_config_post_apply_callback_t s_post_apply_cb = NULL;
+static void *s_post_apply_ctx = NULL;
 
 // Глобальные ссылки на MQTT callbacks для config_apply_mqtt
 static mqtt_config_callback_t s_mqtt_config_cb = NULL;
@@ -684,6 +686,16 @@ esp_err_t node_config_handler_apply_with_result(
         ESP_LOGW(TAG, "MQTT callbacks not registered, skipping MQTT config apply");
     }
 
+    // Применение реле (после инициализации каналов через callback)
+    // ВАЖНО: relay_driver должен быть инициализирован до pump_driver
+    err = config_apply_channels_relay(result_ptr);
+    if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to apply relay channels: %s", esp_err_to_name(err));
+        if (first_err == ESP_OK) {
+            first_err = err;
+        }
+    }
+
     // Применение насосов (после инициализации каналов через callback)
     err = config_apply_channels_pump(result_ptr);
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
@@ -713,6 +725,16 @@ esp_err_t node_config_handler_apply_with_result(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (s_post_apply_cb) {
+        esp_err_t post_err = s_post_apply_cb(config, previous_config, s_post_apply_ctx);
+        if (post_err != ESP_OK && post_err != ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "Post-apply callback failed: %s", esp_err_to_name(post_err));
+            if (first_err == ESP_OK) {
+                first_err = post_err;
             }
         }
     }
@@ -765,6 +787,14 @@ void node_config_handler_set_channels_callback(
 ) {
     s_channels_cb = callback;
     s_channels_ctx = user_ctx;
+}
+
+void node_config_handler_set_post_apply_callback(
+    node_config_post_apply_callback_t callback,
+    void *user_ctx
+) {
+    s_post_apply_cb = callback;
+    s_post_apply_ctx = user_ctx;
 }
 
 void node_config_handler_set_mqtt_callbacks(

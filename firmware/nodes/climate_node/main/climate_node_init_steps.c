@@ -72,6 +72,7 @@ static bool climate_node_add_sensor_channel(
     }
 
     cJSON_AddStringToObject(entry, "name", name);
+    cJSON_AddStringToObject(entry, "channel", name);
     cJSON_AddStringToObject(entry, "type", "SENSOR");
     cJSON_AddStringToObject(entry, "metric", metric);
     cJSON_AddNumberToObject(entry, "poll_interval_ms", poll_interval_ms);

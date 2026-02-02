@@ -53,6 +53,42 @@ class CommandsTest extends TestCase
             ])
             ->assertStatus(422);
     }
+
+    public function test_node_command_requires_state_for_set_state_and_set_relay(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+        $node = \App\Models\DeviceNode::factory()->create();
+
+        $this->actingAs($user);
+
+        $response = $this->postJson("/api/nodes/{$node->id}/commands", [
+            'cmd' => 'set_state',
+            'params' => [],
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['params.state']);
+
+        $errors = $response->json('errors');
+        $this->assertSame(
+            'set_state/set_relay requires params.state (0/1 or true/false)',
+            $errors['params.state'][0] ?? null
+        );
+
+        $response = $this->postJson("/api/nodes/{$node->id}/commands", [
+            'cmd' => 'set_relay',
+            'params' => [],
+        ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['params.state']);
+
+        $errors = $response->json('errors');
+        $this->assertSame(
+            'set_state/set_relay requires params.state (0/1 or true/false)',
+            $errors['params.state'][0] ?? null
+        );
+    }
 }
-
-

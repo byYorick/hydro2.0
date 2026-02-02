@@ -722,11 +722,64 @@ static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
     
-    // Отключаем все реле (устанавливаем в OPEN состояние)
-    // Примечание: relay_driver не имеет функции emergency_stop, поэтому
-    // нужно будет добавить или использовать другой механизм
-    // Пока просто логируем
-    ESP_LOGW(TAG, "Safe mode: all relays should be opened");
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read config for safe mode: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    cJSON *config = cJSON_Parse(config_json);
+    if (config == NULL) {
+        ESP_LOGW(TAG, "Failed to parse config JSON for safe mode");
+        return ESP_FAIL;
+    }
+
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels && cJSON_IsArray(channels)) {
+        int channel_count = cJSON_GetArraySize(channels);
+        for (int i = 0; i < channel_count; i++) {
+            cJSON *ch = cJSON_GetArrayItem(channels, i);
+            if (!ch || !cJSON_IsObject(ch)) {
+                continue;
+            }
+
+            cJSON *name = cJSON_GetObjectItem(ch, "name");
+            cJSON *channel = cJSON_GetObjectItem(ch, "channel");
+            cJSON *type = cJSON_GetObjectItem(ch, "type");
+            cJSON *actuator = cJSON_GetObjectItem(ch, "actuator_type");
+            if (!cJSON_IsString(type)) {
+                continue;
+            }
+
+            const char *channel_name = NULL;
+            if (cJSON_IsString(channel)) {
+                channel_name = channel->valuestring;
+            } else if (cJSON_IsString(name)) {
+                channel_name = name->valuestring;
+            }
+            if (channel_name == NULL) {
+                continue;
+            }
+
+            const bool is_actuator = (strcasecmp(type->valuestring, "ACTUATOR") == 0);
+            const char *kind = cJSON_IsString(actuator) ? actuator->valuestring : type->valuestring;
+            if (!is_actuator && !cJSON_IsString(actuator)) {
+                continue;
+            }
+
+            if (kind &&
+                (strcasecmp(kind, "RELAY") == 0 ||
+                 strcasecmp(kind, "VALVE") == 0 ||
+                 strcasecmp(kind, "FAN") == 0 ||
+                 strcasecmp(kind, "HEATER") == 0 ||
+                 strcasecmp(kind, "LED") == 0)) {
+                relay_driver_set_state(channel_name, RELAY_STATE_OPEN);
+            }
+        }
+    }
+
+    cJSON_Delete(config);
     return ESP_OK;
 }
 
