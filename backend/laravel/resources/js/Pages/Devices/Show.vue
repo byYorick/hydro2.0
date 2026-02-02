@@ -30,7 +30,7 @@
           variant="secondary"
           @click="onRestart"
         >
-          Restart
+          Перезапустить
         </Button>
       </div>
     </div>
@@ -504,7 +504,7 @@ const loadNodeConfig = async (): Promise<void> => {
 
 const onRestart = async (): Promise<void> => {
   try {
-    const response = await api.post<{ status: string }>(
+    const response = await api.post<{ status: string; data?: { command_id?: string } }>(
       `/nodes/${device.value.id}/commands`,
       {
         type: 'restart',
@@ -512,10 +512,29 @@ const onRestart = async (): Promise<void> => {
       }
     )
     
-    if (response.data?.status === 'ok') {
+    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
+      const cmdId = response.data.data.command_id
       logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
       showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
+
+      let executionNotified = false
+      const result = await checkCommandStatus(cmdId, 20, (status) => {
+        if (status === 'ACK' && !executionNotified) {
+          executionNotified = true
+          showToast('Перезапуск ноды...', 'info', TOAST_TIMEOUT.NORMAL)
+        }
+      })
+      
+      if (result.success) {
+        showToast('Нода перезапущена', 'success', TOAST_TIMEOUT.LONG)
+      } else {
+        const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
+        showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
+      }
+      return
     }
+
+    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Show] Failed to restart device:', err)
@@ -683,7 +702,7 @@ function getChannelLabel(channelName: string, channelType: string): string {
 
 // Функция для проверки статуса команды
 async function checkCommandStatus(
-  cmdId: number,
+  cmdId: string | number,
   maxAttempts = 30,
   onStatusChange?: (status: string) => void
 ): Promise<{

@@ -140,9 +140,15 @@ esp_err_t node_framework_set_state(node_state_t state);
  */
 bool node_framework_is_safe_mode(void);
 
+/**
+ * @brief Получение типа ноды, заданного при инициализации фреймворка
+ * 
+ * @return Строка типа ноды (например, "ph", "ec", "climate", "pump") или NULL
+ */
+const char *node_framework_get_node_type(void);
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif // NODE_FRAMEWORK_H
-

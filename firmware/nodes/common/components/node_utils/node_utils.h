@@ -30,6 +30,20 @@ extern "C" {
 esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size);
 
 /**
+ * @brief Сохранить тип ноды для использования в утилитах
+ *
+ * @param node_type Тип ноды ("ph", "ec", "climate", "pump", "relay", "light")
+ */
+void node_utils_set_node_type(const char *node_type);
+
+/**
+ * @brief Получить сохраненный тип ноды
+ *
+ * @return Тип ноды или NULL
+ */
+const char *node_utils_get_node_type(void);
+
+/**
  * @brief Получить hardware_id (MAC-основанный идентификатор ноды)
  *
  * Формат: esp32-<mac6bytes lowercase hex>

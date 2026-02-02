@@ -44,7 +44,7 @@
 | Поле | Тип | Обязательное | Описание |
 |------|-----|--------------|----------|
 | `cmd_id` | string | Да | Уникальный идентификатор команды (UUID) |
-| `cmd` | string | Да | Тип команды (dose, run_pump, set_relay, set_pwm) |
+| `cmd` | string | Да | Тип команды (dose, run_pump, set_relay, set_pwm, test_sensor, restart) |
 | `params` | object | Да | Параметры команды (объект) |
 | `ts` | integer | Да | Unix timestamp создания команды в секундах |
 | `sig` | string | Да | HMAC подпись команды (hex) |

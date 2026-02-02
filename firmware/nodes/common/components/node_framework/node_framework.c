@@ -9,6 +9,7 @@
 #include "node_telemetry_engine.h"
 #include "node_state_manager.h"
 #include "node_watchdog.h"
+#include "node_utils.h"
 #include "memory_pool.h"
 #include "i2c_cache.h"
 #include "cJSON.h"
@@ -90,8 +91,10 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
         memcpy(s_node_type, config->node_type, len);
         s_node_type[len] = '\0';
         s_framework.config.node_type = s_node_type;
+        node_utils_set_node_type(s_node_type);
     } else {
         s_framework.config.node_type = NULL;
+        node_utils_set_node_type(NULL);
     }
     
     // Копируем default_node_id
@@ -336,6 +339,10 @@ esp_err_t node_framework_set_state(node_state_t state) {
 
 bool node_framework_is_safe_mode(void) {
     return node_framework_get_state() == NODE_STATE_SAFE_MODE;
+}
+
+const char *node_framework_get_node_type(void) {
+    return s_framework.config.node_type;
 }
 
 // Обработчик команды exit_safe_mode

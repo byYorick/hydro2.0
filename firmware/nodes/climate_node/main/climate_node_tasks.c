@@ -27,6 +27,7 @@ static const char *TAG = "climate_node_tasks";
 
 // Периоды задач (в миллисекундах)
 #define SENSOR_POLL_INTERVAL_MS    5000  // 5 секунд - опрос климатических датчиков
+#define SENSOR_TASK_STACK_SIZE     8192  // Увеличенный стек для телеметрии/UX и ошибок
 
 /**
  * @brief Задача опроса сенсоров
@@ -182,7 +183,7 @@ static void task_sensors(void *pvParameters) {
  */
 void climate_node_start_tasks(void) {
     // Задача опроса сенсоров
-    xTaskCreate(task_sensors, "sensor_task", 4096, NULL, 5, NULL);
+    xTaskCreate(task_sensors, "sensor_task", SENSOR_TASK_STACK_SIZE, NULL, 5, NULL);
 
     // Общая задача heartbeat из компонента
     heartbeat_task_start_default();

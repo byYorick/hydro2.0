@@ -20,6 +20,8 @@
 
 static const char *TAG = "node_utils";
 
+static char s_node_type[32] = {0};
+
 // Смещение времени для нормализации Unix timestamp
 // time_offset_us = host_ts_us - esp_timer_get_time()
 // Используется для преобразования esp_timer_get_time() в Unix timestamp
@@ -35,6 +37,23 @@ esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size)
     dest[dest_size - 1] = '\0';  // Гарантируем null-termination
     
     return ESP_OK;
+}
+
+void node_utils_set_node_type(const char *node_type) {
+    if (!node_type || node_type[0] == '\0') {
+        s_node_type[0] = '\0';
+        return;
+    }
+    size_t len = strlen(node_type);
+    if (len >= sizeof(s_node_type)) {
+        len = sizeof(s_node_type) - 1;
+    }
+    memcpy(s_node_type, node_type, len);
+    s_node_type[len] = '\0';
+}
+
+const char *node_utils_get_node_type(void) {
+    return s_node_type[0] != '\0' ? s_node_type : NULL;
 }
 
 esp_err_t node_utils_get_hardware_id(char *hardware_id, size_t size) {
@@ -408,6 +427,32 @@ esp_err_t node_utils_publish_config_report(void) {
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to load NodeConfig for config_report: %s", esp_err_to_name(err));
         return err;
+    }
+
+    const char *node_type = node_utils_get_node_type();
+    if (node_type && node_type[0] != '\0') {
+        cJSON *config = cJSON_Parse(config_json);
+        if (config) {
+            cJSON *type_item = cJSON_GetObjectItem(config, "type");
+            bool needs_patch = !cJSON_IsString(type_item) || !type_item->valuestring ||
+                strlen(type_item->valuestring) == 0 || strcmp(type_item->valuestring, "unknown") == 0;
+            if (needs_patch) {
+                cJSON_DeleteItemFromObject(config, "type");
+                cJSON_AddStringToObject(config, "type", node_type);
+                char *patched = cJSON_PrintUnformatted(config);
+                if (patched) {
+                    size_t patched_len = strlen(patched);
+                    if (patched_len < sizeof(config_json)) {
+                        memcpy(config_json, patched, patched_len + 1);
+                        ESP_LOGI(TAG, "Patched config_report type to '%s'", node_type);
+                    } else {
+                        ESP_LOGW(TAG, "Patched config_report exceeds buffer, sending original config");
+                    }
+                    free(patched);
+                }
+            }
+            cJSON_Delete(config);
+        }
     }
 
     ESP_LOGI(TAG, "Publishing config_report (%zu bytes)", strlen(config_json));

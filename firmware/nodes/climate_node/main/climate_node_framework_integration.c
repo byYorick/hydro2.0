@@ -25,6 +25,7 @@
 #include "esp_err.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <strings.h>
 #include <math.h>
 #include <float.h>
@@ -72,6 +73,90 @@ static bool climate_node_parse_state(const cJSON *state_item, bool *state_out) {
     }
 
     return false;
+}
+
+static bool climate_node_channel_matches(const cJSON *entry, const char *name) {
+    if (entry == NULL || name == NULL || !cJSON_IsObject(entry)) {
+        return false;
+    }
+
+    const cJSON *name_item = cJSON_GetObjectItem(entry, "name");
+    if (cJSON_IsString(name_item) && name_item->valuestring &&
+        strcmp(name_item->valuestring, name) == 0) {
+        return true;
+    }
+
+    const cJSON *channel_item = cJSON_GetObjectItem(entry, "channel");
+    if (cJSON_IsString(channel_item) && channel_item->valuestring &&
+        strcmp(channel_item->valuestring, name) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool climate_node_has_channel(const cJSON *channels, const char *name) {
+    if (channels == NULL || name == NULL || !cJSON_IsArray(channels)) {
+        return false;
+    }
+
+    const int count = cJSON_GetArraySize(channels);
+    for (int i = 0; i < count; i++) {
+        const cJSON *entry = cJSON_GetArrayItem(channels, i);
+        if (climate_node_channel_matches(entry, name)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static cJSON *climate_node_build_sensor_entry(
+    const char *name,
+    const char *metric,
+    uint32_t poll_interval_ms,
+    const char *unit,
+    int precision
+) {
+    cJSON *entry = cJSON_CreateObject();
+    if (entry == NULL) {
+        return NULL;
+    }
+
+    cJSON_AddStringToObject(entry, "name", name);
+    cJSON_AddStringToObject(entry, "channel", name);
+    cJSON_AddStringToObject(entry, "type", "SENSOR");
+    cJSON_AddStringToObject(entry, "metric", metric);
+    cJSON_AddNumberToObject(entry, "poll_interval_ms", (double)poll_interval_ms);
+    cJSON_AddStringToObject(entry, "unit", unit);
+    cJSON_AddNumberToObject(entry, "precision", (double)precision);
+
+    return entry;
+}
+
+static bool climate_node_ensure_sensor_channel(
+    cJSON *channels,
+    const char *name,
+    const char *metric,
+    uint32_t poll_interval_ms,
+    const char *unit,
+    int precision,
+    bool *changed
+) {
+    if (climate_node_has_channel(channels, name)) {
+        return true;
+    }
+
+    cJSON *entry = climate_node_build_sensor_entry(name, metric, poll_interval_ms, unit, precision);
+    if (entry == NULL) {
+        return false;
+    }
+
+    cJSON_AddItemToArray(channels, entry);
+    if (changed != NULL) {
+        *changed = true;
+    }
+    return true;
 }
 
 // Callback для инициализации каналов из NodeConfig
@@ -259,6 +344,174 @@ static esp_err_t handle_set_pwm(
     return ESP_OK;
 }
 
+// Обработчик команды test_sensor
+static esp_err_t handle_test_sensor(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)params;
+    (void)user_ctx;
+
+    if (channel == NULL || response == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (strcmp(channel, "temperature") == 0 || strcmp(channel, "humidity") == 0) {
+        if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "i2c_not_initialized",
+                "I2C bus 1 is not initialized",
+                NULL
+            );
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        sht3x_reading_t reading = {0};
+        esp_err_t err = sht3x_read(&reading);
+        if (err == ESP_ERR_INVALID_STATE) {
+            sht3x_config_t sht_config = {
+                .i2c_address = 0x44,
+                .i2c_bus = I2C_BUS_1,
+            };
+            esp_err_t init_err = sht3x_init(&sht_config);
+            if (init_err != ESP_OK) {
+                *response = node_command_handler_create_response(
+                    NULL,
+                    "FAILED",
+                    "sensor_init_failed",
+                    "Failed to initialize SHT3x sensor",
+                    NULL
+                );
+                return init_err;
+            }
+            err = sht3x_read(&reading);
+        }
+
+        if (err != ESP_OK || !reading.valid) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "read_failed",
+                "Failed to read SHT3x sensor",
+                NULL
+            );
+            return err != ESP_OK ? err : ESP_FAIL;
+        }
+
+        const float value = (strcmp(channel, "temperature") == 0) ? reading.temperature : reading.humidity;
+        if (!isfinite(value)) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "invalid_value",
+                "Sensor returned invalid value",
+                NULL
+            );
+            return ESP_FAIL;
+        }
+
+        cJSON *extra = cJSON_CreateObject();
+        if (extra) {
+            cJSON_AddNumberToObject(extra, "value", value);
+            if (strcmp(channel, "temperature") == 0) {
+                cJSON_AddStringToObject(extra, "unit", "°C");
+                cJSON_AddStringToObject(extra, "metric_type", "TEMPERATURE");
+            } else {
+                cJSON_AddStringToObject(extra, "unit", "%");
+                cJSON_AddStringToObject(extra, "metric_type", "HUMIDITY");
+            }
+            cJSON_AddBoolToObject(extra, "stable", true);
+        }
+
+        *response = node_command_handler_create_response(
+            NULL,
+            "DONE",
+            NULL,
+            NULL,
+            extra
+        );
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+
+        return ESP_OK;
+    }
+
+    if (strcmp(channel, "co2") == 0) {
+        if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "i2c_not_initialized",
+                "I2C bus 0 is not initialized",
+                NULL
+            );
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        ccs811_reading_t reading = {0};
+        esp_err_t err = ccs811_read(&reading);
+        if (err == ESP_ERR_NOT_FINISHED) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "sensor_not_ready",
+                "CO2 sensor data not ready",
+                NULL
+            );
+            return err;
+        }
+
+        if (err != ESP_OK || !reading.valid) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "sensor_stub",
+                "CO2 sensor returned invalid or stub values",
+                NULL
+            );
+            return err != ESP_OK ? err : ESP_FAIL;
+        }
+
+        cJSON *extra = cJSON_CreateObject();
+        if (extra) {
+            cJSON_AddNumberToObject(extra, "value", (double)reading.co2_ppm);
+            cJSON_AddStringToObject(extra, "unit", "ppm");
+            cJSON_AddStringToObject(extra, "metric_type", "CO2");
+            cJSON_AddBoolToObject(extra, "stable", true);
+            if (reading.tvoc_ppb > 0) {
+                cJSON_AddNumberToObject(extra, "tvoc_ppb", (double)reading.tvoc_ppb);
+            }
+        }
+
+        *response = node_command_handler_create_response(
+            NULL,
+            "DONE",
+            NULL,
+            NULL,
+            extra
+        );
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+
+        return ESP_OK;
+    }
+
+    *response = node_command_handler_create_response(
+        NULL,
+        "FAILED",
+        "invalid_channel",
+        "Unknown sensor channel",
+        NULL
+    );
+    return ESP_ERR_INVALID_ARG;
+}
+
 // Публикация телеметрии через node_framework
 esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     (void)user_ctx;
@@ -361,7 +614,66 @@ static void climate_node_config_handler_wrapper(
     void *user_ctx
 ) {
     (void)user_ctx;
-    node_config_handler_process(topic, data, data_len, user_ctx);
+
+    if (data == NULL || data_len <= 0) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON *config = cJSON_ParseWithLength(data, data_len);
+    if (config == NULL) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    bool changed = false;
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels == NULL || !cJSON_IsArray(channels)) {
+        if (channels) {
+            cJSON_DeleteItemFromObject(config, "channels");
+        }
+        channels = cJSON_CreateArray();
+        if (channels == NULL) {
+            cJSON_Delete(config);
+            node_config_handler_process(topic, data, data_len, user_ctx);
+            return;
+        }
+        cJSON_AddItemToObject(config, "channels", channels);
+        changed = true;
+    }
+
+    if (!climate_node_ensure_sensor_channel(channels, "temperature", "TEMPERATURE", 5000, "°C", 1, &changed)) {
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+    if (!climate_node_ensure_sensor_channel(channels, "humidity", "HUMIDITY", 5000, "%", 1, &changed)) {
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+    if (!climate_node_ensure_sensor_channel(channels, "co2", "CO2", 10000, "ppm", 0, &changed)) {
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    if (!changed) {
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    char *patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+    if (patched == NULL) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Patching NodeConfig with climate sensor channels");
+    node_config_handler_process(topic, patched, (int)strlen(patched), user_ctx);
+    free(patched);
 }
 
 // Wrapper для обработчика command (C-совместимый)
@@ -412,6 +724,11 @@ esp_err_t climate_node_framework_init_integration(void) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register set_pwm handler: %s", esp_err_to_name(err));
         return err;
+    }
+
+    err = node_command_handler_register("test_sensor", handle_test_sensor, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register test_sensor handler: %s", esp_err_to_name(err));
     }
 
     // Регистрация callback для отключения актуаторов в safe_mode

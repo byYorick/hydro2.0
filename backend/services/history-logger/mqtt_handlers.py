@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import uuid
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
 import httpx
@@ -38,6 +39,76 @@ from utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
+_PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+_PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
+
+
+def _prune_pending_config_reports_locked(now_ts: float) -> None:
+    if not _PENDING_CONFIG_REPORTS:
+        return
+
+    expired_keys = [
+        hardware_id
+        for hardware_id, entry in _PENDING_CONFIG_REPORTS.items()
+        if now_ts - entry.get("ts", now_ts) > _PENDING_CONFIG_REPORT_TTL_SEC
+    ]
+
+    for hardware_id in expired_keys:
+        _PENDING_CONFIG_REPORTS.pop(hardware_id, None)
+
+
+async def _store_pending_config_report(
+    hardware_id: str, topic: str, payload: bytes
+) -> None:
+    now_ts = utcnow().timestamp()
+
+    async with _PENDING_CONFIG_REPORTS_LOCK:
+        _prune_pending_config_reports_locked(now_ts)
+        _PENDING_CONFIG_REPORTS[hardware_id] = {
+            "topic": topic,
+            "payload": payload,
+            "ts": now_ts,
+        }
+        _PENDING_CONFIG_REPORTS.move_to_end(hardware_id)
+
+        while len(_PENDING_CONFIG_REPORTS) > _PENDING_CONFIG_REPORT_MAX:
+            dropped_hardware_id, _ = _PENDING_CONFIG_REPORTS.popitem(last=False)
+            logger.warning(
+                "[CONFIG_REPORT] Dropped buffered config_report due to buffer limit: hardware_id=%s",
+                dropped_hardware_id,
+            )
+
+
+async def _pop_pending_config_report(hardware_id: str) -> Optional[Dict[str, Any]]:
+    now_ts = utcnow().timestamp()
+
+    async with _PENDING_CONFIG_REPORTS_LOCK:
+        _prune_pending_config_reports_locked(now_ts)
+        return _PENDING_CONFIG_REPORTS.pop(hardware_id, None)
+
+
+async def _process_pending_config_report_after_registration(hardware_id: str) -> None:
+    pending = await _pop_pending_config_report(hardware_id)
+    if not pending:
+        return
+
+    logger.info(
+        "[NODE_HELLO] Processing buffered config_report after registration: hardware_id=%s",
+        hardware_id,
+    )
+
+    try:
+        await handle_config_report(pending["topic"], pending["payload"])
+    except Exception as e:
+        logger.error(
+            "[NODE_HELLO] Failed to process buffered config_report: hardware_id=%s, error=%s",
+            hardware_id,
+            e,
+            exc_info=True,
+        )
 
 
 def _apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None) -> None:
@@ -158,27 +229,19 @@ async def handle_node_hello(topic: str, payload: bytes) -> None:
                             headers=headers,
                         )
 
-                    if response.status_code == 201:
+                    if response.status_code in (200, 201):
                         response_data = response.json()
                         node_uid = response_data.get("data", {}).get("uid", "unknown")
+                        action = "registered" if response.status_code == 201 else "updated"
                         logger.info(
-                            "[NODE_HELLO] Node registered successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            "[NODE_HELLO] Node %s successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            action,
                             hardware_id,
                             node_uid,
                             attempt + 1,
                         )
                         NODE_HELLO_REGISTERED.inc()
-                        return
-                    if response.status_code == 200:
-                        response_data = response.json()
-                        node_uid = response_data.get("data", {}).get("uid", "unknown")
-                        logger.info(
-                            "[NODE_HELLO] Node updated successfully: hardware_id=%s, node_uid=%s, attempts=%s",
-                            hardware_id,
-                            node_uid,
-                            attempt + 1,
-                        )
-                        NODE_HELLO_REGISTERED.inc()
+                        await _process_pending_config_report_after_registration(hardware_id)
                         return
                     if response.status_code == 401:
                         logger.error(
@@ -803,6 +866,11 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, skipping config_report"
                 )
                 CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+                await _store_pending_config_report(hardware_id, topic, payload)
+                logger.info(
+                    "[CONFIG_REPORT] Buffered config_report until node registration: hardware_id=%s",
+                    hardware_id,
+                )
                 return
             node = node_rows[0]
             node_uid = node.get("uid")

@@ -48,7 +48,10 @@ class AlertController extends Controller
             $query->whereRaw('1 = 0');
         }
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status')->toString());
+            $status = strtoupper(trim($request->string('status')->toString()));
+            if (in_array($status, ['ACTIVE', 'RESOLVED'], true)) {
+                $query->where('status', $status);
+            }
         }
         $items = $query->orderByDesc('id')->paginate(50);
 

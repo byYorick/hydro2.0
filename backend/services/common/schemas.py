@@ -124,7 +124,7 @@ class CommandRequest(BaseModel):
     def validate_command_type(cls, v):
         """Валидация типа команды."""
         allowed_types = [
-            'dose', 'run_pump', 'set_relay', 'set_pwm'
+            'dose', 'run_pump', 'set_relay', 'set_pwm', 'test_sensor', 'restart'
         ]
         if v not in allowed_types:
             # Предупреждение, но не блокируем (для расширяемости)

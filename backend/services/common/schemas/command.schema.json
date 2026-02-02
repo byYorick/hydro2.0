@@ -14,7 +14,7 @@
     },
     "cmd": {
       "type": "string",
-      "description": "Тип команды (dose, run_pump, set_relay, set_pwm)",
+      "description": "Тип команды (dose, run_pump, set_relay, set_pwm, test_sensor, restart)",
       "minLength": 1,
       "maxLength": 64
     },

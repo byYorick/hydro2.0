@@ -156,6 +156,55 @@ class TestConfigReportFormatSync:
             mock_processed.inc.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_handle_config_report_buffers_when_node_missing(self):
+        """Тест буферизации config_report, если узел еще не зарегистрирован."""
+        from mqtt_handlers import handle_config_report
+
+        topic = "hydro/gh-temp/zn-temp/esp32-aabbccddeeff/config_report"
+        payload_data = {
+            "node_id": "esp32-aabbccddeeff",
+            "version": 1,
+            "channels": [
+                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
+            ],
+        }
+        payload = json.dumps(payload_data).encode('utf-8')
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers._store_pending_config_report', new_callable=AsyncMock) as mock_store:
+
+            mock_fetch.return_value = []
+
+            await handle_config_report(topic, payload)
+
+            mock_store.assert_awaited_once_with("esp32-aabbccddeeff", topic, payload)
+
+    @pytest.mark.asyncio
+    async def test_process_pending_config_report_after_registration(self):
+        """Тест обработки буферизованного config_report после регистрации."""
+        from mqtt_handlers import (
+            _process_pending_config_report_after_registration,
+            _PENDING_CONFIG_REPORTS,
+        )
+
+        hardware_id = "esp32-aabbccddeeff"
+        topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config_report"
+        payload = b'{"node_id":"esp32-aabbccddeeff","version":1}'
+
+        _PENDING_CONFIG_REPORTS.clear()
+        _PENDING_CONFIG_REPORTS[hardware_id] = {
+            "topic": topic,
+            "payload": payload,
+            "ts": datetime.now().timestamp(),
+        }
+
+        with patch('mqtt_handlers.handle_config_report', new_callable=AsyncMock) as mock_handle:
+            await _process_pending_config_report_after_registration(hardware_id)
+
+            mock_handle.assert_awaited_once_with(topic, payload)
+            assert hardware_id not in _PENDING_CONFIG_REPORTS
+
+    @pytest.mark.asyncio
     async def test_handle_config_report_temp_topic_maps_hardware_id(self):
         """Тест обработки config_report из temp топика с hardware_id."""
         from mqtt_handlers import handle_config_report

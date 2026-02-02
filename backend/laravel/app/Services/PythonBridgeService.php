@@ -192,6 +192,15 @@ class PythonBridgeService
     public function sendNodeCommand(DeviceNode $node, array $payload): string
     {
         $payload = $this->normalizeRelayCommand($node, $payload);
+        $rawCmd = $payload['type'] ?? ($payload['cmd'] ?? 'unknown');
+        $normalizedCmd = is_string($rawCmd) ? strtolower($rawCmd) : $rawCmd;
+        if ($normalizedCmd === 'reboot') {
+            $normalizedCmd = 'restart';
+        }
+        if (is_string($normalizedCmd)) {
+            $payload['cmd'] = $normalizedCmd;
+            $payload['type'] = $normalizedCmd;
+        }
         $cmdId = Str::uuid()->toString();
         
         // Получаем channel из payload или из params (для обратной совместимости)
@@ -245,7 +254,9 @@ class PythonBridgeService
         
         // Получаем channel из payload, params, или из command
         $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null) ?? $command->channel;
-        if (!$channel) {
+        $commandType = $command->cmd;
+        $isRestartCommand = is_string($commandType) && strtolower($commandType) === 'restart';
+        if (!$channel && !$isRestartCommand) {
             $error = 'Channel is required for node command';
             Log::error('PythonBridgeService: '.$error, [
                 'node_id' => $node->id,
@@ -255,6 +266,13 @@ class PythonBridgeService
             ]);
             $this->markCommandFailed($command, $error);
             throw new \InvalidArgumentException($error);
+        }
+        if (!$channel && $isRestartCommand) {
+            $channel = 'system';
+        }
+        if ($channel && $command->channel !== $channel) {
+            $command->channel = $channel;
+            $command->save();
         }
         
         $requestData = [

@@ -10,6 +10,7 @@
 #include "oled_ui.h"
 #include "config_storage.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "mbedtls/md.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,7 @@
 static const char *TAG = "node_command_handler";
 static bool g_logged_missing_hmac = false;
 static const char *IN_PROGRESS_STATUS = "IN_PROGRESS";
+static esp_timer_handle_t s_restart_timer = NULL;
 
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
@@ -1065,6 +1067,67 @@ static esp_err_t handle_set_time(
     }
 }
 
+static void restart_timer_cb(void *arg) {
+    (void)arg;
+    ESP_LOGW(TAG, "Restarting device by command");
+    esp_restart();
+}
+
+static esp_err_t schedule_restart_timer(void) {
+    if (!s_restart_timer) {
+        const esp_timer_create_args_t args = {
+            .callback = restart_timer_cb,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "cmd_restart"
+        };
+        esp_err_t err = esp_timer_create(&args, &s_restart_timer);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create restart timer: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    esp_timer_stop(s_restart_timer);
+    return esp_timer_start_once(s_restart_timer, 1000 * 1000);
+}
+
+static esp_err_t handle_restart(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)channel;
+    (void)params;
+    (void)user_ctx;
+
+    esp_err_t err = schedule_restart_timer();
+    if (err != ESP_OK) {
+        if (response) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "FAILED",
+                "restart_schedule_failed",
+                "Failed to schedule restart",
+                NULL
+            );
+        }
+        return err;
+    }
+
+    if (response) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "DONE",
+            NULL,
+            NULL,
+            NULL
+        );
+    }
+    return ESP_OK;
+}
+
 /**
  * @brief Инициализация встроенных обработчиков команд
  * 
@@ -1072,6 +1135,7 @@ static esp_err_t handle_set_time(
  */
 void node_command_handler_init_builtin_handlers(void) {
     node_command_handler_register("set_time", handle_set_time, NULL);
+    node_command_handler_register("restart", handle_restart, NULL);
     ESP_LOGI(TAG, "Built-in command handlers registered");
 }
 
