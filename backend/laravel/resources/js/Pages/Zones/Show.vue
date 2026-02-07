@@ -98,6 +98,7 @@
       :abort-modal="abortModal"
       :change-recipe-modal="changeRecipeModal"
       :loading="loading"
+      :pump-calibration-save-seq="pumpCalibrationSaveSeq"
       @close-action="modals.close('action')"
       @submit-action="onActionSubmit"
       @close-pump-calibration="modals.close('pumpCalibration')"
@@ -142,6 +143,7 @@ const {
     selectedNodeId,
     selectedNode,
     growthCycleInitialData,
+    pumpCalibrationSaveSeq,
     loading,
     zoneId,
     zone,

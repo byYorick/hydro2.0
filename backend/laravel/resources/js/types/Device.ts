@@ -10,6 +10,14 @@ export type DeviceType = 'sensor' | 'actuator' | 'controller' | 'ph' | 'ec' | 'p
  */
 export type DeviceStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 
+export interface PumpCalibrationConfig {
+  ml_per_sec?: number
+  duration_sec?: number
+  actual_ml?: number
+  component?: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down' | string | null
+  calibrated_at?: string | null
+}
+
 /**
  * Канал устройства
  */
@@ -21,6 +29,7 @@ export interface DeviceChannel {
   metric: string | number | null
   unit: string | null
   config?: Record<string, unknown>
+  pump_calibration?: PumpCalibrationConfig | null
   actuator_type?: string | null
   description?: string | null
 }

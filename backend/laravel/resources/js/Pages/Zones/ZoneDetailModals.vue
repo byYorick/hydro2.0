@@ -17,6 +17,7 @@
       :devices="devices"
       :loading-run="loading.pumpCalibrationRun"
       :loading-save="loading.pumpCalibrationSave"
+      :save-success-seq="pumpCalibrationSaveSeq"
       @close="$emit('close-pump-calibration')"
       @start="$emit('start-pump-calibration', $event)"
       @save="$emit('save-pump-calibration', $event)"
@@ -204,6 +205,7 @@ interface Props {
   abortModal: AbortModalState
   changeRecipeModal: ChangeRecipeModalState
   loading: LoadingState
+  pumpCalibrationSaveSeq: number
 }
 
 defineProps<Props>()

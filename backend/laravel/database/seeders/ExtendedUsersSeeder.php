@@ -123,6 +123,34 @@ class ExtendedUsersSeeder extends BaseSeeder
                 'role' => 'operator',
             ],
 
+            // Агрономы
+            [
+                'name' => 'Главный Агроном',
+                'email' => $this->generateEmail('agronomist', 'chief_agronomist'),
+                'password' => 'password',
+                'role' => 'agronomist',
+            ],
+            [
+                'name' => 'Агроном Смены',
+                'email' => $this->generateEmail('agronomist', 'shift_agronomist'),
+                'password' => 'password',
+                'role' => 'agronomist',
+            ],
+
+            // Инженеры
+            [
+                'name' => 'Сервисный Инженер',
+                'email' => $this->generateEmail('engineer', 'service_engineer'),
+                'password' => 'password',
+                'role' => 'engineer',
+            ],
+            [
+                'name' => 'Инженер Автоматики',
+                'email' => $this->generateEmail('engineer', 'automation_engineer'),
+                'password' => 'password',
+                'role' => 'engineer',
+            ],
+
             // Наблюдатели
             [
                 'name' => 'Наблюдатель 1',
@@ -174,8 +202,7 @@ class ExtendedUsersSeeder extends BaseSeeder
             'name' => 'required',
             'email' => 'required',
             'password' => 'required',
-            'role' => ['admin', 'operator', 'viewer'],
+            'role' => ['admin', 'operator', 'viewer', 'agronomist', 'engineer'],
         ];
     }
 }
-

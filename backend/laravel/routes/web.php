@@ -1055,9 +1055,44 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->where('zone_id', $zoneIdInt)
                 ->with([
                     'zone:id,name',
-                    'channels:id,node_id,channel,type,metric,unit',
+                    'channels:id,node_id,channel,type,metric,unit,config',
                 ])
-                ->get();
+                ->get()
+                ->map(function (\App\Models\DeviceNode $device) {
+                    $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) {
+                        $config = is_array($channel->config) ? $channel->config : [];
+                        $pumpCalibration = isset($config['pump_calibration']) && is_array($config['pump_calibration'])
+                            ? $config['pump_calibration']
+                            : null;
+
+                        return [
+                            'id' => $channel->id,
+                            'node_id' => $channel->node_id,
+                            'channel' => $channel->channel,
+                            'type' => $channel->type,
+                            'metric' => $channel->metric,
+                            'unit' => $channel->unit,
+                            'pump_calibration' => $pumpCalibration,
+                        ];
+                    })->values();
+
+                    return [
+                        'id' => $device->id,
+                        'uid' => $device->uid,
+                        'zone_id' => $device->zone_id,
+                        'name' => $device->name,
+                        'type' => $device->type,
+                        'status' => $device->status,
+                        'fw_version' => $device->fw_version,
+                        'last_seen_at' => $device->last_seen_at?->toIso8601String(),
+                        'zone' => $device->zone ? [
+                            'id' => $device->zone->id,
+                            'name' => $device->zone->name,
+                        ] : null,
+                        'channels' => $channels,
+                    ];
+                })
+                ->values();
 
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {

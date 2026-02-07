@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { usePage } from "@inertiajs/vue3";
+import { router, usePage } from "@inertiajs/vue3";
 import { useHistory } from "@/composables/useHistory";
 import { useCommands } from "@/composables/useCommands";
 import { useTelemetry } from "@/composables/useTelemetry";
@@ -126,6 +126,7 @@ export function useZoneShowPage() {
     startedAt?: string | null;
     expectedHarvestAt?: string | null;
   } | null>(null);
+  const pumpCalibrationSaveSeq = ref(0);
 
   const { loading, setLoading } = useLoading<LoadingState>({
     irrigate: false,
@@ -772,6 +773,7 @@ export function useZoneShowPage() {
         skip_run: true,
       });
       showToast("Калибровка сохранена в конфигурации канала.", "success", TOAST_TIMEOUT.NORMAL);
+      pumpCalibrationSaveSeq.value += 1;
     } catch (error) {
       handleError(error, {
         component: "useZoneShowPage",
@@ -805,20 +807,11 @@ export function useZoneShowPage() {
       return;
     }
 
-    try {
-      const { fetchZone } = useZones(showToast);
-      const updatedZone = await fetchZone(zoneId.value, true);
-      if (updatedZone?.id) {
-        zonesStore.upsert(updatedZone);
-        logger.debug("[Zones/Show] Zone updated in store after nodes attachment", { zoneId: updatedZone.id });
-      }
-    } catch (error) {
-      logger.error("[Zones/Show] Failed to update zone after nodes attachment, falling back to reload", {
-        zoneId: zoneId.value,
-        error,
-      });
-      reloadZone(zoneId.value, ["zone", "devices"]);
-    }
+    router.reload({
+      only: ["zone", "devices"],
+      preserveScroll: true,
+      preserveState: true,
+    });
   };
 
   const {
@@ -860,6 +853,7 @@ export function useZoneShowPage() {
     selectedNodeId,
     selectedNode,
     growthCycleInitialData,
+    pumpCalibrationSaveSeq,
     loading,
     zoneId,
     zone,
