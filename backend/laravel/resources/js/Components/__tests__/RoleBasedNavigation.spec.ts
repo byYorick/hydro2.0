@@ -62,6 +62,7 @@ describe('RoleBasedNavigation', () => {
 
     expect(wrapper.text()).toContain('Рецепты')
     expect(wrapper.text()).toContain('Культуры')
+    expect(wrapper.text()).toContain('Мастер запуска')
     expect(wrapper.text()).toContain('Аналитика')
     expect(wrapper.text()).not.toContain('Операторы')
     expect(wrapper.text()).not.toContain('Логи')
@@ -81,6 +82,7 @@ describe('RoleBasedNavigation', () => {
 
     expect(wrapper.text()).toContain('Рецепты')
     expect(wrapper.text()).toContain('Культуры')
+    expect(wrapper.text()).toContain('Мастер запуска')
     expect(wrapper.text()).toContain('Аналитика')
     expect(wrapper.text()).toContain('Операторы')
     expect(wrapper.text()).toContain('Логи')

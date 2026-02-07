@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-4">
-    <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5">
+    <section class="ui-hero p-5">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div class="flex-1 min-w-0">
           <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
@@ -77,6 +77,52 @@
             </Button>
           </Link>
         </div>
+      </div>
+      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4 mt-4">
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            pH факт
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            {{ formatMetric(telemetry?.ph, 2) }}
+          </div>
+          <div class="ui-kpi-hint">
+            Текущее значение
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            EC факт
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            {{ formatMetric(telemetry?.ec, 2) }}
+          </div>
+          <div class="ui-kpi-hint">
+            мСм/см
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Температура
+          </div>
+          <div class="ui-kpi-value">
+            {{ formatMetric(telemetry?.temperature, 1) }}
+          </div>
+          <div class="ui-kpi-hint">
+            °C воздух
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Влажность
+          </div>
+          <div class="ui-kpi-value">
+            {{ formatMetric(telemetry?.humidity, 0) }}
+          </div>
+          <div class="ui-kpi-hint">
+            % относительная
+          </div>
+        </article>
       </div>
     </section>
 
@@ -208,6 +254,7 @@ import ZoneTargets from '@/Components/ZoneTargets.vue'
 import { Link } from '@inertiajs/vue3'
 import { translateEventKind, translateStatus } from '@/utils/i18n'
 import { formatTimeShort } from '@/utils/formatTime'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -217,7 +264,7 @@ interface OverviewLoadingState {
 
 interface Props {
   zone: Zone
-  variant: 'success' | 'neutral' | 'warning' | 'danger'
+  variant: BadgeVariant
   activeGrowCycle?: any
   loading: OverviewLoadingState
   canOperateZone: boolean
@@ -248,6 +295,13 @@ function getEventVariant(kind: string): 'danger' | 'warning' | 'info' | 'neutral
   if (kind === 'WARNING') return 'warning'
   if (kind === 'INFO') return 'info'
   return 'neutral'
+}
+
+function formatMetric(value: number | null | undefined, precision = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—'
+  }
+  return Number(value).toFixed(precision)
 }
 
 </script>

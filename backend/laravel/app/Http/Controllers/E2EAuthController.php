@@ -11,13 +11,13 @@ class E2EAuthController extends Controller
 {
     /**
      * Создать пользователя и токен для E2E тестов.
-     * Доступно только в testing окружении.
+     * Доступно только в testing/e2e окружении.
      */
     public function createToken(Request $request): JsonResponse
     {
         // Проверяем, что мы в тестовом окружении
         $env = app()->environment();
-        if (!in_array($env, ['testing', 'e2e', 'local'])) {
+        if (! in_array($env, ['testing', 'e2e'], true)) {
             abort(404, 'Not found');
         }
 
@@ -62,4 +62,3 @@ class E2EAuthController extends Controller
         ]);
     }
 }
-

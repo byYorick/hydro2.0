@@ -103,7 +103,7 @@
                 Не выбрано
               </option>
               <option
-                v-for="option in taxonomies.substrate_type"
+                v-for="option in taxonomyOptions.substrate_type"
                 :key="option.id"
                 :value="option.id"
               >
@@ -151,7 +151,7 @@
                 Не выбрано
               </option>
               <option
-                v-for="option in taxonomies.growing_system"
+                v-for="option in taxonomyOptions.growing_system"
                 :key="option.id"
                 :value="option.id"
               >
@@ -196,7 +196,7 @@
               Не выбрано
             </option>
             <option
-              v-for="option in taxonomies.photoperiod_preset"
+              v-for="option in taxonomyOptions.photoperiod_preset"
               :key="option.id"
               :value="option.id"
             >
@@ -405,7 +405,7 @@ const defaultSeasonality = [
 
 const localTaxonomies = ref<Record<string, TaxonomyOption[]>>({})
 
-const taxonomies = computed(() => ({
+const taxonomyOptions = computed(() => ({
   substrate_type: localTaxonomies.value.substrate_type ?? [],
   growing_system: localTaxonomies.value.growing_system ?? [],
   photoperiod_preset: localTaxonomies.value.photoperiod_preset ?? [],

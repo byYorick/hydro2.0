@@ -244,6 +244,10 @@ interface GrowCycle {
   id: number
   zone_id: number
   status: string
+  current_phase_id?: number | null
+  currentPhase?: {
+    id?: number | null
+  } | null
   current_stage_code?: string | null
   current_stage_started_at?: string | null
   started_at?: string | null

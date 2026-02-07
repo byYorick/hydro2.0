@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[var(--shadow-card)]">
+      <section class="ui-hero p-5">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
@@ -25,49 +25,49 @@
             </Button>
           </div>
         </div>
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-          <div class="glass-panel border border-[color:var(--badge-success-border)] rounded-xl p-3 shadow-[inset_0_0_0_1px_var(--badge-success-border)]">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+        <div class="ui-kpi-grid grid-cols-2 lg:grid-cols-5 mt-4">
+          <div class="ui-kpi-card border-[color:var(--badge-success-border)]">
+            <div class="ui-kpi-label">
               Активные
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
               {{ runningCount }}
             </div>
           </div>
-          <div class="glass-panel border border-[color:var(--border-muted)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Пауза
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ pausedCount }}
             </div>
           </div>
-          <div class="glass-panel border border-[color:var(--badge-warning-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+          <div class="ui-kpi-card border-[color:var(--badge-warning-border)]">
+            <div class="ui-kpi-label">
               Warning
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
               {{ warningCount }}
             </div>
           </div>
-          <div class="glass-panel border border-[color:var(--badge-danger-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+          <div class="ui-kpi-card border-[color:var(--badge-danger-border)]">
+            <div class="ui-kpi-label">
               Alarm
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-[color:var(--accent-red)]">
               {{ alarmCount }}
             </div>
           </div>
-          <div class="glass-panel border border-[color:var(--badge-info-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+          <div class="ui-kpi-card border-[color:var(--badge-info-border)]">
+            <div class="ui-kpi-label">
               Всего
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
               {{ totalZones }}
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[var(--shadow-card)]">
         <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">

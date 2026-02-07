@@ -2,25 +2,77 @@
   <AppLayout>
     <template #default>
       <div class="space-y-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 class="text-lg font-semibold">
-              Теплицы
-            </h1>
-            <p class="text-sm text-[color:var(--text-muted)] max-w-2xl">
-              Управление всеми теплицами системы
-            </p>
+        <section class="ui-hero p-5 space-y-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+                инфраструктура
+              </p>
+              <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+                Теплицы
+              </h1>
+              <p class="text-sm text-[color:var(--text-muted)] max-w-2xl">
+                Управление теплицами, зонами и готовностью площадок к запуску циклов.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                v-if="canConfigure"
+                size="sm"
+                variant="primary"
+                @click="openCreateModal"
+              >
+                Новая теплица
+              </Button>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="primary"
-              @click="openCreateModal"
-            >
-              Новая теплица
-            </Button>
+          <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Теплиц
+              </div>
+              <div class="ui-kpi-value">
+                {{ totalGreenhouses }}
+              </div>
+              <div class="ui-kpi-hint">
+                Всего в системе
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Зон
+              </div>
+              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+                {{ totalZones }}
+              </div>
+              <div class="ui-kpi-hint">
+                Подключено к теплицам
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Активных зон
+              </div>
+              <div class="ui-kpi-value text-[color:var(--accent-green)]">
+                {{ totalRunningZones }}
+              </div>
+              <div class="ui-kpi-hint">
+                Зоны в статусе RUNNING
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Средняя плотность
+              </div>
+              <div class="ui-kpi-value">
+                {{ averageZonesPerGreenhouse }}
+              </div>
+              <div class="ui-kpi-hint">
+                Зон на одну теплицу
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
         <div
           v-if="greenhouses.length === 0"
@@ -30,6 +82,7 @@
             Нет теплиц
           </div>
           <Button
+            v-if="canConfigure"
             size="sm"
             variant="primary"
             @click="openCreateModal"
@@ -106,7 +159,8 @@
 </template>
 
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3'
+import { computed } from 'vue'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -129,8 +183,18 @@ interface Props {
   greenhouses: Greenhouse[]
 }
 
-// Props are used implicitly by Vue template
-defineProps<Props>()
+const props = defineProps<Props>()
+
+const page = usePage<{ auth?: { user?: { role?: string } } }>()
+const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
+const canConfigure = computed(() => role.value === 'agronomist' || role.value === 'admin')
+const totalGreenhouses = computed(() => props.greenhouses.length)
+const totalZones = computed(() => props.greenhouses.reduce((sum, greenhouse) => sum + (greenhouse.zones_count || 0), 0))
+const totalRunningZones = computed(() => props.greenhouses.reduce((sum, greenhouse) => sum + (greenhouse.zones_running || 0), 0))
+const averageZonesPerGreenhouse = computed(() => {
+  if (totalGreenhouses.value === 0) return '0.0'
+  return (totalZones.value / totalGreenhouses.value).toFixed(1)
+})
 
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 

@@ -73,6 +73,13 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => ({
+    props: {
+      auth: {
+        user: { role: 'agronomist' },
+      },
+    },
+  }),
   router: {
     visit: vi.fn(),
   },

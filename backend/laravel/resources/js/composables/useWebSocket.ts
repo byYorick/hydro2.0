@@ -5,50 +5,36 @@ import { useApi } from './useApi'
 import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
-// Импортируем типы для reconciliation
-import type { ZoneSnapshot, SnapshotHandler } from '@/types/reconciliation'
+import type { SnapshotHandler } from '@/types/reconciliation'
 import { isValidSnapshot } from '@/types/reconciliation'
+import {
+  createSubscriptionLifecycle,
+} from '@/ws/subscriptionLifecycle'
+import type {
+  ActiveSubscription,
+  ChannelControl,
+  ChannelKind,
+  GlobalChannelRegistry,
+  GlobalEventHandler,
+  PendingSubscription,
+  ZoneCommandHandler,
+} from '@/ws/subscriptionTypes'
+import {
+  clearSnapshotRegistry,
+  getSnapshotHandler,
+  getSnapshotServerTs,
+  getZoneSnapshot,
+  hasZoneSnapshot,
+  isStaleSnapshotEvent,
+  registerSnapshotHandler,
+  removeSnapshotHandler,
+  setZoneSnapshot,
+} from '@/ws/snapshotRegistry'
+import { createPendingSubscriptionsManager } from '@/ws/pendingSubscriptions'
+import { createResubscribeManager } from '@/ws/resubscribeManager'
+import { createSnapshotSync } from '@/ws/snapshotSync'
+import { createChannelControlManager } from '@/ws/channelControlManager'
 
-type ZoneCommandHandler = (event: {
-  commandId: number | string
-  status: string
-  message?: string
-  error?: string
-  zoneId?: number
-}) => void
-
-type GlobalEventHandler = (event: {
-  id: number | string
-  kind: string
-  message: string
-  zoneId?: number
-  occurredAt: string
-}) => void
-
-type ChannelKind = 'zoneCommands' | 'globalEvents'
-
-interface ActiveSubscription {
-  id: string
-  channelName: string
-  kind: ChannelKind
-  handler: ZoneCommandHandler | GlobalEventHandler
-  componentTag: string
-  showToast?: ToastHandler
-  instanceId: number
-}
-
-interface ChannelControl {
-  channelName: string
-  channelType: 'private' | 'public'
-  kind: ChannelKind
-  echoChannel: any | null
-  listenerRefs: Record<string, (payload: any) => void>
-}
-
-const COMMAND_STATUS_EVENT = '.App\\Events\\CommandStatusUpdated'
-const COMMAND_FAILED_EVENT = '.App\\Events\\CommandFailed'
-const GLOBAL_EVENT_CREATED = '.App\\Events\\EventCreated'
 const GLOBAL_EVENTS_CHANNEL = 'events.global'
 
 const activeSubscriptions = new Map<string, ActiveSubscription>()
@@ -57,42 +43,14 @@ const channelControls = new Map<string, ChannelControl>()
 const componentChannelCounts = new Map<number, Map<string, number>>()
 const instanceSubscriptionSets = new Map<number, Set<string>>()
 
-// Глобальный реестр для глобальных каналов (events.global, commands.global)
-// Используется для предотвращения множественных запросов на /broadcasting/auth
-interface GlobalChannelRegistry {
-  channelControl: ChannelControl | null
-  subscriptionRefCount: number
-  isAuthorized: boolean
-  handlers: Set<GlobalEventHandler>
-}
-
 const globalChannelRegistry = new Map<string, GlobalChannelRegistry>()
-
-// Очередь отложенных подписок для компонентов, смонтированных до готовности Echo
-interface PendingSubscription {
-  id: string
-  channelName: string
-  kind: ChannelKind
-  channelType: 'private' | 'public'
-  handler: ZoneCommandHandler | GlobalEventHandler
-  componentTag: string
-  instanceId: number
-  showToast?: ToastHandler
-}
 
 const pendingSubscriptions = new Map<string, PendingSubscription>()
 
 let subscriptionCounter = 0
 let componentCounter = 0
-let resubscribeTimer: ReturnType<typeof setTimeout> | null = null
-let isResubscribing = false // Флаг для предотвращения параллельных resubscribe
 
 const WS_DISABLED_MESSAGE = 'Realtime отключен в этой сборке'
-
-const zoneSnapshots = new Map<number, ZoneSnapshot>()
-
-// Callback для применения snapshot (будет установлен компонентами)
-const snapshotHandlers = new Map<number, SnapshotHandler>()
 
 // Вспомогательная функция для проверки, является ли канал глобальным
 function isGlobalChannel(channelName: string): boolean {
@@ -151,48 +109,6 @@ function createSubscriptionId(): string {
   return `sub-${subscriptionCounter}`
 }
 
-// Вспомогательная функция для создания отложенной подписки
-function createPendingSubscription(
-  channelName: string,
-  kind: ChannelKind,
-  channelType: 'private' | 'public',
-  handler: ZoneCommandHandler | GlobalEventHandler,
-  componentTag: string,
-  instanceId: number,
-  showToast?: ToastHandler
-): (() => void) {
-  const subscriptionId = createSubscriptionId()
-  const pending: PendingSubscription = {
-    id: subscriptionId,
-    channelName,
-    kind,
-    channelType,
-    handler,
-    componentTag,
-    instanceId,
-    showToast,
-  }
-  
-  pendingSubscriptions.set(subscriptionId, pending)
-  logger.debug('[useWebSocket] Echo not available, subscription queued', {
-    channel: channelName,
-    subscriptionId,
-    componentTag,
-  })
-  
-  // Пытаемся обработать сразу, если Echo появится
-  setTimeout(() => {
-    processPendingSubscriptions()
-  }, 100)
-  
-  return () => {
-    // Удаляем из очереди при отписке
-    pendingSubscriptions.delete(subscriptionId)
-    // Также удаляем из активных, если успели подписаться
-    removeSubscription(subscriptionId)
-  }
-}
-
 // Вспомогательная функция для создания активной подписки
 function createActiveSubscription(
   channelName: string,
@@ -213,372 +129,70 @@ function createActiveSubscription(
   }
 }
 
-function getPusherChannel(channelName: string): any | null {
-  if (!isBrowser()) {
-    return null
-  }
-
-  const channels = window.Echo?.connector?.pusher?.channels?.channels
-  if (!channels) {
-    return null
-  }
-
-  // Pusher хранит private/presence каналы с префиксом, поэтому проверяем оба варианта
-  return (
-    channels[channelName] ||
-    channels[`private-${channelName}`] ||
-    channels[`presence-${channelName}`] ||
-    null
-  )
-}
-
-function isChannelDead(channelName: string): boolean {
-  if (!isBrowser()) {
-    return true // Если не в браузере, канал мертв
-  }
-  
-  // Если window.Echo не существует или изменился, все каналы мертвы
-  if (!window.Echo) {
-    return true
-  }
-  
-  const pusherChannel = getPusherChannel(channelName)
-  
-  // Если канала нет в текущем window.Echo, он мертв
-  // Это важно после teardown/реинициализации, когда создается новый экземпляр Echo
-  if (!pusherChannel) {
-    return true
-  }
-
-  // Проверяем, есть ли активные подписки на канале
-  const hasBindings = Array.isArray(pusherChannel.bindings) && pusherChannel.bindings.length > 0
-  const hasCallbacks =
-    pusherChannel._callbacks && Object.keys(pusherChannel._callbacks).length > 0
-  const hasEvents =
-    pusherChannel._events && Object.keys(pusherChannel._events).length > 0
-
-  return !(hasBindings || hasCallbacks || hasEvents)
-}
-
-function removeChannelListeners(control: ChannelControl): void {
-  const channel = control.echoChannel
-  if (!channel || !control.listenerRefs) {
-    return
-  }
-  Object.keys(control.listenerRefs).forEach(eventName => {
-    try {
-      channel.stopListening(eventName)
-    } catch {
-      // ignore stop listening errors
+const channelControlManager = createChannelControlManager({
+  isBrowser,
+  getEcho: () => {
+    if (!isBrowser()) {
+      return null
     }
-  })
-  control.listenerRefs = {}
-}
+    return window.Echo
+  },
+  isGlobalChannel,
+  channelControls,
+  globalChannelRegistry,
+  onCommandEvent: handleCommandEvent,
+  onGlobalEvent: handleGlobalEvent,
+})
 
-function attachChannelListeners(control: ChannelControl): void {
-  const channel = control.echoChannel
-  if (!channel) {
-    logger.warn('[useWebSocket] Tried to attach listeners to missing channel', {
-      channel: control.channelName,
-    })
-    return
-  }
+const {
+  addSubscription,
+  removeSubscription,
+  removeSubscriptionsByInstance,
+} = createSubscriptionLifecycle({
+  activeSubscriptions,
+  channelSubscribers,
+  channelControls,
+  componentChannelCounts,
+  instanceSubscriptionSets,
+  globalChannelRegistry,
+  isGlobalChannel,
+  detachChannel: channelControlManager.detachChannel,
+})
 
-  removeChannelListeners(control)
-
-  if (control.kind === 'zoneCommands') {
-    const statusHandler = (payload: any) => handleCommandEvent(control.channelName, payload, false)
-    const failedHandler = (payload: any) => handleCommandEvent(control.channelName, payload, true)
-    channel.listen(COMMAND_STATUS_EVENT, statusHandler)
-    channel.listen(COMMAND_FAILED_EVENT, failedHandler)
-    control.listenerRefs = {
-      [COMMAND_STATUS_EVENT]: statusHandler,
-      [COMMAND_FAILED_EVENT]: failedHandler,
+const pendingSubscriptionsManager = createPendingSubscriptionsManager({
+  pendingSubscriptions,
+  createSubscriptionId,
+  removeSubscription,
+  isBrowser,
+  getEcho: () => {
+    if (!isBrowser()) {
+      return null
     }
-  } else {
-    const eventHandler = (payload: any) => handleGlobalEvent(control.channelName, payload)
-    channel.listen(GLOBAL_EVENT_CREATED, eventHandler)
-    control.listenerRefs = {
-      [GLOBAL_EVENT_CREATED]: eventHandler,
-    }
-  }
-}
+    return window.Echo || getEchoInstance()
+  },
+  isGlobalChannel,
+  isChannelDead: channelControlManager.isChannelDead,
+  globalChannelRegistry,
+  ensureChannelControl: channelControlManager.ensureChannelControl,
+  createActiveSubscription,
+  addSubscription,
+})
 
-function detachChannel(control: ChannelControl, removeControl = false): void {
-  removeChannelListeners(control)
-  if (isBrowser()) {
-    try {
-      window.Echo?.leave?.(control.channelName)
-    } catch {
-      // ignore leave errors
-    }
-  }
-  control.echoChannel = null
-  if (removeControl) {
-    channelControls.delete(control.channelName)
-  }
-}
+const snapshotSync = createSnapshotSync({
+  getApiClient: () => useApi().api,
+  activeSubscriptions,
+  isValidSnapshot,
+  setZoneSnapshot,
+  getSnapshotHandler,
+  registerSnapshotHandler,
+  getZoneSnapshot,
+  hasZoneSnapshot,
+})
 
-function ensureChannelControl(
-  channelName: string,
-  kind: ChannelKind,
-  channelType: 'private' | 'public'
-): ChannelControl | null {
-  if (!isBrowser()) {
-    return null
-  }
-  
-  // Для глобальных каналов используем реестр для предотвращения множественных auth запросов
-  if (isGlobalChannel(channelName)) {
-    const registry = globalChannelRegistry.get(channelName)
-    if (registry && registry.channelControl) {
-      // Проверяем, что канал еще активен (не мертв)
-      const channelStillActive = registry.channelControl.echoChannel && !isChannelDead(channelName)
-      
-      if (channelStillActive) {
-        // Канал уже существует и авторизован, переиспользуем его
-        logger.debug('[useWebSocket] Reusing existing global channel from registry', {
-          channel: channelName,
-          refCount: registry.subscriptionRefCount,
-          isAuthorized: registry.isAuthorized,
-          hasActiveChannel: true,
-        })
-        return registry.channelControl
-      } else if (registry.channelControl.echoChannel === null) {
-        // Канал был удален, но реестр остался - очищаем реестр и создадим новый канал
-        logger.debug('[useWebSocket] Global channel was detached, clearing registry', {
-          channel: channelName,
-        })
-        globalChannelRegistry.delete(channelName)
-      }
-    }
-  }
-  
-  let control = channelControls.get(channelName)
-  if (!control) {
-    control = {
-      channelName,
-      channelType,
-      kind,
-      echoChannel: null,
-      listenerRefs: {},
-    }
-    channelControls.set(channelName, control)
-  }
-
-  const echo = window.Echo
-  if (!echo) {
-    // Если window.Echo не существует, очищаем канал из control
-    if (control.echoChannel) {
-      control.echoChannel = null
-    }
-    return null
-  }
-
-  // Проверяем, что канал существует в текущем window.Echo
-  // Если control.echoChannel существует, но канала нет в window.Echo, он мертв
-  const shouldRecreate = !control.echoChannel || isChannelDead(channelName)
-  
-  // Дополнительная проверка: если control.echoChannel существует, но канала нет в window.Echo,
-  // значит произошла реинициализация Echo и старый канал мертв
-  if (control.echoChannel && !getPusherChannel(channelName)) {
-    logger.debug('[useWebSocket] Channel not found in current Echo instance, marking as dead', {
-      channel: channelName,
-    })
-    control.echoChannel = null
-  }
-
-  if (shouldRecreate || !control.echoChannel) {
-    // Для глобальных каналов проверяем реестр перед созданием нового канала
-    // Если канал уже есть в реестре и активен, переиспользуем его
-    if (isGlobalChannel(channelName)) {
-      const registry = globalChannelRegistry.get(channelName)
-      if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(channelName)) {
-        // Канал уже существует в реестре и активен - переиспользуем его
-        logger.debug('[useWebSocket] Reusing global channel from registry (ref-count was 0)', {
-          channel: channelName,
-          kind,
-          refCount: registry.subscriptionRefCount,
-        })
-        return registry.channelControl
-      }
-    }
-    
-    control.echoChannel =
-      channelType === 'private' ? echo.private(channelName) : echo.channel(channelName)
-    
-    // Для глобальных каналов регистрируем в реестре
-    if (isGlobalChannel(channelName)) {
-      if (!globalChannelRegistry.has(channelName)) {
-        globalChannelRegistry.set(channelName, {
-          channelControl: control,
-          subscriptionRefCount: 0,
-          isAuthorized: false,
-          handlers: new Set(),
-        })
-      }
-      const registry = globalChannelRegistry.get(channelName)
-      if (registry) {
-        registry.channelControl = control
-        registry.isAuthorized = true
-      }
-      
-      logger.debug('[useWebSocket] Created global channel (first auth request)', {
-        channel: channelName,
-        kind,
-      })
-    } else {
-      logger.debug('[useWebSocket] Created channel subscription', {
-        channel: channelName,
-        kind,
-      })
-    }
-  }
-
-  if (!Object.keys(control.listenerRefs).length || shouldRecreate) {
-    attachChannelListeners(control)
-  }
-
-  return control
-}
-
-function addSubscription(_control: ChannelControl, subscription: ActiveSubscription): void {
-  // control передается для совместимости API, но не используется напрямую
-  
-  activeSubscriptions.set(subscription.id, subscription)
-  let channelSet = channelSubscribers.get(subscription.channelName)
-  if (!channelSet) {
-    channelSet = new Set()
-    channelSubscribers.set(subscription.channelName, channelSet)
-  }
-  
-  channelSet.add(subscription.id)
-  incrementComponentChannel(subscription.instanceId, subscription.channelName)
-  
-  // Регистрируем подписку для проверки инвариантов
-  const eventName = subscription.kind === 'zoneCommands' 
-    ? '.App\\Events\\CommandStatusUpdated' 
-    : '.App\\Events\\EventCreated'
-  registerSubscription(
-    subscription.channelName,
-    subscription.id,
-    eventName,
-    subscription.componentTag
-  )
-  
-  logger.debug('[useWebSocket] Added subscription', {
-    channel: subscription.channelName,
-    subscriptionId: subscription.id,
-    componentTag: subscription.componentTag,
-  })
-}
-
-function incrementComponentChannel(instanceId: number, channelName: string): void {
-  let channelMap = componentChannelCounts.get(instanceId)
-  if (!channelMap) {
-    channelMap = new Map()
-    componentChannelCounts.set(instanceId, channelMap)
-  }
-  channelMap.set(channelName, (channelMap.get(channelName) ?? 0) + 1)
-  const instanceSet = instanceSubscriptionSets.get(instanceId)
-  instanceSet?.add(channelName)
-}
-
-function decrementComponentChannel(instanceId: number, channelName: string): void {
-  const channelMap = componentChannelCounts.get(instanceId)
-  if (!channelMap) {
-    return
-  }
-  const next = (channelMap.get(channelName) ?? 0) - 1
-  if (next <= 0) {
-    channelMap.delete(channelName)
-    if (channelMap.size === 0) {
-      componentChannelCounts.delete(instanceId)
-    }
-    // Удаляем канал из instanceSubscriptionSets
-    const instanceSet = instanceSubscriptionSets.get(instanceId)
-    if (instanceSet) {
-      instanceSet.delete(channelName)
-      // Если Set пустой, удаляем запись из instanceSubscriptionSets
-      // Это предотвращает утечку памяти при длительной работе/навигации
-      if (instanceSet.size === 0) {
-        instanceSubscriptionSets.delete(instanceId)
-      }
-    }
-  } else {
-    channelMap.set(channelName, next)
-  }
-}
-
-function removeSubscription(subscriptionId: string): void {
-  const subscription = activeSubscriptions.get(subscriptionId)
-  if (!subscription) {
-    return
-  }
-
-  // Удаляем из реестра инвариантов
-  const eventName = subscription.kind === 'zoneCommands' 
-    ? '.App\\Events\\CommandStatusUpdated' 
-    : '.App\\Events\\EventCreated'
-  unregisterSubscription(
-    subscription.channelName,
-    subscriptionId,
-    eventName
-  )
-
-  // Для глобальных каналов обновляем реестр перед удалением
-  if (isGlobalChannel(subscription.channelName)) {
-    const registry = globalChannelRegistry.get(subscription.channelName)
-    if (registry) {
-      // Удаляем handler из реестра
-      if (subscription.handler && typeof subscription.handler === 'function') {
-        registry.handlers.delete(subscription.handler as GlobalEventHandler)
-      }
-      registry.subscriptionRefCount = Math.max(0, registry.subscriptionRefCount - 1)
-    }
-  }
-
-  activeSubscriptions.delete(subscriptionId)
-  const channelSet = channelSubscribers.get(subscription.channelName)
-  if (channelSet) {
-    channelSet.delete(subscriptionId)
-    if (channelSet.size === 0) {
-      channelSubscribers.delete(subscription.channelName)
-      const control = channelControls.get(subscription.channelName)
-      if (control) {
-        if (!isGlobalChannel(subscription.channelName)) {
-          // Отключаем канал, но сохраняем control, чтобы resubscribeAllChannels мог восстановить слушатели
-          detachChannel(control, false)
-        } else {
-          // Для глобальных каналов НЕ удаляем канал из реестра, даже если ref-count = 0
-          // Это позволяет переиспользовать канал при следующей подписке без нового auth запроса
-          // Канал останется в реестре и будет переиспользован при следующей навигации
-          const registry = globalChannelRegistry.get(subscription.channelName)
-          if (registry && registry.subscriptionRefCount === 0) {
-            // Обнуляем handlers, но сохраняем канал в реестре для переиспользования
-            registry.handlers.clear()
-            // Убираем слушатели и выходим из канала, чтобы не держать "пустые" глобальные подписки
-            detachChannel(control, false)
-            registry.isAuthorized = false
-            logger.debug('[useWebSocket] Global channel kept in registry for reuse (ref-count=0)', {
-              channel: subscription.channelName,
-              hasActiveChannel: !!registry.channelControl?.echoChannel,
-            })
-            // Канал НЕ удаляется из реестра - он будет переиспользован при следующей подписке
-          }
-        }
-      }
-    }
-  }
-
-  decrementComponentChannel(subscription.instanceId, subscription.channelName)
-  logger.debug('[useWebSocket] Removed subscription', {
-    channel: subscription.channelName,
-    subscriptionId,
-    componentTag: subscription.componentTag,
-    refCount: isGlobalChannel(subscription.channelName) ? globalChannelRegistry.get(subscription.channelName)?.subscriptionRefCount : undefined,
-  })
-}
+const resubscribeManager = createResubscribeManager({
+  isBrowser,
+  resubscribeAllChannels: channelControlManager.resubscribeAllChannels,
+})
 
 function handleCommandEvent(channelName: string, payload: any, isFailure: boolean): void {
   const channelSet = channelSubscribers.get(channelName)
@@ -591,19 +205,15 @@ function handleCommandEvent(channelName: string, payload: any, isFailure: boolea
   const zoneId = zoneIdMatch ? parseInt(zoneIdMatch[1], 10) : payload?.zoneId ?? payload?.zone_id
 
   // Reconciliation: проверяем, не старше ли событие snapshot
-  if (zoneId) {
-    const snapshot = zoneSnapshots.get(zoneId)
-    if (snapshot && payload?.server_ts) {
-      if (payload.server_ts < snapshot.server_ts) {
-        logger.debug('[useWebSocket] Ignoring stale command event (reconciliation)', {
-          channel: channelName,
-          event_server_ts: payload.server_ts,
-          snapshot_server_ts: snapshot.server_ts,
-          commandId: payload?.commandId ?? payload?.command_id,
-        })
-        return
-      }
-    }
+  if (isStaleSnapshotEvent(zoneId, payload?.server_ts)) {
+    const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
+    logger.debug('[useWebSocket] Ignoring stale command event (reconciliation)', {
+      channel: channelName,
+      event_server_ts: payload?.server_ts,
+      snapshot_server_ts: snapshotServerTs,
+      commandId: payload?.commandId ?? payload?.command_id,
+    })
+    return
   }
 
   const normalized = {
@@ -647,19 +257,15 @@ function handleGlobalEvent(channelName: string, payload: any): void {
   const zoneId = payload?.zoneId ?? payload?.zone_id
 
   // Reconciliation: проверяем, не старше ли событие snapshot (если есть zoneId)
-  if (zoneId) {
-    const snapshot = zoneSnapshots.get(zoneId)
-    if (snapshot && payload?.server_ts) {
-      if (payload.server_ts < snapshot.server_ts) {
-        logger.debug('[useWebSocket] Ignoring stale global event (reconciliation)', {
-          channel: channelName,
-          event_server_ts: payload.server_ts,
-          snapshot_server_ts: snapshot.server_ts,
-          eventId: payload?.id ?? payload?.eventId ?? payload?.event_id,
-        })
-        return
-      }
-    }
+  if (isStaleSnapshotEvent(zoneId, payload?.server_ts)) {
+    const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
+    logger.debug('[useWebSocket] Ignoring stale global event (reconciliation)', {
+      channel: channelName,
+      event_server_ts: payload?.server_ts,
+      snapshot_server_ts: snapshotServerTs,
+      eventId: payload?.id ?? payload?.eventId ?? payload?.event_id,
+    })
+    return
   }
 
   const normalized = {
@@ -686,238 +292,14 @@ function handleGlobalEvent(channelName: string, payload: any): void {
   })
 }
 
-function removeSubscriptionsByInstance(instanceId: number): void {
-  const idsToRemove: string[] = []
-  activeSubscriptions.forEach((subscription, id) => {
-    if (subscription.instanceId === instanceId) {
-      idsToRemove.push(id)
-    }
-  })
-  idsToRemove.forEach(id => removeSubscription(id))
-}
-
-function scheduleResubscribe(delay = 500): void {
-  if (!isBrowser()) {
-    return
-  }
-  
-  // Предотвращаем параллельные resubscribe
-  if (isResubscribing) {
-    logger.debug('[useWebSocket] Resubscribe already in progress, skipping', {})
-    return
-  }
-  
-  if (resubscribeTimer) {
-    clearTimeout(resubscribeTimer)
-  }
-  
-  resubscribeTimer = window.setTimeout(() => {
-    resubscribeTimer = null
-    if (!isResubscribing) {
-      isResubscribing = true
-      try {
-        resubscribeAllChannels()
-      } finally {
-        isResubscribing = false
-      }
-    }
-  }, delay)
-}
-
-// Обработка отложенных подписок при подключении Echo
-function processPendingSubscriptions(): void {
-  if (!isBrowser() || pendingSubscriptions.size === 0) {
-    return
-  }
-  
-  const echo = window.Echo || getEchoInstance()
-  if (!echo) {
-    // In test environment, don't wait for Echo
-    if (import.meta.env.MODE === 'test') {
-      logger.debug('[useWebSocket] Test environment detected, skipping Echo wait')
-      return
-    }
-
-    logger.debug('[useWebSocket] Echo still not available, keeping subscriptions pending', {
-      pendingCount: pendingSubscriptions.size,
-    })
-    return
-  }
-  
-  logger.info('[useWebSocket] Processing pending subscriptions', {
-    count: pendingSubscriptions.size,
-  })
-  
-  // Обрабатываем все отложенные подписки
-  // ВАЖНО: НЕ очищаем очередь до успешного создания канала
-  // Если ensureChannelControl вернёт null, подписка останется в очереди для повторной попытки
-  const toProcess = Array.from(pendingSubscriptions.entries())
-  
-  toProcess.forEach(([subscriptionId, pending]) => {
-    try {
-      // Для глобальных каналов проверяем реестр
-      if (isGlobalChannel(pending.channelName)) {
-        const registry = globalChannelRegistry.get(pending.channelName)
-        if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(pending.channelName)) {
-          // Канал уже существует и авторизован, просто добавляем handler
-          registry.handlers.add(pending.handler as GlobalEventHandler)
-          registry.subscriptionRefCount += 1
-          
-          const subscription = createActiveSubscription(
-            pending.channelName,
-            pending.kind,
-            pending.handler,
-            pending.componentTag,
-            pending.instanceId,
-            pending.showToast
-          )
-          subscription.id = pending.id // Используем ID из pending
-          
-          addSubscription(registry.channelControl, subscription)
-          
-          // Удаляем из очереди только после успешного создания подписки
-          pendingSubscriptions.delete(subscriptionId)
-          
-          logger.debug('[useWebSocket] Processed pending subscription (reused global channel)', {
-            channel: pending.channelName,
-            subscriptionId: pending.id,
-            componentTag: pending.componentTag,
-            refCount: registry.subscriptionRefCount,
-          })
-          return
-        }
-      }
-      
-      const control = ensureChannelControl(pending.channelName, pending.kind, pending.channelType)
-      if (!control || !control.echoChannel) {
-        // Канал не создан (Echo ещё не готов или ошибка авторизации)
-        // НЕ удаляем из очереди - оставляем для повторной попытки
-        logger.warn('[useWebSocket] Failed to create channel for pending subscription, will retry', {
-          channel: pending.channelName,
-          subscriptionId: pending.id,
-          reason: !control ? 'ensureChannelControl returned null' : 'echoChannel is null',
-        })
-        return
-      }
-      
-      // Обновляем реестр для глобальных каналов
-      if (isGlobalChannel(pending.channelName)) {
-        const registry = globalChannelRegistry.get(pending.channelName)
-        if (registry) {
-          registry.handlers.add(pending.handler as GlobalEventHandler)
-          registry.subscriptionRefCount += 1
-        }
-      }
-      
-      const subscription = createActiveSubscription(
-        pending.channelName,
-        pending.kind,
-        pending.handler,
-        pending.componentTag,
-        pending.instanceId,
-        pending.showToast
-      )
-      subscription.id = pending.id // Используем ID из pending
-      
-      addSubscription(control, subscription)
-      
-      // Удаляем из очереди только после успешного создания подписки
-      pendingSubscriptions.delete(subscriptionId)
-      
-      logger.debug('[useWebSocket] Processed pending subscription', {
-        channel: pending.channelName,
-        subscriptionId: pending.id,
-        componentTag: pending.componentTag,
-      })
-    } catch (error) {
-      // При ошибке не удаляем из очереди - оставляем для повторной попытки
-      logger.error('[useWebSocket] Error processing pending subscription, will retry', {
-        channel: pending.channelName,
-        subscriptionId: pending.id,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  })
-}
-
-/**
- * Получить snapshot для зоны и применить его
- */
-async function fetchAndApplySnapshot(zoneId: number): Promise<void> {
-  try {
-    const { api } = useApi()
-    const response = await api.get<{ status: string; data: ZoneSnapshot }>(`/zones/${zoneId}/snapshot`)
-    
-    if (response.data?.status === 'ok' && response.data?.data) {
-      const snapshot = response.data.data
-      
-      // Валидация snapshot перед сохранением
-      if (!isValidSnapshot(snapshot)) {
-        logger.warn('[useWebSocket] Invalid snapshot received, skipping', {
-          zoneId,
-          snapshot,
-        })
-        return
-      }
-      
-      zoneSnapshots.set(zoneId, snapshot)
-      
-      logger.info('[useWebSocket] Snapshot fetched and stored', {
-        zoneId,
-        snapshot_id: snapshot.snapshot_id,
-        server_ts: snapshot.server_ts,
-      })
-      
-      // Применяем snapshot через handler, если он установлен
-      const handler = snapshotHandlers.get(zoneId)
-      if (handler) {
-        try {
-          await handler(snapshot)
-        } catch (error) {
-          logger.error('[useWebSocket] Error applying snapshot', {
-            zoneId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        }
-      }
-    }
-  } catch (error) {
-    logger.error('[useWebSocket] Failed to fetch snapshot', {
-      zoneId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
-}
-
 if (isBrowser()) {
   try {
     onWsStateChange(state => {
       if (state === 'connected') {
-        scheduleResubscribe()
+        resubscribeManager.scheduleResubscribe()
         // Обрабатываем отложенные подписки при подключении
-        processPendingSubscriptions()
-        
-        // При reconnect: получаем snapshot для всех активных зон
-        // Это происходит автоматически при переподключении
-        const activeZoneIds = Array.from(new Set(
-          Array.from(activeSubscriptions.values())
-            .filter(sub => sub.kind === 'zoneCommands')
-            .map(sub => {
-              const match = sub.channelName.match(/^commands\.(\d+)$/)
-              return match ? parseInt(match[1], 10) : null
-            })
-            .filter((id): id is number => id !== null)
-        ))
-        
-        // Получаем snapshot для каждой активной зоны
-        activeZoneIds.forEach(zoneId => {
-          fetchAndApplySnapshot(zoneId).catch(err => {
-            logger.warn('[useWebSocket] Failed to fetch snapshot on reconnect', {
-              zoneId,
-              error: err instanceof Error ? err.message : String(err),
-            })
-          })
-        })
+        pendingSubscriptionsManager.processPendingSubscriptions()
+        snapshotSync.syncActiveZoneSnapshots()
       }
     })
   } catch {
@@ -937,7 +319,7 @@ if (isBrowser()) {
       if (pendingSubscriptions.size > 0) {
         const echo = window.Echo || getEchoInstance()
         if (echo) {
-          processPendingSubscriptions()
+          pendingSubscriptionsManager.processPendingSubscriptions()
           // Останавливаем проверку, если все подписки обработаны
           if (pendingSubscriptions.size === 0 && pendingCheckInterval) {
             clearInterval(pendingCheckInterval)
@@ -973,7 +355,7 @@ export function cleanupWebSocketChannels(): void {
   // Очищаем все каналы
   channelControls.forEach(control => {
     try {
-      removeChannelListeners(control)
+      channelControlManager.removeChannelListeners(control)
       if (isBrowser() && window.Echo) {
         try {
           window.Echo.leave?.(control.channelName)
@@ -999,64 +381,14 @@ export function cleanupWebSocketChannels(): void {
   globalChannelRegistry.clear()
   pendingSubscriptions.clear()
   
-  // Очищаем таймеры
-  if (resubscribeTimer) {
-    clearTimeout(resubscribeTimer)
-    resubscribeTimer = null
-  }
-  
-  // Сбрасываем флаг resubscribe
-  isResubscribing = false
+  // Очищаем состояние resubscribe
+  resubscribeManager.reset()
   
   logger.debug('[useWebSocket] All channels and registries cleaned up', {})
 }
 
 export function resubscribeAllChannels(): void {
-  if (!isBrowser()) {
-    return
-  }
-  const echo = window.Echo
-  if (!echo) {
-    // Это нормально на начальной загрузке страницы, когда Echo еще не инициализирован
-    // Логируем в debug режиме, а не warning, чтобы не путать пользователя
-    logger.debug('[useWebSocket] resubscribe skipped: Echo not yet initialized', {
-      readyState: document.readyState,
-    })
-    return
-  }
-
-  channelControls.forEach(control => {
-    try {
-      // Очищаем старые слушатели перед пересозданием канала
-      removeChannelListeners(control)
-      
-      // Очищаем старый канал, если он существует
-      if (control.echoChannel) {
-        try {
-          if (isBrowser() && window.Echo) {
-            window.Echo.leave?.(control.channelName)
-          }
-        } catch {
-          // ignore leave errors
-        }
-        control.echoChannel = null
-      }
-      
-      // Создаем новый канал в текущем window.Echo
-      control.echoChannel =
-        control.channelType === 'private'
-          ? echo.private(control.channelName)
-          : echo.channel(control.channelName)
-      
-      // Прикрепляем слушатели к новому каналу
-      attachChannelListeners(control)
-      logger.debug('[useWebSocket] Resubscribed channel', { channel: control.channelName })
-    } catch (error) {
-      logger.error('[useWebSocket] Failed to resubscribe channel', {
-        channel: control.channelName,
-      }, error)
-    }
-  })
+  channelControlManager.resubscribeAllChannels()
 }
 
 export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
@@ -1081,33 +413,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    // Сохраняем handler для snapshot, если передан
-    if (onSnapshot && typeof onSnapshot === 'function') {
-      snapshotHandlers.set(zoneId, onSnapshot)
-    }
-
-    // При первой подписке на зону: получаем snapshot
-    if (!zoneSnapshots.has(zoneId)) {
-      fetchAndApplySnapshot(zoneId).catch(err => {
-        logger.warn('[useWebSocket] Failed to fetch initial snapshot', {
-          zoneId,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      })
-    } else {
-      // Если snapshot уже есть, применяем его сразу
-      const snapshot = zoneSnapshots.get(zoneId)
-      if (snapshot && onSnapshot) {
-        try {
-          onSnapshot(snapshot)
-        } catch (error) {
-          logger.error('[useWebSocket] Error applying existing snapshot', {
-            zoneId,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        }
-      }
-    }
+    snapshotSync.initializeZoneSnapshotSubscription(zoneId, onSnapshot)
 
     if (!isWsEnabled()) {
       // Явно не добавляем отложенные подписки при отключенном WS
@@ -1120,7 +426,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     
     // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
-      return createPendingSubscription(
+      return pendingSubscriptionsManager.createPendingSubscription(
         channelName,
         'zoneCommands',
         'private',
@@ -1131,7 +437,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       )
     }
 
-    const control = ensureChannelControl(channelName, 'zoneCommands', 'private')
+    const control = channelControlManager.ensureChannelControl(channelName, 'zoneCommands', 'private')
     if (!control) {
       logger.warn('[useWebSocket] Unable to create zone command channel', { channel: channelName })
       return () => undefined
@@ -1154,7 +460,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       const hasOtherSubscriptions = Array.from(activeSubscriptions.values())
         .some(sub => sub.kind === 'zoneCommands' && sub.channelName === channelName)
       if (!hasOtherSubscriptions) {
-        snapshotHandlers.delete(zoneId)
+        removeSnapshotHandler(zoneId)
       }
     }
   }
@@ -1177,7 +483,12 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     let registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)
     
     // Если канал уже существует и авторизован, просто добавляем handler без нового auth
-    if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(GLOBAL_EVENTS_CHANNEL)) {
+    if (
+      registry &&
+      registry.channelControl &&
+      registry.channelControl.echoChannel &&
+      !channelControlManager.isChannelDead(GLOBAL_EVENTS_CHANNEL)
+    ) {
       // Канал уже существует и авторизован - переиспользуем его
       registry.handlers.add(handler)
       registry.subscriptionRefCount += 1
@@ -1211,7 +522,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     
     // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
-      return createPendingSubscription(
+      return pendingSubscriptionsManager.createPendingSubscription(
         GLOBAL_EVENTS_CHANNEL,
         'globalEvents',
         'private',
@@ -1223,7 +534,11 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     }
 
     // Первая подписка - создаем канал и делаем auth запрос
-    const control = ensureChannelControl(GLOBAL_EVENTS_CHANNEL, 'globalEvents', 'private')
+    const control = channelControlManager.ensureChannelControl(
+      GLOBAL_EVENTS_CHANNEL,
+      'globalEvents',
+      'private'
+    )
     if (!control) {
       logger.warn('[useWebSocket] Unable to create global events channel', {})
       return () => undefined
@@ -1298,8 +613,8 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     subscribeToGlobalEvents,
     unsubscribeAll,
     subscriptions,
-    fetchSnapshot: fetchAndApplySnapshot,
-    getSnapshot: (zoneId: number) => zoneSnapshots.get(zoneId) || null,
+    fetchSnapshot: snapshotSync.fetchAndApplySnapshot,
+    getSnapshot: (zoneId: number) => getZoneSnapshot(zoneId) || null,
   }
 }
 
@@ -1319,6 +634,7 @@ export const __testExports = {
     channelControls.clear()
     globalChannelRegistry.clear()
     pendingSubscriptions.clear()
+    clearSnapshotRegistry()
     componentChannelCounts.clear()
     instanceSubscriptionSets.clear()
     subscriptionCounter = 0

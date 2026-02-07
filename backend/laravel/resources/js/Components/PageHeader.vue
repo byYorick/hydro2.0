@@ -53,7 +53,7 @@ defineProps<Props>()
 const attrs = useAttrs()
 
 const classes = computed(() => {
-  const base = 'surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[var(--shadow-card)]'
+  const base = 'ui-hero p-5'
   return [base, attrs.class].filter(Boolean).join(' ')
 })
 </script>

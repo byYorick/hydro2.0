@@ -1,11 +1,11 @@
 <template>
   <Card 
-    class="relative overflow-hidden surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 group"
+    class="relative overflow-hidden ui-kpi-card surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 group"
     :data-testid="$attrs['data-testid']"
   >
     <!-- Фоновый градиент для визуального акцента -->
     <div 
-      class="absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity"
+      class="absolute inset-0 opacity-15 group-hover:opacity-25 transition-opacity"
       :style="{ background: `linear-gradient(135deg, ${color} 0%, transparent 100%)` }"
     ></div>
     
@@ -67,7 +67,7 @@
       <!-- Основное значение -->
       <div class="mb-3">
         <div 
-          class="text-4xl font-bold mb-1 transition-colors"
+          class="text-[2.1rem] leading-none font-bold mb-1 tracking-tight transition-colors"
           :style="{ color: color }"
         >
           {{ formattedValue }}
@@ -244,6 +244,5 @@ const progressBarClass = computed(() => {
   return 'bg-[color:var(--accent-amber)]'
 })
 </script>
-
 
 

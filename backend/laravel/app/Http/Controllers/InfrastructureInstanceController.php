@@ -73,7 +73,12 @@ class InfrastructureInstanceController extends Controller
             ], 401);
         }
 
-        // TODO: Проверка доступа к теплице
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this greenhouse',
+            ], 403);
+        }
 
         try {
             $instances = $this->infrastructureService->getForGreenhouse($greenhouse);
@@ -130,7 +135,12 @@ class InfrastructureInstanceController extends Controller
                 }
             } elseif ($data['owner_type'] === 'greenhouse') {
                 $greenhouse = Greenhouse::findOrFail($data['owner_id']);
-                // TODO: Проверка доступа к теплице
+                if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Forbidden: Access denied to this greenhouse',
+                    ], 403);
+                }
             }
 
             $instance = $this->infrastructureService->create($data);
@@ -173,6 +183,14 @@ class InfrastructureInstanceController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
+                ], 403);
+            }
+        } elseif ($infrastructureInstance->owner_type === 'greenhouse') {
+            $greenhouse = Greenhouse::findOrFail($infrastructureInstance->owner_id);
+            if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this greenhouse',
                 ], 403);
             }
         }
@@ -224,6 +242,14 @@ class InfrastructureInstanceController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
+                ], 403);
+            }
+        } elseif ($infrastructureInstance->owner_type === 'greenhouse') {
+            $greenhouse = Greenhouse::findOrFail($infrastructureInstance->owner_id);
+            if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this greenhouse',
                 ], 403);
             }
         }

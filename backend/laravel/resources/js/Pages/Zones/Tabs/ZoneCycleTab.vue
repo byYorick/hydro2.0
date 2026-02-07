@@ -12,7 +12,10 @@
             data-testid="recipe-attach-btn"
             @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
           >
-            <span v-if="!activeGrowCycle" data-testid="zone-start-btn">
+            <span
+              v-if="!activeGrowCycle"
+              data-testid="zone-start-btn"
+            >
               Запустить цикл
             </span>
             <span v-else>
@@ -198,6 +201,7 @@ import Card from '@/Components/Card.vue'
 import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
 import { translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatInterval, formatTimeShort } from '@/utils/formatTime'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Cycle } from '@/types'
 
 interface LoadingStateProps {
@@ -217,7 +221,7 @@ interface Props {
   computedPhaseDaysElapsed: number | null
   computedPhaseDaysTotal: number | null
   cycleStatusLabel: string
-  cycleStatusVariant: 'success' | 'neutral' | 'warning'
+  cycleStatusVariant: BadgeVariant
   phaseTimeLeftLabel: string
   canManageRecipe: boolean
   canManageCycle: boolean

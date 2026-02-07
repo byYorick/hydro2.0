@@ -1,31 +1,93 @@
 <template>
   <AppLayout>
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-lg font-semibold">
-          Добавление новой ноды
-        </h1>
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="refreshNodes"
-        >
-          <svg
-            class="w-4 h-4 mr-2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Обновить список
-        </Button>
+      <div
+        v-if="!canConfigureDevices"
+        class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-sm text-[color:var(--badge-warning-text)]"
+      >
+        Режим только для просмотра. Добавление и удаление устройств доступно только агроному.
       </div>
+      <section class="ui-hero p-5 space-y-4">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+              onboarding устройств
+            </p>
+            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+              Добавление новой ноды
+            </h1>
+            <p class="text-sm text-[color:var(--text-muted)]">
+              Найдите ноду в discovery и привяжите ее к теплице и зоне.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="refreshNodes"
+          >
+            <svg
+              class="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            Обновить список
+          </Button>
+        </div>
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Новых нод
+            </div>
+            <div class="ui-kpi-value">
+              {{ discoveredNodesCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Обнаружено через discovery
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Онлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              {{ onlineNodesCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Готовы к настройке
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              С lifecycle
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ lifecycleNodesCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Передают состояние узла
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Готовы к привязке
+            </div>
+            <div class="ui-kpi-value">
+              {{ readyToAssignCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Выбрана зона в форме
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Инструкция -->
       <Card>
@@ -111,7 +173,7 @@
                 <Button
                   size="sm"
                   variant="danger"
-                  :disabled="deleting[node.id] || assigning[node.id]"
+                  :disabled="!canConfigureDevices || deleting[node.id] || assigning[node.id]"
                   :data-test="`delete-node-${node.id}`"
                   @click="deleteNode(node)"
                 >
@@ -190,7 +252,7 @@
                 <Button
                   type="submit"
                   size="sm"
-                  :disabled="assigning[node.id] || !assignmentForms[node.id].zone_id"
+                  :disabled="!canConfigureDevices || assigning[node.id] || !assignmentForms[node.id].zone_id"
                 >
                   <span v-if="assigning[node.id]">Привязка...</span>
                   <span v-else>Привязать</span>
@@ -205,7 +267,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -223,6 +286,11 @@ import type { Device, Greenhouse, Zone } from '@/types'
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
+const page = usePage<{ auth?: { user?: { role?: string } } }>()
+const canConfigureDevices = computed(() => {
+  const role = page.props.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
 
 // Инициализация composables для lifecycle
 const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
@@ -236,6 +304,12 @@ const deleting = reactive<Record<number, boolean>>({})
 const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
 const pendingAssignments = reactive<Record<number, string>>({})
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+const discoveredNodesCount = computed(() => newNodes.value.length)
+const onlineNodesCount = computed(() => newNodes.value.filter((node) => node.status === 'online').length)
+const lifecycleNodesCount = computed(() => newNodes.value.filter((node) => Boolean(node.lifecycle_state)).length)
+const readyToAssignCount = computed(() =>
+  newNodes.value.filter((node) => Boolean(assignmentForms[node.id]?.zone_id)).length
+)
 
 function unwrapListResponse<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) {
@@ -365,6 +439,11 @@ async function loadZones(): Promise<void> {
 }
 
 async function assignNode(node: any) {
+  if (!canConfigureDevices.value) {
+    showToast('Привязка устройств доступна только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   const form = assignmentForms[node.id]
   if (!form.zone_id) {
     showToast('Выберите зону для привязки', 'error', TOAST_TIMEOUT.NORMAL)
@@ -498,6 +577,11 @@ async function assignNode(node: any) {
 }
 
 async function deleteNode(node: Device): Promise<void> {
+  if (!canConfigureDevices.value) {
+    showToast('Удаление устройств доступно только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   if (!node?.id) return
 
   const label = node.name || node.uid || `Node #${node.id}`

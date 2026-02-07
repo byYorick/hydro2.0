@@ -93,6 +93,10 @@ class RunSimulationJob implements ShouldQueue
                     throw new \RuntimeException('recipe_id required for live simulation.');
                 }
                 $scenario['recipe_id'] = $recipeId;
+                $createdPlant = $context['plant'] ?? null;
+                $createdRecipe = $context['recipe'] ?? null;
+                $createdRecipeRevision = $context['recipe_revision'] ?? null;
+                $createdNode = $context['node'] ?? null;
 
                 $scenario['simulation'] = array_merge(
                     $scenario['simulation'] ?? [],
@@ -101,11 +105,11 @@ class RunSimulationJob implements ShouldQueue
                         'sim_zone_id' => $simZone->id,
                         'sim_grow_cycle_id' => $simCycle->id,
                         'full_simulation' => $fullSimulation,
-                        'created_plant_id' => $context['plant']?->id,
-                        'created_recipe_id' => $context['recipe']?->id,
-                        'created_recipe_revision_id' => $context['recipe_revision']?->id,
-                        'created_node_id' => $context['node']?->id,
-                        'created_node_uid' => $context['node']?->uid,
+                        'created_plant_id' => $createdPlant?->id,
+                        'created_recipe_id' => $createdRecipe?->id,
+                        'created_recipe_revision_id' => $createdRecipeRevision?->id,
+                        'created_node_id' => $createdNode?->id,
+                        'created_node_uid' => $createdNode?->uid,
                     ]
                 );
 

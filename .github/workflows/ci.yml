@@ -26,6 +26,8 @@ jobs:
         working-directory: backend/laravel
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -102,6 +104,8 @@ jobs:
           "
       - name: Install Node deps
         run: npm install
+      - name: File size guard
+        run: ./scripts/check-file-size-guard.sh
       - name: Build (Vite manifest)
         run: npm run build
       - name: PHP configs cache

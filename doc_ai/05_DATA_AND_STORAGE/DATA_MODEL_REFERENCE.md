@@ -669,6 +669,42 @@ created_at
 updated_at
 ```
 
+## 9.2. user_greenhouses
+
+```
+id PK
+user_id BIGINT FK → users CASCADE
+greenhouse_id BIGINT FK → greenhouses CASCADE
+created_at
+updated_at
+
+UNIQUE(user_id, greenhouse_id)
+INDEX(greenhouse_id, user_id)
+```
+
+Назначение:
+
+- Явная привязка пользователя к теплицам.
+- Используется в `ACCESS_CONTROL_MODE=enforce` и `shadow`.
+
+## 9.3. user_zones
+
+```
+id PK
+user_id BIGINT FK → users CASCADE
+zone_id BIGINT FK → zones CASCADE
+created_at
+updated_at
+
+UNIQUE(user_id, zone_id)
+INDEX(zone_id, user_id)
+```
+
+Назначение:
+
+- Точечная привязка пользователя к зонам.
+- В strict-доступе объединяется с `user_greenhouses` (доступ через зону или через ее теплицу).
+
 ---
 
 # 10. OTA прошивки
@@ -691,6 +727,8 @@ created_at
 **Основная доменная модель:**
 ```
 greenhouse 1—N zones
+users N—N greenhouses (user_greenhouses)
+users N—N zones (user_zones)
 zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
 grow_cycle 1—1 recipe_revision (зафиксированная версия)
 recipe 1—N recipe_revisions

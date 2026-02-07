@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-5">
-      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-6">
+      <section class="ui-hero p-6">
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
@@ -16,7 +16,7 @@
           </div>
           <div class="flex flex-wrap gap-2">
             <Button
-              v-if="canManageCycle"
+              v-if="canConfigureCycle"
               size="sm"
               variant="secondary"
               @click="router.visit('/recipes')"
@@ -32,52 +32,52 @@
             </Button>
           </div>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+        <div class="ui-kpi-grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mt-6">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Активные
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
               {{ summary.cycles_running }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Пауза
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
               {{ summary.cycles_paused }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               План
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
               {{ summary.cycles_planned }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Без цикла
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ summary.cycles_none }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Алерты
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-[color:var(--accent-red)]">
               {{ summary.alerts_active }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Устройства
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ summary.devices_online }}/{{ summary.devices_total }}
             </div>
           </div>
@@ -526,7 +526,8 @@ interface Props {
 const props = defineProps<Props>()
 const page = usePage()
 const role = computed(() => (page.props.auth as any)?.user?.role || 'viewer')
-const canManageCycle = computed(() => role.value === 'agronomist')
+const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.value))
+const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
 const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
 const query = ref('')

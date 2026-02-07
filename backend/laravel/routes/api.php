@@ -21,8 +21,8 @@ use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
-use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SimulationController;
+use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
@@ -59,9 +59,11 @@ Route::get('system/health', [SystemController::class, 'health'])
     ]);
 
 // E2E Auth Bootstrap endpoint - создание пользователя и токена для E2E тестов
-// Проверка окружения выполняется в контроллере
-Route::post('e2e/auth/token', [E2EAuthController::class, 'createToken'])
-    ->middleware('throttle:10,1');
+// Регистрируется только в testing/e2e окружениях.
+if (app()->environment('testing', 'e2e')) {
+    Route::post('e2e/auth/token', [E2EAuthController::class, 'createToken'])
+        ->middleware('throttle:10,1');
+}
 
 // Debug endpoint for E2E: verify that Authorization header reaches PHP/Laravel through nginx/FastCGI.
 // Only enabled in testing environment.

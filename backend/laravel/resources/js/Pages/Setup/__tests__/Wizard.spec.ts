@@ -1,12 +1,15 @@
-import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
+
+const apiGetMock = vi.hoisted(() => vi.fn())
+const apiPostMock = vi.hoisted(() => vi.fn())
+const apiPatchMock = vi.hoisted(() => vi.fn())
+const routerVisitMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
-}))
-
-vi.mock('@/Components/Card.vue', () => ({
-  default: { name: 'Card', template: '<div class="card"><slot /></div>' },
 }))
 
 vi.mock('@/Components/Button.vue', () => ({
@@ -27,37 +30,36 @@ vi.mock('@/Components/Badge.vue', () => ({
 
 vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
-}))
-
-const axiosGetMock = vi.hoisted(() => vi.fn())
-const axiosPostMock = vi.hoisted(() => vi.fn())
-const axiosPatchMock = vi.hoisted(() => vi.fn())
-
-const mockAxiosInstance = vi.hoisted(() => ({
-  get: axiosGetMock,
-  post: axiosPostMock,
-  patch: axiosPatchMock,
-  delete: vi.fn(),
-  put: vi.fn(),
-  interceptors: {
-    request: { use: vi.fn(), eject: vi.fn() },
-    response: { use: vi.fn(), eject: vi.fn() },
+  usePage: () => ({
+    props: {
+      auth: {
+        user: {
+          role: roleState.role,
+        },
+      },
+    },
+  }),
+  router: {
+    visit: routerVisitMock,
   },
 }))
 
-vi.mock('axios', () => ({
-  default: {
-    create: vi.fn(() => mockAxiosInstance),
-    get: (url: string, config?: any) => axiosGetMock(url, config),
-    post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
-    patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),
-  },
-}))
-
-// Мокируем useApi чтобы он возвращал мок axios instance
 vi.mock('@/composables/useApi', () => ({
   useApi: () => ({
-    api: mockAxiosInstance,
+    api: {
+      get: (url: string, config?: any) => {
+        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
+        return apiGetMock(finalUrl, config)
+      },
+      post: (url: string, data?: any, config?: any) => {
+        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
+        return apiPostMock(finalUrl, data, config)
+      },
+      patch: (url: string, data?: any, config?: any) => {
+        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
+        return apiPatchMock(finalUrl, data, config)
+      },
+    },
   }),
 }))
 
@@ -69,544 +71,155 @@ vi.mock('@/composables/useToast', () => ({
 
 vi.mock('@/utils/logger', () => ({
   logger: {
-    info: vi.fn(),
     error: vi.fn(),
   },
 }))
 
-import SetupWizard from '../Wizard.vue'
+import Wizard from '../Wizard.vue'
 
 describe('Setup/Wizard.vue', () => {
   beforeEach(() => {
-    axiosGetMock.mockClear()
-    axiosPostMock.mockClear()
-    axiosPatchMock.mockClear()
-    
-    axiosPostMock.mockResolvedValue({
+    roleState.role = 'agronomist'
+    apiGetMock.mockReset()
+    apiPostMock.mockReset()
+    apiPatchMock.mockReset()
+    routerVisitMock.mockReset()
+
+    apiGetMock.mockResolvedValue({
       data: {
-        data: { id: 1 },
-      },
-    })
-    
-    axiosGetMock.mockResolvedValue({
-      data: {
+        status: 'ok',
         data: [],
       },
     })
-    
-    axiosPatchMock.mockResolvedValue({
-      data: { status: 'ok' },
+
+    apiPostMock.mockResolvedValue({
+      data: {
+        status: 'ok',
+        data: { id: 1 },
+      },
+    })
+
+    apiPatchMock.mockResolvedValue({
+      data: {
+        status: 'ok',
+      },
     })
   })
 
-  it('отображает заголовок мастера настройки', () => {
-    const wrapper = mount(SetupWizard)
-    
+  it('рендерит заголовок и шаги мастера', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
     expect(wrapper.text()).toContain('Мастер настройки системы')
+    expect(wrapper.text()).toContain('1. Теплица')
+    expect(wrapper.text()).toContain('2. Зона')
+    expect(wrapper.text()).toContain('3. Растение')
+    expect(wrapper.text()).toContain('4. Рецепт')
+    expect(wrapper.text()).toContain('5. Устройства')
+    expect(wrapper.text()).toContain('6. Логика автоматики')
+    expect(wrapper.text()).toContain('7. Запуск и контроль')
   })
 
-  it('отображает все шаги', () => {
-    const wrapper = mount(SetupWizard)
-    
-    // Компонент использует "Выбрать или создать" вместо просто "Создать"
-    expect(wrapper.text()).toContain('Шаг 1: Выбрать или создать теплицу')
-    expect(wrapper.text()).toContain('Шаг 2: Создать рецепт с фазами')
-    expect(wrapper.text()).toContain('Шаг 3: Выбрать или создать зону')
-    expect(wrapper.text()).toContain('Шаг 4: Запустить цикл выращивания')
-    expect(wrapper.text()).toContain('Шаг 5: Привязать узлы к зоне')
+  it('показывает режим только для просмотра для оператора', async () => {
+    roleState.role = 'operator'
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Режим только для просмотра')
   })
 
-  it('позволяет создать теплицу на шаге 1', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    const createButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createButton) {
-      await createButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      expect(axiosPostMock).toHaveBeenCalledWith(
-        '/api/greenhouses',
-        expect.objectContaining({
-          uid: 'gh-main',
-          name: 'Main Greenhouse',
-        }),
-        expect.any(Object)
-      )
-    }
-  })
-
-  it('блокирует шаг 2 пока шаг 1 не выполнен', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    const createRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-    if (createRecipeButton) {
-      expect((createRecipeButton.element as HTMLButtonElement).disabled).toBe(true)
-    }
-  })
-
-  it('разблокирует шаг 2 после создания теплицы', async () => {
-    axiosPostMock.mockResolvedValueOnce({
+  it('создает теплицу в режиме create', async () => {
+    apiPostMock.mockResolvedValueOnce({
       data: {
-        data: { id: 1, uid: 'gh-main', name: 'Main Greenhouse' },
+        status: 'ok',
+        data: { id: 10, uid: 'gh-main', name: 'Main GH' },
       },
     })
-    
-    const wrapper = mount(SetupWizard)
-    
-    const createGreenhouseButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseButton) {
-      await createGreenhouseButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 150))
-      await wrapper.vm.$nextTick()
-      
-      const createRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-      if (createRecipeButton) {
-        expect((createRecipeButton.element as HTMLButtonElement).disabled).toBe(false)
-      }
-    }
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    expect(createToggle).toBeTruthy()
+    await createToggle?.trigger('click')
+
+    const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
+    expect(greenhouseNameInput.exists()).toBe(true)
+    await greenhouseNameInput.setValue('Main GH')
+
+    const createButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))
+    expect(createButton).toBeTruthy()
+    await createButton?.trigger('click')
+
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/greenhouses',
+      expect.objectContaining({
+        name: 'Main GH',
+      }),
+      undefined
+    )
   })
 
-  it('позволяет добавить фазу рецепта', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    // Сначала создаем теплицу
-    axiosPostMock.mockResolvedValueOnce({
-      data: {
-        data: { id: 1, uid: 'gh-main', name: 'Main Greenhouse' },
-      },
-    })
-    
-    const createGreenhouseButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseButton) {
-      await createGreenhouseButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Переключаемся на режим создания теплицы, если нужно
-    const createModeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать новую'))
-    if (createModeButton) {
-      await createModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const addPhaseButton = wrapper.findAll('button').find(btn => btn.text().includes('Добавить фазу'))
-    if (addPhaseButton) {
-      // Подсчитываем количество элементов фаз в DOM до добавления
-      const phasesBefore = wrapper.findAll('input[placeholder*="Название фазы"]').length
-      await addPhaseButton.trigger('click')
-      await wrapper.vm.$nextTick()
-      
-      // Проверяем, что количество элементов фаз увеличилось
-      const phasesAfter = wrapper.findAll('input[placeholder*="Название фазы"]').length
-      expect(phasesAfter).toBeGreaterThan(phasesBefore)
-    }
-  })
-
-  it('создает рецепт с фазами на шаге 2', async () => {
-    // Создаем теплицу
-    axiosPostMock.mockResolvedValueOnce({
-      data: {
-        data: { id: 1, uid: 'gh-main', name: 'Main Greenhouse' },
-      },
-    })
-    
-    // Создаем рецепт
-    axiosPostMock.mockResolvedValueOnce({
-      data: {
-        data: { id: 1, name: 'Test Recipe' },
-      },
-    })
-    
-    // Получаем рецепт с фазами
-    axiosGetMock.mockResolvedValueOnce({
-      data: {
+  it('применяет логику автоматики через команду зоны', async () => {
+    apiPostMock
+      .mockResolvedValueOnce({
         data: {
-          id: 1,
-          name: 'Test Recipe',
-          phases: [
-            { id: 1, phase_index: 0, name: 'Phase 1', duration_hours: 24 },
-          ],
+          status: 'ok',
+          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
         },
-      },
-    })
-    
-    const wrapper = mount(SetupWizard)
-    
-    // Шаг 1: Переключаемся на режим создания и создаем теплицу
-    const createModeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать новую'))
-    if (createModeButton) {
-      await createModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createGreenhouseButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseButton) {
-      await createGreenhouseButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 2: Создаем рецепт
-    const createRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-    if (createRecipeButton && !createRecipeButton.element?.hasAttribute('disabled')) {
-      await createRecipeButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 300))
-      await wrapper.vm.$nextTick()
-      
-      // Проверяем, что axios.post был вызван для создания рецепта
-      // useApi автоматически добавляет префикс /api
-      expect(axiosPostMock).toHaveBeenCalled()
-      const recipeCall = axiosPostMock.mock.calls.find(call => {
-        const url = call[0]
-        return typeof url === 'string' && (
-          url === '/api/recipes' || 
-          url === '/recipes' ||
-          url.includes('/recipes')
-        )
       })
-      expect(recipeCall).toBeDefined()
-      if (recipeCall) {
-        expect(recipeCall[1]).toMatchObject({
-          name: expect.any(String),
-          description: expect.any(String),
-        })
-      }
-      
-      // Проверяем, что фазы создаются
-      const phaseCalls = axiosPostMock.mock.calls.filter(call => 
-        call[0]?.includes('/api/recipes/') && call[0]?.includes('/phases')
-      )
-      expect(phaseCalls.length).toBeGreaterThan(0)
-    }
-  })
-
-  it('создает зону на шаге 3', async () => {
-    // Настраиваем моки для предыдущих шагов
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1 } } }) // Greenhouse
-      .mockResolvedValueOnce({ data: { data: { id: 1 } } }) // Recipe
-      .mockResolvedValueOnce({ data: { data: { id: 1 } } }) // Zone
-    
-    axiosGetMock.mockResolvedValueOnce({
-      data: {
+      .mockResolvedValueOnce({
         data: {
-          id: 1,
-          name: 'Test Recipe',
-          phases: [],
+          status: 'ok',
+          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
         },
-      },
-    })
-    
-    const wrapper = mount(SetupWizard)
-    
-    // Шаг 1: Переключаемся на режим создания и создаем теплицу
-    const createModeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать новую'))
-    if (createModeButton) {
-      await createModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Мокаем ответы API для создания теплицы и рецепта
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Greenhouse', uid: 'gh-test' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Zone' } } })
-    
-    // Выполняем создание теплицы через UI
-    const createGreenhouseButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseButton) {
-      // Устанавливаем значения формы
-      const uidInput = wrapper.find('input[placeholder*="UID"]')
-      const nameInput = wrapper.find('input[placeholder*="Название теплицы"]')
-      if (uidInput.exists()) await uidInput.setValue('gh-test')
-      if (nameInput.exists()) await nameInput.setValue('Test Greenhouse')
-      await createGreenhouseButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 2: Создаем рецепт
-    const createRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-    if (createRecipeButton && !createRecipeButton.element?.hasAttribute('disabled')) {
-      await createRecipeButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 3: Переключаемся на режим создания зоны
-    const createZoneModeButton = wrapper.findAll('button').find(btn => 
-      btn.text().includes('Создать новую') && !btn.text().includes('теплицу')
-    )
-    if (createZoneModeButton) {
-      await createZoneModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createZoneButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать зону'))
-    if (createZoneButton && !createZoneButton.element?.hasAttribute('disabled')) {
-      await createZoneButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-      
-      // Проверяем, что axios.post был вызван для создания зоны
-      // useApi автоматически добавляет префикс /api
-      expect(axiosPostMock).toHaveBeenCalled()
-      const zoneCall = axiosPostMock.mock.calls.find(call => {
-        const url = call[0]
-        return typeof url === 'string' && (
-          url === '/api/zones' || 
-          url === '/zones' ||
-          url.includes('/zones')
-        )
       })
-      expect(zoneCall).toBeDefined()
-      if (zoneCall) {
-        expect(zoneCall[1]).toMatchObject({
-          name: expect.any(String),
-          greenhouse_id: expect.any(Number),
-        })
-      }
-    }
-  })
+      .mockResolvedValue({
+        data: {
+          status: 'ok',
+          data: { id: 99 },
+        },
+      })
 
-  it('привязывает рецепт к зоне на шаге 4', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    // Симулируем создание через API вызовы
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Greenhouse', uid: 'gh-test' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Zone' } } })
-    
-    axiosGetMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-    
-    // Шаг 1: Переключаемся на режим создания и создаем теплицу
-    const createModeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать новую'))
-    if (createModeButton) {
-      await createModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createGreenhouseBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseBtn) {
-      const uidInput = wrapper.find('input[placeholder*="UID"]')
-      const nameInput = wrapper.find('input[placeholder*="Название теплицы"]')
-      if (uidInput.exists()) await uidInput.setValue('gh-test')
-      if (nameInput.exists()) await nameInput.setValue('Test Greenhouse')
-      await createGreenhouseBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 2: Создаем рецепт
-    const createRecipeBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-    if (createRecipeBtn && !createRecipeBtn.element?.hasAttribute('disabled')) {
-      await createRecipeBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 3: Переключаемся на режим создания зоны и создаем зону
-    const createZoneModeButton = wrapper.findAll('button').find(btn => 
-      btn.text().includes('Создать новую') && !btn.text().includes('теплицу')
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    await createToggle?.trigger('click')
+
+    const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
+    await greenhouseNameInput.setValue('Main GH')
+
+    const createGreenhouseButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))
+    await createGreenhouseButton?.trigger('click')
+    await flushPromises()
+
+    const createZoneButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))
+    await createZoneButton?.trigger('click')
+    await flushPromises()
+
+    const applyAutomationButton = wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))
+    expect(applyAutomationButton).toBeTruthy()
+    await applyAutomationButton?.trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/zones/20/commands',
+      expect.objectContaining({
+        type: 'GROWTH_CYCLE_CONFIG',
+      }),
+      undefined
     )
-    if (createZoneModeButton) {
-      await createZoneModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createZoneBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать зону'))
-    if (createZoneBtn && !createZoneBtn.element?.hasAttribute('disabled')) {
-      await createZoneBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 4: Привязываем рецепт к зоне
-    const attachRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать рецепт к зоне'))
-    if (attachRecipeButton && !attachRecipeButton.element?.hasAttribute('disabled')) {
-      await attachRecipeButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-      
-      // Проверяем, что axios.post был вызван для привязки рецепта
-      expect(axiosPostMock).toHaveBeenCalled()
-      const attachCall = axiosPostMock.mock.calls.find(call => 
-        call[0]?.includes('/api/zones/') && call[0]?.includes('/attach-recipe')
-      )
-      expect(attachCall).toBeDefined()
-    }
   })
 
-  it('загружает доступные узлы на шаге 5', async () => {
-    axiosGetMock.mockResolvedValue({
-      data: {
-        data: [
-          { id: 1, uid: 'node-1', type: 'sensor' },
-          { id: 2, uid: 'node-2', type: 'actuator' },
-        ],
-      },
-    })
-    
-    const wrapper = mount(SetupWizard)
-    
-    await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // useApi автоматически добавляет префикс /api
-    expect(axiosGetMock).toHaveBeenCalled()
-    const nodesCall = axiosGetMock.mock.calls.find(call => {
-      const url = call[0]
-      return typeof url === 'string' && (
-        url.includes('/nodes') || 
-        url.includes('/api/nodes')
-      )
-    })
-    expect(nodesCall).toBeDefined()
-  })
+  it('не позволяет запуск до завершения обязательных шагов', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
 
-  it('привязывает узлы к зоне на шаге 5', async () => {
-    axiosGetMock.mockResolvedValue({
-      data: {
-        data: [
-          { id: 1, uid: 'node-1' },
-          { id: 2, uid: 'node-2' },
-        ],
-      },
-    })
-    
-    const wrapper = mount(SetupWizard)
-    
-    // Симулируем создание через API вызовы
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Greenhouse', uid: 'gh-test' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Zone' } } })
-    
-    axiosGetMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-    
-    // Шаг 1: Переключаемся на режим создания и создаем теплицу
-    const createModeButton = wrapper.findAll('button').find(btn => btn.text().includes('Создать новую'))
-    if (createModeButton) {
-      await createModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createGreenhouseBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать теплицу'))
-    if (createGreenhouseBtn) {
-      await createGreenhouseBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 2: Создаем рецепт
-    const createRecipeBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать рецепт'))
-    if (createRecipeBtn && !createRecipeBtn.element?.hasAttribute('disabled')) {
-      await createRecipeBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 3: Переключаемся на режим создания зоны и создаем зону
-    const createZoneModeButton = wrapper.findAll('button').find(btn => 
-      btn.text().includes('Создать новую') && !btn.text().includes('теплицу')
-    )
-    if (createZoneModeButton) {
-      await createZoneModeButton.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
-    
-    const createZoneBtn = wrapper.findAll('button').find(btn => btn.text().includes('Создать зону'))
-    if (createZoneBtn && !createZoneBtn.element?.hasAttribute('disabled')) {
-      await createZoneBtn.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 4: Привязываем рецепт к зоне
-    const attachRecipeButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать рецепт к зоне'))
-    if (attachRecipeButton && !attachRecipeButton.element?.hasAttribute('disabled')) {
-      await attachRecipeButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-    }
-    
-    // Шаг 5: Ждем загрузки узлов
-    await new Promise(resolve => setTimeout(resolve, 100))
-    await wrapper.vm.$nextTick()
-    
-    // Выбираем узлы через чекбоксы (если они есть)
-    const checkboxes = wrapper.findAll('input[type="checkbox"]')
-    if (checkboxes.length > 0) {
-      await checkboxes[0].setValue(true)
-      if (checkboxes.length > 1) {
-        await checkboxes[1].setValue(true)
-      }
-      await wrapper.vm.$nextTick()
-    }
-    
-    const attachNodesButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать узлы'))
-    if (attachNodesButton && !attachNodesButton.element?.hasAttribute('disabled')) {
-      await attachNodesButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 200))
-      await wrapper.vm.$nextTick()
-      
-      // Проверяем, что axios.patch был вызван для привязки узлов
-      expect(axiosPatchMock).toHaveBeenCalled()
-      const patchCalls = axiosPatchMock.mock.calls.filter(call => 
-        call[0]?.includes('/api/nodes/')
-      )
-      expect(patchCalls.length).toBeGreaterThan(0)
-      expect(axiosPatchMock.mock.calls[0][1]).toMatchObject({ zone_id: 1 })
-    }
-  })
-
-  it('показывает финальное сообщение после завершения всех шагов', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    // Симулируем создание через API вызовы
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Greenhouse', uid: 'gh-test' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Zone' } } })
-    
-    // Создаем все через UI (упрощенная версия для теста)
-    // В реальности нужно выполнить все шаги, но для проверки финального сообщения
-    // можно просто проверить, что компонент рендерится
-    await wrapper.vm.$nextTick()
-    
-    // Проверяем, что компонент отображает шаги
-    expect(wrapper.text()).toContain('Мастер настройки системы')
-    // Финальное сообщение появится только после выполнения всех шагов
-    // Для упрощения теста проверяем наличие шагов
-    expect(wrapper.text()).toContain('Шаг 1')
-  })
-
-  it('отображает ссылки на зону и главную после завершения', async () => {
-    const wrapper = mount(SetupWizard)
-    
-    // Симулируем создание через API вызовы
-    axiosPostMock
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Greenhouse', uid: 'gh-test' } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Recipe', phases: [] } } })
-      .mockResolvedValueOnce({ data: { data: { id: 1, name: 'Test Zone' } } })
-    
-    // Для упрощения теста проверяем, что компонент рендерится
-    // Ссылки появятся только после выполнения всех шагов
-    await wrapper.vm.$nextTick()
-    
-    // Проверяем, что компонент отображает шаги
-    expect(wrapper.text()).toContain('Мастер настройки системы')
-    // Ссылки появятся в финальном шаге, который требует выполнения всех предыдущих
-    // Для упрощения теста просто проверяем наличие компонента
-    expect(wrapper.exists()).toBe(true)
+    const openLaunchButton = wrapper.findAll('button').find((btn) => btn.text().includes('Открыть мастер запуска цикла'))
+    expect(openLaunchButton).toBeTruthy()
+    expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -7,7 +7,10 @@
         eyebrow="инфраструктура"
       >
         <template #actions>
-          <Link href="/devices/add">
+          <Link
+            v-if="canConfigureDevices"
+            href="/devices/add"
+          >
             <Button
               size="sm"
               variant="primary"
@@ -29,6 +32,52 @@
             </Button>
           </Link>
         </template>
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Всего устройств
+            </div>
+            <div class="ui-kpi-value">
+              {{ totalDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Узлы в реестре
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Онлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              {{ onlineDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Доступны сейчас
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Оффлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+              {{ offlineDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Требуют проверки
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              По фильтру
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ visibleDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Отображается в таблице
+            </div>
+          </div>
+        </div>
       </PageHeader>
 
       <FilterBar>
@@ -176,6 +225,10 @@ import { logger } from '@/utils/logger'
 import { onWsStateChange } from '@/utils/echoClient'
 
 const page = usePage<{ devices?: Device[] }>()
+const canConfigureDevices = computed(() => {
+  const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 const deviceUpdateEventName = '.device.updated'
@@ -388,6 +441,10 @@ const perPage = useUrlState<number>({
 })
 
 const { isDeviceFavorite, toggleDeviceFavorite } = useFavorites()
+const allDevices = computed(() => (Array.isArray(devicesStore.allDevices) ? devicesStore.allDevices : []))
+const totalDevices = computed(() => allDevices.value.length)
+const onlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'online').length)
+const offlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'offline').length)
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())
@@ -409,6 +466,7 @@ const filtered = computed(() => {
     return okType && okQuery && okFavorites
   })
 })
+const visibleDevices = computed(() => filtered.value.length)
 
 const paginatedData = computed(() => {
   if (!Array.isArray(filtered.value)) {

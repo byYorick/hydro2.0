@@ -63,6 +63,7 @@
         v-show="activeTab === 'automation'"
         :zone-id="zoneId"
         :targets="targets"
+        :telemetry="telemetry"
       />
 
       <ZoneEventsTab
@@ -239,7 +240,7 @@ const { showToast } = useToast()
 // Инициализация composables с Toast
 const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
-const { fetchZone, reloadZone } = useZones(showToast)
+const { reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
@@ -377,9 +378,9 @@ const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
 const isAgronomist = computed(() => userRole.value === 'agronomist')
 const canOperateZone = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(userRole.value))
-const canManageDevices = computed(() => ['admin', 'operator', 'engineer'].includes(userRole.value))
-const canManageRecipe = computed(() => isAgronomist.value)
-const canManageCycle = computed(() => isAgronomist.value)
+const canManageDevices = computed(() => ['admin', 'agronomist'].includes(userRole.value))
+const canManageRecipe = computed(() => isAgronomist.value || userRole.value === 'admin')
+const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(userRole.value))
 
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время

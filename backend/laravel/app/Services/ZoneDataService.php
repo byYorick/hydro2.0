@@ -272,17 +272,28 @@ class ZoneDataService
         $limit = (int) $request->get('per_page', $request->get('limit', 10));
         $limit = min(max($limit, 1), 100);
         $severity = $request->get('severity');
+        $zoneHardwareIds = DeviceNode::query()
+            ->where('zone_id', $zone->id)
+            ->whereNotNull('hardware_id')
+            ->pluck('hardware_id')
+            ->filter()
+            ->values();
 
         // Получаем ошибки из таблицы unassigned_node_errors для узлов зоны
-        $query = UnassignedNodeError::where(function ($query) use ($zone) {
+        $query = UnassignedNodeError::where(function ($query) use ($zone, $zoneHardwareIds) {
             $query->whereHas('node', function ($inner) use ($zone) {
                 $inner->where('zone_id', $zone->id);
-            })
-            ->orWhere(function ($inner) {
-                // Также включаем ошибки без node_id, но которые могут быть связаны с зоной
-                // (в старой архитектуре могли быть ошибки без node_id)
-                $inner->whereNull('node_id');
             });
+
+            if ($zoneHardwareIds->isNotEmpty()) {
+                // Также включаем ошибки без node_id, но которые могут быть связаны с зоной
+                // по hardware_id нод этой зоны.
+                $query->orWhere(function ($inner) use ($zoneHardwareIds) {
+                    $inner
+                        ->whereNull('node_id')
+                        ->whereIn('hardware_id', $zoneHardwareIds->all());
+                });
+            }
         });
 
         if ($severity) {

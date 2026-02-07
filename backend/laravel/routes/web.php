@@ -666,18 +666,18 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
     /**
      * Setup Wizard - мастер настройки системы
-     * Доступен только для администраторов для предотвращения случайного/злонамеренного изменения конфигурации
+     * Доступен агроному и администратору для безопасной конфигурации.
      */
     Route::get('/setup/wizard', function () {
         $user = auth()->user();
-        if (! $user || ! $user->isAdmin()) {
-            abort(403, 'Only administrators can access the setup wizard');
+        if (! $user || (! $user->isAdmin() && ! $user->isAgronomist())) {
+            abort(403, 'Only agronomists and administrators can access the setup wizard');
         }
 
         return Inertia::render('Setup/Wizard', [
             'auth' => ['user' => ['role' => $user->role ?? 'admin']],
         ]);
-    })->name('setup.wizard')->middleware('admin');
+    })->name('setup.wizard')->middleware('role:admin,agronomist');
 
     /**
      * Greenhouses Index - список всех теплиц

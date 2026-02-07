@@ -56,6 +56,9 @@ const sampleRecipesData = vi.hoisted(() => [
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
+      auth: {
+        user: { role: 'agronomist' }
+      },
       recipes: sampleRecipesData,
     },
   }),
@@ -117,10 +120,9 @@ describe('Recipes/Index.vue', () => {
   it('отображает кнопку создания рецепта', () => {
     const wrapper = mount(RecipesIndex)
     
-    // В компоненте кнопка содержит "Новый цикл", а не "Создать рецепт"
-    expect(wrapper.text()).toContain('Новый цикл')
+    expect(wrapper.text()).toContain('Новый рецепт')
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const createButton = buttons.find(btn => btn.text().includes('Новый цикл'))
+    const createButton = buttons.find(btn => btn.text().includes('Новый рецепт'))
     expect(createButton).toBeTruthy()
   })
 
@@ -218,4 +220,3 @@ describe('Recipes/Index.vue', () => {
     expect(wrapper.text()).toContain('Tomato Recipe')
   })
 })
-
