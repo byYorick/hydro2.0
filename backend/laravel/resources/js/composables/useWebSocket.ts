@@ -2,9 +2,7 @@ import { ref } from 'vue'
 import { logger } from '@/utils/logger'
 import type { ToastHandler } from './useApi'
 import { useApi } from './useApi'
-import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
-import { readBooleanEnv } from '@/utils/env'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { onWsStateChange } from '@/utils/echoClient'
 import type { SnapshotHandler } from '@/types/reconciliation'
 import { isValidSnapshot } from '@/types/reconciliation'
 import {
@@ -22,20 +20,26 @@ import type {
 import {
   clearSnapshotRegistry,
   getSnapshotHandler,
-  getSnapshotServerTs,
   getZoneSnapshot,
   hasZoneSnapshot,
-  isStaleSnapshotEvent,
   registerSnapshotHandler,
   removeSnapshotHandler,
   setZoneSnapshot,
 } from '@/ws/snapshotRegistry'
 import { createPendingSubscriptionsManager } from '@/ws/pendingSubscriptions'
+import { createPendingSubscriptionMonitor } from '@/ws/pendingSubscriptionMonitor'
 import { createResubscribeManager } from '@/ws/resubscribeManager'
 import { createSnapshotSync } from '@/ws/snapshotSync'
 import { createChannelControlManager } from '@/ws/channelControlManager'
-
-const GLOBAL_EVENTS_CHANNEL = 'events.global'
+import { createWebSocketEventDispatchers } from '@/ws/webSocketEventDispatchers'
+import {
+  ensureEchoAvailable,
+  getAvailableEcho,
+  GLOBAL_EVENTS_CHANNEL,
+  isBrowser,
+  isGlobalChannel,
+  isWsEnabled,
+} from '@/ws/webSocketRuntime'
 
 const activeSubscriptions = new Map<string, ActiveSubscription>()
 const channelSubscribers = new Map<string, Set<string>>()
@@ -49,60 +53,6 @@ const pendingSubscriptions = new Map<string, PendingSubscription>()
 
 let subscriptionCounter = 0
 let componentCounter = 0
-
-const WS_DISABLED_MESSAGE = 'Realtime отключен в этой сборке'
-
-// Вспомогательная функция для проверки, является ли канал глобальным
-function isGlobalChannel(channelName: string): boolean {
-  return channelName === GLOBAL_EVENTS_CHANNEL || channelName === 'commands.global'
-}
-
-function isBrowser(): boolean {
-  return typeof window !== 'undefined'
-}
-
-function isWsEnabled(): boolean {
-  return readBooleanEnv('VITE_ENABLE_WS', true)
-}
-
-function ensureEchoAvailable(showToast?: ToastHandler): any | null {
-  if (!isBrowser()) {
-    return null
-  }
-  const wsEnabled = isWsEnabled()
-  if (!wsEnabled) {
-    if (showToast) {
-      showToast(WS_DISABLED_MESSAGE, 'warning', TOAST_TIMEOUT.NORMAL)
-    }
-    logger.warn('[useWebSocket] WebSocket disabled via env flag', {})
-    return null
-  }
-  const echo = window.Echo
-  if (!echo) {
-    // Не показываем warning, если Echo просто еще не инициализирован
-    // Это нормально на начальной загрузке страницы
-    // Только логируем в debug режиме для отладки
-    // bootstrap.js должен инициализировать Echo автоматически
-    // Проверяем, не инициализируется ли Echo прямо сейчас
-    const isInitializing = typeof window !== 'undefined' && 
-      (window.Echo !== undefined || document.readyState === 'loading')
-    
-    if (!isInitializing) {
-      // Если страница уже загружена и Echo все еще не инициализирован, это может быть проблемой
-      // Но не показываем warning, так как это может быть нормальным поведением при отключенном WebSocket
-      logger.debug('[useWebSocket] Echo instance not yet initialized', {
-        readyState: document.readyState,
-        hasWindowEcho: typeof window !== 'undefined' && window.Echo !== undefined,
-      })
-    } else {
-      logger.debug('[useWebSocket] Echo instance not yet initialized, waiting for bootstrap.js', {
-        readyState: document.readyState,
-      })
-    }
-    return null
-  }
-  return echo
-}
 
 function createSubscriptionId(): string {
   subscriptionCounter += 1
@@ -128,6 +78,14 @@ function createActiveSubscription(
     instanceId,
   }
 }
+
+const {
+  handleCommandEvent,
+  handleGlobalEvent,
+} = createWebSocketEventDispatchers({
+  activeSubscriptions,
+  channelSubscribers,
+})
 
 const channelControlManager = createChannelControlManager({
   isBrowser,
@@ -164,12 +122,7 @@ const pendingSubscriptionsManager = createPendingSubscriptionsManager({
   createSubscriptionId,
   removeSubscription,
   isBrowser,
-  getEcho: () => {
-    if (!isBrowser()) {
-      return null
-    }
-    return window.Echo || getEchoInstance()
-  },
+  getEcho: getAvailableEcho,
   isGlobalChannel,
   isChannelDead: channelControlManager.isChannelDead,
   globalChannelRegistry,
@@ -194,103 +147,11 @@ const resubscribeManager = createResubscribeManager({
   resubscribeAllChannels: channelControlManager.resubscribeAllChannels,
 })
 
-function handleCommandEvent(channelName: string, payload: any, isFailure: boolean): void {
-  const channelSet = channelSubscribers.get(channelName)
-  if (!channelSet) {
-    return
-  }
-
-  // Извлекаем zoneId из channelName (формат: commands.{zoneId})
-  const zoneIdMatch = channelName.match(/^commands\.(\d+)$/)
-  const zoneId = zoneIdMatch ? parseInt(zoneIdMatch[1], 10) : payload?.zoneId ?? payload?.zone_id
-
-  // Reconciliation: проверяем, не старше ли событие snapshot
-  if (isStaleSnapshotEvent(zoneId, payload?.server_ts)) {
-    const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
-    logger.debug('[useWebSocket] Ignoring stale command event (reconciliation)', {
-      channel: channelName,
-      event_server_ts: payload?.server_ts,
-      snapshot_server_ts: snapshotServerTs,
-      commandId: payload?.commandId ?? payload?.command_id,
-    })
-    return
-  }
-
-  const normalized = {
-    commandId: payload?.commandId ?? payload?.command_id,
-    status: isFailure ? (payload?.status ?? 'ERROR') : (payload?.status ?? 'UNKNOWN'),
-    message: payload?.message,
-    error: payload?.error,
-    zoneId: zoneId,
-  }
-
-  channelSet.forEach(subscriptionId => {
-    const subscription = activeSubscriptions.get(subscriptionId)
-    if (!subscription || subscription.kind !== 'zoneCommands') {
-      return
-    }
-    try {
-      (subscription.handler as ZoneCommandHandler)(normalized)
-    } catch (error) {
-      logger.error('[useWebSocket] Zone command handler error', {
-        channel: channelName,
-        componentTag: subscription.componentTag,
-      }, error)
-    }
-
-    if (isFailure && subscription.showToast) {
-      subscription.showToast(
-        `Команда завершилась с ошибкой: ${normalized.message || 'Ошибка'}`,
-        'error',
-        5000
-      )
-    }
-  })
-}
-
-function handleGlobalEvent(channelName: string, payload: any): void {
-  const channelSet = channelSubscribers.get(channelName)
-  if (!channelSet) {
-    return
-  }
-
-  const zoneId = payload?.zoneId ?? payload?.zone_id
-
-  // Reconciliation: проверяем, не старше ли событие snapshot (если есть zoneId)
-  if (isStaleSnapshotEvent(zoneId, payload?.server_ts)) {
-    const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
-    logger.debug('[useWebSocket] Ignoring stale global event (reconciliation)', {
-      channel: channelName,
-      event_server_ts: payload?.server_ts,
-      snapshot_server_ts: snapshotServerTs,
-      eventId: payload?.id ?? payload?.eventId ?? payload?.event_id,
-    })
-    return
-  }
-
-  const normalized = {
-    id: payload?.id ?? payload?.eventId ?? payload?.event_id,
-    kind: payload?.kind ?? payload?.type ?? 'INFO',
-    message: payload?.message ?? '',
-    zoneId: zoneId,
-    occurredAt: payload?.occurredAt ?? payload?.occurred_at ?? new Date().toISOString(),
-  }
-
-  channelSet.forEach(subscriptionId => {
-    const subscription = activeSubscriptions.get(subscriptionId)
-    if (!subscription || subscription.kind !== 'globalEvents') {
-      return
-    }
-    try {
-      (subscription.handler as GlobalEventHandler)(normalized)
-    } catch (error) {
-      logger.error('[useWebSocket] Global event handler error', {
-        channel: channelName,
-        componentTag: subscription.componentTag,
-      }, error)
-    }
-  })
-}
+const pendingSubscriptionMonitor = createPendingSubscriptionMonitor({
+  getPendingSubscriptionsSize: () => pendingSubscriptions.size,
+  getEcho: getAvailableEcho,
+  processPendingSubscriptions: pendingSubscriptionsManager.processPendingSubscriptions,
+})
 
 if (isBrowser()) {
   try {
@@ -305,45 +166,13 @@ if (isBrowser()) {
   } catch {
     // ignore registration errors
   }
-  
-  // Периодически проверяем доступность Echo для обработки отложенных подписок
-  // Это нужно на случай, если компонент смонтировался до инициализации Echo
-  let pendingCheckInterval: ReturnType<typeof setInterval> | null = null
-  
-  const startPendingCheck = () => {
-    if (pendingCheckInterval) {
-      return
-    }
-    
-    pendingCheckInterval = window.setInterval(() => {
-      if (pendingSubscriptions.size > 0) {
-        const echo = window.Echo || getEchoInstance()
-        if (echo) {
-          pendingSubscriptionsManager.processPendingSubscriptions()
-          // Останавливаем проверку, если все подписки обработаны
-          if (pendingSubscriptions.size === 0 && pendingCheckInterval) {
-            clearInterval(pendingCheckInterval)
-            pendingCheckInterval = null
-          }
-        }
-      } else if (pendingCheckInterval) {
-        // Нет отложенных подписок, останавливаем проверку
-        clearInterval(pendingCheckInterval)
-        pendingCheckInterval = null
-      }
-    }, 1000) // Проверяем каждую секунду
-  }
-  
-  // Запускаем проверку при загрузке модуля
-  startPendingCheck()
-  
+
+  pendingSubscriptionMonitor.start()
+
   // Очистка при HMR
   if ((import.meta as any).hot) {
     (import.meta as any).hot.dispose(() => {
-      if (pendingCheckInterval) {
-        clearInterval(pendingCheckInterval)
-        pendingCheckInterval = null
-      }
+      pendingSubscriptionMonitor.stop()
     })
   }
 }
@@ -351,7 +180,9 @@ if (isBrowser()) {
 // Функция для очистки всех каналов и реестров при teardown Echo
 export function cleanupWebSocketChannels(): void {
   logger.debug('[useWebSocket] Cleaning up all channels and registries', {})
-  
+
+  pendingSubscriptionMonitor.stop()
+
   // Очищаем все каналы
   channelControls.forEach(control => {
     try {

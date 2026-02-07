@@ -568,8 +568,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, shallowRef, watch, reactive } from 'vue'
-import { Link, router } from '@inertiajs/vue3'
+import { computed, ref, watch, reactive } from 'vue'
+import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
@@ -586,13 +586,12 @@ import ViewerDashboard from './Dashboards/ViewerDashboard.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
-import { useTelemetry } from '@/composables/useTelemetry'
-import { useWebSocket } from '@/composables/useWebSocket'
 import { useRole } from '@/composables/useRole'
 import { useCommands } from '@/composables/useCommands'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
-import type { Zone, Greenhouse, Alert, ZoneEvent, EventKind } from '@/types'
+import { useDashboardRealtimeFeed } from '@/composables/useDashboardRealtimeFeed'
+import type { Zone, Greenhouse, Alert } from '@/types'
 
 type QuickAction = 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'
 type TelemetryPeriod = '1h' | '24h' | '7d'
@@ -731,6 +730,21 @@ watch([selectedZoneId, telemetryPeriod], ([zoneId]) => {
   loadTelemetryMetrics()
 })
 
+const latestAlerts = computed(() => props.dashboard.latestAlerts || [])
+const {
+  eventFilter,
+  filteredEvents,
+  telemetryMetrics,
+  handleOpenDetail,
+  loadTelemetryMetrics,
+  resetTelemetryData,
+} = useDashboardRealtimeFeed({
+  theme,
+  selectedZoneId,
+  telemetryPeriod,
+  latestAlerts,
+})
+
 function restoreTelemetryPreferences(): void {
   if (typeof window === 'undefined') {
     return
@@ -749,68 +763,6 @@ function restoreTelemetryPreferences(): void {
     telemetryPeriod.value = storedPeriod
   } else {
     window.localStorage.setItem(TELEMETRY_PERIOD_STORAGE_KEY, telemetryPeriod.value)
-  }
-}
-
-// Телеметрия для мини-графиков
-const { fetchAggregates } = useTelemetry()
-const { subscribeToGlobalEvents } = useWebSocket()
-const telemetryMetricKeys = ['ph', 'ec', 'temperature', 'humidity'] as const
-type TelemetryMetricKey = typeof telemetryMetricKeys[number]
-
-interface TelemetryMiniChartState {
-  data: Array<{ ts: number; value?: number | null; avg?: number | null; min?: number | null; max?: number | null }>
-  currentValue: number | null
-  loading: boolean
-}
-
-// Используем shallowRef для больших объектов телеметрии
-const telemetryData = shallowRef<Record<TelemetryMetricKey, TelemetryMiniChartState>>({
-  ph: { data: [], currentValue: null, loading: false },
-  ec: { data: [], currentValue: null, loading: false },
-  temperature: { data: [], currentValue: null, loading: false },
-  humidity: { data: [], currentValue: null, loading: false },
-})
-
-// События для боковой панели - используем shallowRef для массива
-const events = shallowRef<Array<ZoneEvent & { created_at?: string }>>([])
-const eventFilter = ref<'ALL' | EventKind>('ALL')
-
-// Объединяем события из props и WebSocket
-// Мемоизируем propsEvents для избежания пересоздания при каждом рендере
-const propsEvents = computed(() => {
-  return (props.dashboard.latestAlerts || []).map(a => ({
-    id: a.id,
-    kind: 'ALERT' as const,
-    message: (a as any).details?.message || a.type,
-    zone_id: a.zone_id,
-    occurred_at: a.created_at,
-    created_at: a.created_at
-  }))
-})
-
-const allEvents = computed(() => {
-  return [...events.value, ...propsEvents.value].sort((a, b) => {
-    const timeA = new Date(a.occurred_at || a.created_at || 0).getTime()
-    const timeB = new Date(b.occurred_at || b.created_at || 0).getTime()
-    return timeB - timeA
-  }).slice(0, 20)
-})
-
-const filteredEvents = computed(() => {
-  if (eventFilter.value === 'ALL') {
-    return allEvents.value
-  }
-  return allEvents.value.filter(e => e.kind === eventFilter.value)
-})
-
-// Получаем первую зону для отображения телеметрии (можно расширить для всех зон)
-// Обработчик клика на мини-график для перехода к детальному графику
-function handleOpenDetail(zoneId: number, _metric: string): void {
-  if (zoneId) {
-    router.visit(`/zones/${zoneId}`, {
-      preserveUrl: false,
-    })
   }
 }
 
@@ -842,159 +794,6 @@ async function handleQuickAction(zone: Zone, action: 'PAUSE' | 'RESUME' | 'FORCE
   }
 }
 
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
-
-const telemetryPalette = computed(() => {
-  theme.value
-  return {
-    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
-    ec: resolveCssColor('--accent-green', '#10b981'),
-    temperature: resolveCssColor('--accent-amber', '#f59e0b'),
-    humidity: resolveCssColor('--accent-lime', '#8b5cf6'),
-  }
-})
-
-// Мемоизируем метрики телеметрии для избежания пересоздания массива
-const telemetryMetrics = computed(() => {
-  const data = telemetryData.value
-  const palette = telemetryPalette.value
-  return [
-    {
-      key: 'ph',
-      label: 'pH',
-      data: data.ph.data,
-      currentValue: data.ph.currentValue === null ? undefined : data.ph.currentValue,
-      unit: '',
-      loading: data.ph.loading,
-      color: palette.ph
-    },
-    {
-      key: 'ec',
-      label: 'EC',
-      data: data.ec.data,
-      currentValue: data.ec.currentValue === null ? undefined : data.ec.currentValue,
-      unit: 'мСм/см',
-      loading: data.ec.loading,
-      color: palette.ec
-    },
-    {
-      key: 'temperature',
-      label: 'Температура',
-      data: data.temperature.data,
-      currentValue: data.temperature.currentValue === null ? undefined : data.temperature.currentValue,
-      unit: '°C',
-      loading: data.temperature.loading,
-      color: palette.temperature
-    },
-    {
-      key: 'humidity',
-      label: 'Влажность',
-      data: data.humidity.data,
-      currentValue: data.humidity.currentValue === null ? undefined : data.humidity.currentValue,
-      unit: '%',
-      loading: data.humidity.loading,
-      color: palette.humidity
-    }
-  ]
-})
-
-function resetTelemetryData(): void {
-  telemetryMetricKeys.forEach(metric => {
-    telemetryData.value[metric].data = []
-    telemetryData.value[metric].currentValue = null
-    telemetryData.value[metric].loading = false
-  })
-}
-
-async function loadTelemetryMetrics() {
-  const zoneId = selectedZoneId.value
-  const period = telemetryPeriod.value
-  if (!zoneId) {
-    resetTelemetryData()
-    return
-  }
-
-  for (const metric of telemetryMetricKeys) {
-    telemetryData.value[metric].loading = true
-    try {
-      const data = await fetchAggregates(zoneId, metric, period)
-      // Если за время загрузки зона или период сменились — пропускаем обновление
-      if (selectedZoneId.value !== zoneId || telemetryPeriod.value !== period) {
-        continue
-      }
-      telemetryData.value[metric].data = data.map(item => ({
-        ts: new Date(item.ts).getTime(),
-        value: item.value ?? undefined,
-        avg: (item as any).avg ?? undefined,
-        min: (item as any).min ?? undefined,
-        max: (item as any).max ?? undefined
-      }))
-      if (data.length > 0) {
-        telemetryData.value[metric].currentValue = data[data.length - 1].value ?? (data[data.length - 1] as any).avg ?? null
-      }
-    } catch (err) {
-      logger.error(`[Dashboard] Failed to load ${metric} telemetry:`, err)
-    } finally {
-      telemetryData.value[metric].loading = false
-    }
-  }
-}
-
-// Сохраняем функцию отписки для очистки при размонтировании
-let unsubscribeGlobalEvents: (() => void) | null = null
-
-onMounted(async () => {
-  restoreTelemetryPreferences()
-  
-  // Подписаться на глобальные события с оптимизацией
-  const { useBatchUpdates } = await import('@/composables/useOptimizedUpdates')
-  const { add: addEvent } = useBatchUpdates<any>(
-    (eventBatch) => {
-      // Применяем события пакетом
-      eventBatch.forEach(event => {
-        events.value.unshift({
-          id: event.id,
-          kind: event.kind,
-          message: event.message,
-          zone_id: event.zoneId,
-          occurred_at: event.occurredAt,
-          created_at: event.occurredAt
-        })
-      })
-      
-      // Ограничиваем список 20 событиями
-      if (events.value.length > 20) {
-        events.value = events.value.slice(0, 20)
-      }
-    },
-    { debounceMs: 200, maxBatchSize: 5, maxWaitMs: 1000 }
-  )
-  
-  // Сохраняем функцию отписки
-  unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
-    // Используем batch updates для оптимизации
-    addEvent({
-      id: event.id,
-      kind: event.kind,
-      message: event.message,
-      zoneId: event.zoneId,
-      occurredAt: event.occurredAt
-    })
-  })
-})
-
-// Отписываемся при размонтировании
-onUnmounted(() => {
-  if (unsubscribeGlobalEvents) {
-    unsubscribeGlobalEvents()
-    unsubscribeGlobalEvents = null
-  }
-})
+restoreTelemetryPreferences()
 
 </script>

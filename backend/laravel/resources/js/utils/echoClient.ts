@@ -12,6 +12,8 @@ import {
 import { attemptEchoConnect } from './echoConnectStrategy'
 import { createEchoReconciliation } from './echoReconciliation'
 
+export type EchoInstance = Echo<'reverb'>
+
 // Ленивая загрузка store для избежания ошибок до инициализации Pinia
 function getWebSocketStore() {
   try {
@@ -48,7 +50,7 @@ const MAX_RECONNECT_DELAY = 60000
 const listeners = new Set<StateListener>()
 
 let currentState: WsState = 'disconnected'
-let echoInstance: Echo<any> | null = null
+let echoInstance: EchoInstance | null = null
 let initializing = false
 let reconnectAttempts = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -356,7 +358,7 @@ function scheduleReconnect(reason: string): void {
   }, delay)
 }
 
-export function initEcho(forceReinit = false): Echo<any> | null {
+export function initEcho(forceReinit = false): EchoInstance | null {
   if (!isBrowser()) {
     return null
   }
@@ -531,11 +533,11 @@ export function initEcho(forceReinit = false): Echo<any> | null {
   }
 }
 
-export function getEchoInstance(): Echo<any> | null {
+export function getEchoInstance(): EchoInstance | null {
   return echoInstance
 }
 
-export function getEcho(): Echo<any> | null {
+export function getEcho(): EchoInstance | null {
   return echoInstance
 }
 
@@ -613,7 +615,7 @@ export { emitState as __emitWsState }
 
 declare global {
   interface Window {
-    Echo?: Echo<any>
+    Echo?: EchoInstance
     Pusher?: typeof Pusher
   }
 }

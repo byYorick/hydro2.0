@@ -2,7 +2,10 @@ import { logger } from '@/utils/logger'
 import type {
   ChannelControl,
   ChannelKind,
+  EchoLike,
   GlobalChannelRegistry,
+  PusherChannelSnapshot,
+  WsEventPayload,
 } from '@/ws/subscriptionTypes'
 
 const COMMAND_STATUS_EVENT = '.App\\Events\\CommandStatusUpdated'
@@ -11,16 +14,16 @@ const GLOBAL_EVENT_CREATED = '.App\\Events\\EventCreated'
 
 interface ChannelControlManagerDeps {
   isBrowser: () => boolean
-  getEcho: () => any | null
+  getEcho: () => EchoLike | null
   isGlobalChannel: (channelName: string) => boolean
   channelControls: Map<string, ChannelControl>
   globalChannelRegistry: Map<string, GlobalChannelRegistry>
-  onCommandEvent: (channelName: string, payload: any, isFailure: boolean) => void
-  onGlobalEvent: (channelName: string, payload: any) => void
+  onCommandEvent: (channelName: string, payload: WsEventPayload, isFailure: boolean) => void
+  onGlobalEvent: (channelName: string, payload: WsEventPayload) => void
 }
 
 export function createChannelControlManager(deps: ChannelControlManagerDeps) {
-  const getPusherChannel = (channelName: string): any | null => {
+  const getPusherChannel = (channelName: string) => {
     if (!deps.isBrowser()) {
       return null
     }
@@ -31,12 +34,17 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     }
 
     // Pusher хранит private/presence каналы с префиксом, поэтому проверяем оба варианта
-    return (
+    const channel =
       channels[channelName] ||
       channels[`private-${channelName}`] ||
       channels[`presence-${channelName}`] ||
       null
-    )
+
+    if (!channel || typeof channel !== 'object') {
+      return null
+    }
+
+    return channel as PusherChannelSnapshot
   }
 
   const isChannelDead = (channelName: string): boolean => {
@@ -89,8 +97,8 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     removeChannelListeners(control)
 
     if (control.kind === 'zoneCommands') {
-      const statusHandler = (payload: any) => deps.onCommandEvent(control.channelName, payload, false)
-      const failedHandler = (payload: any) => deps.onCommandEvent(control.channelName, payload, true)
+      const statusHandler = (payload: WsEventPayload) => deps.onCommandEvent(control.channelName, payload, false)
+      const failedHandler = (payload: WsEventPayload) => deps.onCommandEvent(control.channelName, payload, true)
       channel.listen(COMMAND_STATUS_EVENT, statusHandler)
       channel.listen(COMMAND_FAILED_EVENT, failedHandler)
       control.listenerRefs = {
@@ -100,7 +108,7 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
       return
     }
 
-    const eventHandler = (payload: any) => deps.onGlobalEvent(control.channelName, payload)
+    const eventHandler = (payload: WsEventPayload) => deps.onGlobalEvent(control.channelName, payload)
     channel.listen(GLOBAL_EVENT_CREATED, eventHandler)
     control.listenerRefs = {
       [GLOBAL_EVENT_CREATED]: eventHandler,

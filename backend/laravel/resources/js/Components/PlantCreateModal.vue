@@ -85,7 +85,7 @@
           />
         </div>
 
-        <div>
+        <div v-if="showSubstrateSelector">
           <div class="flex items-center justify-between mb-1">
             <label
               for="plant-substrate"
@@ -179,6 +179,12 @@
               </svg>
             </Button>
           </div>
+          <p
+            v-if="form.growing_system && !showSubstrateSelector"
+            class="mt-1 text-[11px] text-[color:var(--text-dim)]"
+          >
+            Для выбранной системы субстрат не используется.
+          </p>
         </div>
 
         <div>
@@ -317,6 +323,158 @@
             autocomplete="off"
           ></textarea>
         </div>
+
+        <div class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Фазы полного цикла (день/ночь)
+            </h4>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              @click="addRecipePhase"
+            >
+              Добавить фазу
+            </Button>
+          </div>
+
+          <div
+            v-for="(phase, index) in form.recipe_phases"
+            :key="`recipe-phase-${index}`"
+            class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 space-y-3"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-[color:var(--text-muted)]">Фаза {{ index + 1 }}</span>
+              <Button
+                v-if="form.recipe_phases.length > 1"
+                type="button"
+                size="sm"
+                variant="danger"
+                @click="removeRecipePhase(index)"
+              >
+                Удалить
+              </Button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                v-model="phase.name"
+                type="text"
+                class="input-field h-9"
+                placeholder="Название фазы"
+              />
+              <input
+                v-model.number="phase.duration_days"
+                type="number"
+                min="1"
+                class="input-field h-9"
+                placeholder="Дней"
+              />
+              <select
+                v-model="phase.day_start_time"
+                class="input-field h-9"
+              >
+                <option value="06:00:00">
+                  День с 06:00
+                </option>
+                <option value="07:00:00">
+                  День с 07:00
+                </option>
+                <option value="08:00:00">
+                  День с 08:00
+                </option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                v-model.number="phase.light_hours"
+                type="number"
+                min="0"
+                max="24"
+                class="input-field h-9"
+                placeholder="Свет, ч/сут"
+              />
+              <input
+                v-model.number="phase.ph_day"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="pH день"
+              />
+              <input
+                v-model.number="phase.ph_night"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="pH ночь"
+              />
+              <input
+                v-model.number="phase.ec_day"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="EC день"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                v-model.number="phase.ec_night"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="EC ночь"
+              />
+              <input
+                v-model.number="phase.temp_day"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="T день, °C"
+              />
+              <input
+                v-model.number="phase.temp_night"
+                type="number"
+                step="0.1"
+                class="input-field h-9"
+                placeholder="T ночь, °C"
+              />
+              <input
+                v-model.number="phase.humidity_day"
+                type="number"
+                step="1"
+                class="input-field h-9"
+                placeholder="Влажн. день, %"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                v-model.number="phase.humidity_night"
+                type="number"
+                step="1"
+                class="input-field h-9"
+                placeholder="Влажн. ночь, %"
+              />
+              <input
+                v-model.number="phase.irrigation_interval_sec"
+                type="number"
+                min="0"
+                class="input-field h-9"
+                placeholder="Интервал полива, сек"
+              />
+              <input
+                v-model.number="phase.irrigation_duration_sec"
+                type="number"
+                min="0"
+                class="input-field h-9"
+                placeholder="Длительность полива, сек"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
@@ -358,20 +516,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { toRef } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import TaxonomyWizardModal from '@/Components/TaxonomyWizardModal.vue'
-import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
-import { useToast } from '@/composables/useToast'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
-
-interface TaxonomyOption {
-  id: string
-  label: string
-}
+import { usePlantCreateModal, type TaxonomyOption } from '@/composables/usePlantCreateModal'
 
 interface Props {
   show?: boolean
@@ -380,240 +529,40 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   show: false,
-  taxonomies: () => ({})
+  taxonomies: () => ({}),
 })
 
 const emit = defineEmits<{
   close: []
-  created: [plant: any]
+  created: [plant: unknown]
 }>()
 
-const { showToast } = useToast()
-const { api } = useApi(showToast)
-
-const loading = ref<boolean>(false)
-const errors = reactive<Record<string, string>>({})
-const currentStep = ref<number>(1)
-const createdPlantId = ref<number | null>(null)
-const createdPlantData = ref<any | null>(null)
-
-const defaultSeasonality = [
-  { id: 'all_year', label: 'Круглый год' },
-  { id: 'multi_cycle', label: 'Несколько циклов' },
-  { id: 'seasonal', label: 'Сезонное выращивание' },
-]
-
-const localTaxonomies = ref<Record<string, TaxonomyOption[]>>({})
-
-const taxonomyOptions = computed(() => ({
-  substrate_type: localTaxonomies.value.substrate_type ?? [],
-  growing_system: localTaxonomies.value.growing_system ?? [],
-  photoperiod_preset: localTaxonomies.value.photoperiod_preset ?? [],
-}))
-
-const seasonOptions = computed(() => localTaxonomies.value.seasonality ?? defaultSeasonality)
-
-type TaxonomyKey = 'substrate_type' | 'growing_system' | 'seasonality'
-const taxonomyWizard = reactive<{ open: boolean; key: TaxonomyKey; title: string }>({
-  open: false,
-  key: 'substrate_type',
-  title: '',
+const {
+  loading,
+  errors,
+  currentStep,
+  createdPlantId,
+  taxonomyOptions,
+  seasonOptions,
+  taxonomyWizard,
+  taxonomyWizardItems,
+  form,
+  showSubstrateSelector,
+  addRecipePhase,
+  removeRecipePhase,
+  openTaxonomyWizard,
+  closeTaxonomyWizard,
+  handleTaxonomySaved,
+  handleClose,
+  stepTitle,
+  primaryLabel,
+  isPrimaryDisabled,
+  goBack,
+  onSubmit,
+} = usePlantCreateModal({
+  show: toRef(props, 'show'),
+  taxonomies: toRef(props, 'taxonomies'),
+  onClose: () => emit('close'),
+  onCreated: (plant) => emit('created', plant),
 })
-
-const taxonomyWizardItems = computed(() => localTaxonomies.value[taxonomyWizard.key] ?? [])
-
-const form = reactive({
-  name: '',
-  species: '',
-  variety: '',
-  substrate_type: '',
-  growing_system: '',
-  photoperiod_preset: '',
-  seasonality: '',
-  description: '',
-  recipe_name: '',
-  recipe_description: '',
-})
-
-// Сброс формы при открытии модального окна
-watch(() => props.show, (newVal: boolean) => {
-  if (newVal) {
-    resetForm()
-  }
-})
-
-watch(() => props.taxonomies, (value) => {
-  localTaxonomies.value = {
-    substrate_type: value?.substrate_type ?? [],
-    growing_system: value?.growing_system ?? [],
-    photoperiod_preset: value?.photoperiod_preset ?? [],
-    seasonality: value?.seasonality ?? defaultSeasonality,
-  }
-}, { immediate: true, deep: true })
-
-function resetForm() {
-  form.name = ''
-  form.species = ''
-  form.variety = ''
-  form.substrate_type = ''
-  form.growing_system = ''
-  form.photoperiod_preset = ''
-  form.seasonality = ''
-  form.description = ''
-  form.recipe_name = ''
-  form.recipe_description = ''
-  currentStep.value = 1
-  createdPlantId.value = null
-  createdPlantData.value = null
-  Object.keys(errors).forEach(key => delete errors[key])
-}
-
-function openTaxonomyWizard(key: TaxonomyKey): void {
-  taxonomyWizard.key = key
-  taxonomyWizard.title = key === 'substrate_type'
-    ? 'Справочник: субстрат'
-    : key === 'growing_system'
-      ? 'Справочник: система'
-      : 'Справочник: сезонность'
-  taxonomyWizard.open = true
-}
-
-function closeTaxonomyWizard(): void {
-  taxonomyWizard.open = false
-}
-
-function handleTaxonomySaved(payload: { key: string; items: TaxonomyOption[] }): void {
-  localTaxonomies.value = {
-    ...localTaxonomies.value,
-    [payload.key]: payload.items,
-  }
-}
-
-function handleClose() {
-  resetForm()
-  emit('close')
-}
-
-const stepTitle = computed(() => (currentStep.value === 1 ? 'Данные растения' : 'Рецепт выращивания'))
-const primaryLabel = computed(() => {
-  if (currentStep.value === 1) {
-    return 'Далее'
-  }
-
-  return createdPlantId.value ? 'Создать рецепт' : 'Создать'
-})
-const isPrimaryDisabled = computed(() => {
-  if (currentStep.value === 1) {
-    return !form.name.trim()
-  }
-
-  return !form.recipe_name.trim()
-})
-
-function goBack() {
-  currentStep.value = 1
-  errors.general = ''
-  errors.recipe_name = ''
-}
-
-async function onSubmit() {
-  if (currentStep.value === 1) {
-    if (!form.name || !form.name.trim()) {
-      showToast('Введите название растения', 'error', TOAST_TIMEOUT.NORMAL)
-      return
-    }
-
-    currentStep.value = 2
-    return
-  }
-
-  if (!form.recipe_name || !form.recipe_name.trim()) {
-    showToast('Введите название рецепта', 'error', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  if (!form.name || !form.name.trim()) {
-    showToast('Введите название растения', 'error', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  loading.value = true
-  errors.name = ''
-  errors.recipe_name = ''
-  errors.general = ''
-  
-  try {
-    const payload: any = {
-      name: form.name.trim(),
-      species: form.species.trim() || null,
-      variety: form.variety.trim() || null,
-      substrate_type: form.substrate_type || null,
-      growing_system: form.growing_system || null,
-      photoperiod_preset: form.photoperiod_preset || null,
-      seasonality: form.seasonality || null,
-      description: form.description.trim() || null,
-    }
-
-    if (!createdPlantId.value) {
-      try {
-        const response = await api.post('/plants', payload)
-        const plant = (response.data as any)?.data || response.data
-        createdPlantId.value = plant?.id ?? null
-        createdPlantData.value = plant
-        logger.info('Plant created:', response.data)
-      } catch (error: any) {
-        logger.error('Failed to create plant:', error)
-        if (error.response?.data?.errors) {
-          Object.keys(error.response.data.errors).forEach(key => {
-            errors[key] = error.response.data.errors[key][0]
-          })
-        } else if (error.response?.data?.message) {
-          errors.general = error.response.data.message
-        }
-        currentStep.value = 1
-        return
-      }
-    }
-
-    try {
-      await api.post('/recipes', {
-        name: form.recipe_name.trim(),
-        description: form.recipe_description.trim() || null,
-        plant_id: createdPlantId.value,
-      })
-    } catch (error: any) {
-      logger.error('Failed to create recipe:', error)
-      if (error.response?.data?.errors) {
-        Object.keys(error.response.data.errors).forEach(key => {
-          if (key === 'name') {
-            errors.recipe_name = error.response.data.errors[key][0]
-          } else {
-            errors[key] = error.response.data.errors[key][0]
-          }
-        })
-      } else if (error.response?.data?.message) {
-        errors.general = error.response.data.message
-      }
-      return
-    }
-
-    showToast('Растение и рецепт успешно созданы', 'success', TOAST_TIMEOUT.NORMAL)
-    emit('created', createdPlantData.value)
-    handleClose()
-    router.reload({ only: ['plants'] })
-  } catch (error: any) {
-    logger.error('Failed to create plant:', error)
-    
-    // Обработка ошибок валидации (422)
-    if (error.response?.data?.errors) {
-      Object.keys(error.response.data.errors).forEach(key => {
-        errors[key] = error.response.data.errors[key][0]
-      })
-    } else if (error.response?.data?.message) {
-      errors.general = error.response.data.message
-    }
-  } finally {
-    loading.value = false
-  }
-}
 </script>

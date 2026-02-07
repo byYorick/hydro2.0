@@ -499,3 +499,310 @@
    - payload-builder/validation;
    - quick-actions runtime.
 2. Повторить `eslint + typecheck + targeted tests` и зафиксировать снижение `useZoneAutomationTab.ts` до `< 700` строк.
+
+### Выполнено (S2, итерация 14)
+
+1. Проведена декомпозиция `useZoneAutomationTab.ts`:
+   - вынесена доменная логика форм/targets/payload/reset в `resources/js/composables/zoneAutomationFormLogic.ts`;
+   - `useZoneAutomationTab.ts` оставлен как orchestration-слой (state + storage sync + команды/quick-actions).
+2. Метрика декомпозиции:
+   - `useZoneAutomationTab.ts`: `862 -> 335` строк;
+   - новый модуль: `zoneAutomationFormLogic.ts` (608 строк).
+3. Проверки:
+   - `eslint resources/js/composables/useZoneAutomationTab.ts resources/js/composables/zoneAutomationFormLogic.ts resources/js/Pages/Zones/Tabs/ZoneAutomationTab.vue` — pass;
+   - `eslint . --ext .ts,.tsx,.vue -f compact` — pass (`errors = 0`, `warnings = 0`);
+   - `npm run typecheck` — pass;
+   - `npm run test -- resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts` — pass (`2/2`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 15)
+
+1. Додекомпозировать `useSetupWizard.ts` (777 строк) на 2 модуля:
+   - data-loading/selection flows;
+   - recipe/automation apply flows.
+2. Повторить `eslint + typecheck + targeted tests (Wizard.spec.ts)` и зафиксировать новую метрику размера.
+
+### Выполнено (S2, итерация 15)
+
+1. Проведена декомпозиция `useSetupWizard.ts` на доменные модули:
+   - `resources/js/composables/setupWizardDataFlows.ts` (загрузка данных + create/select flows по greenhouse/zone/plant + attach nodes);
+   - `resources/js/composables/setupWizardRecipeAutomationFlows.ts` (recipe-phase/create/select + apply automation + launch flow);
+   - `resources/js/composables/setupWizardTypes.ts` (общие типы мастера и форм).
+2. `useSetupWizard.ts` переведен в orchestration-слой:
+   - оставлены state/computed/watch/onMounted;
+   - бизнес-операции делегированы в `createSetupWizardDataFlows(...)` и `createSetupWizardRecipeAutomationFlows(...)`;
+   - публичный контракт composable для `Wizard.vue` сохранен без изменения.
+3. Метрика декомпозиции:
+   - `useSetupWizard.ts`: `777 -> 323` строк.
+   - новые модули:
+     - `setupWizardDataFlows.ts` (353 строки),
+     - `setupWizardRecipeAutomationFlows.ts` (282 строки),
+     - `setupWizardTypes.ts` (106 строк).
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/useSetupWizard.ts resources/js/composables/setupWizardTypes.ts resources/js/composables/setupWizardDataFlows.ts resources/js/composables/setupWizardRecipeAutomationFlows.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/Pages/Setup/__tests__/Wizard.spec.ts` — pass (`5/5`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 16)
+
+1. Додекомпозировать `zoneAutomationFormLogic.ts` (608 строк) на 2 подпотока:
+   - parser/apply-targets;
+   - payload/builders + reset/system-sync.
+2. Добавить unit-тесты на pure-helper блоки (без UI) для снижения регрессионного риска.
+3. Повторить `eslint + typecheck + targeted tests` и зафиксировать новую метрику.
+
+### Выполнено (S2, итерация 16)
+
+1. Проведена декомпозиция `zoneAutomationFormLogic.ts` на отдельные подпотоки:
+   - `resources/js/composables/zoneAutomationTargetsParser.ts` (parser/apply-targets + синхронизация layout баков);
+   - `resources/js/composables/zoneAutomationPayloadBuilders.ts` (validate + payload builders + reset defaults);
+   - `resources/js/composables/zoneAutomationTypes.ts` (типы форм и контракты).
+2. Сохранена обратная совместимость импортов:
+   - `resources/js/composables/zoneAutomationFormLogic.ts` переведен в фасад re-export (без изменения внешнего API для `useZoneAutomationTab.ts`).
+3. Добавлены unit-тесты pure-helper блока:
+   - `resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts` (sync/apply/payload/validate/reset).
+4. Дополнительно закрыта старая регрессия контракта setup wizard:
+   - синхронизированы `useSetupWizard.ts` и `setupWizardRecipeAutomationFlows.ts` (передача `selectedPlant`, восстановлен `recipeMode`, возвращен `selectRecipe`).
+   - обновлен `Wizard.spec.ts` под актуальный 6-шаговый UX-сценарий (`Культура и рецепт` вместо раздельных шагов).
+5. Метрика декомпозиции:
+   - `zoneAutomationFormLogic.ts`: `608 -> 19` строк (фасад);
+   - новые модули:
+     - `zoneAutomationTargetsParser.ts` (345 строк),
+     - `zoneAutomationPayloadBuilders.ts` (210 строк),
+     - `zoneAutomationTypes.ts` (56 строк).
+6. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/useSetupWizard.ts resources/js/composables/setupWizardRecipeAutomationFlows.ts resources/js/composables/zoneAutomationFormLogic.ts resources/js/composables/zoneAutomationTypes.ts resources/js/composables/zoneAutomationTargetsParser.ts resources/js/composables/zoneAutomationPayloadBuilders.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts resources/js/Pages/Setup/Wizard.vue resources/js/Pages/Zones/Tabs/ZoneAutomationTab.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts` — pass (`12/12`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 17)
+
+1. Декомпозировать `setupWizardRecipeAutomationFlows.ts` (343 строки) на:
+   - recipe-linking/auto-select flow;
+   - recipe create/publish flow.
+2. Покрыть unit-тестами автопривязку рецепта к растению (без UI монтирования).
+3. Повторить `eslint + typecheck + targeted tests` и зафиксировать обновленную метрику.
+
+### Выполнено (S2, итерация 17)
+
+1. Проведена декомпозиция `setupWizardRecipeAutomationFlows.ts`:
+   - добавлен `resources/js/composables/setupWizardRecipeCreation.ts` (create/publish flow + `buildAutoRecipeName` + `addRecipePhase`);
+   - добавлен `resources/js/composables/setupWizardRecipeLinking.ts` (recipe-linking/auto-select/ensure flow + селектор по id).
+2. `setupWizardRecipeAutomationFlows.ts` переведен в orchestration-слой:
+   - делегирует создание/публикацию в `createRecipeForPlant(...)`;
+   - делегирует автопривязку в `ensureRecipeBinding(...)`;
+   - сохранен внешний контракт для `useSetupWizard.ts`.
+3. Добавлены unit-тесты автопривязки рецепта (без UI монтирования):
+   - `resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts`.
+4. Исправлена старая ошибка stale-state:
+   - при ошибке автосоздания рецепта теперь очищаются `selectedRecipe/selectedRecipeId`, чтобы не оставался рецепт от другой культуры.
+5. Метрика декомпозиции:
+   - `setupWizardRecipeAutomationFlows.ts`: `343 -> 237` строк;
+   - новые модули:
+     - `setupWizardRecipeCreation.ts` (116 строк),
+     - `setupWizardRecipeLinking.ts` (96 строк),
+     - тест `setupWizardRecipeLinking.spec.ts` (152 строки).
+6. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/setupWizardRecipeAutomationFlows.ts resources/js/composables/setupWizardRecipeCreation.ts resources/js/composables/setupWizardRecipeLinking.ts resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts resources/js/composables/useSetupWizard.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts` — pass (`18/18`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 18)
+
+1. Додекомпозировать `setupWizardDataFlows.ts` (353 строки) на:
+   - data loaders (`greenhouses/zones/plants/recipes/nodes`);
+   - entity create/select/attach commands.
+2. Добавить unit-тесты на helper-слой загрузки/распаковки коллекций (`extractCollection` + edge-cases payload).
+3. Повторить `eslint + typecheck + targeted tests` и зафиксировать новую метрику размера.
+
+### Выполнено (S2, итерация 18)
+
+1. Проведена декомпозиция `setupWizardDataFlows.ts`:
+   - добавлен `resources/js/composables/setupWizardDataLoaders.ts` (data loaders: `greenhouses/zones/plants/recipes/nodes`);
+   - добавлен `resources/js/composables/setupWizardEntityCommands.ts` (create/select/attach команды сущностей);
+   - добавлен `resources/js/composables/setupWizardCollection.ts` (helper распаковки коллекций).
+2. `setupWizardDataFlows.ts` переведен в orchestration-слой:
+   - собирает `loaders + commands` и возвращает совместимый контракт для `useSetupWizard.ts`.
+3. Добавлены unit-тесты helper-слоя загрузки:
+   - `resources/js/composables/__tests__/setupWizardCollection.spec.ts` (`extractCollection` + edge-cases payload).
+4. Метрика декомпозиции:
+   - `setupWizardDataFlows.ts`: `353 -> 92` строки;
+   - новые модули:
+     - `setupWizardDataLoaders.ts` (133 строки),
+     - `setupWizardEntityCommands.ts` (260 строк),
+     - `setupWizardCollection.ts` (15 строк),
+     - тест `setupWizardCollection.spec.ts` (40 строк).
+5. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/setupWizardCollection.ts resources/js/composables/setupWizardDataLoaders.ts resources/js/composables/setupWizardEntityCommands.ts resources/js/composables/setupWizardDataFlows.ts resources/js/composables/__tests__/setupWizardCollection.spec.ts resources/js/composables/useSetupWizard.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/composables/__tests__/setupWizardCollection.spec.ts resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts` — pass (`22/22`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 19)
+
+1. Додекомпозировать `setupWizardEntityCommands.ts` (260 строк) на:
+   - greenhouse/zone команды;
+   - plant/node команды.
+2. Добавить unit-тесты на helper-селекцию сущностей (`selectPlant` и edge-cases id отсутствует/нет прав).
+3. Повторить `eslint + typecheck + targeted tests` и зафиксировать новую метрику.
+
+### Выполнено (S2, итерация 19)
+
+1. Проведена декомпозиция `setupWizardEntityCommands.ts`:
+   - добавлен `resources/js/composables/setupWizardGreenhouseZoneCommands.ts` (команды `greenhouse/zone`);
+   - добавлен `resources/js/composables/setupWizardPlantNodeCommands.ts` (команды `plant/node` + helper-селекция);
+   - `setupWizardEntityCommands.ts` переведен в orchestration-слой, объединяющий два подмодуля.
+2. Добавлены helper-функции селекции растения:
+   - `canSelectPlant(canConfigure, selectedPlantId)`;
+   - `resolveSelectedPlant(plants, selectedPlantId)`.
+3. Добавлены unit-тесты helper-селекции и command-path:
+   - `resources/js/composables/__tests__/setupWizardPlantNodeCommands.spec.ts`
+   - покрыты edge-cases: нет прав, нет id, id не найден, успешный выбор.
+4. Метрика декомпозиции:
+   - `setupWizardEntityCommands.ts`: `260 -> 91` строка;
+   - новые модули:
+     - `setupWizardGreenhouseZoneCommands.ts` (169 строк),
+     - `setupWizardPlantNodeCommands.ts` (144 строки),
+     - тест `setupWizardPlantNodeCommands.spec.ts` (188 строк).
+5. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/setupWizardEntityCommands.ts resources/js/composables/setupWizardGreenhouseZoneCommands.ts resources/js/composables/setupWizardPlantNodeCommands.ts resources/js/composables/setupWizardDataFlows.ts resources/js/composables/useSetupWizard.ts resources/js/composables/__tests__/setupWizardPlantNodeCommands.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/composables/__tests__/setupWizardPlantNodeCommands.spec.ts resources/js/composables/__tests__/setupWizardCollection.spec.ts resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts` — pass (`28/28`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — fail по нецелевому файлу `resources/js/Components/PlantCreateModal.vue` (902 > 900 в текущем рабочем дереве).
+
+### Следующая итерация (S2, итерация 20)
+
+1. Декомпозировать `setupWizardGreenhouseZoneCommands.ts` (169 строк) на:
+   - greenhouse create/select;
+   - zone create/select.
+2. Добавить unit-тесты helper-валидации create/select preconditions для greenhouse/zone.
+3. Повторить `eslint + typecheck + targeted tests` и зафиксировать новую метрику.
+
+### Выполнено (S2, итерация 20)
+
+1. Проведена декомпозиция `setupWizardGreenhouseZoneCommands.ts`:
+   - добавлен `resources/js/composables/setupWizardGreenhouseCommands.ts` (greenhouse create/select + preconditions);
+   - добавлен `resources/js/composables/setupWizardZoneCommands.ts` (zone create/select + preconditions);
+   - `setupWizardGreenhouseZoneCommands.ts` переведен в orchestration-слой, объединяющий оба подмодуля.
+2. Добавлены helper-валидации preconditions:
+   - `canCreateGreenhouse`, `canSelectGreenhouse`;
+   - `canCreateZone`, `canSelectZone`.
+3. Добавлены unit-тесты precondition helper-слоя:
+   - `resources/js/composables/__tests__/setupWizardGreenhouseZoneCommands.spec.ts`.
+4. Метрика декомпозиции:
+   - `setupWizardGreenhouseZoneCommands.ts`: `169 -> 76` строк;
+   - новые модули:
+     - `setupWizardGreenhouseCommands.ts` (113 строк),
+     - `setupWizardZoneCommands.ts` (116 строк),
+     - тест `setupWizardGreenhouseZoneCommands.spec.ts` (38 строк).
+5. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/composables/setupWizardGreenhouseCommands.ts resources/js/composables/setupWizardZoneCommands.ts resources/js/composables/setupWizardGreenhouseZoneCommands.ts resources/js/composables/setupWizardEntityCommands.ts resources/js/composables/setupWizardDataFlows.ts resources/js/composables/useSetupWizard.ts resources/js/composables/__tests__/setupWizardGreenhouseZoneCommands.spec.ts resources/js/composables/__tests__/setupWizardPlantNodeCommands.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run test -- resources/js/composables/__tests__/setupWizardGreenhouseZoneCommands.spec.ts resources/js/composables/__tests__/setupWizardPlantNodeCommands.spec.ts resources/js/composables/__tests__/setupWizardCollection.spec.ts resources/js/composables/__tests__/setupWizardRecipeLinking.spec.ts resources/js/composables/__tests__/zoneAutomationFormLogic.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts` — pass (`32/32`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — fail по нецелевому файлу `resources/js/Components/PlantCreateModal.vue` (974 > 900 в текущем рабочем дереве).
+
+### Следующая итерация (S2, итерация 21)
+
+1. Снять текущий blocker `file-size-guard`:
+   - декомпозировать `resources/js/Components/PlantCreateModal.vue` до `<= 900` строк через вынос form/submit/helper секций в composable и/или подпакет компонентов.
+2. Добавить минимальные unit/component тесты на вынесенную логику `PlantCreateModal` (валидация/submit payload).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard` и зафиксировать новый baseline.
+
+### Выполнено (S2, итерация 21)
+
+1. Снят blocker `file-size-guard` по `PlantCreateModal`:
+   - добавлен `resources/js/composables/usePlantCreateModal.ts` (вынос submit/payload/form/helper логики);
+   - `resources/js/Components/PlantCreateModal.vue` переведен на thin-wrapper (`template + import/use composable`).
+2. Исправлена legacy TS-ошибка шаблона (`TS2367`) в `resources/js/Pages/Setup/Wizard.vue`:
+   - в ветках `v-if="greenhouseMode === 'select'"` и `v-if="zoneMode === 'select'"` удалено недостижимое сравнение с `'create'`, `variant` зафиксирован в `secondary`.
+3. Метрика декомпозиции:
+   - `PlantCreateModal.vue`: `974 -> 568` строк;
+   - новый `usePlantCreateModal.ts`: `507` строк.
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel sh -lc './node_modules/.bin/eslint resources/js/Components/PlantCreateModal.vue resources/js/composables/usePlantCreateModal.ts resources/js/Pages/Setup/Wizard.vue'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run test -- resources/js/Components/__tests__/PlantCreateModal.spec.ts resources/js/Pages/Setup/__tests__/Wizard.spec.ts` — pass (`7/7`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующая итерация (S2, итерация 22)
+
+1. Продолжить декомпозицию top-N composable:
+   - разнести `resources/js/composables/useWebSocket.ts` на runtime/env, event-dispatch и pending-monitor модули.
+2. Сохранить публичный контракт `useWebSocket` без breaking changes.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard` и зафиксировать новый baseline.
+
+### Выполнено (S2, итерация 22)
+
+1. Проведена декомпозиция `useWebSocket.ts`:
+   - добавлен `resources/js/ws/webSocketRuntime.ts` (browser/env/echo availability + channel classification);
+   - добавлен `resources/js/ws/webSocketEventDispatchers.ts` (normalization + dispatch command/global событий);
+   - добавлен `resources/js/ws/pendingSubscriptionMonitor.ts` (монитор отложенных подписок).
+2. `resources/js/composables/useWebSocket.ts` переведен в orchestration-слой:
+   - подключены новые модули;
+   - сохранены экспортируемые API: `useWebSocket`, `cleanupWebSocketChannels`, `resubscribeAllChannels`, `__testExports`.
+3. Метрика декомпозиции:
+   - `useWebSocket.ts`: `643 -> 474` строки;
+   - новые модули: `60 + 157 + 54 = 271` строка.
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel sh -lc './node_modules/.bin/eslint resources/js/composables/useWebSocket.ts resources/js/ws/webSocketRuntime.ts resources/js/ws/webSocketEventDispatchers.ts resources/js/ws/pendingSubscriptionMonitor.ts resources/js/composables/__tests__/useWebSocket.spec.ts resources/js/composables/__tests__/useWebSocket.integration.spec.ts resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts resources/js/composables/__tests__/useWebSocket.reconnect.spec.ts resources/js/composables/__tests__/useWebSocket.resubscribe.spec.ts'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run test -- resources/js/composables/__tests__/useWebSocket.spec.ts resources/js/composables/__tests__/useWebSocket.integration.spec.ts resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts resources/js/composables/__tests__/useWebSocket.reconnect.spec.ts resources/js/composables/__tests__/useWebSocket.resubscribe.spec.ts` — pass (`45/45`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Выполнено (S2, итерация 23)
+
+1. Выполнена декомпозиция 3 критических страниц (`>900` строк):
+   - `resources/js/Pages/Zones/Show.vue`:
+     - вынесен блок операций цикла в `resources/js/composables/useZoneCycleActions.ts`;
+     - размер: `1019 -> 873` строки.
+   - `resources/js/Pages/Dashboard/Index.vue`:
+     - вынесены realtime-feed и мини-телеметрия в `resources/js/composables/useDashboardRealtimeFeed.ts`;
+     - размер: `1000 -> 799` строк.
+   - `resources/js/Pages/Devices/Show.vue`:
+     - вынесена command-логика (restart/test/detach/status polling) в `resources/js/composables/useDeviceCommandActions.ts`;
+     - размер: `967 -> 680` строк.
+2. Все критические top-N файлы (`>900`) сняты из блока:
+   - `Zones/Show.vue`, `Dashboard/Index.vue`, `Devices/Show.vue` теперь `< 900`.
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel sh -lc './node_modules/.bin/eslint resources/js/Pages/Zones/Show.vue resources/js/Pages/Dashboard/Index.vue resources/js/Pages/Devices/Show.vue resources/js/composables/useZoneCycleActions.ts resources/js/composables/useDashboardRealtimeFeed.ts resources/js/composables/useDeviceCommandActions.ts'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run test -- resources/js/Pages/Zones/__tests__/Show.spec.ts resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts resources/js/Pages/Zones/__tests__/Show.integration.spec.ts resources/js/Pages/Devices/__tests__/Show.spec.ts resources/js/Pages/Devices/__tests__/Show.utils.spec.ts` — pass (`57/57`, `3 skipped`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 1)
+
+1. Начать этап S3 (контракты и типизация) с фронтенд realtime-слоя:
+   - типизировать payload-контракты в `resources/js/utils/echoClient.ts` и `resources/js/ws/*`;
+   - убрать оставшиеся `any` в новых composable (`useDashboardRealtimeFeed`, `useDeviceCommandActions`, `useZoneCycleActions`) без изменения поведения.
+2. Добавить/обновить unit-тесты на типизированные нормализаторы/payload-parsers.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 1)
+
+1. Типизирован realtime-контракт в `echoClient` и `ws`:
+   - `resources/js/utils/echoClient.ts`: введен `EchoInstance = Echo<'reverb'>`, убран `Echo<any>`.
+   - `resources/js/utils/echoConfig.ts`: добавлен тип `EchoReverbConfig`.
+   - `resources/js/ws/subscriptionTypes.ts`: добавлены `WsEventPayload`, `EchoLike`, `EchoChannelLike`, `PusherChannelSnapshot`; убраны `any` в `ChannelControl`.
+   - `resources/js/ws/channelControlManager.ts`, `resources/js/ws/pendingSubscriptions.ts`, `resources/js/ws/webSocketRuntime.ts`, `resources/js/ws/webSocketEventDispatchers.ts`, `resources/js/ws/subscriptions.ts`: переведены на новые типы payload/channel.
+2. Убраны `any` в новых composable:
+   - `resources/js/composables/useDashboardRealtimeFeed.ts` (типизация aggregate/event batch payload).
+   - `resources/js/composables/useDeviceCommandActions.ts` (типизация command params).
+   - `resources/js/composables/useZoneCycleActions.ts` (типизация API response).
+   - Дополнительно: `resources/js/ws/invariants.ts` — типизирован debug-экспорт `window.__wsInvariants`; `resources/js/composables/useSystemStatus.ts` — удалено конфликтующее объявление `Window.Echo`.
+3. S3 baseline-проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel sh -lc './node_modules/.bin/eslint resources/js/utils/echoClient.ts resources/js/utils/echoConfig.ts resources/js/composables/useSystemStatus.ts resources/js/ws/*.ts resources/js/composables/useDashboardRealtimeFeed.ts resources/js/composables/useDeviceCommandActions.ts resources/js/composables/useZoneCycleActions.ts resources/js/composables/useWebSocket.ts'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run typecheck` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel npm run test -- resources/js/composables/__tests__/useWebSocket.spec.ts resources/js/composables/__tests__/useWebSocket.integration.spec.ts resources/js/composables/__tests__/useWebSocket.reconnect.spec.ts resources/js/composables/__tests__/useWebSocket.resubscribe.spec.ts resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts resources/js/ws/__tests__/invariants.spec.ts resources/js/Pages/Zones/__tests__/Show.spec.ts resources/js/Pages/Devices/__tests__/Show.spec.ts` — pass (`94/94`, `3 skipped`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 2)
+
+1. Добить типизацию realtime edge-case слоев:
+   - `resources/js/composables/useTelemetry.ts` (`response as any`, reconciliation payload);
+   - `resources/js/utils/echoConnectStrategy.ts` и `resources/js/utils/echoConnectionEvents.ts` (если есть `unknown/any`-дыру в runtime-connect path).
+2. Добавить unit-тесты на typed-normalization edge-cases:
+   - некорректные payload (`id/kind/message` отсутствуют, `zone_id` строкой, `server_ts` null).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.

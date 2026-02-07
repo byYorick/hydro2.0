@@ -113,11 +113,10 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('Мастер настройки системы')
     expect(wrapper.text()).toContain('1. Теплица')
     expect(wrapper.text()).toContain('2. Зона')
-    expect(wrapper.text()).toContain('3. Растение')
-    expect(wrapper.text()).toContain('4. Рецепт')
-    expect(wrapper.text()).toContain('5. Устройства')
-    expect(wrapper.text()).toContain('6. Логика автоматики')
-    expect(wrapper.text()).toContain('7. Запуск и контроль')
+    expect(wrapper.text()).toContain('3. Культура и рецепт')
+    expect(wrapper.text()).toContain('4. Устройства')
+    expect(wrapper.text()).toContain('5. Логика автоматики')
+    expect(wrapper.text()).toContain('6. Запуск и контроль')
   })
 
   it('показывает режим только для просмотра для оператора', async () => {
@@ -163,6 +162,33 @@ describe('Setup/Wizard.vue', () => {
   })
 
   it('применяет логику автоматики через команду зоны', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/plants') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 5, name: 'Tomato' }],
+          },
+        })
+      }
+
+      if (url === '/api/recipes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{
+              id: 30,
+              name: 'Tomato recipe',
+              plants: [{ id: 5, name: 'Tomato' }],
+              phases: [{ phase_index: 0, ph_target: 5.9, ec_target: 1.7, irrigation_mode: 'RECIRC' }],
+            }],
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
     apiPostMock
       .mockResolvedValueOnce({
         data: {
@@ -196,8 +222,26 @@ describe('Setup/Wizard.vue', () => {
     await createGreenhouseButton?.trigger('click')
     await flushPromises()
 
+    const openZoneCreateButton = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    expect(openZoneCreateButton).toBeTruthy()
+    await openZoneCreateButton?.trigger('click')
+    await flushPromises()
+
+    const zoneNameInput = wrapper.find('input[placeholder="Название зоны"]')
+    expect(zoneNameInput.exists()).toBe(true)
+    await zoneNameInput.setValue('Zone A')
+
     const createZoneButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))
+    expect(createZoneButton).toBeTruthy()
     await createZoneButton?.trigger('click')
+    await flushPromises()
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    expect(plantSelect).toBeTruthy()
+    await plantSelect?.setValue('5')
+    const applyPlantButton = wrapper.findAll('button').find((btn) => btn.text() === 'Применить')
+    expect(applyPlantButton).toBeTruthy()
+    await applyPlantButton?.trigger('click')
     await flushPromises()
 
     const applyAutomationButton = wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))
@@ -209,6 +253,99 @@ describe('Setup/Wizard.vue', () => {
       '/api/zones/20/commands',
       expect.objectContaining({
         type: 'GROWTH_CYCLE_CONFIG',
+      }),
+      undefined
+    )
+  })
+
+  it('отправляет флаги управления климатом и светом из переключателей', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/plants') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 5, name: 'Tomato' }],
+          },
+        })
+      }
+
+      if (url === '/api/recipes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{
+              id: 30,
+              name: 'Tomato recipe',
+              plants: [{ id: 5, name: 'Tomato' }],
+              phases: [{ phase_index: 0, ph_target: 5.9, ec_target: 1.7, irrigation_mode: 'RECIRC' }],
+            }],
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    apiPostMock
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          status: 'ok',
+          data: { id: 99 },
+        },
+      })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    await createToggle?.trigger('click')
+    await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
+    await flushPromises()
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    expect(plantSelect).toBeTruthy()
+    await plantSelect?.setValue('5')
+    const applyPlantButton = wrapper.findAll('button').find((btn) => btn.text() === 'Применить')
+    expect(applyPlantButton).toBeTruthy()
+    await applyPlantButton?.trigger('click')
+    await flushPromises()
+
+    const climateToggle = wrapper.findAll('label').find((item) => item.text().includes('Управлять климатом'))
+    const lightingToggle = wrapper.findAll('label').find((item) => item.text().includes('Управлять освещением'))
+    await climateToggle?.find('input').setValue(false)
+    await lightingToggle?.find('input').setValue(false)
+
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))?.trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/zones/20/commands',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          subsystems: expect.objectContaining({
+            climate: expect.objectContaining({ enabled: false }),
+            lighting: expect.objectContaining({ enabled: false }),
+          }),
+        }),
       }),
       undefined
     )

@@ -3,7 +3,6 @@
  */
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
-import type Echo from 'laravel-echo'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -88,12 +87,6 @@ if (import.meta.hot) {
       resetWebSocketBindings()
     }
   })
-}
-
-declare global {
-  interface Window {
-    Echo?: Echo<any>
-  }
 }
 
 interface StatusResponse {

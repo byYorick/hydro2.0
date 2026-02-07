@@ -7,7 +7,7 @@
           Мастер настройки системы
         </h1>
         <p class="text-sm text-[color:var(--text-muted)] mt-2">
-          Пошаговая настройка теплицы, зоны, растения, рецепта, устройств и автоматики.
+          Пошаговая настройка теплицы, зоны, культуры, устройств и автоматики.
         </p>
 
         <div class="mt-4 h-2 rounded-full bg-[color:var(--border-muted)] overflow-hidden">
@@ -18,7 +18,7 @@
         </div>
 
         <div class="mt-3 text-xs text-[color:var(--text-dim)]">
-          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/7)
+          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/6)
         </div>
       </section>
 
@@ -72,25 +72,6 @@
           </Badge>
         </div>
 
-        <div class="flex gap-2">
-          <Button
-            size="sm"
-            :variant="greenhouseMode === 'select' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="greenhouseMode = 'select'"
-          >
-            Выбрать
-          </Button>
-          <Button
-            size="sm"
-            :variant="greenhouseMode === 'create' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="greenhouseMode = 'create'"
-          >
-            Создать
-          </Button>
-        </div>
-
         <div
           v-if="greenhouseMode === 'select'"
           class="grid gap-3 md:grid-cols-[1fr_auto]"
@@ -99,6 +80,7 @@
             v-model.number="selectedGreenhouseId"
             class="input-select"
             :disabled="!canConfigure || loading.greenhouses"
+            @change="selectGreenhouse"
           >
             <option :value="null">
               Выберите теплицу
@@ -113,10 +95,11 @@
           </select>
           <Button
             size="sm"
-            :disabled="!canConfigure || !selectedGreenhouseId || loading.stepGreenhouse"
-            @click="selectGreenhouse"
+            variant="secondary"
+            :disabled="!canConfigure"
+            @click="greenhouseMode = 'create'"
           >
-            {{ loading.stepGreenhouse ? 'Выбор...' : 'Применить' }}
+            Создать
           </Button>
         </div>
 
@@ -132,18 +115,27 @@
             :disabled="!canConfigure"
           />
           <input
-            v-model="greenhouseForm.type"
-            type="text"
-            placeholder="Тип (indoor / tunnel)"
-            class="input-field"
-            :disabled="!canConfigure"
-          />
-          <input
             :value="generatedGreenhouseUid"
             type="text"
             class="input-field"
             disabled
           />
+          <select
+            v-model.number="greenhouseForm.greenhouse_type_id"
+            class="input-select"
+            :disabled="!canConfigure"
+          >
+            <option :value="null">
+              Выберите тип теплицы
+            </option>
+            <option
+              v-for="greenhouseType in availableGreenhouseTypes"
+              :key="greenhouseType.id"
+              :value="greenhouseType.id"
+            >
+              {{ greenhouseType.name }}
+            </option>
+          </select>
           <textarea
             v-model="greenhouseForm.description"
             class="input-field md:col-span-2"
@@ -178,25 +170,6 @@
           </Badge>
         </div>
 
-        <div class="flex gap-2">
-          <Button
-            size="sm"
-            :variant="zoneMode === 'select' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure || !stepGreenhouseDone"
-            @click="zoneMode = 'select'"
-          >
-            Выбрать
-          </Button>
-          <Button
-            size="sm"
-            :variant="zoneMode === 'create' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure || !stepGreenhouseDone"
-            @click="zoneMode = 'create'"
-          >
-            Создать
-          </Button>
-        </div>
-
         <div
           v-if="zoneMode === 'select'"
           class="grid gap-3 md:grid-cols-[1fr_auto]"
@@ -205,6 +178,7 @@
             v-model.number="selectedZoneId"
             class="input-select"
             :disabled="!canConfigure || loading.zones || !stepGreenhouseDone"
+            @change="selectZone"
           >
             <option :value="null">
               Выберите зону
@@ -219,16 +193,17 @@
           </select>
           <Button
             size="sm"
-            :disabled="!canConfigure || !selectedZoneId || loading.stepZone"
-            @click="selectZone"
+            variant="secondary"
+            :disabled="!canConfigure || !stepGreenhouseDone"
+            @click="zoneMode = 'create'"
           >
-            {{ loading.stepZone ? 'Выбор...' : 'Применить' }}
+            Создать
           </Button>
         </div>
 
         <div
-          v-else
-          class="grid gap-3 md:grid-cols-[1fr_1fr_auto]"
+          v-if="zoneMode === 'create'"
+          class="grid gap-3 md:grid-cols-4"
         >
           <input
             v-model="zoneForm.name"
@@ -243,6 +218,12 @@
             placeholder="Описание зоны"
             class="input-field"
             :disabled="!canConfigure || !stepGreenhouseDone"
+          />
+          <input
+            :value="generatedZoneUid"
+            type="text"
+            class="input-field"
+            disabled
           />
           <Button
             size="sm"
@@ -264,10 +245,10 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            3. Растение
+            3. Культура и рецепт
           </h3>
           <Badge :variant="stepPlantDone ? 'success' : 'neutral'">
-            {{ stepPlantDone ? 'Готово' : 'Не настроено' }}
+            {{ stepPlantDone && stepRecipeDone ? 'Готово' : 'Не настроено' }}
           </Badge>
         </div>
 
@@ -319,177 +300,41 @@
 
         <div
           v-else
-          class="grid gap-3 md:grid-cols-4"
-        >
-          <input
-            v-model="plantForm.name"
-            type="text"
-            placeholder="Название растения"
-            class="input-field"
-            :disabled="!canConfigure"
-          />
-          <input
-            v-model="plantForm.species"
-            type="text"
-            placeholder="Вид"
-            class="input-field"
-            :disabled="!canConfigure"
-          />
-          <input
-            v-model="plantForm.variety"
-            type="text"
-            placeholder="Сорт"
-            class="input-field"
-            :disabled="!canConfigure"
-          />
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !plantForm.name.trim() || loading.stepPlant"
-            @click="createPlant"
-          >
-            {{ loading.stepPlant ? 'Создание...' : 'Создать растение' }}
-          </Button>
-        </div>
-      </section>
-
-      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            4. Рецепт
-          </h3>
-          <Badge :variant="stepRecipeDone ? 'success' : 'neutral'">
-            {{ stepRecipeDone ? 'Готово' : 'Не настроено' }}
-          </Badge>
-        </div>
-
-        <div class="flex gap-2">
-          <Button
-            size="sm"
-            :variant="recipeMode === 'select' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="recipeMode = 'select'"
-          >
-            Выбрать
-          </Button>
-          <Button
-            size="sm"
-            :variant="recipeMode === 'create' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="recipeMode = 'create'"
-          >
-            Создать
-          </Button>
-        </div>
-
-        <div
-          v-if="recipeMode === 'select'"
-          class="grid gap-3 md:grid-cols-[1fr_auto]"
-        >
-          <select
-            v-model.number="selectedRecipeId"
-            class="input-select"
-            :disabled="!canConfigure || loading.recipes"
-          >
-            <option :value="null">Выберите рецепт</option>
-            <option
-              v-for="recipe in availableRecipes"
-              :key="recipe.id"
-              :value="recipe.id"
-            >
-              {{ recipe.name }}
-            </option>
-          </select>
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !selectedRecipeId || loading.stepRecipe"
-            @click="selectRecipe"
-          >
-            Применить
-          </Button>
-        </div>
-
-        <div
-          v-else
           class="space-y-3"
         >
-          <div class="grid gap-3 md:grid-cols-2">
-            <input
-              v-model="recipeForm.name"
-              type="text"
-              placeholder="Название рецепта"
-              class="input-field"
-              :disabled="!canConfigure"
-            />
-            <input
-              v-model="recipeForm.description"
-              type="text"
-              placeholder="Описание рецепта"
-              class="input-field"
-              :disabled="!canConfigure"
-            />
-          </div>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Создание культуры выполняется через мастер с одновременным созданием рецепта.
+          </p>
+          <Button
+            size="sm"
+            :disabled="!canConfigure"
+            @click="showPlantCreateWizard = true"
+          >
+            Открыть мастер культуры и рецепта
+          </Button>
+        </div>
 
-          <div class="space-y-3">
-            <div
-              v-for="phase in recipeForm.phases"
-              :key="phase.phase_index"
-              class="rounded-xl border border-[color:var(--border-muted)] p-3 bg-[color:var(--bg-surface-strong)]"
-            >
-              <div class="text-xs text-[color:var(--text-muted)] mb-2">
-                Фаза {{ phase.phase_index + 1 }}
-              </div>
-              <div class="grid gap-2 md:grid-cols-4">
-                <input
-                  v-model="phase.name"
-                  type="text"
-                  class="input-field"
-                  placeholder="Имя фазы"
-                  :disabled="!canConfigure"
-                />
-                <input
-                  v-model.number="phase.duration_hours"
-                  type="number"
-                  min="1"
-                  class="input-field"
-                  placeholder="Часы"
-                  :disabled="!canConfigure"
-                />
-                <input
-                  v-model.number="phase.targets.ph"
-                  type="number"
-                  step="0.1"
-                  class="input-field"
-                  placeholder="pH"
-                  :disabled="!canConfigure"
-                />
-                <input
-                  v-model.number="phase.targets.ec"
-                  type="number"
-                  step="0.1"
-                  class="input-field"
-                  placeholder="EC"
-                  :disabled="!canConfigure"
-                />
-              </div>
-            </div>
+        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">
+            Рецепт по выбранной культуре
           </div>
-
-          <div class="flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              :disabled="!canConfigure"
-              @click="addRecipePhase"
-            >
-              Добавить фазу
-            </Button>
-            <Button
-              size="sm"
-              :disabled="!canConfigure || !recipeForm.name.trim() || loading.stepRecipe"
-              @click="createRecipe"
-            >
-              {{ loading.stepRecipe ? 'Создание...' : 'Создать рецепт' }}
-            </Button>
+          <div
+            v-if="loading.stepRecipe"
+            class="text-sm text-[color:var(--text-muted)]"
+          >
+            Подбираем и привязываем рецепт...
+          </div>
+          <div
+            v-else-if="selectedRecipe"
+            class="text-sm text-[color:var(--text-primary)]"
+          >
+            Используется рецепт: <span class="font-semibold">{{ selectedRecipe.name }}</span>
+          </div>
+          <div
+            v-else
+            class="text-sm text-[color:var(--badge-warning-text)]"
+          >
+            Выберите или создайте культуру, чтобы автоматически назначить рецепт.
           </div>
         </div>
       </section>
@@ -497,7 +342,7 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            5. Устройства
+            4. Устройства
           </h3>
           <Badge :variant="stepDevicesDone ? 'success' : 'neutral'">
             {{ stepDevicesDone ? 'Готово' : 'Не настроено' }}
@@ -536,7 +381,7 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            6. Логика автоматики
+            5. Логика автоматики
           </h3>
           <Badge :variant="stepAutomationDone ? 'success' : 'neutral'">
             {{ stepAutomationDone ? 'Готово' : 'Не настроено' }}
@@ -544,42 +389,51 @@
         </div>
 
         <div class="grid gap-3 md:grid-cols-3">
-          <label class="text-xs text-[color:var(--text-muted)]">
-            Система
-            <select
-              v-model="automationForm.systemType"
-              class="input-select mt-1"
-              :disabled="!canConfigure"
-            >
-              <option value="drip">drip</option>
-              <option value="substrate_trays">substrate_trays</option>
-              <option value="nft">nft</option>
-            </select>
-          </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
-            pH
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">Система (из рецепта)</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationSystemLabel }}</div>
+          </div>
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">pH target (из рецепта)</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationForm.targetPh.toFixed(2) }}</div>
+          </div>
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">EC target (из рецепта)</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationForm.targetEc.toFixed(2) }}</div>
+          </div>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
             <input
-              v-model.number="automationForm.targetPh"
-              type="number"
-              step="0.1"
-              class="input-field mt-1"
+              v-model="automationForm.manageClimate"
+              type="checkbox"
               :disabled="!canConfigure"
             />
+            Управлять климатом
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
-            EC
+          <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
             <input
-              v-model.number="automationForm.targetEc"
-              type="number"
-              step="0.1"
-              class="input-field mt-1"
+              v-model="automationForm.manageLighting"
+              type="checkbox"
               :disabled="!canConfigure"
             />
+            Управлять освещением
           </label>
         </div>
 
         <div class="text-xs text-[color:var(--text-muted)]">
           Топология воды: {{ waterTopologyLabel }}
+        </div>
+        <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)] space-y-2">
+          <div class="font-semibold text-[color:var(--text-primary)]">Логика автоматики (полностью из рецепта):</div>
+          <div>1. Выбирается культура, для неё автоматически назначается рецепт и активная фаза.</div>
+          <div>2. Из фазы берутся тип системы, pH/EC, интервалы и длительность полива.</div>
+          <div>3. Водный узел работает по схеме: набор чистой воды → подготовка раствора через узел коррекции pH/EC → полив по target с обратной связью.</div>
+          <div>4. При 3-баках включается контроль дренажа, при 2-баках работает схема без дренажного бака.</div>
+          <div>5. Климат и освещение управляются по целям фазы и переключателям управления.</div>
+          <div>6. Форточки управляются по внутренней/внешней телеметрии и ограничениям открытия.</div>
+          <div>7. При публикации нового рецепта параметры шага автоматики обновляются автоматически.</div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -600,7 +454,7 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            7. Запуск и контроль
+            6. Запуск и контроль
           </h3>
           <Badge :variant="canLaunch ? 'success' : 'warning'">
             {{ canLaunch ? 'Можно запускать' : 'Есть незавершённые шаги' }}
@@ -626,14 +480,22 @@
         </div>
       </section>
     </div>
+
+    <PlantCreateModal
+      :show="showPlantCreateWizard"
+      @close="showPlantCreateWizard = false"
+      @created="handlePlantCreated"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 
 const {
@@ -642,24 +504,21 @@ const {
   greenhouseMode,
   zoneMode,
   plantMode,
-  recipeMode,
   availableGreenhouses,
+  availableGreenhouseTypes,
   availableZones,
   availablePlants,
-  availableRecipes,
   availableNodes,
   selectedGreenhouseId,
   selectedZoneId,
   selectedPlantId,
-  selectedRecipeId,
   selectedGreenhouse,
   selectedZone,
+  selectedRecipe,
   selectedNodeIds,
   attachedNodesCount,
   greenhouseForm,
   zoneForm,
-  plantForm,
-  recipeForm,
   automationForm,
   automationAppliedAt,
   stepGreenhouseDone,
@@ -675,18 +534,51 @@ const {
   stepItems,
   waterTopologyLabel,
   generatedGreenhouseUid,
-  addRecipePhase,
+  generatedZoneUid,
   createGreenhouse,
   selectGreenhouse,
   createZone,
   selectZone,
-  createPlant,
   selectPlant,
-  createRecipe,
-  selectRecipe,
   attachNodesToZone,
   applyAutomation,
   openCycleWizard,
   formatDateTime,
 } = useSetupWizard()
+
+const showPlantCreateWizard = ref<boolean>(false)
+
+const automationSystemLabel = computed<string>(() => {
+  if (automationForm.systemType === 'drip') {
+    return 'Капельный полив (drip)'
+  }
+  if (automationForm.systemType === 'substrate_trays') {
+    return 'Лотки/субстрат (substrate trays)'
+  }
+  if (automationForm.systemType === 'nft') {
+    return 'NFT (рециркуляция)'
+  }
+
+  return automationForm.systemType
+})
+
+function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
+  showPlantCreateWizard.value = false
+
+  if (!plant?.id) {
+    return
+  }
+
+  const exists = availablePlants.value.some((item) => item.id === plant.id)
+  if (!exists) {
+    availablePlants.value = [
+      ...availablePlants.value,
+      { id: plant.id, name: plant.name ?? `Plant #${plant.id}` },
+    ]
+  }
+
+  selectedPlantId.value = plant.id
+  plantMode.value = 'select'
+  selectPlant()
+}
 </script>

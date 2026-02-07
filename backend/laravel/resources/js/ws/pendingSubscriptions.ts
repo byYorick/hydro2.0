@@ -3,6 +3,7 @@ import type {
   ActiveSubscription,
   ChannelControl,
   ChannelKind,
+  EchoLike,
   GlobalChannelRegistry,
   GlobalEventHandler,
   PendingSubscription,
@@ -15,7 +16,7 @@ interface PendingSubscriptionsManagerDeps {
   createSubscriptionId: () => string
   removeSubscription: (subscriptionId: string) => void
   isBrowser: () => boolean
-  getEcho: () => any | null
+  getEcho: () => EchoLike | null
   isGlobalChannel: (channelName: string) => boolean
   isChannelDead: (channelName: string) => boolean
   globalChannelRegistry: Map<string, GlobalChannelRegistry>

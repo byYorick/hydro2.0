@@ -7,6 +7,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
+use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\InfrastructureInstanceController;
 use App\Http\Controllers\NodeCommandController;
@@ -112,6 +113,7 @@ Route::middleware([
     'throttle:'.$apiThrottle, // Увеличен лимит для тестов и множественных компонентов
 ])->group(function () use ($apiThrottle) {
     // Read-only endpoints (viewer+)
+    Route::get('greenhouse-types', [GreenhouseTypeController::class, 'index']);
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
     Route::get('greenhouses/{greenhouse}/dashboard', [GreenhouseController::class, 'dashboard']);

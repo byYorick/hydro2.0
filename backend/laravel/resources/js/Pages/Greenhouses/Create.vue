@@ -57,21 +57,19 @@
             >Тип</label>
             <select
               id="greenhouse-type"
-              v-model="form.type"
-              name="type"
+              v-model.number="form.greenhouse_type_id"
+              name="greenhouse_type_id"
               class="input-select"
             >
-              <option value="">
+              <option :value="null">
                 Выберите тип
               </option>
-              <option value="indoor">
-                Indoor (Закрытая)
-              </option>
-              <option value="outdoor">
-                Outdoor (Открытая)
-              </option>
-              <option value="greenhouse">
-                Greenhouse (Теплица)
+              <option
+                v-for="greenhouseType in greenhouseTypes"
+                :key="greenhouseType.id"
+                :value="greenhouseType.id"
+              >
+                {{ greenhouseType.name }}
               </option>
             </select>
           </div>
@@ -116,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -131,12 +129,14 @@ const { showToast } = useToast()
 const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
+const loadingTypes = ref<boolean>(false)
 const errors = reactive<Record<string, string>>({})
+const greenhouseTypes = ref<Array<{ id: number; code: string; name: string }>>([])
 
 const form = reactive({
   name: '',
   timezone: 'Europe/Moscow',
-  type: '',
+  greenhouse_type_id: null as number | null,
   coordinates: null,
   description: ''
 })
@@ -147,6 +147,23 @@ const generatedUid = computed(() => {
   }
   return generateUid(form.name, 'gh-')
 })
+
+async function loadGreenhouseTypes(): Promise<void> {
+  loadingTypes.value = true
+  try {
+    const response = await api.get('/greenhouse-types')
+    const payload = (response.data as any)?.data ?? []
+    greenhouseTypes.value = Array.isArray(payload) ? payload : []
+
+    if (!form.greenhouse_type_id && greenhouseTypes.value.length > 0) {
+      form.greenhouse_type_id = greenhouseTypes.value[0].id
+    }
+  } catch (error: any) {
+    logger.error('Failed to load greenhouse types:', error)
+  } finally {
+    loadingTypes.value = false
+  }
+}
 
 async function onSubmit() {
   errors.name = ''
@@ -187,4 +204,8 @@ async function onSubmit() {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  void loadGreenhouseTypes()
+})
 </script>

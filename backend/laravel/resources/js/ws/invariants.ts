@@ -239,6 +239,16 @@ export function clearRegistry(): void {
   logger.debug('[ws/invariants] Registry cleared')
 }
 
+declare global {
+  interface Window {
+    __wsInvariants?: {
+      getStats: typeof getSubscriptionStats
+      checkInvariants: typeof checkInvariants
+      clearRegistry: typeof clearRegistry
+    }
+  }
+}
+
 // Периодическая проверка инвариантов в DEV режиме
 if (ENABLE_INVARIANTS && typeof window !== 'undefined') {
   let checkInterval: ReturnType<typeof setInterval> | null = null
@@ -266,7 +276,7 @@ if (ENABLE_INVARIANTS && typeof window !== 'undefined') {
   
   // Экспортируем статистику в window для отладки
   if (typeof window !== 'undefined') {
-    (window as any).__wsInvariants = {
+    window.__wsInvariants = {
       getStats: getSubscriptionStats,
       checkInvariants,
       clearRegistry,

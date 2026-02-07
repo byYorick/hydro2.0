@@ -225,12 +225,11 @@ import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vu
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
-import { normalizeStatus } from '@/composables/useCommands'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import { useTheme } from '@/composables/useTheme'
+import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
@@ -241,16 +240,27 @@ interface PageProps {
 const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
-const testingChannels = ref<Set<string>>(new Set())
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
-const detaching = ref(false)
-const detachModalOpen = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
 const { theme } = useTheme()
+const {
+  testingChannels,
+  detaching,
+  detachModalOpen,
+  onRestart,
+  detachNode,
+  confirmDetachNode,
+  onTestPump,
+} = useDeviceCommandActions({
+  device,
+  api,
+  showToast,
+  upsertDevice: (updatedDevice) => devicesStore.upsert(updatedDevice),
+})
 
 // Графики телеметрии
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
@@ -340,17 +350,6 @@ const METRIC_NORMALIZATION: Record<string, string> = {
   'EC': 'EC',
 }
 
-const COMMAND_ERROR_MESSAGES: Record<string, string> = {
-  relay_not_initialized: 'Релейный драйвер не инициализирован',
-  relay_invalid_channel: 'Неверное имя канала реле',
-  relay_channel_not_found: 'Канал реле не найден',
-  relay_mutex_timeout: 'Таймаут выполнения команды реле',
-  relay_gpio_error: 'Ошибка управления GPIO реле',
-  relay_error: 'Ошибка управления реле',
-  invalid_params: 'Неверные параметры команды',
-  set_time_failed: 'Не удалось установить время на ноде',
-}
-
 // Утилиты для работы с метриками
 const getMetricFromChannel = (channel: DeviceChannel): string => {
   return String(channel.metric || channel.channel.toUpperCase())
@@ -366,22 +365,6 @@ const getMetricLabel = (metric: string, fallback?: string): string => {
 
 const normalizeMetricForQuery = (metric: string): string => {
   return METRIC_NORMALIZATION[metric] || metric
-}
-
-const formatCommandError = (status: string, errorMessage?: string, errorCode?: string): string => {
-  if (errorCode && COMMAND_ERROR_MESSAGES[errorCode]) {
-    return COMMAND_ERROR_MESSAGES[errorCode]
-  }
-
-  if (errorMessage) {
-    return errorMessage
-  }
-
-  if (errorCode) {
-    return `Код ошибки: ${errorCode}`
-  }
-
-  return status
 }
 
 const getCurrentValue = (data: Array<{ ts: number; value: number }>): number | undefined => {
@@ -500,276 +483,6 @@ const loadNodeConfig = async (): Promise<void> => {
   } finally {
     configLoading.value = false
   }
-}
-
-const onRestart = async (): Promise<void> => {
-  try {
-    const response = await api.post<{ status: string; data?: { command_id?: string } }>(
-      `/nodes/${device.value.id}/commands`,
-      {
-        type: 'restart',
-        params: {},
-      }
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-      const cmdId = response.data.data.command_id
-      logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
-      showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
-
-      let executionNotified = false
-      const result = await checkCommandStatus(cmdId, 20, (status) => {
-        if (status === 'ACK' && !executionNotified) {
-          executionNotified = true
-          showToast('Перезапуск ноды...', 'info', TOAST_TIMEOUT.NORMAL)
-        }
-      })
-      
-      if (result.success) {
-        showToast('Нода перезапущена', 'success', TOAST_TIMEOUT.LONG)
-      } else {
-        const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
-        showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
-      }
-      return
-    }
-
-    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
-  } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('[Devices/Show] Failed to restart device:', err)
-  }
-}
-
-const detachNode = async (): Promise<void> => {
-  if (!device.value.zone_id) {
-    showToast('Нода уже отвязана от зоны', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  detachModalOpen.value = true
-}
-
-const confirmDetachNode = async (): Promise<void> => {
-  if (!device.value.zone_id) {
-    detachModalOpen.value = false
-    return
-  }
-
-  detaching.value = true
-  try {
-    const response = await api.post<{ status: string; data?: Device }>(
-      `/nodes/${device.value.id}/detach`,
-      {}
-    )
-    
-    if (response.data?.status === 'ok') {
-      logger.debug('[Devices/Show] Node detached successfully', response.data)
-      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
-      
-      // Обновляем device локально, убирая zone_id, вместо полного reload
-      const updatedDevice = response.data?.data || {
-        ...device.value,
-        zone_id: undefined,
-        zone: undefined,
-      }
-      
-      // Обновляем device в store для мгновенного отображения
-      if (updatedDevice?.id) {
-        devicesStore.upsert(updatedDevice)
-        logger.debug('[Devices/Show] Device updated in store after detach', { deviceId: updatedDevice.id })
-      }
-      
-      // Опционально: можно перенаправить на список устройств, если нужно
-      // router.visit('/devices')
-    }
-  } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('[Devices/Show] Failed to detach node:', err)
-  } finally {
-    detaching.value = false
-    detachModalOpen.value = false
-  }
-}
-
-// Функция для теста конкретного насоса/клапана
-const onTestPump = async (channelName: string, channelType: string): Promise<void> => {
-  if (testingChannels.value.has(channelName)) return
-  
-  testingChannels.value.add(channelName)
-  const channelLabel = getChannelLabel(channelName, channelType)
-  showToast(`Команда отправлена: ${channelLabel}`, 'info', TOAST_TIMEOUT.SHORT)
-  
-  try {
-    let commandType = 'run_pump'
-    let params: Record<string, any> = { duration_ms: 3000 } // 3 секунды по умолчанию
-
-    const nodeTypeLower = (device.value.type || '').toLowerCase()
-    const channelNameLower = (channelName || '').toLowerCase()
-    const channelTypeLower = (channelType || '').toLowerCase()
-
-    const isRelayNode = nodeTypeLower.includes('relay')
-    const isSensor = channelTypeLower === 'sensor'
-    const isValve = channelType === 'valve' || channelNameLower.includes('valve')
-    
-    if (isSensor) {
-      commandType = 'test_sensor'
-      params = {}
-    } else if (isRelayNode) {
-      commandType = 'set_relay'
-      params = { state: 1, duration_ms: 3000 }
-    } else if (isValve) {
-      commandType = 'set_relay'
-      params = { state: true, duration_ms: 3000 }
-    }
-    
-    const response = await api.post<{ status: string; data?: { command_id: number } }>(
-      `/nodes/${device.value.id}/commands`,
-      {
-        type: commandType,
-        channel: channelName,
-        params: params,
-      }
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-      const cmdId = response.data.data.command_id
-      // Ожидаем ответа от ноды
-      let executionNotified = false
-      const result = await checkCommandStatus(cmdId, 30, (status) => {
-        if (status === 'ACK' && !executionNotified) {
-          executionNotified = true
-          showToast(`Выполнение: ${channelLabel}...`, 'info', TOAST_TIMEOUT.NORMAL)
-        }
-      }) // Максимум 30 секунд
-      
-      if (result.success) {
-        showToast(`Выполнено: ${channelLabel}`, 'success', TOAST_TIMEOUT.LONG)
-      } else {
-        const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
-        showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
-      }
-    } else {
-      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
-    }
-  } catch (err) {
-    const apiMessage = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
-    const detail = apiMessage?.message || apiMessage?.error
-    if (detail) {
-      showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
-    }
-    logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
-  } finally {
-    testingChannels.value.delete(channelName)
-  }
-}
-
-// Функция для получения читаемого названия канала
-function getChannelLabel(channelName: string, channelType: string): string {
-  const name = (channelName || '').toLowerCase()
-  const nodeType = (device.value.type || '').toLowerCase()
-  const type = (channelType || '').toLowerCase()
-  const isSensor = type === 'sensor'
-  
-  // PH нода
-  if (nodeType.includes('ph')) {
-    if (isSensor && name.includes('ph_sensor')) return 'Тест pH сенсора'
-    if (isSensor && (name.includes('solution_temp') || name.includes('temp'))) return 'Тест температуры раствора'
-    if (name.includes('acid') || name.includes('up')) return 'PH UP тест'
-    if (name.includes('base') || name.includes('down')) return 'PH DOWN тест'
-  }
-  
-  // EC нода
-  if (nodeType.includes('ec')) {
-    if (name.includes('nutrient_a') || name.includes('pump_a')) return 'Тест насоса A'
-    if (name.includes('nutrient_b') || name.includes('pump_b')) return 'Тест насоса B'
-    if (name.includes('nutrient_c') || name.includes('pump_c')) return 'Тест насоса C'
-    if (name.includes('nutrient')) return 'Тест насоса питательного раствора'
-  }
-  
-  // Pump нода
-  if (nodeType.includes('pump')) {
-    if (name.includes('main') || name.includes('primary')) return 'Тест главного насоса'
-    if (name.includes('backup') || name.includes('reserve') || name.includes('reserve')) return 'Тест резервного насоса'
-    if (name.includes('transfer') || name.includes('перекач')) return 'Тест перекачивающего насоса'
-    if (name.includes('valve') || channelType === 'valve') return 'Тест клапана'
-  }
-  
-  // Общий случай
-  if (isSensor) return `Тест сенсора ${channelName || 'канал'}`
-  return channelName || 'Канал'
-}
-
-// Функция для проверки статуса команды
-async function checkCommandStatus(
-  cmdId: string | number,
-  maxAttempts = 30,
-  onStatusChange?: (status: string) => void
-): Promise<{
-  success: boolean
-  status: string
-  error?: string
-  errorCode?: string
-  errorMessage?: string
-}> {
-  let lastStatus: string | null = null
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await api.get<{
-        status: string
-        data?: {
-          status: string
-          error_message?: string | null
-          error_code?: string | null
-          result_code?: number | null
-          duration_ms?: number | null
-        }
-      }>(
-        `/commands/${cmdId}/status`
-      )
-      
-      if (response.data?.status === 'ok' && response.data?.data) {
-        const cmdStatus = response.data.data.status
-        // Используем новые статусы из единого контракта
-        const normalizedStatus = normalizeStatus(cmdStatus)
-        if (normalizedStatus !== lastStatus) {
-          lastStatus = normalizedStatus
-          if (onStatusChange) {
-            onStatusChange(normalizedStatus)
-          }
-        }
-        if (['DONE', 'NO_EFFECT'].includes(normalizedStatus)) {
-          return { success: true, status: normalizedStatus }
-        } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
-          const errorMessage = response.data.data.error_message || undefined
-          const errorCode = response.data.data.error_code || undefined
-          const errorDetail = errorMessage || errorCode || null
-          return {
-            success: false,
-            status: normalizedStatus,
-            error: errorDetail || undefined,
-            errorCode,
-            errorMessage,
-          }
-        } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACK') {
-          // Продолжаем ожидание
-          await new Promise(resolve => setTimeout(resolve, 500))
-          continue
-        }
-      }
-    } catch (err) {
-      logger.error('[Devices/Show] Failed to check command status:', err)
-      // Если команда не найдена, возможно она еще не создана, продолжаем ожидание
-      const errorStatus = (err as { response?: { status?: number } })?.response?.status
-      if (errorStatus === 404 && i < maxAttempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
-        continue
-      }
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      return { success: false, status: 'ERROR', error: errorMessage }
-    }
-  }
-  return { success: false, status: 'TIMEOUT' }
 }
 
 // Загрузка данных телеметрии для графиков

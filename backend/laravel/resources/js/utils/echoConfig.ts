@@ -1,5 +1,6 @@
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
+import type { EchoOptions } from 'laravel-echo'
 
 type ReverbScheme = 'http' | 'https'
 
@@ -95,7 +96,9 @@ function resolvePath(): string | undefined {
   return undefined
 }
 
-export function buildEchoConfig(): Record<string, unknown> {
+export type EchoReverbConfig = EchoOptions<'reverb'> & { broadcaster: 'reverb' }
+
+export function buildEchoConfig(): EchoReverbConfig {
   const isDev = (import.meta as any).env?.DEV === true
   const scheme = resolveScheme()
   const host = resolveHost()
@@ -195,6 +198,5 @@ export function buildEchoConfig(): Record<string, unknown> {
     wsPort: port,
   })
 
-  return echoConfig
+  return echoConfig as EchoReverbConfig
 }
-

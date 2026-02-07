@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Greenhouse extends Model
@@ -16,6 +17,7 @@ class Greenhouse extends Model
         'name',
         'timezone',
         'type',
+        'greenhouse_type_id',
         'coordinates',
         'description',
     ];
@@ -33,6 +35,11 @@ class Greenhouse extends Model
         return $this->hasMany(Zone::class);
     }
 
+    public function greenhouseType(): BelongsTo
+    {
+        return $this->belongsTo(GreenhouseType::class);
+    }
+
     public function growCycles(): HasMany
     {
         return $this->hasMany(GrowCycle::class);
@@ -47,5 +54,4 @@ class Greenhouse extends Model
             ->where('owner_type', 'greenhouse');
     }
 }
-
 

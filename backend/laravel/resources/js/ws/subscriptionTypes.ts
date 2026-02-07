@@ -1,5 +1,38 @@
 import type { ToastHandler } from '@/composables/useApi'
 
+export type WsEventPayload = Record<string, unknown>
+
+export interface EchoChannelLike {
+  listen: (event: string, callback: (payload: WsEventPayload) => void) => unknown
+  stopListening: (event: string, callback?: (payload: WsEventPayload) => void) => unknown
+}
+
+export interface PusherChannelSnapshot {
+  bindings?: unknown[]
+  _callbacks?: Record<string, unknown>
+  _events?: Record<string, unknown>
+}
+
+export interface EchoLike {
+  private: (channel: string) => EchoChannelLike
+  channel: (channel: string) => EchoChannelLike
+  leave?: (channel: string) => void
+  connector?: {
+    pusher?: {
+      channels?: {
+        channels?: Record<string, unknown>
+      }
+      connection?: {
+        state?: string
+        socket_id?: string | null
+        connect?: () => void
+      }
+      connect?: () => void
+      disconnect?: () => void
+    }
+  }
+}
+
 export type ZoneCommandHandler = (event: {
   commandId: number | string
   status: string
@@ -32,8 +65,8 @@ export interface ChannelControl {
   channelName: string
   channelType: 'private' | 'public'
   kind: ChannelKind
-  echoChannel: any | null
-  listenerRefs: Record<string, (payload: any) => void>
+  echoChannel: EchoChannelLike | null
+  listenerRefs: Record<string, (payload: WsEventPayload) => void>
 }
 
 export interface GlobalChannelRegistry {
