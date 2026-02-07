@@ -78,6 +78,7 @@ class InfrastructureRepository:
         result: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             role = row["role"]
+            pump_calibration = self._extract_pump_calibration(row.get("channel_config"))
             if role not in result:
                 result[role] = {
                     "node_id": row["node_id"],
@@ -87,7 +88,9 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
-                    "ml_per_sec": self._extract_ml_per_sec(row.get("channel_config")),
+                    "ml_per_sec": pump_calibration.get("ml_per_sec"),
+                    "k_ms_per_ml_l": pump_calibration.get("k_ms_per_ml_l"),
+                    "pump_calibration": pump_calibration,
                 }
             else:
                 key = (zone_id, role)
@@ -153,6 +156,7 @@ class InfrastructureRepository:
         for row in rows:
             zone_id = row["zone_id"]
             role = row["role"]
+            pump_calibration = self._extract_pump_calibration(row.get("channel_config"))
             
             if zone_id not in result:
                 result[zone_id] = {}
@@ -166,7 +170,9 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
-                    "ml_per_sec": self._extract_ml_per_sec(row.get("channel_config")),
+                    "ml_per_sec": pump_calibration.get("ml_per_sec"),
+                    "k_ms_per_ml_l": pump_calibration.get("k_ms_per_ml_l"),
+                    "pump_calibration": pump_calibration,
                 }
             else:
                 key = (zone_id, role)
@@ -244,20 +250,25 @@ class InfrastructureRepository:
         ]
 
     @staticmethod
-    def _extract_ml_per_sec(channel_config: Any) -> Optional[float]:
+    def _extract_pump_calibration(channel_config: Any) -> Dict[str, Optional[float]]:
         if not isinstance(channel_config, dict):
-            return None
+            return {"ml_per_sec": None, "k_ms_per_ml_l": None}
 
         calibration = channel_config.get("pump_calibration")
         if not isinstance(calibration, dict):
-            return None
+            return {"ml_per_sec": None, "k_ms_per_ml_l": None}
 
-        value = calibration.get("ml_per_sec")
+        return {
+            "ml_per_sec": InfrastructureRepository._extract_positive_float(calibration.get("ml_per_sec")),
+            "k_ms_per_ml_l": InfrastructureRepository._extract_positive_float(calibration.get("k_ms_per_ml_l")),
+        }
+
+    @staticmethod
+    def _extract_positive_float(value: Any) -> Optional[float]:
         try:
             parsed = float(value)
         except (TypeError, ValueError):
             return None
-
         if parsed <= 0:
             return None
         return parsed

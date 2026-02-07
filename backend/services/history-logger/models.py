@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TelemetryPayloadModel(BaseModel):
@@ -105,7 +105,11 @@ class CalibratePumpRequest(BaseModel):
     duration_sec: int = Field(..., ge=1, le=120, description="Pump run duration (seconds)")
     actual_ml: Optional[float] = Field(None, gt=0.0, description="Measured real volume in ml")
     skip_run: bool = Field(False, description="Skip physical run and only persist calibration")
-    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|micro|ph_up|ph_down")
+    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|magnesium|micro|ph_up|ph_down")
+    test_volume_l: Optional[float] = Field(None, gt=0.0, description="Calibration test volume in liters")
+    ec_before_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC before dosing, mS/cm")
+    ec_after_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC after dosing, mS/cm")
+    temperature_c: Optional[float] = Field(None, ge=0.0, le=50.0, description="Water temperature in Celsius")
 
     @field_validator("component")
     @classmethod
@@ -122,7 +126,13 @@ class CalibratePumpRequest(BaseModel):
             "acid": "ph_down",
         }
         normalized = aliases.get(normalized, normalized)
-        allowed = {"npk", "calcium", "micro", "ph_up", "ph_down"}
+        allowed = {"npk", "calcium", "magnesium", "micro", "ph_up", "ph_down"}
         if normalized not in allowed:
-            raise ValueError("component must be one of npk|calcium|micro|ph_up|ph_down")
+            raise ValueError("component must be one of npk|calcium|magnesium|micro|ph_up|ph_down")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_ec_range(self) -> "CalibratePumpRequest":
+        if self.ec_before_ms is not None and self.ec_after_ms is not None and self.ec_after_ms <= self.ec_before_ms:
+            raise ValueError("ec_after_ms must be greater than ec_before_ms")
+        return self

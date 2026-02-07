@@ -8,8 +8,9 @@
     <div class="space-y-4">
       <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]">
         <div>1. Запустите насос на заданное время и измерьте фактический объём.</div>
-        <div>2. Введите измеренный объём (мл) и сохраните калибровку в конфиг ноды.</div>
-        <div>3. После сохранения форма автоматически переключится на следующий насос.</div>
+        <div>2. Для ΔEC-калибровки укажите объём тестового бака и EC до/после дозы (опционально).</div>
+        <div>3. Сохраните калибровку в конфиг ноды: `ml_per_sec` и коэффициент `k` (если рассчитан).</div>
+        <div>4. После сохранения форма автоматически переключится на следующий насос.</div>
       </div>
 
       <div
@@ -80,6 +81,58 @@
               data-testid="pump-calibration-actual-ml"
             />
           </label>
+
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Объём теста (л)
+            <input
+              v-model.number="form.test_volume_l"
+              type="number"
+              min="0.1"
+              max="1000"
+              step="0.1"
+              class="input-field mt-1 w-full"
+              data-testid="pump-calibration-test-volume"
+            />
+          </label>
+
+          <label class="text-xs text-[color:var(--text-muted)]">
+            EC до дозы (mS/cm)
+            <input
+              v-model.number="form.ec_before_ms"
+              type="number"
+              min="0"
+              max="20"
+              step="0.001"
+              class="input-field mt-1 w-full"
+              data-testid="pump-calibration-ec-before"
+            />
+          </label>
+
+          <label class="text-xs text-[color:var(--text-muted)]">
+            EC после дозы (mS/cm)
+            <input
+              v-model.number="form.ec_after_ms"
+              type="number"
+              min="0"
+              max="20"
+              step="0.001"
+              class="input-field mt-1 w-full"
+              data-testid="pump-calibration-ec-after"
+            />
+          </label>
+
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Температура (°C, опц.)
+            <input
+              v-model.number="form.temperature_c"
+              type="number"
+              min="0"
+              max="50"
+              step="0.1"
+              class="input-field mt-1 w-full"
+              data-testid="pump-calibration-temperature"
+            />
+          </label>
         </div>
 
         <div
@@ -95,11 +148,24 @@
             · {{ selectedCalibration.actual_ml ?? '-' }} мл за {{ selectedCalibration.duration_sec ?? '-' }} сек
           </div>
           <div
+            v-if="selectedCalibration.k_ms_per_ml_l !== undefined && selectedCalibration.k_ms_per_ml_l !== null"
+            class="mt-1"
+          >
+            k: {{ selectedCalibration.k_ms_per_ml_l }} mS/(мл/л)
+          </div>
+          <div
             v-if="selectedCalibration.calibrated_at"
             class="mt-1 text-[color:var(--text-dim)]"
           >
             Обновлено: {{ formatDateTime(selectedCalibration.calibrated_at) }}
           </div>
+        </div>
+
+        <div
+          v-if="estimatedK !== null"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+        >
+          Расчёт k по введённым данным: <span class="font-semibold text-[color:var(--text-primary)]">{{ estimatedK.toFixed(6) }}</span> mS/(мл/л)
         </div>
 
         <div
@@ -158,7 +224,7 @@ import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import type { Device, PumpCalibrationConfig } from '@/types'
 
-type PumpCalibrationComponent = 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down'
+type PumpCalibrationComponent = 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'
 
 interface PumpChannelOption {
   id: number
@@ -177,6 +243,10 @@ interface StartPumpCalibrationPayload {
 interface SavePumpCalibrationPayload extends StartPumpCalibrationPayload {
   actual_ml: number
   skip_run: true
+  test_volume_l?: number
+  ec_before_ms?: number
+  ec_after_ms?: number
+  temperature_c?: number
 }
 
 interface Props {
@@ -204,6 +274,7 @@ const emit = defineEmits<{
 const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }> = [
   { value: 'npk', label: 'NPK (комплекс)' },
   { value: 'calcium', label: 'Calcium' },
+  { value: 'magnesium', label: 'Magnesium (MgSO4)' },
   { value: 'micro', label: 'Micro' },
   { value: 'ph_up', label: 'pH Up' },
   { value: 'ph_down', label: 'pH Down' },
@@ -212,7 +283,8 @@ const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }
 const componentKeywords: Record<PumpCalibrationComponent, string[]> = {
   npk: ['npk', 'part_a', 'nutrient_a', 'a'],
   calcium: ['calcium', 'cal', 'part_b', 'nutrient_b', 'b'],
-  micro: ['micro', 'trace', 'part_c', 'nutrient_c', 'c'],
+  magnesium: ['magnesium', 'mg', 'epsom', 'mgso4', 'part_c', 'nutrient_c', 'c'],
+  micro: ['micro', 'trace', 'part_d', 'nutrient_d', 'd'],
   ph_up: ['ph_up', 'phup', 'base', 'alkali'],
   ph_down: ['ph_down', 'phdown', 'acid'],
 }
@@ -222,11 +294,19 @@ const form = reactive<{
   node_channel_id: number | null
   duration_sec: number
   actual_ml: number | null
+  test_volume_l: number | null
+  ec_before_ms: number | null
+  ec_after_ms: number | null
+  temperature_c: number | null
 }>({
   component: 'npk',
   node_channel_id: null,
   duration_sec: 20,
   actual_ml: null,
+  test_volume_l: null,
+  ec_before_ms: null,
+  ec_after_ms: null,
+  temperature_c: null,
 })
 
 const formError = ref<string | null>(null)
@@ -425,7 +505,14 @@ watch(
 
 function normalizeComponent(value: unknown): PumpCalibrationComponent | null {
   const raw = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-  if (raw === 'npk' || raw === 'calcium' || raw === 'micro' || raw === 'ph_up' || raw === 'ph_down') {
+  if (
+    raw === 'npk' ||
+    raw === 'calcium' ||
+    raw === 'magnesium' ||
+    raw === 'micro' ||
+    raw === 'ph_up' ||
+    raw === 'ph_down'
+  ) {
     return raw
   }
   if (raw === 'phup' || raw === 'base') {
@@ -516,11 +603,19 @@ function moveToNextComponent(): void {
     form.component = component
     form.node_channel_id = channelId
     form.actual_ml = null
+    form.ec_before_ms = null
+    form.ec_after_ms = null
+    form.test_volume_l = null
+    form.temperature_c = null
     formError.value = null
     return
   }
 
   form.actual_ml = null
+  form.ec_before_ms = null
+  form.ec_after_ms = null
+  form.test_volume_l = null
+  form.temperature_c = null
   formError.value = null
 }
 
@@ -533,6 +628,21 @@ function validateCommon(): string | null {
   }
   if (!Number.isFinite(form.duration_sec) || form.duration_sec < 1 || form.duration_sec > 120) {
     return 'Время запуска должно быть от 1 до 120 секунд.'
+  }
+  const hasAnyEcCalibrationInput = form.test_volume_l !== null || form.ec_before_ms !== null || form.ec_after_ms !== null
+  if (hasAnyEcCalibrationInput) {
+    if (!Number.isFinite(form.test_volume_l) || (form.test_volume_l as number) <= 0) {
+      return 'Для расчёта k укажите объём тестового раствора больше 0 л.'
+    }
+    if (!Number.isFinite(form.ec_before_ms) || (form.ec_before_ms as number) < 0) {
+      return 'Для расчёта k укажите EC до дозы (>= 0).'
+    }
+    if (!Number.isFinite(form.ec_after_ms) || (form.ec_after_ms as number) < 0) {
+      return 'Для расчёта k укажите EC после дозы (>= 0).'
+    }
+    if ((form.ec_after_ms as number) <= (form.ec_before_ms as number)) {
+      return 'EC после дозы должен быть больше EC до дозы.'
+    }
   }
   return null
 }
@@ -564,14 +674,57 @@ function onSave(): void {
   }
 
   formError.value = null
-  emit('save', {
+  const payload: SavePumpCalibrationPayload = {
     node_channel_id: form.node_channel_id as number,
     duration_sec: Math.trunc(form.duration_sec),
     actual_ml: Number(form.actual_ml),
     component: form.component,
     skip_run: true,
+  }
+
+  if (Number.isFinite(form.test_volume_l) && (form.test_volume_l as number) > 0) {
+    payload.test_volume_l = Number(form.test_volume_l)
+  }
+  if (Number.isFinite(form.ec_before_ms) && (form.ec_before_ms as number) >= 0) {
+    payload.ec_before_ms = Number(form.ec_before_ms)
+  }
+  if (Number.isFinite(form.ec_after_ms) && (form.ec_after_ms as number) >= 0) {
+    payload.ec_after_ms = Number(form.ec_after_ms)
+  }
+  if (Number.isFinite(form.temperature_c)) {
+    payload.temperature_c = Number(form.temperature_c)
+  }
+
+  emit('save', {
+    ...payload,
   })
 }
+
+const estimatedK = computed<number | null>(() => {
+  if (
+    !Number.isFinite(form.actual_ml) ||
+    !Number.isFinite(form.test_volume_l) ||
+    !Number.isFinite(form.ec_before_ms) ||
+    !Number.isFinite(form.ec_after_ms)
+  ) {
+    return null
+  }
+
+  const actualMl = Number(form.actual_ml)
+  const testVolume = Number(form.test_volume_l)
+  const ecBefore = Number(form.ec_before_ms)
+  const ecAfter = Number(form.ec_after_ms)
+
+  if (actualMl <= 0 || testVolume <= 0 || ecAfter <= ecBefore) {
+    return null
+  }
+
+  const mlPerL = actualMl / testVolume
+  if (mlPerL <= 0) {
+    return null
+  }
+  return (ecAfter - ecBefore) / mlPerL
+})
 
 function formatDateTime(value: string): string {
   const date = new Date(value)

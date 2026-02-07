@@ -129,13 +129,16 @@ def get_nutrition_components(
         return {}
 
     result: Dict[str, Dict[str, Optional[float]]] = {}
-    for key in ("npk", "calcium", "micro"):
-        component = components.get(key)
+    for key, component in components.items():
+        if not isinstance(key, str) or not key.strip():
+            continue
         if not isinstance(component, dict):
             continue
-        result[key] = {
+        component_key = key.strip().lower()
+        result[component_key] = {
             "ratio_pct": _coerce_float(component.get("ratio_pct")),
             "dose_ml_per_l": _coerce_float(component.get("dose_ml_per_l")),
+            "k_ms_per_ml_l": _coerce_float(component.get("k_ms_per_ml_l")),
         }
 
     return result

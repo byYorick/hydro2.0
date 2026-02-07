@@ -305,10 +305,16 @@ class CorrectionController:
         payload = self._build_correction_command(actuator, correction_type, amount)
         batch_commands: List[Dict[str, Any]] = []
         if self.correction_type == CorrectionType.EC and correction_type == "add_nutrients":
-            batch_commands = self._build_ec_component_batch(targets, actuators, amount)
+            batch_commands = self._build_ec_component_batch(
+                targets=targets,
+                actuators=actuators,
+                total_ml=amount,
+                current_ec=current_val,
+                target_ec=target_val,
+            )
             if not batch_commands:
                 logger.warning(
-                    "Zone %s: Missing one or more EC component pumps (npk/calcium/micro), skipping dosing",
+                    "Zone %s: Unable to build EC component batch; skipping dosing",
                     zone_id,
                     extra={"zone_id": zone_id},
                 )
@@ -316,8 +322,8 @@ class CorrectionController:
                     zone_id,
                     "EC_CORRECTION_SKIPPED",
                     {
-                        "reason": "missing_component_pumps",
-                        "required_roles": ["ec_npk_pump", "ec_calcium_pump", "ec_micro_pump"],
+                        "reason": "ec_component_batch_unavailable",
+                        "available_roles": sorted(list((actuators or {}).keys())),
                     },
                 )
                 return None
@@ -357,6 +363,8 @@ class CorrectionController:
                     'binding_role': item.get('role'),
                     'ml': item.get('ml'),
                     'ratio_pct': item.get('ratio_pct'),
+                    'mode': item.get('mode'),
+                    'k_ms_per_ml_l': item.get('k_ms_per_ml_l'),
                     'channel': item.get('channel'),
                 }
                 for item in batch_commands
@@ -616,7 +624,7 @@ class CorrectionController:
         else:
             # EC: добавляем удобрения, dilute пока не поддерживаем отдельным actuator
             if correction_type == "add_nutrients":
-                role_order = ["ec_npk_pump", "ec_calcium_pump", "ec_micro_pump"]
+                role_order = ["ec_npk_pump", "ec_calcium_pump", "ec_magnesium_pump", "ec_micro_pump"]
             else:
                 # Для dilute нет корректного actuator — пропускаем, чтобы не совершать неверное действие
                 return None
@@ -626,9 +634,6 @@ class CorrectionController:
                 if role in actuators:
                     return actuators[role]
 
-        if nodes:
-            return self._find_irrigation_node(nodes)
-
         return None
 
     def _build_ec_component_batch(
@@ -636,34 +641,137 @@ class CorrectionController:
         targets: Dict[str, Any],
         actuators: Optional[Dict[str, Dict[str, Any]]],
         total_ml: float,
+        current_ec: float,
+        target_ec: float,
     ) -> List[Dict[str, Any]]:
         if not actuators or total_ml <= 0:
             return []
 
-        required_roles = {
+        required_components = ["npk", "calcium", "magnesium", "micro"]
+        role_map = {
             "npk": "ec_npk_pump",
             "calcium": "ec_calcium_pump",
+            "magnesium": "ec_magnesium_pump",
             "micro": "ec_micro_pump",
         }
-        if any(role not in actuators for role in required_roles.values()):
+        missing_roles = [
+            role_map[component]
+            for component in required_components
+            if role_map[component] not in actuators
+        ]
+        if missing_roles:
             return []
 
         component_actuators: Dict[str, Dict[str, Any]] = {
-            component: actuators[role]
-            for component, role in required_roles.items()
+            component: actuators[role_map[component]]
+            for component in required_components
         }
-        components_order = ["npk", "calcium", "micro"]
+        actuator_identity_to_component: Dict[str, str] = {}
+        duplicate_actuator_bindings: List[Dict[str, str]] = []
+        for component in required_components:
+            actuator = component_actuators[component]
+            identity = self._build_actuator_identity(actuator)
+            previous_component = actuator_identity_to_component.get(identity)
+            if previous_component is None:
+                actuator_identity_to_component[identity] = component
+                continue
+            duplicate_actuator_bindings.append(
+                {
+                    "identity": identity,
+                    "component_a": previous_component,
+                    "component_b": component,
+                }
+            )
+        if duplicate_actuator_bindings:
+            logger.warning(
+                "EC component pumps must be unique per component; duplicate actuator bindings detected",
+                extra={"duplicates": duplicate_actuator_bindings},
+            )
+            return []
+
+        nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
+        components_cfg = get_nutrition_components(targets)
+        if any(component not in components_cfg for component in required_components):
+            return []
+        components_order = required_components
+
         ratios = self._resolve_ec_component_ratios(targets, components_order)
+        if not ratios:
+            return []
+
+        mode = self._resolve_nutrition_mode(nutrition)
+        solution_volume_l = self._resolve_solution_volume_l(nutrition)
+
+        k_values: Dict[str, Optional[float]] = {}
+        for component in components_order:
+            cfg_k = components_cfg.get(component, {}).get("k_ms_per_ml_l")
+            act_k = component_actuators[component].get("k_ms_per_ml_l")
+            try:
+                k_candidate = float(cfg_k if cfg_k is not None else act_k)
+            except (TypeError, ValueError):
+                k_candidate = None
+            if k_candidate is not None and k_candidate > 0:
+                k_values[component] = k_candidate
+            else:
+                k_values[component] = None
 
         commands: List[Dict[str, Any]] = []
-        remaining_ml = float(total_ml)
-        for idx, component in enumerate(components_order):
-            ratio_pct = float(ratios.get(component, 0.0))
-            if idx == len(components_order) - 1:
-                component_ml = max(0.0, round(remaining_ml, 3))
+        component_ml_map: Dict[str, float] = {}
+
+        if mode == "dose_ml_l_only":
+            if solution_volume_l is None or solution_volume_l <= 0:
+                return []
+            for component in components_order:
+                dose_ml_l = components_cfg.get(component, {}).get("dose_ml_per_l")
+                try:
+                    dose_value = float(dose_ml_l)
+                except (TypeError, ValueError):
+                    dose_value = 0.0
+                if dose_value <= 0:
+                    return []
+                component_ml_map[component] = round(dose_value * solution_volume_l, 3)
+
+        if mode == "delta_ec_by_k":
+            delta_ec = max(0.0, target_ec - current_ec)
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if delta_ec <= 0 or solution_volume_l is None or solution_volume_l <= 0 or not has_all_k:
+                return []
+            for component in components_order:
+                ratio_pct = float(ratios.get(component, 0.0))
+                k_value = float(k_values[component] or 0.0)
+                delta_ec_component = delta_ec * (ratio_pct / 100.0)
+                ml_per_l = delta_ec_component / k_value if k_value > 0 else 0.0
+                component_ml_map[component] = round(max(0.0, ml_per_l * solution_volume_l), 3)
+
+        if mode == "ratio_ec_pid":
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if has_all_k:
+                weighted = {
+                    component: float(ratios.get(component, 0.0)) / float(k_values[component] or 1.0)
+                    for component in components_order
+                }
+                weighted_sum = sum(weighted.values())
+                if weighted_sum <= 0:
+                    return []
+                for component in components_order:
+                    component_ml_map[component] = round(max(0.0, total_ml * (weighted[component] / weighted_sum)), 3)
             else:
-                component_ml = max(0.0, round((total_ml * ratio_pct) / 100.0, 3))
-                remaining_ml -= component_ml
+                remaining_ml = float(total_ml)
+                for idx, component in enumerate(components_order):
+                    ratio_pct = float(ratios.get(component, 0.0))
+                    if idx == len(components_order) - 1:
+                        component_ml = max(0.0, round(remaining_ml, 3))
+                    else:
+                        component_ml = max(0.0, round((total_ml * ratio_pct) / 100.0, 3))
+                        remaining_ml -= component_ml
+                    component_ml_map[component] = component_ml
+
+        if not component_ml_map:
+            return []
+
+        for component in components_order:
+            ratio_pct = float(ratios.get(component, 0.0))
+            component_ml = max(0.0, float(component_ml_map.get(component, 0.0)))
 
             if component_ml <= 0:
                 continue
@@ -683,61 +791,81 @@ class CorrectionController:
                     "role": actuator.get("role"),
                     "ml": component_ml,
                     "ratio_pct": round(ratio_pct, 2),
+                    "mode": mode,
+                    "k_ms_per_ml_l": k_values.get(component),
                 }
             )
 
         return commands
+
+    def _build_actuator_identity(self, actuator: Dict[str, Any]) -> str:
+        node_channel_id = actuator.get("node_channel_id")
+        if node_channel_id is not None:
+            return f"node_channel:{node_channel_id}"
+
+        node_uid = actuator.get("node_uid")
+        channel = actuator.get("channel")
+        if node_uid is not None and channel is not None:
+            return f"node_uid:{node_uid}|channel:{channel}"
+
+        node_id = actuator.get("node_id")
+        if node_id is not None and channel is not None:
+            return f"node_id:{node_id}|channel:{channel}"
+
+        role = actuator.get("role")
+        if role is not None:
+            return f"role:{role}"
+
+        return "unknown"
 
     def _resolve_ec_component_ratios(
         self,
         targets: Dict[str, Any],
         available_components: List[str],
     ) -> Dict[str, float]:
-        defaults = {"npk": 45.0, "calcium": 35.0, "micro": 20.0}
         components = get_nutrition_components(targets)
+        if not components:
+            return {}
 
-        by_ratio: Dict[str, float] = {}
+        raw_ratios: Dict[str, float] = {}
         for component in available_components:
-            ratio = components.get(component, {}).get("ratio_pct") if components else None
-            if ratio is not None and ratio > 0:
-                by_ratio[component] = float(ratio)
+            ratio = components.get(component, {}).get("ratio_pct")
+            if ratio is None:
+                return {}
+            try:
+                ratio_value = float(ratio)
+            except (TypeError, ValueError):
+                return {}
+            if ratio_value < 0:
+                return {}
+            raw_ratios[component] = ratio_value
 
-        if by_ratio:
-            return self._normalize_component_ratios(by_ratio, available_components, defaults)
-
-        by_dose: Dict[str, float] = {}
-        for component in available_components:
-            dose = components.get(component, {}).get("dose_ml_per_l") if components else None
-            if dose is not None and dose > 0:
-                by_dose[component] = float(dose)
-
-        if by_dose:
-            return self._normalize_component_ratios(by_dose, available_components, defaults)
-
-        return self._normalize_component_ratios({}, available_components, defaults)
-
-    def _normalize_component_ratios(
-        self,
-        source: Dict[str, float],
-        available_components: List[str],
-        defaults: Dict[str, float],
-    ) -> Dict[str, float]:
-        base: Dict[str, float] = {}
-        for component in available_components:
-            value = source.get(component)
-            if value is None or value <= 0:
-                value = defaults.get(component, 0.0)
-            base[component] = float(value)
-
-        total = sum(base.values())
+        total = sum(raw_ratios.values())
         if total <= 0:
-            equal = round(100.0 / max(1, len(available_components)), 2)
-            return {component: equal for component in available_components}
+            return {}
 
         normalized: Dict[str, float] = {}
         for component in available_components:
-            normalized[component] = round((base[component] / total) * 100.0, 2)
+            normalized[component] = round((raw_ratios[component] / total) * 100.0, 2)
         return normalized
+
+    def _resolve_nutrition_mode(self, nutrition: Dict[str, Any]) -> str:
+        mode = str(nutrition.get("mode", "")).strip().lower()
+        if mode in {"ratio_ec_pid", "delta_ec_by_k", "dose_ml_l_only"}:
+            return mode
+        return ""
+
+    def _resolve_solution_volume_l(self, nutrition: Dict[str, Any]) -> Optional[float]:
+        raw = nutrition.get("solution_volume_l")
+        if raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if value <= 0:
+            return None
+        return value
 
     def _build_correction_command(
         self,
@@ -769,19 +897,27 @@ class CorrectionController:
 
         return {"cmd": cmd, "params": params}
 
-    def _find_irrigation_node(self, nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Legacy fallback: найти узел для полива/дозирования по типу irrig."""
-        for node_info in nodes.values():
-            if node_info.get("type") == "irrig":
-                return node_info
-        return None
-
-    def _extract_nutrition_control(self, targets: Dict[str, Any]) -> Dict[str, float]:
+    def _extract_nutrition_control(self, targets: Dict[str, Any]) -> Dict[str, Any]:
         nutrition = targets.get("nutrition")
         if not isinstance(nutrition, dict):
             return {}
 
-        result: Dict[str, float] = {}
+        result: Dict[str, Any] = {}
+        mode_raw = nutrition.get("mode")
+        if isinstance(mode_raw, str):
+            mode = mode_raw.strip().lower()
+            if mode in {"ratio_ec_pid", "delta_ec_by_k", "dose_ml_l_only"}:
+                result["mode"] = mode
+
+        solution_volume_raw = nutrition.get("solution_volume_l")
+        if solution_volume_raw is not None:
+            try:
+                solution_volume = float(solution_volume_raw)
+                if solution_volume > 0:
+                    result["solution_volume_l"] = solution_volume
+            except (TypeError, ValueError):
+                pass
+
         delay_raw = nutrition.get("dose_delay_sec")
         if delay_raw is not None:
             try:

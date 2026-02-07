@@ -214,8 +214,8 @@ defineEmits<{
   (e: 'close-action'): void
   (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
   (e: 'close-pump-calibration'): void
-  (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down' }): void
-  (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true }): void
+  (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' }): void
+  (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true; test_volume_l?: number; ec_before_ms?: number; ec_after_ms?: number; temperature_c?: number }): void
   (e: 'close-attach-nodes'): void
   (e: 'nodes-attached', payload: number[]): void
   (e: 'close-node-config'): void

@@ -140,7 +140,10 @@ updated_at
 
 Практика для актуаторов-дозаторов:
 - калибровка насоса хранится в `node_channels.config.pump_calibration`:
-  `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`.
+  `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`,
+  `k_ms_per_ml_l`, `test_volume_l`, `ec_before_ms`, `ec_after_ms`, `delta_ec_ms`, `temperature_c`.
+- `component` для EC-питания поддерживает: `npk`, `calcium`, `magnesium`, `micro` (для pH — `acid`/`base`).
+- Для новой логики питания не используется legacy 3-компонентная схема: актуальна только 4-компонентная модель.
 
 ---
 
@@ -246,7 +249,7 @@ INDEX: (recipe_id, status)
 id BIGSERIAL PK
 manufacturer VARCHAR(128)
 name VARCHAR(191)
-component VARCHAR(16) -- npk|calcium|micro
+component VARCHAR(16) -- npk|calcium|magnesium|micro
 composition VARCHAR(128) NULL
 recommended_stage VARCHAR(64) NULL
 notes TEXT NULL
@@ -276,13 +279,18 @@ ec_max DECIMAL(5,2) NULL
 nutrient_program_code VARCHAR(64) NULL
 nutrient_npk_ratio_pct DECIMAL(5,2) NULL
 nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_magnesium_ratio_pct DECIMAL(5,2) NULL
 nutrient_micro_ratio_pct DECIMAL(5,2) NULL
 nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
 nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_magnesium_dose_ml_l DECIMAL(8,3) NULL
 nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
 nutrient_npk_product_id BIGINT FK → nutrient_products NULL
 nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_magnesium_product_id BIGINT FK → nutrient_products NULL
 nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
+nutrient_solution_volume_l DECIMAL(8,2) NULL
 nutrient_dose_delay_sec INT NULL
 nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
@@ -394,13 +402,18 @@ ec_max DECIMAL(5,2) NULL
 nutrient_program_code VARCHAR(64) NULL
 nutrient_npk_ratio_pct DECIMAL(5,2) NULL
 nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_magnesium_ratio_pct DECIMAL(5,2) NULL
 nutrient_micro_ratio_pct DECIMAL(5,2) NULL
 nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
 nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_magnesium_dose_ml_l DECIMAL(8,3) NULL
 nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
 nutrient_npk_product_id BIGINT FK → nutrient_products NULL
 nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_magnesium_product_id BIGINT FK → nutrient_products NULL
 nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
+nutrient_solution_volume_l DECIMAL(8,2) NULL
 nutrient_dose_delay_sec INT NULL
 nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL

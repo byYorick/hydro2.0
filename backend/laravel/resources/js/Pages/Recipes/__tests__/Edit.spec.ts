@@ -72,14 +72,17 @@ const sampleRecipe = vi.hoisted(() => ({
       duration_hours: 168,
       nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
       nutrient_npk_ratio_pct: 44,
-      nutrient_calcium_ratio_pct: 44,
-      nutrient_micro_ratio_pct: 12,
+      nutrient_calcium_ratio_pct: 36,
+      nutrient_magnesium_ratio_pct: 17,
+      nutrient_micro_ratio_pct: 3,
       nutrient_npk_dose_ml_l: 0.55,
       nutrient_calcium_dose_ml_l: 0.55,
+      nutrient_magnesium_dose_ml_l: 0.25,
       nutrient_micro_dose_ml_l: 0.09,
       nutrient_npk_product_id: 1,
       nutrient_calcium_product_id: 2,
-      nutrient_micro_product_id: 3,
+      nutrient_magnesium_product_id: 3,
+      nutrient_micro_product_id: 4,
       nutrient_dose_delay_sec: 12,
       nutrient_ec_stop_tolerance: 0.07,
       targets: {
@@ -216,7 +219,8 @@ describe('Recipes/Edit.vue', () => {
             data: [
               { id: 1, manufacturer: 'Yara', name: 'YaraRega', component: 'npk' },
               { id: 2, manufacturer: 'Yara', name: 'Calcinit', component: 'calcium' },
-              { id: 3, manufacturer: 'Haifa', name: 'Micro Mix', component: 'micro' },
+              { id: 3, manufacturer: 'TerraTarsa', name: 'MgSO4', component: 'magnesium' },
+              { id: 4, manufacturer: 'Haifa', name: 'Micro Mix', component: 'micro' },
             ],
           },
         })
@@ -319,11 +323,12 @@ describe('Recipes/Edit.vue', () => {
       const placeholder = input.attributes('placeholder') || ''
       return placeholder.includes('ratio, %')
     })
-    expect(ratioInputs.length).toBeGreaterThanOrEqual(3)
-    if (ratioInputs.length >= 3) {
+    expect(ratioInputs.length).toBeGreaterThanOrEqual(4)
+    if (ratioInputs.length >= 4) {
       await ratioInputs[0].setValue('30')
       await ratioInputs[1].setValue('30')
       await ratioInputs[2].setValue('30')
+      await ratioInputs[3].setValue('30')
     }
 
     axiosPatchMock.mockClear()
@@ -350,6 +355,7 @@ describe('Recipes/Edit.vue', () => {
     if (formInstance) {
       formInstance.phases[0].nutrient_npk_ratio_pct = 30
       formInstance.phases[0].nutrient_calcium_ratio_pct = 30
+      formInstance.phases[0].nutrient_magnesium_ratio_pct = 30
       formInstance.phases[0].nutrient_micro_ratio_pct = 30
     }
 
@@ -364,6 +370,7 @@ describe('Recipes/Edit.vue', () => {
       const sum =
         Number(formInstance.phases[0].nutrient_npk_ratio_pct || 0) +
         Number(formInstance.phases[0].nutrient_calcium_ratio_pct || 0) +
+        Number(formInstance.phases[0].nutrient_magnesium_ratio_pct || 0) +
         Number(formInstance.phases[0].nutrient_micro_ratio_pct || 0)
       expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.01)
     }
@@ -398,14 +405,17 @@ describe('Recipes/Edit.vue', () => {
         expect(phasePatchCall[1]).toMatchObject({
           nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
           nutrient_npk_ratio_pct: 44,
-          nutrient_calcium_ratio_pct: 44,
-          nutrient_micro_ratio_pct: 12,
+          nutrient_calcium_ratio_pct: 36,
+          nutrient_magnesium_ratio_pct: 17,
+          nutrient_micro_ratio_pct: 3,
           nutrient_npk_dose_ml_l: 0.55,
           nutrient_calcium_dose_ml_l: 0.55,
+          nutrient_magnesium_dose_ml_l: 0.25,
           nutrient_micro_dose_ml_l: 0.09,
           nutrient_npk_product_id: 1,
           nutrient_calcium_product_id: 2,
-          nutrient_micro_product_id: 3,
+          nutrient_magnesium_product_id: 3,
+          nutrient_micro_product_id: 4,
           nutrient_dose_delay_sec: 12,
           nutrient_ec_stop_tolerance: 0.07,
         })

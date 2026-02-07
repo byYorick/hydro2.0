@@ -481,6 +481,18 @@ class ZoneService
         if (! empty($data['component'])) {
             $payload['component'] = $data['component'];
         }
+        if (array_key_exists('test_volume_l', $data) && $data['test_volume_l'] !== null) {
+            $payload['test_volume_l'] = $data['test_volume_l'];
+        }
+        if (array_key_exists('ec_before_ms', $data) && $data['ec_before_ms'] !== null) {
+            $payload['ec_before_ms'] = $data['ec_before_ms'];
+        }
+        if (array_key_exists('ec_after_ms', $data) && $data['ec_after_ms'] !== null) {
+            $payload['ec_after_ms'] = $data['ec_after_ms'];
+        }
+        if (array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null) {
+            $payload['temperature_c'] = $data['temperature_c'];
+        }
 
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)

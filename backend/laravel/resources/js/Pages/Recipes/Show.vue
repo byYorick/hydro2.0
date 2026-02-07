@@ -50,10 +50,19 @@
                 Программа: {{ p.nutrient_program_code || '-' }}
               </div>
               <div>
+                Режим: {{ p.nutrient_mode || 'ratio_ec_pid' }}
+                <span v-if="p.nutrient_solution_volume_l">
+                  · Объём: {{ formatNumber(p.nutrient_solution_volume_l) }} л
+                </span>
+              </div>
+              <div>
                 NPK: {{ formatNumber(p.nutrient_npk_ratio_pct) }}% / {{ formatNumber(p.nutrient_npk_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.npk_product, p.nutrient_npk_product_id) }}
               </div>
               <div>
                 Кальций: {{ formatNumber(p.nutrient_calcium_ratio_pct) }}% / {{ formatNumber(p.nutrient_calcium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.calcium_product, p.nutrient_calcium_product_id) }}
+              </div>
+              <div>
+                Магний: {{ formatNumber(p.nutrient_magnesium_ratio_pct) }}% / {{ formatNumber(p.nutrient_magnesium_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.magnesium_product, p.nutrient_magnesium_product_id) }}
               </div>
               <div>
                 Микро: {{ formatNumber(p.nutrient_micro_ratio_pct) }}% / {{ formatNumber(p.nutrient_micro_dose_ml_l) }} мл/л / {{ resolveProductLabel(p.micro_product, p.nutrient_micro_product_id) }}
@@ -102,17 +111,22 @@ interface RecipePhaseWithNutrition extends RecipePhase {
   nutrient_program_code?: string | null
   nutrient_npk_ratio_pct?: number | string | null
   nutrient_calcium_ratio_pct?: number | string | null
+  nutrient_magnesium_ratio_pct?: number | string | null
   nutrient_micro_ratio_pct?: number | string | null
   nutrient_npk_dose_ml_l?: number | string | null
   nutrient_calcium_dose_ml_l?: number | string | null
+  nutrient_magnesium_dose_ml_l?: number | string | null
   nutrient_micro_dose_ml_l?: number | string | null
   nutrient_npk_product_id?: number | null
   nutrient_calcium_product_id?: number | null
+  nutrient_magnesium_product_id?: number | null
   nutrient_micro_product_id?: number | null
   nutrient_dose_delay_sec?: number | null
   nutrient_ec_stop_tolerance?: number | string | null
+  nutrient_solution_volume_l?: number | string | null
   npk_product?: NutrientProductSummary | null
   calcium_product?: NutrientProductSummary | null
+  magnesium_product?: NutrientProductSummary | null
   micro_product?: NutrientProductSummary | null
 }
 
@@ -168,15 +182,19 @@ function hasNutrition(phase: RecipePhaseWithNutrition): boolean {
     phase.nutrient_program_code
       || hasValue(phase.nutrient_npk_ratio_pct)
       || hasValue(phase.nutrient_calcium_ratio_pct)
+      || hasValue(phase.nutrient_magnesium_ratio_pct)
       || hasValue(phase.nutrient_micro_ratio_pct)
       || hasValue(phase.nutrient_npk_dose_ml_l)
       || hasValue(phase.nutrient_calcium_dose_ml_l)
+      || hasValue(phase.nutrient_magnesium_dose_ml_l)
       || hasValue(phase.nutrient_micro_dose_ml_l)
       || hasValue(phase.nutrient_npk_product_id)
       || hasValue(phase.nutrient_calcium_product_id)
+      || hasValue(phase.nutrient_magnesium_product_id)
       || hasValue(phase.nutrient_micro_product_id)
       || hasValue(phase.nutrient_dose_delay_sec)
       || hasValue(phase.nutrient_ec_stop_tolerance)
+      || hasValue(phase.nutrient_solution_volume_l)
   )
 }
 </script>

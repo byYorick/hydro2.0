@@ -34,6 +34,11 @@ class NutrientProduct extends Model
         return $this->hasMany(RecipeRevisionPhase::class, 'nutrient_calcium_product_id');
     }
 
+    public function recipeRevisionMagnesiumPhases(): HasMany
+    {
+        return $this->hasMany(RecipeRevisionPhase::class, 'nutrient_magnesium_product_id');
+    }
+
     public function recipeRevisionMicroPhases(): HasMany
     {
         return $this->hasMany(RecipeRevisionPhase::class, 'nutrient_micro_product_id');

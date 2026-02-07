@@ -1122,6 +1122,10 @@ async def zone_calibrate_pump(
                 actual_ml=req.actual_ml,
                 skip_run=req.skip_run,
                 component=req.component,
+                test_volume_l=req.test_volume_l,
+                ec_before_ms=req.ec_before_ms,
+                ec_after_ms=req.ec_after_ms,
+                temperature_c=req.temperature_c,
                 mqtt_client=mqtt,
                 gh_uid=gh_uid,
             )
@@ -1144,6 +1148,10 @@ async def zone_calibrate_pump(
                     "actual_ml": req.actual_ml,
                     "skip_run": req.skip_run,
                     "component": req.component,
+                    "test_volume_l": req.test_volume_l,
+                    "ec_before_ms": req.ec_before_ms,
+                    "ec_after_ms": req.ec_after_ms,
+                    "temperature_c": req.temperature_c,
                 },
             )
             raise HTTPException(status_code=500, detail=str(e))

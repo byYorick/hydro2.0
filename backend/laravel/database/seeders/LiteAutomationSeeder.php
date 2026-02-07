@@ -37,47 +37,69 @@ class LiteAutomationSeeder extends Seeder
         $this->call(AdminUserSeeder::class);
         $this->call(PresetSeeder::class);
 
-        $greenhouse = $this->createGreenhouse();
-        $zones = $this->createZones($greenhouse);
-        $nodes = $this->createNodesAndChannels($zones);
+        $greenhouses = $this->createGreenhouses();
+        $zones = $this->createZones($greenhouses);
+        $zoneNodes = $this->createNodesAndChannels($zones);
+        $this->cleanupStaleLiteNodes($zoneNodes);
 
-        $this->createInfrastructure($zones['running'], $nodes['running']);
+        $this->createInfrastructure($zones, $zoneNodes);
 
         [$plant, $revision] = $this->createRecipe();
         $cycles = $this->createCycles($zones, $revision, $plant->id);
 
-        $this->seedTelemetry($zones, $nodes, $cycles);
-        $this->seedAutomationSignals($zones, $nodes, $cycles);
+        $this->seedTelemetry($zones, $zoneNodes, $cycles);
+        $this->seedAutomationSignals($zones, $zoneNodes, $cycles);
 
         $this->command->info('=== Lite Automation Engine seeding complete ===');
     }
 
-    private function createGreenhouse(): Greenhouse
+    /**
+     * @return array{first: Greenhouse, second: Greenhouse}
+     */
+    private function createGreenhouses(): array
     {
-        $greenhouse = Greenhouse::updateOrCreate(
+        $first = Greenhouse::updateOrCreate(
             ['uid' => 'gh-lite-automation-1'],
             [
-                'name' => 'Automation Lite Greenhouse',
+                'name' => 'Automation Lite Greenhouse A',
                 'timezone' => 'Europe/Moscow',
                 'type' => 'indoor',
                 'coordinates' => ['lat' => 55.7558, 'lon' => 37.6173],
-                'description' => 'Lightweight dataset for automation engine testing',
-                'provisioning_token' => 'gh_lite_'.Str::random(24),
+                'description' => 'Lite dataset greenhouse A',
+                'provisioning_token' => 'gh_lite_a_'.Str::random(24),
             ]
         );
 
-        if (! $greenhouse->provisioning_token) {
-            $greenhouse->provisioning_token = 'gh_lite_'.Str::random(24);
-            $greenhouse->save();
+        $second = Greenhouse::updateOrCreate(
+            ['uid' => 'gh-lite-automation-2'],
+            [
+                'name' => 'Automation Lite Greenhouse B',
+                'timezone' => 'Europe/Moscow',
+                'type' => 'indoor',
+                'coordinates' => ['lat' => 59.9343, 'lon' => 30.3351],
+                'description' => 'Lite dataset greenhouse B',
+                'provisioning_token' => 'gh_lite_b_'.Str::random(24),
+            ]
+        );
+
+        foreach ([$first, $second] as $greenhouse) {
+            if (! $greenhouse->provisioning_token) {
+                $greenhouse->provisioning_token = 'gh_lite_'.Str::random(24);
+                $greenhouse->save();
+            }
         }
 
-        return $greenhouse;
+        return [
+            'first' => $first,
+            'second' => $second,
+        ];
     }
 
     /**
+     * @param  array{first: Greenhouse, second: Greenhouse}  $greenhouses
      * @return array{running: Zone, paused: Zone, planned: Zone, empty: Zone}
      */
-    private function createZones(Greenhouse $greenhouse): array
+    private function createZones(array $greenhouses): array
     {
         $presetId = Preset::query()->value('id');
 
@@ -109,13 +131,13 @@ class LiteAutomationSeeder extends Seeder
             'has_flow_sensor' => true,
         ];
 
-        $zones = [
+        return [
             'running' => Zone::updateOrCreate(
                 ['uid' => 'zn-lite-run-1'],
                 [
-                    'greenhouse_id' => $greenhouse->id,
+                    'greenhouse_id' => $greenhouses['first']->id,
                     'preset_id' => $presetId,
-                    'name' => 'Automation Zone A',
+                    'name' => 'Automation Zone A1',
                     'description' => 'Primary automation zone with active cycle',
                     'status' => 'RUNNING',
                     'health_score' => 88,
@@ -128,14 +150,14 @@ class LiteAutomationSeeder extends Seeder
             'paused' => Zone::updateOrCreate(
                 ['uid' => 'zn-lite-pause-1'],
                 [
-                    'greenhouse_id' => $greenhouse->id,
+                    'greenhouse_id' => $greenhouses['first']->id,
                     'preset_id' => $presetId,
-                    'name' => 'Automation Zone B',
+                    'name' => 'Automation Zone A2',
                     'description' => 'Paused cycle for status validation',
                     'status' => 'PAUSED',
-                    'health_score' => 62,
+                    'health_score' => 67,
                     'health_status' => 'maintenance',
-                    'capabilities' => array_merge($fullCapabilities, ['light_control' => false]),
+                    'capabilities' => $fullCapabilities,
                     'hardware_profile' => $fullHardware,
                     'settings' => $baseSettings,
                 ]
@@ -143,97 +165,180 @@ class LiteAutomationSeeder extends Seeder
             'planned' => Zone::updateOrCreate(
                 ['uid' => 'zn-lite-plan-1'],
                 [
-                    'greenhouse_id' => $greenhouse->id,
+                    'greenhouse_id' => $greenhouses['second']->id,
                     'preset_id' => $presetId,
-                    'name' => 'Automation Zone C',
+                    'name' => 'Automation Zone B1',
                     'description' => 'Planned cycle for schedule validation',
                     'status' => 'RUNNING',
                     'health_score' => 74,
                     'health_status' => 'healthy',
-                    'capabilities' => array_merge($fullCapabilities, ['ph_control' => false, 'ec_control' => false]),
-                    'hardware_profile' => array_merge($fullHardware, ['has_ph_sensor' => false, 'has_ec_sensor' => false]),
+                    'capabilities' => $fullCapabilities,
+                    'hardware_profile' => $fullHardware,
                     'settings' => $baseSettings,
                 ]
             ),
             'empty' => Zone::updateOrCreate(
                 ['uid' => 'zn-lite-empty-1'],
                 [
-                    'greenhouse_id' => $greenhouse->id,
+                    'greenhouse_id' => $greenhouses['second']->id,
                     'preset_id' => $presetId,
-                    'name' => 'Automation Zone D',
+                    'name' => 'Automation Zone B2',
                     'description' => 'Zone without active cycle',
                     'status' => 'STOPPED',
-                    'health_score' => 30,
+                    'health_score' => 42,
                     'health_status' => 'stopped',
-                    'capabilities' => ['climate_control' => true],
-                    'hardware_profile' => ['has_temperature_sensor' => true, 'has_humidity_sensor' => true],
+                    'capabilities' => $fullCapabilities,
+                    'hardware_profile' => $fullHardware,
                     'settings' => $baseSettings,
                 ]
             ),
         ];
-
-        return $zones;
     }
 
     /**
      * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
-     * @return array{running: DeviceNode, paused: DeviceNode, planned: DeviceNode}
+     * @return array<string, array<string, DeviceNode>>
      */
     private function createNodesAndChannels(array $zones): array
     {
-        $runningNode = $this->createNodeWithChannels(
-            $zones['running'],
-            'nd-lite-ctrl-1',
-            'automation',
-            'Automation Controller',
-            'online',
-            [
-                ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
-                ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-                ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
-                ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
-                ['channel' => 'co2_ppm', 'metric' => 'CO2', 'unit' => 'ppm'],
-            ],
-            [
-                ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool'],
-                ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool'],
-                ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool'],
-                ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool'],
-                ['channel' => 'mister', 'metric' => 'RELAY', 'unit' => 'bool'],
-            ]
-        );
+        $templates = $this->nodeTemplates();
+        $zoneNodes = [];
 
-        $pausedNode = $this->createNodeWithChannels(
-            $zones['paused'],
-            'nd-lite-climate-2',
-            'climate',
-            'Climate Node',
-            'offline',
-            [
-                ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
-                ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
-            ],
-            []
-        );
+        foreach ($zones as $zoneKey => $zone) {
+            $zoneNodes[$zoneKey] = [];
 
-        $plannedNode = $this->createNodeWithChannels(
-            $zones['planned'],
-            'nd-lite-sensor-3',
-            'sensor',
-            'Planned Sensor Node',
-            'online',
-            [
-                ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
-                ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
-            ],
-            []
-        );
+            foreach ($templates as $role => $template) {
+                $uid = $this->nodeUidForZoneRole($zoneKey, $role);
 
+                $nodeStatus = $zoneKey === 'empty' && in_array($role, ['irrigation', 'dosing'], true)
+                    ? 'offline'
+                    : 'online';
+
+                $zoneNodes[$zoneKey][$role] = $this->createNodeWithChannels(
+                    $zone,
+                    $uid,
+                    $template['type'],
+                    $template['name'],
+                    $nodeStatus,
+                    $template['sensor_channels'],
+                    $template['actuator_channels']
+                );
+            }
+        }
+
+        return $zoneNodes;
+    }
+
+    /**
+     * @return array<string, array{type: string, name: string, sensor_channels: array<int, array{channel: string, metric: string, unit: string}>, actuator_channels: array<int, array{channel: string, metric: string, unit: string, data_type?: string}>}>
+     */
+    private function nodeTemplates(): array
+    {
         return [
-            'running' => $runningNode,
-            'paused' => $pausedNode,
-            'planned' => $plannedNode,
+            'climate' => [
+                'type' => 'climate',
+                'name' => 'Climate Node',
+                'sensor_channels' => [
+                    ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                    ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
+                    ['channel' => 'co2_ppm', 'metric' => 'CO2', 'unit' => 'ppm'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'vent_window_pct', 'metric' => 'PERCENT', 'unit' => '%', 'data_type' => 'float'],
+                ],
+            ],
+            'irrigation' => [
+                'type' => 'irrig',
+                'name' => 'Irrigation Node',
+                'sensor_channels' => [
+                    ['channel' => 'line_pressure', 'metric' => 'PRESSURE', 'unit' => 'bar'],
+                    ['channel' => 'flow_l_min', 'metric' => 'PRESSURE', 'unit' => 'L/min'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'irrigation_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                ],
+            ],
+            'dosing' => [
+                'type' => 'ph',
+                'name' => 'PH/EC Node',
+                'sensor_channels' => [
+                    ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
+                    ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'dose_ph_down', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'dose_ph_up', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'dose_npk', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                ],
+            ],
+            'lighting' => [
+                'type' => 'light',
+                'name' => 'Lighting Node',
+                'sensor_channels' => [
+                    ['channel' => 'lux', 'metric' => 'LIGHT_INTENSITY', 'unit' => 'lux'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                ],
+            ],
+            'water' => [
+                'type' => 'water',
+                'name' => 'Water Tanks Node',
+                'sensor_channels' => [
+                    ['channel' => 'clean_tank_level', 'metric' => 'WATER_LEVEL', 'unit' => '%'],
+                    ['channel' => 'solution_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'fill_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'drain_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                ],
+            ],
         ];
+    }
+
+    private function nodeUidForZoneRole(string $zoneKey, string $role): string
+    {
+        if ($zoneKey === 'running' && $role === 'climate') {
+            return 'nd-lite-ctrl-1';
+        }
+
+        if ($zoneKey === 'paused' && $role === 'climate') {
+            return 'nd-lite-climate-2';
+        }
+
+        if ($zoneKey === 'planned' && $role === 'climate') {
+            return 'nd-lite-sensor-3';
+        }
+
+        $suffixMap = [
+            'running' => 'run',
+            'paused' => 'pause',
+            'planned' => 'plan',
+            'empty' => 'empty',
+        ];
+
+        return sprintf('nd-lite-%s-%s', $suffixMap[$zoneKey] ?? $zoneKey, $role);
+    }
+
+    /**
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function cleanupStaleLiteNodes(array $zoneNodes): void
+    {
+        $expectedUids = [];
+        foreach ($zoneNodes as $nodes) {
+            foreach ($nodes as $node) {
+                $expectedUids[] = $node->uid;
+            }
+        }
+
+        DeviceNode::query()
+            ->where('uid', 'like', 'nd-lite-%')
+            ->whereNotIn('uid', $expectedUids)
+            ->delete();
     }
 
     private function createNodeWithChannels(
@@ -249,7 +354,7 @@ class LiteAutomationSeeder extends Seeder
             ['uid' => $uid],
             [
                 'zone_id' => $zone->id,
-                'hardware_id' => 'esp32-lite-'.Str::random(6),
+                'hardware_id' => 'esp32-lite-'.Str::lower(Str::random(6)),
                 'type' => $type,
                 'name' => $name,
                 'status' => $status,
@@ -262,7 +367,11 @@ class LiteAutomationSeeder extends Seeder
             ]
         );
 
+        $allChannels = [];
+
         foreach ($sensorChannels as $channel) {
+            $allChannels[] = $channel['channel'];
+
             NodeChannel::updateOrCreate(
                 ['node_id' => $node->id, 'channel' => $channel['channel']],
                 [
@@ -275,62 +384,80 @@ class LiteAutomationSeeder extends Seeder
         }
 
         foreach ($actuatorChannels as $channel) {
+            $allChannels[] = $channel['channel'];
+
             NodeChannel::updateOrCreate(
                 ['node_id' => $node->id, 'channel' => $channel['channel']],
                 [
                     'type' => 'actuator',
                     'metric' => $channel['metric'],
                     'unit' => $channel['unit'],
-                    'config' => ['data_type' => 'boolean'],
+                    'config' => ['data_type' => $channel['data_type'] ?? 'boolean'],
                 ]
             );
         }
 
+        NodeChannel::query()
+            ->where('node_id', $node->id)
+            ->whereNotIn('channel', $allChannels)
+            ->delete();
+
         return $node;
     }
 
-    private function createInfrastructure(Zone $zone, DeviceNode $node): void
+    /**
+     * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function createInfrastructure(array $zones, array $zoneNodes): void
     {
-        $assets = [
-            ['asset_type' => 'PUMP', 'channel' => 'main_pump', 'label' => 'Main Pump', 'required' => true, 'role' => 'main_pump'],
-            ['asset_type' => 'FAN', 'channel' => 'fan', 'label' => 'Ventilation Fan', 'required' => true, 'role' => 'fan'],
-            ['asset_type' => 'HEATER', 'channel' => 'heater', 'label' => 'Heater', 'required' => true, 'role' => 'heater'],
-            ['asset_type' => 'LIGHT', 'channel' => 'light', 'label' => 'Grow Light', 'required' => false, 'role' => 'light'],
-            ['asset_type' => 'MISTER', 'channel' => 'mister', 'label' => 'Mister', 'required' => false, 'role' => 'mister'],
-        ];
+        foreach ($zones as $zoneKey => $zone) {
+            $assetMap = [
+                ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'main_pump', 'role' => 'main_pump', 'required' => true],
+                ['asset_type' => 'FAN', 'label' => 'Ventilation Fan', 'node_role' => 'climate', 'channel' => 'fan', 'role' => 'fan', 'required' => true],
+                ['asset_type' => 'HEATER', 'label' => 'Climate Heater', 'node_role' => 'climate', 'channel' => 'heater', 'role' => 'heater', 'required' => true],
+                ['asset_type' => 'LIGHT', 'label' => 'Grow Light', 'node_role' => 'lighting', 'channel' => 'light', 'role' => 'light', 'required' => false],
+                ['asset_type' => 'VENT', 'label' => 'Window Vent', 'node_role' => 'climate', 'channel' => 'vent_window_pct', 'role' => 'vent_window', 'required' => false],
+            ];
 
-        foreach ($assets as $asset) {
-            $infra = InfrastructureInstance::updateOrCreate(
-                [
-                    'owner_type' => 'zone',
-                    'owner_id' => $zone->id,
-                    'asset_type' => $asset['asset_type'],
-                    'label' => $asset['label'],
-                ],
-                [
-                    'required' => $asset['required'],
-                ]
-            );
+            foreach ($assetMap as $asset) {
+                $infra = InfrastructureInstance::updateOrCreate(
+                    [
+                        'owner_type' => 'zone',
+                        'owner_id' => $zone->id,
+                        'asset_type' => $asset['asset_type'],
+                        'label' => $asset['label'],
+                    ],
+                    [
+                        'required' => $asset['required'],
+                    ]
+                );
 
-            $channel = NodeChannel::query()
-                ->where('node_id', $node->id)
-                ->where('channel', $asset['channel'])
-                ->first();
+                $node = $zoneNodes[$zoneKey][$asset['node_role']] ?? null;
+                if (! $node) {
+                    continue;
+                }
 
-            if (! $channel) {
-                continue;
+                $channel = NodeChannel::query()
+                    ->where('node_id', $node->id)
+                    ->where('channel', $asset['channel'])
+                    ->first();
+
+                if (! $channel) {
+                    continue;
+                }
+
+                ChannelBinding::updateOrCreate(
+                    [
+                        'infrastructure_instance_id' => $infra->id,
+                        'node_channel_id' => $channel->id,
+                    ],
+                    [
+                        'direction' => $channel->type === 'actuator' ? 'actuator' : 'sensor',
+                        'role' => $asset['role'],
+                    ]
+                );
             }
-
-            ChannelBinding::updateOrCreate(
-                [
-                    'infrastructure_instance_id' => $infra->id,
-                    'node_channel_id' => $channel->id,
-                ],
-                [
-                    'direction' => $channel->type === 'actuator' ? 'actuator' : 'sensor',
-                    'role' => $asset['role'],
-                ]
-            );
         }
     }
 
@@ -391,7 +518,7 @@ class LiteAutomationSeeder extends Seeder
             [
                 'name' => 'Вегетация',
                 'order_index' => 1,
-                'default_duration_days' => 10,
+                'default_duration_days' => 12,
                 'ui_meta' => ['color' => '#2196F3', 'icon' => 'leaf'],
             ]
         );
@@ -400,7 +527,7 @@ class LiteAutomationSeeder extends Seeder
             ['recipe_revision_id' => $revision->id, 'phase_index' => 0],
             [
                 'stage_template_id' => $germination->id,
-                'name' => 'Germination',
+                'name' => 'Germination (Day/Night)',
                 'duration_hours' => 72,
                 'ph_target' => 6.0,
                 'ph_min' => 5.8,
@@ -412,9 +539,14 @@ class LiteAutomationSeeder extends Seeder
                 'irrigation_interval_sec' => 900,
                 'irrigation_duration_sec' => 8,
                 'lighting_photoperiod_hours' => 16,
+                'lighting_start_time' => '06:00:00',
                 'temp_air_target' => 22.0,
                 'humidity_target' => 70.0,
                 'co2_target' => 800,
+                'extensions' => [
+                    'day_target' => ['temp_air' => 22.0, 'humidity' => 68],
+                    'night_target' => ['temp_air' => 20.0, 'humidity' => 72],
+                ],
             ]
         );
 
@@ -422,7 +554,7 @@ class LiteAutomationSeeder extends Seeder
             ['recipe_revision_id' => $revision->id, 'phase_index' => 1],
             [
                 'stage_template_id' => $vegetation->id,
-                'name' => 'Growth',
+                'name' => 'Vegetation (Day/Night)',
                 'duration_hours' => 240,
                 'ph_target' => 6.1,
                 'ph_min' => 5.7,
@@ -434,9 +566,14 @@ class LiteAutomationSeeder extends Seeder
                 'irrigation_interval_sec' => 1200,
                 'irrigation_duration_sec' => 10,
                 'lighting_photoperiod_hours' => 18,
+                'lighting_start_time' => '05:00:00',
                 'temp_air_target' => 24.0,
                 'humidity_target' => 65.0,
                 'co2_target' => 900,
+                'extensions' => [
+                    'day_target' => ['temp_air' => 24.0, 'humidity' => 63],
+                    'night_target' => ['temp_air' => 21.0, 'humidity' => 68],
+                ],
             ]
         );
 
@@ -481,7 +618,7 @@ class LiteAutomationSeeder extends Seeder
             $plantId,
             'lite-planned',
             GrowCycleStatus::PLANNED,
-            now()->addDays(1)
+            now()->addDay()
         );
 
         foreach ([$running, $paused, $planned] as $cycle) {
@@ -521,31 +658,32 @@ class LiteAutomationSeeder extends Seeder
             ]);
         }
 
-        $updates = [
+        $cycle->update([
             'status' => $status,
             'planting_at' => $plantingAt,
             'started_at' => $status === GrowCycleStatus::PLANNED ? null : $plantingAt,
             'phase_started_at' => $status === GrowCycleStatus::PLANNED ? null : $plantingAt,
-        ];
-
-        $cycle->update($updates);
+        ]);
 
         return $cycle->fresh(['currentPhase', 'recipeRevision']);
     }
 
     /**
      * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
-     * @param  array{running: DeviceNode, paused: DeviceNode, planned: DeviceNode}  $nodes
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
      * @param  array{running: GrowCycle, paused: GrowCycle, planned: GrowCycle}  $cycles
      */
-    private function seedTelemetry(array $zones, array $nodes, array $cycles): void
+    private function seedTelemetry(array $zones, array $zoneNodes, array $cycles): void
     {
-        $this->seedTelemetryForNode($zones['running'], $nodes['running'], $cycles['running']);
-        $this->seedTelemetryForNode($zones['paused'], $nodes['paused'], $cycles['paused']);
-        $this->seedTelemetryForNode($zones['planned'], $nodes['planned'], $cycles['planned']);
+        foreach ($zones as $zoneKey => $zone) {
+            $cycle = $cycles[$zoneKey] ?? null;
+            foreach ($zoneNodes[$zoneKey] as $node) {
+                $this->seedTelemetryForNode($zone, $node, $cycle);
+            }
+        }
     }
 
-    private function seedTelemetryForNode(Zone $zone, DeviceNode $node, GrowCycle $cycle): void
+    private function seedTelemetryForNode(Zone $zone, DeviceNode $node, ?GrowCycle $cycle): void
     {
         $channels = NodeChannel::query()
             ->where('node_id', $node->id)
@@ -556,9 +694,9 @@ class LiteAutomationSeeder extends Seeder
             return;
         }
 
-        $now = now();
-        $samplesPerSensor = 12;
-        $intervalMinutes = 30;
+        $now = $this->seedBaseTime()->copy()->addMinutes($this->timeOffsetForNode($node));
+        $samplesPerSensor = 4;
+        $intervalMinutes = 20;
         $startTime = $now->copy()->subMinutes($intervalMinutes * ($samplesPerSensor - 1));
 
         foreach ($channels as $channel) {
@@ -601,7 +739,7 @@ class LiteAutomationSeeder extends Seeder
                     ],
                     [
                         'zone_id' => $zone->id,
-                        'cycle_id' => $cycle->id,
+                        'cycle_id' => $cycle?->id,
                         'value' => round($value, 2),
                         'quality' => 'GOOD',
                         'metadata' => [
@@ -625,11 +763,13 @@ class LiteAutomationSeeder extends Seeder
 
     /**
      * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
-     * @param  array{running: DeviceNode, paused: DeviceNode, planned: DeviceNode}  $nodes
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
      * @param  array{running: GrowCycle, paused: GrowCycle, planned: GrowCycle}  $cycles
      */
-    private function seedAutomationSignals(array $zones, array $nodes, array $cycles): void
+    private function seedAutomationSignals(array $zones, array $zoneNodes, array $cycles): void
     {
+        $baseTime = $this->seedBaseTime();
+
         Alert::updateOrCreate(
             [
                 'zone_id' => $zones['running']->id,
@@ -638,9 +778,9 @@ class LiteAutomationSeeder extends Seeder
             [
                 'source' => 'automation',
                 'type' => 'CLIMATE',
-                'details' => ['message' => 'Humidity deviated from target'],
+                'details' => ['message' => 'Влажность отклонилась от целевого диапазона'],
                 'status' => 'ACTIVE',
-                'created_at' => now()->subHours(4),
+                'created_at' => $baseTime->copy()->subHour(),
             ]
         );
 
@@ -656,21 +796,16 @@ class LiteAutomationSeeder extends Seeder
                     'message' => 'Automation engine evaluated targets',
                     'cycle_id' => $cycles['running']->id,
                 ],
-                'server_ts' => now()->timestamp * 1000,
+                'server_ts' => $baseTime->timestamp * 1000,
             ]
         );
 
-        $this->seedCycleCommand($zones['running'], $nodes['running'], 'FORCE_PH_CONTROL', 15);
-        $this->seedCycleCommand($zones['running'], $nodes['running'], 'FORCE_EC_CONTROL', 20);
-        $this->seedCycleCommand($zones['running'], $nodes['running'], 'FORCE_IRRIGATION', 30);
-        $this->seedCycleCommand($zones['running'], $nodes['running'], 'FORCE_LIGHTING', 45);
-        $this->seedCycleCommand($zones['running'], $nodes['running'], 'FORCE_CLIMATE', 60);
+        $this->seedCycleCommand($zones['running'], $zoneNodes['running']['dosing'], 'FORCE_PH_CONTROL', $baseTime->copy()->subMinutes(10));
+        $this->seedCycleCommand($zones['running'], $zoneNodes['running']['irrigation'], 'FORCE_IRRIGATION', $baseTime->copy()->subMinutes(6));
     }
 
-    private function seedCycleCommand(Zone $zone, DeviceNode $node, string $cmd, int $minutesAgo): void
+    private function seedCycleCommand(Zone $zone, DeviceNode $node, string $cmd, Carbon $ackAt): void
     {
-        $ackAt = now()->subMinutes($minutesAgo);
-
         Command::updateOrCreate(
             [
                 'cmd_id' => 'lite-'.$cmd,
@@ -686,7 +821,7 @@ class LiteAutomationSeeder extends Seeder
                 'sent_at' => $ackAt->copy()->subSeconds(4),
                 'ack_at' => $ackAt,
                 'result_code' => 0,
-                'duration_ms' => 400,
+                'duration_ms' => 360,
                 'created_at' => $ackAt->copy()->subSeconds(6),
             ]
         );
@@ -694,14 +829,15 @@ class LiteAutomationSeeder extends Seeder
 
     private function sensorTypeFromMetric(string $metric): ?string
     {
-        $metric = strtoupper($metric);
-
-        return match ($metric) {
+        return match (strtoupper($metric)) {
             'PH' => 'PH',
             'EC' => 'EC',
             'TEMPERATURE' => 'TEMPERATURE',
             'HUMIDITY' => 'HUMIDITY',
             'CO2' => 'CO2',
+            'WATER_LEVEL' => 'WATER_LEVEL',
+            'PRESSURE' => 'PRESSURE',
+            'LIGHT_INTENSITY' => 'LIGHT_INTENSITY',
             default => null,
         };
     }
@@ -711,9 +847,12 @@ class LiteAutomationSeeder extends Seeder
         return match (strtoupper($metric)) {
             'PH' => 6.0,
             'EC' => 1.4,
-            'TEMPERATURE' => 22.5,
-            'HUMIDITY' => 60.0,
-            'CO2' => 850.0,
+            'TEMPERATURE' => 22.4,
+            'HUMIDITY' => 62.0,
+            'CO2' => 840.0,
+            'WATER_LEVEL' => 73.0,
+            'PRESSURE' => 1.6,
+            'LIGHT_INTENSITY' => 18500.0,
             default => 0.0,
         };
     }
@@ -721,11 +860,14 @@ class LiteAutomationSeeder extends Seeder
     private function variationForMetric(string $metric): float
     {
         return match (strtoupper($metric)) {
-            'PH' => 0.15,
-            'EC' => 0.25,
-            'TEMPERATURE' => 2.0,
-            'HUMIDITY' => 8.0,
-            'CO2' => 80.0,
+            'PH' => 0.12,
+            'EC' => 0.2,
+            'TEMPERATURE' => 1.8,
+            'HUMIDITY' => 7.0,
+            'CO2' => 70.0,
+            'WATER_LEVEL' => 4.0,
+            'PRESSURE' => 0.35,
+            'LIGHT_INTENSITY' => 1500.0,
             default => 1.0,
         };
     }
@@ -748,5 +890,15 @@ class LiteAutomationSeeder extends Seeder
         $suffix = $channel ? strtoupper($channel) : strtoupper($metric);
 
         return "Sensor {$suffix}";
+    }
+
+    private function seedBaseTime(): Carbon
+    {
+        return Carbon::parse('2026-01-15 12:00:00', 'UTC');
+    }
+
+    private function timeOffsetForNode(DeviceNode $node): int
+    {
+        return abs(crc32($node->uid)) % 60;
     }
 }

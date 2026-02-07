@@ -310,7 +310,7 @@
 
               <div class="md:col-span-6 border-t border-[color:var(--border-muted)] pt-3 mt-2">
                 <div class="text-xs font-semibold uppercase tracking-wide text-[color:var(--text-muted)] mb-2">
-                  Питание (NPK / Кальций / Микро)
+                  Питание (NPK / Кальций / Магний / Микро)
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -335,7 +335,36 @@
                   />
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                  <select
+                    :id="`phase-${i}-nutrient-mode`"
+                    v-model="p.nutrient_mode"
+                    :name="`phases[${i}][nutrient_mode]`"
+                    class="input-field"
+                  >
+                    <option value="ratio_ec_pid">
+                      ratio_ec_pid
+                    </option>
+                    <option value="delta_ec_by_k">
+                      delta_ec_by_k
+                    </option>
+                    <option value="dose_ml_l_only">
+                      dose_ml_l_only
+                    </option>
+                  </select>
+                  <input
+                    :id="`phase-${i}-nutrient-solution-volume`"
+                    v-model.number="p.nutrient_solution_volume_l"
+                    :name="`phases[${i}][nutrient_solution_volume_l]`"
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    placeholder="Объём раствора (л), для delta_ec_by_k"
+                    class="input-field"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2">
                   <select
                     :id="`phase-${i}-npk-product`"
                     v-model="p.nutrient_npk_product_id"
@@ -377,6 +406,26 @@
                   </select>
 
                   <select
+                    :id="`phase-${i}-magnesium-product`"
+                    v-model="p.nutrient_magnesium_product_id"
+                    :name="`phases[${i}][nutrient_magnesium_product_id]`"
+                    class="input-field"
+                    :disabled="nutrientProductsLoading"
+                    data-testid="nutrient-magnesium-product-select"
+                  >
+                    <option :value="null">
+                      Магний: не выбрано
+                    </option>
+                    <option
+                      v-for="product in magnesiumProducts"
+                      :key="`magnesium-${product.id}`"
+                      :value="product.id"
+                    >
+                      {{ product.manufacturer }} · {{ product.name }}
+                    </option>
+                  </select>
+
+                  <select
                     :id="`phase-${i}-micro-product`"
                     v-model="p.nutrient_micro_product_id"
                     :name="`phases[${i}][nutrient_micro_product_id]`"
@@ -404,7 +453,7 @@
                   Справочник удобрений пуст. Добавьте продукты в `nutrient_products`.
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2">
                   <input
                     :id="`phase-${i}-nutrient-npk-ratio`"
                     v-model.number="p.nutrient_npk_ratio_pct"
@@ -425,6 +474,17 @@
                     min="0"
                     max="100"
                     placeholder="Calcium ratio, %"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-magnesium-ratio`"
+                    v-model.number="p.nutrient_magnesium_ratio_pct"
+                    :name="`phases[${i}][nutrient_magnesium_ratio_pct]`"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Magnesium ratio, %"
                     class="input-field"
                   />
                   <input
@@ -457,7 +517,7 @@
                   </Button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2">
                   <input
                     :id="`phase-${i}-nutrient-npk-dose`"
                     v-model.number="p.nutrient_npk_dose_ml_l"
@@ -476,6 +536,16 @@
                     step="0.001"
                     min="0"
                     placeholder="Calcium мл/л"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-magnesium-dose`"
+                    v-model.number="p.nutrient_magnesium_dose_ml_l"
+                    :name="`phases[${i}][nutrient_magnesium_dose_ml_l]`"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="Magnesium мл/л"
                     class="input-field"
                   />
                   <input
@@ -568,17 +638,22 @@ interface RecipePhaseForm {
   name: string
   duration_hours: number
   nutrient_program_code: string | null
+  nutrient_mode: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only'
   nutrient_npk_ratio_pct: number | null
   nutrient_calcium_ratio_pct: number | null
+  nutrient_magnesium_ratio_pct: number | null
   nutrient_micro_ratio_pct: number | null
   nutrient_npk_dose_ml_l: number | null
   nutrient_calcium_dose_ml_l: number | null
+  nutrient_magnesium_dose_ml_l: number | null
   nutrient_micro_dose_ml_l: number | null
   nutrient_npk_product_id: number | null
   nutrient_calcium_product_id: number | null
+  nutrient_magnesium_product_id: number | null
   nutrient_micro_product_id: number | null
   nutrient_dose_delay_sec: number | null
   nutrient_ec_stop_tolerance: number | null
+  nutrient_solution_volume_l: number | null
   targets: {
     ph: { min: number; max: number }
     ec: { min: number; max: number }
@@ -640,17 +715,22 @@ function createDefaultPhase(phaseIndex: number): RecipePhaseForm {
     name: '',
     duration_hours: 24,
     nutrient_program_code: DEFAULT_NUTRIENT_PROGRAM_CODE,
+    nutrient_mode: 'ratio_ec_pid',
     nutrient_npk_ratio_pct: 44,
-    nutrient_calcium_ratio_pct: 44,
-    nutrient_micro_ratio_pct: 12,
+    nutrient_calcium_ratio_pct: 36,
+    nutrient_magnesium_ratio_pct: 17,
+    nutrient_micro_ratio_pct: 3,
     nutrient_npk_dose_ml_l: 0.55,
     nutrient_calcium_dose_ml_l: 0.55,
+    nutrient_magnesium_dose_ml_l: 0.25,
     nutrient_micro_dose_ml_l: 0.09,
     nutrient_npk_product_id: null,
     nutrient_calcium_product_id: null,
+    nutrient_magnesium_product_id: null,
     nutrient_micro_product_id: null,
     nutrient_dose_delay_sec: DEFAULT_NUTRIENT_DOSE_DELAY_SEC,
     nutrient_ec_stop_tolerance: DEFAULT_NUTRIENT_EC_STOP_TOLERANCE,
+    nutrient_solution_volume_l: null,
     targets: {
       ph: { min: 5.6, max: 6.0 },
       ec: { min: 1.2, max: 1.6 },
@@ -677,17 +757,24 @@ function mapRecipePhaseToForm(phase: RecipePhase & Record<string, any>): RecipeP
     nutrient_program_code: typeof phase.nutrient_program_code === 'string' && phase.nutrient_program_code.trim().length > 0
       ? phase.nutrient_program_code
       : DEFAULT_NUTRIENT_PROGRAM_CODE,
+    nutrient_mode: (phase.nutrient_mode === 'delta_ec_by_k' || phase.nutrient_mode === 'dose_ml_l_only')
+      ? phase.nutrient_mode
+      : 'ratio_ec_pid',
     nutrient_npk_ratio_pct: toNullableNumber(phase.nutrient_npk_ratio_pct, 44),
-    nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct, 44),
-    nutrient_micro_ratio_pct: toNullableNumber(phase.nutrient_micro_ratio_pct, 12),
+    nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct, 36),
+    nutrient_magnesium_ratio_pct: toNullableNumber(phase.nutrient_magnesium_ratio_pct, 17),
+    nutrient_micro_ratio_pct: toNullableNumber(phase.nutrient_micro_ratio_pct, 3),
     nutrient_npk_dose_ml_l: toNullableNumber(phase.nutrient_npk_dose_ml_l, 0.55),
     nutrient_calcium_dose_ml_l: toNullableNumber(phase.nutrient_calcium_dose_ml_l, 0.55),
+    nutrient_magnesium_dose_ml_l: toNullableNumber(phase.nutrient_magnesium_dose_ml_l, 0.25),
     nutrient_micro_dose_ml_l: toNullableNumber(phase.nutrient_micro_dose_ml_l, 0.09),
     nutrient_npk_product_id: toNullableInt(phase.nutrient_npk_product_id),
     nutrient_calcium_product_id: toNullableInt(phase.nutrient_calcium_product_id),
+    nutrient_magnesium_product_id: toNullableInt(phase.nutrient_magnesium_product_id),
     nutrient_micro_product_id: toNullableInt(phase.nutrient_micro_product_id),
     nutrient_dose_delay_sec: toNullableInt(phase.nutrient_dose_delay_sec, DEFAULT_NUTRIENT_DOSE_DELAY_SEC),
     nutrient_ec_stop_tolerance: toNullableNumber(phase.nutrient_ec_stop_tolerance, DEFAULT_NUTRIENT_EC_STOP_TOLERANCE),
+    nutrient_solution_volume_l: toNullableNumber(phase.nutrient_solution_volume_l),
     targets: {
       ph: { min: phMin, max: phMax },
       ec: { min: ecMin, max: ecMax },
@@ -715,6 +802,10 @@ const npkProducts = computed<NutrientProduct[]>(() => {
 
 const calciumProducts = computed<NutrientProduct[]>(() => {
   return nutrientProducts.value.filter((product) => String(product.component).toLowerCase() === 'calcium')
+})
+
+const magnesiumProducts = computed<NutrientProduct[]>(() => {
+  return nutrientProducts.value.filter((product) => String(product.component).toLowerCase() === 'magnesium')
 })
 
 const microProducts = computed<NutrientProduct[]>(() => {
@@ -788,8 +879,9 @@ const sortedPhases = computed<RecipePhaseForm[]>(() => {
 function nutrientRatioSum(phase: RecipePhaseForm): number {
   const npk = toNullableNumber(phase.nutrient_npk_ratio_pct, 0) ?? 0
   const calcium = toNullableNumber(phase.nutrient_calcium_ratio_pct, 0) ?? 0
+  const magnesium = toNullableNumber(phase.nutrient_magnesium_ratio_pct, 0) ?? 0
   const micro = toNullableNumber(phase.nutrient_micro_ratio_pct, 0) ?? 0
-  return npk + calcium + micro
+  return npk + calcium + magnesium + micro
 }
 
 function roundRatio(value: number): number {
@@ -799,31 +891,35 @@ function roundRatio(value: number): number {
 function normalizePhaseRatios(phase: RecipePhaseForm): void {
   const npk = toNullableNumber(phase.nutrient_npk_ratio_pct, 0) ?? 0
   const calcium = toNullableNumber(phase.nutrient_calcium_ratio_pct, 0) ?? 0
+  const magnesium = toNullableNumber(phase.nutrient_magnesium_ratio_pct, 0) ?? 0
   const micro = toNullableNumber(phase.nutrient_micro_ratio_pct, 0) ?? 0
 
-  const sum = npk + calcium + micro
+  const sum = npk + calcium + magnesium + micro
   if (sum <= 0) {
     phase.nutrient_npk_ratio_pct = 44
-    phase.nutrient_calcium_ratio_pct = 44
-    phase.nutrient_micro_ratio_pct = 12
+    phase.nutrient_calcium_ratio_pct = 36
+    phase.nutrient_magnesium_ratio_pct = 17
+    phase.nutrient_micro_ratio_pct = 3
     return
   }
 
   const normalizedNpk = roundRatio((npk / sum) * 100)
   const normalizedCalcium = roundRatio((calcium / sum) * 100)
-  let normalizedMicro = roundRatio(100 - normalizedNpk - normalizedCalcium)
+  const normalizedMagnesium = roundRatio((magnesium / sum) * 100)
+  let normalizedMicro = roundRatio(100 - normalizedNpk - normalizedCalcium - normalizedMagnesium)
 
   if (normalizedMicro < 0) {
     normalizedMicro = 0
   }
 
-  const normalizedSum = normalizedNpk + normalizedCalcium + normalizedMicro
+  const normalizedSum = normalizedNpk + normalizedCalcium + normalizedMagnesium + normalizedMicro
   if (Math.abs(normalizedSum - 100) > 0.01) {
     normalizedMicro = roundRatio(normalizedMicro + (100 - normalizedSum))
   }
 
   phase.nutrient_npk_ratio_pct = normalizedNpk
   phase.nutrient_calcium_ratio_pct = normalizedCalcium
+  phase.nutrient_magnesium_ratio_pct = normalizedMagnesium
   phase.nutrient_micro_ratio_pct = normalizedMicro
 }
 
@@ -873,17 +969,22 @@ function buildPhasePayload(phase: RecipePhaseForm): Record<string, any> {
     irrigation_interval_sec: toNullableInt(phase.targets.irrigation_interval_sec),
     irrigation_duration_sec: toNullableInt(phase.targets.irrigation_duration_sec),
     nutrient_program_code: phase.nutrient_program_code?.trim() || null,
+    nutrient_mode: phase.nutrient_mode || 'ratio_ec_pid',
     nutrient_npk_ratio_pct: toNullableNumber(phase.nutrient_npk_ratio_pct),
     nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct),
+    nutrient_magnesium_ratio_pct: toNullableNumber(phase.nutrient_magnesium_ratio_pct),
     nutrient_micro_ratio_pct: toNullableNumber(phase.nutrient_micro_ratio_pct),
     nutrient_npk_dose_ml_l: toNullableNumber(phase.nutrient_npk_dose_ml_l),
     nutrient_calcium_dose_ml_l: toNullableNumber(phase.nutrient_calcium_dose_ml_l),
+    nutrient_magnesium_dose_ml_l: toNullableNumber(phase.nutrient_magnesium_dose_ml_l),
     nutrient_micro_dose_ml_l: toNullableNumber(phase.nutrient_micro_dose_ml_l),
     nutrient_npk_product_id: toNullableInt(phase.nutrient_npk_product_id),
     nutrient_calcium_product_id: toNullableInt(phase.nutrient_calcium_product_id),
+    nutrient_magnesium_product_id: toNullableInt(phase.nutrient_magnesium_product_id),
     nutrient_micro_product_id: toNullableInt(phase.nutrient_micro_product_id),
     nutrient_dose_delay_sec: toNullableInt(phase.nutrient_dose_delay_sec),
     nutrient_ec_stop_tolerance: toNullableNumber(phase.nutrient_ec_stop_tolerance),
+    nutrient_solution_volume_l: toNullableNumber(phase.nutrient_solution_volume_l),
   }
 }
 

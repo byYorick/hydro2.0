@@ -1370,6 +1370,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ->with([
                     'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
                     'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.magnesiumProduct:id,manufacturer,name,component',
                     'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
                 ])
                 ->findOrFail($recipeId);
@@ -1398,9 +1399,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ->with([
                     'latestDraftRevision.phases.npkProduct:id,manufacturer,name,component',
                     'latestDraftRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestDraftRevision.phases.magnesiumProduct:id,manufacturer,name,component',
                     'latestDraftRevision.phases.microProduct:id,manufacturer,name,component',
                     'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
                     'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.magnesiumProduct:id,manufacturer,name,component',
                     'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
                 ])
                 ->findOrFail($recipeId);
@@ -1748,6 +1751,12 @@ Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(func
         Route::get('/create', [NutrientProductController::class, 'createPage'])->name('nutrients.create');
         Route::get('/{nutrientProduct}/edit', [NutrientProductController::class, 'editPage'])->name('nutrients.edit');
     });
+
+    Route::get('/documentation/fertigation', function () {
+        return Inertia::render('Documentation/Fertigation', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('documentation.fertigation');
 });
 
 Route::middleware(['web', 'auth'])->group(function () {

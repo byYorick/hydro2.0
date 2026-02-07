@@ -688,6 +688,51 @@ async def test_calibrate_pump_success():
 
 
 @pytest.mark.asyncio
+async def test_calibrate_pump_calculates_k_from_ec_profile():
+    channel_info = {
+        "channel_id": 24,
+        "channel": "pump_c",
+        "config": {},
+        "node_id": 14,
+        "node_uid": "nd-ec-c",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_fetch.return_value = [channel_info]
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-4"}
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
+        mock_httpx_client.return_value = mock_http_client
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=24,
+            duration_sec=20,
+            actual_ml=10.0,
+            component="magnesium",
+            test_volume_l=10.0,
+            ec_before_ms=0.10,
+            ec_after_ms=0.35,
+            temperature_c=21.5,
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["component"] == "magnesium"
+        assert result["k_ms_per_ml_l"] == pytest.approx(0.25, abs=0.000001)
+
+
+@pytest.mark.asyncio
 async def test_calibrate_pump_run_only_waits_for_actual_ml():
     channel_info = {
         "channel_id": 22,

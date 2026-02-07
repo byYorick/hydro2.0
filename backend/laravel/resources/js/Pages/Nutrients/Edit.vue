@@ -54,6 +54,9 @@
               <option value="calcium">
                 Кальций
               </option>
+              <option value="magnesium">
+                Магний
+              </option>
               <option value="micro">
                 Микроэлементы
               </option>
@@ -211,7 +214,7 @@ const errors = reactive<Record<string, string>>({})
 const form = reactive({
   manufacturer: nutrient.value?.manufacturer || '',
   name: nutrient.value?.name || '',
-  component: (nutrient.value?.component || 'npk') as 'npk' | 'calcium' | 'micro',
+  component: (nutrient.value?.component || 'npk') as 'npk' | 'calcium' | 'magnesium' | 'micro',
   composition: nutrient.value?.composition || '',
   recommended_stage: nutrient.value?.recommended_stage || '',
   notes: nutrient.value?.notes || '',

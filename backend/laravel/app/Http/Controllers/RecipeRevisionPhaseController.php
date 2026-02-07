@@ -44,17 +44,22 @@ class RecipeRevisionPhaseController extends Controller
             'ec_min' => ['nullable', 'numeric', 'min:0'],
             'ec_max' => ['nullable', 'numeric', 'min:0'],
             'nutrient_program_code' => ['nullable', 'string', 'max:64'],
+            'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
             'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_micro_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_npk_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_calcium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
+            'nutrient_magnesium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_micro_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_npk_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_calcium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
+            'nutrient_magnesium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_micro_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_dose_delay_sec' => ['nullable', 'integer', 'min:0', 'max:3600'],
             'nutrient_ec_stop_tolerance' => ['nullable', 'numeric', 'min:0', 'max:5'],
+            'nutrient_solution_volume_l' => ['nullable', 'numeric', 'min:0.1', 'max:100000'],
             'irrigation_mode' => ['nullable', 'string', 'in:SUBSTRATE,RECIRC'],
             'irrigation_interval_sec' => ['nullable', 'integer', 'min:0'],
             'irrigation_duration_sec' => ['nullable', 'integer', 'min:0'],
@@ -128,17 +133,22 @@ class RecipeRevisionPhaseController extends Controller
             'ec_min' => ['nullable', 'numeric', 'min:0'],
             'ec_max' => ['nullable', 'numeric', 'min:0'],
             'nutrient_program_code' => ['nullable', 'string', 'max:64'],
+            'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
             'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_micro_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'nutrient_npk_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_calcium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
+            'nutrient_magnesium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_micro_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
             'nutrient_npk_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_calcium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
+            'nutrient_magnesium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_micro_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
             'nutrient_dose_delay_sec' => ['nullable', 'integer', 'min:0', 'max:3600'],
             'nutrient_ec_stop_tolerance' => ['nullable', 'numeric', 'min:0', 'max:5'],
+            'nutrient_solution_volume_l' => ['nullable', 'numeric', 'min:0.1', 'max:100000'],
             'irrigation_mode' => ['nullable', 'string', 'in:SUBSTRATE,RECIRC'],
             'irrigation_interval_sec' => ['nullable', 'integer', 'min:0'],
             'irrigation_duration_sec' => ['nullable', 'integer', 'min:0'],
@@ -225,44 +235,54 @@ class RecipeRevisionPhaseController extends Controller
     }
 
     /**
-     * Проверяет, что доли NPK/Calcium/Micro суммарно дают 100%.
+     * Проверяет, что доли NPK/Calcium/Magnesium/Micro заполнены и суммарно дают 100%.
      * Для PATCH учитывает уже сохранённые значения фазы.
      */
     private function validateNutritionRatioSum(array $data, ?RecipeRevisionPhase $existingPhase = null): void
     {
         $hasAnyIncomingRatio = array_key_exists('nutrient_npk_ratio_pct', $data)
             || array_key_exists('nutrient_calcium_ratio_pct', $data)
+            || array_key_exists('nutrient_magnesium_ratio_pct', $data)
             || array_key_exists('nutrient_micro_ratio_pct', $data);
 
         $npk = $data['nutrient_npk_ratio_pct'] ?? $existingPhase?->nutrient_npk_ratio_pct;
         $calcium = $data['nutrient_calcium_ratio_pct'] ?? $existingPhase?->nutrient_calcium_ratio_pct;
+        $magnesium = $data['nutrient_magnesium_ratio_pct'] ?? $existingPhase?->nutrient_magnesium_ratio_pct;
         $micro = $data['nutrient_micro_ratio_pct'] ?? $existingPhase?->nutrient_micro_ratio_pct;
 
-        $hasAnyRatio = $npk !== null || $calcium !== null || $micro !== null;
+        $hasAnyRatio = $npk !== null || $calcium !== null || $magnesium !== null || $micro !== null;
 
         if (! $hasAnyIncomingRatio && ! $hasAnyRatio) {
             return;
         }
 
-        $validator = Validator::make(
-            [
-                'nutrient_npk_ratio_pct' => $npk,
-                'nutrient_calcium_ratio_pct' => $calcium,
-                'nutrient_micro_ratio_pct' => $micro,
-            ],
-            [
-                'nutrient_npk_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
-                'nutrient_calcium_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
-                'nutrient_micro_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
-            ]
-        );
+        $validator = Validator::make([
+            'nutrient_npk_ratio_pct' => $npk,
+            'nutrient_calcium_ratio_pct' => $calcium,
+            'nutrient_magnesium_ratio_pct' => $magnesium,
+            'nutrient_micro_ratio_pct' => $micro,
+        ], [
+            'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'nutrient_micro_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
 
-        $validator->after(function ($validator) use ($npk, $calcium, $micro): void {
-            $sum = (float) $npk + (float) $calcium + (float) $micro;
+        $validator->after(function ($validator) use ($npk, $calcium, $magnesium, $micro): void {
+            if ($npk === null || $calcium === null || $magnesium === null || $micro === null) {
+                $validator->errors()->add(
+                    'nutrient_ratio_components',
+                    'Для питания обязательны все 4 доли: nutrient_npk_ratio_pct, nutrient_calcium_ratio_pct, nutrient_magnesium_ratio_pct, nutrient_micro_ratio_pct.'
+                );
+
+                return;
+            }
+
+            $sum = (float) ($npk ?? 0) + (float) ($calcium ?? 0) + (float) ($magnesium ?? 0) + (float) ($micro ?? 0);
             if (abs($sum - 100.0) > 0.01) {
                 $validator->errors()->add(
                     'nutrient_ratio_sum',
-                    'Сумма nutrient_npk_ratio_pct + nutrient_calcium_ratio_pct + nutrient_micro_ratio_pct должна быть 100%.'
+                    'Сумма nutrient_npk_ratio_pct + nutrient_calcium_ratio_pct + nutrient_magnesium_ratio_pct + nutrient_micro_ratio_pct должна быть 100%.'
                 );
             }
         });

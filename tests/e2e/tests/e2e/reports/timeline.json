@@ -1,167 +1,50 @@
 {
-  "test_suite": "E03_node_setup_preconfig",
-  "generated_at": "2026-01-29T12:47:44.743559",
+  "test_suite": "E68_dose_ml_l_only_incomplete_profile",
+  "generated_at": "2026-02-07T22:15:45.207334",
   "test_cases": [
     {
-      "name": "set_test_identifiers",
+      "name": "stop_node_simulator_initial",
       "status": "passed",
-      "duration": 2.5510787963867188e-05,
+      "duration": 10.26443886756897,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_identifiers",
+          "name": "stop_node_simulator_initial",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:22.499470"
+      "timestamp": "2026-02-07T22:15:32.254424"
     },
     {
-      "name": "build_node_sim_config",
+      "name": "set_test_zone_uid",
       "status": "passed",
-      "duration": 8.511543273925781e-05,
+      "duration": 1.0013580322265625e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "build_node_sim_config",
+          "name": "set_test_zone_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:22.499747"
+      "timestamp": "2026-02-07T22:15:32.254559"
     },
     {
-      "name": "connect_websocket",
+      "name": "get_test_zone_id",
       "status": "passed",
-      "duration": 2.5272369384765625e-05,
+      "duration": 0.0026526451110839844,
       "error_message": null,
       "steps": [
         {
-          "name": "connect_websocket",
+          "name": "get_test_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:22.499786"
-    },
-    {
-      "name": "subscribe_devices_channel",
-      "status": "passed",
-      "duration": 0.28910112380981445,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "subscribe_devices_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:22.788909"
-    },
-    {
-      "name": "start_node_simulator",
-      "status": "passed",
-      "duration": 5.175849676132202,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "start_node_simulator",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:27.964818"
-    },
-    {
-      "name": "node_sends_node_hello",
-      "status": "passed",
-      "duration": 2.0035758018493652,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "node_sends_node_hello",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:29.968530"
-    },
-    {
-      "name": "wait_for_device_created_event",
-      "status": "passed",
-      "duration": 8.940696716308594e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_device_created_event",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:29.968724"
-    },
-    {
-      "name": "db_lookup_node",
-      "status": "passed",
-      "duration": 0.0073850154876708984,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "db_lookup_node",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:29.976250"
-    },
-    {
-      "name": "set_node_identity",
-      "status": "passed",
-      "duration": 9.5367431640625e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_node_identity",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:29.976332"
-    },
-    {
-      "name": "wait_for_registered_state",
-      "status": "passed",
-      "duration": 0.0015358924865722656,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_registered_state",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:29.977927"
-    },
-    {
-      "name": "fetch_unassigned_nodes",
-      "status": "passed",
-      "duration": 0.11678004264831543,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_unassigned_nodes",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:30.095026"
-    },
-    {
-      "name": "fetch_zone_id",
-      "status": "passed",
-      "duration": 0.0030565261840820312,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:30.098330"
+      "timestamp": "2026-02-07T22:15:32.257252"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 3.0994415283203125e-06,
       "error_message": null,
       "steps": [
         {
@@ -169,220 +52,74 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:30.098411"
+      "timestamp": "2026-02-07T22:15:32.257285"
     },
     {
-      "name": "assign_node_to_zone",
+      "name": "ensure_zone_readiness_bindings",
       "status": "passed",
-      "duration": 2.1456780433654785,
+      "duration": 0.0036673545837402344,
       "error_message": null,
       "steps": [
         {
-          "name": "assign_node_to_zone",
+          "name": "ensure_zone_readiness_bindings",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:32.244769"
+      "timestamp": "2026-02-07T22:15:32.260988"
     },
     {
-      "name": "wait_for_device_assigned_event",
+      "name": "ensure_ec_component_bindings",
+      "status": "failed",
+      "duration": 0.0012226104736328125,
+      "error_message": "there is no parameter $1\nLINE 1: $1\n        ^\nQUERY:  $1\nCONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization",
+      "steps": [
+        {
+          "name": "ensure_ec_component_bindings",
+          "status": "failed",
+          "error": "there is no parameter $1\nLINE 1: $1\n        ^\nQUERY:  $1\nCONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization"
+        }
+      ],
+      "timestamp": "2026-02-07T22:15:32.262457"
+    },
+    {
+      "name": "no_add_nutrients_commands_created",
       "status": "passed",
-      "duration": 3.838539123535156e-05,
+      "duration": 0.008740425109863281,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_device_assigned_event",
+          "name": "no_add_nutrients_commands_created",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-29T12:47:32.244861"
+      "timestamp": "2026-02-07T22:15:32.271220"
     },
     {
-      "name": "node_sends_config_report",
-      "status": "passed",
-      "duration": 2.0018274784088135,
-      "error_message": null,
+      "name": "skipped_due_to_incomplete_profile",
+      "status": "failed",
+      "duration": 10.080382347106934,
+      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND type = 'EC_CORRECTION_SKIPPED'\nAND details->>'reason' = 'ec_component_batch_unavailable'\nAND created_at > NOW() - INTERVAL '3 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
       "steps": [
         {
-          "name": "node_sends_config_report",
-          "status": "passed"
+          "name": "skipped_due_to_incomplete_profile",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND type = 'EC_CORRECTION_SKIPPED'\nAND details->>'reason' = 'ec_component_batch_unavailable'\nAND created_at > NOW() - INTERVAL '3 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2026-01-29T12:47:34.246831"
-    },
-    {
-      "name": "wait_for_binding_completed",
-      "status": "passed",
-      "duration": 0.0008199214935302734,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_binding_completed",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.247743"
-    },
-    {
-      "name": "fetch_unassigned_nodes_after",
-      "status": "passed",
-      "duration": 0.09161520004272461,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_unassigned_nodes_after",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339403"
-    },
-    {
-      "name": "device_created_event_payload",
-      "status": "passed",
-      "duration": 4.76837158203125e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "device_created_event_payload",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339464"
-    },
-    {
-      "name": "device_assigned_event_payload",
-      "status": "passed",
-      "duration": 1.7404556274414062e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "device_assigned_event_payload",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339486"
-    },
-    {
-      "name": "node_registered_in_setup_mode",
-      "status": "passed",
-      "duration": 0.00010514259338378906,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "node_registered_in_setup_mode",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339594"
-    },
-    {
-      "name": "unassigned_api_has_results",
-      "status": "passed",
-      "duration": 1.7881393432617188e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "unassigned_api_has_results",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339617"
-    },
-    {
-      "name": "unassigned_api_returns_node",
-      "status": "passed",
-      "duration": 2.574920654296875e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "unassigned_api_returns_node",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.339646"
-    },
-    {
-      "name": "node_binding_completed",
-      "status": "passed",
-      "duration": 0.04530954360961914,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "node_binding_completed",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.384964"
-    },
-    {
-      "name": "unassigned_api_excludes_node_after_binding",
-      "status": "passed",
-      "duration": 1.5497207641601562e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "unassigned_api_excludes_node_after_binding",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-29T12:47:34.384996"
+      "timestamp": "2026-02-07T22:15:42.351657"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E03_node_setup_preconfig": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-hydro.devices"
-          },
-          "timestamp": "2026-01-29T12:47:22.700477"
-        },
-        {
-          "data": {
-            "event": "device.updated",
-            "data": {
-              "device": {
-                "id": 464,
-                "uid": "nd-ph-h1769690842",
-                "name": null,
-                "type": "ph",
-                "status": "offline",
-                "lifecycle_state": "REGISTERED_BACKEND",
-                "fw_version": "2.0.0-sim",
-                "hardware_id": "h1769690842",
-                "zone_id": null,
-                "last_seen_at": null,
-                "first_seen_at": "2026-01-29T12:47:28+00:00",
-                "was_recently_created": false
-              },
-              "event_id": 1769690848000000026,
-              "server_ts": 1769690848000
-            },
-            "channel": "private-hydro.devices"
-          },
-          "timestamp": "2026-01-29T12:47:28.204679"
-        },
-        {
-          "data": {
-            "event": "device.updated",
-            "data": "{\"device\":{\"id\":464,\"uid\":\"nd-ph-h1769690842\",\"name\":null,\"type\":\"ph\",\"status\":\"offline\",\"lifecycle_state\":\"REGISTERED_BACKEND\",\"fw_version\":\"2.0.0-sim\",\"hardware_id\":\"h1769690842\",\"zone_id\":null,\"last_seen_at\":null,\"first_seen_at\":\"2026-01-29T12:47:28+00:00\",\"was_recently_created\":false},\"event_id\":1769690850000000027,\"server_ts\":1769690850000}",
-            "channel": "private-hydro.devices"
-          },
-          "timestamp": "2026-01-29T12:47:30.238141"
-        }
-      ],
+    "E68_dose_ml_l_only_incomplete_profile": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
+        "zone_id": 409,
         "zone_uid": "zn-test-1",
-        "node_id": 464,
-        "node_uid": "nd-ph-h1769690842",
-        "test_hardware_id": "h1769690842",
-        "ws_last_event_id": 1769690850000000027
+        "node_id": 225,
+        "node_uid": "nd-ph-esp32una"
       }
     }
   }

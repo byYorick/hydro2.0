@@ -1,7 +1,7 @@
 {
   "total": 1,
-  "passed": 1,
-  "failed": 0,
-  "timestamp": "/e2e/reports/",
+  "passed": 0,
+  "failed": 1,
+  "timestamp": "/home/georgiy/esp/hydro/hydro2.0/tests/e2e/reports/",
   "scenarios": []
 }

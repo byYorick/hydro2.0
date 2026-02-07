@@ -155,6 +155,28 @@
           />
         </svg>
       </NavLink>
+
+      <NavLink
+        v-if="canViewDocumentation"
+        href="/documentation/fertigation"
+        :label="'Документация'"
+        class="flex flex-col items-center justify-center flex-1 h-full"
+        :mobile="true"
+      >
+        <svg
+          class="w-6 h-6 mb-1"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 6v12m0-12l-4 4m4-4l4 4M6 20h12"
+          />
+        </svg>
+      </NavLink>
       
       <NavLink
         href="/alerts"
@@ -265,6 +287,7 @@ const canViewZones = computed(() => true) // Все роли могут виде
 const canViewDevices = computed(() => true) // Все роли могут видеть устройства
 const canViewRecipes = computed(() => true) // Все роли могут видеть рецепты
 const canViewNutrients = computed(() => hasAnyRole(['admin', 'agronomist', 'operator']))
+const canViewDocumentation = computed(() => hasAnyRole(['admin', 'agronomist', 'operator']))
 const canViewLogs = computed(() => hasAnyRole(['admin', 'operator', 'engineer']))
 
 function checkMobile() {

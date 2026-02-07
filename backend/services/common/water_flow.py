@@ -879,6 +879,10 @@ async def calibrate_pump(
     actual_ml: Optional[float] = None,
     skip_run: bool = False,
     component: Optional[str] = None,
+    test_volume_l: Optional[float] = None,
+    ec_before_ms: Optional[float] = None,
+    ec_after_ms: Optional[float] = None,
+    temperature_c: Optional[float] = None,
     mqtt_client: Any = None,  # Deprecated, не используется
     gh_uid: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -903,7 +907,7 @@ async def calibrate_pump(
             "acid": "ph_down",
         }
         normalized_component = aliases.get(candidate, candidate)
-        allowed_components = {"npk", "calcium", "micro", "ph_up", "ph_down"}
+        allowed_components = {"npk", "calcium", "magnesium", "micro", "ph_up", "ph_down"}
         if normalized_component not in allowed_components:
             raise ValueError(
                 f"Unsupported calibration component '{component}'. "
@@ -997,6 +1001,27 @@ async def calibrate_pump(
     if ml_per_sec <= 0:
         raise ValueError("Calculated ml_per_sec must be greater than 0")
 
+    k_ms_per_ml_l: Optional[float] = None
+    ec_delta_ms: Optional[float] = None
+    if test_volume_l is not None or ec_before_ms is not None or ec_after_ms is not None:
+        if test_volume_l is None or ec_before_ms is None or ec_after_ms is None:
+            raise ValueError("test_volume_l, ec_before_ms and ec_after_ms must be provided together")
+        test_volume_value = float(test_volume_l)
+        ec_before_value = float(ec_before_ms)
+        ec_after_value = float(ec_after_ms)
+        if test_volume_value <= 0:
+            raise ValueError("test_volume_l must be greater than 0")
+        if ec_after_value <= ec_before_value:
+            raise ValueError("ec_after_ms must be greater than ec_before_ms")
+
+        ec_delta_ms = round(ec_after_value - ec_before_value, 6)
+        ml_per_l = actual_ml_value / test_volume_value
+        if ml_per_l <= 0:
+            raise ValueError("Calculated ml_per_l must be greater than 0")
+        k_ms_per_ml_l = round(ec_delta_ms / ml_per_l, 6)
+        if k_ms_per_ml_l <= 0:
+            raise ValueError("Calculated k_ms_per_ml_l must be greater than 0")
+
     current_config = channel_info.get("config") or {}
     if not isinstance(current_config, dict):
         current_config = {}
@@ -1005,6 +1030,12 @@ async def calibrate_pump(
         "duration_sec": duration_sec,
         "actual_ml": actual_ml_value,
         "component": normalized_component,
+        "k_ms_per_ml_l": k_ms_per_ml_l,
+        "test_volume_l": float(test_volume_l) if test_volume_l is not None else None,
+        "ec_before_ms": float(ec_before_ms) if ec_before_ms is not None else None,
+        "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
+        "delta_ec_ms": ec_delta_ms,
+        "temperature_c": float(temperature_c) if temperature_c is not None else None,
         "calibrated_at": utcnow().isoformat(),
     }
 
@@ -1040,6 +1071,12 @@ async def calibrate_pump(
             "duration_sec": duration_sec,
             "actual_ml": actual_ml_value,
             "ml_per_sec": ml_per_sec,
+            "k_ms_per_ml_l": k_ms_per_ml_l,
+            "test_volume_l": float(test_volume_l) if test_volume_l is not None else None,
+            "ec_before_ms": float(ec_before_ms) if ec_before_ms is not None else None,
+            "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
+            "delta_ec_ms": ec_delta_ms,
+            "temperature_c": float(temperature_c) if temperature_c is not None else None,
             "finished_at": finished_at.isoformat(),
         },
     )
@@ -1054,5 +1091,11 @@ async def calibrate_pump(
         "duration_sec": duration_sec,
         "actual_ml": actual_ml_value,
         "ml_per_sec": ml_per_sec,
+        "k_ms_per_ml_l": k_ms_per_ml_l,
+        "test_volume_l": float(test_volume_l) if test_volume_l is not None else None,
+        "ec_before_ms": float(ec_before_ms) if ec_before_ms is not None else None,
+        "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
+        "delta_ec_ms": ec_delta_ms,
+        "temperature_c": float(temperature_c) if temperature_c is not None else None,
         "calibrated_at": finished_at.isoformat(),
     }

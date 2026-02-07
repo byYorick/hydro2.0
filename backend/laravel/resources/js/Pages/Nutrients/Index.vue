@@ -10,7 +10,7 @@
             Удобрения
           </h1>
           <p class="text-sm text-[color:var(--text-muted)]">
-            Справочник продуктов для 3-насосной схемы: NPK, кальций и микроэлементы.
+            Справочник продуктов для 4-насосной EC-схемы: NPK, кальций, магний и микроэлементы.
           </p>
         </div>
         <Link href="/nutrients/create">
@@ -23,7 +23,7 @@
         </Link>
       </div>
 
-      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-5">
         <div class="ui-kpi-card">
           <div class="ui-kpi-label">
             Всего продуктов
@@ -55,6 +55,17 @@
           </div>
           <div class="ui-kpi-hint">
             Кальциевая линия
+          </div>
+        </div>
+        <div class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Магний
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-orange)]">
+            {{ magnesiumCount }}
+          </div>
+          <div class="ui-kpi-hint">
+            MgSO4 линия
           </div>
         </div>
         <div class="ui-kpi-card">
@@ -100,6 +111,9 @@
         </option>
         <option value="calcium">
           Кальций
+        </option>
+        <option value="magnesium">
+          Магний
         </option>
         <option value="micro">
           Микроэлементы
@@ -223,13 +237,14 @@ const page = usePage<PageProps>()
 const nutrients = computed(() => (page.props.nutrients || []) as NutrientProduct[])
 
 const query = ref('')
-const componentFilter = ref<'all' | 'npk' | 'calcium' | 'micro'>('all')
+const componentFilter = ref<'all' | 'npk' | 'calcium' | 'magnesium' | 'micro'>('all')
 const currentPage = ref(1)
 const perPage = ref(25)
 
 const totalProducts = computed(() => nutrients.value.length)
 const npkCount = computed(() => nutrients.value.filter((item) => item.component === 'npk').length)
 const calciumCount = computed(() => nutrients.value.filter((item) => item.component === 'calcium').length)
+const magnesiumCount = computed(() => nutrients.value.filter((item) => item.component === 'magnesium').length)
 const microCount = computed(() => nutrients.value.filter((item) => item.component === 'micro').length)
 
 const filteredProducts = computed(() => {
@@ -290,6 +305,7 @@ const paginatedProducts = computed(() => {
 function componentLabel(component: string): string {
   if (component === 'npk') return 'NPK'
   if (component === 'calcium') return 'Кальций'
+  if (component === 'magnesium') return 'Магний'
   if (component === 'micro') return 'Микроэлементы'
   return component
 }

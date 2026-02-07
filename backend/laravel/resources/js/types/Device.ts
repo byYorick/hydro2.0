@@ -12,9 +12,15 @@ export type DeviceStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 
 export interface PumpCalibrationConfig {
   ml_per_sec?: number
+  k_ms_per_ml_l?: number
   duration_sec?: number
   actual_ml?: number
-  component?: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down' | string | null
+  component?: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' | string | null
+  test_volume_l?: number
+  ec_before_ms?: number
+  ec_after_ms?: number
+  delta_ec_ms?: number
+  temperature_c?: number
   calibrated_at?: string | null
 }
 

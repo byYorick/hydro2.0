@@ -22,7 +22,7 @@ class NutrientProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'component' => ['nullable', 'string', 'in:npk,calcium,micro'],
+            'component' => ['nullable', 'string', 'in:npk,calcium,magnesium,micro'],
         ]);
 
         $query = NutrientProduct::query()
@@ -72,7 +72,7 @@ class NutrientProductController extends Controller
         $data = $request->validate([
             'manufacturer' => ['required', 'string', 'max:128'],
             'name' => ['required', 'string', 'max:191'],
-            'component' => ['required', 'string', 'in:npk,calcium,micro'],
+            'component' => ['required', 'string', 'in:npk,calcium,magnesium,micro'],
             'composition' => ['nullable', 'string', 'max:128'],
             'recommended_stage' => ['nullable', 'string', 'max:64'],
             'notes' => ['nullable', 'string', 'max:5000'],
@@ -98,7 +98,7 @@ class NutrientProductController extends Controller
         $data = $request->validate([
             'manufacturer' => ['sometimes', 'required', 'string', 'max:128'],
             'name' => ['sometimes', 'required', 'string', 'max:191'],
-            'component' => ['sometimes', 'required', 'string', 'in:npk,calcium,micro'],
+            'component' => ['sometimes', 'required', 'string', 'in:npk,calcium,magnesium,micro'],
             'composition' => ['nullable', 'string', 'max:128'],
             'recommended_stage' => ['nullable', 'string', 'max:64'],
             'notes' => ['nullable', 'string', 'max:5000'],
@@ -250,6 +250,7 @@ class NutrientProductController extends Controller
         $isReferencedInRecipePhases = RecipeRevisionPhase::query()
             ->where('nutrient_npk_product_id', $productId)
             ->orWhere('nutrient_calcium_product_id', $productId)
+            ->orWhere('nutrient_magnesium_product_id', $productId)
             ->orWhere('nutrient_micro_product_id', $productId)
             ->exists();
 
@@ -260,6 +261,7 @@ class NutrientProductController extends Controller
         return GrowCyclePhase::query()
             ->where('nutrient_npk_product_id', $productId)
             ->orWhere('nutrient_calcium_product_id', $productId)
+            ->orWhere('nutrient_magnesium_product_id', $productId)
             ->orWhere('nutrient_micro_product_id', $productId)
             ->exists();
     }

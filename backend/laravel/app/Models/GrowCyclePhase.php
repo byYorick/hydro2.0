@@ -23,17 +23,22 @@ class GrowCyclePhase extends Model
         'ec_min',
         'ec_max',
         'nutrient_program_code',
+        'nutrient_mode',
         'nutrient_npk_ratio_pct',
         'nutrient_calcium_ratio_pct',
+        'nutrient_magnesium_ratio_pct',
         'nutrient_micro_ratio_pct',
         'nutrient_npk_dose_ml_l',
         'nutrient_calcium_dose_ml_l',
+        'nutrient_magnesium_dose_ml_l',
         'nutrient_micro_dose_ml_l',
         'nutrient_npk_product_id',
         'nutrient_calcium_product_id',
+        'nutrient_magnesium_product_id',
         'nutrient_micro_product_id',
         'nutrient_dose_delay_sec',
         'nutrient_ec_stop_tolerance',
+        'nutrient_solution_volume_l',
         'irrigation_mode',
         'irrigation_interval_sec',
         'irrigation_duration_sec',
@@ -65,11 +70,14 @@ class GrowCyclePhase extends Model
         'ec_max' => 'decimal:2',
         'nutrient_npk_ratio_pct' => 'decimal:2',
         'nutrient_calcium_ratio_pct' => 'decimal:2',
+        'nutrient_magnesium_ratio_pct' => 'decimal:2',
         'nutrient_micro_ratio_pct' => 'decimal:2',
         'nutrient_npk_dose_ml_l' => 'decimal:3',
         'nutrient_calcium_dose_ml_l' => 'decimal:3',
+        'nutrient_magnesium_dose_ml_l' => 'decimal:3',
         'nutrient_micro_dose_ml_l' => 'decimal:3',
         'nutrient_ec_stop_tolerance' => 'decimal:3',
+        'nutrient_solution_volume_l' => 'decimal:2',
         'temp_air_target' => 'decimal:2',
         'humidity_target' => 'decimal:2',
         'base_temp_c' => 'decimal:2',
@@ -105,6 +113,11 @@ class GrowCyclePhase extends Model
     public function calciumProduct(): BelongsTo
     {
         return $this->belongsTo(NutrientProduct::class, 'nutrient_calcium_product_id');
+    }
+
+    public function magnesiumProduct(): BelongsTo
+    {
+        return $this->belongsTo(NutrientProduct::class, 'nutrient_magnesium_product_id');
     }
 
     public function microProduct(): BelongsTo

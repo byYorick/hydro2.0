@@ -57,7 +57,7 @@ interface LoadingState extends Record<string, boolean> {
   pumpCalibrationSave: boolean;
 }
 
-type PumpCalibrationComponent = "npk" | "calcium" | "micro" | "ph_up" | "ph_down";
+type PumpCalibrationComponent = "npk" | "calcium" | "magnesium" | "micro" | "ph_up" | "ph_down";
 
 interface PumpCalibrationRunPayload {
   node_channel_id: number;
@@ -68,6 +68,10 @@ interface PumpCalibrationRunPayload {
 interface PumpCalibrationSavePayload extends PumpCalibrationRunPayload {
   actual_ml: number;
   skip_run: true;
+  test_volume_l?: number;
+  ec_before_ms?: number;
+  ec_after_ms?: number;
+  temperature_c?: number;
 }
 
 const zoneTabs = [
@@ -809,8 +813,6 @@ export function useZoneShowPage() {
 
     router.reload({
       only: ["zone", "devices"],
-      preserveScroll: true,
-      preserveState: true,
     });
   };
 
