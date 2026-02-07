@@ -25,6 +25,22 @@ export interface ZoneAutomationTabProps {
   telemetry?: ZoneTelemetry | null
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim()
+    if (normalized === '') return null
+
+    const parsed = Number(normalized)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
 export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const page = usePage<{ auth?: { user?: { role?: string } } }>()
   const { showToast } = useToast()
@@ -114,10 +130,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   })
 
   const telemetryLabel = computed(() => {
-    const temperature = props.telemetry?.temperature
-    const humidity = props.telemetry?.humidity
+    const temperature = toFiniteNumber(props.telemetry?.temperature)
+    const humidity = toFiniteNumber(props.telemetry?.humidity)
 
-    if (temperature === undefined || temperature === null || humidity === undefined || humidity === null) {
+    if (temperature === null || humidity === null) {
       return 'нет данных'
     }
 

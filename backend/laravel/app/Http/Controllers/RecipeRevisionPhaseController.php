@@ -8,6 +8,7 @@ use App\Services\RecipeRevisionPhaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Symfony\Component\HttpFoundation\Response;
 
 class RecipeRevisionPhaseController extends Controller
@@ -74,6 +75,7 @@ class RecipeRevisionPhaseController extends Controller
             'dli_target' => ['nullable', 'numeric', 'min:0'],
             'extensions' => ['nullable', 'array'],
         ]);
+        $this->validateNutritionRatioSum($data);
 
         try {
             $phase = $this->phaseService->createPhase($recipeRevision, $data);
@@ -156,6 +158,7 @@ class RecipeRevisionPhaseController extends Controller
             'dli_target' => ['nullable', 'numeric', 'min:0'],
             'extensions' => ['nullable', 'array'],
         ]);
+        $this->validateNutritionRatioSum($data, $recipeRevisionPhase);
 
         try {
             $phase = $this->phaseService->updatePhase($recipeRevisionPhase, $data);
@@ -219,5 +222,51 @@ class RecipeRevisionPhaseController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Проверяет, что доли NPK/Calcium/Micro суммарно дают 100%.
+     * Для PATCH учитывает уже сохранённые значения фазы.
+     */
+    private function validateNutritionRatioSum(array $data, ?RecipeRevisionPhase $existingPhase = null): void
+    {
+        $hasAnyIncomingRatio = array_key_exists('nutrient_npk_ratio_pct', $data)
+            || array_key_exists('nutrient_calcium_ratio_pct', $data)
+            || array_key_exists('nutrient_micro_ratio_pct', $data);
+
+        $npk = $data['nutrient_npk_ratio_pct'] ?? $existingPhase?->nutrient_npk_ratio_pct;
+        $calcium = $data['nutrient_calcium_ratio_pct'] ?? $existingPhase?->nutrient_calcium_ratio_pct;
+        $micro = $data['nutrient_micro_ratio_pct'] ?? $existingPhase?->nutrient_micro_ratio_pct;
+
+        $hasAnyRatio = $npk !== null || $calcium !== null || $micro !== null;
+
+        if (! $hasAnyIncomingRatio && ! $hasAnyRatio) {
+            return;
+        }
+
+        $validator = Validator::make(
+            [
+                'nutrient_npk_ratio_pct' => $npk,
+                'nutrient_calcium_ratio_pct' => $calcium,
+                'nutrient_micro_ratio_pct' => $micro,
+            ],
+            [
+                'nutrient_npk_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
+                'nutrient_calcium_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
+                'nutrient_micro_ratio_pct' => ['required', 'numeric', 'min:0', 'max:100'],
+            ]
+        );
+
+        $validator->after(function ($validator) use ($npk, $calcium, $micro): void {
+            $sum = (float) $npk + (float) $calcium + (float) $micro;
+            if (abs($sum - 100.0) > 0.01) {
+                $validator->errors()->add(
+                    'nutrient_ratio_sum',
+                    'Сумма nutrient_npk_ratio_pct + nutrient_calcium_ratio_pct + nutrient_micro_ratio_pct должна быть 100%.'
+                );
+            }
+        });
+
+        $validator->validate();
     }
 }

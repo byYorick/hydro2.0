@@ -169,6 +169,14 @@ const staticCommandDefinitions: CommandDefinition[] = [
     route: '/recipes',
   },
   {
+    id: 'nav-nutrients',
+    label: 'Открыть Nutrients',
+    icon: '🧪',
+    groupId: 'navigation',
+    route: '/nutrients',
+    roles: ['admin', 'agronomist', 'operator'],
+  },
+  {
     id: 'nav-alerts',
     label: 'Открыть Alerts',
     icon: '⚠️',

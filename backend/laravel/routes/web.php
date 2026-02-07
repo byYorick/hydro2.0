@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CycleCenterController;
+use App\Http\Controllers\NutrientProductController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
@@ -309,7 +310,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     }
 })->middleware(['web', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
 
-Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
+Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,engineer'])->group(function () {
     Route::get('/', function () {
         $user = auth()->user();
 
@@ -1366,7 +1367,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with(['latestPublishedRevision.phases'])
+                ->with([
+                    'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
+                ])
                 ->findOrFail($recipeId);
 
             $recipeArray = $recipe->toArray();
@@ -1390,7 +1395,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with(['latestDraftRevision.phases', 'latestPublishedRevision'])
+                ->with([
+                    'latestDraftRevision.phases.npkProduct:id,manufacturer,name,component',
+                    'latestDraftRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestDraftRevision.phases.microProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
+                    'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
+                ])
                 ->findOrFail($recipeId);
 
             $phases = $recipe->latestDraftRevision?->phases
@@ -1730,6 +1742,12 @@ Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(func
     Route::put('/plants/{plant}', [PlantController::class, 'update'])->name('plants.update');
     Route::delete('/plants/{plant}', [PlantController::class, 'destroy'])->name('plants.destroy');
     Route::post('/plants/{plant}/prices', [PlantController::class, 'storePriceVersion'])->name('plants.prices.store');
+
+    Route::prefix('nutrients')->group(function () {
+        Route::get('/', [NutrientProductController::class, 'indexPage'])->name('nutrients.index');
+        Route::get('/create', [NutrientProductController::class, 'createPage'])->name('nutrients.create');
+        Route::get('/{nutrientProduct}/edit', [NutrientProductController::class, 'editPage'])->name('nutrients.edit');
+    });
 });
 
 Route::middleware(['web', 'auth'])->group(function () {

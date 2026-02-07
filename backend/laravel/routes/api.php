@@ -13,6 +13,7 @@ use App\Http\Controllers\InfrastructureInstanceController;
 use App\Http\Controllers\NodeChannelController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
+use App\Http\Controllers\NutrientProductController;
 use App\Http\Controllers\PipelineHealthController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\PresetController;
@@ -145,6 +146,8 @@ Route::middleware([
     Route::get('recipes', [RecipeController::class, 'index']);
     Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
     Route::get('recipes/{recipe}/stage-map', [RecipeController::class, 'getStageMap']);
+    Route::get('nutrient-products', [NutrientProductController::class, 'index']);
+    Route::get('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'show']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
@@ -216,6 +219,11 @@ Route::middleware([
         Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
         Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap']);
+
+        // Nutrient products
+        Route::post('nutrient-products', [NutrientProductController::class, 'store']);
+        Route::patch('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'update']);
+        Route::delete('nutrient-products/{nutrientProduct}', [NutrientProductController::class, 'destroy']);
 
         // Recipe revisions
         Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);

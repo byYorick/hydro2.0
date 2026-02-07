@@ -28,6 +28,7 @@ const navigationItems: NavItem[] = [
   { href: '/zones', label: 'Зоны' },
   { href: '/greenhouses', label: 'Теплицы' },
   { href: '/recipes', label: 'Рецепты', roles: ['admin', 'agronomist'] },
+  { href: '/nutrients', label: 'Удобрения', roles: ['admin', 'agronomist', 'operator'] },
   { href: '/plants', label: 'Культуры', roles: ['admin', 'agronomist'] },
   { href: '/devices', label: 'Устройства' },
   { href: '/alerts', label: 'Алерты' },

@@ -19,6 +19,19 @@ export interface RecipePhaseTargets {
   irrigation_duration_sec?: number
 }
 
+export interface NutrientProduct {
+  id: number
+  manufacturer: string
+  name: string
+  component: 'npk' | 'calcium' | 'micro' | string
+  composition?: string | null
+  recommended_stage?: string | null
+  notes?: string | null
+  metadata?: Record<string, any> | null
+  created_at?: string
+  updated_at?: string
+}
+
 /**
  * Фаза рецепта
  */
@@ -28,6 +41,18 @@ export interface RecipePhase {
   name: string
   duration_hours: number
   targets?: RecipePhaseTargets
+  nutrient_program_code?: string | null
+  nutrient_npk_ratio_pct?: number | string | null
+  nutrient_calcium_ratio_pct?: number | string | null
+  nutrient_micro_ratio_pct?: number | string | null
+  nutrient_npk_dose_ml_l?: number | string | null
+  nutrient_calcium_dose_ml_l?: number | string | null
+  nutrient_micro_dose_ml_l?: number | string | null
+  nutrient_npk_product_id?: number | null
+  nutrient_calcium_product_id?: number | null
+  nutrient_micro_product_id?: number | null
+  nutrient_dose_delay_sec?: number | null
+  nutrient_ec_stop_tolerance?: number | string | null
   created_at?: string
   updated_at?: string
 }

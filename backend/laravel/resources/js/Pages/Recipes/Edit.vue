@@ -259,6 +259,7 @@
                   </div>
                 </div>
               </div>
+
               <div class="md:col-span-6 grid grid-cols-3 gap-2 mt-2">
                 <input
                   :id="`phase-${i}-temp-air`"
@@ -287,6 +288,7 @@
                   class="input-field"
                 />
               </div>
+
               <div class="md:col-span-6 grid grid-cols-2 gap-2 mt-2">
                 <input
                   :id="`phase-${i}-irrigation-interval`"
@@ -305,8 +307,206 @@
                   class="input-field"
                 />
               </div>
+
+              <div class="md:col-span-6 border-t border-[color:var(--border-muted)] pt-3 mt-2">
+                <div class="text-xs font-semibold uppercase tracking-wide text-[color:var(--text-muted)] mb-2">
+                  Питание (NPK / Кальций / Микро)
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <input
+                    :id="`phase-${i}-nutrient-program-code`"
+                    v-model="p.nutrient_program_code"
+                    :name="`phases[${i}][nutrient_program_code]`"
+                    type="text"
+                    placeholder="Код программы питания"
+                    class="input-field md:col-span-2"
+                    data-testid="nutrient-program-code-input"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-dose-delay`"
+                    v-model.number="p.nutrient_dose_delay_sec"
+                    :name="`phases[${i}][nutrient_dose_delay_sec]`"
+                    type="number"
+                    min="0"
+                    placeholder="Пауза между дозами (сек)"
+                    class="input-field"
+                    data-testid="nutrient-dose-delay-input"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <select
+                    :id="`phase-${i}-npk-product`"
+                    v-model="p.nutrient_npk_product_id"
+                    :name="`phases[${i}][nutrient_npk_product_id]`"
+                    class="input-field"
+                    :disabled="nutrientProductsLoading"
+                    data-testid="nutrient-npk-product-select"
+                  >
+                    <option :value="null">
+                      NPK: не выбрано
+                    </option>
+                    <option
+                      v-for="product in npkProducts"
+                      :key="`npk-${product.id}`"
+                      :value="product.id"
+                    >
+                      {{ product.manufacturer }} · {{ product.name }}
+                    </option>
+                  </select>
+
+                  <select
+                    :id="`phase-${i}-calcium-product`"
+                    v-model="p.nutrient_calcium_product_id"
+                    :name="`phases[${i}][nutrient_calcium_product_id]`"
+                    class="input-field"
+                    :disabled="nutrientProductsLoading"
+                    data-testid="nutrient-calcium-product-select"
+                  >
+                    <option :value="null">
+                      Кальций: не выбрано
+                    </option>
+                    <option
+                      v-for="product in calciumProducts"
+                      :key="`calcium-${product.id}`"
+                      :value="product.id"
+                    >
+                      {{ product.manufacturer }} · {{ product.name }}
+                    </option>
+                  </select>
+
+                  <select
+                    :id="`phase-${i}-micro-product`"
+                    v-model="p.nutrient_micro_product_id"
+                    :name="`phases[${i}][nutrient_micro_product_id]`"
+                    class="input-field"
+                    :disabled="nutrientProductsLoading"
+                    data-testid="nutrient-micro-product-select"
+                  >
+                    <option :value="null">
+                      Микро: не выбрано
+                    </option>
+                    <option
+                      v-for="product in microProducts"
+                      :key="`micro-${product.id}`"
+                      :value="product.id"
+                    >
+                      {{ product.manufacturer }} · {{ product.name }}
+                    </option>
+                  </select>
+                </div>
+
+                <div
+                  v-if="!nutrientProductsLoading && nutrientProducts.length === 0"
+                  class="text-xs text-[color:var(--text-dim)] mt-2"
+                >
+                  Справочник удобрений пуст. Добавьте продукты в `nutrient_products`.
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <input
+                    :id="`phase-${i}-nutrient-npk-ratio`"
+                    v-model.number="p.nutrient_npk_ratio_pct"
+                    :name="`phases[${i}][nutrient_npk_ratio_pct]`"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="NPK ratio, %"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-calcium-ratio`"
+                    v-model.number="p.nutrient_calcium_ratio_pct"
+                    :name="`phases[${i}][nutrient_calcium_ratio_pct]`"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Calcium ratio, %"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-micro-ratio`"
+                    v-model.number="p.nutrient_micro_ratio_pct"
+                    :name="`phases[${i}][nutrient_micro_ratio_pct]`"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="Micro ratio, %"
+                    class="input-field"
+                  />
+                </div>
+                <div class="flex items-center justify-between gap-2 mt-1">
+                  <div
+                    class="text-xs"
+                    :class="isNutrientRatioValid(p) ? 'text-[color:var(--text-dim)]' : 'text-[color:var(--badge-danger-text)]'"
+                  >
+                    Сумма ratio: {{ nutrientRatioSum(p).toFixed(2) }}%
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    type="button"
+                    data-testid="normalize-ratio-button"
+                    @click="normalizePhaseRatios(p)"
+                  >
+                    Нормализовать ratio
+                  </Button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <input
+                    :id="`phase-${i}-nutrient-npk-dose`"
+                    v-model.number="p.nutrient_npk_dose_ml_l"
+                    :name="`phases[${i}][nutrient_npk_dose_ml_l]`"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="NPK мл/л"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-calcium-dose`"
+                    v-model.number="p.nutrient_calcium_dose_ml_l"
+                    :name="`phases[${i}][nutrient_calcium_dose_ml_l]`"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="Calcium мл/л"
+                    class="input-field"
+                  />
+                  <input
+                    :id="`phase-${i}-nutrient-micro-dose`"
+                    v-model.number="p.nutrient_micro_dose_ml_l"
+                    :name="`phases[${i}][nutrient_micro_dose_ml_l]`"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="Micro мл/л"
+                    class="input-field"
+                  />
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <input
+                    :id="`phase-${i}-nutrient-ec-stop-tolerance`"
+                    v-model.number="p.nutrient_ec_stop_tolerance"
+                    :name="`phases[${i}][nutrient_ec_stop_tolerance]`"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    placeholder="EC stop tolerance"
+                    class="input-field"
+                    data-testid="nutrient-ec-stop-tolerance-input"
+                  />
+                </div>
+              </div>
             </div>
           </div>
+
           <Button
             size="sm"
             variant="secondary"
@@ -353,7 +553,11 @@ import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import type { Recipe, RecipePhase } from '@/types'
+import type { NutrientProduct, Recipe, RecipePhase } from '@/types'
+
+const DEFAULT_NUTRIENT_PROGRAM_CODE = 'YARAREGA_CALCINIT_HAIFA_MICRO_V1'
+const DEFAULT_NUTRIENT_DOSE_DELAY_SEC = 12
+const DEFAULT_NUTRIENT_EC_STOP_TOLERANCE = 0.07
 
 const { showToast } = useToast()
 const { api } = useApi(showToast)
@@ -363,14 +567,26 @@ interface RecipePhaseForm {
   phase_index: number
   name: string
   duration_hours: number
+  nutrient_program_code: string | null
+  nutrient_npk_ratio_pct: number | null
+  nutrient_calcium_ratio_pct: number | null
+  nutrient_micro_ratio_pct: number | null
+  nutrient_npk_dose_ml_l: number | null
+  nutrient_calcium_dose_ml_l: number | null
+  nutrient_micro_dose_ml_l: number | null
+  nutrient_npk_product_id: number | null
+  nutrient_calcium_product_id: number | null
+  nutrient_micro_product_id: number | null
+  nutrient_dose_delay_sec: number | null
+  nutrient_ec_stop_tolerance: number | null
   targets: {
     ph: { min: number; max: number }
     ec: { min: number; max: number }
-    temp_air?: number
-    humidity_air?: number
-    light_hours?: number
-    irrigation_interval_sec?: number
-    irrigation_duration_sec?: number
+    temp_air: number | null
+    humidity_air: number | null
+    light_hours: number | null
+    irrigation_interval_sec: number | null
+    irrigation_duration_sec: number | null
   }
 }
 
@@ -386,47 +602,55 @@ interface PageProps {
   [key: string]: any
 }
 
-const page = usePage<PageProps>()
-const recipe = (page.props.recipe || {}) as Partial<Recipe>
-
 interface PlantOption {
   id: number
   name: string
 }
 
+const page = usePage<PageProps>()
+const recipe = (page.props.recipe || {}) as Partial<Recipe>
+
 const plants = ref<PlantOption[]>([])
 const plantsLoading = ref(false)
+const nutrientProducts = ref<NutrientProduct[]>([])
+const nutrientProductsLoading = ref(false)
 const initialPlantId = recipe.plants?.[0]?.id ?? null
 
-const form = useForm<RecipeFormData>({
-  name: recipe.name || '',
-  description: recipe.description || '',
-  plant_id: initialPlantId,
-  phases: (recipe.phases || []).length > 0 ? (recipe.phases || []).map((p: RecipePhase & Record<string, any>) => {
-    const phMin = typeof p.ph_min === 'number' ? p.ph_min : (typeof p.targets?.ph?.min === 'number' ? p.targets.ph.min : 5.8)
-    const phMax = typeof p.ph_max === 'number' ? p.ph_max : (typeof p.targets?.ph?.max === 'number' ? p.targets.ph.max : 6.0)
-    const ecMin = typeof p.ec_min === 'number' ? p.ec_min : (typeof p.targets?.ec?.min === 'number' ? p.targets.ec.min : 1.2)
-    const ecMax = typeof p.ec_max === 'number' ? p.ec_max : (typeof p.targets?.ec?.max === 'number' ? p.targets.ec.max : 1.6)
+function toNullableNumber(value: unknown, fallback: number | null = null): number | null {
+  if (value === null || value === undefined || value === '') {
+    return fallback
+  }
 
-    return {
-      id: p.id,
-      phase_index: p.phase_index || 0,
-      name: p.name || '',
-      duration_hours: p.duration_hours || 24,
-      targets: {
-        ph: { min: phMin, max: phMax },
-        ec: { min: ecMin, max: ecMax },
-        temp_air: p.temp_air_target ?? p.targets?.temp_air ?? null,
-        humidity_air: p.humidity_target ?? p.targets?.humidity_air ?? null,
-        light_hours: p.lighting_photoperiod_hours ?? p.targets?.light_hours ?? null,
-        irrigation_interval_sec: p.irrigation_interval_sec ?? p.targets?.irrigation_interval_sec ?? null,
-        irrigation_duration_sec: p.irrigation_duration_sec ?? p.targets?.irrigation_duration_sec ?? null,
-      },
-    }
-  }) : [{
-    phase_index: 0,
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function toNullableInt(value: unknown, fallback: number | null = null): number | null {
+  const parsed = toNullableNumber(value, fallback)
+  if (parsed === null) {
+    return null
+  }
+
+  return Math.round(parsed)
+}
+
+function createDefaultPhase(phaseIndex: number): RecipePhaseForm {
+  return {
+    phase_index: phaseIndex,
     name: '',
     duration_hours: 24,
+    nutrient_program_code: DEFAULT_NUTRIENT_PROGRAM_CODE,
+    nutrient_npk_ratio_pct: 44,
+    nutrient_calcium_ratio_pct: 44,
+    nutrient_micro_ratio_pct: 12,
+    nutrient_npk_dose_ml_l: 0.55,
+    nutrient_calcium_dose_ml_l: 0.55,
+    nutrient_micro_dose_ml_l: 0.09,
+    nutrient_npk_product_id: null,
+    nutrient_calcium_product_id: null,
+    nutrient_micro_product_id: null,
+    nutrient_dose_delay_sec: DEFAULT_NUTRIENT_DOSE_DELAY_SEC,
+    nutrient_ec_stop_tolerance: DEFAULT_NUTRIENT_EC_STOP_TOLERANCE,
     targets: {
       ph: { min: 5.6, max: 6.0 },
       ec: { min: 1.2, max: 1.6 },
@@ -436,7 +660,65 @@ const form = useForm<RecipeFormData>({
       irrigation_interval_sec: null,
       irrigation_duration_sec: null,
     },
-  }],
+  }
+}
+
+function mapRecipePhaseToForm(phase: RecipePhase & Record<string, any>): RecipePhaseForm {
+  const phMin = toNullableNumber(phase.ph_min ?? phase.targets?.ph?.min, 5.8) ?? 5.8
+  const phMax = toNullableNumber(phase.ph_max ?? phase.targets?.ph?.max, 6.0) ?? 6.0
+  const ecMin = toNullableNumber(phase.ec_min ?? phase.targets?.ec?.min, 1.2) ?? 1.2
+  const ecMax = toNullableNumber(phase.ec_max ?? phase.targets?.ec?.max, 1.6) ?? 1.6
+
+  return {
+    id: phase.id,
+    phase_index: phase.phase_index || 0,
+    name: phase.name || '',
+    duration_hours: phase.duration_hours || 24,
+    nutrient_program_code: typeof phase.nutrient_program_code === 'string' && phase.nutrient_program_code.trim().length > 0
+      ? phase.nutrient_program_code
+      : DEFAULT_NUTRIENT_PROGRAM_CODE,
+    nutrient_npk_ratio_pct: toNullableNumber(phase.nutrient_npk_ratio_pct, 44),
+    nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct, 44),
+    nutrient_micro_ratio_pct: toNullableNumber(phase.nutrient_micro_ratio_pct, 12),
+    nutrient_npk_dose_ml_l: toNullableNumber(phase.nutrient_npk_dose_ml_l, 0.55),
+    nutrient_calcium_dose_ml_l: toNullableNumber(phase.nutrient_calcium_dose_ml_l, 0.55),
+    nutrient_micro_dose_ml_l: toNullableNumber(phase.nutrient_micro_dose_ml_l, 0.09),
+    nutrient_npk_product_id: toNullableInt(phase.nutrient_npk_product_id),
+    nutrient_calcium_product_id: toNullableInt(phase.nutrient_calcium_product_id),
+    nutrient_micro_product_id: toNullableInt(phase.nutrient_micro_product_id),
+    nutrient_dose_delay_sec: toNullableInt(phase.nutrient_dose_delay_sec, DEFAULT_NUTRIENT_DOSE_DELAY_SEC),
+    nutrient_ec_stop_tolerance: toNullableNumber(phase.nutrient_ec_stop_tolerance, DEFAULT_NUTRIENT_EC_STOP_TOLERANCE),
+    targets: {
+      ph: { min: phMin, max: phMax },
+      ec: { min: ecMin, max: ecMax },
+      temp_air: toNullableNumber(phase.temp_air_target ?? phase.targets?.temp_air),
+      humidity_air: toNullableNumber(phase.humidity_target ?? phase.targets?.humidity_air),
+      light_hours: toNullableNumber(phase.lighting_photoperiod_hours ?? phase.targets?.light_hours),
+      irrigation_interval_sec: toNullableInt(phase.irrigation_interval_sec ?? phase.targets?.irrigation_interval_sec),
+      irrigation_duration_sec: toNullableInt(phase.irrigation_duration_sec ?? phase.targets?.irrigation_duration_sec),
+    },
+  }
+}
+
+const form = useForm<RecipeFormData>({
+  name: recipe.name || '',
+  description: recipe.description || '',
+  plant_id: initialPlantId,
+  phases: (recipe.phases || []).length > 0
+    ? (recipe.phases || []).map((phase: RecipePhase & Record<string, any>) => mapRecipePhaseToForm(phase))
+    : [createDefaultPhase(0)],
+})
+
+const npkProducts = computed<NutrientProduct[]>(() => {
+  return nutrientProducts.value.filter((product) => String(product.component).toLowerCase() === 'npk')
+})
+
+const calciumProducts = computed<NutrientProduct[]>(() => {
+  return nutrientProducts.value.filter((product) => String(product.component).toLowerCase() === 'calcium')
+})
+
+const microProducts = computed<NutrientProduct[]>(() => {
+  return nutrientProducts.value.filter((product) => String(product.component).toLowerCase() === 'micro')
 })
 
 const loadPlants = async (): Promise<void> => {
@@ -468,32 +750,141 @@ const loadPlants = async (): Promise<void> => {
   }
 }
 
+const loadNutrientProducts = async (): Promise<void> => {
+  try {
+    nutrientProductsLoading.value = true
+    const response = await api.get('/nutrient-products')
+    const data = response.data?.data || []
+
+    nutrientProducts.value = Array.isArray(data)
+      ? data.map((item: any) => ({
+        id: item.id,
+        manufacturer: item.manufacturer,
+        name: item.name,
+        component: item.component,
+        composition: item.composition ?? null,
+        recommended_stage: item.recommended_stage ?? null,
+        notes: item.notes ?? null,
+        metadata: item.metadata ?? null,
+      }))
+      : []
+  } catch (error) {
+    logger.error('Failed to load nutrient products:', error)
+    showToast('Не удалось загрузить список удобрений', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    nutrientProductsLoading.value = false
+  }
+}
+
 onMounted(() => {
-  loadPlants()
+  void loadPlants()
+  void loadNutrientProducts()
 })
 
 const sortedPhases = computed<RecipePhaseForm[]>(() => {
   return [...form.phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
 })
 
+function nutrientRatioSum(phase: RecipePhaseForm): number {
+  const npk = toNullableNumber(phase.nutrient_npk_ratio_pct, 0) ?? 0
+  const calcium = toNullableNumber(phase.nutrient_calcium_ratio_pct, 0) ?? 0
+  const micro = toNullableNumber(phase.nutrient_micro_ratio_pct, 0) ?? 0
+  return npk + calcium + micro
+}
+
+function roundRatio(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function normalizePhaseRatios(phase: RecipePhaseForm): void {
+  const npk = toNullableNumber(phase.nutrient_npk_ratio_pct, 0) ?? 0
+  const calcium = toNullableNumber(phase.nutrient_calcium_ratio_pct, 0) ?? 0
+  const micro = toNullableNumber(phase.nutrient_micro_ratio_pct, 0) ?? 0
+
+  const sum = npk + calcium + micro
+  if (sum <= 0) {
+    phase.nutrient_npk_ratio_pct = 44
+    phase.nutrient_calcium_ratio_pct = 44
+    phase.nutrient_micro_ratio_pct = 12
+    return
+  }
+
+  const normalizedNpk = roundRatio((npk / sum) * 100)
+  const normalizedCalcium = roundRatio((calcium / sum) * 100)
+  let normalizedMicro = roundRatio(100 - normalizedNpk - normalizedCalcium)
+
+  if (normalizedMicro < 0) {
+    normalizedMicro = 0
+  }
+
+  const normalizedSum = normalizedNpk + normalizedCalcium + normalizedMicro
+  if (Math.abs(normalizedSum - 100) > 0.01) {
+    normalizedMicro = roundRatio(normalizedMicro + (100 - normalizedSum))
+  }
+
+  phase.nutrient_npk_ratio_pct = normalizedNpk
+  phase.nutrient_calcium_ratio_pct = normalizedCalcium
+  phase.nutrient_micro_ratio_pct = normalizedMicro
+}
+
+function isNutrientRatioValid(phase: RecipePhaseForm): boolean {
+  return Math.abs(nutrientRatioSum(phase) - 100) <= 0.01
+}
+
+function validateAllPhaseRatios(phases: RecipePhaseForm[]): boolean {
+  for (const phase of phases) {
+    if (!isNutrientRatioValid(phase)) {
+      const label = phase.name?.trim() || `Фаза #${(phase.phase_index ?? 0) + 1}`
+      showToast(`Сумма ratio должна быть 100% (${label})`, 'error', TOAST_TIMEOUT.NORMAL)
+      return false
+    }
+  }
+
+  return true
+}
+
 const onAddPhase = (): void => {
-  const maxIndex = form.phases.length > 0 
-    ? Math.max(...form.phases.map(p => p.phase_index || 0))
+  const maxIndex = form.phases.length > 0
+    ? Math.max(...form.phases.map((phase) => phase.phase_index || 0))
     : -1
-  form.phases.push({
-    phase_index: maxIndex + 1,
-    name: '',
-    duration_hours: 24,
-    targets: {
-      ph: { min: 5.6, max: 6.0 },
-      ec: { min: 1.2, max: 1.6 },
-      temp_air: null,
-      humidity_air: null,
-      light_hours: null,
-      irrigation_interval_sec: null,
-      irrigation_duration_sec: null,
-    },
-  })
+
+  form.phases.push(createDefaultPhase(maxIndex + 1))
+}
+
+function buildPhasePayload(phase: RecipePhaseForm): Record<string, any> {
+  const phMin = phase.targets.ph.min
+  const phMax = phase.targets.ph.max
+  const ecMin = phase.targets.ec.min
+  const ecMax = phase.targets.ec.max
+
+  return {
+    phase_index: phase.phase_index,
+    name: phase.name,
+    duration_hours: phase.duration_hours,
+    ph_target: (phMin + phMax) / 2,
+    ph_min: phMin,
+    ph_max: phMax,
+    ec_target: (ecMin + ecMax) / 2,
+    ec_min: ecMin,
+    ec_max: ecMax,
+    temp_air_target: toNullableNumber(phase.targets.temp_air),
+    humidity_target: toNullableNumber(phase.targets.humidity_air),
+    lighting_photoperiod_hours: toNullableInt(phase.targets.light_hours),
+    irrigation_interval_sec: toNullableInt(phase.targets.irrigation_interval_sec),
+    irrigation_duration_sec: toNullableInt(phase.targets.irrigation_duration_sec),
+    nutrient_program_code: phase.nutrient_program_code?.trim() || null,
+    nutrient_npk_ratio_pct: toNullableNumber(phase.nutrient_npk_ratio_pct),
+    nutrient_calcium_ratio_pct: toNullableNumber(phase.nutrient_calcium_ratio_pct),
+    nutrient_micro_ratio_pct: toNullableNumber(phase.nutrient_micro_ratio_pct),
+    nutrient_npk_dose_ml_l: toNullableNumber(phase.nutrient_npk_dose_ml_l),
+    nutrient_calcium_dose_ml_l: toNullableNumber(phase.nutrient_calcium_dose_ml_l),
+    nutrient_micro_dose_ml_l: toNullableNumber(phase.nutrient_micro_dose_ml_l),
+    nutrient_npk_product_id: toNullableInt(phase.nutrient_npk_product_id),
+    nutrient_calcium_product_id: toNullableInt(phase.nutrient_calcium_product_id),
+    nutrient_micro_product_id: toNullableInt(phase.nutrient_micro_product_id),
+    nutrient_dose_delay_sec: toNullableInt(phase.nutrient_dose_delay_sec),
+    nutrient_ec_stop_tolerance: toNullableNumber(phase.nutrient_ec_stop_tolerance),
+  }
 }
 
 const onSave = async (): Promise<void> => {
@@ -502,8 +893,13 @@ const onSave = async (): Promise<void> => {
     return
   }
 
+  if (!validateAllPhaseRatios(form.phases)) {
+    return
+  }
+
   try {
     form.processing = true
+
     if (recipe.id) {
       await api.patch(`/recipes/${recipe.id}`, {
         name: form.name,
@@ -528,34 +924,14 @@ const onSave = async (): Promise<void> => {
       }
 
       const existingPhaseIds = hasDraft
-        ? (recipe.phases || []).map((p: any) => p.id).filter((id: number | undefined) => !!id)
+        ? (recipe.phases || []).map((phase: any) => phase.id).filter((id: number | undefined) => !!id)
         : []
-      const currentPhaseIds = form.phases.map(p => p.id).filter((id): id is number => !!id)
+      const currentPhaseIds = form.phases
+        .map((phase) => phase.id)
+        .filter((id): id is number => !!id)
 
       for (const phase of form.phases) {
-        const phMin = phase.targets.ph.min
-        const phMax = phase.targets.ph.max
-        const ecMin = phase.targets.ec.min
-        const ecMax = phase.targets.ec.max
-        const phTarget = (phMin + phMax) / 2
-        const ecTarget = (ecMin + ecMax) / 2
-
-        const payload = {
-          phase_index: phase.phase_index,
-          name: phase.name,
-          duration_hours: phase.duration_hours,
-          ph_target: phTarget,
-          ph_min: phMin,
-          ph_max: phMax,
-          ec_target: ecTarget,
-          ec_min: ecMin,
-          ec_max: ecMax,
-          temp_air_target: phase.targets.temp_air || null,
-          humidity_target: phase.targets.humidity_air || null,
-          lighting_photoperiod_hours: phase.targets.light_hours || null,
-          irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
-          irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
-        }
+        const payload = buildPhasePayload(phase)
 
         if (hasDraft && phase.id) {
           await api.patch(`/recipe-revision-phases/${phase.id}`, payload)
@@ -565,7 +941,7 @@ const onSave = async (): Promise<void> => {
       }
 
       if (hasDraft) {
-        const removedIds = existingPhaseIds.filter(id => !currentPhaseIds.includes(id))
+        const removedIds = existingPhaseIds.filter((id) => !currentPhaseIds.includes(id))
         for (const removedId of removedIds) {
           await api.delete(`/recipe-revision-phases/${removedId}`)
         }
@@ -574,65 +950,43 @@ const onSave = async (): Promise<void> => {
       await api.post(`/recipe-revisions/${draftRevisionId}/publish`)
       showToast('Рецепт успешно обновлен', 'success', TOAST_TIMEOUT.NORMAL)
       router.visit(`/recipes/${recipe.id}`)
-    } else {
-      // Создание нового рецепта - сначала создаем рецепт, потом фазы
-      const recipeResponse = await api.post<{ data?: { id: number } }>(
-        '/recipes',
-        {
-          name: form.name,
-          description: form.description,
-          plant_id: form.plant_id,
-        }
-      )
-      
-      const recipeId = (recipeResponse.data as { data?: { id: number } })?.data?.id
-      
-      if (!recipeId) {
-        throw new Error('Recipe ID not found in response')
-      }
-
-      const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
-        `/recipes/${recipeId}/revisions`,
-        { description: 'Initial revision' }
-      )
-      const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
-      const revisionId = revision?.id
-
-      if (!revisionId) {
-        throw new Error('Recipe revision ID not found in response')
-      }
-
-      for (const phase of form.phases) {
-        const phMin = phase.targets.ph.min
-        const phMax = phase.targets.ph.max
-        const ecMin = phase.targets.ec.min
-        const ecMax = phase.targets.ec.max
-        const phTarget = (phMin + phMax) / 2
-        const ecTarget = (ecMin + ecMax) / 2
-
-        await api.post(`/recipe-revisions/${revisionId}/phases`, {
-          phase_index: phase.phase_index,
-          name: phase.name,
-          duration_hours: phase.duration_hours,
-          ph_target: phTarget,
-          ph_min: phMin,
-          ph_max: phMax,
-          ec_target: ecTarget,
-          ec_min: ecMin,
-          ec_max: ecMax,
-          temp_air_target: phase.targets.temp_air || null,
-          humidity_target: phase.targets.humidity_air || null,
-          lighting_photoperiod_hours: phase.targets.light_hours || null,
-          irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
-          irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
-        })
-      }
-
-      await api.post(`/recipe-revisions/${revisionId}/publish`)
-
-      showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
-      router.visit(`/recipes/${recipeId}`)
+      return
     }
+
+    const recipeResponse = await api.post<{ data?: { id: number } }>(
+      '/recipes',
+      {
+        name: form.name,
+        description: form.description,
+        plant_id: form.plant_id,
+      }
+    )
+
+    const recipeId = (recipeResponse.data as { data?: { id: number } })?.data?.id
+
+    if (!recipeId) {
+      throw new Error('Recipe ID not found in response')
+    }
+
+    const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
+      `/recipes/${recipeId}/revisions`,
+      { description: 'Initial revision' }
+    )
+    const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
+    const revisionId = revision?.id
+
+    if (!revisionId) {
+      throw new Error('Recipe revision ID not found in response')
+    }
+
+    for (const phase of form.phases) {
+      await api.post(`/recipe-revisions/${revisionId}/phases`, buildPhasePayload(phase))
+    }
+
+    await api.post(`/recipe-revisions/${revisionId}/publish`)
+
+    showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
+    router.visit(`/recipes/${recipeId}`)
   } catch (error) {
     logger.error('Failed to save recipe:', error)
   } finally {

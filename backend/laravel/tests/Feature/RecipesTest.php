@@ -159,6 +159,47 @@ class RecipesTest extends TestCase
             ->assertJsonPath('data.name', 'New Phase');
     }
 
+    public function test_add_phase_rejects_invalid_nutrient_ratio_sum(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'DRAFT',
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/recipe-revisions/{$revision->id}/phases", [
+                'phase_index' => 0,
+                'name' => 'Phase with invalid ratio',
+                'duration_hours' => 24,
+                'nutrient_npk_ratio_pct' => 40,
+                'nutrient_calcium_ratio_pct' => 40,
+                'nutrient_micro_ratio_pct' => 10,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['nutrient_ratio_sum']);
+    }
+
+    public function test_update_phase_rejects_partial_ratio_update_when_sum_not_100(): void
+    {
+        $token = $this->token();
+        $phase = RecipeRevisionPhase::factory()->create([
+            'nutrient_npk_ratio_pct' => 44,
+            'nutrient_calcium_ratio_pct' => 44,
+            'nutrient_micro_ratio_pct' => 12,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/recipe-revision-phases/{$phase->id}", [
+                'nutrient_npk_ratio_pct' => 60,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['nutrient_ratio_sum']);
+    }
+
     public function test_delete_phase(): void
     {
         $token = $this->token();

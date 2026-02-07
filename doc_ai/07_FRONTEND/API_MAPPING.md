@@ -51,6 +51,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |------------------------|------------------|-------|------------|--------|
 | `Recipes/Edit.vue:96` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
 | `Admin/Recipes.vue:41` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
+| `Recipes/Edit.vue` | `/api/nutrient-products` | GET | `NutrientProductController::index` | ✅ Используется |
 
 **Отсутствующие endpoints (требуются для плана):**
 - ❌ `/api/recipes?search={query}` - поиск рецептов для Command Palette (Волна 4)
@@ -60,6 +61,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Frontend использование | Backend endpoint | Метод | Контроллер | Статус |
 |------------------------|------------------|-------|------------|--------|
 | `Alerts/Index.vue:86` | `/api/alerts/{id}/ack` | PATCH | `AlertController::ack` | ✅ Используется |
+
+### 1.4.1. Nutrients (Удобрения)
+
+| Frontend использование | Backend endpoint | Метод | Контроллер | Статус |
+|------------------------|------------------|-------|------------|--------|
+| `Nutrients/Index.vue` | `/api/nutrient-products` | GET | `NutrientProductController::index` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products` | POST | `NutrientProductController::store` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products/{id}` | PATCH | `NutrientProductController::update` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products/{id}` | DELETE | `NutrientProductController::destroy` | ✅ Используется |
 
 ### 1.5. Greenhouses (Теплицы)
 

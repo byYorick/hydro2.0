@@ -160,4 +160,22 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.waterForm.intervalMinutes).toBe(60)
     expect(vm.waterForm.durationSeconds).toBe(150)
   })
+
+  it('безопасно форматирует телеметрию из строковых значений', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        telemetry: { temperature: '24.4', humidity: '58' } as any,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect(vm.telemetryLabel).toBe('24.4°C / 58%')
+  })
 })

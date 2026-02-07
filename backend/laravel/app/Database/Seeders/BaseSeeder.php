@@ -236,17 +236,21 @@ abstract class BaseSeeder extends Seeder implements SeederInterface
             if ($instance->wasRecentlyCreated) {
                 return 'created';
             } else {
-                // Проверим, были ли изменения
-                $hasChanges = false;
+                // Обновляем все измененные поля, а не только первое совпадение.
+                $changes = [];
                 foreach ($values as $key => $value) {
                     if ($instance->$key != $value) {
-                        $instance->update([$key => $value]);
-                        $hasChanges = true;
-                        break;
+                        $changes[$key] = $value;
                     }
                 }
 
-                return $hasChanges ? 'updated' : 'skipped';
+                if (! empty($changes)) {
+                    $instance->update($changes);
+
+                    return 'updated';
+                }
+
+                return 'skipped';
             }
         } catch (\Throwable $e) {
             Log::error("firstOrCreate failed in {$this->getSeederName()}", [
