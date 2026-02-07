@@ -96,3 +96,13 @@ class CalibrateFlowRequest(BaseModel):
     node_id: int = Field(..., ge=1, description="Node ID with flow sensor")
     channel: str = Field(..., min_length=1, max_length=64, description="Flow sensor channel name")
     pump_duration_sec: Optional[int] = Field(10, ge=1, le=60, description="Pump duration for calibration")
+
+
+class CalibratePumpRequest(BaseModel):
+    """Request model for dosing pump calibration."""
+
+    node_channel_id: int = Field(..., ge=1, description="Actuator node_channel ID for pump")
+    duration_sec: int = Field(..., ge=1, le=120, description="Pump run duration (seconds)")
+    actual_ml: Optional[float] = Field(None, gt=0.0, description="Measured real volume in ml")
+    skip_run: bool = Field(False, description="Skip physical run and only persist calibration")
+    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|micro")

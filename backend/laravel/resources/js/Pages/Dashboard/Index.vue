@@ -571,8 +571,7 @@ import ViewerDashboard from "./Dashboards/ViewerDashboard.vue";
 import { translateStatus } from "@/utils/i18n";
 import { formatTime } from "@/utils/formatTime";
 import { useRole } from "@/composables/useRole";
-import { useDashboardPage, telemetryRangeOptions, type DashboardData, type QuickAction } from "@/composables/useDashboardPage";
-import type { Zone } from "@/types";
+import { useDashboardPage, telemetryRangeOptions, type DashboardData } from "@/composables/useDashboardPage";
 
 interface Props {
     dashboard: DashboardData;

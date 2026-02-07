@@ -19,13 +19,15 @@ from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
 from common.db import execute, fetch
 from common.env import get_settings
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.mqtt import get_mqtt_client
 from common.trace_context import get_trace_id, set_trace_id
 from common.utils.time import utcnow
-from common.water_flow import calibrate_flow, execute_drain_mode, execute_fill_mode
+from common.water_flow import calibrate_flow, calibrate_pump, execute_drain_mode, execute_fill_mode
 from metrics import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
 from models import (
     CalibrateFlowRequest,
+    CalibratePumpRequest,
     CommandRequest,
     FillDrainRequest,
     NodeConfigPublishRequest,
@@ -71,6 +73,36 @@ def _log_config_publish_context(
         is_temp,
         has_secret,
         payload_size,
+    )
+
+
+async def _emit_command_send_failed_alert(
+    *,
+    zone_id: int,
+    node_uid: str,
+    channel: str,
+    cmd: str,
+    cmd_id: str,
+    error: Any,
+    max_retries: int,
+) -> None:
+    await send_infra_alert(
+        code="infra_command_send_failed",
+        alert_type="Command Send Failed",
+        message=f"Не удалось отправить команду {cmd} после {max_retries} попыток: {error}",
+        severity="critical",
+        zone_id=zone_id,
+        service="history-logger",
+        component="command_publish",
+        node_uid=node_uid,
+        channel=channel,
+        cmd=cmd,
+        error_type=type(error).__name__ if error else "UnknownError",
+        details={
+            "cmd_id": cmd_id,
+            "max_retries": max_retries,
+            "error_message": str(error),
+        },
     )
 
 
@@ -446,6 +478,15 @@ async def publish_zone_command(
             f"Failed to update command status to SEND_FAILED: {e}",
             exc_info=True,
         )
+    await _emit_command_send_failed_alert(
+        zone_id=zone_id,
+        node_uid=req.node_uid,
+        channel=req.channel,
+        cmd=req.get_command_name(),
+        cmd_id=cmd_id,
+        error=last_error,
+        max_retries=max_retries,
+    )
 
     MQTT_PUBLISH_ERRORS.labels(error_type=type(last_error).__name__).inc()
     raise HTTPException(
@@ -677,6 +718,15 @@ async def publish_node_command(
             f"Failed to update command status to SEND_FAILED: {e}",
             exc_info=True,
         )
+    await _emit_command_send_failed_alert(
+        zone_id=req.zone_id,
+        node_uid=node_uid,
+        channel=req.channel,
+        cmd=req.get_command_name(),
+        cmd_id=cmd_id,
+        error=last_error,
+        max_retries=max_retries,
+    )
 
     MQTT_PUBLISH_ERRORS.labels(error_type=type(last_error).__name__).inc()
     raise HTTPException(
@@ -922,6 +972,15 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
             f"Failed to update command status to SEND_FAILED: {e}",
             exc_info=True,
         )
+    await _emit_command_send_failed_alert(
+        zone_id=req.zone_id,
+        node_uid=req.node_uid,
+        channel=req.channel,
+        cmd=req.get_command_name(),
+        cmd_id=cmd_id,
+        error=last_error,
+        max_retries=max_retries,
+    )
 
     MQTT_PUBLISH_ERRORS.labels(error_type=type(last_error).__name__).inc()
     raise HTTPException(
@@ -951,6 +1010,19 @@ async def zone_fill(
             logger.error(
                 f"Failed to execute fill mode for zone {zone_id}: {e}", exc_info=True
             )
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_fill_mode_failed",
+                alert_type="Fill Mode Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="history-logger",
+                component="water_flow",
+                details={
+                    "target_level": req.target_level,
+                    "max_duration_sec": req.max_duration_sec,
+                },
+            )
             raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -974,6 +1046,19 @@ async def zone_drain(
         except Exception as e:
             logger.error(
                 f"Failed to execute drain mode for zone {zone_id}: {e}", exc_info=True
+            )
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_drain_mode_failed",
+                alert_type="Drain Mode Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="history-logger",
+                component="water_flow",
+                details={
+                    "target_level": req.target_level,
+                    "max_duration_sec": req.max_duration_sec,
+                },
             )
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -1001,5 +1086,64 @@ async def zone_calibrate_flow(
         except Exception as e:
             logger.error(
                 f"Failed to calibrate flow for zone {zone_id}: {e}", exc_info=True
+            )
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_flow_calibration_failed",
+                alert_type="Flow Calibration Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="history-logger",
+                component="flow_calibration",
+                details={
+                    "node_id": req.node_id,
+                    "channel": req.channel,
+                    "pump_duration_sec": req.pump_duration_sec,
+                },
+            )
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/zones/{zone_id}/calibrate-pump")
+async def zone_calibrate_pump(
+    request: Request, zone_id: int, req: CalibratePumpRequest = Body(...)
+):
+    """Выполнить калибровку дозирующей помпы (ml/sec) через history-logger."""
+    _auth_ingest(request)
+
+    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
+
+    async with _mqtt_client_context("-calibrate-pump") as mqtt:
+        try:
+            result = await calibrate_pump(
+                zone_id=zone_id,
+                node_channel_id=req.node_channel_id,
+                duration_sec=req.duration_sec,
+                actual_ml=req.actual_ml,
+                skip_run=req.skip_run,
+                component=req.component,
+                mqtt_client=mqtt,
+                gh_uid=gh_uid,
+            )
+            return {"status": "ok", "data": result}
+        except Exception as e:
+            logger.error(
+                f"Failed to calibrate pump for zone {zone_id}: {e}", exc_info=True
+            )
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_pump_calibration_failed",
+                alert_type="Pump Calibration Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="history-logger",
+                component="pump_calibration",
+                details={
+                    "node_channel_id": req.node_channel_id,
+                    "duration_sec": req.duration_sec,
+                    "actual_ml": req.actual_ml,
+                    "skip_run": req.skip_run,
+                    "component": req.component,
+                },
             )
             raise HTTPException(status_code=500, detail=str(e))

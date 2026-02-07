@@ -220,11 +220,9 @@ async def test_ec_controller_check_and_correct_low_ec():
     telemetry = {"EC": 1.5}  # diff = -0.3, EC слишком низкий
     nodes = {}
     actuators = {
-        "ec_nutrient_pump": {
-            "node_uid": "nd-ec-1",
-            "channel": "pump_nutrient",
-            "role": "ec_nutrient_pump"
-        }
+        "ec_npk_pump": {"node_uid": "nd-ec-a", "channel": "pump_a", "role": "ec_npk_pump"},
+        "ec_calcium_pump": {"node_uid": "nd-ec-b", "channel": "pump_b", "role": "ec_calcium_pump"},
+        "ec_micro_pump": {"node_uid": "nd-ec-c", "channel": "pump_c", "role": "ec_micro_pump"},
     }
     
     with patch("correction_controller.should_apply_correction") as mock_should, \
@@ -242,6 +240,7 @@ async def test_ec_controller_check_and_correct_low_ec():
         assert result['params']['type'] == 'add_nutrients'
         assert result['params']['ml'] == pytest.approx(30.0, abs=0.01)  # abs(-0.3) * 100
         assert result['params']['duration_ms'] > 0
+        assert len(result.get("batch_commands", [])) == 3
         assert result['event_type'] == 'EC_DOSING'
 
 
@@ -253,10 +252,10 @@ async def test_ec_controller_check_and_correct_high_ec():
     telemetry = {"EC": 2.1}  # diff = 0.3, EC слишком высокий
     nodes = {}
     actuators = {
-        "ec_nutrient_pump": {
+        "ec_npk_pump": {
             "node_uid": "nd-ec-1",
-            "channel": "pump_nutrient",
-            "role": "ec_nutrient_pump"
+            "channel": "pump_a",
+            "role": "ec_npk_pump"
         }
     }
     
@@ -268,6 +267,188 @@ async def test_ec_controller_check_and_correct_high_ec():
         
         # Для dilute актюатор не выбирается, команда не отправляется
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_ec_controller_requires_all_three_component_pumps():
+    """EC correction should be skipped when one of three component pumps is missing."""
+    controller = CorrectionController(CorrectionType.EC)
+    targets = {"ec": {"target": 2.0}}
+    telemetry = {"EC": 1.6}
+    actuators = {
+        "ec_npk_pump": {"node_uid": "nd-ec-a", "channel": "pump_a", "role": "ec_npk_pump"},
+        "ec_calcium_pump": {"node_uid": "nd-ec-b", "channel": "pump_b", "role": "ec_calcium_pump"},
+    }
+
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(
+            1,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+        )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_ec_controller_splits_dose_for_three_component_feeding():
+    """EC correction should be split across NPK/Ca/Micro pumps when targets provide nutrition components."""
+    controller = CorrectionController(CorrectionType.EC)
+    targets = {
+        "ec": {"target": 2.0},
+        "nutrition": {
+            "program_code": "GENERIC_3PART_V1",
+            "components": {
+                "npk": {"ratio_pct": 50},
+                "calcium": {"ratio_pct": 30},
+                "micro": {"ratio_pct": 20},
+            },
+        },
+    }
+    telemetry = {"EC": 1.6}  # diff = -0.4
+    nodes = {}
+    actuators = {
+        "ec_npk_pump": {
+            "node_uid": "nd-ec-a",
+            "channel": "pump_a",
+            "role": "ec_npk_pump",
+        },
+        "ec_calcium_pump": {
+            "node_uid": "nd-ec-b",
+            "channel": "pump_b",
+            "role": "ec_calcium_pump",
+        },
+        "ec_micro_pump": {
+            "node_uid": "nd-ec-c",
+            "channel": "pump_c",
+            "role": "ec_micro_pump",
+        },
+    }
+
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+
+        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        result = await controller.check_and_correct(
+            1,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes=nodes,
+            water_level_ok=True,
+            actuators=actuators,
+        )
+
+        assert result is not None
+        assert "batch_commands" in result
+        assert len(result["batch_commands"]) == 3
+        doses = {item["component"]: item["ml"] for item in result["batch_commands"]}
+        assert doses["npk"] == pytest.approx(15.0, abs=0.01)
+        assert doses["calcium"] == pytest.approx(9.0, abs=0.01)
+        assert doses["micro"] == pytest.approx(6.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_apply_correction_publishes_all_batch_commands():
+    """Batch correction should publish each component command."""
+    controller = CorrectionController(CorrectionType.EC)
+    command = {
+        "node_uid": "nd-ec-a",
+        "channel": "pump_a",
+        "cmd": "run_pump",
+        "params": {"type": "add_nutrients", "ml": 10.0, "duration_ms": 1000},
+        "event_type": "EC_DOSING",
+        "event_details": {
+            "correction_type": "add_nutrients",
+            "current_ec": 1.6,
+            "target_ec": 2.0,
+            "diff": -0.4,
+            "ml": 30.0,
+        },
+        "zone_id": 1,
+        "correction_type_str": "ec",
+        "current_value": 1.6,
+        "target_value": 2.0,
+        "reason": "Корректировка необходима",
+        "batch_commands": [
+            {
+                "node_uid": "nd-ec-a",
+                "channel": "pump_a",
+                "cmd": "run_pump",
+                "params": {"type": "add_nutrients", "component": "npk", "ml": 15.0, "duration_ms": 1500},
+            },
+            {
+                "node_uid": "nd-ec-b",
+                "channel": "pump_b",
+                "cmd": "run_pump",
+                "params": {"type": "add_nutrients", "component": "calcium", "ml": 9.0, "duration_ms": 900},
+            },
+            {
+                "node_uid": "nd-ec-c",
+                "channel": "pump_c",
+                "cmd": "run_pump",
+                "params": {"type": "add_nutrients", "component": "micro", "ml": 6.0, "duration_ms": 600},
+            },
+        ],
+    }
+
+    from infrastructure.command_bus import CommandBus
+    command_bus = Mock(spec=CommandBus)
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+
+    with patch("correction_controller.record_correction"), \
+         patch("correction_controller.create_zone_event"), \
+         patch("correction_controller.create_ai_log"), \
+         patch("correction_controller.fetch", new_callable=AsyncMock, return_value=[]):
+        await controller.apply_correction(command, command_bus)
+
+    assert command_bus.publish_controller_command.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_apply_correction_stops_batch_when_ec_target_reached():
+    """Batch EC dosing should stop early after recheck if target reached."""
+    controller = CorrectionController(CorrectionType.EC)
+    command = {
+        "zone_id": 1,
+        "correction_type_str": "ec",
+        "current_value": 1.6,
+        "target_value": 2.0,
+        "reason": "Корректировка необходима",
+        "event_type": "EC_DOSING",
+        "event_details": {"diff": -0.4, "correction_type": "add_nutrients", "ml": 30.0},
+        "nutrition_control": {"dose_delay_sec": 0.0, "ec_stop_tolerance": 0.05},
+        "batch_commands": [
+            {"node_uid": "nd-ec-a", "channel": "pump_a", "cmd": "run_pump", "params": {"ml": 15.0}, "component": "npk"},
+            {"node_uid": "nd-ec-b", "channel": "pump_b", "cmd": "run_pump", "params": {"ml": 9.0}, "component": "calcium"},
+            {"node_uid": "nd-ec-c", "channel": "pump_c", "cmd": "run_pump", "params": {"ml": 6.0}, "component": "micro"},
+        ],
+    }
+
+    from infrastructure.command_bus import CommandBus
+    command_bus = Mock(spec=CommandBus)
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+
+    ec_after_first_dose = [{"last_value": 1.98}]
+    with patch("correction_controller.record_correction"), \
+         patch("correction_controller.create_zone_event"), \
+         patch("correction_controller.create_ai_log"), \
+         patch("correction_controller.fetch", new_callable=AsyncMock, return_value=ec_after_first_dose):
+        await controller.apply_correction(command, command_bus)
+
+    assert command_bus.publish_controller_command.await_count == 1
 
 
 @pytest.mark.asyncio

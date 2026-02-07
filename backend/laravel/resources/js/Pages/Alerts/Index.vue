@@ -56,6 +56,19 @@
           />
         </div>
 
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Подавление:</label>
+          <input
+            v-model.number="toastSuppressionSec"
+            type="number"
+            min="0"
+            max="600"
+            step="5"
+            class="input-field w-24"
+          />
+          <span class="text-xs text-[color:var(--text-dim)]">сек</span>
+        </div>
+
         <div class="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -146,6 +159,12 @@
           </span>
         </template>
 
+        <template #cell-type="{ row }">
+          <span class="truncate block max-w-[320px]">
+            {{ getAlertMeta(row).title }}
+          </span>
+        </template>
+
         <template #cell-created_at="{ row }">
           {{ formatDate(row.created_at) }}
         </template>
@@ -215,7 +234,7 @@
               Тип
             </div>
             <div class="text-[color:var(--text-primary)] font-semibold">
-              {{ selectedAlert.type }}
+              {{ getAlertMeta(selectedAlert).title }}
             </div>
           </div>
           <div
@@ -241,14 +260,25 @@
             </div>
           </div>
           <div
-            v-if="selectedAlert.message"
+            v-if="selectedAlertMessage"
             class="space-y-1"
           >
             <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
               Сообщение
             </div>
             <div class="text-[color:var(--text-primary)]">
-              {{ selectedAlert.message }}
+              {{ selectedAlertMessage }}
+            </div>
+          </div>
+          <div
+            v-if="getAlertMeta(selectedAlert).recommendation"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Рекомендация
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ getAlertMeta(selectedAlert).recommendation }}
             </div>
           </div>
           <div class="space-y-1">
@@ -326,6 +356,7 @@ import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity } from '@/constants/alertErrorMap'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Alert } from '@/types/Alert'
 
@@ -346,6 +377,13 @@ const page = usePage<PageProps>()
 const alertsStore = useAlertsStore()
 const { api } = useApi()
 const { showToast } = useToast()
+const ALERT_TOAST_SUPPRESSION_KEY = 'hydro.alerts.toastSuppressionSec'
+const toastSuppressionSec = ref(30)
+const isSyncingSuppressionPreference = ref(false)
+let skipSuppressionPersistCount = 0
+const recentAlertToastAt = new Map<string, number>()
+const toastSuppressionMs = computed(() => Math.max(0, Math.floor(Number(toastSuppressionSec.value) || 0) * 1000))
+let suppressionPersistTimer: ReturnType<typeof setTimeout> | null = null
 
 const statusFilter = useUrlState<'active' | 'resolved' | 'all'>({
   key: 'status',
@@ -455,6 +493,15 @@ const zoneOptions = computed(() => {
 
 const searchNeedle = computed(() => searchQuery.value.trim().toLowerCase())
 
+const getAlertMeta = (alert?: AlertRecord | null) => resolveAlertCodeMeta(alert?.code)
+
+const getAlertMessage = (alert?: AlertRecord | null): string => {
+  if (!alert) return ''
+  const messageFromPayload = String(alert.message || alert.details?.message || '').trim()
+  if (messageFromPayload) return messageFromPayload
+  return getAlertMeta(alert).description
+}
+
 const isResolved = (alert: AlertRecord): boolean => {
   return alert.status === 'resolved' || alert.status === 'RESOLVED'
 }
@@ -462,8 +509,8 @@ const isResolved = (alert: AlertRecord): boolean => {
 const isAlarm = (alert: AlertRecord): boolean => {
   const type = (alert.type || '').toUpperCase()
   const code = (alert.code || '').toUpperCase()
-  const severity = String(alert.details?.severity || alert.details?.level || '').toUpperCase()
-  return type.includes('ALARM') || type.includes('ALERT') || code.includes('ALARM') || severity.includes('CRITICAL')
+  const severity = resolveAlertSeverity(alert.code, alert.details)
+  return type.includes('ALARM') || type.includes('ALERT') || code.includes('ALARM') || severity === 'critical'
 }
 
 const filteredAlerts = computed(() => {
@@ -494,7 +541,8 @@ const filteredAlerts = computed(() => {
       const searchStack = [
         alert.type,
         alert.code,
-        alert.message,
+        getAlertMessage(alert),
+        getAlertMeta(alert).title,
         alert.source,
         detailsText,
       ]
@@ -637,6 +685,8 @@ const selectedAlert = computed<AlertRecord | null>(() => {
   return (alertsStore.alertById(selectedAlertId.value) as AlertRecord) || null
 })
 
+const selectedAlertMessage = computed(() => getAlertMessage(selectedAlert.value))
+
 const detailsJson = computed(() => {
   if (!selectedAlert.value?.details) return ''
   try {
@@ -661,18 +711,143 @@ const formatDate = (value?: string): string => {
   return parsed.toLocaleString('ru-RU')
 }
 
+const severityToToastVariant = (severity: AlertSeverity): 'info' | 'warning' | 'error' => {
+  if (severity === 'critical' || severity === 'error') return 'error'
+  if (severity === 'warning') return 'warning'
+  return 'info'
+}
+
+const getAlertToastKey = (alert: AlertRecord): string => {
+  const dedupeFromBackend = String(alert.details?.dedupe_key || '').trim()
+  if (dedupeFromBackend) return dedupeFromBackend
+  return [
+    String(alert.code || alert.type || 'unknown'),
+    String(alert.zone_id || 'global'),
+    String(alert.details?.node_uid || alert.details?.hardware_id || 'node'),
+  ].join('|')
+}
+
+const shouldSuppressAlertToast = (alert: AlertRecord): boolean => {
+  const windowMs = toastSuppressionMs.value
+  if (windowMs <= 0) return false
+
+  const now = Date.now()
+  for (const [key, timestamp] of recentAlertToastAt.entries()) {
+    if (now - timestamp > windowMs) {
+      recentAlertToastAt.delete(key)
+    }
+  }
+
+  const key = getAlertToastKey(alert)
+  const prevTimestamp = recentAlertToastAt.get(key)
+  if (prevTimestamp && now - prevTimestamp < windowMs) {
+    return true
+  }
+  recentAlertToastAt.set(key, now)
+  return false
+}
+
+const normalizeSuppressionSec = (value: unknown): number => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 30
+  return Math.min(600, Math.max(0, Math.floor(parsed)))
+}
+
+const applyToastSuppressionFromStorage = (): boolean => {
+  if (typeof window === 'undefined') return false
+  const raw = window.localStorage.getItem(ALERT_TOAST_SUPPRESSION_KEY)
+  if (!raw) return false
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return false
+  isSyncingSuppressionPreference.value = true
+  skipSuppressionPersistCount += 1
+  toastSuppressionSec.value = normalizeSuppressionSec(parsed)
+  isSyncingSuppressionPreference.value = false
+  return true
+}
+
+const loadToastSuppressionPreference = async (): Promise<void> => {
+  const hasLocalFallback = applyToastSuppressionFromStorage()
+  try {
+    const response = await api.get('/settings/preferences')
+    const fromProfile = response?.data?.data?.alert_toast_suppression_sec
+    isSyncingSuppressionPreference.value = true
+    skipSuppressionPersistCount += 1
+    toastSuppressionSec.value = normalizeSuppressionSec(fromProfile)
+    isSyncingSuppressionPreference.value = false
+  } catch (err) {
+    logger.warn('[Alerts] Failed to load toast suppression preference from profile', err)
+    if (!hasLocalFallback) {
+      isSyncingSuppressionPreference.value = true
+      skipSuppressionPersistCount += 1
+      toastSuppressionSec.value = 30
+      isSyncingSuppressionPreference.value = false
+    }
+  }
+}
+
+const persistToastSuppressionPreference = async (value: number): Promise<void> => {
+  try {
+    await api.patch('/settings/preferences', {
+      alert_toast_suppression_sec: value,
+    })
+  } catch (err) {
+    logger.warn('[Alerts] Failed to persist toast suppression preference', err)
+  }
+}
+
+watch(toastSuppressionSec, (value) => {
+  const normalized = normalizeSuppressionSec(value)
+  if (normalized !== value) {
+    toastSuppressionSec.value = normalized
+    return
+  }
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(ALERT_TOAST_SUPPRESSION_KEY, String(normalized))
+  }
+  if (skipSuppressionPersistCount > 0) {
+    skipSuppressionPersistCount -= 1
+    return
+  }
+  if (isSyncingSuppressionPreference.value) return
+  if (suppressionPersistTimer) {
+    clearTimeout(suppressionPersistTimer)
+  }
+  suppressionPersistTimer = setTimeout(() => {
+    persistToastSuppressionPreference(normalized)
+  }, 350)
+})
+
 let unsubscribeAlerts: (() => void) | null = null
 
 onMounted(() => {
+  loadToastSuppressionPreference()
   unsubscribeAlerts = subscribeAlerts((event) => {
     const payload = event as AlertRecord
     if (payload?.id) {
       alertsStore.upsert(payload as Alert)
+      if (!isResolved(payload) && !shouldSuppressAlertToast(payload)) {
+        const meta = getAlertMeta(payload)
+        const severity = resolveAlertSeverity(payload.code, payload.details)
+        showToast(
+          getAlertMessage(payload),
+          severityToToastVariant(severity),
+          TOAST_TIMEOUT.NORMAL,
+          {
+            title: meta.title,
+            allowDuplicates: true,
+          }
+        )
+      }
     }
   })
 })
 
 onUnmounted(() => {
+  if (suppressionPersistTimer) {
+    clearTimeout(suppressionPersistTimer)
+    suppressionPersistTimer = null
+  }
   unsubscribeAlerts?.()
   unsubscribeAlerts = null
 })

@@ -252,6 +252,13 @@ ph_max DECIMAL(4,2) NULL
 ec_target DECIMAL(5,2) NULL
 ec_min DECIMAL(5,2) NULL
 ec_max DECIMAL(5,2) NULL
+nutrient_program_code VARCHAR(64) NULL
+nutrient_npk_ratio_pct DECIMAL(5,2) NULL
+nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_micro_ratio_pct DECIMAL(5,2) NULL
+nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
+nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
@@ -358,6 +365,13 @@ ph_max DECIMAL(4,2) NULL
 ec_target DECIMAL(5,2) NULL
 ec_min DECIMAL(5,2) NULL
 ec_max DECIMAL(5,2) NULL
+nutrient_program_code VARCHAR(64) NULL
+nutrient_npk_ratio_pct DECIMAL(5,2) NULL
+nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_micro_ratio_pct DECIMAL(5,2) NULL
+nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
+nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
@@ -665,6 +679,7 @@ name
 email UNIQUE
 password
 role VARCHAR (admin/operator/viewer/automation_bot)
+preferences JSONB NULL -- пользовательские UI-настройки
 created_at
 updated_at
 ```

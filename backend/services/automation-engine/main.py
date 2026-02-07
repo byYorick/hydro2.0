@@ -11,6 +11,7 @@ from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
 from common.simulation_clock import get_simulation_clocks, SimulationClock
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 import math
 import time
@@ -340,6 +341,18 @@ async def process_zones_parallel(
                         exc_info=True,
                         extra={'zone_id': zone_id, 'zone_name': zone_name}
                     )
+                    await send_infra_exception_alert(
+                        error=e,
+                        code="infra_zone_processing_failed",
+                        alert_type="Zone Processing Failed",
+                        severity="error",
+                        zone_id=zone_id,
+                        service="automation-engine",
+                        component="zone_processing",
+                        details={
+                            "zone_name": zone_name,
+                        },
+                    )
         finally:
             # Очищаем контекст
             set_zone_id(None)
@@ -369,6 +382,22 @@ async def process_zones_parallel(
                     'severity': severity,
                     'errors': results['errors'][:10]  # Первые 10 ошибок
                 }
+            )
+            await send_infra_alert(
+                code="infra_zone_failure_rate_high",
+                alert_type="Zone Failure Rate High",
+                message=f"Высокая доля ошибок обработки зон: {failure_rate:.1%}",
+                severity=severity,
+                zone_id=None,
+                service="automation-engine",
+                component="zone_processing",
+                error_type="HighFailureRate",
+                details={
+                    "total": results["total"],
+                    "failed": results["failed"],
+                    "failure_rate": failure_rate,
+                    "sample_errors": results["errors"][:5],
+                },
             )
     
     return results
@@ -841,6 +870,15 @@ async def main():
                     break
                 except Exception as e:
                     handle_automation_error(e, {"action": "main_loop"})
+                    await send_infra_exception_alert(
+                        error=e,
+                        code="infra_automation_loop_error",
+                        alert_type="Automation Loop Error",
+                        severity="error",
+                        zone_id=None,
+                        service="automation-engine",
+                        component="main_loop",
+                    )
                     # Sleep before retrying to avoid tight error loops
                     await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                 

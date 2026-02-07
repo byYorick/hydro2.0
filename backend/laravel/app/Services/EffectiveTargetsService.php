@@ -22,6 +22,12 @@ class EffectiveTargetsService
     {
         $cycle = GrowCycle::with([
             'currentPhase.recipeRevisionPhase.stageTemplate', // Для снапшотов получаем stageTemplate через recipeRevisionPhase
+            'currentPhase.recipeRevisionPhase.npkProduct',
+            'currentPhase.recipeRevisionPhase.calciumProduct',
+            'currentPhase.recipeRevisionPhase.microProduct',
+            'currentPhase.npkProduct',
+            'currentPhase.calciumProduct',
+            'currentPhase.microProduct',
             'recipeRevision',
             'zone',
         ])->findOrFail($growCycleId);
@@ -101,6 +107,7 @@ class EffectiveTargetsService
     protected function extractPhaseTargets($phase): array
     {
         $targets = [];
+        $recipePhase = $phase instanceof GrowCyclePhase ? $phase->recipeRevisionPhase : null;
 
         // pH параметры
         if ($phase->ph_target !== null) {
@@ -118,6 +125,57 @@ class EffectiveTargetsService
                 'min' => $phase->ec_min ? (float) $phase->ec_min : null,
                 'max' => $phase->ec_max ? (float) $phase->ec_max : null,
             ];
+        }
+
+        // Компоненты питания для EC-дозирования (3-помповая схема)
+        $nutrientProgramCode = $phase->nutrient_program_code ?? $recipePhase?->nutrient_program_code;
+        $nutrientNpkRatioPct = $phase->nutrient_npk_ratio_pct ?? $recipePhase?->nutrient_npk_ratio_pct;
+        $nutrientNpkDoseMlL = $phase->nutrient_npk_dose_ml_l ?? $recipePhase?->nutrient_npk_dose_ml_l;
+        $nutrientNpkProductId = $phase->nutrient_npk_product_id ?? $recipePhase?->nutrient_npk_product_id;
+        $nutrientCalciumRatioPct = $phase->nutrient_calcium_ratio_pct ?? $recipePhase?->nutrient_calcium_ratio_pct;
+        $nutrientCalciumDoseMlL = $phase->nutrient_calcium_dose_ml_l ?? $recipePhase?->nutrient_calcium_dose_ml_l;
+        $nutrientCalciumProductId = $phase->nutrient_calcium_product_id ?? $recipePhase?->nutrient_calcium_product_id;
+        $nutrientMicroRatioPct = $phase->nutrient_micro_ratio_pct ?? $recipePhase?->nutrient_micro_ratio_pct;
+        $nutrientMicroDoseMlL = $phase->nutrient_micro_dose_ml_l ?? $recipePhase?->nutrient_micro_dose_ml_l;
+        $nutrientMicroProductId = $phase->nutrient_micro_product_id ?? $recipePhase?->nutrient_micro_product_id;
+        $nutrientDoseDelaySec = $phase->nutrient_dose_delay_sec ?? $recipePhase?->nutrient_dose_delay_sec;
+        $nutrientEcStopTolerance = $phase->nutrient_ec_stop_tolerance ?? $recipePhase?->nutrient_ec_stop_tolerance;
+
+        $npkProduct = $phase->npkProduct ?? $recipePhase?->npkProduct;
+        $calciumProduct = $phase->calciumProduct ?? $recipePhase?->calciumProduct;
+        $microProduct = $phase->microProduct ?? $recipePhase?->microProduct;
+
+        $nutrition = [
+            'program_code' => $nutrientProgramCode,
+            'components' => [
+                'npk' => [
+                    'ratio_pct' => $nutrientNpkRatioPct !== null ? (float) $nutrientNpkRatioPct : null,
+                    'dose_ml_per_l' => $nutrientNpkDoseMlL !== null ? (float) $nutrientNpkDoseMlL : null,
+                    'product_id' => $nutrientNpkProductId,
+                    'product_name' => $npkProduct?->name,
+                    'manufacturer' => $npkProduct?->manufacturer,
+                ],
+                'calcium' => [
+                    'ratio_pct' => $nutrientCalciumRatioPct !== null ? (float) $nutrientCalciumRatioPct : null,
+                    'dose_ml_per_l' => $nutrientCalciumDoseMlL !== null ? (float) $nutrientCalciumDoseMlL : null,
+                    'product_id' => $nutrientCalciumProductId,
+                    'product_name' => $calciumProduct?->name,
+                    'manufacturer' => $calciumProduct?->manufacturer,
+                ],
+                'micro' => [
+                    'ratio_pct' => $nutrientMicroRatioPct !== null ? (float) $nutrientMicroRatioPct : null,
+                    'dose_ml_per_l' => $nutrientMicroDoseMlL !== null ? (float) $nutrientMicroDoseMlL : null,
+                    'product_id' => $nutrientMicroProductId,
+                    'product_name' => $microProduct?->name,
+                    'manufacturer' => $microProduct?->manufacturer,
+                ],
+            ],
+            'dose_delay_sec' => $nutrientDoseDelaySec,
+            'ec_stop_tolerance' => $nutrientEcStopTolerance !== null ? (float) $nutrientEcStopTolerance : null,
+        ];
+        $nutrition = $this->cleanNullValues($nutrition);
+        if (!empty($nutrition)) {
+            $targets['nutrition'] = $nutrition;
         }
 
         // Полив
@@ -310,4 +368,3 @@ class EffectiveTargetsService
         return $cleaned;
     }
 }
-

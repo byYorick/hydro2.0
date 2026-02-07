@@ -8,6 +8,7 @@ use App\Models\GrowCycleOverride;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\NutrientProduct;
 use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
 use App\Enums\GrowCycleStatus;
@@ -284,5 +285,90 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals('SUBSTRATE', $result['targets']['irrigation']['mode']);
         $this->assertEquals(3600, $result['targets']['irrigation']['interval_sec']);
         $this->assertEquals(300, $result['targets']['irrigation']['duration_sec']);
+    }
+
+    #[Test]
+    public function it_includes_nutrition_targets_for_three_component_feeding()
+    {
+        $npk = NutrientProduct::query()->create([
+            'manufacturer' => 'Masterblend',
+            'name' => 'Tomato 4-18-38',
+            'component' => 'npk',
+        ]);
+        $calcium = NutrientProduct::query()->create([
+            'manufacturer' => 'Yara',
+            'name' => 'YaraLiva Calcinit',
+            'component' => 'calcium',
+        ]);
+        $micro = NutrientProduct::query()->create([
+            'manufacturer' => 'Haifa',
+            'name' => 'Micro Hydroponic Mix',
+            'component' => 'micro',
+        ]);
+
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'Nutrition Phase',
+            'ec_target' => 2.1,
+            'nutrient_program_code' => 'GENERIC_3PART_V1',
+            'nutrient_npk_ratio_pct' => 46,
+            'nutrient_calcium_ratio_pct' => 34,
+            'nutrient_micro_ratio_pct' => 20,
+            'nutrient_npk_dose_ml_l' => 1.8,
+            'nutrient_calcium_dose_ml_l' => 1.2,
+            'nutrient_micro_dose_ml_l' => 0.6,
+            'nutrient_npk_product_id' => $npk->id,
+            'nutrient_calcium_product_id' => $calcium->id,
+            'nutrient_micro_product_id' => $micro->id,
+            'nutrient_dose_delay_sec' => 12,
+            'nutrient_ec_stop_tolerance' => 0.07,
+        ]);
+
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+
+        $snapshotPhase = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $phase->id,
+            'phase_index' => 0,
+            'name' => 'Nutrition Phase',
+            'ec_target' => 2.1,
+            'nutrient_program_code' => 'GENERIC_3PART_V1',
+            'nutrient_npk_ratio_pct' => 46,
+            'nutrient_calcium_ratio_pct' => 34,
+            'nutrient_micro_ratio_pct' => 20,
+            'nutrient_npk_dose_ml_l' => 1.8,
+            'nutrient_calcium_dose_ml_l' => 1.2,
+            'nutrient_micro_dose_ml_l' => 0.6,
+        ]);
+
+        $cycle->update(['current_phase_id' => $snapshotPhase->id]);
+
+        $result = $this->service->getEffectiveTargets($cycle->id);
+
+        $this->assertArrayHasKey('nutrition', $result['targets']);
+        $this->assertEquals('GENERIC_3PART_V1', $result['targets']['nutrition']['program_code']);
+        $this->assertEquals(46.0, $result['targets']['nutrition']['components']['npk']['ratio_pct']);
+        $this->assertEquals(34.0, $result['targets']['nutrition']['components']['calcium']['ratio_pct']);
+        $this->assertEquals(20.0, $result['targets']['nutrition']['components']['micro']['ratio_pct']);
+        $this->assertEquals($npk->id, $result['targets']['nutrition']['components']['npk']['product_id']);
+        $this->assertEquals('Masterblend', $result['targets']['nutrition']['components']['npk']['manufacturer']);
+        $this->assertEquals($calcium->id, $result['targets']['nutrition']['components']['calcium']['product_id']);
+        $this->assertEquals('YaraLiva Calcinit', $result['targets']['nutrition']['components']['calcium']['product_name']);
+        $this->assertEquals($micro->id, $result['targets']['nutrition']['components']['micro']['product_id']);
+        $this->assertEquals('Haifa', $result['targets']['nutrition']['components']['micro']['manufacturer']);
+        $this->assertEquals(12, $result['targets']['nutrition']['dose_delay_sec']);
+        $this->assertEquals(0.07, $result['targets']['nutrition']['ec_stop_tolerance']);
     }
 }

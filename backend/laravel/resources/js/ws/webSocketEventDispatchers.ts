@@ -9,6 +9,7 @@ import type {
   ZoneCommandHandler,
   WsEventPayload,
 } from '@/ws/subscriptionTypes'
+import type { CommandStatus } from '@/types'
 
 interface WebSocketEventDispatcherDeps {
   activeSubscriptions: Map<string, ActiveSubscription>
@@ -93,18 +94,39 @@ function normalizeCommandPayload(
   isFailure: boolean
 ): {
   commandId: number | string | undefined
-  status: string
+  status: CommandStatus
   message: string | undefined
   error: string | undefined
   zoneId: number | undefined
 } {
+  const rawStatus = isFailure ? (payload.status ?? 'ERROR') : (payload.status ?? 'UNKNOWN')
   return {
     commandId: payload?.commandId ?? payload?.command_id,
-    status: isFailure ? (payload.status ?? 'ERROR') : (payload.status ?? 'UNKNOWN'),
+    status: normalizeCommandStatus(rawStatus),
     message: typeof payload.message === 'string' ? payload.message : undefined,
     error: typeof payload.error === 'string' ? payload.error : undefined,
     zoneId,
   }
+}
+
+function normalizeCommandStatus(status: unknown): CommandStatus {
+  const normalized = String(status ?? 'UNKNOWN').toUpperCase()
+  if ([
+    'QUEUED',
+    'SENT',
+    'ACK',
+    'DONE',
+    'NO_EFFECT',
+    'ERROR',
+    'INVALID',
+    'BUSY',
+    'TIMEOUT',
+    'SEND_FAILED',
+  ].includes(normalized)) {
+    return normalized as CommandStatus
+  }
+
+  return 'UNKNOWN'
 }
 
 function normalizeGlobalPayload(payload: RawGlobalPayload, zoneId: number | undefined): {
@@ -155,6 +177,14 @@ export function createWebSocketEventDispatchers({
     }
 
     const normalized = normalizeCommandPayload(rawPayload, zoneId, isFailure)
+    if (typeof normalized.commandId !== 'number' && typeof normalized.commandId !== 'string') {
+      logger.warn('[useWebSocket] Ignoring command event without commandId', {
+        channel: channelName,
+        zoneId,
+        status: normalized.status,
+      })
+      return
+    }
 
     channelSet.forEach(subscriptionId => {
       const subscription = activeSubscriptions.get(subscriptionId)

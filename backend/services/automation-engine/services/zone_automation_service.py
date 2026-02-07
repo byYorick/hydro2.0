@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from common.utils.time import utcnow
 from common.simulation_clock import SimulationClock
 from common.simulation_events import record_simulation_event
+from common.infra_alerts import send_infra_exception_alert
 from common.db import create_zone_event
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
@@ -557,6 +558,20 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: Failed to create CONTROLLER_FAILED event: {event_error}",
                     exc_info=True
                 )
+
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_controller_failed",
+                alert_type="Controller Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component=f"controller:{controller_name}",
+                details={
+                    "controller": controller_name,
+                    "cooldown_seconds": CONTROLLER_COOLDOWN_SECONDS,
+                },
+            )
     
     async def _check_phase_transitions(
         self,

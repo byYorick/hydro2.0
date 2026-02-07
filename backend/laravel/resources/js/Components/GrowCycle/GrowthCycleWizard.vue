@@ -393,7 +393,6 @@
   </Modal>
 </template>
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useZones } from "@/composables/useZones";
@@ -401,23 +400,12 @@ import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import ErrorBoundary from "@/Components/ErrorBoundary.vue";
 import RecipeCreateWizard from "@/Components/RecipeCreateWizard.vue";
-import { logger } from "@/utils/logger";
-import { TOAST_TIMEOUT } from "@/constants/timeouts";
-import { extractSetupWizardErrorDetails, extractSetupWizardErrorMessage } from "@/composables/setupWizardErrors";
-interface Props {
+import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";
+
+interface Props extends GrowthCycleWizardProps {
     show: boolean;
-    zoneId?: number;
-    zoneName?: string;
-    currentPhaseTargets?: any;
-    activeCycle?: any;
-    initialData?: {
-        recipeId?: number | null;
-        recipeRevisionId?: number | null;
-        plantId?: number | null;
-        startedAt?: string | null;
-        expectedHarvestAt?: string | null;
-    } | null;
 }
+
 const props = withDefaults(defineProps<Props>(), {
     show: false,
     zoneId: undefined,
@@ -438,459 +426,44 @@ const emit = defineEmits<{
 const { api } = useApi();
 const { showToast } = useToast();
 const { fetchZones } = useZones();
-function getNowLocalDatetimeValue(): string {
-    const now = new Date();
-    const offsetMs = now.getTimezoneOffset() * 60_000;
-    return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-const currentStep = ref(0);
-const recipeMode = ref<"select" | "create">("select");
-const loading = ref(false);
-const error = ref<string | null>(null);
-const errorDetails = ref<string[]>([]);
-const validationErrors = ref<string[]>([]);
-const form = ref({
-    zoneId: props.zoneId || null,
-    startedAt: getNowLocalDatetimeValue(),
-    expectedHarvestAt: "",
-});
-const availableZones = ref<any[]>([]);
-const availablePlants = ref<any[]>([]);
-const availableRecipes = ref<any[]>([]);
-const selectedRecipe = ref<any | null>(null);
-const selectedRecipeId = ref<number | null>(null);
-const selectedRevisionId = ref<number | null>(null);
-const selectedPlantId = ref<number | null>(null);
-const availableRevisions = computed(() => {
-    if (!selectedRecipe.value) return [];
-    return selectedRecipe.value.published_revisions || [];
-});
-const selectedRevision = computed(() => {
-    if (!selectedRevisionId.value) return null;
-    return availableRevisions.value.find((revision: any) => revision.id === selectedRevisionId.value) || null;
-});
-const steps = [
-    { title: "Зона", key: "zone" },
-    { title: "Растение", key: "plant" },
-    { title: "Рецепт", key: "recipe" },
-    { title: "Параметры", key: "params" },
-    { title: "Подтверждение", key: "confirm" },
-];
-const wizardTitle = computed(() => {
-    return props.activeCycle ? "Корректировка цикла выращивания" : "Запуск нового цикла выращивания";
-});
-const minStartDate = computed(() => {
-    return getNowLocalDatetimeValue();
-});
-const totalDurationDays = computed(() => {
-    if (!selectedRevision.value?.phases) return 0;
-    const totalHours = selectedRevision.value.phases.reduce((sum: number, phase: any) => {
-        if (typeof phase.duration_hours === "number") return sum + phase.duration_hours;
-        if (typeof phase.duration_days === "number") return sum + phase.duration_days * 24;
-        return sum;
-    }, 0);
-    return totalHours / 24;
-});
-const canProceed = computed(() => {
-    switch (currentStep.value) {
-        case 0:
-            return form.value.zoneId !== null;
-        case 1:
-            return selectedPlantId.value !== null;
-        case 2:
-            return selectedRevisionId.value !== null && selectedRecipe.value !== null;
-        case 3:
-            return form.value.startedAt !== "";
-        default:
-            return true;
-    }
-});
-const canSubmit = computed(() => {
-    return canProceed.value && validationErrors.value.length === 0;
-});
-const nextStepBlockedReason = computed(() => {
-    if (currentStep.value === 0 && !form.value.zoneId) {
-        return "Выберите зону, чтобы продолжить.";
-    }
-    if (currentStep.value === 1 && !selectedPlantId.value) {
-        return "Выберите растение, чтобы продолжить.";
-    }
-    if (currentStep.value === 2) {
-        if (!selectedRecipeId.value) {
-            return "Выберите рецепт.";
-        }
-        if (!selectedRevisionId.value) {
-            return "Выберите ревизию рецепта.";
-        }
-    }
-    if (currentStep.value === 3 && !form.value.startedAt) {
-        return "Укажите дату начала цикла.";
-    }
-    return "";
-});
-function formatDateTime(dateString: string): string {
-    if (!dateString) return "";
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleString("ru-RU", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    } catch {
-        return dateString;
-    }
-}
-function formatDate(dateString: string): string {
-    if (!dateString) return "";
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString("ru-RU");
-    } catch {
-        return dateString;
-    }
-}
-async function loadZones(): Promise<void> {
-    try {
-        const zones = await fetchZones(true);
-        availableZones.value = zones;
-    } catch (err) {
-        logger.error("[GrowthCycleWizard] Failed to load zones", err);
-    }
-}
-async function loadWizardData(): Promise<void> {
-    try {
-        const response = await api.get("/grow-cycle-wizard/data");
-        if (response.data?.status === "ok") {
-            const data = response.data.data || {};
-            availableRecipes.value = data.recipes || [];
-            availablePlants.value = data.plants || [];
-        }
-    } catch (err) {
-        logger.error("[GrowthCycleWizard] Failed to load wizard data", err);
-        showToast("Не удалось загрузить данные визарда", "error", TOAST_TIMEOUT.NORMAL);
-    }
-}
-function onZoneSelected(): void {}
-function syncSelectedRecipe(): void {
-    if (!selectedRecipeId.value) {
-        selectedRecipe.value = null;
-        selectedRevisionId.value = null;
-        return;
-    }
-    selectedRecipe.value = availableRecipes.value.find((r) => r.id === selectedRecipeId.value) || null;
-    const revisions = selectedRecipe.value?.published_revisions || [];
-    if (!revisions.length) {
-        selectedRevisionId.value = null;
-        return;
-    }
-    const hasSelected = revisions.some((revision: any) => revision.id === selectedRevisionId.value);
-    if (!hasSelected) {
-        selectedRevisionId.value = revisions[0].id;
-    }
-}
-function onRecipeSelected(): void {
-    syncSelectedRecipe();
-}
-function onRecipeCreated(recipe: any): void {
-    selectedRecipeId.value = recipe.id;
-    selectedRecipe.value = recipe;
-    selectedRevisionId.value = recipe.latest_published_revision_id || recipe.latest_draft_revision_id || null;
-    recipeMode.value = "select";
-    loadWizardData(); // Обновляем список рецептов
-}
-function normalizeDatetimeLocal(value: string | null | undefined): string | null {
-    if (!value) {
-        return null;
-    }
-    const raw = value.trim();
-    if (!raw) {
-        return null;
-    }
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
-        return raw;
-    }
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return parsed.toISOString().slice(0, 16);
-}
-function applyInitialData(): void {
-    const initialData = props.initialData;
-    if (!initialData) {
-        return;
-    }
-    if (initialData.plantId) {
-        selectedPlantId.value = initialData.plantId;
-    }
-    if (initialData.recipeId) {
-        selectedRecipeId.value = initialData.recipeId;
-        syncSelectedRecipe();
-    }
-    if (initialData.recipeRevisionId) {
-        selectedRevisionId.value = initialData.recipeRevisionId;
-    }
-    const normalizedStart = normalizeDatetimeLocal(initialData.startedAt);
-    if (normalizedStart) {
-        form.value.startedAt = normalizedStart;
-    }
-    if (initialData.expectedHarvestAt) {
-        form.value.expectedHarvestAt = initialData.expectedHarvestAt;
-    }
-    const hasContext = Boolean(form.value.zoneId && selectedPlantId.value && selectedRecipeId.value && selectedRevisionId.value);
-    if (hasContext && currentStep.value < 3) {
-        currentStep.value = 3;
-    }
-}
-function validateStep(step: number): boolean {
-    validationErrors.value = [];
-    switch (step) {
-        case 0:
-            if (!form.value.zoneId) {
-                validationErrors.value.push("Необходимо выбрать зону");
-                return false;
-            }
-            break;
-        case 1:
-            if (!selectedPlantId.value) {
-                validationErrors.value.push("Необходимо выбрать растение");
-                return false;
-            }
-            break;
-        case 2:
-            if (!selectedRecipeId.value || !selectedRevisionId.value) {
-                validationErrors.value.push("Необходимо выбрать рецепт и ревизию");
-                return false;
-            }
-            if (!selectedRecipe.value) {
-                validationErrors.value.push("Рецепт не загружен");
-                return false;
-            }
-            if (!selectedRevision.value?.phases || selectedRevision.value.phases.length === 0) {
-                validationErrors.value.push("Рецепт должен содержать хотя бы одну фазу");
-                return false;
-            }
-            break;
-        case 3: {
-            if (!form.value.startedAt) {
-                validationErrors.value.push("Необходимо указать дату начала");
-                return false;
-            }
-            let startDate = new Date(form.value.startedAt);
-            const now = new Date();
-            now.setSeconds(0, 0);
-            if (startDate < now) {
-                const corrected = getNowLocalDatetimeValue();
-                form.value.startedAt = corrected;
-                startDate = new Date(corrected);
-                showToast("Дата начала была в прошлом, время автоматически обновлено", "warning", TOAST_TIMEOUT.NORMAL);
-            }
-            if (form.value.expectedHarvestAt) {
-                const harvestDate = new Date(form.value.expectedHarvestAt);
-                if (harvestDate <= startDate) {
-                    validationErrors.value.push("Дата сбора должна быть позже даты начала");
-                    return false;
-                }
-            }
-            break;
-        }
-    }
-    return validationErrors.value.length === 0;
-}
-function nextStep(): void {
-    if (!validateStep(currentStep.value)) {
-        if (validationErrors.value.length > 0) {
-            showToast(validationErrors.value[0], "error", TOAST_TIMEOUT.NORMAL);
-        }
-        return;
-    }
-    if (currentStep.value < steps.length - 1) {
-        currentStep.value++;
-        saveDraft();
-    }
-}
-function prevStep(): void {
-    if (currentStep.value > 0) {
-        currentStep.value--;
-    }
-}
-function saveDraft(): void {
-    try {
-        const draft = {
-            zoneId: form.value.zoneId,
-            plantId: selectedPlantId.value,
-            recipeId: selectedRecipeId.value,
-            recipeRevisionId: selectedRevisionId.value,
-            startedAt: form.value.startedAt,
-            expectedHarvestAt: form.value.expectedHarvestAt,
-            currentStep: currentStep.value,
-        };
-        localStorage.setItem(getDraftStorageKey(), JSON.stringify(draft));
-    } catch (err) {
-        logger.warn("[GrowthCycleWizard] Failed to save draft", err);
-    }
-}
-function getDraftStorageKey(): string {
-    const scope = props.zoneId ? `zone-${props.zoneId}` : "global";
-    return `growthCycleWizardDraft:${scope}`;
-}
-function loadDraft(): void {
-    try {
-        const draftStr = localStorage.getItem(getDraftStorageKey());
-        if (draftStr) {
-            const draft = JSON.parse(draftStr);
-            if (!props.zoneId && draft.zoneId) {
-                form.value.zoneId = draft.zoneId;
-            } else if (props.zoneId) {
-                form.value.zoneId = props.zoneId;
-            }
-            if (draft.plantId) selectedPlantId.value = draft.plantId;
-            if (draft.recipeId) {
-                selectedRecipeId.value = draft.recipeId;
-                selectedRecipe.value = availableRecipes.value.find((r) => r.id === draft.recipeId) || null;
-            }
-            if (draft.recipeRevisionId) {
-                selectedRevisionId.value = draft.recipeRevisionId;
-            }
-            if (draft.startedAt) form.value.startedAt = draft.startedAt;
-            if (draft.expectedHarvestAt) form.value.expectedHarvestAt = draft.expectedHarvestAt;
-            if (draft.currentStep !== undefined) currentStep.value = draft.currentStep;
-        }
-    } catch (err) {
-        logger.warn("[GrowthCycleWizard] Failed to load draft", err);
-    }
-}
-function clearDraft(): void {
-    try {
-        localStorage.removeItem(getDraftStorageKey());
-    } catch (err) {
-        logger.warn("[GrowthCycleWizard] Failed to clear draft", err);
-    }
-}
-async function onSubmit(): Promise<void> {
-    if (!validateStep(currentStep.value)) {
-        return;
-    }
-    if (!form.value.zoneId || !selectedRevisionId.value || !selectedPlantId.value || !form.value.startedAt) {
-        error.value = "Заполните все обязательные поля";
-        return;
-    }
-    const zoneId = form.value.zoneId;
-    loading.value = true;
-    error.value = null;
-    errorDetails.value = [];
-    try {
-        const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined;
-        const response = await api.post(`/api/zones/${zoneId}/grow-cycles`, {
-            recipe_revision_id: selectedRevisionId.value,
-            plant_id: selectedPlantId.value,
-            planting_at: plantingAt,
-            start_immediately: true,
-            settings: {
-                expected_harvest_at: form.value.expectedHarvestAt || undefined,
-            },
-        });
-        if (response.data?.status === "ok") {
-            clearDraft();
-            showToast("Цикл выращивания успешно запущен", "success", TOAST_TIMEOUT.NORMAL);
-            emit("close");
-            emit("submit", {
-                zoneId,
-                recipeId: selectedRecipeId.value || undefined,
-                recipeRevisionId: selectedRevisionId.value || undefined,
-                startedAt: form.value.startedAt,
-                expectedHarvestAt: form.value.expectedHarvestAt || undefined,
-            });
-        } else {
-            throw new Error(response.data?.message || "Не удалось создать цикл");
-        }
-    } catch (err: any) {
-        const errorMessage = extractSetupWizardErrorMessage(err, "Ошибка при создании цикла");
-        const details = extractSetupWizardErrorDetails(err);
-        const isActiveCycleConflict = typeof errorMessage === "string" && errorMessage.includes("Zone already has an active cycle");
-        error.value = isActiveCycleConflict ? "В зоне уже активный цикл." : errorMessage;
-        errorDetails.value = details;
-        logger.error("[GrowthCycleWizard] Failed to submit", err);
-        if (isActiveCycleConflict) {
-            showToast("В зоне уже активный цикл. Обновляю данные зоны.", "warning", TOAST_TIMEOUT.NORMAL);
-            emit("close");
-            emit("submit", {
-                zoneId,
-                startedAt: form.value.startedAt,
-            });
-        } else {
-            const primaryDetail = details.length > 0 ? ` ${details[0]}` : "";
-            showToast(`${errorMessage}${primaryDetail}`, "error", TOAST_TIMEOUT.NORMAL);
-        }
-    } finally {
-        loading.value = false;
-    }
-}
-function handleClose(): void {
-    if (!loading.value) {
-        emit("close");
-    }
-}
-function reset(): void {
-    currentStep.value = 0;
-    recipeMode.value = "select";
-    error.value = null;
-    errorDetails.value = [];
-    validationErrors.value = [];
-    form.value = {
-        zoneId: props.zoneId || null,
-        startedAt: getNowLocalDatetimeValue(),
-        expectedHarvestAt: "",
-    };
-    selectedPlantId.value = null;
-    selectedRecipeId.value = null;
-    selectedRevisionId.value = null;
-    selectedRecipe.value = null;
-}
-async function initializeWizardState(): Promise<void> {
-    if (!props.zoneId) {
-        await loadZones();
-    }
-    await loadWizardData();
-    loadDraft();
-    applyInitialData();
-}
-watch(
-    () => props.show,
-    (show) => {
-        if (show) {
-            reset();
-            void initializeWizardState();
-        } else {
-            clearDraft();
-        }
-    },
-);
-watch(
-    () => props.zoneId,
-    (newZoneId) => {
-        if (newZoneId) {
-            form.value.zoneId = newZoneId;
-        }
-    },
-);
-watch(selectedRecipeId, () => {
-    syncSelectedRecipe();
-});
-watch(availableRecipes, () => {
-    syncSelectedRecipe();
-});
-onMounted(() => {
-    if (props.show) {
-        void initializeWizardState();
-    }
-});
-onUnmounted(() => {
-    if (props.show) {
-        saveDraft();
-    }
+const wizardEmit = emit as GrowthCycleWizardEmit;
+const {
+    currentStep,
+    recipeMode,
+    loading,
+    error,
+    errorDetails,
+    validationErrors,
+    form,
+    availableZones,
+    availablePlants,
+    availableRecipes,
+    selectedRecipe,
+    selectedRecipeId,
+    selectedRevisionId,
+    selectedPlantId,
+    availableRevisions,
+    selectedRevision,
+    steps,
+    wizardTitle,
+    minStartDate,
+    totalDurationDays,
+    canSubmit,
+    nextStepBlockedReason,
+    formatDateTime,
+    formatDate,
+    onZoneSelected,
+    onRecipeSelected,
+    onRecipeCreated,
+    nextStep,
+    prevStep,
+    onSubmit,
+    handleClose,
+} = useGrowthCycleWizard({
+    props,
+    emit: wizardEmit,
+    api,
+    showToast,
+    fetchZones,
 });
 </script>

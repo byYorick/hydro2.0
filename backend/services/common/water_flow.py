@@ -870,3 +870,170 @@ async def calibrate_flow(
         'pump_duration_sec': pump_duration_sec,
         'calibrated_at': calibration_end_time.isoformat()
     }
+
+
+async def calibrate_pump(
+    zone_id: int,
+    node_channel_id: int,
+    duration_sec: int,
+    actual_ml: Optional[float] = None,
+    skip_run: bool = False,
+    component: Optional[str] = None,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Калибровка дозирующей помпы (ml/sec) с сохранением в node_channel.config.pump_calibration.
+    """
+    if not HTTPX_AVAILABLE:
+        raise RuntimeError("httpx is required for pump calibration")
+
+    if duration_sec <= 0:
+        raise ValueError("duration_sec must be positive")
+
+    rows = await fetch(
+        """
+        SELECT
+            nc.id AS channel_id,
+            nc.channel AS channel,
+            nc.config AS config,
+            n.id AS node_id,
+            n.uid AS node_uid,
+            n.status AS node_status
+        FROM node_channels nc
+        JOIN nodes n ON n.id = nc.node_id
+        WHERE nc.id = $1
+          AND n.zone_id = $2
+        LIMIT 1
+        """,
+        node_channel_id,
+        zone_id,
+    )
+    if not rows:
+        raise ValueError(f"node_channel_id={node_channel_id} not found in zone {zone_id}")
+
+    channel_info = rows[0]
+    node_uid = channel_info["node_uid"]
+    channel = channel_info.get("channel") or "default"
+
+    started_at = utcnow()
+    if not skip_run:
+        if channel_info.get("node_status") != "online":
+            raise ValueError(f"Node {node_uid} is offline; cannot run calibration")
+
+        run_result = await send_command(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            channel=channel,
+            cmd="run_pump",
+            params={"duration_ms": int(duration_sec * 1000)},
+            greenhouse_uid=gh_uid,
+        )
+        if run_result.get("status") != "sent":
+            raise RuntimeError(f"Failed to send pump run command: {run_result.get('error')}")
+
+        await create_zone_event(
+            zone_id,
+            "PUMP_CALIBRATION_STARTED",
+            {
+                "node_channel_id": node_channel_id,
+                "node_uid": node_uid,
+                "channel": channel,
+                "duration_sec": duration_sec,
+                "component": component,
+                "start_time": started_at.isoformat(),
+            },
+        )
+        await asyncio.sleep(duration_sec + 1)
+    else:
+        await create_zone_event(
+            zone_id,
+            "PUMP_CALIBRATION_RUN_SKIPPED",
+            {
+                "node_channel_id": node_channel_id,
+                "node_uid": node_uid,
+                "channel": channel,
+                "duration_sec": duration_sec,
+                "component": component,
+            },
+        )
+
+    if actual_ml is None:
+        return {
+            "success": True,
+            "status": "awaiting_actual_ml",
+            "node_channel_id": node_channel_id,
+            "node_uid": node_uid,
+            "channel": channel,
+            "duration_sec": duration_sec,
+            "component": component,
+            "started_at": started_at.isoformat(),
+        }
+
+    actual_ml_value = float(actual_ml)
+    if actual_ml_value <= 0:
+        raise ValueError("actual_ml must be greater than 0")
+
+    ml_per_sec = round(actual_ml_value / float(duration_sec), 6)
+    if ml_per_sec <= 0:
+        raise ValueError("Calculated ml_per_sec must be greater than 0")
+
+    current_config = channel_info.get("config") or {}
+    if not isinstance(current_config, dict):
+        current_config = {}
+    current_config["pump_calibration"] = {
+        "ml_per_sec": ml_per_sec,
+        "duration_sec": duration_sec,
+        "actual_ml": actual_ml_value,
+        "component": component,
+        "calibrated_at": utcnow().isoformat(),
+    }
+
+    from .env import get_settings
+    from .trace_context import inject_trace_id_header
+    settings = get_settings()
+    api_url = settings.laravel_api_url
+    api_token = settings.laravel_api_token
+
+    async with httpx.AsyncClient() as client:
+        headers = inject_trace_id_header({})
+        if api_token:
+            headers["Authorization"] = f"Bearer {api_token}"
+
+        response = await client.patch(
+            f"{api_url}/api/node-channels/{node_channel_id}",
+            json={"config": current_config},
+            headers=headers,
+            timeout=10.0,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to update node channel config: {response.status_code} {response.text}")
+
+    finished_at = utcnow()
+    await create_zone_event(
+        zone_id,
+        "PUMP_CALIBRATION_FINISHED",
+        {
+            "node_channel_id": node_channel_id,
+            "node_uid": node_uid,
+            "channel": channel,
+            "component": component,
+            "duration_sec": duration_sec,
+            "actual_ml": actual_ml_value,
+            "ml_per_sec": ml_per_sec,
+            "finished_at": finished_at.isoformat(),
+        },
+    )
+
+    return {
+        "success": True,
+        "status": "calibrated",
+        "node_channel_id": node_channel_id,
+        "node_uid": node_uid,
+        "channel": channel,
+        "component": component,
+        "duration_sec": duration_sec,
+        "actual_ml": actual_ml_value,
+        "ml_per_sec": ml_per_sec,
+        "calibrated_at": finished_at.isoformat(),
+    }

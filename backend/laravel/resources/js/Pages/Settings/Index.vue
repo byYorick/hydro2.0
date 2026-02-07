@@ -167,6 +167,48 @@
       </div>
     </Card>
 
+    <Card class="mt-4">
+      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
+        Уведомления
+      </h2>
+      <div class="space-y-3 max-w-md">
+        <div>
+          <label class="text-sm text-[color:var(--text-muted)]">
+            Окно подавления повторов алертов (сек)
+          </label>
+          <input
+            v-model.number="notificationSettings.alertToastSuppressionSec"
+            type="number"
+            min="0"
+            max="600"
+            step="5"
+            class="input-field mt-1"
+            data-testid="settings-alert-suppression-input"
+          />
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            Используется в тостах на странице алертов, по умолчанию 30 сек.
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button
+            size="sm"
+            :disabled="preferencesLoading || preferencesSaving"
+            @click="savePreferences"
+          >
+            {{ preferencesSaving ? 'Сохраняем...' : 'Сохранить' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="preferencesLoading || preferencesSaving"
+            @click="loadPreferences"
+          >
+            {{ preferencesLoading ? 'Загружаем...' : 'Обновить' }}
+          </Button>
+        </div>
+      </div>
+    </Card>
+
     <!-- Create/Edit User Modal -->
     <Modal
       :open="showCreateModal || editingUser !== null"
@@ -307,6 +349,8 @@ const searchQuery = ref('')
 const roleFilter = ref('')
 const currentPage = ref(1)
 const perPage = ref(25)
+const preferencesLoading = ref(false)
+const preferencesSaving = ref(false)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
@@ -317,6 +361,55 @@ const userForm = reactive({
   password: '',
   role: 'operator',
 })
+
+const notificationSettings = reactive({
+  alertToastSuppressionSec: 30,
+})
+
+const normalizeSuppressionSec = (value) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 30
+  return Math.max(0, Math.min(600, Math.floor(parsed)))
+}
+
+const applyPreferences = (data) => {
+  notificationSettings.alertToastSuppressionSec = normalizeSuppressionSec(
+    data?.alert_toast_suppression_sec
+  )
+}
+
+const loadPreferences = async () => {
+  preferencesLoading.value = true
+  try {
+    const response = await api.get('/settings/preferences')
+    applyPreferences(response?.data?.data)
+  } catch (err) {
+    logger.error('Failed to load user preferences:', err)
+    const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+    showToast(`Ошибка загрузки настроек: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    preferencesLoading.value = false
+  }
+}
+
+const savePreferences = async () => {
+  const normalized = normalizeSuppressionSec(notificationSettings.alertToastSuppressionSec)
+  notificationSettings.alertToastSuppressionSec = normalized
+  preferencesSaving.value = true
+  try {
+    const response = await api.patch('/settings/preferences', {
+      alert_toast_suppression_sec: normalized,
+    })
+    applyPreferences(response?.data?.data)
+    showToast('Настройки уведомлений сохранены', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (err) {
+    logger.error('Failed to save user preferences:', err)
+    const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+    showToast(`Ошибка сохранения настроек: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    preferencesSaving.value = false
+  }
+}
 
 const filteredUsers = computed(() => {
   return users.value.filter((u) => {
@@ -445,6 +538,8 @@ onMounted(() => {
   if (isAdmin.value) {
     loadUsers()
   }
+  applyPreferences(currentUser.value?.preferences || null)
+  loadPreferences()
 })
 
 // Сбрасываем на первую страницу при изменении фильтров

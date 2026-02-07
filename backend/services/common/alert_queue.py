@@ -19,6 +19,63 @@ from .http_client_pool import make_request, calculate_backoff_with_jitter
 
 logger = logging.getLogger(__name__)
 
+_ALERT_QUEUE_META_KEY = "__hydro_alert_meta__"
+_QUEUE_META_FIELDS = ("node_uid", "hardware_id", "severity", "ts_device")
+
+
+def _pack_queue_details(
+    details: Optional[Dict[str, Any]],
+    node_uid: Optional[str] = None,
+    hardware_id: Optional[str] = None,
+    severity: Optional[str] = None,
+    ts_device: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Упаковать details с техническими метаданными для сохранения в очереди.
+    Метаданные нужны только для ретрая и не должны уходить в финальный payload как есть.
+    """
+    payload: Dict[str, Any] = dict(details) if isinstance(details, dict) else {}
+    meta: Dict[str, Any] = {}
+
+    if node_uid:
+        meta["node_uid"] = node_uid
+    if hardware_id:
+        meta["hardware_id"] = hardware_id
+    if severity:
+        meta["severity"] = severity
+    if ts_device:
+        meta["ts_device"] = ts_device
+
+    if meta:
+        payload[_ALERT_QUEUE_META_KEY] = meta
+
+    return payload or None
+
+
+def _unpack_queue_details(details: Optional[Dict[str, Any]]) -> tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Распаковать details из очереди:
+    - вернуть details без технических ключей
+    - вернуть метаданные доставки (node_uid/hardware_id/severity/ts_device)
+    """
+    if not isinstance(details, dict):
+        return details, {}
+
+    details_copy = dict(details)
+    meta = details_copy.pop(_ALERT_QUEUE_META_KEY, None)
+    meta_out: Dict[str, Any] = {}
+    if isinstance(meta, dict):
+        meta_out.update(meta)
+
+    # Backward compatibility для старых записей очереди
+    for key in _QUEUE_META_FIELDS:
+        if key not in meta_out and key in details_copy:
+            value = details_copy.get(key)
+            if value is not None:
+                meta_out[key] = value
+
+    return details_copy or None, meta_out
+
 
 class AlertQueue:
     """Персистентная очередь для алертов."""
@@ -170,7 +227,11 @@ class AlertQueue:
         code: str,
         type: str,
         status: str,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        node_uid: Optional[str] = None,
+        hardware_id: Optional[str] = None,
+        severity: Optional[str] = None,
+        ts_device: Optional[str] = None,
     ) -> bool:
         """
         Добавляет алерт в очередь.
@@ -191,7 +252,13 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = details if details else None
+                details_json = _pack_queue_details(
+                    details=details,
+                    node_uid=node_uid,
+                    hardware_id=hardware_id,
+                    severity=severity,
+                    ts_device=ts_device,
+                )
                 await conn.execute("""
                     INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
                     VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
@@ -547,7 +614,18 @@ async def send_alert_to_laravel(
         logger.error("[ALERT_DELIVERY] Laravel API URL not configured")
         # Сохраняем в очередь для ретрая после настройки
         queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
+        await queue.enqueue(
+            zone_id,
+            source,
+            code,
+            type,
+            status,
+            details,
+            node_uid=node_uid,
+            hardware_id=hardware_id,
+            severity=severity,
+            ts_device=ts_device,
+        )
         return False
     
     ingest_token = (
@@ -604,7 +682,18 @@ async def send_alert_to_laravel(
             )
             # Сохраняем в очередь для ретрая
             queue = await get_alert_queue()
-            await queue.enqueue(zone_id, source, code, type, status, details)
+            await queue.enqueue(
+                zone_id,
+                source,
+                code,
+                type,
+                status,
+                details,
+                node_uid=node_uid,
+                hardware_id=hardware_id,
+                severity=severity,
+                ts_device=ts_device,
+            )
             return False
             
     except Exception as e:
@@ -615,15 +704,18 @@ async def send_alert_to_laravel(
         )
         # Сохраняем в очередь для ретрая
         queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
-        return False
-        logger.error(
-            f"[ALERT_DELIVERY] Unexpected error sending alert to Laravel: {e}",
-            exc_info=True
+        await queue.enqueue(
+            zone_id,
+            source,
+            code,
+            type,
+            status,
+            details,
+            node_uid=node_uid,
+            hardware_id=hardware_id,
+            severity=severity,
+            ts_device=ts_device,
         )
-        # Сохраняем в очередь для ретрая
-        queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
         return False
 
 
@@ -666,11 +758,12 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     break
                 
                 try:
-                    # Извлекаем дополнительные поля из details, если они есть
-                    node_uid = details.get("node_uid") if details else None
-                    hardware_id = details.get("hardware_id") if details else None
-                    severity = details.get("severity") or details.get("level") if details else None
-                    ts_device = details.get("ts_device") or details.get("ts") if details else None
+                    # Извлекаем дополнительные поля для доставки (без утечки служебных ключей в payload)
+                    clean_details, meta = _unpack_queue_details(details)
+                    node_uid = meta.get("node_uid")
+                    hardware_id = meta.get("hardware_id")
+                    severity = meta.get("severity")
+                    ts_device = meta.get("ts_device")
                     
                     # Пытаемся отправить
                     success = await send_alert_to_laravel(
@@ -679,7 +772,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         code=code,
                         type=type,
                         status=status,
-                        details=details,
+                        details=clean_details,
                         node_uid=node_uid,
                         hardware_id=hardware_id,
                         severity=severity,

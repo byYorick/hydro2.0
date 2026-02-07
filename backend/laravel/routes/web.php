@@ -19,9 +19,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// Роут для Laravel Boost browser-logs
-// В проде отключен для предотвращения DoS и утечки данных
-// В dev режиме принимает Boost payload без auth
 Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
     if (app()->environment('production')) {
         \Log::warning('Browser log endpoint accessed in production (blocked)', [
@@ -127,20 +124,13 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
     return response()->json(['status' => 'ok'], 200);
 })->middleware(['web', 'throttle:120,1']); // 120 запросов в минуту для dev режима
 
-// Broadcasting authentication route
-// Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
-// Поддерживает как сессионную авторизацию (web guard), так и токеновую (Sanctum PAT)
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     try {
-        // Сначала пытаемся аутентифицировать через Sanctum PAT (для мобильных/SPA клиентов)
-        // Это позволяет использовать токен из /api/auth/login для WebSocket авторизации
         $user = null;
 
-        // Проверяем Sanctum токен из заголовка Authorization
         if ($request->bearerToken()) {
             $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
             if ($token && $token->tokenable) {
-                // Проверяем срок действия токена
                 if ($token->expires_at && $token->expires_at->isPast()) {
                     \Log::warning('Broadcasting auth: Sanctum token expired', [
                         'ip' => $request->ip(),
@@ -151,12 +141,10 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                 }
 
                 $user = $token->tokenable;
-                // Устанавливаем пользователя для обоих guard'ов
                 \Illuminate\Support\Facades\Auth::guard('sanctum')->setUser($user);
                 \Illuminate\Support\Facades\Auth::guard('web')->setUser($user);
                 $request->setUserResolver(static fn () => $user);
 
-                // Обновляем last_used_at для отслеживания активности токена
                 $token->forceFill(['last_used_at' => now()])->save();
 
                 \Log::debug('Broadcasting auth: Authenticated via Sanctum PAT', [
@@ -166,7 +154,6 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             }
         }
 
-        // Если не удалось аутентифицировать через токен, проверяем сессию (web guard)
         if (! $user) {
             if (! auth()->check() && ! auth('web')->check()) {
                 \Log::warning('Broadcasting auth: Unauthenticated request', [
@@ -203,11 +190,9 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             'channel' => $channelName,
         ]);
 
-        // Обрабатываем ошибки БД отдельно
         try {
             $response = Broadcast::auth($request);
 
-            // Проверяем, что ответ валиден
             if (! $response) {
                 \Log::warning('Broadcasting auth: Broadcast::auth returned null', [
                     'user_id' => $user->id,
@@ -297,7 +282,6 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 
         return $response;
     } catch (\Illuminate\Broadcasting\BroadcastException $broadcastException) {
-        // Отказ в доступе к каналу - возвращаем 403, а не 500
         \Log::warning('Broadcasting auth: Channel authorization denied', [
             'user_id' => auth()->id(),
             'channel' => $request->input('channel_name'),
@@ -326,42 +310,16 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 })->middleware(['web', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
-    /**
-     * Dashboard - главная страница
-     *
-     * Inertia Props:
-     * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-     * - dashboard: {
-     *     greenhousesCount: int,
-     *     zonesCount: int,
-     *     devicesCount: int,
-     *     alertsCount: int,
-     *     zonesByStatus: { 'RUNNING': int, 'PAUSED': int, 'WARNING': int, 'ALARM': int },
-     *     nodesByStatus: { 'online': int, 'offline': int },
-     *     problematicZones: Array<{ id, name, status, description, greenhouse_id, greenhouse, alerts_count }>,
-     *     greenhouses: Array<{ id, uid, name, type, zones_count, zones_running }>,
-     *     zones: Array<{ id, name, status, greenhouse: { id, name } }>,
-     *     latestAlerts: Array<{ id, type, status, details, zone_id, created_at, zone }>
-     *   }
-     *
-     * Кеширование: 30 секунд
-     */
     Route::get('/', function () {
-        // Обрабатываем ошибки БД для предотвращения 500 и бесконечных перезагрузок
-        // Используем кеш для статических данных (TTL 30 секунд)
-        // Пользователь уже проверен middleware 'auth'
         $user = auth()->user();
 
-        // Получаем доступные зоны для пользователя для tenant-изоляции
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
         $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
 
         $cacheKey = 'dashboard_data_'.auth()->id();
         try {
             $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () use ($user, $accessibleZoneIds, $accessibleNodeIds) {
-                // Обрабатываем ошибки БД внутри кеша
                 try {
-                    // Фильтруем статистику по доступным зонам/нодам (кроме админов)
                     if ($user->isAdmin()) {
                         $stats = DB::select("
                             SELECT 
@@ -371,7 +329,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 (SELECT COUNT(*) FROM alerts WHERE status = 'ACTIVE') as alerts_count
                         ")[0];
                     } else {
-                        // Используем параметризованные запросы для безопасности
                         $zoneIds = $accessibleZoneIds ?: [0];
                         $nodeIds = $accessibleNodeIds ?: [0];
                         $zonePlaceholders = implode(',', array_fill(0, count($zoneIds), '?'));
@@ -385,7 +342,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ", array_merge($zoneIds, $zoneIds, $nodeIds, $zoneIds))[0];
                     }
                 } catch (\Illuminate\Database\QueryException $e) {
-                    // Если таблицы не существуют, возвращаем нулевые значения
                     \Log::error('Dashboard: Database error in stats query', [
                         'error' => $e->getMessage(),
                         'user_id' => auth()->id(),
@@ -398,8 +354,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ];
                 }
 
-                // Обрабатываем ошибки БД для всех запросов
-                // Если таблицы не существуют или БД недоступна, возвращаем пустые данные
                 try {
                     $zonesByStatusQuery = Zone::query();
                     if (! $user->isAdmin()) {
@@ -535,15 +489,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $greenhousesQuery = Greenhouse::query()
                         ->select(['id', 'uid', 'name', 'type', 'description']);
                     if (! $user->isAdmin()) {
-                        // Согласно ZoneAccessHelper, все пользователи имеют доступ ко всем зонам/теплицам
-                        // Показываем все теплицы, включая те, у которых ещё нет зон
-                        // В будущем, при реализации мульти-тенантности, здесь будет фильтрация через user_greenhouses
                         $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
-                            // Теплицы с доступными зонами
                             $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
                                 $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                             })
-                            // ИЛИ теплицы без зон (чтобы новые теплицы тоже отображались)
                                 ->orWhereDoesntHave('zones');
                         });
                     }
@@ -639,7 +588,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ];
             });
         } catch (\Exception $e) {
-            // Если произошла критическая ошибка (например, проблема с кешем), возвращаем пустые данные
             \Log::error('Dashboard: Critical error', [
                 'error' => $e->getMessage(),
                 'user_id' => auth()->id(),
@@ -664,10 +612,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('dashboard');
 
-    /**
-     * Setup Wizard - мастер настройки системы
-     * Доступен агроному и администратору для безопасной конфигурации.
-     */
     Route::get('/setup/wizard', function () {
         $user = auth()->user();
         if (! $user || (! $user->isAdmin() && ! $user->isAgronomist())) {
@@ -679,9 +623,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('setup.wizard')->middleware('role:admin,agronomist');
 
-    /**
-     * Greenhouses Index - список всех теплиц
-     */
     Route::get('/greenhouses', function () {
         $user = auth()->user();
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
@@ -691,7 +632,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->select(['id', 'uid', 'name', 'type', 'description', 'timezone', 'created_at']);
 
             if (! $user->isAdmin()) {
-                // Показываем все теплицы, включая те, у которых ещё нет зон
                 $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
                     $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
                         $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
@@ -730,18 +670,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('greenhouses.index');
 
-    /**
-     * Create Greenhouse - создание теплицы
-     */
     Route::get('/greenhouses/create', function () {
         return Inertia::render('Greenhouses/Create', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]);
     })->name('greenhouses.create');
 
-    /**
-     * Greenhouse Show - детальная страница теплицы
-     */
     Route::get('/greenhouses/{greenhouse}', function (Greenhouse $greenhouse) {
         $zones = Zone::query()
             ->where('greenhouse_id', $greenhouse->id)
@@ -770,7 +704,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         $telemetryByZone = [];
         if (! empty($zoneIds)) {
-            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = TelemetryLast::query()
                 ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
                 ->whereIn('sensors.zone_id', $zoneIds)
@@ -842,59 +775,22 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('greenhouses.show');
 
-    /**
-     * Cycle Center - основной операционный экран циклов выращивания
-     */
     Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
 
-    /**
-     * Grow Cycle Wizard - мастер запуска цикла выращивания
-     *
-     * Inertia Props:
-     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
-     */
     Route::get('/grow-cycle-wizard', function () {
         return Inertia::render('GrowCycles/Wizard', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]);
     })->name('grow-cycle-wizard');
 
-    /**
-     * Analytics - страница аналитики и отчетов
-     *
-     * Inertia Props:
-     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
-     */
     Route::get('/analytics', function () {
         return Inertia::render('Analytics/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]);
     })->name('analytics');
 
-    /**
-     * Zones routes
-     */
     Route::prefix('zones')->group(function () {
-        /**
-         * Zones Index - список всех зон
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - zones: Array<{
-         *     id: int,
-         *     name: string,
-         *     status: 'RUNNING'|'PAUSED'|'WARNING'|'ALARM',
-         *     description: string,
-         *     greenhouse_id: int,
-         *     greenhouse: { id: int, name: string },
-         *     telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
-         *   }>
-         *
-         * Кеширование: 10 секунд
-         * Telemetry: batch loading для всех зон
-         */
         Route::get('/', function () {
-            // Кешируем список зон на 10 секунд
             $cacheKey = 'zones_list_'.auth()->id();
             $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Zone::query()
@@ -911,12 +807,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->get();
             });
 
-            // Загружаем telemetry для всех зон (batch loading)
             $zoneIds = $zones->pluck('id')->toArray();
             $telemetryByZone = [];
 
             if (! empty($zoneIds)) {
-                // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
                 $telemetryAll = \App\Models\TelemetryLast::query()
                     ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
                     ->whereIn('sensors.zone_id', $zoneIds)
@@ -928,7 +822,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ])
                     ->get();
 
-                // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
                 $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
                     $result = ['ph' => null, 'ec' => null, 'temperature' => null, 'humidity' => null];
                     foreach ($metrics as $metric) {
@@ -948,7 +841,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 })->toArray();
             }
 
-            // Добавляем telemetry к каждой зоне
             $zonesWithTelemetry = $zones->map(function ($zone) use ($telemetryByZone) {
                 $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
 
@@ -961,17 +853,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('zones.web.index');
 
-        /**
-         * Zone Simulation - отдельная страница симуляции по зоне
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - zoneId: int
-         * - zone: { id, name, status, greenhouse_id, greenhouse, activeGrowCycle }
-         * - telemetry: { ph, ec, temperature, humidity }
-         * - active_grow_cycle: object|null
-         * - active_simulation: { id, status }|null
-         */
         Route::get('/{zoneId}/simulation', function (string $zoneId) {
             $zoneIdInt = (int) $zoneId;
 
@@ -1048,70 +929,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('zones.simulation');
 
-        /**
-         * Zone Show - детальная страница зоны
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - zoneId: int
-         * - zone: {
-         *     id: int,
-         *     name: string,
-         *     status: 'RUNNING'|'PAUSED'|'WARNING'|'ALARM',
-         *     description: string,
-         *     greenhouse_id: int,
-         *     greenhouse: { id: int, name: string },
-         *     recipeInstance: {
-         *       recipe: { id: int, name: string },
-         *       current_phase_index: int
-         *     }
-         *   }
-         * - telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
-         * - targets: Object - «сырые» цели текущей фазы рецепта (исторический формат, для back-compat)
-         * - current_phase: {
-         *     index: int,
-         *     name: string|null,
-         *     duration_hours: float|null,
-         *     phase_started_at: string|null, // UTC ISO8601
-         *     phase_ends_at: string|null,    // UTC ISO8601
-         *     targets: {
-         *       ph: { min: float|null, max: float|null }|null,
-         *       ec: { min: float|null, max: float|null }|null,
-         *       climate: { temperature: float|null, humidity: float|null }|null,
-         *       lighting: { hours_on: float|null, hours_off: float|null }|null,
-         *       irrigation: { interval_minutes: float|null, duration_seconds: float|null }|null
-         *     }|null
-         *   }|null
-         * - active_cycle: {
-         *     id: int,
-         *     type: 'GROWTH_CYCLE',
-         *     status: 'active'|'finished'|'aborted',
-         *     started_at: string, // UTC ISO8601
-         *     ends_at: string,    // UTC ISO8601
-         *     subsystems: {
-         *       ph: { required: bool, enabled: bool, targets: { min: float|null, max: float|null }|null },
-         *       ec: { required: bool, enabled: bool, targets: { min: float|null, max: float|null }|null },
-         *       climate: { required: bool, enabled: bool, targets: { temperature: float|null, humidity: float|null }|null },
-         *       lighting: { required: bool, enabled: bool, targets: { hours_on: float|null, hours_off: float|null }|null },
-         *       irrigation: { required: bool, enabled: bool, targets: { interval_minutes: float|null, duration_seconds: float|null }|null }
-         *     }
-         *   }|null
-         * - devices: Array<{ id, uid, zone_id, name, type, status, fw_version, last_seen_at, zone }>
-         * - events: Array<{ id, kind: 'ALERT'|'WARNING'|'INFO', message: string, occurred_at: ISO8601 }>
-         * - cycles: {
-         *     PH_CONTROL: { type, strategy, interval, last_run, next_run },
-         *     EC_CONTROL: { type, strategy, interval, last_run, next_run },
-         *     IRRIGATION: { type, strategy, interval, last_run, next_run },
-         *     LIGHTING: { type, strategy, interval, last_run, next_run },
-         *     CLIMATE: { type, strategy, interval, last_run, next_run }
-         *   }
-         */
         Route::get('/{zoneId}', function (string $zoneId) {
-            // Convert zoneId to integer
             $zoneIdInt = (int) $zoneId;
 
-            // Загружаем зону с активным циклом выращивания
-            // ВАЖНО: Используем fresh() чтобы получить свежие данные из БД
             $zone = Zone::query()
                 ->with([
                     'greenhouse:id,name',
@@ -1124,7 +944,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ])
                 ->findOrFail($zoneIdInt);
 
-            // Обновляем зону, чтобы гарантировать загрузку свежих данных
             $zone->refresh();
             $zone->loadMissing([
                 'activeGrowCycle.recipeRevision.recipe',
@@ -1135,7 +954,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'activeGrowCycle.plant',
             ]);
 
-            // Логируем для отладки
             \Log::info('Loading zone for web route', [
                 'zone_id' => $zoneIdInt,
                 'has_active_grow_cycle' => $zone->activeGrowCycle !== null,
@@ -1144,7 +962,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'recipe_name' => $zone->activeGrowCycle?->recipeRevision?->recipe?->name,
             ]);
 
-            // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
                 ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
                 ->where('sensors.zone_id', $zoneIdInt)
@@ -1173,7 +990,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 })
                 ->toArray();
 
-            // Загрузить эффективные цели через API
             $targets = [];
             $activeGrowCycle = $zone->activeGrowCycle;
             if ($activeGrowCycle) {
@@ -1190,7 +1006,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
             }
 
-            // Нормализованный блок current_phase через effective targets
             $currentPhaseNormalized = null;
             $activeGrowCycle = $zone->activeGrowCycle;
             if ($activeGrowCycle) {
@@ -1217,7 +1032,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ]);
                 }
             }
-            // Агрегированный цикл выращивания (один активный на зону).
             $activeCycleModel = GrowCycle::query()
                 ->where('zone_id', $zone->id)
                 ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
@@ -1236,14 +1050,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ];
             }
 
-            // Загрузить устройства зоны
             $devices = \App\Models\DeviceNode::query()
                 ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                 ->where('zone_id', $zoneIdInt)
                 ->with('zone:id,name')
                 ->get();
 
-            // Загрузить последние события зоны (если модель Event существует)
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {
                 try {
@@ -1254,18 +1066,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ->limit(20)
                         ->get();
 
-                    // Маппинг структуры Events для фронтенда
-                    // type → kind, details.message → message, created_at → occurred_at
                     $events = $eventsRaw->map(function ($event) {
                         $details = $event->details ?? [];
                         $message = $details['message'] ?? $details['msg'] ?? null;
 
-                        // Специальное форматирование событий циклов выращивания, чтобы оператор видел параметры
                         if (str_starts_with($event->type ?? '', 'CYCLE_') && isset($details['subsystems']) && is_array($details['subsystems'])) {
                             $parts = [];
                             $subs = $details['subsystems'];
 
-                            // pH (обязательный)
                             if (isset($subs['ph']['enabled']) && $subs['ph']['enabled'] === true && isset($subs['ph']['targets']) && is_array($subs['ph']['targets'])) {
                                 $t = $subs['ph']['targets'];
                                 if (isset($t['min']) && isset($t['max'])) {
@@ -1273,7 +1081,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 }
                             }
 
-                            // EC (обязательный)
                             if (isset($subs['ec']['enabled']) && $subs['ec']['enabled'] === true && isset($subs['ec']['targets']) && is_array($subs['ec']['targets'])) {
                                 $t = $subs['ec']['targets'];
                                 if (isset($t['min']) && isset($t['max'])) {
@@ -1281,7 +1088,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 }
                             }
 
-                            // Климат (опциональный)
                             if (isset($subs['climate']['enabled']) && $subs['climate']['enabled'] === true && isset($subs['climate']['targets']) && is_array($subs['climate']['targets'])) {
                                 $t = $subs['climate']['targets'];
                                 if (isset($t['temperature']) && isset($t['humidity'])) {
@@ -1289,7 +1095,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 }
                             }
 
-                            // Освещение (опциональный)
                             if (isset($subs['lighting']['enabled']) && $subs['lighting']['enabled'] === true && isset($subs['lighting']['targets']) && is_array($subs['lighting']['targets'])) {
                                 $t = $subs['lighting']['targets'];
                                 if (isset($t['hours_on']) && isset($t['hours_off'])) {
@@ -1297,7 +1102,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 }
                             }
 
-                            // Полив (обязательный)
                             if (isset($subs['irrigation']['enabled']) && $subs['irrigation']['enabled'] === true && isset($subs['irrigation']['targets']) && is_array($subs['irrigation']['targets'])) {
                                 $t = $subs['irrigation']['targets'];
                                 if (isset($t['interval_minutes']) && isset($t['duration_seconds'])) {
@@ -1322,16 +1126,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ];
                     });
                 } catch (\Exception $e) {
-                    // Event model or table doesn't exist, use empty collection
                     $events = collect([]);
                 }
             }
 
-            // Загрузить данные cycles для зоны
             $cycles = [];
             try {
                 $settings = $zone->settings ?? [];
-                // Получаем последние команды для вычисления last_run
                 $lastCommands = \App\Models\Command::query()
                     ->where('zone_id', $zoneIdInt)
                     ->whereIn('cmd', ['FORCE_PH_CONTROL', 'FORCE_EC_CONTROL', 'FORCE_IRRIGATION', 'FORCE_LIGHTING', 'FORCE_CLIMATE'])
@@ -1344,7 +1145,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         return $group->first()->ack_at?->toIso8601String();
                     });
 
-                // Определяем интервалы из settings или targets
                 $cycleConfigs = [
                     'PH_CONTROL' => [
                         'strategy' => $settings['ph_control']['strategy'] ?? 'periodic',
@@ -1368,7 +1168,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ],
                 ];
 
-                // Формируем ответ
                 foreach ($cycleConfigs as $type => $config) {
                     $lastRun = $lastCommands->get("FORCE_{$type}");
                     $interval = $config['interval'];
@@ -1387,13 +1186,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ];
                 }
             } catch (\Exception $e) {
-                // Если ошибка при загрузке cycles, используем пустой массив
                 $cycles = [];
             }
 
-            // Формируем данные для отправки в Inertia
-            // ВАЖНО: Используем оригинальную модель, так как Inertia правильно сериализует отношения
-            // Но убеждаемся, что все отношения загружены
             if (! $zone->relationLoaded('activeGrowCycle')) {
                 $zone->load([
                     'activeGrowCycle.recipeRevision.recipe',
@@ -1403,7 +1198,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ]);
             }
 
-            // Логируем данные перед отправкой в Inertia
             \Log::info('Sending zone data to Inertia', [
                 'zone_id' => $zone->id,
                 'zone_name' => $zone->name,
@@ -1432,46 +1226,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         })->name('zones.show');
     });
 
-    /**
-     * Devices routes
-     */
     Route::prefix('devices')->group(function () {
-        /**
-         * Devices Index - список всех устройств
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - devices: Array<{
-         *     id: int,
-         *     uid: string,
-         *     zone_id: int,
-         *     name: string,
-         *     type: string,
-         *     status: string,
-         *     fw_version: string,
-         *     last_seen_at: datetime,
-         *     zone: { id: int, name: string }
-         *   }>
-         *
-         * Кеширование: 10 секунд
-         */
         Route::get('/', function () {
             $user = auth()->user();
-            // Кешируем список устройств на 2 секунды для быстрого обновления
             $cacheKey = 'devices_list_'.$user->id;
             $devices = null;
 
-            // Получаем доступные ноды для пользователя
             $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
 
-            // Пытаемся использовать теги, если поддерживаются
             try {
                 $devices = \Illuminate\Support\Facades\Cache::tags(['devices_list'])->remember($cacheKey, 2, function () use ($user, $accessibleNodeIds) {
                     $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name');
 
-                    // Фильтруем по доступным нодам (кроме админов)
                     if (! $user->isAdmin()) {
                         $query->whereIn('id', $accessibleNodeIds);
                     }
@@ -1480,13 +1248,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ->get();
                 });
             } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, используем обычный кеш
                 $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () use ($user, $accessibleNodeIds) {
                     $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name');
 
-                    // Фильтруем по доступным нодам (кроме админов)
                     if (! $user->isAdmin()) {
                         $query->whereIn('id', $accessibleNodeIds);
                     }
@@ -1502,44 +1268,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('devices.index');
 
-        /**
-         * Devices Add - форма добавления устройства
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         */
         Route::get('/add', function () {
             return Inertia::render('Devices/Add', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             ]);
         })->name('devices.add');
 
-        /**
-         * Device Show - детальная страница устройства
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - device: {
-         *     id: int,
-         *     uid: string,
-         *     zone_id: int,
-         *     name: string,
-         *     type: string,
-         *     status: string,
-         *     fw_version: string,
-         *     last_seen_at: datetime,
-         *     zone: { id: int, name: string },
-         *     channels: Array<{ id, node_id, channel, type, metric, unit }>
-         *   }
-         *
-         * Поддержка поиска по ID (int) или UID (string)
-         */
         Route::get('/{nodeId}', function (string $nodeId) {
-            // Support both ID (int) and UID (string) lookup
             $query = DeviceNode::query()
                 ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name']);
 
-            // Try to find by ID if nodeId is numeric, otherwise by UID
             if (is_numeric($nodeId)) {
                 $device = $query->findOrFail((int) $nodeId);
             } else {
@@ -1553,9 +1291,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         })->name('devices.show');
     });
 
-    /**
-     * Recipes routes
-     */
     Route::prefix('recipes')->group(function () {
         Route::get('/create', function () {
             return Inertia::render('Recipes/Edit', [
@@ -1564,22 +1299,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('recipes.create');
 
-        /**
-         * Recipes Index - список всех рецептов
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - recipes: Array<{
-         *     id: int,
-         *     name: string,
-         *     description: string,
-         *     phases_count: int
-         *   }>
-         *
-         * Кеширование: 10 секунд
-         */
         Route::get('/', function () {
-            // Кешируем список рецептов на 10 секунд
             $cacheKey = 'recipes_list_'.auth()->id();
             $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Recipe::query()
@@ -1587,7 +1307,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->with(['revisions.phases'])
                     ->get()
                     ->map(function ($recipe) {
-                        // Подсчитываем общее количество фаз во всех ревизиях рецепта
                         $phasesCount = $recipe->revisions->sum(function ($revision) {
                             return $revision->phases->count();
                         });
@@ -1607,24 +1326,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('recipes.index');
 
-        /**
-         * Recipe Show - детальная страница рецепта
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - recipe: {
-         *     id: int,
-         *     name: string,
-         *     description: string,
-         *     phases: Array<{ id, recipe_id, phase_index, name, duration_hours, targets }>
-         *   }
-         */
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
                 ->with(['latestPublishedRevision.phases'])
                 ->findOrFail($recipeId);
 
-            // Для совместимости с фронтендом добавляем phases на уровень recipe
             $recipeArray = $recipe->toArray();
             $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
             $recipeArray['published_revision_id'] = $recipe->latestPublishedRevision?->id;
@@ -1635,18 +1341,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('recipes.show');
 
-        /**
-         * Recipe Edit - форма редактирования рецепта
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-         * - recipe: {
-         *     id: int,
-         *     name: string,
-         *     description: string,
-         *     phases: Array<{ id, recipe_id, phase_index, name, duration_hours, targets }>
-         *   }
-         */
         Route::get('/create', function () {
             $recipe = new \App\Models\Recipe;
             $recipe->phases = [];
@@ -1661,7 +1355,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->with(['latestDraftRevision.phases', 'latestPublishedRevision'])
                 ->findOrFail($recipeId);
 
-            // Для совместимости с фронтендом добавляем phases на уровень recipe
             $phases = $recipe->latestDraftRevision?->phases
                 ?? $recipe->latestPublishedRevision?->phases
                 ?? collect();
@@ -1677,26 +1370,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         })->name('recipes.edit');
     });
 
-    /**
-     * Alerts Index - список всех алертов
-     *
-     * Inertia Props:
-     * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
-     * - alerts: Array<{
-     *     id: int,
-     *     type: string,
-     *     status: 'active'|'resolved',
-     *     details: object,
-     *     zone_id: int,
-     *     created_at: datetime,
-     *     resolved_at: datetime|null,
-     *     zone: { id: int, name: string }
-     *   }>
-     *
-     * Кеширование: 5 секунд (более динамичные данные)
-     */
     Route::get('/alerts', function () {
-        // Кешируем список алертов на 5 секунд (более динамичные данные)
         $cacheKey = 'alerts_list_'.auth()->id();
         $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
             return \App\Models\Alert::query()
@@ -1714,20 +1388,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('alerts.index');
 
-    /**
-     * Users Index - страница управления пользователями (только для admin)
-     *
-     * Inertia Props:
-     * - auth: {
-     *     user: {
-     *       id: int,
-     *       name: string,
-     *       email: string,
-     *       role: 'admin'
-     *     }
-     *   }
-     * - users: Array<{ id, name, email, role, created_at }>
-     */
     Route::middleware('role:admin')->get('/users', function () {
         $user = auth()->user();
         $users = \App\Models\User::query()
@@ -1748,26 +1408,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('users.index');
 
-    /**
-     * Audit Index - страница аудита (только для admin)
-     *
-     * Inertia Props:
-     * - auth: {
-     *     user: {
-     *       id: int,
-     *       name: string,
-     *       email: string,
-     *       role: 'admin'
-     *     }
-     *   }
-     * - logs: Array<{ id, level, message, context, created_at }>
-     *
-     * Кеширование: 5 секунд (динамичные данные)
-     */
     Route::middleware('role:admin')->get('/audit', function () {
         $user = auth()->user();
 
-        // Кешируем логи на 5 секунд для снижения нагрузки
         $cacheKey = 'audit_logs_'.auth()->id();
         $logs = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
             try {
@@ -1777,7 +1420,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->limit(1000)
                     ->get();
 
-                // Логируем для отладки
                 \Log::info('Audit logs loaded', ['count' => $result->count()]);
 
                 return $result;
@@ -1801,9 +1443,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('audit.index');
 
-    /**
-     * Logs Index - страница логов сервисов (admin/operator/engineer)
-     */
     Route::middleware('role:admin,operator,engineer')->get('/logs', function (Request $request) {
         $serviceCatalog = [
             'automation-engine' => [
@@ -1873,25 +1512,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('logs.index');
 
-    /**
-     * Settings Index - страница настроек
-     *
-     * Inertia Props:
-     * - auth: {
-     *     user: {
-     *       id: int,
-     *       name: string,
-     *       email: string,
-     *       role: 'viewer'|'operator'|'admin'
-     *     }
-     *   }
-     * - users: Array<{ id, name, email, role, created_at }> - только для admin
-     */
     Route::get('/settings', function () {
         $user = auth()->user();
         $users = [];
 
-        // Загрузить пользователей только для админов
         if ($user->role === 'admin') {
             $users = \App\Models\User::query()
                 ->select(['id', 'name', 'email', 'role', 'created_at'])
@@ -1906,13 +1530,45 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role ?? 'viewer',
+                    'preferences' => $user->preferences ?? [],
                 ],
             ],
             'users' => $users,
         ]);
     })->name('settings.index');
 
-    // User management routes (admin only, using web session auth)
+    Route::get('/settings/preferences', function (Request $request) {
+        $user = $request->user();
+        $preferences = is_array($user?->preferences) ? $user->preferences : [];
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'alert_toast_suppression_sec' => (int) ($preferences['alert_toast_suppression_sec'] ?? 30),
+            ],
+        ]);
+    })->name('settings.preferences.show');
+
+    Route::patch('/settings/preferences', function (Request $request) {
+        $data = $request->validate([
+            'alert_toast_suppression_sec' => ['required', 'integer', 'min:0', 'max:600'],
+        ]);
+
+        $user = $request->user();
+        $preferences = is_array($user?->preferences) ? $user->preferences : [];
+        $preferences['alert_toast_suppression_sec'] = (int) $data['alert_toast_suppression_sec'];
+
+        $user->preferences = $preferences;
+        $user->save();
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'alert_toast_suppression_sec' => (int) $preferences['alert_toast_suppression_sec'],
+            ],
+        ]);
+    })->name('settings.preferences.update');
+
     Route::middleware('role:admin')->prefix('settings/users')->group(function () {
         Route::post('/', function (\Illuminate\Http\Request $request) {
             $data = $request->validate([
@@ -1929,7 +1585,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'role' => $data['role'],
             ]);
 
-            return redirect()->route('users.index');
+            return response()->json([
+                'status' => 'ok',
+                'data' => $user->makeHidden(['password', 'remember_token']),
+            ], 201);
         })->name('settings.users.store');
 
         Route::patch('/{id}', function (\Illuminate\Http\Request $request, int $id) {
@@ -1950,42 +1609,33 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             }
             $user->save();
 
-            return redirect()->route('users.index');
+            return response()->json([
+                'status' => 'ok',
+                'data' => $user->makeHidden(['password', 'remember_token']),
+            ]);
         })->name('settings.users.update');
 
         Route::delete('/{id}', function (int $id) {
             $user = \App\Models\User::findOrFail($id);
-            // Нельзя удалить самого себя
             if ($user->id === auth()->id()) {
-                return redirect()->route('users.index')->withErrors(['error' => 'Нельзя удалить самого себя']);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Нельзя удалить самого себя',
+                ], 422);
             }
             $user->delete();
 
-            return redirect()->route('users.index');
+            return response()->json([
+                'status' => 'ok',
+            ]);
         })->name('settings.users.destroy');
     });
 
-    /**
-     * Admin routes (только для admin)
-     */
     Route::middleware('role:admin')->prefix('admin')->group(function () {
-        /**
-         * Admin Index - главная страница админки
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'admin' } }
-         */
         Route::get('/', fn () => Inertia::render('Admin/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]))->name('admin.index');
 
-        /**
-         * Admin Zones - управление зонами
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'admin' } }
-         * - zones: Array<{ id, name, status, description, greenhouse_id, greenhouse }>
-         */
         Route::get('/zones', function () {
             $zones = Zone::query()
                 ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
@@ -1998,13 +1648,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('admin.zones');
 
-        /**
-         * Admin Recipes - управление рецептами
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'admin' } }
-         * - recipes: Array<{ id, name, description, phases_count }>
-         */
         Route::get('/recipes', function () {
             $recipes = Recipe::query()
                 ->select(['id', 'name', 'description'])
@@ -2031,8 +1674,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     });
 });
 
-// Swagger доступен только для авторизованных пользователей в dev/testing окружениях
-// В production должен быть отключен или защищен дополнительной аутентификацией
 Route::get('/swagger', function () {
     if (app()->environment(['production', 'staging'])) {
         abort(404, 'Swagger documentation is not available in this environment');
@@ -2058,12 +1699,6 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    /**
-     * Monitoring - страница мониторинга системы
-     *
-     * Inertia Props:
-     * - auth: { user: { role: string } }
-     */
     Route::get('/monitoring', fn () => Inertia::render('Monitoring/Index', [
         'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
     ]))->name('monitoring.index');
@@ -2071,14 +1706,38 @@ Route::middleware(['web', 'auth'])->group(function () {
 
 require __DIR__.'/auth.php';
 
-// Тестовый backdoor доступен ТОЛЬКО в testing окружении (не в local!)
-// Это предотвращает случайное включение в production при ошибочной конфигурации env
-if (app()->environment('testing')) {
-    Route::get('/testing/login/{user}', function (\App\Models\User $user) {
-        \Illuminate\Support\Facades\Auth::login($user);
+if (app()->environment(['testing', 'e2e'])) {
+    Route::get('/testing/login/{user?}', function () {
+        $request = request();
+        $identifier = $request->route('user') ?? $request->query('user') ?? $request->query('email');
+
+        $targetUser = null;
+        if (is_string($identifier) && $identifier !== '') {
+            if (is_numeric($identifier)) {
+                $targetUser = \App\Models\User::query()->find((int) $identifier);
+            } else {
+                $targetUser = \App\Models\User::query()
+                    ->whereRaw('LOWER(email) = ?', [strtolower($identifier)])
+                    ->first();
+            }
+        }
+
+        if (! $targetUser) {
+            $targetUser = \App\Models\User::query()
+                ->where('role', 'admin')
+                ->orderBy('id')
+                ->first();
+        }
+
+        if (! $targetUser) {
+            $targetUser = \App\Models\User::query()->orderBy('id')->firstOrFail();
+        }
+
+        Auth::login($targetUser);
         \Log::warning('Testing backdoor used', [
-            'user_id' => $user->id,
-            'ip' => request()->ip(),
+            'user_id' => $targetUser->id,
+            'identifier' => $identifier,
+            'ip' => $request->ip(),
         ]);
 
         return redirect()->intended('/');

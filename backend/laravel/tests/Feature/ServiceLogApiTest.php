@@ -19,6 +19,7 @@ class ServiceLogApiTest extends TestCase
 
         $user = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($user);
+        SystemLog::query()->delete();
     }
 
     public function test_returns_logs_with_service_and_level_filters(): void

@@ -170,8 +170,8 @@ if (isBrowser()) {
   pendingSubscriptionMonitor.start()
 
   // Очистка при HMR
-  if ((import.meta as any).hot) {
-    (import.meta as any).hot.dispose(() => {
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
       pendingSubscriptionMonitor.stop()
     })
   }

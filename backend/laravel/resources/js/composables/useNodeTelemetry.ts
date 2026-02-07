@@ -1,7 +1,9 @@
-import { ref, onUnmounted, type Ref } from 'vue'
+import { ref, onUnmounted, isRef, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
 import { getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'
+import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
+import type { EchoChannelLike } from '@/ws/subscriptionTypes'
 
 export interface NodeTelemetryData {
   node_id: number
@@ -12,6 +14,7 @@ export interface NodeTelemetryData {
 }
 
 type TelemetryHandler = (data: NodeTelemetryData) => void
+type TelemetryEventHandler = (payload: unknown) => void
 
 /**
  * Composable для подписки на real-time телеметрию устройства через WebSocket
@@ -21,12 +24,20 @@ export function useNodeTelemetry(
   zoneId: Ref<number | null> | number | null,
 ) {
   const isSubscribed = ref(false)
-  let echoChannel: any = null
-  let handlerRef: ((payload: any) => void) | null = null
+  let echoChannel: EchoChannelLike | null = null
+  let handlerRef: TelemetryEventHandler | null = null
+
+  const resolveRefNumber = (value: Ref<number | null> | number | null): number | null => {
+    return isRef(value) ? value.value : value
+  }
+
+  const resolveCurrentNodeId = (): number | null => {
+    return resolveRefNumber(nodeId)
+  }
 
   const subscribe = (handler: TelemetryHandler): (() => void) => {
-    const nodeIdValue = typeof nodeId === 'object' && nodeId !== null ? nodeId.value : nodeId
-    const zoneIdValue = typeof zoneId === 'object' && zoneId !== null ? zoneId.value : zoneId
+    const nodeIdValue = resolveCurrentNodeId()
+    const zoneIdValue = resolveRefNumber(zoneId)
     
     if (!nodeIdValue || !zoneIdValue) {
       logger.warn('[useNodeTelemetry] Cannot subscribe: nodeId or zoneId is null', {
@@ -54,20 +65,17 @@ export function useNodeTelemetry(
       
       // Создаем обработчик события
       // Используем функцию для получения актуального значения nodeId (если это ref)
-      handlerRef = (payload: any) => {
+      handlerRef = (payload: unknown) => {
         logger.debug('[useNodeTelemetry] Received telemetry event', {
           payload,
-          expectedNodeId: typeof nodeId === 'object' && nodeId !== null ? nodeId.value : nodeId,
+          expectedNodeId: resolveCurrentNodeId(),
         })
-
-        const updates = Array.isArray(payload?.updates) ? payload.updates : [payload]
+        const updates = parseNodeTelemetryBatch(payload)
 
         // Получаем актуальное значение nodeId (на случай если это ref)
-        const currentNodeId = typeof nodeId === 'object' && nodeId !== null ? nodeId.value : nodeId
+        const currentNodeId = resolveCurrentNodeId()
 
-        updates.forEach((item: any) => {
-          const data = item as NodeTelemetryData
-
+        updates.forEach((data) => {
           if (currentNodeId && data.node_id === currentNodeId) {
             logger.debug('[useNodeTelemetry] Processing telemetry for node', {
               nodeId: currentNodeId,
@@ -83,7 +91,7 @@ export function useNodeTelemetry(
                 nodeId: currentNodeId,
               })
             }
-          } else if (data?.node_id) {
+          } else {
             logger.debug('[useNodeTelemetry] Ignoring telemetry (nodeId mismatch)', {
               receivedNodeId: data.node_id,
               expectedNodeId: currentNodeId,

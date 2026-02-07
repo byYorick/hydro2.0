@@ -22,7 +22,7 @@ class ZoneOperationJob implements ShouldQueue
      */
     public function __construct(
         public int $zoneId,
-        public string $operation, // 'fill', 'drain', 'calibrateFlow'
+        public string $operation, // 'fill', 'drain', 'calibrate_flow', 'calibrate_pump'
         public array $data,
         public string $jobId // Для отслеживания статуса
     ) {
@@ -49,7 +49,8 @@ class ZoneOperationJob implements ShouldQueue
             $result = match($this->operation) {
                 'fill' => $zoneService->fill($zone, $this->data),
                 'drain' => $zoneService->drain($zone, $this->data),
-                'calibrateFlow' => $zoneService->calibrateFlow($zone, $this->data),
+                'calibrate_flow' => $zoneService->calibrateFlow($zone, $this->data),
+                'calibrate_pump' => $zoneService->calibratePump($zone, $this->data),
                 default => throw new \InvalidArgumentException("Unknown operation: {$this->operation}"),
             };
 
@@ -110,4 +111,3 @@ class ZoneOperationJob implements ShouldQueue
         ]);
     }
 }
-

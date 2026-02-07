@@ -1057,3 +1057,239 @@
    - `resources/js/Pages/Dashboard/Index.vue`
 2. Для каждого файла вынести 1 крупный функциональный блок в composable/утилиту с targeted unit/component тестами.
 3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 8)
+
+1. Выполнена содержательная декомпозиция 3 критических top-N файлов (по запросу):
+   - `resources/js/Pages/Plants/Show.vue`:
+     - orchestration переведен на `resources/js/composables/usePlantShowPage.ts`;
+     - размер файла: `760 -> 578`.
+   - `resources/js/Pages/Dashboard/Index.vue`:
+     - realtime/preferences/quick-actions вынесены в `resources/js/composables/useDashboardPage.ts`;
+     - размер файла: `755 -> 603`.
+   - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue`:
+     - состояние визарда, draft-flow, валидация и submit вынесены в `resources/js/composables/useGrowthCycleWizard.ts`;
+     - размер файла: `896 -> 469`.
+2. Состояние remaining top-N после итерации:
+   - `resources/js/Pages/Zones/Show.vue` остается последним `>700` (`732` строки).
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint ...'` (targeted по измененным файлам) — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 4)
+
+1. Перейти к S3 (контракты/типизация) после закрытия 3 критических декомпозиций:
+   - убрать остаточные `any/unknown`-дыры в websocket/payload-normalization пути;
+   - добавить targeted contract/unit тесты на пограничные payload-сценарии.
+2. Отдельным подшагом S4.9 закрыть последний top-N файл `resources/js/Pages/Zones/Show.vue` (`732 -> <700`) через вынос orchestration-блока в composable.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard` и зафиксировать gate-pass.
+
+### Выполнено (S4, итерация 9)
+
+1. Закрыт последний remaining top-N файл `>700`:
+   - `resources/js/Pages/Zones/Show.vue`:
+     - orchestration (state/modals/telemetry-history/realtime subscriptions/action handlers/cycle wiring) вынесен в `resources/js/composables/useZoneShowPage.ts`;
+     - размер файла: `732 -> 185`.
+2. Legacy warning cleanup:
+   - в `useZoneShowPage.ts` убран non-null assertion через локальный guard (`currentZoneId`).
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel sh -lc './node_modules/.bin/eslint resources/js/Pages/Zones/Show.vue resources/js/composables/useZoneShowPage.ts'` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml run --rm laravel npm run typecheck` — pass;
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 4)
+
+1. Сфокусироваться на типизации/контрактах realtime path:
+   - websocket event payload guards/normalizers;
+   - устранение остаточных `any` в критичных transport/composable цепочках.
+2. Добавить targeted unit/contract тесты на edge-case payload.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 4, часть 1)
+
+1. Усилен контракт realtime command-events (WebSocket):
+   - `resources/js/ws/subscriptionTypes.ts`:
+     - `ZoneCommandHandler.status: string -> CommandStatus`.
+   - `resources/js/ws/webSocketEventDispatchers.ts`:
+     - добавлен `normalizeCommandStatus(...)` с whitelist статусов контракта;
+     - command-события без `command_id/commandId` теперь игнорируются с warn-логом;
+     - неизвестный статус нормализуется в `UNKNOWN` до передачи в handler.
+2. Обновлен потребитель командных событий:
+   - `resources/js/composables/useZoneShowPage.ts`:
+     - убран `status as any` при `updateCommandStatus(...)`; используется строгий тип `CommandStatus`.
+3. Добавлены targeted тесты на edge-cases payload:
+   - `resources/js/ws/__tests__/webSocketEventDispatchers.spec.ts`:
+     - кейс без `command_id` (событие пропускается);
+     - кейс с неизвестным `status` (нормализуется в `UNKNOWN`).
+4. Проверки:
+   - `eslint` (targeted): `subscriptionTypes.ts`, `webSocketEventDispatchers.ts`, `useZoneShowPage.ts`, `webSocketEventDispatchers.spec.ts` — pass;
+   - `typecheck` — pass;
+   - `test` targeted: `webSocketEventDispatchers.spec.ts`, `invariants.spec.ts`, `useWebSocket.spec.ts` — pass (`29/29`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 4, часть 2)
+
+1. Продолжить чистку realtime payload-типа в `useZoneShowPage.ts`:
+   - минимизировать `any` в `zone:updated` payload и `active_cycle/current_phase` адаптерах.
+2. Вынести parse/guard helpers в отдельный typed util для zone updates.
+3. Добавить узкие unit-тесты на helper и повторить `eslint + typecheck + targeted tests`.
+
+### Выполнено (S3, итерация 4, часть 2)
+
+1. Продолжена типизация realtime payload-цепочки `zone:updated`:
+   - добавлен typed util `resources/js/ws/zoneUpdatePayload.ts`:
+     - `parseZoneUpdatePayload(payload)`;
+     - безопасная нормализация `id` и telemetry-метрик (`ph/ec/temperature/humidity`).
+2. Интеграция в страницу зоны:
+   - `resources/js/composables/useZoneShowPage.ts`:
+     - callback `subscribeWithCleanup('zone:updated', ...)` переведен с `any` на `unknown` + `parseZoneUpdatePayload`;
+     - убрана ручная inline-проверка сырых полей payload.
+3. Добавлены targeted unit-тесты:
+   - `resources/js/ws/__tests__/zoneUpdatePayload.spec.ts`:
+     - нормализация строковых/числовых значений;
+     - игнорирование нечисловых telemetry-полей;
+     - fallback для невалидного payload.
+4. Проверки:
+   - `eslint` (targeted) — pass;
+   - `typecheck` — pass;
+   - `test` targeted: `zoneUpdatePayload.spec.ts`, `webSocketEventDispatchers.spec.ts`, `invariants.spec.ts`, `useWebSocket.spec.ts` — pass (`32/32`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 5)
+
+1. Убрать remaining `any` в realtime route-connect path:
+   - `resources/js/utils/echoConfig.ts` (`import.meta as any` -> typed env accessor),
+   - `resources/js/composables/useWebSocket.ts` (typed HMR block).
+2. Добавить/обновить тесты на env-resolution/reconnect поведения без `any`.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 5)
+
+1. Убран `import.meta as any` в realtime route-connect path:
+   - `resources/js/utils/echoConfig.ts`:
+     - env-resolution переведен на typed access через `readStringEnv/readBooleanEnv`;
+     - удалены прямые обращения `(import.meta as any).env`.
+   - `resources/js/composables/useWebSocket.ts`:
+     - HMR cleanup переведен на `import.meta.hot` без `as any`.
+2. Сохранено поведение reconnect/env-конфигурации:
+   - fallback и приоритеты `VITE_REVERB_*`, TLS/proxy-port логика не изменены по контракту.
+3. Проверки:
+   - `eslint` (targeted) — pass;
+   - `typecheck` — pass;
+   - `test` targeted: `webSocketEventDispatchers.spec.ts`, `zoneUpdatePayload.spec.ts`, `useWebSocket.spec.ts`, `echoClient.spec.ts` — pass (`21/21`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 6)
+
+1. Перейти к следующему критичному realtime-узлу с `any`:
+   - `resources/js/composables/useNodeTelemetry.ts` (typed payload normalize + channel handlers).
+2. Добавить targeted unit-тесты на edge-case payload обновлений телеметрии узлов.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 6)
+
+1. Убраны `any` в realtime node-telemetry path:
+   - `resources/js/composables/useNodeTelemetry.ts`:
+     - `echoChannel` типизирован как `EchoChannelLike | null`;
+     - `handlerRef` типизирован как `(payload: unknown) => void`;
+     - добавлен typed resolver для `Ref<number|null> | number | null` через `isRef`;
+     - raw payload обработка переведена на typed parse слой.
+2. Добавлен typed parser для payload обновлений узлов:
+   - новый `resources/js/ws/nodeTelemetryPayload.ts`:
+     - `parseNodeTelemetryBatch(payload)` с безопасной нормализацией `node_id/value/ts/channel/metric_type`;
+     - поддержка batch (`updates[]`) и одиночного payload.
+3. Добавлены targeted unit-тесты:
+   - `resources/js/ws/__tests__/nodeTelemetryPayload.spec.ts` (3 кейса: batch normalize, ISO ts, filtering invalid items).
+4. Проверки:
+   - `eslint` (targeted) — pass;
+   - `typecheck` — pass;
+   - `test` targeted: `nodeTelemetryPayload.spec.ts`, `webSocketEventDispatchers.spec.ts`, `useWebSocket.spec.ts` — pass (`17/17`).
+5. Ограничение текущего рабочего дерева:
+   - `file-size-guard --working-tree` падает на несвязанном уже измененном файле:
+     - `backend/laravel/routes/web.php: 2086 -> 2145` (outside текущего S3 scope).
+
+### Следующий этап (S3, итерация 7)
+
+1. Закрыть remaining `any` в realtime/supporting path:
+   - `resources/js/composables/useWsChannel.ts` (telemetry/alerts/nodes payload shapes),
+   - `resources/js/composables/useStoreEvents.ts` (typed event-bus payloads).
+2. Добавить unit-тесты на typed-event contracts.
+3. Повторить `eslint + typecheck + targeted tests`; `file-size-guard` считать блокированным до стабилизации `routes/web.php` изменений.
+
+### Выполнено (S3, итерация 7)
+
+1. Закрыт remaining `any` в supporting realtime path:
+   - `resources/js/composables/useWsChannel.ts`:
+     - локальные `any`-типы заменены на контрактные типы из `subscriptionTypes` и `types/reconciliation` (`ZoneCommandHandler`, `GlobalEventHandler`, `SnapshotHandler`).
+   - `resources/js/composables/useStoreEvents.ts`:
+     - `EventEmitter` переведен на generic payload-map;
+     - `subscribe/subscribeWithCleanup/unsubscribe/emit` типизированы по `StoreEventPayloadMap`;
+     - `zoneEvents/deviceEvents/recipeEvents` переведены на доменные типы (`Zone/Device/Recipe`) без `any`.
+2. Продолжена чистка node telemetry path:
+   - `resources/js/composables/useNodeTelemetry.ts`:
+     - `Ref|number|null` resolver типизирован через `isRef`;
+     - обработка payload полностью через typed parser.
+   - добавлен `resources/js/ws/nodeTelemetryPayload.ts`.
+3. Тесты на typed-event contracts:
+   - обновлен `resources/js/composables/__tests__/useStoreEvents.spec.ts` (убраны `any` в тестовых данных);
+   - добавлен `resources/js/ws/__tests__/nodeTelemetryPayload.spec.ts`.
+4. Проверки:
+   - `eslint` (targeted) — pass;
+   - `typecheck` — pass;
+   - `test` targeted: `useStoreEvents.spec.ts`, `nodeTelemetryPayload.spec.ts`, `webSocketEventDispatchers.spec.ts`, `useWebSocket.spec.ts` — pass (`25/25`).
+5. Ограничение рабочего дерева:
+   - `file-size-guard --working-tree` продолжает падать на внешнем несвязанном изменении `backend/laravel/routes/web.php` (`2086 -> 2156`, вне S3 scope).
+
+### Статус блока S3
+
+- `S3 (Контракты и типизация)` завершен по целевому scope realtime/transport/frontend contract path.
+- Все целевые шаги S3.4-S3.7 выполнены и проверены (`eslint + typecheck + targeted tests`).
+- Единственный незакрытый gate в рабочем дереве связан с внешним изменением `routes/web.php`, не относящимся к S3.
+
+### Следующий этап (S4 / репо-гигиена и CI)
+
+1. Стабилизировать `file-size-guard` по всему рабочему дереву (включая `routes/web.php`).
+2. Закрыть оставшиеся legacy warning по несвязанным модулям, если они мешают CI-gates.
+3. Подготовить clean pass полного pipeline и финальную фиксацию этапа в плане.
+
+### Выполнено (S4, итерация 10)
+
+1. Стабилизирован blocker `file-size-guard` по рабочему дереву:
+   - `backend/laravel/routes/web.php` приведен в допустимую legacy-дельту без изменения runtime-контрактов маршрутов;
+   - размер файла: `2156 -> 1745` строк;
+   - guard-статус: `LEGACY (2086 -> 1745, over limit but within delta)` и общий `PASS`.
+2. Проведен проход CI-gates для текущего scope:
+   - `eslint . --ext .ts,.tsx,.vue -f compact` — pass;
+   - `npm run typecheck` — pass;
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+3. Прогнаны целевые тесты на контракты/настройки:
+   - `php artisan test tests/Feature/SettingsUsersApiTest.php tests/Feature/UserPreferencesSettingsTest.php` — pass (`5/5`);
+   - `npm run test -- resources/js/ws/__tests__/webSocketEventDispatchers.spec.ts resources/js/ws/__tests__/zoneUpdatePayload.spec.ts resources/js/ws/__tests__/nodeTelemetryPayload.spec.ts resources/js/composables/__tests__/useStoreEvents.spec.ts` — pass (`18/18`).
+
+### Следующий этап (S4, итерация 11)
+
+1. Выполнить финальный проход полного CI pipeline (backend + frontend + сервисы) в актуальной ветке.
+2. Если появятся новые нестабильные шаги из несвязанных изменений, локализовать их в отдельный список блокеров с владельцами.
+3. Подготовить финальную сводку закрытия S4 с перечнем оставшихся внешних рисков (если будут).
+
+### Выполнено (S4, итерация 11)
+
+1. Проведен финальный проход CI-стадий в Docker:
+   - `check-file-size-guard.sh --working-tree` (на хосте) — pass;
+   - `eslint . --ext .ts,.tsx,.vue -f compact` — pass;
+   - `npm run typecheck` — pass;
+   - `npm run test` (vitest full) — pass (`102 files`, `883 passed`, `15 skipped`);
+   - `npm run build` — pass.
+2. E2E smoke зафиксирован после установки браузера в том же контейнере:
+   - `npx playwright install chromium && npm run build && npm run e2e -- tests/E2E/dashboard.smoke.spec.ts` — pass (`2/2`).
+3. Локализован блокер полного backend pipeline (`php artisan test --testsuite=Unit,Feature`):
+   - итог: `53 failed`, `406 passed`, `4 skipped`;
+   - доминирующий профиль ошибок: рассинхрон схемы БД и миграций/seed-данных в рабочем дереве (`undefined table/column`, `missing route`, `unique/deadlock`), вне scope текущих S3/S4 realtime-правок.
+
+### Следующий этап (S4, итерация 12)
+
+1. Стабилизировать backend test-suite до green:
+   - выровнять миграции и factories/seeders (таблицы/колонки, задействованные в `GrowCycle*`, `Infrastructure*`, `N1Optimization*`, `InternalApiController*` тестах).
+2. Разнести flaky/deadlock-части сидеров (`Extended*`) в deterministic режим для CI-тестовых окружений.
+3. Повторить полный CI-проход и зафиксировать окончательное закрытие S4.

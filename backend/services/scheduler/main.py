@@ -28,6 +28,7 @@ from common.water_cycle import (
     WATER_STATE_WATER_CHANGE_FILL,
     WATER_STATE_WATER_CHANGE_STABILIZE,
 )
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log
 from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id, get_trace_id, inject_trace_id_header, set_trace_id
@@ -260,6 +261,23 @@ async def send_command_via_automation_engine(
                         "status_code": response.status_code,
                     },
                 )
+                await send_infra_alert(
+                    code="infra_scheduler_command_failed",
+                    alert_type="Scheduler Command Failed",
+                    message=f"Scheduler не смог отправить команду {cmd}: {error_msg}",
+                    severity="error",
+                    zone_id=zone_id,
+                    service="scheduler",
+                    component="automation_engine_api",
+                    node_uid=node_uid,
+                    channel=channel,
+                    cmd=cmd,
+                    error_type=f"http_{response.status_code}",
+                    details={
+                        "status_code": response.status_code,
+                        "error_message": error_msg,
+                    },
+                )
                 return False
                 
     except httpx.TimeoutException as e:
@@ -280,6 +298,20 @@ async def send_command_via_automation_engine(
                 "error": str(e),
             },
         )
+        await send_infra_alert(
+            code="infra_scheduler_command_timeout",
+            alert_type="Scheduler Command Timeout",
+            message=f"Scheduler получил таймаут при отправке команды {cmd}: {e}",
+            severity="critical",
+            zone_id=zone_id,
+            service="scheduler",
+            component="automation_engine_api",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            error_type="timeout",
+            details={"error_message": str(e)},
+        )
         return False
     except httpx.RequestError as e:
         COMMAND_REST_ERRORS.labels(error_type="request_error").inc()
@@ -299,6 +331,20 @@ async def send_command_via_automation_engine(
                 "error": str(e),
             },
         )
+        await send_infra_alert(
+            code="infra_scheduler_command_failed",
+            alert_type="Scheduler Command Failed",
+            message=f"Scheduler получил ошибку запроса при отправке команды {cmd}: {e}",
+            severity="error",
+            zone_id=zone_id,
+            service="scheduler",
+            component="automation_engine_api",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            error_type="request_error",
+            details={"error_message": str(e)},
+        )
         return False
     except Exception as e:
         COMMAND_REST_ERRORS.labels(error_type=type(e).__name__).inc()
@@ -317,6 +363,18 @@ async def send_command_via_automation_engine(
                 "params": params or {},
                 "error": str(e),
             },
+        )
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Scheduler Unexpected Error",
+            severity="error",
+            zone_id=zone_id,
+            service="scheduler",
+            component="command_dispatch",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
         )
         return False
     finally:

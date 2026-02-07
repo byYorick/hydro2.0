@@ -165,4 +165,45 @@ describe('webSocketEventDispatchers', () => {
       message: 'fresh',
     }))
   })
+
+  it('игнорирует command-событие без command_id и нормализует неизвестный статус в UNKNOWN', () => {
+    const handler = vi.fn()
+    const activeSubscriptions = new Map<string, ActiveSubscription>([
+      ['sub-command-1', {
+        id: 'sub-command-1',
+        channelName: 'commands.9',
+        kind: 'zoneCommands',
+        handler,
+        componentTag: 'TestComponent',
+        instanceId: 1,
+      }],
+    ])
+    const channelSubscribers = new Map<string, Set<string>>([
+      ['commands.9', new Set(['sub-command-1'])],
+    ])
+
+    const { handleCommandEvent } = createWebSocketEventDispatchers({
+      activeSubscriptions,
+      channelSubscribers,
+    })
+
+    handleCommandEvent('commands.9', {
+      status: 'DONE',
+      message: 'no-id',
+    }, false)
+
+    handleCommandEvent('commands.9', {
+      command_id: 200,
+      status: 'custom_state',
+      message: 'normalized-status',
+    }, false)
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      commandId: 200,
+      status: 'UNKNOWN',
+      message: 'normalized-status',
+      zoneId: 9,
+    }))
+  })
 })

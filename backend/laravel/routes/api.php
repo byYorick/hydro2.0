@@ -10,6 +10,7 @@ use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\InfrastructureInstanceController;
+use App\Http\Controllers\NodeChannelController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PipelineHealthController;
@@ -184,6 +185,7 @@ Route::middleware([
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
+        Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);
@@ -334,6 +336,9 @@ Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$int
     Route::post('grow-cycles/{growCycle}/harvest', [\App\Http\Controllers\InternalApiController::class, 'harvestGrowCycle']);
     Route::post('realtime/telemetry-batch', [\App\Http\Controllers\InternalRealtimeController::class, 'telemetryBatch']);
 });
+
+Route::patch('node-channels/{nodeChannel}', [NodeChannelController::class, 'serviceUpdateConfig'])
+    ->middleware(['verify.python.service', 'throttle:'.$internalApiThrottle]);
 
 // Node registration and service updates (token-based) - умеренный лимит
 Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function () {

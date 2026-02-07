@@ -1,12 +1,14 @@
 """
 Централизованная обработка ошибок для automation engine.
 """
+import asyncio
 import logging
 import traceback
 from typing import Optional, Dict, Any, Callable, Awaitable
 from functools import wraps
 from prometheus_client import Counter
 from common.service_logs import send_service_log
+from common.infra_alerts import send_infra_exception_alert
 
 from exceptions import (
     AutomationError,
@@ -28,6 +30,36 @@ ERROR_COUNTER = Counter(
     "Total automation errors by type",
     ["error_type", "zone_id"]
 )
+
+
+def _emit_infra_error_alert(
+    *,
+    error: Exception,
+    zone_id: Optional[int],
+    component: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Fire-and-forget отправка infra-алерта.
+    Нельзя блокировать основной путь обработки ошибок.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    loop.create_task(
+        send_infra_exception_alert(
+            error=error,
+            code="infra_unknown_error",
+            alert_type="Automation Error",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component=component,
+            details={"context": context or {}},
+        )
+    )
 
 
 def handle_zone_error(
@@ -68,6 +100,12 @@ def handle_zone_error(
                 "context": context,
             },
         )
+        _emit_infra_error_alert(
+            error=error,
+            zone_id=zone_id,
+            component="zone_error",
+            context=context,
+        )
     else:
         # Обработка стандартных исключений
         msg = f"Zone {zone_id}: Unexpected error: {error}{context_str}"
@@ -82,6 +120,12 @@ def handle_zone_error(
             level="error",
             message=msg,
             context=log_context,
+        )
+        _emit_infra_error_alert(
+            error=error,
+            zone_id=zone_id,
+            component="zone_error_unexpected",
+            context=context,
         )
 
 
@@ -115,6 +159,12 @@ def handle_automation_error(
             message=msg,
             context=log_context,
         )
+        _emit_infra_error_alert(
+            error=error,
+            zone_id=None,
+            component="automation_error",
+            context=context,
+        )
     else:
         msg = f"Unexpected automation error: {error}{context_str}"
         log_context = {
@@ -127,6 +177,12 @@ def handle_automation_error(
             level="error",
             message=msg,
             context=log_context,
+        )
+        _emit_infra_error_alert(
+            error=error,
+            zone_id=None,
+            component="automation_unexpected",
+            context=context,
         )
 
 

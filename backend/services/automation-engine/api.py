@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 import logging
 import os
 from infrastructure import CommandBus
+from common.infra_alerts import send_infra_exception_alert
 from common.trace_context import extract_trace_id_from_headers
 from utils.logging_context import set_trace_id
 
@@ -92,11 +93,25 @@ async def scheduler_command(request: Request, req: SchedulerCommandRequest = Bod
         else:
             raise HTTPException(status_code=500, detail="Failed to publish command")
             
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             f"Error processing scheduler command: {e}",
             exc_info=True,
             extra={"zone_id": req.zone_id, "node_uid": req.node_uid}
+        )
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Automation API Unexpected Error",
+            severity="error",
+            zone_id=req.zone_id,
+            service="automation-engine",
+            component="api:/scheduler/command",
+            node_uid=req.node_uid,
+            channel=req.channel,
+            cmd=req.cmd,
         )
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 

@@ -60,11 +60,16 @@ class TelemetryCleanupCommandTest extends TestCase
         
         // Проверяем начальное количество
         $oldCount = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
             ->where('ts', '<', Carbon::now()->subDays(30))
             ->count();
         $this->assertEquals(2500, $oldCount);
         
-        $totalCount = DB::table('telemetry_samples')->count();
+        $totalCount = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
+            ->count();
         $this->assertEquals(2600, $totalCount);
         
         // Запускаем команду очистки (без подтверждения VACUUM)
@@ -74,6 +79,8 @@ class TelemetryCleanupCommandTest extends TestCase
         
         // Проверяем, что старые записи удалены
         $remainingOld = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
             ->where('ts', '<', Carbon::now()->subDays(30))
             ->count();
         $this->assertEquals(0, $remainingOld);
@@ -81,6 +88,8 @@ class TelemetryCleanupCommandTest extends TestCase
         // Проверяем, что новые записи остались (используем более точное условие)
         $cutoffDate = Carbon::now()->subDays(30);
         $remainingNew = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
             ->where('ts', '>', $cutoffDate)
             ->count();
         // Проверяем, что осталось хотя бы 100 записей
@@ -133,7 +142,10 @@ class TelemetryCleanupCommandTest extends TestCase
             ]);
         }
         
-        $initialCount = DB::table('telemetry_samples')->count();
+        $initialCount = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
+            ->count();
         $this->assertEquals(100, $initialCount);
         
         $this->artisan('telemetry:cleanup-raw', ['--days' => 30])
@@ -141,7 +153,10 @@ class TelemetryCleanupCommandTest extends TestCase
             ->expectsOutput('Всего удалено записей: 0')
             ->assertSuccessful();
         
-        $finalCount = DB::table('telemetry_samples')->count();
+        $finalCount = DB::table('telemetry_samples')
+            ->where('zone_id', $zone->id)
+            ->where('sensor_id', $sensor->id)
+            ->count();
         $this->assertEquals(100, $finalCount);
     }
 }

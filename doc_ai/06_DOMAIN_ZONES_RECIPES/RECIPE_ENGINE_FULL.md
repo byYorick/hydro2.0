@@ -99,6 +99,14 @@ CREATE TABLE recipe_revision_phases (
        "targets": {
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+         "nutrition": {
+           "program_code": "GENERIC_3PART_V1",
+           "components": {
+             "npk": {"ratio_pct": 46.0},
+             "calcium": {"ratio_pct": 34.0},
+             "micro": {"ratio_pct": 20.0}
+           }
+         },
          "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600}
        }
      }
@@ -151,6 +159,14 @@ CREATE TABLE recipe_revision_phases (
        "targets": {
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+         "nutrition": {
+           "program_code": "GENERIC_3PART_V1",
+           "components": {
+             "npk": {"ratio_pct": 46.0, "dose_ml_per_l": 1.8},
+             "calcium": {"ratio_pct": 34.0, "dose_ml_per_l": 1.2},
+             "micro": {"ratio_pct": 20.0, "dose_ml_per_l": 0.6}
+           }
+         },
          "irrigation": {
            "mode": "SUBSTRATE",
            "interval_sec": 3600,

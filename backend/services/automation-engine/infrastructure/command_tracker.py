@@ -27,6 +27,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime
 from common.utils.time import utcnow
 from common.db import execute, fetch, create_zone_event
+from common.infra_alerts import send_infra_alert
 from common.commands import new_command_id
 from prometheus_client import Histogram, Counter, Gauge
 from decision_context import ContextLike, normalize_context
@@ -220,9 +221,59 @@ class CommandTracker:
                     'latency': latency
                 }
             )
+            await self._emit_failure_alert(
+                zone_id=zone_id,
+                cmd_id=cmd_id,
+                status=status,
+                command_info=command_info,
+                error=error,
+            )
         
         # Удаляем из pending
         del self.pending_commands[cmd_id]
+
+    async def _emit_failure_alert(
+        self,
+        *,
+        zone_id: int,
+        cmd_id: str,
+        status: str,
+        command_info: Dict[str, Any],
+        error: Optional[str],
+    ) -> None:
+        command = command_info.get("command") or {}
+        node_uid = command.get("node_uid")
+        channel = command.get("channel")
+        cmd = command.get("cmd") or command_info.get("command_type")
+
+        status_upper = str(status).upper()
+        code_map = {
+            "SEND_FAILED": ("infra_command_send_failed", "critical"),
+            "TIMEOUT": ("infra_command_timeout", "critical"),
+            "ERROR": ("infra_command_failed", "error"),
+            "INVALID": ("infra_command_invalid", "error"),
+            "BUSY": ("infra_command_busy", "warning"),
+        }
+        code, severity = code_map.get(status_upper, ("infra_command_unknown_status", "error"))
+
+        await send_infra_alert(
+            code=code,
+            alert_type="Command Execution Failed",
+            message=f"Команда {cmd or 'unknown'} завершилась со статусом {status_upper}: {error or status_upper}",
+            severity=severity,
+            zone_id=zone_id,
+            service="automation-engine",
+            component="command_tracker",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            error_type=status_upper,
+            details={
+                "cmd_id": cmd_id,
+                "status": status_upper,
+                "error_message": error,
+            },
+        )
     
     async def confirm_command(
         self,
@@ -236,6 +287,19 @@ class CommandTracker:
         Оставлено для обратной совместимости.
         """
         status = 'DONE' if success else 'ERROR'
+        await self._confirm_command_internal(cmd_id, status, response, error)
+
+    async def confirm_command_status(
+        self,
+        cmd_id: str,
+        status: str,
+        response: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """
+        Явно подтвердить команду заданным статусом.
+        Используется для сценариев, когда публикация команды не удалась до получения ACK.
+        """
         await self._confirm_command_internal(cmd_id, status, response, error)
     
     async def _check_timeout(self, cmd_id: str):

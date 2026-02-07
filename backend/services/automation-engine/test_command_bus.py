@@ -275,8 +275,10 @@ async def test_publish_command_with_trace_id():
 
 
 @pytest.mark.asyncio
-async def test_publish_command_without_token():
+async def test_publish_command_without_token(monkeypatch):
     """Test command publication without authentication token."""
+    monkeypatch.delenv("HISTORY_LOGGER_API_TOKEN", raising=False)
+    monkeypatch.delenv("PY_INGEST_TOKEN", raising=False)
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_response = Mock()
         mock_response.status_code = 200

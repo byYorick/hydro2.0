@@ -8,6 +8,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\NutrientProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -20,10 +21,13 @@ use Illuminate\Support\Str;
  */
 class ExtendedRecipesCyclesSeeder extends Seeder
 {
+    private array $nutrientProductIds = [];
+
     public function run(): void
     {
         $this->command->info('=== Создание расширенных рецептов и циклов ===');
 
+        $this->seedNutrientProducts();
         $templates = $this->ensureStageTemplates();
         $revisions = $this->seedRecipes($templates);
         $this->seedGrowCycles($revisions);
@@ -1483,6 +1487,10 @@ class ExtendedRecipesCyclesSeeder extends Seeder
         $ecMin = $phaseData['ec_min'] ?? $ec['min'] ?? null;
         $ecMax = $phaseData['ec_max'] ?? $ec['max'] ?? null;
         $ecTarget = $phaseData['ec_target'] ?? $ec['target'] ?? $this->averageTarget(['min' => $ecMin, 'max' => $ecMax]);
+        $nutritionProfile = $this->buildNutritionProfile(
+            $phaseData,
+            $phaseData['stage_code'] ?? $stageTemplate?->code
+        );
 
         $tempMin = $phaseData['temp_air_min'] ?? $tempAir['min'] ?? null;
         $tempMax = $phaseData['temp_air_max'] ?? $tempAir['max'] ?? null;
@@ -1528,6 +1536,18 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             'ec_target' => $ecTarget,
             'ec_min' => $ecMin,
             'ec_max' => $ecMax,
+            'nutrient_program_code' => $nutritionProfile['program_code'],
+            'nutrient_npk_ratio_pct' => $nutritionProfile['npk_ratio_pct'],
+            'nutrient_calcium_ratio_pct' => $nutritionProfile['calcium_ratio_pct'],
+            'nutrient_micro_ratio_pct' => $nutritionProfile['micro_ratio_pct'],
+            'nutrient_npk_dose_ml_l' => $nutritionProfile['npk_dose_ml_l'],
+            'nutrient_calcium_dose_ml_l' => $nutritionProfile['calcium_dose_ml_l'],
+            'nutrient_micro_dose_ml_l' => $nutritionProfile['micro_dose_ml_l'],
+            'nutrient_npk_product_id' => $nutritionProfile['npk_product_id'],
+            'nutrient_calcium_product_id' => $nutritionProfile['calcium_product_id'],
+            'nutrient_micro_product_id' => $nutritionProfile['micro_product_id'],
+            'nutrient_dose_delay_sec' => $nutritionProfile['dose_delay_sec'],
+            'nutrient_ec_stop_tolerance' => $nutritionProfile['ec_stop_tolerance'],
             'irrigation_mode' => $irrigationMode,
             'irrigation_interval_sec' => $phaseData['irrigation_interval_sec'] ?? $irrigation['interval_sec'] ?? null,
             'irrigation_duration_sec' => $phaseData['irrigation_duration_sec'] ?? $irrigation['duration_sec'] ?? null,
@@ -1546,6 +1566,142 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             'target_gdd' => $phaseData['target_gdd'] ?? null,
             'dli_target' => $dliTarget,
             'extensions' => $extensions,
+        ];
+    }
+
+    private function buildNutritionProfile(array $phaseData, ?string $stageCode = null): array
+    {
+        $nutrition = is_array($phaseData['nutrition'] ?? null) ? $phaseData['nutrition'] : [];
+        $components = is_array($nutrition['components'] ?? null) ? $nutrition['components'] : [];
+        $defaults = $this->defaultNutritionRatiosByStage($stageCode);
+        $programCode = $phaseData['nutrient_program_code']
+            ?? $nutrition['program_code']
+            ?? 'MASTERBLEND_3PART_V1';
+        $defaultProducts = $this->defaultNutritionProductsByProgram($programCode);
+
+        $npkRatio = $phaseData['nutrient_npk_ratio_pct']
+            ?? data_get($components, 'npk.ratio_pct')
+            ?? $defaults['npk'];
+        $calciumRatio = $phaseData['nutrient_calcium_ratio_pct']
+            ?? data_get($components, 'calcium.ratio_pct')
+            ?? $defaults['calcium'];
+        $microRatio = $phaseData['nutrient_micro_ratio_pct']
+            ?? data_get($components, 'micro.ratio_pct')
+            ?? $defaults['micro'];
+
+        $normalized = $this->normalizeNutritionRatios((float) $npkRatio, (float) $calciumRatio, (float) $microRatio);
+
+        return [
+            'program_code' => $programCode,
+            'npk_ratio_pct' => $normalized['npk'],
+            'calcium_ratio_pct' => $normalized['calcium'],
+            'micro_ratio_pct' => $normalized['micro'],
+            'npk_dose_ml_l' => $phaseData['nutrient_npk_dose_ml_l'] ?? data_get($components, 'npk.dose_ml_per_l'),
+            'calcium_dose_ml_l' => $phaseData['nutrient_calcium_dose_ml_l'] ?? data_get($components, 'calcium.dose_ml_per_l'),
+            'micro_dose_ml_l' => $phaseData['nutrient_micro_dose_ml_l'] ?? data_get($components, 'micro.dose_ml_per_l'),
+            'npk_product_id' => $phaseData['nutrient_npk_product_id'] ?? data_get($components, 'npk.product_id') ?? $defaultProducts['npk_product_id'],
+            'calcium_product_id' => $phaseData['nutrient_calcium_product_id'] ?? data_get($components, 'calcium.product_id') ?? $defaultProducts['calcium_product_id'],
+            'micro_product_id' => $phaseData['nutrient_micro_product_id'] ?? data_get($components, 'micro.product_id') ?? $defaultProducts['micro_product_id'],
+            'dose_delay_sec' => $phaseData['nutrient_dose_delay_sec'] ?? $nutrition['dose_delay_sec'] ?? 12,
+            'ec_stop_tolerance' => $phaseData['nutrient_ec_stop_tolerance'] ?? $nutrition['ec_stop_tolerance'] ?? 0.07,
+        ];
+    }
+
+    private function seedNutrientProducts(): void
+    {
+        $products = [
+            [
+                'manufacturer' => 'Masterblend',
+                'name' => 'Tomato 4-18-38',
+                'component' => 'npk',
+                'composition' => 'NPK 4-18-38',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Базовый комплекс NPK для двухкомпонентных гидросхем с отдельным кальцием.',
+            ],
+            [
+                'manufacturer' => 'Yara',
+                'name' => 'YaraLiva Calcinit',
+                'component' => 'calcium',
+                'composition' => '15.5-0-0 + 19% Ca',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Источник нитратного азота и кальция; хранить отдельно от фосфатов/сульфатов.',
+            ],
+            [
+                'manufacturer' => 'Haifa',
+                'name' => 'Micro Hydroponic Mix',
+                'component' => 'micro',
+                'composition' => 'Fe, Mn, Zn, Cu, B, Mo',
+                'recommended_stage' => 'GERMINATION,ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Хелатный микс микроэлементов для гидропоники.',
+            ],
+            [
+                'manufacturer' => 'Yara',
+                'name' => 'YaraTera Kristalon 18-18-18',
+                'component' => 'npk',
+                'composition' => 'NPK 18-18-18',
+                'recommended_stage' => 'VEG',
+                'notes' => 'Универсальная комплексная база NPK для вегетативных фаз.',
+            ],
+        ];
+
+        foreach ($products as $payload) {
+            $product = NutrientProduct::query()->firstOrCreate(
+                [
+                    'manufacturer' => $payload['manufacturer'],
+                    'name' => $payload['name'],
+                    'component' => $payload['component'],
+                ],
+                $payload
+            );
+            $this->nutrientProductIds[$payload['manufacturer'].'|'.$payload['name'].'|'.$payload['component']] = $product->id;
+        }
+    }
+
+    private function defaultNutritionProductsByProgram(string $programCode): array
+    {
+        $code = strtoupper($programCode);
+        $masterblend = [
+            'npk_product_id' => $this->nutrientProductIds['Masterblend|Tomato 4-18-38|npk'] ?? null,
+            'calcium_product_id' => $this->nutrientProductIds['Yara|YaraLiva Calcinit|calcium'] ?? null,
+            'micro_product_id' => $this->nutrientProductIds['Haifa|Micro Hydroponic Mix|micro'] ?? null,
+        ];
+
+        return match ($code) {
+            'MASTERBLEND_3PART_V1', 'GENERIC_3PART_V1' => $masterblend,
+            default => $masterblend,
+        };
+    }
+
+    private function defaultNutritionRatiosByStage(?string $stageCode): array
+    {
+        $code = strtoupper((string) $stageCode);
+
+        return match ($code) {
+            'GERMINATION' => ['npk' => 50.0, 'calcium' => 30.0, 'micro' => 20.0],
+            'ROOTING' => ['npk' => 48.0, 'calcium' => 34.0, 'micro' => 18.0],
+            'VEG' => ['npk' => 46.0, 'calcium' => 38.0, 'micro' => 16.0],
+            'FLOWER' => ['npk' => 44.0, 'calcium' => 34.0, 'micro' => 22.0],
+            'FRUIT' => ['npk' => 42.0, 'calcium' => 32.0, 'micro' => 26.0],
+            'HARVEST' => ['npk' => 40.0, 'calcium' => 30.0, 'micro' => 30.0],
+            default => ['npk' => 45.0, 'calcium' => 35.0, 'micro' => 20.0],
+        };
+    }
+
+    private function normalizeNutritionRatios(float $npk, float $calcium, float $micro): array
+    {
+        $npk = max(0.0, $npk);
+        $calcium = max(0.0, $calcium);
+        $micro = max(0.0, $micro);
+
+        $sum = $npk + $calcium + $micro;
+        if ($sum <= 0.0) {
+            return ['npk' => 45.0, 'calcium' => 35.0, 'micro' => 20.0];
+        }
+
+        return [
+            'npk' => round(($npk / $sum) * 100.0, 2),
+            'calcium' => round(($calcium / $sum) * 100.0, 2),
+            'micro' => round(($micro / $sum) * 100.0, 2),
         ];
     }
 

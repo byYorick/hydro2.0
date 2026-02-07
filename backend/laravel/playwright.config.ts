@@ -2,12 +2,12 @@ import type { PlaywrightTestConfig } from '@playwright/test'
 
 const config: PlaywrightTestConfig = {
   webServer: {
-    command: 'php artisan serve --host=127.0.0.1 --port=8000',
+    command: 'php artisan e2e:auth-bootstrap --email=agronomist@example.com --role=admin >/dev/null 2>&1 || true && php artisan serve --host=127.0.0.1 --port=8000',
     port: 8000,
     reuseExistingServer: true,
     timeout: 60000,
     env: {
-      APP_ENV: process.env.APP_ENV ?? 'testing',
+      APP_ENV: process.env.PW_APP_ENV ?? 'testing',
       APP_URL: 'http://127.0.0.1:8000',
       CACHE_DRIVER: process.env.CACHE_DRIVER ?? 'file',
       SESSION_DRIVER: process.env.SESSION_DRIVER ?? 'file',
@@ -22,4 +22,3 @@ const config: PlaywrightTestConfig = {
 }
 
 export default config
-

@@ -9,6 +9,7 @@ import httpx
 import os
 from common.mqtt import MqttClient
 from common.db import create_zone_event
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram
 from .command_validator import CommandValidator
@@ -99,6 +100,37 @@ class CommandBus:
             logger.warning("CommandBus HTTP client not initialized, using temporary client")
             return None
         return self._http_client
+
+    async def _emit_publish_failure_alert(
+        self,
+        *,
+        code: str,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        cmd: str,
+        error: Optional[str],
+        error_type: Optional[str],
+        http_status: Optional[int] = None,
+    ) -> None:
+        severity = "critical" if code in {"infra_command_send_failed", "infra_command_timeout"} else "error"
+        await send_infra_alert(
+            code=code,
+            alert_type="Command Publish Failed",
+            message=f"Не удалось отправить команду {cmd}: {error or code}",
+            severity=severity,
+            zone_id=zone_id,
+            service="automation-engine",
+            component="command_bus",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            error_type=error_type,
+            details={
+                "http_status": http_status,
+                "error_message": error,
+            },
+        )
     
     async def publish_command(
         self,
@@ -227,6 +259,15 @@ class CommandBus:
                             "error": str(e),
                         },
                     )
+                    await self._emit_publish_failure_alert(
+                        code="infra_command_publish_response_decode_error",
+                        zone_id=zone_id,
+                        node_uid=node_uid,
+                        channel=channel,
+                        cmd=cmd,
+                        error=str(e),
+                        error_type=error_type,
+                    )
                     return False
             else:
                 try:
@@ -254,6 +295,16 @@ class CommandBus:
                         "error": error_msg,
                     },
                 )
+                await self._emit_publish_failure_alert(
+                    code="infra_command_send_failed",
+                    zone_id=zone_id,
+                    node_uid=node_uid,
+                    channel=channel,
+                    cmd=cmd,
+                    error=error_msg,
+                    error_type=error_type,
+                    http_status=response.status_code,
+                )
                 return False
                     
         except httpx.TimeoutException as e:
@@ -274,6 +325,15 @@ class CommandBus:
                     "error": str(e),
                 },
             )
+            await self._emit_publish_failure_alert(
+                code="infra_command_timeout",
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                error=str(e),
+                error_type=error_type,
+            )
             return False
         except httpx.RequestError as e:
             error_type = "request_error"
@@ -293,6 +353,15 @@ class CommandBus:
                     "error": str(e),
                 },
             )
+            await self._emit_publish_failure_alert(
+                code="infra_command_send_failed",
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                error=str(e),
+                error_type=error_type,
+            )
             return False
         except Exception as e:
             error_type = type(e).__name__
@@ -311,6 +380,18 @@ class CommandBus:
                     "node_uid": node_uid,
                     "error": str(e),
                 },
+            )
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_unknown_error",
+                alert_type="Command Publish Unexpected Error",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="command_bus",
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
             )
             return False
     
@@ -402,7 +483,7 @@ class CommandBus:
             logger.warning(f"Zone {zone_id}: Failed to audit command: {e}", exc_info=True)
         
         if not success and cmd_id and self.tracker:
-            # Если публикация не удалась, подтверждаем команду как failed
-            await self.tracker.confirm_command(cmd_id, False, error='publish_failed')
-        
+            # Если публикация не удалась, фиксируем терминальный статус SEND_FAILED.
+            await self.tracker.confirm_command_status(cmd_id, "SEND_FAILED", error="publish_failed")
+
         return success

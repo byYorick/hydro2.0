@@ -115,6 +115,32 @@ def get_ec_target(
     return None, None, None
 
 
+def get_nutrition_components(
+    targets: Dict[str, Any],
+    zone_id: Optional[int] = None,
+) -> Dict[str, Dict[str, Optional[float]]]:
+    nutrition = targets.get("nutrition")
+    if not isinstance(nutrition, dict):
+        return {}
+
+    components = nutrition.get("components")
+    if not isinstance(components, dict):
+        _warn_schema_mismatch("ec", zone_id, "nutrition target missing components")
+        return {}
+
+    result: Dict[str, Dict[str, Optional[float]]] = {}
+    for key in ("npk", "calcium", "micro"):
+        component = components.get(key)
+        if not isinstance(component, dict):
+            continue
+        result[key] = {
+            "ratio_pct": _coerce_float(component.get("ratio_pct")),
+            "dose_ml_per_l": _coerce_float(component.get("dose_ml_per_l")),
+        }
+
+    return result
+
+
 def get_irrigation_params(
     targets: Dict[str, Any],
     zone_id: Optional[int] = None,

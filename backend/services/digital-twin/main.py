@@ -18,6 +18,7 @@ from common.env import get_settings
 from common.db import fetch, execute
 from common.schemas import SimulationRequest, SimulationScenario
 from common.service_logs import send_service_log
+from common.infra_alerts import send_infra_exception_alert
 from prometheus_client import Counter, Histogram, start_http_server
 import httpx
 from common.logging_setup import setup_standard_logging, install_exception_handlers
@@ -769,6 +770,19 @@ async def _complete_live_simulation(
             },
             level="error",
         )
+        await send_infra_exception_alert(
+            error=exc,
+            code="infra_unknown_error",
+            alert_type="Digital Twin Live Completion Failed",
+            severity="error",
+            zone_id=zone_id or None,
+            service="digital-twin",
+            component="live_simulation_completion",
+            details={
+                "simulation_id": simulation_id,
+                "node_sim_session_id": session_id,
+            },
+        )
     finally:
         LIVE_SIM_TASKS.pop(simulation_id, None)
 
@@ -783,6 +797,15 @@ async def simulate_zone_endpoint(request: SimulationRequest):
         raise
     except Exception as e:
         logger.exception("Digital Twin simulation failed", exc_info=e)
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Digital Twin Simulation Failed",
+            severity="error",
+            zone_id=request.zone_id,
+            service="digital-twin",
+            component="simulate_zone_endpoint",
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -858,6 +881,15 @@ async def start_live_simulation(request: LiveSimulationStartRequest):
         raise
     except Exception as e:
         logger.exception("Live simulation start failed", exc_info=e)
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Live Simulation Start Failed",
+            severity="error",
+            zone_id=request.zone_id,
+            service="digital-twin",
+            component="start_live_simulation",
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -914,6 +946,16 @@ async def stop_live_simulation(request: LiveSimulationStopRequest):
         raise
     except Exception as e:
         logger.exception("Live simulation stop failed", exc_info=e)
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Live Simulation Stop Failed",
+            severity="error",
+            zone_id=None,
+            service="digital-twin",
+            component="stop_live_simulation",
+            details={"simulation_id": request.simulation_id},
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -944,6 +986,15 @@ async def calibrate_zone(zone_id: int, days: int = Query(7, ge=1, le=30)):
     except Exception as e:
         import logging
         logging.error(f"Calibration failed for zone {zone_id}: {e}", exc_info=True)
+        await send_infra_exception_alert(
+            error=e,
+            code="infra_unknown_error",
+            alert_type="Digital Twin Calibration Failed",
+            severity="error",
+            zone_id=zone_id,
+            service="digital-twin",
+            component="calibrate_zone",
+        )
         raise HTTPException(status_code=500, detail=f"Calibration failed: {str(e)}")
 
 

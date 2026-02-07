@@ -325,14 +325,42 @@ class ZoneController extends Controller
         $this->authorizeZoneAccess($request->user(), $zone);
 
         $data = $request->validate([
-            'duration_sec' => ['required', 'integer', 'min:10', 'max:300'],
+            'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'channel' => ['required', 'string', 'max:64'],
+            'pump_duration_sec' => ['nullable', 'integer', 'min:1', 'max:120'],
+            'duration_sec' => ['nullable', 'integer', 'min:1', 'max:120'], // legacy alias
         ]);
+        if (! isset($data['pump_duration_sec']) && isset($data['duration_sec'])) {
+            $data['pump_duration_sec'] = $data['duration_sec'];
+            unset($data['duration_sec']);
+        }
 
         $jobId = $this->operationsService->calibrateFlow($zone, $data);
 
         return response()->json([
             'status' => 'ok',
             'message' => 'Calibrate flow operation queued',
+            'job_id' => $jobId,
+        ], Response::HTTP_ACCEPTED);
+    }
+
+    public function calibratePump(Request $request, Zone $zone): JsonResponse
+    {
+        $this->authorizeZoneAccess($request->user(), $zone);
+
+        $data = $request->validate([
+            'node_channel_id' => ['required', 'integer', 'exists:node_channels,id'],
+            'duration_sec' => ['required', 'integer', 'min:1', 'max:120'],
+            'actual_ml' => ['nullable', 'numeric', 'min:0.01', 'max:100000'],
+            'skip_run' => ['nullable', 'boolean'],
+            'component' => ['nullable', 'string', 'in:npk,calcium,micro'],
+        ]);
+
+        $jobId = $this->operationsService->calibratePump($zone, $data);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Calibrate pump operation queued',
             'job_id' => $jobId,
         ], Response::HTTP_ACCEPTED);
     }

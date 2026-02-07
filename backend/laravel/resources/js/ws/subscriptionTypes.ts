@@ -1,4 +1,5 @@
 import type { ToastHandler } from '@/composables/useApi'
+import type { CommandStatus } from '@/types'
 
 export type WsEventPayload = Record<string, unknown>
 
@@ -35,7 +36,7 @@ export interface EchoLike {
 
 export type ZoneCommandHandler = (event: {
   commandId: number | string
-  status: string
+  status: CommandStatus
   message?: string
   error?: string
   zoneId?: number

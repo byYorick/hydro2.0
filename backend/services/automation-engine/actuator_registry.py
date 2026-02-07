@@ -14,7 +14,9 @@ class ActuatorRegistry:
         "recirculation_pump": ["recirculation_pump", "recirculation", "recirc"],
         "ph_acid_pump": ["ph_acid_pump", "pump_acid", "acid_pump", "ph_acid", "acid"],
         "ph_base_pump": ["ph_base_pump", "pump_base", "base_pump", "ph_base", "base"],
-        "ec_nutrient_pump": ["ec_nutrient_pump", "pump_nutrient", "nutrient_pump", "ec_pump", "ec"],
+        "ec_npk_pump": ["ec_npk_pump", "pump_nutrient_a", "pump_a", "nutrient_a", "npk"],
+        "ec_calcium_pump": ["ec_calcium_pump", "pump_nutrient_b", "pump_b", "nutrient_b", "calcium", "calmag"],
+        "ec_micro_pump": ["ec_micro_pump", "pump_nutrient_c", "pump_c", "nutrient_c", "micro"],
         "fan": ["vent", "fan", "ventilation"],
         "heater": ["heater", "heating"],
         "white_light": ["white_light", "light_white"],
@@ -29,7 +31,9 @@ class ActuatorRegistry:
         "recirculation_pump": ["recirculation", "recirc"],
         "ph_acid_pump": ["pump_acid", "acid"],
         "ph_base_pump": ["pump_base", "base"],
-        "ec_nutrient_pump": ["pump_nutrient", "nutrient"],
+        "ec_npk_pump": ["pump_nutrient_a", "pump_a", "nutrient_a", "npk"],
+        "ec_calcium_pump": ["pump_nutrient_b", "pump_b", "nutrient_b", "calcium"],
+        "ec_micro_pump": ["pump_nutrient_c", "pump_c", "nutrient_c", "micro"],
         "fan": ["fan", "vent"],
         "heater": ["heater"],
         "white_light": ["white_light"],
@@ -81,6 +85,7 @@ class ActuatorRegistry:
                     "asset_type": info.get("asset_type"),
                     "direction": info.get("direction"),
                     "role": alias,
+                    "ml_per_sec": info.get("ml_per_sec"),
                 }
         return None
 

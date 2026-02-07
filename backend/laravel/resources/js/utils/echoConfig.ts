@@ -1,5 +1,5 @@
 import { logger } from './logger'
-import { readBooleanEnv } from './env'
+import { readBooleanEnv, readStringEnv } from './env'
 import type { EchoOptions } from 'laravel-echo'
 
 type ReverbScheme = 'http' | 'https'
@@ -9,7 +9,7 @@ function isBrowser(): boolean {
 }
 
 export function resolveScheme(): ReverbScheme {
-  const envScheme = (import.meta as any).env?.VITE_REVERB_SCHEME
+  const envScheme = readStringEnv('VITE_REVERB_SCHEME', '')
 
   if (typeof envScheme === 'string' && envScheme.trim().length > 0) {
     const scheme = envScheme.toLowerCase().trim()
@@ -29,7 +29,7 @@ export function resolveScheme(): ReverbScheme {
 }
 
 export function resolveHost(): string | undefined {
-  const envHost = (import.meta as any).env?.VITE_REVERB_HOST
+  const envHost = readStringEnv('VITE_REVERB_HOST', '')
   if (typeof envHost === 'string' && envHost.trim().length > 0) {
     return envHost.trim()
   }
@@ -40,10 +40,8 @@ export function resolveHost(): string | undefined {
 }
 
 export function resolvePort(scheme: ReverbScheme): number | undefined {
-  const isDev = (import.meta as any).env?.DEV === true ||
-                (import.meta as any).env?.MODE === 'development' ||
-                (typeof (import.meta as any).env?.DEV !== 'undefined' && (import.meta as any).env?.DEV)
-  const envPort = (import.meta as any).env?.VITE_REVERB_PORT
+  const isDev = readBooleanEnv('DEV', false) || readStringEnv('MODE', '') === 'development'
+  const envPort = readStringEnv('VITE_REVERB_PORT', '')
 
   if (isBrowser() && window.location.port) {
     const pagePort = Number(window.location.port)
@@ -84,9 +82,7 @@ export function resolvePort(scheme: ReverbScheme): number | undefined {
 }
 
 function resolvePath(): string | undefined {
-  const envPath =
-    (import.meta as any).env?.VITE_REVERB_SERVER_PATH ??
-    (import.meta as any).env?.VITE_REVERB_PATH
+  const envPath = readStringEnv('VITE_REVERB_SERVER_PATH', '') || readStringEnv('VITE_REVERB_PATH', '')
 
   if (typeof envPath === 'string' && envPath.trim().length > 0) {
     const trimmed = envPath.trim()
@@ -99,7 +95,7 @@ function resolvePath(): string | undefined {
 export type EchoReverbConfig = EchoOptions<'reverb'> & { broadcaster: 'reverb' }
 
 export function buildEchoConfig(): EchoReverbConfig {
-  const isDev = (import.meta as any).env?.DEV === true
+  const isDev = readBooleanEnv('DEV', false)
   const scheme = resolveScheme()
   const host = resolveHost()
   const port = resolvePort(scheme)
@@ -127,8 +123,8 @@ export function buildEchoConfig(): EchoReverbConfig {
   const forceTls = readBooleanEnv('VITE_WS_TLS', shouldUseTls)
 
   const key =
-    (import.meta as any).env?.VITE_REVERB_APP_KEY ||
-    (import.meta as any).env?.VITE_PUSHER_APP_KEY ||
+    readStringEnv('VITE_REVERB_APP_KEY', '') ||
+    readStringEnv('VITE_PUSHER_APP_KEY', '') ||
     'local'
 
   const csrfToken = isBrowser()

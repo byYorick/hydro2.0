@@ -52,7 +52,8 @@ class InfrastructureRepository:
                     n.id as node_id,
                     n.uid as node_uid,
                     nc.id as node_channel_id,
-                    nc.channel as channel
+                    nc.channel as channel,
+                    nc.config as channel_config
                 FROM infrastructure_instances ii
                 JOIN channel_bindings cb ON cb.infrastructure_instance_id = ii.id
                 JOIN node_channels nc ON nc.id = cb.node_channel_id
@@ -86,6 +87,7 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
+                    "ml_per_sec": self._extract_ml_per_sec(row.get("channel_config")),
                 }
             else:
                 key = (zone_id, role)
@@ -126,7 +128,8 @@ class InfrastructureRepository:
                     n.id as node_id,
                     n.uid as node_uid,
                     nc.id as node_channel_id,
-                    nc.channel as channel
+                    nc.channel as channel,
+                    nc.config as channel_config
                 FROM infrastructure_instances ii
                 JOIN channel_bindings cb ON cb.infrastructure_instance_id = ii.id
                 JOIN node_channels nc ON nc.id = cb.node_channel_id
@@ -163,6 +166,7 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
+                    "ml_per_sec": self._extract_ml_per_sec(row.get("channel_config")),
                 }
             else:
                 key = (zone_id, role)
@@ -238,3 +242,22 @@ class InfrastructureRepository:
             }
             for row in rows
         ]
+
+    @staticmethod
+    def _extract_ml_per_sec(channel_config: Any) -> Optional[float]:
+        if not isinstance(channel_config, dict):
+            return None
+
+        calibration = channel_config.get("pump_calibration")
+        if not isinstance(calibration, dict):
+            return None
+
+        value = calibration.get("ml_per_sec")
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        if parsed <= 0:
+            return None
+        return parsed
