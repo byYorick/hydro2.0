@@ -359,61 +359,26 @@ import PageHeader from '@/Components/PageHeader.vue'
 import Pagination from '@/Components/Pagination.vue'
 import TelemetryAggregatesChart from '@/Components/TelemetryAggregatesChart.vue'
 import { useApi } from '@/composables/useApi'
+import {
+  formatDate,
+  formatDuration,
+  formatNumber,
+  toComparisonRows,
+  toRecipeAnalytics,
+  toRecipeOptions,
+  toTelemetryAggregates,
+  toZoneOptions,
+  type AggregatePoint,
+  type RecipeComparisonRow,
+  type RecipeOption,
+  type RecipeRun,
+  type RecipeStats,
+  type ZoneOption,
+} from '@/composables/useAnalyticsTransforms'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
-
-interface ZoneOption {
-  id: number
-  name: string
-}
-
-interface RecipeOption {
-  id: number
-  name: string
-}
-
-interface AggregatePoint {
-  ts: string
-  avg: number
-  min: number
-  max: number
-  median?: number
-}
-
-interface RecipeRun {
-  id: number
-  zone_id?: number
-  zone?: { id: number; name: string }
-  start_date?: string
-  end_date?: string
-  efficiency_score?: number
-  avg_ph_deviation?: number
-  avg_ec_deviation?: number
-  alerts_count?: number
-  total_duration_hours?: number
-}
-
-interface RecipeStats {
-  avg_efficiency?: number
-  avg_ph_deviation_overall?: number
-  avg_ec_deviation_overall?: number
-  avg_alerts_count?: number
-  avg_duration_hours?: number
-  total_runs?: number
-}
-
-interface RecipeComparisonRow {
-  recipe_id: number
-  recipe?: { id: number; name: string }
-  avg_efficiency?: number
-  avg_ph_deviation?: number
-  avg_ec_deviation?: number
-  avg_alerts_count?: number
-  avg_duration_hours?: number
-  runs_count?: number
-}
 
 interface SavedView {
   id: string
@@ -496,37 +461,10 @@ const compareColumns = [
   { key: 'runs_count', label: 'Запуски', sortable: true },
 ]
 
-const formatNumber = (value: unknown, decimals: number): string => {
-  if (value === null || value === undefined) return '—'
-  const num = typeof value === 'number' ? value : Number(value)
-  if (Number.isNaN(num) || !isFinite(num)) return '—'
-  return num.toFixed(decimals)
-}
-
-const formatDuration = (value: unknown): string => {
-  if (value === null || value === undefined) return '—'
-  const num = typeof value === 'number' ? value : Number(value)
-  if (Number.isNaN(num) || !isFinite(num)) return '—'
-  if (num >= 24) {
-    return `${(num / 24).toFixed(1)} дн.`
-  }
-  return `${num.toFixed(1)} ч`
-}
-
-const formatDate = (value?: string): string => {
-  if (!value) return '—'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toLocaleString('ru-RU')
-}
-
 const loadZones = async (): Promise<void> => {
   try {
     const response = await api.get('/api/zones')
-    const list = response?.data?.data
-    zoneOptions.value = Array.isArray(list)
-      ? list.map((zone: any) => ({ id: zone.id, name: zone.name || `Zone #${zone.id}` }))
-      : []
+    zoneOptions.value = toZoneOptions(response)
   } catch (err) {
     logger.error('[Analytics] Failed to load zones', err)
     if (!(err as any)?.response) {
@@ -538,9 +476,7 @@ const loadZones = async (): Promise<void> => {
 const loadRecipes = async (): Promise<void> => {
   try {
     const response = await api.get('/api/recipes')
-    const payload = response?.data?.data
-    const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
-    recipeOptions.value = list.map((recipe: any) => ({ id: recipe.id, name: recipe.name }))
+    recipeOptions.value = toRecipeOptions(response)
   } catch (err) {
     logger.error('[Analytics] Failed to load recipes', err)
     if (!(err as any)?.response) {
@@ -567,8 +503,7 @@ const loadTelemetryAggregates = async (): Promise<void> => {
         period: selectedPeriod.value,
       },
     })
-    const list = response?.data?.data
-    telemetryData.value = Array.isArray(list) ? list : []
+    telemetryData.value = toTelemetryAggregates(response)
   } catch (err: any) {
     telemetryError.value = 'Ошибка загрузки агрегатов'
     logger.error('[Analytics] Failed to load telemetry aggregates', err)
@@ -593,12 +528,11 @@ const loadRecipeAnalytics = async (): Promise<void> => {
     const response = await api.get(`/api/recipes/${selectedRecipeId.value}/analytics`, {
       params: { page: recipePage.value },
     })
-    const pageData = response?.data?.data
-    const list = Array.isArray(pageData?.data) ? pageData.data : []
-    recipeRuns.value = list
-    recipeTotal.value = pageData?.total ?? list.length
-    recipePerPage.value = pageData?.per_page ?? recipePerPage.value
-    recipeStats.value = response?.data?.stats || null
+    const analytics = toRecipeAnalytics(response, recipePerPage.value)
+    recipeRuns.value = analytics.runs
+    recipeTotal.value = analytics.total
+    recipePerPage.value = analytics.perPage
+    recipeStats.value = analytics.stats
   } catch (err) {
     logger.error('[Analytics] Failed to load recipe analytics', err)
     if (!(err as any)?.response) {
@@ -620,8 +554,7 @@ const loadComparison = async (): Promise<void> => {
     const response = await api.post('/api/recipes/comparison', {
       recipe_ids: compareRecipeIds.value.map((id) => Number(id)),
     })
-    const list = response?.data?.data
-    comparisonRows.value = Array.isArray(list) ? list : []
+    comparisonRows.value = toComparisonRows(response)
   } catch (err) {
     logger.error('[Analytics] Failed to compare recipes', err)
     if (!(err as any)?.response) {

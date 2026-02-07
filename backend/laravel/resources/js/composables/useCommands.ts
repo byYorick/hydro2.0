@@ -18,6 +18,42 @@ interface PendingCommandInternal {
   message?: string
 }
 
+function extractCommandErrorMessage(err: unknown): string {
+  const fallback = 'Неизвестная ошибка'
+  if (!err || typeof err !== 'object') {
+    return fallback
+  }
+
+  const response = (err as { response?: { data?: Record<string, unknown> } }).response
+  const data = response?.data
+  const message = data?.message
+  const details = data?.details
+
+  const safeMessage = typeof message === 'string' && message.trim().length > 0
+    ? message.trim()
+    : null
+  const safeDetails = typeof details === 'string' && details.trim().length > 0
+    ? details.trim()
+    : null
+
+  if (safeMessage && safeDetails && !safeMessage.includes(safeDetails)) {
+    return `${safeMessage} ${safeDetails}`
+  }
+  if (safeMessage) {
+    return safeMessage
+  }
+  if (safeDetails) {
+    return safeDetails
+  }
+
+  const directMessage = (err as { message?: string }).message
+  if (typeof directMessage === 'string' && directMessage.trim().length > 0) {
+    return directMessage.trim()
+  }
+
+  return fallback
+}
+
 export function normalizeStatus(status: CommandStatus | string): CommandStatus {
   const statusUpper = String(status).toUpperCase()
 
@@ -119,10 +155,7 @@ export function useCommands(showToast?: ToastHandler) {
       } as Command
     } catch (err) {
       error.value = err as Error
-      const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })
-        ?.response?.data?.message || 
-        (err as { message?: string })?.message || 
-        'Неизвестная ошибка'
+      const errorMsg = extractCommandErrorMessage(err)
       
       if (showToast) {
         showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)

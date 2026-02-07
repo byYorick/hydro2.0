@@ -1,28 +1,26 @@
 <template>
   <AppLayout>
     <template #default>
-      <!-- Ролевые Dashboard -->
-      <AgronomistDashboard 
+      <AgronomistDashboard
         v-if="isAgronomist"
         :dashboard="dashboard as any"
       />
-      <AdminDashboard 
+      <AdminDashboard
         v-else-if="isAdmin"
         :dashboard="dashboard as any"
       />
-      <EngineerDashboard 
+      <EngineerDashboard
         v-else-if="isEngineer"
         :dashboard="dashboard as any"
       />
-      <OperatorDashboard 
+      <OperatorDashboard
         v-else-if="isOperator"
         :dashboard="dashboard as any"
       />
-      <ViewerDashboard 
+      <ViewerDashboard
         v-else-if="isViewer"
         :dashboard="dashboard as any"
       />
-      <!-- Дефолтный Dashboard для остальных случаев -->
       <div
         v-else
         class="space-y-6"
@@ -51,7 +49,6 @@
               </Link>
             </div>
           </div>
-          <!-- Промышленный стиль: Крупные индикаторы метрик -->
           <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
             <MetricIndicator
               label="Теплицы"
@@ -59,7 +56,6 @@
               :status="dashboard.greenhousesCount > 0 ? 'success' : 'neutral'"
               size="large"
             />
-            
             <MetricIndicator
               label="Зоны"
               :value="dashboard.zonesCount"
@@ -100,7 +96,6 @@
                 </div>
               </template>
             </MetricIndicator>
-            
             <MetricIndicator
               label="Устройства"
               :value="dashboard.devicesCount"
@@ -128,7 +123,6 @@
                 </div>
               </template>
             </MetricIndicator>
-            
             <MetricIndicator
               label="Активные алерты"
               :value="dashboard.alertsCount"
@@ -138,8 +132,6 @@
             />
           </div>
         </div>
-
-        <!-- Быстрые действия -->
         <div
           v-if="!hasGreenhouses || dashboard.greenhousesCount === 0"
           class="mb-6"
@@ -164,8 +156,6 @@
             </div>
           </Card>
         </div>
-
-        <!-- Теплицы -->
         <div
           v-if="hasGreenhouses"
           class="mb-6"
@@ -184,9 +174,9 @@
             </Link>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <Card 
-              v-for="gh in dashboard.greenhouses" 
-              :key="gh.id" 
+            <Card
+              v-for="gh in dashboard.greenhouses"
+              :key="gh.id"
               v-memo="[gh.id, gh.name, (gh as any).zones_count, (gh as any).zones_running]"
               class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
             >
@@ -213,8 +203,6 @@
             </Card>
           </div>
         </div>
-
-        <!-- Проблемные зоны -->
         <div
           v-if="hasProblematicZones"
           class="mb-6"
@@ -223,9 +211,9 @@
             Проблемные зоны
           </h2>
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <Card 
-              v-for="zone in dashboard.problematicZones" 
-              :key="zone.id" 
+            <Card
+              v-for="zone in dashboard.problematicZones"
+              :key="zone.id"
               v-memo="[zone.id, zone.status, (zone as any).alerts_count]"
               class="surface-card-hover hover:border-[color:var(--badge-danger-border)] transition-all duration-200 border-[color:var(--badge-danger-border)]"
             >
@@ -257,7 +245,6 @@
               >
                 Активных алертов: {{ (zone as any).alerts_count }}
               </div>
-              <!-- Быстрые действия -->
               <div class="mt-3 flex items-center gap-2 flex-wrap">
                 <Link :href="`/zones/${zone.id}`">
                   <Button
@@ -386,8 +373,6 @@
             </div>
           </Card>
         </div>
-
-        <!-- Мини-графики телеметрии (если есть зоны) -->
         <div class="mb-6">
           <template v-if="hasZonesForTelemetry">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
@@ -429,9 +414,11 @@
                     v-for="range in telemetryRangeOptions"
                     :key="range.value"
                     class="px-3 py-1 rounded-md text-xs border transition-colors"
-                    :class="telemetryPeriod === range.value
-                      ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--accent-cyan)]'
-                      : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+                    :class="
+                      telemetryPeriod === range.value
+                        ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--accent-cyan)]'
+                        : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'
+                    "
                     @click="telemetryPeriod = range.value"
                   >
                     {{ range.label }}
@@ -464,8 +451,6 @@
             </Card>
           </template>
         </div>
-
-        <!-- Heatmap зон по статусам -->
         <div
           v-if="hasZones"
           class="mb-6"
@@ -499,41 +484,42 @@
             <span>Live</span>
           </div>
         </div>
-        
-        <!-- Фильтр по типу событий -->
         <div class="mb-3 flex gap-1 flex-wrap shrink-0">
           <button
             v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
             :key="kind"
             :data-testid="`dashboard-event-filter-${kind}`"
             class="px-2.5 py-1 text-xs rounded-md border transition-all duration-200"
-            :class="eventFilter === kind 
-              ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
-              : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+            :class="
+              eventFilter === kind
+                ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
+                : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'
+            "
             @click="eventFilter = kind as any"
           >
-            {{ kind === 'ALL' ? 'Все' : kind }}
+            {{ kind === "ALL" ? "Все" : kind }}
           </button>
         </div>
-        
         <div
           v-if="filteredEvents.length > 0"
           class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-[color:var(--border-muted)] scrollbar-track-transparent pr-1"
         >
-          <div 
-            v-for="e in filteredEvents" 
-            :key="e.id" 
+          <div
+            v-for="e in filteredEvents"
+            :key="e.id"
             v-memo="[e.id, e.kind, e.message, e.occurred_at]"
             class="rounded-lg border p-2.5 transition-all duration-200 hover:shadow-[var(--shadow-card)]"
-            :class="e.kind === 'ALERT' 
-              ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]' 
-              : e.kind === 'WARNING' 
-                ? 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]' 
-                : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]'"
+            :class="
+              e.kind === 'ALERT'
+                ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
+                : e.kind === 'WARNING'
+                  ? 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]'
+                  : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]'
+            "
           >
             <div class="flex items-start justify-between mb-1.5">
-              <Badge 
-                :variant="e.kind === 'ALERT' ? 'danger' : e.kind === 'WARNING' ? 'warning' : 'info'" 
+              <Badge
+                :variant="e.kind === 'ALERT' ? 'danger' : e.kind === 'WARNING' ? 'warning' : 'info'"
                 class="text-xs"
               >
                 {{ e.kind }}
@@ -566,234 +552,53 @@
     </template>
   </AppLayout>
 </template>
-
 <script setup lang="ts">
-import { computed, ref, watch, reactive } from 'vue'
-import { Link } from '@inertiajs/vue3'
-import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
-import Badge from '@/Components/Badge.vue'
-import Button from '@/Components/Button.vue'
-import MetricIndicator from '@/Components/MetricIndicator.vue'
-import StatusIndicator from '@/Components/StatusIndicator.vue'
-import MiniTelemetryChart from '@/Components/MiniTelemetryChart.vue'
-import ZonesHeatmap from '@/Components/ZonesHeatmap.vue'
-import AgronomistDashboard from './Dashboards/AgronomistDashboard.vue'
-import AdminDashboard from './Dashboards/AdminDashboard.vue'
-import EngineerDashboard from './Dashboards/EngineerDashboard.vue'
-import OperatorDashboard from './Dashboards/OperatorDashboard.vue'
-import ViewerDashboard from './Dashboards/ViewerDashboard.vue'
-import { translateStatus } from '@/utils/i18n'
-import { formatTime } from '@/utils/formatTime'
-import { logger } from '@/utils/logger'
-import { useRole } from '@/composables/useRole'
-import { useCommands } from '@/composables/useCommands'
-import { useToast } from '@/composables/useToast'
-import { useTheme } from '@/composables/useTheme'
-import { useDashboardRealtimeFeed } from '@/composables/useDashboardRealtimeFeed'
-import type { Zone, Greenhouse, Alert } from '@/types'
-
-type QuickAction = 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'
-type TelemetryPeriod = '1h' | '24h' | '7d'
-type TelemetryZone = Pick<Zone, 'id' | 'name' | 'status'> & {
-  greenhouse?: { name?: string | null } | null
-}
-
-interface DashboardData {
-  greenhousesCount: number
-  zonesCount: number
-  devicesCount: number
-  alertsCount: number
-  zonesByStatus?: Record<string, number>
-  nodesByStatus?: Record<string, number>
-  greenhouses?: Greenhouse[]
-  problematicZones?: Zone[]
-  zones?: TelemetryZone[]
-  latestAlerts?: Alert[]
-}
-
-const TELEMETRY_ZONE_STORAGE_KEY = 'dashboard.telemetry.zone'
-const TELEMETRY_PERIOD_STORAGE_KEY = 'dashboard.telemetry.period'
-
-const telemetryRangeOptions: Array<{ label: string; value: TelemetryPeriod }> = [
-  { label: '1ч', value: '1h' },
-  { label: '24ч', value: '24h' },
-  { label: '7д', value: '7d' },
-]
+import { computed } from "vue";
+import { Link } from "@inertiajs/vue3";
+import AppLayout from "@/Layouts/AppLayout.vue";
+import Card from "@/Components/Card.vue";
+import Badge from "@/Components/Badge.vue";
+import Button from "@/Components/Button.vue";
+import MetricIndicator from "@/Components/MetricIndicator.vue";
+import StatusIndicator from "@/Components/StatusIndicator.vue";
+import MiniTelemetryChart from "@/Components/MiniTelemetryChart.vue";
+import ZonesHeatmap from "@/Components/ZonesHeatmap.vue";
+import AgronomistDashboard from "./Dashboards/AgronomistDashboard.vue";
+import AdminDashboard from "./Dashboards/AdminDashboard.vue";
+import EngineerDashboard from "./Dashboards/EngineerDashboard.vue";
+import OperatorDashboard from "./Dashboards/OperatorDashboard.vue";
+import ViewerDashboard from "./Dashboards/ViewerDashboard.vue";
+import { translateStatus } from "@/utils/i18n";
+import { formatTime } from "@/utils/formatTime";
+import { useRole } from "@/composables/useRole";
+import { useDashboardPage, telemetryRangeOptions, type DashboardData, type QuickAction } from "@/composables/useDashboardPage";
+import type { Zone } from "@/types";
 
 interface Props {
-  dashboard: DashboardData
+    dashboard: DashboardData;
 }
 
-const props = defineProps<Props>()
+const props = defineProps<Props>();
+const dashboard = computed(() => props.dashboard);
+const { isAgronomist, isAdmin, isEngineer, isOperator, isViewer } = useRole();
 
-const { isAgronomist, isAdmin, isEngineer, isOperator, isViewer } = useRole()
-const { theme } = useTheme()
-
-const zonesStatusSummary = computed(() => props.dashboard.zonesByStatus || {})
-const nodesStatusSummary = computed(() => props.dashboard.nodesByStatus || {})
-const hasGreenhouses = computed(() => {
-  const gh = props.dashboard.greenhouses
-  return gh && Array.isArray(gh) && gh.length > 0
-})
-const hasProblematicZones = computed(() => {
-  const zones = props.dashboard.problematicZones
-  return zones && Array.isArray(zones) && zones.length > 0
-})
-
-const hasZones = computed(() => {
-  return props.dashboard.zonesCount > 0
-})
-
-const telemetryPeriod = ref<TelemetryPeriod>('24h')
-const selectedZoneId = ref<number | null>(null)
-const telemetryZones = computed<TelemetryZone[]>(() => {
-  const uniqueZones = new Map<number, TelemetryZone>()
-  const problemZones = Array.isArray(props.dashboard.problematicZones) ? props.dashboard.problematicZones : []
-  const payloadZones = Array.isArray(props.dashboard.zones) ? props.dashboard.zones : []
-
-  const pushZone = (zone: any) => {
-    if (!zone?.id) {
-      return
-    }
-    const normalizedId = typeof zone.id === 'string' ? parseInt(zone.id, 10) : zone.id
-    if (!normalizedId || Number.isNaN(normalizedId) || uniqueZones.has(normalizedId)) {
-      return
-    }
-    uniqueZones.set(normalizedId, {
-      id: normalizedId,
-      name: zone.name || `Зона ${zone.id}`,
-      status: zone.status,
-      greenhouse: zone.greenhouse ? { name: zone.greenhouse.name } : null,
-    })
-  }
-
-  problemZones.forEach(pushZone)
-  payloadZones.forEach(pushZone)
-
-  return Array.from(uniqueZones.values())
-})
-const selectedZone = computed(() => {
-  if (!selectedZoneId.value) {
-    return null
-  }
-  return telemetryZones.value.find(zone => zone.id === selectedZoneId.value) ?? null
-})
-const selectedZoneLabel = computed(() => selectedZone.value?.name ?? '')
-const telemetryPeriodLabel = computed(() => telemetryRangeOptions.find(option => option.value === telemetryPeriod.value)?.label ?? '24ч')
-
-const hasZonesForTelemetry = computed(() => telemetryZones.value.length > 0)
-const quickActionLoading = reactive<Record<number, QuickAction | null>>({})
-
-function isQuickActionLoading(zoneId: number, action?: QuickAction): boolean {
-  const state = quickActionLoading[zoneId]
-  if (!state) {
-    return false
-  }
-  return action ? state === action : true
-}
-
-watch(telemetryZones, (zones) => {
-  if (!zones.length) {
-    selectedZoneId.value = null
-    return
-  }
-  if (selectedZoneId.value && zones.some(zone => zone.id === selectedZoneId.value)) {
-    return
-  }
-  selectedZoneId.value = zones[0].id
-}, { immediate: true })
-
-watch(selectedZoneId, (zoneId) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  if (zoneId) {
-    window.localStorage.setItem(TELEMETRY_ZONE_STORAGE_KEY, String(zoneId))
-  } else {
-    window.localStorage.removeItem(TELEMETRY_ZONE_STORAGE_KEY)
-  }
-})
-
-watch(telemetryPeriod, (period) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  window.localStorage.setItem(TELEMETRY_PERIOD_STORAGE_KEY, period)
-})
-
-watch([selectedZoneId, telemetryPeriod], ([zoneId]) => {
-  if (!zoneId) {
-    resetTelemetryData()
-    return
-  }
-  loadTelemetryMetrics()
-})
-
-const latestAlerts = computed(() => props.dashboard.latestAlerts || [])
 const {
-  eventFilter,
-  filteredEvents,
-  telemetryMetrics,
-  handleOpenDetail,
-  loadTelemetryMetrics,
-  resetTelemetryData,
-} = useDashboardRealtimeFeed({
-  theme,
-  selectedZoneId,
-  telemetryPeriod,
-  latestAlerts,
-})
-
-function restoreTelemetryPreferences(): void {
-  if (typeof window === 'undefined') {
-    return
-  }
-  const storedZoneId = window.localStorage.getItem(TELEMETRY_ZONE_STORAGE_KEY)
-  if (storedZoneId) {
-    const parsed = Number(storedZoneId)
-    if (!Number.isNaN(parsed) && telemetryZones.value.some(zone => zone.id === parsed)) {
-      selectedZoneId.value = parsed
-    }
-  } else if (selectedZoneId.value) {
-    window.localStorage.setItem(TELEMETRY_ZONE_STORAGE_KEY, String(selectedZoneId.value))
-  }
-  const storedPeriod = window.localStorage.getItem(TELEMETRY_PERIOD_STORAGE_KEY) as TelemetryPeriod | null
-  if (storedPeriod && telemetryRangeOptions.some(option => option.value === storedPeriod)) {
-    telemetryPeriod.value = storedPeriod
-  } else {
-    window.localStorage.setItem(TELEMETRY_PERIOD_STORAGE_KEY, telemetryPeriod.value)
-  }
-}
-
-const { showToast } = useToast()
-
-// Инициализация useCommands для быстрых действий
-const { sendZoneCommand } = useCommands(showToast)
-
-// Обработчик быстрых действий для проблемных зон
-async function handleQuickAction(zone: Zone, action: 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'): Promise<void> {
-  const zoneId = typeof zone.id === 'string' ? parseInt(zone.id, 10) : zone.id
-  quickActionLoading[zoneId] = action
-  try {
-    if (action === 'PAUSE') {
-      await sendZoneCommand(zoneId, 'PAUSE', {})
-      showToast(`Зона "${zone.name}" приостановлена`, 'success')
-    } else if (action === 'RESUME') {
-      await sendZoneCommand(zoneId, 'RESUME', {})
-      showToast(`Зона "${zone.name}" запущена`, 'success')
-    } else if (action === 'FORCE_IRRIGATION') {
-      await sendZoneCommand(zoneId, 'FORCE_IRRIGATION', {})
-      showToast(`Запущен полив для зоны "${zone.name}"`, 'success')
-    }
-  } catch (error) {
-    logger.error('[Dashboard] Failed to execute quick action:', error)
-    showToast(`Ошибка выполнения действия для зоны "${zone.name}"`, 'error')
-  } finally {
-    quickActionLoading[zoneId] = null
-  }
-}
-
-restoreTelemetryPreferences()
-
+    zonesStatusSummary,
+    nodesStatusSummary,
+    hasGreenhouses,
+    hasProblematicZones,
+    hasZones,
+    telemetryPeriod,
+    selectedZoneId,
+    telemetryZones,
+    selectedZoneLabel,
+    telemetryPeriodLabel,
+    hasZonesForTelemetry,
+    isQuickActionLoading,
+    eventFilter,
+    filteredEvents,
+    telemetryMetrics,
+    handleOpenDetail,
+    handleQuickAction,
+} = useDashboardPage({ dashboard });
 </script>

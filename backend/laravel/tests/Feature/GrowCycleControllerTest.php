@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
+use App\Models\DeviceNode;
+use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
@@ -43,6 +45,34 @@ class GrowCycleControllerTest extends TestCase
         RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $this->revision->id,
             'phase_index' => 0,
+        ]);
+
+        $this->attachRequiredInfrastructure($this->zone);
+    }
+
+    private function attachRequiredInfrastructure(Zone $zone): void
+    {
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => ['zone_role' => 'main_pump'],
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain_main',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => ['zone_role' => 'drain'],
         ]);
     }
 
@@ -89,6 +119,27 @@ class GrowCycleControllerTest extends TestCase
         $cycle = GrowCycle::where('zone_id', $this->zone->id)->first();
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
         $this->assertNotNull($cycle->planting_at);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_zone_has_no_bound_nodes(): void
+    {
+        $zoneWithoutNodes = Zone::factory()->create();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$zoneWithoutNodes->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start')
+            ->assertJsonPath('readiness.nodes.total', 0);
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Нет привязанных нод в зоне', $errors);
     }
 
     #[Test]

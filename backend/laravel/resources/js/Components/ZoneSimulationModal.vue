@@ -15,7 +15,6 @@
       <h2 class="text-lg font-semibold mb-4">
         Симуляция цифрового двойника
       </h2>
-      
       <form
         class="space-y-4"
         @submit.prevent="onSubmit"
@@ -37,7 +36,6 @@
           @apply-aggressive-drift="applyAggressiveDrift"
           @reset-drift-values="resetDriftValues"
         />
-        
         <div
           v-if="isSimulating"
           class="space-y-2"
@@ -97,7 +95,7 @@
                 class="flex items-start justify-between gap-3 text-xs text-[color:var(--text-muted)]"
               >
                 <span class="flex-1 truncate">
-                  {{ action.summary || action.event_type || action.cmd || 'Событие' }}
+                  {{ action.summary || action.event_type || action.cmd || "Событие" }}
                 </span>
                 <span class="whitespace-nowrap text-[11px] text-[color:var(--text-dim)]">
                   {{ formatTimestamp(action.created_at) }}
@@ -143,7 +141,6 @@
             </div>
           </div>
         </div>
-
         <div
           v-if="simulationDbId"
           class="rounded-lg border border-[color:var(--border-muted)] p-3"
@@ -192,7 +189,7 @@
                   </span>
                 </div>
                 <div class="text-xs text-[color:var(--text-primary)]">
-                  {{ event.message || 'Событие симуляции' }}
+                  {{ event.message || "Событие симуляции" }}
                 </div>
                 <div
                   v-if="formatSimulationPayload(event.payload)"
@@ -207,7 +204,6 @@
             </li>
           </ul>
         </div>
-
         <div
           v-if="simulationReport"
           class="rounded-lg border border-[color:var(--border-muted)] p-3"
@@ -222,7 +218,6 @@
             <div>Старт: {{ formatDateTime(simulationReport.started_at) }}</div>
             <div>Финиш: {{ formatDateTime(simulationReport.finished_at) }}</div>
           </div>
-
           <div
             v-if="reportSummaryEntries.length"
             class="mt-3"
@@ -245,7 +240,6 @@
               </div>
             </div>
           </div>
-
           <div
             v-if="reportPhaseEntries.length"
             class="mt-3"
@@ -281,10 +275,10 @@
                     class="border-t border-[color:var(--border-muted)]"
                   >
                     <td class="py-1 pr-2">
-                      {{ phase.phase_index ?? '—' }}
+                      {{ phase.phase_index ?? "—" }}
                     </td>
                     <td class="py-1 pr-2">
-                      {{ phase.name || '—' }}
+                      {{ phase.name || "—" }}
                     </td>
                     <td class="py-1 pr-2">
                       {{ formatTimestamp(phase.started_at) }}
@@ -293,14 +287,13 @@
                       {{ formatTimestamp(phase.completed_at) }}
                     </td>
                     <td class="py-1">
-                      {{ phase.status || '—' }}
+                      {{ phase.status || "—" }}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
-
           <div
             v-if="reportMetricsEntries.length"
             class="mt-3"
@@ -323,7 +316,6 @@
               </div>
             </div>
           </div>
-
           <div
             v-if="reportErrors.length"
             class="mt-3 text-xs text-[color:var(--accent-red)]"
@@ -331,14 +323,12 @@
             Ошибки отчета: {{ formatReportValue(reportErrors) }}
           </div>
         </div>
-        
         <div
           v-if="error"
           class="text-sm text-[color:var(--accent-red)]"
         >
           {{ error }}
         </div>
-        
         <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
           <Button
             v-if="isModal"
@@ -352,11 +342,10 @@
             type="submit"
             :disabled="loading"
           >
-            {{ loading ? 'Запуск...' : 'Запустить' }}
+            {{ loading ? "Запуск..." : "Запустить" }}
           </Button>
         </div>
       </form>
-      
       <div
         v-if="results"
         class="mt-6 border-t border-[color:var(--border-muted)] pt-4"
@@ -378,372 +367,306 @@
     </div>
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, reactive, computed, toRef } from 'vue'
-import { logger } from '@/utils/logger'
-import Button from '@/Components/Button.vue'
-import ChartBase from '@/Components/ChartBase.vue'
-import ZoneSimulationFormFields from '@/Components/ZoneSimulationFormFields.vue'
-import { useApi } from '@/composables/useApi'
-import { useToast } from '@/composables/useToast'
-import { useLoading } from '@/composables/useLoading'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { useTheme } from '@/composables/useTheme'
-import {
-  useSimulationPresentation,
-  type SimulationReportPhase,
-} from '@/composables/useSimulationPresentation'
-import { useSimulationDrift } from '@/composables/useSimulationDrift'
-import { useSimulationChart } from '@/composables/useSimulationChart'
-import {
-  useSimulationEventFeed,
-} from '@/composables/useSimulationEventFeed'
-import { useSimulationInitialTelemetry } from '@/composables/useSimulationInitialTelemetry'
-import { useSimulationLifecycle } from '@/composables/useSimulationLifecycle'
-import { useSimulationRuntimeState } from '@/composables/useSimulationRuntimeState'
-import {
-  useSimulationSubmit,
-  type SimulationSubmitForm,
-  type SimulationSubmitDrift,
-} from '@/composables/useSimulationSubmit'
-import { useSimulationRecipes } from '@/composables/useSimulationRecipes'
-import { useSimulationPolling } from '@/composables/useSimulationPolling'
-import {
-  formatDateTime,
-  formatPidValue,
-  formatReportKey,
-  formatReportValue,
-  formatSimulationPayload,
-  formatTimestamp,
-  simulationLevelClass,
-} from '@/utils/simulationFormatters'
-import {
-  normalizeSimulationResult,
-  type SimulationResults,
-} from '@/utils/simulationResultParser'
-
+import { ref, reactive, computed, toRef } from "vue";
+import { logger } from "@/utils/logger";
+import Button from "@/Components/Button.vue";
+import ChartBase from "@/Components/ChartBase.vue";
+import ZoneSimulationFormFields from "@/Components/ZoneSimulationFormFields.vue";
+import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
+import { useLoading } from "@/composables/useLoading";
+import { TOAST_TIMEOUT } from "@/constants/timeouts";
+import { useTheme } from "@/composables/useTheme";
+import { useSimulationPresentation, type SimulationReportPhase } from "@/composables/useSimulationPresentation";
+import { useSimulationDrift } from "@/composables/useSimulationDrift";
+import { useSimulationChart } from "@/composables/useSimulationChart";
+import { useSimulationEventFeed } from "@/composables/useSimulationEventFeed";
+import { useSimulationInitialTelemetry } from "@/composables/useSimulationInitialTelemetry";
+import { useSimulationLifecycle } from "@/composables/useSimulationLifecycle";
+import { useSimulationRuntimeState } from "@/composables/useSimulationRuntimeState";
+import { useSimulationSubmit, type SimulationSubmitForm, type SimulationSubmitDrift } from "@/composables/useSimulationSubmit";
+import { useSimulationRecipes } from "@/composables/useSimulationRecipes";
+import { useSimulationPolling } from "@/composables/useSimulationPolling";
+import { formatDateTime, formatPidValue, formatReportKey, formatReportValue, formatSimulationPayload, formatTimestamp, simulationLevelClass } from "@/utils/simulationFormatters";
+import { normalizeSimulationResult, type SimulationResults } from "@/utils/simulationResultParser";
 interface Props {
-  show?: boolean
-  mode?: 'modal' | 'page'
-  zoneId: number
-  defaultRecipeId?: number | null
-  initialTelemetry?: {
-    ph?: number | null
-    ec?: number | null
-    temperature?: number | null
-    humidity?: number | null
-  } | null
-  activeSimulationId?: number | null
-  activeSimulationStatus?: string | null
+    show?: boolean;
+    mode?: "modal" | "page";
+    zoneId: number;
+    defaultRecipeId?: number | null;
+    initialTelemetry?: {
+        ph?: number | null;
+        ec?: number | null;
+        temperature?: number | null;
+        humidity?: number | null;
+    } | null;
+    activeSimulationId?: number | null;
+    activeSimulationStatus?: string | null;
 }
-
 const props = withDefaults(defineProps<Props>(), {
-  show: false,
-  mode: 'modal',
-  defaultRecipeId: null,
-  initialTelemetry: null,
-  activeSimulationId: null,
-  activeSimulationStatus: null,
-})
-
+    show: false,
+    mode: "modal",
+    defaultRecipeId: null,
+    initialTelemetry: null,
+    activeSimulationId: null,
+    activeSimulationStatus: null,
+});
 defineEmits<{
-  close: []
-}>()
-
-const { showToast } = useToast()
-const { api } = useApi(showToast)
-const { theme } = useTheme()
-const { submitZoneSimulation } = useSimulationSubmit(api)
-
-const isModal = computed(() => props.mode === 'modal')
-const isVisible = computed(() => props.mode === 'page' || props.show)
+    close: [];
+}>();
+const { showToast } = useToast();
+const { api } = useApi(showToast);
+const { theme } = useTheme();
+const { submitZoneSimulation } = useSimulationSubmit(api);
+const isModal = computed(() => props.mode === "modal");
+const isVisible = computed(() => props.mode === "page" || props.show);
 const rootClass = computed(() => {
-  if (isModal.value) {
-    return 'fixed inset-0 z-50 flex items-center justify-center'
-  }
-  return 'w-full'
-})
+    if (isModal.value) {
+        return "fixed inset-0 z-50 flex items-center justify-center";
+    }
+    return "w-full";
+});
 const panelClass = computed(() => {
-  if (isModal.value) {
-    return 'relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto'
-  }
-  return 'w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6'
-})
-
-type SimulationForm = SimulationSubmitForm
-
+    if (isModal.value) {
+        return "relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto";
+    }
+    return "w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6";
+});
+type SimulationForm = SimulationSubmitForm;
 interface SimulationAction {
-  kind: 'command' | 'event'
-  id: number
-  summary?: string | null
-  cmd?: string | null
-  event_type?: string | null
-  created_at?: string | null
+    kind: "command" | "event";
+    id: number;
+    summary?: string | null;
+    cmd?: string | null;
+    event_type?: string | null;
+    created_at?: string | null;
 }
-
 interface SimulationPidStatus {
-  type: string
-  current?: number | null
-  target?: number | null
-  output?: number | null
-  zone_state?: string | null
-  error?: string | null
-  updated_at?: string | null
+    type: string;
+    current?: number | null;
+    target?: number | null;
+    output?: number | null;
+    zone_state?: string | null;
+    error?: string | null;
+    updated_at?: string | null;
 }
-
 interface SimulationReport {
-  id: number
-  simulation_id: number
-  zone_id: number
-  status: string
-  started_at?: string | null
-  finished_at?: string | null
-  summary_json?: Record<string, unknown> | null
-  phases_json?: SimulationReportPhase[] | null
-  metrics_json?: Record<string, unknown> | null
-  errors_json?: unknown
+    id: number;
+    simulation_id: number;
+    zone_id: number;
+    status: string;
+    started_at?: string | null;
+    finished_at?: string | null;
+    summary_json?: Record<string, unknown> | null;
+    phases_json?: SimulationReportPhase[] | null;
+    metrics_json?: Record<string, unknown> | null;
+    errors_json?: unknown;
 }
-
 const form = reactive<SimulationForm>({
-  duration_hours: 72,
-  step_minutes: 10,
-  sim_duration_minutes: null,
-  full_simulation: true,
-  recipe_id: props.defaultRecipeId || null,
-  initial_state: {
-    ph: null,
-    ec: null,
-    temp_air: null,
-    temp_water: null,
-    humidity_air: null,
-  },
-})
-
+    duration_hours: 72,
+    step_minutes: 10,
+    sim_duration_minutes: null,
+    full_simulation: true,
+    recipe_id: props.defaultRecipeId || null,
+    initial_state: {
+        ph: null,
+        ec: null,
+        temp_air: null,
+        temp_water: null,
+        humidity_air: null,
+    },
+});
+const { driftPh, driftEc, driftTempAir, driftTempWater, driftHumidity, driftNoise, markDriftTouched, applyAutoDrift, applyAggressiveDrift, resetDriftValues } = useSimulationDrift(form.initial_state);
+const { loading, startLoading, stopLoading } = useLoading<boolean>(false);
+const error = ref<string | null>(null);
+const results = ref<SimulationResults | null>(null);
 const {
-  driftPh,
-  driftEc,
-  driftTempAir,
-  driftTempWater,
-  driftHumidity,
-  driftNoise,
-  markDriftTouched,
-  applyAutoDrift,
-  applyAggressiveDrift,
-  resetDriftValues,
-} = useSimulationDrift(form.initial_state)
-
-const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
-const error = ref<string | null>(null)
-const results = ref<SimulationResults | null>(null)
-const {
-  recipes,
-  recipesLoading,
-  recipesError,
-  recipeSearch,
-  handleOpen: handleRecipesOpen,
+    recipes,
+    recipesLoading,
+    recipesError,
+    recipeSearch,
+    handleOpen: handleRecipesOpen,
 } = useSimulationRecipes({
-  api,
-  isOpen: isVisible,
-  defaultRecipeId: toRef(props, 'defaultRecipeId'),
-  selectedRecipeId: toRef(form, 'recipe_id'),
-  initialState: form.initial_state,
-})
-const simulationJobId = ref<string | null>(null)
-const simulationStatus = ref<'idle' | 'queued' | 'processing' | 'completed' | 'failed'>('idle')
-const simulationProgressValue = ref<number | null>(null)
-const simulationElapsedMinutes = ref<number | null>(null)
-const simulationRealDurationMinutes = ref<number | null>(null)
-const simulationSimNow = ref<string | null>(null)
-const simulationEngine = ref<string | null>(null)
-const simulationMode = ref<string | null>(null)
-const simulationProgressSource = ref<string | null>(null)
-const simulationActions = ref<SimulationAction[]>([])
-const simulationPidStatuses = ref<SimulationPidStatus[]>([])
-const simulationCurrentPhase = ref<string | null>(null)
-const simulationReport = ref<SimulationReport | null>(null)
+    api,
+    isOpen: isVisible,
+    defaultRecipeId: toRef(props, "defaultRecipeId"),
+    selectedRecipeId: toRef(form, "recipe_id"),
+    initialState: form.initial_state,
+});
+const simulationJobId = ref<string | null>(null);
+const simulationStatus = ref<"idle" | "queued" | "processing" | "completed" | "failed">("idle");
+const simulationProgressValue = ref<number | null>(null);
+const simulationElapsedMinutes = ref<number | null>(null);
+const simulationRealDurationMinutes = ref<number | null>(null);
+const simulationSimNow = ref<string | null>(null);
+const simulationEngine = ref<string | null>(null);
+const simulationMode = ref<string | null>(null);
+const simulationProgressSource = ref<string | null>(null);
+const simulationActions = ref<SimulationAction[]>([]);
+const simulationPidStatuses = ref<SimulationPidStatus[]>([]);
+const simulationCurrentPhase = ref<string | null>(null);
+const simulationReport = ref<SimulationReport | null>(null);
 const {
-  simulationDbId,
-  simulationEvents,
-  simulationEventsLoading,
-  simulationEventsError,
-  simulationEventsListRef,
-  onSimulationEventsScroll,
-  loadSimulationEvents,
-  attachSimulation,
-  resetSimulationEvents,
-} = useSimulationEventFeed(api)
-
-const { resetSimulationRuntimeState } = useSimulationRuntimeState<
-  SimulationReport,
-  SimulationAction,
-  SimulationPidStatus
->({
-  simulationProgressValue,
-  simulationElapsedMinutes,
-  simulationRealDurationMinutes,
-  simulationSimNow,
-  simulationEngine,
-  simulationMode,
-  simulationProgressSource,
-  simulationActions,
-  simulationPidStatuses,
-  simulationCurrentPhase,
-  simulationReport,
-})
-
+    simulationDbId,
+    simulationEvents,
+    simulationEventsLoading,
+    simulationEventsError,
+    simulationEventsListRef,
+    onSimulationEventsScroll,
+    loadSimulationEvents,
+    attachSimulation,
+    resetSimulationEvents,
+} = useSimulationEventFeed(api);
+const { resetSimulationRuntimeState } = useSimulationRuntimeState<SimulationReport, SimulationAction, SimulationPidStatus>({
+    simulationProgressValue,
+    simulationElapsedMinutes,
+    simulationRealDurationMinutes,
+    simulationSimNow,
+    simulationEngine,
+    simulationMode,
+    simulationProgressSource,
+    simulationActions,
+    simulationPidStatuses,
+    simulationCurrentPhase,
+    simulationReport,
+});
 useSimulationInitialTelemetry({
-  initialTelemetry: toRef(props, 'initialTelemetry'),
-  initialState: form.initial_state,
-  applyAutoDrift,
-})
-
+    initialTelemetry: toRef(props, "initialTelemetry"),
+    initialState: form.initial_state,
+    applyAutoDrift,
+});
 const { chartOption } = useSimulationChart({
-  theme,
-  results,
-})
-
+    theme,
+    results,
+});
 const {
-  simulationProgress,
-  simulationProgressDetails,
-  simulationEngineLabel,
-  simulationProgressSourceLabel,
-  simulationCurrentPhaseLabel,
-  simulationSimTimeLabel,
-  simulationStatusLabel,
-  reportSummaryEntries,
-  reportPhaseEntries,
-  reportMetricsEntries,
-  reportErrors,
-  isSimulating,
-  resultDurationHours,
-  resultStepMinutes,
+    simulationProgress,
+    simulationProgressDetails,
+    simulationEngineLabel,
+    simulationProgressSourceLabel,
+    simulationCurrentPhaseLabel,
+    simulationSimTimeLabel,
+    simulationStatusLabel,
+    reportSummaryEntries,
+    reportPhaseEntries,
+    reportMetricsEntries,
+    reportErrors,
+    isSimulating,
+    resultDurationHours,
+    resultStepMinutes,
 } = useSimulationPresentation({
-  simulationProgressValue,
-  simulationStatus,
-  simulationElapsedMinutes,
-  simulationRealDurationMinutes,
-  simulationEngine,
-  simulationMode,
-  simulationProgressSource,
-  simulationCurrentPhase,
-  simulationSimNow,
-  simulationReport,
-  loading,
-  results,
-  form,
-})
-
-const { clearSimulationPolling, startSimulationPolling } = useSimulationPolling<
-  SimulationResults,
-  SimulationReport,
-  SimulationAction,
-  SimulationPidStatus
->({
-  api,
-  simulationJobId,
-  simulationStatus,
-  simulationProgressValue,
-  simulationElapsedMinutes,
-  simulationRealDurationMinutes,
-  simulationSimNow,
-  simulationEngine,
-  simulationMode,
-  simulationProgressSource,
-  simulationActions,
-  simulationPidStatuses,
-  simulationCurrentPhase,
-  simulationReport,
-  simulationDbId,
-  simulationEvents,
-  simulationEventsLoading,
-  attachSimulation,
-  loadSimulationEvents,
-  normalizeSimulationResult,
-  results,
-  error,
-  stopLoading,
-  activeSimulationId: toRef(props, 'activeSimulationId'),
-  activeSimulationStatus: toRef(props, 'activeSimulationStatus'),
-  isVisible,
-  loading,
-})
-
+    simulationProgressValue,
+    simulationStatus,
+    simulationElapsedMinutes,
+    simulationRealDurationMinutes,
+    simulationEngine,
+    simulationMode,
+    simulationProgressSource,
+    simulationCurrentPhase,
+    simulationSimNow,
+    simulationReport,
+    loading,
+    results,
+    form,
+});
+const { clearSimulationPolling, startSimulationPolling } = useSimulationPolling<SimulationResults, SimulationReport, SimulationAction, SimulationPidStatus>({
+    api,
+    simulationJobId,
+    simulationStatus,
+    simulationProgressValue,
+    simulationElapsedMinutes,
+    simulationRealDurationMinutes,
+    simulationSimNow,
+    simulationEngine,
+    simulationMode,
+    simulationProgressSource,
+    simulationActions,
+    simulationPidStatuses,
+    simulationCurrentPhase,
+    simulationReport,
+    simulationDbId,
+    simulationEvents,
+    simulationEventsLoading,
+    attachSimulation,
+    loadSimulationEvents,
+    normalizeSimulationResult,
+    results,
+    error,
+    stopLoading,
+    activeSimulationId: toRef(props, "activeSimulationId"),
+    activeSimulationStatus: toRef(props, "activeSimulationStatus"),
+    isVisible,
+    loading,
+});
 const { resetSimulationLifecycleState } = useSimulationLifecycle({
-  isVisible,
-  handleOpen: handleRecipesOpen,
-  resetDriftValues,
-  clearSimulationPolling,
-  resetSimulationRuntimeState,
-  resetSimulationEvents,
-})
-
+    isVisible,
+    handleOpen: handleRecipesOpen,
+    resetDriftValues,
+    clearSimulationPolling,
+    resetSimulationRuntimeState,
+    resetSimulationEvents,
+});
 async function onSubmit(): Promise<void> {
-  startLoading()
-  error.value = null
-  results.value = null
-  simulationJobId.value = null
-  simulationStatus.value = 'queued'
-  resetSimulationLifecycleState()
-  
-  try {
-    const drift: SimulationSubmitDrift = {
-      ph: driftPh.value,
-      ec: driftEc.value,
-      temp_air: driftTempAir.value,
-      temp_water: driftTempWater.value,
-      humidity_air: driftHumidity.value,
-      noise: driftNoise.value,
+    startLoading();
+    error.value = null;
+    results.value = null;
+    simulationJobId.value = null;
+    simulationStatus.value = "queued";
+    resetSimulationLifecycleState();
+    try {
+        const drift: SimulationSubmitDrift = {
+            ph: driftPh.value,
+            ec: driftEc.value,
+            temp_air: driftTempAir.value,
+            temp_water: driftTempWater.value,
+            humidity_air: driftHumidity.value,
+            noise: driftNoise.value,
+        };
+        const submitOutcome = await submitZoneSimulation(props.zoneId, form, drift);
+        if (submitOutcome.kind === "queued") {
+            simulationJobId.value = submitOutcome.jobId;
+            simulationStatus.value = submitOutcome.status;
+            startSimulationPolling(submitOutcome.jobId);
+            showToast("Симуляция поставлена в очередь", "info", TOAST_TIMEOUT.NORMAL);
+            return;
+        }
+        if (submitOutcome.kind === "completed") {
+            const parsed = normalizeSimulationResult(submitOutcome.payload);
+            if (parsed) {
+                results.value = parsed;
+                simulationStatus.value = "completed";
+                showToast("Симуляция успешно завершена", "success", TOAST_TIMEOUT.NORMAL);
+            } else {
+                error.value = "Неожиданный формат ответа";
+                simulationStatus.value = "failed";
+            }
+        } else {
+            error.value = submitOutcome.message;
+            simulationStatus.value = "failed";
+        }
+    } catch (err) {
+        logger.error("[ZoneSimulationModal] Simulation error:", err);
+        const errorMsg = err instanceof Error ? err.message : "Не удалось запустить симуляцию";
+        error.value = errorMsg;
+        simulationStatus.value = "failed";
+    } finally {
+        if (simulationStatus.value !== "queued" && simulationStatus.value !== "processing") {
+            stopLoading();
+        }
     }
-
-    const submitOutcome = await submitZoneSimulation(props.zoneId, form, drift)
-
-    if (submitOutcome.kind === 'queued') {
-      simulationJobId.value = submitOutcome.jobId
-      simulationStatus.value = submitOutcome.status
-      startSimulationPolling(submitOutcome.jobId)
-      showToast('Симуляция поставлена в очередь', 'info', TOAST_TIMEOUT.NORMAL)
-      return
-    }
-
-    if (submitOutcome.kind === 'completed') {
-      const parsed = normalizeSimulationResult(submitOutcome.payload)
-      if (parsed) {
-        results.value = parsed
-        simulationStatus.value = 'completed'
-        showToast('Симуляция успешно завершена', 'success', TOAST_TIMEOUT.NORMAL)
-      } else {
-        error.value = 'Неожиданный формат ответа'
-        simulationStatus.value = 'failed'
-      }
-    } else {
-      error.value = submitOutcome.message
-      simulationStatus.value = 'failed'
-    }
-  } catch (err) {
-    logger.error('[ZoneSimulationModal] Simulation error:', err)
-    const errorMsg = err instanceof Error ? err.message : 'Не удалось запустить симуляцию'
-    error.value = errorMsg
-    simulationStatus.value = 'failed'
-  } finally {
-    if (simulationStatus.value !== 'queued' && simulationStatus.value !== 'processing') {
-      stopLoading()
-    }
-  }
 }
 </script>
-
 <style scoped>
 @keyframes simulation-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
 }
-
 .simulation-shimmer {
-  animation: simulation-shimmer 1.6s infinite;
+    animation: simulation-shimmer 1.6s infinite;
 }
 </style>

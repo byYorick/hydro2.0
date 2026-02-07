@@ -26,6 +26,46 @@ function firstValidationMessage(errors: unknown): string | null {
   return null
 }
 
+function normalizeReadinessErrors(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim())
+}
+
+export function extractSetupWizardErrorDetails(error: unknown): string[] {
+  const errorRecord = asRecord(error)
+  const response = asRecord(errorRecord?.response)
+  const data = asRecord(response?.data)
+  const details: string[] = []
+
+  for (const readinessError of normalizeReadinessErrors(data?.readiness_errors)) {
+    details.push(readinessError)
+  }
+
+  const detailsField = data?.details
+  if (typeof detailsField === 'string' && detailsField.trim().length > 0) {
+    details.push(detailsField.trim())
+  }
+
+  const nestedData = asRecord(data?.data)
+  const nestedErrors = nestedData?.errors
+  if (Array.isArray(nestedErrors)) {
+    for (const entry of nestedErrors) {
+      const record = asRecord(entry)
+      const message = record?.message
+      if (typeof message === 'string' && message.trim().length > 0) {
+        details.push(message.trim())
+      }
+    }
+  }
+
+  return [...new Set(details)]
+}
+
 export function extractSetupWizardErrorMessage(error: unknown, fallback: string): string {
   const errorRecord = asRecord(error)
   const response = asRecord(errorRecord?.response)

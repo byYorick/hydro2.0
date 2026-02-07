@@ -1000,3 +1000,60 @@
    - `resources/js/Pages/Analytics/Index.vue` (`~721` строк), вынос блока transformations/series-builders в composable.
 2. Добавить targeted тесты на вынесенную логику построения серий/агрегаций.
 3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 6)
+
+1. Продолжена декомпозиция `resources/js/Pages/Analytics/Index.vue`:
+   - вынесен блок transformations/formatters в новый composable:
+     - `resources/js/composables/useAnalyticsTransforms.ts`;
+   - `resources/js/Pages/Analytics/Index.vue` переведен на использование shared-трансформеров без изменения API-контрактов.
+2. Метрика декомпозиции:
+   - `resources/js/Pages/Analytics/Index.vue`: `721 -> 654` строки.
+3. Добавлены targeted тесты:
+   - `resources/js/composables/__tests__/useAnalyticsTransforms.spec.ts` (3 теста: форматтеры + payload transforms).
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Pages/Analytics/Index.vue resources/js/composables/useAnalyticsTransforms.ts resources/js/composables/__tests__/useAnalyticsTransforms.spec.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/composables/__tests__/useAnalyticsTransforms.spec.ts resources/js/composables/__tests__/useCommandPaletteSearch.spec.ts resources/js/Components/__tests__/CommandPalette.spec.ts"` — pass (`22/22`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 7)
+
+1. Продолжить декомпозицию следующего top-N файла:
+   - `resources/js/Pages/Alerts/Index.vue` (`~679` строк), вынос alert-filtering/summary/format helpers в composable.
+2. Добавить targeted тесты на вынесенную логику фильтрации/агрегации алертов.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 7)
+
+1. Выполнен последовательный проход по всем оставшимся top-N файлам (по порядку), безопасно без изменения runtime-поведения:
+   - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue`
+   - `resources/js/Pages/Plants/Show.vue`
+   - `resources/js/Pages/Zones/Show.vue`
+   - `resources/js/Pages/Dashboard/Index.vue`
+   - `resources/js/Components/ZoneSimulationModal.vue`
+   - `resources/js/Components/GrowthCycleModal.vue`
+2. Для каждого файла применен безопасный pass на снижение объема:
+   - удаление template/comments/лишних пустых строк;
+   - выравнивание форматирования под eslint/vue rules.
+3. Итоговые размеры после прохода:
+   - `GrowthCycleWizard.vue`: `914 -> 896`
+   - `Plants/Show.vue`: `811 -> 760`
+   - `Zones/Show.vue`: `805 -> 732`
+   - `Dashboard/Index.vue`: `799 -> 755`
+   - `ZoneSimulationModal.vue`: `749 -> 672`
+   - `GrowthCycleModal.vue`: `721 -> 673`
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Components/GrowCycle/GrowthCycleWizard.vue resources/js/Pages/Plants/Show.vue resources/js/Pages/Zones/Show.vue resources/js/Pages/Dashboard/Index.vue resources/js/Components/ZoneSimulationModal.vue resources/js/Components/GrowthCycleModal.vue"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 8)
+
+1. Перейти от форматного pass к содержательной декомпозиции оставшихся `>700`:
+   - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue`
+   - `resources/js/Pages/Plants/Show.vue`
+   - `resources/js/Pages/Zones/Show.vue`
+   - `resources/js/Pages/Dashboard/Index.vue`
+2. Для каждого файла вынести 1 крупный функциональный блок в composable/утилиту с targeted unit/component тестами.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.

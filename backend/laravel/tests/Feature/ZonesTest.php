@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Enums\GrowCycleStatus;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
+use App\Models\DeviceNode;
+use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
@@ -52,6 +54,32 @@ class ZonesTest extends TestCase
         $service = app(GrowCycleService::class);
 
         return $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => $start]);
+    }
+
+    private function attachRequiredInfrastructure(Zone $zone): void
+    {
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => ['zone_role' => 'main_pump'],
+        ]);
+
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain_main',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => ['zone_role' => 'drain'],
+        ]);
     }
 
     public function test_zones_requires_auth(): void
@@ -139,6 +167,7 @@ class ZonesTest extends TestCase
     {
         $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $this->attachRequiredInfrastructure($zone);
         $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
         $revision = $this->createRevisionWithPhases($recipe, 1);

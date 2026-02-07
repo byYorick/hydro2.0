@@ -389,6 +389,18 @@ class GrowCycleController extends Controller
             'start_immediately' => ['nullable', 'boolean'],
         ]);
 
+        $zone->loadMissing('nodes.channels');
+        $readiness = $this->checkZoneReadiness($zone);
+        $readinessErrors = $this->buildZoneReadinessErrors($readiness);
+        if (! empty($readinessErrors)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Zone is not ready for cycle start',
+                'readiness_errors' => $readinessErrors,
+                'readiness' => $readiness,
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         try {
             $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
             $cycle = $this->growCycleService->createCycle(
@@ -419,6 +431,105 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Проверить готовность зоны к запуску цикла.
+     *
+     * @return array{
+     *   ready: bool,
+     *   required_assets: array{main_pump: bool, drain: bool},
+     *   optional_assets: array{light: bool, vent: bool, heater: bool, mist: bool},
+     *   nodes: array{online: int, total: int, all_online: bool},
+     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
+     * }
+     */
+    private function checkZoneReadiness(Zone $zone): array
+    {
+        $requiredAssets = [
+            'main_pump' => false,
+            'drain' => false,
+        ];
+
+        $optionalAssets = [
+            'light' => false,
+            'vent' => false,
+            'heater' => false,
+            'mist' => false,
+        ];
+
+        $onlineNodes = 0;
+        $totalNodes = $zone->nodes->count();
+
+        foreach ($zone->nodes as $node) {
+            if (is_string($node->status) && strtolower($node->status) === 'online') {
+                $onlineNodes++;
+            }
+
+            foreach ($node->channels as $channel) {
+                $role = $channel->config['zone_role'] ?? null;
+                if (! is_string($role)) {
+                    continue;
+                }
+
+                if (array_key_exists($role, $requiredAssets)) {
+                    $requiredAssets[$role] = true;
+                }
+
+                if (array_key_exists($role, $optionalAssets)) {
+                    $optionalAssets[$role] = true;
+                }
+            }
+        }
+
+        $hasOnlineNodes = $onlineNodes > 0;
+        $hasNodes = $totalNodes > 0;
+        $allRequiredReady = $requiredAssets['main_pump'] && $requiredAssets['drain'];
+
+        return [
+            'ready' => $allRequiredReady && $hasOnlineNodes && $hasNodes,
+            'required_assets' => $requiredAssets,
+            'optional_assets' => $optionalAssets,
+            'nodes' => [
+                'online' => $onlineNodes,
+                'total' => $totalNodes,
+                'all_online' => $onlineNodes === $totalNodes && $totalNodes > 0,
+            ],
+            'checks' => [
+                'main_pump' => $requiredAssets['main_pump'],
+                'drain' => $requiredAssets['drain'],
+                'online_nodes' => $hasOnlineNodes,
+                'has_nodes' => $hasNodes,
+            ],
+        ];
+    }
+
+    /**
+     * Сформировать читаемые ошибки готовности.
+     *
+     * @param  array{
+     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
+     * }  $readiness
+     * @return array<int, string>
+     */
+    private function buildZoneReadinessErrors(array $readiness): array
+    {
+        $errors = [];
+
+        if (! ($readiness['checks']['has_nodes'] ?? false)) {
+            $errors[] = 'Нет привязанных нод в зоне';
+        }
+        if (! ($readiness['checks']['main_pump'] ?? false)) {
+            $errors[] = 'Основная помпа не привязана к каналу';
+        }
+        if (! ($readiness['checks']['drain'] ?? false)) {
+            $errors[] = 'Дренаж не привязан к каналу';
+        }
+        if (! ($readiness['checks']['online_nodes'] ?? false)) {
+            $errors[] = 'Нет онлайн нод в зоне';
+        }
+
+        return $errors;
     }
 
     /**

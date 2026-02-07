@@ -369,7 +369,7 @@ class GrowCycleWizardController extends Controller
 
         // Проверяем каналы и их роли
         foreach ($zone->nodes as $node) {
-            if ($node->status === 'online') {
+            if (is_string($node->status) && strtolower($node->status) === 'online') {
                 $onlineNodes++;
             }
 
