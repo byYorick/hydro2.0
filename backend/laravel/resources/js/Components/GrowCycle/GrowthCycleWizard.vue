@@ -6,7 +6,6 @@
     @close="handleClose"
   >
     <ErrorBoundary>
-      <!-- Прогресс-бар шагов -->
       <div class="mb-6">
         <div class="flex items-center justify-between">
           <div
@@ -47,8 +46,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Шаг 1: Выбор зоны (если не передана) -->
       <div
         v-if="currentStep === 0"
         class="space-y-4"
@@ -83,8 +80,6 @@
           💡 Подсказка: Убедитесь, что зона имеет привязанный рецепт и устройства
         </div>
       </div>
-
-      <!-- Шаг 2: Выбор растения -->
       <div
         v-if="currentStep === 1"
         class="space-y-4"
@@ -111,8 +106,6 @@
           💡 Растение определяет контекст для подбора рецепта
         </div>
       </div>
-
-      <!-- Шаг 3: Выбор рецепта -->
       <div
         v-if="currentStep === 2"
         class="space-y-4"
@@ -135,7 +128,6 @@
               Создать новый
             </Button>
           </div>
-
           <div v-if="recipeMode === 'select'">
             <select
               v-model="selectedRecipeId"
@@ -154,7 +146,6 @@
               </option>
             </select>
           </div>
-
           <div v-else>
             <RecipeCreateWizard
               :show="recipeMode === 'create'"
@@ -163,7 +154,6 @@
             />
           </div>
         </div>
-
         <div
           v-if="selectedRecipe"
           class="space-y-2"
@@ -185,8 +175,6 @@
             </option>
           </select>
         </div>
-
-        <!-- Визуализация выбранного рецепта -->
         <div
           v-if="selectedRevision"
           class="mt-4 p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
@@ -224,13 +212,10 @@
             </div>
           </div>
         </div>
-
         <div class="text-xs text-[color:var(--text-muted)]">
           💡 Подсказка: Рецепт определяет фазы роста и целевые параметры для каждой фазы
         </div>
       </div>
-
-      <!-- Шаг 3: Параметры цикла -->
       <div
         v-if="currentStep === 3"
         class="space-y-4"
@@ -239,7 +224,6 @@
           <h3 class="text-sm font-semibold mb-3">
             Параметры запуска цикла
           </h3>
-          
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium mb-2">Дата начала</label>
@@ -254,7 +238,6 @@
                 Цикл начнется с первой фазы выбранного рецепта
               </div>
             </div>
-
             <div>
               <label class="block text-sm font-medium mb-2">Ожидаемая дата сбора (опционально)</label>
               <input
@@ -267,8 +250,6 @@
                 Используется для планирования и аналитики
               </div>
             </div>
-
-            <!-- Предпросмотр длительности -->
             <div
               v-if="selectedRecipe"
               class="p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]"
@@ -286,8 +267,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Шаг 5: Предпросмотр и подтверждение -->
       <div
         v-if="currentStep === 4"
         class="space-y-4"
@@ -296,7 +275,6 @@
           <h3 class="text-sm font-semibold mb-3">
             Предпросмотр цикла выращивания
           </h3>
-          
           <div class="space-y-3">
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
               <div class="text-xs text-[color:var(--text-dim)] mb-1">
@@ -306,7 +284,6 @@
                 {{ zoneName || `Зона #${form.zoneId}` }}
               </div>
             </div>
-
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
               <div class="text-xs text-[color:var(--text-dim)] mb-1">
                 Рецепт
@@ -315,7 +292,6 @@
                 {{ selectedRecipe?.name || 'Не выбран' }}
               </div>
             </div>
-
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
               <div class="text-xs text-[color:var(--text-dim)] mb-1">
                 Дата начала
@@ -324,7 +300,6 @@
                 {{ formatDateTime(form.startedAt) }}
               </div>
             </div>
-
             <div
               v-if="form.expectedHarvestAt"
               class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
@@ -336,8 +311,6 @@
                 {{ formatDate(form.expectedHarvestAt) }}
               </div>
             </div>
-
-            <!-- Timeline фаз -->
             <div
               v-if="selectedRevision"
               class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
@@ -360,7 +333,6 @@
             </div>
           </div>
         </div>
-
         <div
           v-if="validationErrors.length > 0"
           class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
@@ -378,8 +350,6 @@
           </ul>
         </div>
       </div>
-
-      <!-- Общие ошибки -->
       <div
         v-if="error"
         class="mt-4 p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
@@ -389,7 +359,6 @@
         </div>
       </div>
     </ErrorBoundary>
-
     <template #footer>
       <div class="flex items-center justify-between w-full">
         <Button
@@ -401,7 +370,6 @@
           Назад
         </Button>
         <div v-else></div>
-        
         <div class="flex gap-2">
           <Button
             variant="secondary"
@@ -412,7 +380,7 @@
           </Button>
           <Button
             v-if="currentStep < steps.length - 1"
-            :disabled="!canProceed || loading"
+            :disabled="loading"
             @click="nextStep"
           >
             Далее
@@ -426,10 +394,15 @@
           </Button>
         </div>
       </div>
+      <div
+        v-if="nextStepBlockedReason && currentStep < steps.length - 1"
+        class="mt-2 text-xs text-[color:var(--badge-danger-text)]"
+      >
+        {{ nextStepBlockedReason }}
+      </div>
     </template>
   </Modal>
 </template>
-
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useApi } from '@/composables/useApi'
@@ -441,21 +414,25 @@ import ErrorBoundary from '@/Components/ErrorBoundary.vue'
 import RecipeCreateWizard from '@/Components/RecipeCreateWizard.vue'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-
 interface Props {
   show: boolean
   zoneId?: number
   zoneName?: string
   currentPhaseTargets?: any
   activeCycle?: any
+  initialData?: {
+    recipeId?: number | null
+    recipeRevisionId?: number | null
+    plantId?: number | null
+    startedAt?: string | null
+    expectedHarvestAt?: string | null
+  } | null
 }
-
 const props = withDefaults(defineProps<Props>(), {
   show: false,
   zoneId: undefined,
   zoneName: '',
 })
-
 const emit = defineEmits<{
   close: []
   submit: [data: {
@@ -466,23 +443,24 @@ const emit = defineEmits<{
     expectedHarvestAt?: string
   }]
 }>()
-
 const { api } = useApi()
 const { showToast } = useToast()
 const { fetchZones } = useZones()
-
+function getNowLocalDatetimeValue(): string {
+  const now = new Date()
+  const offsetMs = now.getTimezoneOffset() * 60_000
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16)
+}
 const currentStep = ref(0)
 const recipeMode = ref<'select' | 'create'>('select')
 const loading = ref(false)
 const error = ref<string | null>(null)
 const validationErrors = ref<string[]>([])
-
 const form = ref({
   zoneId: props.zoneId || null,
-  startedAt: new Date().toISOString().slice(0, 16),
+  startedAt: getNowLocalDatetimeValue(),
   expectedHarvestAt: '',
 })
-
 const availableZones = ref<any[]>([])
 const availablePlants = ref<any[]>([])
 const availableRecipes = ref<any[]>([])
@@ -490,17 +468,14 @@ const selectedRecipe = ref<any | null>(null)
 const selectedRecipeId = ref<number | null>(null)
 const selectedRevisionId = ref<number | null>(null)
 const selectedPlantId = ref<number | null>(null)
-
 const availableRevisions = computed(() => {
   if (!selectedRecipe.value) return []
   return selectedRecipe.value.published_revisions || []
 })
-
 const selectedRevision = computed(() => {
   if (!selectedRevisionId.value) return null
   return availableRevisions.value.find((revision: any) => revision.id === selectedRevisionId.value) || null
 })
-
 const steps = [
   { title: 'Зона', key: 'zone' },
   { title: 'Растение', key: 'plant' },
@@ -508,17 +483,14 @@ const steps = [
   { title: 'Параметры', key: 'params' },
   { title: 'Подтверждение', key: 'confirm' },
 ]
-
 const wizardTitle = computed(() => {
   return props.activeCycle 
     ? 'Корректировка цикла выращивания'
     : 'Запуск нового цикла выращивания'
 })
-
 const minStartDate = computed(() => {
-  return new Date().toISOString().slice(0, 16)
+  return getNowLocalDatetimeValue()
 })
-
 const totalDurationDays = computed(() => {
   if (!selectedRevision.value?.phases) return 0
   const totalHours = selectedRevision.value.phases.reduce((sum: number, phase: any) => {
@@ -528,7 +500,6 @@ const totalDurationDays = computed(() => {
   }, 0)
   return totalHours / 24
 })
-
 const canProceed = computed(() => {
   switch (currentStep.value) {
     case 0:
@@ -543,11 +514,29 @@ const canProceed = computed(() => {
       return true
   }
 })
-
 const canSubmit = computed(() => {
   return canProceed.value && validationErrors.value.length === 0
 })
-
+const nextStepBlockedReason = computed(() => {
+  if (currentStep.value === 0 && !form.value.zoneId) {
+    return 'Выберите зону, чтобы продолжить.'
+  }
+  if (currentStep.value === 1 && !selectedPlantId.value) {
+    return 'Выберите растение, чтобы продолжить.'
+  }
+  if (currentStep.value === 2) {
+    if (!selectedRecipeId.value) {
+      return 'Выберите рецепт.'
+    }
+    if (!selectedRevisionId.value) {
+      return 'Выберите ревизию рецепта.'
+    }
+  }
+  if (currentStep.value === 3 && !form.value.startedAt) {
+    return 'Укажите дату начала цикла.'
+  }
+  return ''
+})
 function formatDateTime(dateString: string): string {
   if (!dateString) return ''
   try {
@@ -563,7 +552,6 @@ function formatDateTime(dateString: string): string {
     return dateString
   }
 }
-
 function formatDate(dateString: string): string {
   if (!dateString) return ''
   try {
@@ -573,7 +561,6 @@ function formatDate(dateString: string): string {
     return dateString
   }
 }
-
 async function loadZones(): Promise<void> {
   try {
     const zones = await fetchZones(true)
@@ -582,7 +569,6 @@ async function loadZones(): Promise<void> {
     logger.error('[GrowthCycleWizard] Failed to load zones', err)
   }
 }
-
 async function loadWizardData(): Promise<void> {
   try {
     const response = await api.get('/grow-cycle-wizard/data')
@@ -596,35 +582,28 @@ async function loadWizardData(): Promise<void> {
     showToast('Не удалось загрузить данные визарда', 'error', TOAST_TIMEOUT.NORMAL)
   }
 }
-
 function onZoneSelected(): void {
-  // Можно добавить дополнительную логику при выборе зоны
 }
-
 function syncSelectedRecipe(): void {
   if (!selectedRecipeId.value) {
     selectedRecipe.value = null
     selectedRevisionId.value = null
     return
   }
-
   selectedRecipe.value = availableRecipes.value.find(r => r.id === selectedRecipeId.value) || null
   const revisions = selectedRecipe.value?.published_revisions || []
   if (!revisions.length) {
     selectedRevisionId.value = null
     return
   }
-
   const hasSelected = revisions.some((revision: any) => revision.id === selectedRevisionId.value)
   if (!hasSelected) {
     selectedRevisionId.value = revisions[0].id
   }
 }
-
 function onRecipeSelected(): void {
   syncSelectedRecipe()
 }
-
 function onRecipeCreated(recipe: any): void {
   selectedRecipeId.value = recipe.id
   selectedRecipe.value = recipe
@@ -632,10 +611,52 @@ function onRecipeCreated(recipe: any): void {
   recipeMode.value = 'select'
   loadWizardData() // Обновляем список рецептов
 }
-
+function normalizeDatetimeLocal(value: string | null | undefined): string | null {
+  if (!value) {
+    return null
+  }
+  const raw = value.trim()
+  if (!raw) {
+    return null
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return raw
+  }
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+  return parsed.toISOString().slice(0, 16)
+}
+function applyInitialData(): void {
+  const initialData = props.initialData
+  if (!initialData) {
+    return
+  }
+  if (initialData.plantId) {
+    selectedPlantId.value = initialData.plantId
+  }
+  if (initialData.recipeId) {
+    selectedRecipeId.value = initialData.recipeId
+    syncSelectedRecipe()
+  }
+  if (initialData.recipeRevisionId) {
+    selectedRevisionId.value = initialData.recipeRevisionId
+  }
+  const normalizedStart = normalizeDatetimeLocal(initialData.startedAt)
+  if (normalizedStart) {
+    form.value.startedAt = normalizedStart
+  }
+  if (initialData.expectedHarvestAt) {
+    form.value.expectedHarvestAt = initialData.expectedHarvestAt
+  }
+  const hasContext = Boolean(form.value.zoneId && selectedPlantId.value && selectedRecipeId.value && selectedRevisionId.value)
+  if (hasContext && currentStep.value < 3) {
+    currentStep.value = 3
+  }
+}
 function validateStep(step: number): boolean {
   validationErrors.value = []
-
   switch (step) {
     case 0:
       if (!form.value.zoneId) {
@@ -668,10 +689,14 @@ function validateStep(step: number): boolean {
         validationErrors.value.push('Необходимо указать дату начала')
         return false
       }
-      const startDate = new Date(form.value.startedAt)
-      if (startDate < new Date()) {
-        validationErrors.value.push('Дата начала не может быть в прошлом')
-        return false
+      let startDate = new Date(form.value.startedAt)
+      const now = new Date()
+      now.setSeconds(0, 0)
+      if (startDate < now) {
+        const corrected = getNowLocalDatetimeValue()
+        form.value.startedAt = corrected
+        startDate = new Date(corrected)
+        showToast('Дата начала была в прошлом, время автоматически обновлено', 'warning', TOAST_TIMEOUT.NORMAL)
       }
       if (form.value.expectedHarvestAt) {
         const harvestDate = new Date(form.value.expectedHarvestAt)
@@ -683,27 +708,25 @@ function validateStep(step: number): boolean {
       break
     }
   }
-
   return validationErrors.value.length === 0
 }
-
 function nextStep(): void {
   if (!validateStep(currentStep.value)) {
+    if (validationErrors.value.length > 0) {
+      showToast(validationErrors.value[0], 'error', TOAST_TIMEOUT.NORMAL)
+    }
     return
   }
-
   if (currentStep.value < steps.length - 1) {
     currentStep.value++
     saveDraft()
   }
 }
-
 function prevStep(): void {
   if (currentStep.value > 0) {
     currentStep.value--
   }
 }
-
 function saveDraft(): void {
   try {
     const draft = {
@@ -715,18 +738,25 @@ function saveDraft(): void {
       expectedHarvestAt: form.value.expectedHarvestAt,
       currentStep: currentStep.value,
     }
-    localStorage.setItem('growthCycleWizardDraft', JSON.stringify(draft))
+    localStorage.setItem(getDraftStorageKey(), JSON.stringify(draft))
   } catch (err) {
     logger.warn('[GrowthCycleWizard] Failed to save draft', err)
   }
 }
-
+function getDraftStorageKey(): string {
+  const scope = props.zoneId ? `zone-${props.zoneId}` : 'global'
+  return `growthCycleWizardDraft:${scope}`
+}
 function loadDraft(): void {
   try {
-    const draftStr = localStorage.getItem('growthCycleWizardDraft')
+    const draftStr = localStorage.getItem(getDraftStorageKey())
     if (draftStr) {
       const draft = JSON.parse(draftStr)
-      if (draft.zoneId) form.value.zoneId = draft.zoneId
+      if (!props.zoneId && draft.zoneId) {
+        form.value.zoneId = draft.zoneId
+      } else if (props.zoneId) {
+        form.value.zoneId = props.zoneId
+      }
       if (draft.plantId) selectedPlantId.value = draft.plantId
       if (draft.recipeId) {
         selectedRecipeId.value = draft.recipeId
@@ -743,50 +773,41 @@ function loadDraft(): void {
     logger.warn('[GrowthCycleWizard] Failed to load draft', err)
   }
 }
-
 function clearDraft(): void {
   try {
-    localStorage.removeItem('growthCycleWizardDraft')
+    localStorage.removeItem(getDraftStorageKey())
   } catch (err) {
     logger.warn('[GrowthCycleWizard] Failed to clear draft', err)
   }
 }
-
 async function onSubmit(): Promise<void> {
   if (!validateStep(currentStep.value)) {
     return
   }
-
   if (!form.value.zoneId || !selectedRevisionId.value || !selectedPlantId.value || !form.value.startedAt) {
     error.value = 'Заполните все обязательные поля'
     return
   }
-
+  const zoneId = form.value.zoneId
   loading.value = true
   error.value = null
-
   try {
-    // Формируем данные для API
     const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined
-    
-    const response = await api.post(`/api/zones/${form.value.zoneId}/grow-cycles`, {
+    const response = await api.post(`/api/zones/${zoneId}/grow-cycles`, {
       recipe_revision_id: selectedRevisionId.value,
       plant_id: selectedPlantId.value,
       planting_at: plantingAt,
-      start_immediately: true, // Запускаем цикл сразу после создания
+      start_immediately: true,
       settings: {
         expected_harvest_at: form.value.expectedHarvestAt || undefined,
       },
     })
-
     if (response.data?.status === 'ok') {
       clearDraft()
       showToast('Цикл выращивания успешно запущен', 'success', TOAST_TIMEOUT.NORMAL)
       emit('close')
-      
-      // Эмитим событие для обновления данных на странице
       emit('submit', {
-        zoneId: form.value.zoneId,
+        zoneId,
         recipeId: selectedRecipeId.value || undefined,
         recipeRevisionId: selectedRevisionId.value || undefined,
         startedAt: form.value.startedAt,
@@ -797,20 +818,29 @@ async function onSubmit(): Promise<void> {
     }
   } catch (err: any) {
     const errorMessage = err?.response?.data?.message || err?.message || 'Ошибка при создании цикла'
-    error.value = errorMessage
+    const isActiveCycleConflict = typeof errorMessage === 'string'
+      && errorMessage.includes('Zone already has an active cycle')
+    error.value = isActiveCycleConflict ? 'В зоне уже активный цикл.' : errorMessage
     logger.error('[GrowthCycleWizard] Failed to submit', err)
-    showToast(errorMessage, 'error', TOAST_TIMEOUT.NORMAL)
+    if (isActiveCycleConflict) {
+      showToast('В зоне уже активный цикл. Обновляю данные зоны.', 'warning', TOAST_TIMEOUT.NORMAL)
+      emit('close')
+      emit('submit', {
+        zoneId,
+        startedAt: form.value.startedAt,
+      })
+    } else {
+      showToast(errorMessage, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     loading.value = false
   }
 }
-
 function handleClose(): void {
   if (!loading.value) {
     emit('close')
   }
 }
-
 function reset(): void {
   currentStep.value = 0
   recipeMode.value = 'select'
@@ -818,7 +848,7 @@ function reset(): void {
   validationErrors.value = []
   form.value = {
     zoneId: props.zoneId || null,
-    startedAt: new Date().toISOString().slice(0, 16),
+    startedAt: getNowLocalDatetimeValue(),
     expectedHarvestAt: '',
   }
   selectedPlantId.value = null
@@ -826,46 +856,39 @@ function reset(): void {
   selectedRevisionId.value = null
   selectedRecipe.value = null
 }
-
+async function initializeWizardState(): Promise<void> {
+  if (!props.zoneId) {
+    await loadZones()
+  }
+  await loadWizardData()
+  loadDraft()
+  applyInitialData()
+}
 watch(() => props.show, (show) => {
   if (show) {
     reset()
-    if (!props.zoneId) {
-      loadZones()
-    }
-    loadWizardData()
-    loadDraft()
+    void initializeWizardState()
   } else {
     clearDraft()
   }
 })
-
 watch(() => props.zoneId, (newZoneId) => {
   if (newZoneId) {
     form.value.zoneId = newZoneId
   }
 })
-
 watch(selectedRecipeId, () => {
   syncSelectedRecipe()
 })
-
 watch(availableRecipes, () => {
   syncSelectedRecipe()
 })
-
 onMounted(() => {
   if (props.show) {
-    if (!props.zoneId) {
-      loadZones()
-    }
-    loadWizardData()
-    loadDraft()
+    void initializeWizardState()
   }
 })
-
 onUnmounted(() => {
-  // Сохраняем черновик при закрытии
   if (props.show) {
     saveDraft()
   }

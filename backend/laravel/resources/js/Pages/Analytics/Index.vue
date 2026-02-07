@@ -359,7 +359,10 @@ import PageHeader from '@/Components/PageHeader.vue'
 import Pagination from '@/Components/Pagination.vue'
 import TelemetryAggregatesChart from '@/Components/TelemetryAggregatesChart.vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 
 interface ZoneOption {
   id: number
@@ -422,6 +425,7 @@ interface SavedView {
 }
 
 const { api } = useApi()
+const { showToast } = useToast()
 
 const zoneOptions = ref<ZoneOption[]>([])
 const recipeOptions = ref<RecipeOption[]>([])
@@ -525,6 +529,9 @@ const loadZones = async (): Promise<void> => {
       : []
   } catch (err) {
     logger.error('[Analytics] Failed to load zones', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить зоны: ${extractHumanErrorMessage(err, 'Ошибка загрузки')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   }
 }
 
@@ -536,6 +543,9 @@ const loadRecipes = async (): Promise<void> => {
     recipeOptions.value = list.map((recipe: any) => ({ id: recipe.id, name: recipe.name }))
   } catch (err) {
     logger.error('[Analytics] Failed to load recipes', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить рецепты: ${extractHumanErrorMessage(err, 'Ошибка загрузки')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   }
 }
 
@@ -562,6 +572,9 @@ const loadTelemetryAggregates = async (): Promise<void> => {
   } catch (err: any) {
     telemetryError.value = 'Ошибка загрузки агрегатов'
     logger.error('[Analytics] Failed to load telemetry aggregates', err)
+    if (!err?.response) {
+      showToast(`Не удалось загрузить агрегаты: ${extractHumanErrorMessage(err, 'Ошибка загрузки агрегатов')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     telemetryLoading.value = false
   }
@@ -588,6 +601,9 @@ const loadRecipeAnalytics = async (): Promise<void> => {
     recipeStats.value = response?.data?.stats || null
   } catch (err) {
     logger.error('[Analytics] Failed to load recipe analytics', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить аналитику рецепта: ${extractHumanErrorMessage(err, 'Ошибка загрузки аналитики')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     recipeLoading.value = false
   }
@@ -608,6 +624,9 @@ const loadComparison = async (): Promise<void> => {
     comparisonRows.value = Array.isArray(list) ? list : []
   } catch (err) {
     logger.error('[Analytics] Failed to compare recipes', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось сравнить рецепты: ${extractHumanErrorMessage(err, 'Ошибка сравнения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     compareLoading.value = false
   }

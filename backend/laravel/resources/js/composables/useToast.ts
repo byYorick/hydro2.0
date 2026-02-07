@@ -6,6 +6,8 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 // Группировка похожих уведомлений
 const groupedToasts = new Map<string, number[]>()
+const recentToasts = new Map<string, { id: number; timestamp: number }>()
+const TOAST_DEDUPE_WINDOW_MS = 5000
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
 
@@ -37,6 +39,20 @@ let toastIdCounter = 0
 export function clearAllToasts(): void {
   toasts.value = []
   toastIdCounter = 0
+  groupedToasts.clear()
+  recentToasts.clear()
+}
+
+function cleanupRecentToasts(now: number): void {
+  for (const [key, entry] of recentToasts.entries()) {
+    if (now - entry.timestamp > TOAST_DEDUPE_WINDOW_MS) {
+      recentToasts.delete(key)
+    }
+  }
+}
+
+function getToastDedupeKey(message: string, variant: ToastVariant, title?: string): string {
+  return `${variant}::${title ?? ''}::${message}`
 }
 
 /**
@@ -55,8 +71,23 @@ export function useToast() {
       actions?: ToastAction[]
       groupKey?: string
       showProgress?: boolean
+      allowDuplicates?: boolean
     }
   ): number {
+    const now = Date.now()
+    cleanupRecentToasts(now)
+
+    if (!options?.allowDuplicates) {
+      const dedupeKey = getToastDedupeKey(message, variant, options?.title)
+      const recent = recentToasts.get(dedupeKey)
+      if (recent && now - recent.timestamp < TOAST_DEDUPE_WINDOW_MS) {
+        const existingToast = toasts.value.find((toast) => toast.id === recent.id)
+        if (existingToast) {
+          return existingToast.id
+        }
+      }
+    }
+
     const id = ++toastIdCounter
     
     // Проверяем группировку
@@ -90,6 +121,10 @@ export function useToast() {
     }
     
     toasts.value.push(toast)
+    recentToasts.set(getToastDedupeKey(message, variant, options?.title), {
+      id,
+      timestamp: now,
+    })
     
     // Обновление прогресс-бара
     if (duration > 0 && toast.showProgress) {
@@ -172,6 +207,8 @@ export function useToast() {
    */
   function clearAll(): void {
     toasts.value = []
+    groupedToasts.clear()
+    recentToasts.clear()
   }
 
   return {
@@ -185,4 +222,3 @@ export function useToast() {
     clearAll
   }
 }
-

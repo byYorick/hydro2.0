@@ -58,6 +58,7 @@ export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions)
   const loaders = createSetupWizardDataLoaders({
     api: options.api,
     loading: options.loading,
+    showToast: options.showToast,
     availableGreenhouses: options.availableGreenhouses,
     availableGreenhouseTypes: options.availableGreenhouseTypes,
     availableZones: options.availableZones,

@@ -17,6 +17,7 @@ export type ToastHandler = (
     actions?: ToastAction[]
     groupKey?: string
     showProgress?: boolean
+    allowDuplicates?: boolean
   }
 ) => number
 

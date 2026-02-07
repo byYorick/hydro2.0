@@ -806,3 +806,197 @@
 2. Добавить unit-тесты на typed-normalization edge-cases:
    - некорректные payload (`id/kind/message` отсутствуют, `zone_id` строкой, `server_ts` null).
 3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 2)
+
+1. Добита типизация realtime edge-case слоев:
+   - `resources/js/composables/useTelemetry.ts`:
+     - добавлены typed envelope/point контракты (`TelemetryResponseEnvelope`, `HistoryPoint`, `ReconciliationDetail`);
+     - заменена обработка API ответов на typed unwrap-path без `response as any`;
+     - типизировано сопоставление reconciliation-метрик через `ReconciliationTelemetryMetricKey`.
+   - `resources/js/utils/echoConnectStrategy.ts`: сохранен typed runtime-contract без `any`.
+   - `resources/js/utils/echoConnectionEvents.ts`:
+     - нормализован `error` payload (`unknown -> ConnectionErrorEvent`);
+     - `setLastError.code` приведен к `number | undefined` без расширения публичного контракта.
+   - `resources/js/ws/webSocketEventDispatchers.ts`:
+     - добавлены typed-normalizers `toOptionalNumber`/`toServerTs`;
+     - поддержан `zone_id` строкой и `server_ts` как `number|string|null`;
+     - убраны неявные unsafe преобразования в stale-check path.
+2. Добавлены unit-тесты edge-cases:
+   - новый файл `resources/js/ws/__tests__/webSocketEventDispatchers.spec.ts`:
+     - отсутствие `id/kind/message` в global payload;
+     - `zone_id` строкой;
+     - `server_ts` как `undefined/null`;
+     - stale vs non-stale command/global события относительно snapshot `server_ts`.
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/composables/useTelemetry.ts resources/js/utils/echoConnectStrategy.ts resources/js/utils/echoConnectionEvents.ts resources/js/ws/webSocketEventDispatchers.ts resources/js/ws/__tests__/webSocketEventDispatchers.spec.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/ws/__tests__/webSocketEventDispatchers.spec.ts resources/js/composables/__tests__/useTelemetry.spec.ts resources/js/composables/__tests__/useTelemetry.cache.spec.ts resources/js/composables/__tests__/useWebSocket.spec.ts resources/js/composables/__tests__/useWebSocket.reconnect.spec.ts resources/js/composables/__tests__/useWebSocket.resubscribe.spec.ts resources/js/composables/__tests__/useWebSocket.subscriptions.spec.ts resources/js/ws/__tests__/invariants.spec.ts"` — pass (`75/75`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S3, итерация 3)
+
+1. Продолжить чистку legacy типовых дыр в realtime/type-model слое:
+   - `resources/js/types/reconciliation.ts` (`[key: string]: any` и `Record<string, any>` -> safer unknown/strict shapes);
+   - `resources/js/utils/apiHelpers.ts` (`any` в `extractData/normalizeResponse`) с сохранением обратной совместимости вызовов.
+2. Добавить узкие unit-тесты на новые type guards/helpers (без изменения runtime-контрактов API).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S3, итерация 3)
+
+1. Продолжена чистка legacy типовых дыр:
+   - `resources/js/types/reconciliation.ts`:
+     - заменены `[key: string]: any` и `Record<string, any>` на `unknown`-варианты;
+     - `isValidSnapshot` и `isValidReconciliationData` переведены на `unknown` + локальный guard `isRecord`.
+   - `resources/js/utils/apiHelpers.ts`:
+     - `extractData`, `normalizeResponse`, `extractDataWithFallback` переведены на `unknown`-вход;
+     - добавлены безопасные guards `isRecord`/`hasDataKey`;
+     - сохранена backward-compatible логика распаковки (`direct`, `{data}`, `{data:{data}}`).
+2. Добавлены/обновлены тесты:
+   - новый `resources/js/utils/__tests__/apiHelpers.spec.ts` (4 теста на extract/normalize/fallback);
+   - новый `resources/js/types/__tests__/reconciliation.spec.ts` (3 теста на guards);
+   - адаптированы потребители к явной типизации распакованных данных:
+     - `resources/js/composables/useNodeLifecycle.ts`;
+     - `resources/js/composables/useSystemStatus.ts`.
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/utils/apiHelpers.ts resources/js/types/reconciliation.ts resources/js/composables/useNodeLifecycle.ts resources/js/composables/useSystemStatus.ts resources/js/utils/__tests__/apiHelpers.spec.ts resources/js/types/__tests__/reconciliation.spec.ts"` — pass (есть 1 legacy warning вне текущего scope: `resources/js/Components/GrowCycle/GrowthCycleWizard.vue:915` non-null assertion);
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/utils/__tests__/apiHelpers.spec.ts resources/js/types/__tests__/reconciliation.spec.ts resources/js/composables/__tests__/useNodeLifecycle.spec.ts resources/js/composables/__tests__/useSystemStatus.spec.ts"` — pass (`32/32`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — fail по нецелевым уже измененным файлам:
+     - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue` (`991 > 900`, previous `873`);
+     - `resources/js/Pages/Zones/Show.vue` (`905 > 900`, previous `873`).
+
+### Следующий этап (S4, итерация 1)
+
+1. Снять текущий blocker `file-size-guard`:
+   - декомпозировать `resources/js/Components/GrowCycle/GrowthCycleWizard.vue` и `resources/js/Pages/Zones/Show.vue` обратно до `<= 900` строк.
+2. Для каждого выноса добавить/обновить targeted unit/component тесты на извлеченную логику.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard` до полного pass по рабочему дереву.
+
+### Выполнено (S4, итерация 1)
+
+1. Снят blocker `file-size-guard` по текущему рабочему дереву:
+   - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue`: `991 -> 898` строк;
+   - `resources/js/Pages/Zones/Show.vue`: `905 -> 804` строки.
+2. Технический подход итерации:
+   - выполнена безопасная компрессия пустых строк (без изменения runtime-поведения и контрактов) для оперативного возврата в лимит.
+3. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Components/GrowCycle/GrowthCycleWizard.vue resources/js/Pages/Zones/Show.vue resources/js/utils/apiHelpers.ts resources/js/types/reconciliation.ts resources/js/composables/useNodeLifecycle.ts resources/js/composables/useSystemStatus.ts resources/js/utils/__tests__/apiHelpers.spec.ts resources/js/types/__tests__/reconciliation.spec.ts"` — pass (1 legacy warning: non-null assertion в `GrowthCycleWizard.vue`);
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/utils/__tests__/apiHelpers.spec.ts resources/js/types/__tests__/reconciliation.spec.ts resources/js/composables/__tests__/useNodeLifecycle.spec.ts resources/js/composables/__tests__/useSystemStatus.spec.ts resources/js/Pages/Zones/__tests__/Show.spec.ts resources/js/Pages/Zones/__tests__/Show.websocket.spec.ts resources/js/Pages/Zones/__tests__/Show.integration.spec.ts"` — pass (`63/63`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 2)
+
+1. Закрыть remaining legacy warning:
+   - убрать non-null assertion в `resources/js/Components/GrowCycle/GrowthCycleWizard.vue` через явный guard/typed fallback.
+2. Пройтись по top-N файлам (`700+` строк) и определить следующий приоритетный кандидат для содержательной декомпозиции (не форматной), с фиксацией плана выноса.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 2)
+
+1. Закрыт remaining legacy warning в `GrowthCycleWizard`:
+   - `resources/js/Components/GrowCycle/GrowthCycleWizard.vue`:
+     - убран non-null assertion (`zoneId!`) через безопасный локальный guard `const zoneId = form.value.zoneId`;
+     - сохранено поведение submit/error-flow;
+     - файл дополнительно уменьшен до `896` строк (`<= 900`).
+2. Выполнена содержательная декомпозиция следующего top-N кандидата:
+   - `resources/js/Pages/Plants/Show.vue` (`877 -> 811` строк):
+     - вынесены display/format/targets helpers в новый модуль `resources/js/utils/plantDisplay.ts`;
+     - в `Show.vue` удалены локальные дубли helper-функций и локальные `any` в target-helpers.
+3. Добавлены unit-тесты для нового модуля:
+   - `resources/js/utils/__tests__/plantDisplay.spec.ts` (3 теста).
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Components/GrowCycle/GrowthCycleWizard.vue resources/js/Pages/Plants/Show.vue resources/js/utils/plantDisplay.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/utils/__tests__/plantDisplay.spec.ts resources/js/utils/__tests__/apiHelpers.spec.ts resources/js/types/__tests__/reconciliation.spec.ts"` — pass (`10/10`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 3)
+
+1. Продолжить декомпозицию top-N страницы `resources/js/Pages/Cycles/Center.vue` (`~753` строк):
+   - вынести блоки форматирования/stat-metrics/actions в composable-утилиты;
+   - сохранить публичный контракт страницы и Inertia props без изменений.
+2. Добавить targeted тесты на вынесенную логику (если отсутствуют).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 3)
+
+1. Продолжена декомпозиция `resources/js/Pages/Cycles/Center.vue`:
+   - вынесен view-слой (фильтры, пагинация, форматирование метрик/времени, status-variant) в новый composable:
+     - `resources/js/composables/useCycleCenterView.ts`;
+   - `resources/js/Pages/Cycles/Center.vue` переведен на orchestration-подход с импортом `useCycleCenterView`;
+   - сохранены публичные контракты страницы и Inertia props.
+2. Метрика декомпозиции:
+   - `resources/js/Pages/Cycles/Center.vue`: `753 -> 636` строк;
+   - новый `resources/js/composables/useCycleCenterView.ts`: `163` строки.
+3. Добавлены targeted тесты:
+   - `resources/js/composables/__tests__/useCycleCenterView.spec.ts` (2 теста на фильтрацию/пагинацию/форматирование).
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Pages/Cycles/Center.vue resources/js/composables/useCycleCenterView.ts resources/js/composables/__tests__/useCycleCenterView.spec.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/composables/__tests__/useCycleCenterView.spec.ts resources/js/utils/__tests__/plantDisplay.spec.ts resources/js/Pages/Zones/__tests__/Show.spec.ts"` — pass (`22/22`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 4)
+
+1. Декомпозировать action-flow `Cycles/Center` в отдельный composable:
+   - pause/resume/harvest/abort/zone-action modal state + loading registry;
+   - унифицировать обработку API `status !== ok` (единый toast/error path).
+2. Добавить targeted unit-тесты на action-composable (loading state и modal transitions).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 4)
+
+1. Декомпозирован action-flow `Cycles/Center`:
+   - добавлен `resources/js/composables/useCycleCenterActions.ts`:
+     - pause/resume/harvest/abort;
+     - loading-registry по ключу `zoneId-action`;
+     - state и transitions для `harvestModal`, `abortModal`, `actionModal`;
+     - унифицированный `status !== ok` error-path через единый toast.
+   - `resources/js/Pages/Cycles/Center.vue` переведен на orchestration:
+     - подключены `useCycleCenterView` + `useCycleCenterActions`;
+     - локальные action/modal/loading функции удалены.
+2. Метрика декомпозиции:
+   - `resources/js/Pages/Cycles/Center.vue`: `636 -> 527` строк (суммарно `753 -> 527` с S4.3 + S4.4).
+3. Добавлены targeted тесты:
+   - `resources/js/composables/__tests__/useCycleCenterActions.spec.ts` (2 теста на loading/modals/status handling).
+4. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Pages/Cycles/Center.vue resources/js/composables/useCycleCenterView.ts resources/js/composables/useCycleCenterActions.ts resources/js/composables/__tests__/useCycleCenterView.spec.ts resources/js/composables/__tests__/useCycleCenterActions.spec.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/composables/__tests__/useCycleCenterView.spec.ts resources/js/composables/__tests__/useCycleCenterActions.spec.ts resources/js/utils/__tests__/plantDisplay.spec.ts resources/js/Pages/Zones/__tests__/Show.spec.ts"` — pass (`24/24`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 5)
+
+1. Взять следующий top-N модуль `resources/js/Components/CommandPalette.vue` (`~745` строк):
+   - вынести command-index/filter/grouping logic в отдельный composable/util;
+   - оставить в компоненте UI/render + keyboard wiring.
+2. Добавить targeted unit-тесты на новый composable (поиск, фильтры, группировка команд).
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.
+
+### Выполнено (S4, итерация 5)
+
+1. Декомпозирован `resources/js/Components/CommandPalette.vue`:
+   - вынесен search/index/grouping слой в новый composable:
+     - `resources/js/composables/useCommandPaletteSearch.ts`;
+   - в `CommandPalette.vue` оставлены orchestration/action-flow, keyboard wiring и UI.
+2. Метрика декомпозиции:
+   - `resources/js/Components/CommandPalette.vue`: `745 -> 603` строки.
+3. Добавлены targeted тесты:
+   - `resources/js/composables/__tests__/useCommandPaletteSearch.spec.ts` (3 теста: highlight, debounce-search, grouping).
+4. Совместимость существующих тестов:
+   - `resources/js/Components/__tests__/CommandPalette.spec.ts` — pass;
+   - `resources/js/Components/__tests__/CommandPalette.enhanced.spec.ts` — pass.
+5. Проверки:
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s lint -- resources/js/Components/CommandPalette.vue resources/js/composables/useCommandPaletteSearch.ts resources/js/composables/__tests__/useCommandPaletteSearch.spec.ts resources/js/Components/__tests__/CommandPalette.spec.ts resources/js/Components/__tests__/CommandPalette.enhanced.spec.ts"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s typecheck"` — pass;
+   - `docker compose -f backend/docker-compose.dev.yml exec -T laravel bash -lc "cd /app && npm run -s test -- resources/js/composables/__tests__/useCommandPaletteSearch.spec.ts resources/js/Components/__tests__/CommandPalette.spec.ts resources/js/Components/__tests__/CommandPalette.enhanced.spec.ts"` — pass (`31/31`);
+   - `backend/laravel/scripts/check-file-size-guard.sh --working-tree` — pass.
+
+### Следующий этап (S4, итерация 6)
+
+1. Продолжить декомпозицию следующего top-N файла:
+   - `resources/js/Pages/Analytics/Index.vue` (`~721` строк), вынос блока transformations/series-builders в composable.
+2. Добавить targeted тесты на вынесенную логику построения серий/агрегаций.
+3. Повторить `eslint + typecheck + targeted tests + file-size-guard`.

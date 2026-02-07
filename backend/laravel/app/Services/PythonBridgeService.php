@@ -46,6 +46,7 @@ class PythonBridgeService
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
         $commandType = $payload['type'] ?? 'unknown';
+        $node = null;
 
         // GROWTH_CYCLE_CONFIG - агрегированная команда на уровне зоны, не требует node_uid/channel
         if ($commandType === 'GROWTH_CYCLE_CONFIG') {
@@ -56,6 +57,7 @@ class PythonBridgeService
                 ->first();
 
             if ($firstNode) {
+                $node = $firstNode;
                 $nodeUid = $firstNode->uid;
                 // Используем первый доступный канал или null, если Python-сервис не требует его
                 $firstChannel = $firstNode->channels()->first();
@@ -158,14 +160,23 @@ class PythonBridgeService
             'greenhouse_uid' => $ghUid,
             'zone_uid' => $zoneUid, // Передаем zone_uid
             'node_uid' => $nodeUid,
-            'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
+            'hardware_id' => $node?->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
 
         // Подписываем команду HMAC подписью
-        $signatureService = app(\App\Services\CommandSignatureService::class);
-        $requestData = $signatureService->signCommand($node, $requestData);
+        if ($node instanceof DeviceNode) {
+            $signatureService = app(\App\Services\CommandSignatureService::class);
+            $requestData = $signatureService->signCommand($node, $requestData);
+        } else {
+            Log::warning('PythonBridgeService: Sending zone command without node signature (node not resolved)', [
+                'zone_id' => $zone->id,
+                'cmd_id' => $cmdId,
+                'command_type' => $commandType,
+                'node_uid' => $nodeUid,
+            ]);
+        }
 
         try {
             $this->sendWithRetry(

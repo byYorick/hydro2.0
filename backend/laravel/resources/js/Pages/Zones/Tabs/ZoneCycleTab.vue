@@ -8,18 +8,22 @@
         <template v-if="canManageRecipe">
           <Button
             size="sm"
-            :variant="activeGrowCycle ? 'secondary' : 'primary'"
+            :variant="displayCycle ? 'secondary' : 'primary'"
             data-testid="recipe-attach-btn"
-            @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
+            :disabled="displayCycle && !hasDetailedCycle"
+            @click="displayCycle ? $emit('change-recipe') : $emit('run-cycle')"
           >
             <span
-              v-if="!activeGrowCycle"
+              v-if="!displayCycle"
               data-testid="zone-start-btn"
             >
               Запустить цикл
             </span>
-            <span v-else>
+            <span v-else-if="hasDetailedCycle">
               Сменить ревизию
+            </span>
+            <span v-else>
+              Активный цикл
             </span>
           </Button>
         </template>
@@ -51,6 +55,17 @@
           >
             {{ phaseTimeLeftLabel }}
           </span>
+        </div>
+      </div>
+      <div
+        v-else-if="displayCycle"
+        class="space-y-2"
+      >
+        <div class="text-sm text-[color:var(--text-dim)]">
+          Цикл уже активен
+        </div>
+        <div class="text-xs text-[color:var(--text-dim)]">
+          Обновите данные зоны, чтобы подтянуть детали активного цикла.
         </div>
       </div>
       <div
@@ -195,6 +210,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
@@ -215,6 +231,7 @@ interface LoadingStateProps {
 interface Props {
   activeGrowCycle?: any
   activeCycle?: any
+  zoneStatus?: string
   currentPhase?: any
   cyclesList: Array<Cycle & { required?: boolean; recipeTargets?: any; last_run?: string | null; next_run?: string | null; interval?: number | null }>
   computedPhaseProgress: number | null
@@ -228,8 +245,6 @@ interface Props {
   loading: LoadingStateProps
 }
 
-defineProps<Props>()
-
 defineEmits<{
   (e: 'run-cycle'): void
   (e: 'change-recipe'): void
@@ -239,6 +254,21 @@ defineEmits<{
   (e: 'abort'): void
   (e: 'next-phase'): void
 }>()
+
+const props = defineProps<Props>()
+
+const displayCycle = computed(() => {
+  if (props.activeGrowCycle || props.activeCycle) {
+    return props.activeGrowCycle ?? props.activeCycle
+  }
+
+  if (props.zoneStatus === 'RUNNING' || props.zoneStatus === 'PAUSED') {
+    return { status: props.zoneStatus }
+  }
+
+  return null
+})
+const hasDetailedCycle = computed(() => Boolean(props.activeGrowCycle))
 
 function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_run?: string | null; interval?: number | null }): number {
   if (!cycle.last_run || !cycle.interval || !cycle.next_run) return 0

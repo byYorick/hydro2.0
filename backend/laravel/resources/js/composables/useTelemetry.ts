@@ -8,6 +8,7 @@ import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import type { ZoneTelemetry, TelemetrySample, TelemetryMetric } from '@/types'
+import type { AxiosResponse } from 'axios'
 
 // Кеш в памяти (TTL 30-60 секунд для телеметрии)
 interface CacheEntry<T> {
@@ -20,6 +21,46 @@ const CACHE_TTL = 30 * 1000 // 30 секунд
 const HISTORY_CACHE_TTL = 60 * 1000 // 60 секунд для истории
 const STORAGE_KEY = 'hydro_telemetry_cache'
 const MAX_STORAGE_SIZE = 5 * 1024 * 1024 // 5MB максимум для sessionStorage
+
+interface TelemetryResponseEnvelope<T> {
+  data?: T
+}
+
+interface HistoryPoint {
+  ts: string
+  value: number
+}
+
+interface ReconciliationTelemetryItem {
+  zone_id?: number
+  node_id?: number
+  channel?: string | null
+  metric_type?: string
+  value?: number | null
+  ts?: string | number | Date
+}
+
+interface ReconciliationDetail {
+  telemetry?: ReconciliationTelemetryItem[]
+}
+
+type ReconciliationTelemetryMetricKey = 'ph' | 'ec' | 'temperature' | 'humidity' | 'co2'
+
+const TELEMETRY_METRIC_MAP: Record<string, ReconciliationTelemetryMetricKey> = {
+  ph: 'ph',
+  ec: 'ec',
+  temperature: 'temperature',
+  humidity: 'humidity',
+  co2: 'co2',
+}
+
+function unwrapResponseData<T>(response: AxiosResponse<T> | T): T {
+  if (response && typeof response === 'object' && 'data' in response) {
+    return (response as AxiosResponse<T>).data
+  }
+
+  return response as T
+}
 
 /**
  * Сохранить кеш в sessionStorage
@@ -151,7 +192,7 @@ export function useTelemetry(showToast?: ToastHandler) {
 
     try {
       // Используем rate-limited API для предотвращения превышения лимитов
-      const response = await rateLimitedGet<{ data?: ZoneTelemetry } | ZoneTelemetry>(
+      const response = await rateLimitedGet<TelemetryResponseEnvelope<ZoneTelemetry> | ZoneTelemetry>(
         `/api/zones/${zoneId}/telemetry/last`,
         {},
         {
@@ -162,7 +203,7 @@ export function useTelemetry(showToast?: ToastHandler) {
       )
       
       // rateLimitedGet возвращает axios response, нужно обращаться к response.data
-      const responseData = (response as any)?.data || response
+      const responseData = unwrapResponseData(response)
       const telemetry: ZoneTelemetry = extractData<ZoneTelemetry>(responseData) || {} as ZoneTelemetry
       
       // Сохраняем в кеш
@@ -211,7 +252,7 @@ export function useTelemetry(showToast?: ToastHandler) {
 
     try {
       // Используем rate-limited API для предотвращения превышения лимитов
-      const response = await rateLimitedGet<{ data?: Array<{ ts: string; value: number }> }>(
+      const response = await rateLimitedGet<TelemetryResponseEnvelope<HistoryPoint[]> | HistoryPoint[]>(
         `/api/zones/${zoneId}/telemetry/history`,
         {
           params: {
@@ -227,8 +268,8 @@ export function useTelemetry(showToast?: ToastHandler) {
       )
       
       // rateLimitedGet возвращает axios response, нужно обращаться к response.data
-      const responseData = (response as any)?.data || response
-      const data = (responseData as { data?: Array<{ ts: string; value: number }> })?.data || []
+      const responseData = unwrapResponseData(response)
+      const data = Array.isArray(responseData) ? responseData : (responseData.data ?? [])
       const history: TelemetrySample[] = data.map(item => ({
         ts: new Date(item.ts).getTime(),
         value: item.value,
@@ -281,7 +322,7 @@ export function useTelemetry(showToast?: ToastHandler) {
 
     try {
       // Используем rate-limited API для предотвращения превышения лимитов
-      const response = await rateLimitedGet<{ data?: TelemetrySample[] }>(
+      const response = await rateLimitedGet<TelemetryResponseEnvelope<TelemetrySample[]> | TelemetrySample[]>(
         '/api/telemetry/aggregates',
         {
           params: {
@@ -298,8 +339,8 @@ export function useTelemetry(showToast?: ToastHandler) {
       )
       
       // rateLimitedGet возвращает axios response, нужно обращаться к response.data
-      const responseData = (response as any)?.data || response
-      const data = (responseData as { data?: TelemetrySample[] })?.data || []
+      const responseData = unwrapResponseData(response)
+      const data = Array.isArray(responseData) ? responseData : (responseData.data ?? [])
       
       // Сохраняем в кеш
       telemetryCache.set(cacheKey, {
@@ -342,7 +383,7 @@ export function useTelemetry(showToast?: ToastHandler) {
   }
 
   // Обработчик события reconciliation для обновления телеметрии при переподключении
-  function handleReconciliation(event: CustomEvent) {
+  function handleReconciliation(event: CustomEvent<ReconciliationDetail>) {
     const { telemetry } = event.detail || {}
     
     if (!telemetry || !Array.isArray(telemetry)) {
@@ -366,15 +407,13 @@ export function useTelemetry(showToast?: ToastHandler) {
         telemetryByZone.set(zoneId, zoneTelemetry)
       }
 
-      const key = item.metric_type || 'unknown'
-      zoneTelemetry[key] = {
-        zone_id: zoneId,
-        node_id: item.node_id,
-        channel: item.channel,
-        metric_type: item.metric_type,
-        value: item.value,
-        ts: item.ts ? new Date(item.ts) : new Date(),
-      } as any
+      const metricKey = (item.metric_type || '').toLowerCase()
+      const zoneTelemetryKey = TELEMETRY_METRIC_MAP[metricKey]
+      if (!zoneTelemetryKey) {
+        continue
+      }
+
+      zoneTelemetry[zoneTelemetryKey] = item.value ?? null
     }
 
     // Обновляем кеш для каждой зоны

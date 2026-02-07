@@ -322,8 +322,11 @@ import { subscribeAlerts } from '@/ws/subscriptions'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Alert } from '@/types/Alert'
 
 interface AlertRecord extends Omit<Alert, 'zone'> {
@@ -342,6 +345,7 @@ interface PageProps {
 const page = usePage<PageProps>()
 const alertsStore = useAlertsStore()
 const { api } = useApi()
+const { showToast } = useToast()
 
 const statusFilter = useUrlState<'active' | 'resolved' | 'all'>({
   key: 'status',
@@ -426,6 +430,9 @@ const loadAlerts = async (): Promise<void> => {
     alertsStore.setAll(list)
   } catch (err) {
     logger.error('[Alerts] Failed to load alerts', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить алерты: ${extractHumanErrorMessage(err, 'Ошибка загрузки')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     isRefreshing.value = false
   }
@@ -590,6 +597,9 @@ const doResolve = async (): Promise<void> => {
     applyResolved(confirm.value.alertId, updated)
   } catch (err) {
     logger.error('[Alerts] Failed to resolve alert', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось подтвердить алерт: ${extractHumanErrorMessage(err, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     closeConfirm()
   }
@@ -611,6 +621,9 @@ const resolveSelected = async (): Promise<void> => {
     }))
   } catch (err) {
     logger.error('[Alerts] Failed to resolve alerts', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось подтвердить выбранные алерты: ${extractHumanErrorMessage(err, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     bulkConfirm.value = { open: false, loading: false }
     selectedIds.value = new Set()

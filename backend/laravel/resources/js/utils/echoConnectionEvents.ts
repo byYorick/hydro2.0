@@ -1,4 +1,5 @@
 import { logger } from './logger'
+import type { WsEventPayload } from '@/ws/subscriptionTypes'
 
 export interface ConnectionHandler {
   event: string
@@ -25,6 +26,43 @@ interface BindConnectionEventsDeps {
   performReconciliation: () => void
 }
 
+interface PusherConnectionLike {
+  state?: string
+  socket_id?: string | null
+  bind: (event: string, handler: (payload?: unknown) => void) => void
+  unbind: (event: string, handler: (payload?: unknown) => void) => void
+  connect?: () => void
+}
+
+interface ErrorPayload {
+  message?: string
+  code?: string | number
+  type?: string
+  data?: Record<string, unknown>
+  stack?: string
+}
+
+interface ConnectionErrorEvent extends WsEventPayload {
+  message?: string
+  code?: string | number
+  type?: string
+  data?: Record<string, unknown>
+  error?: Error | ErrorPayload
+}
+
+function getErrorDataMessage(data: Record<string, unknown> | undefined): string | undefined {
+  const message = data?.message
+  return typeof message === 'string' ? message : undefined
+}
+
+function normalizeConnectionErrorPayload(payload: unknown): ConnectionErrorEvent {
+  if (!payload || typeof payload !== 'object') {
+    return {}
+  }
+
+  return payload as ConnectionErrorEvent
+}
+
 export function clearEchoActiveTimers(activeTimers: Set<ActiveTimer>): void {
   activeTimers.forEach(timer => {
     if (timer.abortController) {
@@ -41,7 +79,7 @@ export function clearEchoActiveTimers(activeTimers: Set<ActiveTimer>): void {
 }
 
 export function bindEchoConnectionEvents(
-  connection: any,
+  connection: PusherConnectionLike | null | undefined,
   deps: BindConnectionEventsDeps
 ): ConnectionHandler[] {
   if (!connection) {
@@ -300,21 +338,33 @@ export function bindEchoConnectionEvents(
     },
     {
       event: 'error',
-      handler: (payload: any) => {
+      handler: (payload: unknown) => {
+        const normalizedPayload = normalizeConnectionErrorPayload(payload)
+        const nestedError = normalizedPayload.error
+        const errorObject = nestedError && typeof nestedError === 'object'
+          ? nestedError as ErrorPayload
+          : null
+
         const message =
-          payload?.error?.data?.message ||
-          payload?.error?.message ||
-          payload?.message ||
-          payload?.error?.toString() ||
-          (payload?.error ? JSON.stringify(payload.error) : null) ||
+          getErrorDataMessage(errorObject?.data) ||
+          errorObject?.message ||
+          normalizedPayload.message ||
+          (nestedError instanceof Error ? nestedError.toString() : null) ||
+          (nestedError ? JSON.stringify(nestedError) : null) ||
           'Unknown error'
-        const code = payload?.error?.code ?? payload?.code ?? payload?.error?.type
-        const errorType = payload?.error?.type || payload?.type || 'unknown'
-        const errorData = payload?.error?.data || payload?.data
+        const code = errorObject?.code ?? normalizedPayload.code ?? errorObject?.type
+        const codeAsNumber =
+          typeof code === 'number'
+            ? code
+            : typeof code === 'string' && code.trim() !== '' && Number.isFinite(Number(code))
+              ? Number(code)
+              : undefined
+        const errorType = errorObject?.type || normalizedPayload.type || 'unknown'
+        const errorData = errorObject?.data || normalizedPayload.data
 
         deps.setLastError({
           message,
-          code,
+          code: codeAsNumber,
           timestamp: Date.now(),
         })
 
@@ -325,9 +375,9 @@ export function bindEchoConnectionEvents(
           errorData,
           state: connection?.state,
           socketId: connection?.socket_id,
-          fullPayload: payload,
-          errorStack: payload?.error?.stack,
-        }, payload?.error instanceof Error ? payload.error : undefined)
+          fullPayload: normalizedPayload,
+          errorStack: errorObject?.stack,
+        }, nestedError instanceof Error ? nestedError : undefined)
 
         if (errorType === 'PusherError' || code === 'PUSHER_ERROR' || message.includes('authorization')) {
           logger.warn('[echoClient] Critical error detected, will reconnect', {

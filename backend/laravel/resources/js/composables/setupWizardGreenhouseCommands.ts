@@ -3,6 +3,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
   Greenhouse,
   GreenhouseFormState,
@@ -78,6 +79,7 @@ export function createSetupWizardGreenhouseCommands(
       await loaders.loadZones(greenhouse.id)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to create greenhouse', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось создать теплицу'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepGreenhouse = false
     }
@@ -101,6 +103,7 @@ export function createSetupWizardGreenhouseCommands(
       await loaders.loadZones(greenhouse.id)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to select greenhouse', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось выбрать теплицу'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepGreenhouse = false
     }

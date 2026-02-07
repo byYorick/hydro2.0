@@ -572,6 +572,15 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import { usePageProps } from '@/composables/usePageProps'
+import {
+  formatCurrency,
+  formatDuration,
+  formatIrrigationInterval,
+  formatRange,
+  formatTargetRange,
+  hasPhaseTargets,
+  hasTargetValue,
+} from '@/utils/plantDisplay'
 
 interface EnvironmentRange {
   min?: number | string | null
@@ -732,81 +741,6 @@ function metricLabel(metric: string): string {
   return metricMap[metric] || metric
 }
 
-function formatRange(range: EnvironmentRange | undefined): string {
-  if (!range) return '—'
-  const min = range.min ?? ''
-  const max = range.max ?? ''
-  if (min === '' && max === '') return '—'
-  if (min !== '' && max !== '') return `${min} – ${max}`
-  return min !== '' ? `от ${min}` : `до ${max}`
-}
-
-function formatCurrency(value: number | string | null | undefined, currency = 'RUB'): string {
-  if (value === null || value === undefined || value === '') {
-    return '—'
-  }
-
-  const numeric = typeof value === 'string' ? Number(value) : value
-  if (Number.isNaN(numeric)) {
-    return '—'
-  }
-
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(numeric)
-}
-
-function formatDuration(hours: number | null | undefined): string {
-  if (!hours) return '-'
-  if (hours < 24) return `${hours} ч`
-  const days = Math.floor(hours / 24)
-  const remainder = hours % 24
-  if (remainder === 0) return `${days} дн`
-  return `${days} дн ${remainder} ч`
-}
-
-function formatTargetRange(target: { min?: number; max?: number } | number | undefined | null): string {
-  if (target === undefined || target === null) return '-'
-  if (typeof target === 'number') {
-    return target.toString()
-  }
-  const min = target.min ?? ''
-  const max = target.max ?? ''
-  if (min === '' && max === '') return '-'
-  if (min !== '' && max !== '') return `${min}–${max}`
-  return min !== '' ? `от ${min}` : `до ${max}`
-}
-
-function formatIrrigationInterval(seconds: number | undefined | null): string {
-  if (!seconds) return '-'
-  if (seconds < 60) return `${seconds} сек`
-  if (seconds < 3600) {
-    const minutes = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    if (secs === 0) return `${minutes} мин`
-    return `${minutes} мин ${secs} сек`
-  }
-  const hours = Math.floor(seconds / 3600)
-  const mins = Math.floor((seconds % 3600) / 60)
-  if (mins === 0) return `${hours} ч`
-  return `${hours} ч ${mins} мин`
-}
-
-function hasTargetValue(target: any): boolean {
-  if (target === null || target === undefined) return false
-  if (typeof target === 'number') return true
-  if (typeof target === 'object') {
-    return (target.min !== null && target.min !== undefined) || (target.max !== null && target.max !== undefined)
-  }
-  return false
-}
-
-function hasPhaseTargets(targets: any): boolean {
-  if (!targets || typeof targets !== 'object') return false
-  return Object.keys(targets).some(key => hasTargetValue(targets[key]))
-}
 
 function populateEnvironment(env?: Record<string, EnvironmentRange> | null): Record<string, EnvironmentRange> {
   const template = emptyEnvironment()

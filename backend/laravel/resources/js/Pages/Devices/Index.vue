@@ -218,13 +218,16 @@ import PageHeader from '@/Components/PageHeader.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
+import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
 import { onWsStateChange } from '@/utils/echoClient'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage<{ devices?: Device[] }>()
+const { showToast } = useToast()
 const canConfigureDevices = computed(() => {
   const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
   return role === 'agronomist' || role === 'admin'
@@ -277,6 +280,7 @@ const subscribeZoneChannel = (zoneId: number): void => {
     logger.debug('[Devices/Index] Subscribed to zone device channel', { channel: channelName })
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to zone device channel', { zoneId, err })
+    showToast(`Ошибка подписки на WebSocket зоны #${zoneId}`, 'error', TOAST_TIMEOUT.NORMAL)
   }
 }
 
@@ -315,6 +319,7 @@ const subscribeUnassignedChannel = (): void => {
     logger.debug('[Devices/Index] Subscribed to unassigned devices channel')
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to unassigned devices channel', err)
+    showToast('Ошибка подписки на канал неназначенных устройств', 'error', TOAST_TIMEOUT.NORMAL)
     unassignedChannel = null
   }
 }

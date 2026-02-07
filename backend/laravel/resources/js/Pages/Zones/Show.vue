@@ -8,12 +8,12 @@
           aria-label="Разделы зоны"
         />
       </div>
-
       <ZoneOverviewTab
         v-show="activeTab === 'overview'"
         :zone="zone"
         :variant="variant"
         :active-grow-cycle="activeGrowCycle"
+        :active-cycle="activeCycle"
         :loading="loading"
         :can-operate-zone="canOperateZone"
         :targets="targets"
@@ -24,7 +24,6 @@
         :events="events"
         @force-irrigation="openActionModal('FORCE_IRRIGATION')"
       />
-
       <ZoneTelemetryTab
         v-show="activeTab === 'telemetry'"
         :zone-id="zoneId"
@@ -35,11 +34,11 @@
         :targets="targets"
         @time-range-change="onChartTimeRangeChange"
       />
-
       <ZoneCycleTab
         v-show="activeTab === 'cycle'"
         :active-grow-cycle="activeGrowCycle"
         :current-phase="currentPhase"
+        :zone-status="zone.status"
         :cycles-list="cyclesList"
         :computed-phase-progress="computedPhaseProgress"
         :computed-phase-days-elapsed="computedPhaseDaysElapsed"
@@ -58,20 +57,17 @@
         @abort="onCycleAbort"
         @next-phase="onNextPhase"
       />
-
       <ZoneAutomationTab
         v-show="activeTab === 'automation'"
         :zone-id="zoneId"
         :targets="targets"
         :telemetry="telemetry"
       />
-
       <ZoneEventsTab
         v-show="activeTab === 'events'"
         :events="events"
         :zone-id="zoneId"
       />
-
       <ZoneDevicesTab
         v-show="activeTab === 'devices'"
         :zone="zone"
@@ -90,6 +86,7 @@
       :zone-name="zone.name"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
+      :growth-cycle-initial-data="growthCycleInitialData"
       :selected-node-id="selectedNodeId"
       :selected-node="selectedNode"
       :current-action-type="currentActionType"
@@ -113,7 +110,6 @@
     />
   </AppLayout>
 </template>
-
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
@@ -128,7 +124,6 @@ import ZoneTelemetryTab from '@/Pages/Zones/Tabs/ZoneTelemetryTab.vue'
 import ZoneDetailModals from '@/Pages/Zones/ZoneDetailModals.vue'
 import { useHistory } from '@/composables/useHistory'
 import { logger } from '@/utils/logger'
-
 // Используем logger напрямую (logger уже проверен и доступен)
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
@@ -152,7 +147,6 @@ import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
-
 interface PageProps {
   zone?: Zone
   zoneId?: number
@@ -171,9 +165,7 @@ interface PageProps {
   }
   [key: string]: any
 }
-
 const page = usePage<PageProps>()
-
 const zoneTabs = [
   { id: 'overview', label: 'Обзор' },
   { id: 'telemetry', label: 'Телеметрия' },
@@ -182,7 +174,6 @@ const zoneTabs = [
   { id: 'events', label: 'События' },
   { id: 'devices', label: 'Устройства' },
 ]
-
 const activeTab = useUrlState<string>({
   key: 'tab',
   defaultValue: zoneTabs[0].id,
@@ -192,7 +183,6 @@ const activeTab = useUrlState<string>({
   },
   serialize: (value) => value,
 })
-
 // Modal states using useModal composable
 const modals = useModal<{
   action: boolean
@@ -205,16 +195,20 @@ const modals = useModal<{
   attachNodes: false,
   nodeConfig: false,
 })
-
 const showActionModal = computed(() => modals.isModalOpen('action'))
 const showGrowthCycleModal = computed(() => modals.isModalOpen('growthCycle'))
 const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
 const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
-
 const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
 const selectedNodeId = ref<number | null>(null)
 const selectedNode = ref<any>(null)
-
+const growthCycleInitialData = ref<{
+  recipeId?: number | null
+  recipeRevisionId?: number | null
+  plantId?: number | null
+  startedAt?: string | null
+  expectedHarvestAt?: string | null
+} | null>(null)
 // Loading states using useLoading composable
 interface LoadingState extends Record<string, boolean> {
   irrigate: boolean
@@ -225,7 +219,6 @@ interface LoadingState extends Record<string, boolean> {
   cycleAbort: boolean
   cycleChangeRecipe: boolean
 }
-
 const { loading, setLoading } = useLoading<LoadingState>({
   irrigate: false,
   nextPhase: false,
@@ -235,9 +228,7 @@ const { loading, setLoading } = useLoading<LoadingState>({
   cycleAbort: false,
   cycleChangeRecipe: false,
 })
-
 const { showToast } = useToast()
-
 // Инициализация composables с Toast
 const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
@@ -246,7 +237,6 @@ const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
 const zonesStore = useZonesStore()
-
 // zoneId должен определяться из URL или props напрямую, без зависимости от zone
 // Извлекаем ID из URL (например, /zones/25 -> 25)
 const zoneId = computed(() => {
@@ -255,25 +245,20 @@ const zoneId = computed(() => {
     const id = page.props.zoneId
     return typeof id === 'string' ? parseInt(id) : id
   }
-  
   // Пробуем из zone props
   if (page.props.zone?.id) {
     const id = page.props.zone.id
     return typeof id === 'string' ? parseInt(id) : id
   }
-  
   // Извлекаем из URL как fallback
   const pathMatch = window.location.pathname.match(/\/zones\/(\d+)/)
   if (pathMatch && pathMatch[1]) {
     return parseInt(pathMatch[1])
   }
-
   return undefined
 })
-
 const zone = computed<Zone>(() => {
   const zoneIdValue = zoneId.value
-  
   // Сначала проверяем store - там может быть более актуальное состояние
   if (zoneIdValue) {
     const storeZone = zonesStore.zoneById(zoneIdValue)
@@ -281,30 +266,23 @@ const zone = computed<Zone>(() => {
       return storeZone
     }
   }
-  
   // Если в store нет, используем props
   const rawZoneData = (page.props.zone || {}) as any
-  
   const zoneData = { ...rawZoneData }
-  
   // Убеждаемся, что у объекта есть id
   if (!zoneData.id && zoneIdValue) {
     zoneData.id = zoneIdValue
   }
-  
   // Если zoneData все еще пустой, возвращаем минимальный объект
   if (!zoneData.id) {
     return {
       id: zoneIdValue || undefined,
     } as Zone
   }
-  
   return zoneData as Zone
 })
-
 // История просмотров
 const { addToHistory } = useHistory()
-
 // Добавляем зону в историю просмотров
 watch(zone, (newZone) => {
   if (newZone?.id) {
@@ -316,11 +294,9 @@ watch(zone, (newZone) => {
     })
   }
 }, { immediate: true })
-
 // Телеметрия, цели и устройства из props
 // Оптимизированное обновление телеметрии
 const telemetryRef = ref<ZoneTelemetry>(page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null } as ZoneTelemetry)
-
 // Используем batch updates для оптимизации частых обновлений телеметрии
 const { addUpdate, flush } = useTelemetryBatch((updates) => {
   // Применяем обновления пакетом
@@ -348,10 +324,8 @@ const { addUpdate, flush } = useTelemetryBatch((updates) => {
     }
   })
 }) // Использует DEBOUNCE_DELAY.NORMAL по умолчанию
-
 const telemetry = computed(() => telemetryRef.value)
 const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp, current_phase: currentPhaseProp, active_cycle: activeCycleProp, active_grow_cycle: activeGrowCycleProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
-
 // Сырые targets (исторический формат, для Back-compat) + нормализованный current_phase
 const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
 const currentPhase = computed(() => {
@@ -360,12 +334,19 @@ const currentPhase = computed(() => {
   }
   return null
 })
-
-const activeCycle = computed(() => (activeCycleProp.value || null) as any)
+const activeCycle = computed(() => {
+  return (
+    activeCycleProp.value ||
+    (zone.value as any)?.active_cycle ||
+    (zone.value as any)?.activeCycle ||
+    null
+  ) as any
+})
 const rawActiveGrowCycle = computed(() => {
   return (
     zone.value?.activeGrowCycle ||
     (zone.value as any)?.active_grow_cycle ||
+    activeCycle.value ||
     activeGrowCycleProp.value ||
     null
   )
@@ -374,7 +355,6 @@ const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.val
 const devices = computed(() => (devicesProp.value || []) as Device[])
 const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
-
 // События цикла (теперь загружаются внутри CycleControlPanel)
 const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
 const isAgronomist = computed(() => userRole.value === 'agronomist')
@@ -382,7 +362,6 @@ const canOperateZone = computed(() => ['admin', 'operator', 'agronomist', 'engin
 const canManageDevices = computed(() => ['admin', 'agronomist'].includes(userRole.value))
 const canManageRecipe = computed(() => isAgronomist.value || userRole.value === 'admin')
 const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(userRole.value))
-
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
 const computedPhaseProgress = computed(() => {
@@ -391,7 +370,6 @@ const computedPhaseProgress = computed(() => {
     logger.debug('[Zones/Show] computedPhaseProgress: phase is null')
     return null
   }
-  
   if (!phase.phase_started_at || !phase.phase_ends_at) {
     logger.debug('[Zones/Show] computedPhaseProgress: missing dates', {
       phase_started_at: phase.phase_started_at,
@@ -409,33 +387,25 @@ const computedPhaseProgress = computed(() => {
   }
   return progress
 })
-
 const computedPhaseDaysElapsed = computed(() => {
   const phase = currentPhase.value
   if (!phase || !phase.phase_started_at) return null
-
   // Все вычисления в UTC
   const now = new Date()
   const phaseStart = new Date(phase.phase_started_at)
-  
   if (isNaN(phaseStart.getTime())) {
     return null
   }
-
   const elapsedMs = now.getTime() - phaseStart.getTime()
   if (elapsedMs <= 0) return 0
-
   const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24)
   return Math.floor(elapsedDays)
 })
-
 const computedPhaseDaysTotal = computed(() => {
   const phase = currentPhase.value
   if (!phase || !phase.duration_hours) return null
-
   return Math.ceil(phase.duration_hours / 24)
 })
-
 // Единый статус цикла зоны и человекочитаемое время до конца фазы
 const cycleStatusLabel = computed(() => {
   if (activeGrowCycle.value) {
@@ -446,7 +416,6 @@ const cycleStatusLabel = computed(() => {
   }
   return 'Цикл не запущен'
 })
-
 const cycleStatusVariant = computed<BadgeVariant>(() => {
   if (activeGrowCycle.value) {
     return getCycleStatusVariant(activeGrowCycle.value.status)
@@ -456,31 +425,24 @@ const cycleStatusVariant = computed<BadgeVariant>(() => {
   }
   return 'neutral'
 })
-
 const phaseTimeLeftLabel = computed(() => {
   const phase = currentPhase.value
   if (!phase || !phase.phase_ends_at) {
     return ''
   }
-
   // Все вычисления в UTC
   const now = new Date()
   const endsAt = new Date(phase.phase_ends_at)
-  
   if (isNaN(endsAt.getTime())) {
     return ''
   }
-
   const diffMs = endsAt.getTime() - now.getTime()
-
   if (diffMs <= 0) {
     return 'Фаза завершена'
   }
-
   const minutes = Math.floor(diffMs / 60000)
   const hours = Math.floor(minutes / 60)
   const days = Math.floor(hours / 24)
-
   if (days > 0) {
     return `До конца фазы: ${days} дн.`
   }
@@ -489,15 +451,12 @@ const phaseTimeLeftLabel = computed(() => {
   }
   return `До конца фазы: ${minutes} мин`
 })
-
 // Список циклов для отображения:
 // объединяем расписание из API (/cycles) с таргетами текущей фазы рецепта и (в будущем) фактическим active_cycle
 const cyclesList = computed(() => {
   const phaseTargets = (currentPhase.value?.targets || {}) as any
   const active = (activeCycle.value?.subsystems || {}) as any
-
   const serverCycles = cycles.value || {}
-
   const base = [
     {
       key: 'ph',
@@ -560,7 +519,6 @@ const cyclesList = computed(() => {
       next_run: serverCycles.CLIMATE?.next_run || null,
     },
   ]
-
   return base as Array<
     {
       key: string
@@ -576,19 +534,15 @@ const cyclesList = computed(() => {
     }
   >
 })
-
 // Графики: загрузка данных истории
 const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
 type TelemetryRange = typeof telemetryRanges[number]
-
 const chartTimeRange = ref<TelemetryRange>('24H')
 const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
 const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
-
 const telemetryRangeKey = computed(() => {
   return zoneId.value ? `zone:${zoneId.value}:telemetryRange` : null
 })
-
 const getStoredTelemetryRange = (): TelemetryRange | null => {
   if (typeof window === 'undefined') return null
   const key = telemetryRangeKey.value
@@ -596,11 +550,9 @@ const getStoredTelemetryRange = (): TelemetryRange | null => {
   const stored = window.localStorage.getItem(key)
   return telemetryRanges.includes(stored as TelemetryRange) ? (stored as TelemetryRange) : null
 }
-
 // Загрузка данных истории для графиков через useTelemetry
 async function loadChartData(metric: 'PH' | 'EC', timeRange: TelemetryRange): Promise<Array<{ ts: number; value: number }>> {
   if (!zoneId.value) return []
-  
   const now = new Date()
   let from: Date | null = null
   switch (timeRange) {
@@ -620,40 +572,33 @@ async function loadChartData(metric: 'PH' | 'EC', timeRange: TelemetryRange): Pr
       from = null
       break
   }
-  
   try {
     const params: { from?: string; to: string } = { to: now.toISOString() }
     if (from) params.from = from.toISOString()
-    
     return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
     logger.error(`Failed to load ${metric} history:`, err)
     return []
   }
 }
-
 async function onChartTimeRangeChange(newRange: TelemetryRange): Promise<void> {
   if (chartTimeRange.value === newRange) return
   chartTimeRange.value = newRange
   chartDataPh.value = await loadChartData('PH', newRange)
   chartDataEc.value = await loadChartData('EC', newRange)
 }
-
 watch(chartTimeRange, (value) => {
   if (typeof window === 'undefined') return
   const key = telemetryRangeKey.value
   if (!key) return
   window.localStorage.setItem(key, value)
 })
-
 // Watch для отслеживания изменений zone props (отключен для производительности)
 // watch(() => page.props.zone, (newZone: any, oldZone: any) => {
 //   logInfo('[Zones/Show] Zone props changed')
 // }, { deep: true, immediate: true })
-
 // Сохраняем функцию отписки для очистки при размонтировании
 let unsubscribeZoneCommands: (() => void) | null = null
-
 // Регистрируем onUnmounted синхронно перед async onMounted
 onUnmounted(() => {
   // Отписываемся от WebSocket канала при размонтировании
@@ -663,36 +608,44 @@ onUnmounted(() => {
   }
   flush()
 })
-
 onMounted(async () => {
   logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
-
   // Инициализируем зону в store из props для синхронизации
   if (zoneId.value && zone.value?.id) {
     zonesStore.upsert(zone.value, true) // silent: true, так как это начальная инициализация
     logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
   }
-
   const params = new URLSearchParams(window.location.search)
+  const parseQueryNumber = (key: string): number | null => {
+    const value = params.get(key)
+    if (!value) return null
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  }
+  const startedAt = params.get('started_at')
+  const expectedHarvestAt = params.get('expected_harvest_at')
+  growthCycleInitialData.value = {
+    recipeId: parseQueryNumber('recipe_id'),
+    recipeRevisionId: parseQueryNumber('recipe_revision_id'),
+    plantId: parseQueryNumber('plant_id'),
+    startedAt: startedAt || null,
+    expectedHarvestAt: expectedHarvestAt || null,
+  }
   if (params.get('start_cycle') === '1') {
     modals.open('growthCycle')
   }
-
   const storedRange = getStoredTelemetryRange()
   if (storedRange) {
     chartTimeRange.value = storedRange
   }
-
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
-  
   // Подписаться на WebSocket канал команд зоны и сохранить функцию отписки
   if (zoneId.value) {
     unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
       updateCommandStatus(commandEvent.commandId, commandEvent.status as any, commandEvent.message)
-      
       // Если команда завершена, обновляем зону
       const finalStatuses = ['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED']
       if (finalStatuses.includes(commandEvent.status)) {
@@ -701,7 +654,6 @@ onMounted(async () => {
         }
       }
     })
-
     // Подписаться на обновления цикла через канал зоны
     const echo = window.Echo
     if (echo) {
@@ -711,7 +663,6 @@ onMounted(async () => {
         // Обновляем зону для получения актуального состояния цикла
         reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
       })
-      
       // Сохраняем функцию отписки
       const originalUnsubscribe = unsubscribeZoneCommands
       unsubscribeZoneCommands = () => {
@@ -720,11 +671,9 @@ onMounted(async () => {
       }
     }
   }
-  
   // Автоматическая синхронизация через события stores
   const { useStoreEvents } = await import('@/composables/useStoreEvents')
   const { subscribeWithCleanup } = useStoreEvents()
-  
   // Слушаем события обновления зоны для автоматического обновления
   subscribeWithCleanup('zone:updated', (updatedZone: any) => {
     if (updatedZone.id === zoneId.value) {
@@ -749,20 +698,16 @@ onMounted(async () => {
       }
     }
   })
-  
 })
-
 async function onRunCycle(): Promise<void> {
   if (!zoneId.value) {
     logger.warn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
-
   // Открываем модал для запуска/корректировки агрегированного цикла
   modals.open('growthCycle')
 }
-
 const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
   switch (zone.value.status) {
     case 'RUNNING': return 'success'
@@ -772,18 +717,13 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
     default: return 'neutral'
   }
 })
-
-
 function openActionModal(actionType: CommandType): void {
   currentActionType.value = actionType
   modals.open('action')
 }
-
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
-  
   setLoading('irrigate', true)
-  
   const actionNames: Record<CommandType, string> = {
     'FORCE_IRRIGATION': 'Полив',
     'FORCE_PH_CONTROL': 'Коррекция pH',
@@ -791,7 +731,6 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     'FORCE_CLIMATE': 'Управление климатом',
     'FORCE_LIGHTING': 'Управление освещением'
   } as Record<CommandType, string>
-
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
     const actionName = actionNames[actionType] || 'Действие'
@@ -810,28 +749,23 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     setLoading('irrigate', false)
   }
 }
-
-async function onGrowthCycleWizardSubmit({ zoneId, recipeId: _recipeId, startedAt: _startedAt, expectedHarvestAt: _expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
+async function onGrowthCycleWizardSubmit({ zoneId, recipeId: _recipeId, startedAt: _startedAt, expectedHarvestAt: _expectedHarvestAt }: { zoneId: number; recipeId?: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
   // Новый wizard уже создал цикл через API, нужно только обновить данные
   if (zoneId) {
-    reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
+    reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
   }
 }
-
 function openNodeConfig(nodeId: number, node: any): void {
   selectedNodeId.value = nodeId
   selectedNode.value = node
   modals.open('nodeConfig')
 }
-
 async function onNodesAttached(_nodeIds: number[]): Promise<void> {
   if (!zoneId.value) return
-  
   try {
     // Обновляем зону через API вместо reload
     const { fetchZone } = useZones(showToast)
     const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
-    
     if (updatedZone?.id) {
       zonesStore.upsert(updatedZone)
       logger.debug('[Zones/Show] Zone updated in store after nodes attachment', { zoneId: updatedZone.id })
@@ -842,7 +776,6 @@ async function onNodesAttached(_nodeIds: number[]): Promise<void> {
     reloadZone(zoneId.value, ['zone', 'devices'])
   }
 }
-
 const {
   harvestModal,
   abortModal,
@@ -868,6 +801,5 @@ const {
   setLoading,
   handleError,
 })
-
 // События цикла теперь загружаются внутри CycleControlPanel
 </script>

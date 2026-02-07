@@ -3,6 +3,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
   Plant,
   PlantFormState,
@@ -94,6 +95,7 @@ export function createSetupWizardPlantNodeCommands(
       await loaders.loadPlants()
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to create plant', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось создать растение'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepPlant = false
     }
@@ -131,6 +133,7 @@ export function createSetupWizardPlantNodeCommands(
       await loaders.loadAvailableNodes()
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to attach nodes', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось привязать устройства к зоне'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepDevices = false
     }

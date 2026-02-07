@@ -21,9 +21,9 @@ interface RawCommandPayload extends WsEventPayload {
   status?: string
   message?: string
   error?: string
-  zoneId?: number
-  zone_id?: number
-  server_ts?: number
+  zoneId?: number | string
+  zone_id?: number | string
+  server_ts?: number | string | null
 }
 
 interface RawGlobalPayload extends WsEventPayload {
@@ -33,11 +33,11 @@ interface RawGlobalPayload extends WsEventPayload {
   kind?: string
   type?: string
   message?: string
-  zoneId?: number
-  zone_id?: number
+  zoneId?: number | string
+  zone_id?: number | string
   occurredAt?: string
   occurred_at?: string
-  server_ts?: number
+  server_ts?: number | string | null
 }
 
 function asRecord(payload: unknown): WsEventPayload {
@@ -48,6 +48,35 @@ function asRecord(payload: unknown): WsEventPayload {
   return {}
 }
 
+function toOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+
+  return undefined
+}
+
+function toServerTs(value: unknown): number | null | undefined {
+  if (value === null) {
+    return null
+  }
+
+  return toOptionalNumber(value)
+}
+
+function toRawCommandPayload(payload: WsEventPayload): RawCommandPayload {
+  return asRecord(payload) as RawCommandPayload
+}
+
+function toRawGlobalPayload(payload: WsEventPayload): RawGlobalPayload {
+  return asRecord(payload) as RawGlobalPayload
+}
+
 function resolveZoneId(channelName: string, payload: RawCommandPayload): number | undefined {
   const zoneIdMatch = channelName.match(/^commands\.(\d+)$/)
   if (zoneIdMatch) {
@@ -55,7 +84,7 @@ function resolveZoneId(channelName: string, payload: RawCommandPayload): number 
   }
 
   const payloadZoneId = payload?.zoneId ?? payload?.zone_id
-  return typeof payloadZoneId === 'number' ? payloadZoneId : undefined
+  return toOptionalNumber(payloadZoneId)
 }
 
 function normalizeCommandPayload(
@@ -85,12 +114,16 @@ function normalizeGlobalPayload(payload: RawGlobalPayload, zoneId: number | unde
   zoneId: number | undefined
   occurredAt: string
 } {
+  const kindValue = payload.kind ?? payload.type
+  const messageValue = payload.message
+  const occurredAt = payload.occurredAt ?? payload.occurred_at
+
   return {
     id: payload?.id ?? payload?.eventId ?? payload?.event_id,
-    kind: payload.kind ?? payload.type ?? 'INFO',
-    message: payload.message ?? '',
+    kind: typeof kindValue === 'string' ? kindValue : 'INFO',
+    message: typeof messageValue === 'string' ? messageValue : '',
     zoneId,
-    occurredAt: payload.occurredAt ?? payload.occurred_at ?? new Date().toISOString(),
+    occurredAt: typeof occurredAt === 'string' ? occurredAt : new Date().toISOString(),
   }
 }
 
@@ -107,13 +140,14 @@ export function createWebSocketEventDispatchers({
       return
     }
 
-    const rawPayload = payload as RawCommandPayload
+    const rawPayload = toRawCommandPayload(payload)
     const zoneId = resolveZoneId(channelName, rawPayload)
-    if (isStaleSnapshotEvent(zoneId, rawPayload.server_ts)) {
+    const eventServerTs = toServerTs(rawPayload.server_ts)
+    if (isStaleSnapshotEvent(zoneId, eventServerTs)) {
       const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
       logger.debug('[useWebSocket] Ignoring stale command event (reconciliation)', {
         channel: channelName,
-        event_server_ts: rawPayload.server_ts,
+        event_server_ts: eventServerTs,
         snapshot_server_ts: snapshotServerTs,
         commandId: rawPayload.commandId ?? rawPayload.command_id,
       })
@@ -153,15 +187,16 @@ export function createWebSocketEventDispatchers({
       return
     }
 
-    const rawPayload = asRecord(payload) as RawGlobalPayload
+    const rawPayload = toRawGlobalPayload(payload)
     const payloadZoneId = rawPayload.zoneId ?? rawPayload.zone_id
-    const zoneId = typeof payloadZoneId === 'number' ? payloadZoneId : undefined
+    const zoneId = toOptionalNumber(payloadZoneId)
+    const eventServerTs = toServerTs(rawPayload.server_ts)
 
-    if (isStaleSnapshotEvent(zoneId, rawPayload.server_ts)) {
+    if (isStaleSnapshotEvent(zoneId, eventServerTs)) {
       const snapshotServerTs = typeof zoneId === 'number' ? getSnapshotServerTs(zoneId) : undefined
       logger.debug('[useWebSocket] Ignoring stale global event (reconciliation)', {
         channel: channelName,
-        event_server_ts: rawPayload.server_ts,
+        event_server_ts: eventServerTs,
         snapshot_server_ts: snapshotServerTs,
         eventId: rawPayload.id ?? rawPayload.eventId ?? rawPayload.event_id,
       })

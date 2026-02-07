@@ -274,12 +274,33 @@ export function useSetupWizard() {
   )
 
   watch(selectedGreenhouseId, async (greenhouseId) => {
+    selectedZoneId.value = null
+    selectedZone.value = null
+    selectedNodeIds.value = []
+    attachedNodesCount.value = 0
+    automationAppliedAt.value = null
+
     if (!greenhouseId || greenhouseMode.value !== 'select') {
+      availableZones.value = []
       return
     }
 
     zoneMode.value = 'select'
     await dataFlows.loadZones(greenhouseId)
+  })
+
+  watch(selectedZoneId, (zoneId, previousZoneId) => {
+    if (zoneId === previousZoneId) {
+      return
+    }
+
+    if (selectedZone.value?.id && selectedZone.value.id !== zoneId) {
+      selectedZone.value = null
+    }
+
+    selectedNodeIds.value = []
+    attachedNodesCount.value = 0
+    automationAppliedAt.value = null
   })
 
   watch(

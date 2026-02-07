@@ -147,7 +147,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
         '/api/system/health'
       )
 
-      const payload = extractData(response.data) || {}
+      const payload = extractData<StatusResponse>(response.data) || {}
 
       coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
       dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'

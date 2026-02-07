@@ -92,6 +92,9 @@ import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { logger } from '@/utils/logger'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 interface UnassignedError {
   id: number
@@ -123,6 +126,7 @@ const error = ref<string | null>(null)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 const { api } = useApi()
+const { showToast } = useToast()
 
 const getSeverityVariant = (severity: string | undefined): 'danger' | 'warning' | 'info' => {
   const upper = (severity || 'ERROR').toUpperCase()
@@ -172,8 +176,9 @@ const fetchErrors = async () => {
       errors.value = response.data?.data || []
     }
   } catch (err: any) {
-    error.value = err.response?.data?.message || 'Ошибка загрузки данных'
-    console.error('Failed to fetch unassigned node errors:', err)
+    error.value = err?.response?.data?.message || 'Ошибка загрузки данных'
+    logger.error('[UnassignedNodeErrorsWidget] Failed to fetch errors', { err, zoneId: props.zoneId })
+    showToast(error.value, 'error', TOAST_TIMEOUT.NORMAL)
   } finally {
     loading.value = false
   }

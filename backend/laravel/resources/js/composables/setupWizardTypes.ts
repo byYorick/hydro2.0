@@ -34,6 +34,8 @@ export interface Recipe {
   name: string
   phases_count?: number
   phases?: RecipePhase[]
+  latest_published_revision_id?: number | null
+  latest_draft_revision_id?: number | null
   plants?: Array<{
     id: number
     name?: string

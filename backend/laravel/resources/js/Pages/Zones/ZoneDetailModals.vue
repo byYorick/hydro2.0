@@ -36,6 +36,7 @@
       :zone-name="zoneName"
       :current-phase-targets="currentPhaseTargets"
       :active-cycle="activeCycle"
+      :initial-data="growthCycleInitialData"
       @close="$emit('close-growth-cycle')"
       @submit="$emit('submit-growth-cycle', $event)"
     />
@@ -168,6 +169,13 @@ interface Props {
   zoneName: string
   currentPhaseTargets: any | null
   activeCycle: any | null
+  growthCycleInitialData?: {
+    recipeId?: number | null
+    recipeRevisionId?: number | null
+    plantId?: number | null
+    startedAt?: string | null
+    expectedHarvestAt?: string | null
+  } | null
   selectedNodeId: number | null
   selectedNode: any | null
   currentActionType: CommandType
@@ -190,7 +198,7 @@ defineEmits<{
   (e: 'nodes-attached', payload: number[]): void
   (e: 'close-node-config'): void
   (e: 'close-growth-cycle'): void
-  (e: 'submit-growth-cycle', payload: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): void
+  (e: 'submit-growth-cycle', payload: { zoneId: number; recipeId?: number; startedAt: string; expectedHarvestAt?: string }): void
   (e: 'close-harvest'): void
   (e: 'confirm-harvest'): void
   (e: 'close-abort'): void

@@ -3,6 +3,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
   AutomationFormState,
   Plant,
@@ -223,6 +224,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       return recipe
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load recipe details', { error, recipeId })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить детали рецепта'), 'error', TOAST_TIMEOUT.NORMAL)
       return null
     }
   }
@@ -283,8 +285,11 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     }
 
     if (!selectedRecipe.value?.id) {
-      showToast('Сначала выберите культуру с рецептом, чтобы подтянуть параметры автоматики', 'warning', TOAST_TIMEOUT.NORMAL)
-      return
+      await ensureRecipeForPlant(true)
+      if (!selectedRecipe.value?.id) {
+        showToast('Не удалось найти рецепт для выбранной культуры. Выберите культуру или создайте рецепт.', 'warning', TOAST_TIMEOUT.NORMAL)
+        return
+      }
     }
 
     syncAutomationFromRecipe(selectedRecipe.value)
@@ -305,6 +310,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       showToast('Логика автоматики применена', 'success', TOAST_TIMEOUT.NORMAL)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to apply automation profile', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось применить логику автоматики'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepAutomation = false
     }
@@ -320,7 +326,28 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
 
     loading.stepLaunch = true
     try {
-      const url = `/zones/${selectedZone.value.id}?start_cycle=1&recipe_id=${selectedRecipe.value.id}`
+      const recipeRevisionId = selectedRecipe.value.latest_published_revision_id
+        ?? selectedRecipe.value.latest_draft_revision_id
+        ?? null
+      const now = new Date()
+      const offsetMs = now.getTimezoneOffset() * 60_000
+      const startedAt = new Date(now.getTime() - offsetMs).toISOString().slice(0, 16)
+      const queryParams = new URLSearchParams({
+        start_cycle: '1',
+        source: 'setup_wizard',
+        recipe_id: String(selectedRecipe.value.id),
+        started_at: startedAt,
+      })
+
+      if (selectedPlantId.value) {
+        queryParams.set('plant_id', String(selectedPlantId.value))
+      }
+
+      if (recipeRevisionId) {
+        queryParams.set('recipe_revision_id', String(recipeRevisionId))
+      }
+
+      const url = `/zones/${selectedZone.value.id}?${queryParams.toString()}`
       showToast('Открываю мастер запуска цикла', 'info', TOAST_TIMEOUT.NORMAL)
       visit(url)
     } finally {

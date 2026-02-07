@@ -2,6 +2,18 @@
  * Утилиты для работы с API ответами
  */
 
+type ApiResponseLike<T> = {
+  data?: T | ApiResponseLike<T>
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function hasDataKey(value: unknown): value is ApiResponseLike<unknown> {
+  return isRecord(value) && 'data' in value
+}
+
 /**
  * Извлекает данные из API ответа
  * Поддерживает разные форматы ответов:
@@ -12,20 +24,20 @@
  * @param response - Ответ от API
  * @returns Извлеченные данные или null
  */
-export function extractData<T = any>(response: any): T | null {
+export function extractData<T = unknown>(response: unknown): T | null {
   if (!response) {
     return null
   }
   
   // Если response уже является нужным типом
-  if (response && typeof response === 'object' && !('data' in response)) {
+  if (isRecord(response) && !hasDataKey(response)) {
     return response as T
   }
   
   // Стандартный формат: { data: T }
-  if (response?.data !== undefined) {
+  if (hasDataKey(response) && typeof response.data !== 'undefined') {
     // Проверяем, не является ли data тоже обернутым объектом
-    if (response.data && typeof response.data === 'object' && 'data' in response.data) {
+    if (hasDataKey(response.data)) {
       return response.data.data as T
     }
     return response.data as T
@@ -41,8 +53,8 @@ export function extractData<T = any>(response: any): T | null {
  * @param expectedType - Ожидаемый тип (для валидации)
  * @returns Нормализованные данные
  */
-export function normalizeResponse<T = any>(
-  response: any,
+export function normalizeResponse<T = unknown>(
+  response: unknown,
   expectedType?: 'array' | 'object' | 'primitive'
 ): T {
   const data = extractData<T>(response)
@@ -69,8 +81,7 @@ export function normalizeResponse<T = any>(
  * @param fallback - Значение по умолчанию
  * @returns Извлеченные данные или fallback
  */
-export function extractDataWithFallback<T = any>(response: any, fallback: T): T {
+export function extractDataWithFallback<T = unknown>(response: unknown, fallback: T): T {
   const data = extractData<T>(response)
   return data !== null && data !== undefined ? data : fallback
 }
-

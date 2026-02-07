@@ -40,6 +40,12 @@
                 фаза {{ activeGrowCycle.currentPhase.phase_index + 1 }}
               </span>
             </div>
+            <div
+              v-else-if="displayCycle"
+              class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]"
+            >
+              Цикл активен
+            </div>
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2 justify-end">
@@ -159,7 +165,7 @@
           :started-at="activeGrowCycle.started_at"
         />
         <div
-          v-else-if="activeGrowCycle || zone.status === 'RUNNING'"
+          v-else-if="displayCycle || zone.status === 'RUNNING'"
           class="text-center py-6"
         >
           <div class="text-4xl mb-2">
@@ -266,6 +272,7 @@ interface Props {
   zone: Zone
   variant: BadgeVariant
   activeGrowCycle?: any
+  activeCycle?: any
   loading: OverviewLoadingState
   canOperateZone: boolean
   targets: ZoneTargetsType
@@ -281,6 +288,7 @@ defineEmits<{
 }>()
 
 const props = defineProps<Props>()
+const displayCycle = computed(() => props.activeGrowCycle ?? props.activeCycle ?? null)
 
 const hasTargets = computed(() => {
   return Boolean(props.targets && (props.targets.ph || props.targets.ec || props.targets.temp || props.targets.humidity))

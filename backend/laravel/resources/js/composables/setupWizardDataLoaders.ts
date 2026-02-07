@@ -1,4 +1,6 @@
 import type { Ref } from 'vue'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import type {
   Greenhouse,
@@ -10,6 +12,7 @@ import type {
   Zone,
 } from './setupWizardTypes'
 import { extractCollection } from './setupWizardCollection'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 
 export interface SetupWizardDataApiClient {
   get(url: string, config?: unknown): Promise<{ data: unknown }>
@@ -20,6 +23,7 @@ export interface SetupWizardDataApiClient {
 interface SetupWizardDataLoadersOptions {
   api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
+  showToast: (message: string, variant: ToastVariant, timeout?: number) => void
   availableGreenhouses: Ref<Greenhouse[]>
   availableGreenhouseTypes: Ref<GreenhouseType[]>
   availableZones: Ref<Zone[]>
@@ -42,6 +46,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
   const {
     api,
     loading,
+    showToast,
     availableGreenhouses,
     availableGreenhouseTypes,
     availableZones,
@@ -57,6 +62,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availableGreenhouseTypes.value = extractCollection<GreenhouseType>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load greenhouse types', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить типы теплиц'), 'error', TOAST_TIMEOUT.NORMAL)
       availableGreenhouseTypes.value = []
     }
   }
@@ -68,6 +74,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availableGreenhouses.value = extractCollection<Greenhouse>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load greenhouses', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список теплиц'), 'error', TOAST_TIMEOUT.NORMAL)
       availableGreenhouses.value = []
     } finally {
       loading.greenhouses = false
@@ -89,6 +96,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availableZones.value = extractCollection<Zone>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load zones', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список зон'), 'error', TOAST_TIMEOUT.NORMAL)
       availableZones.value = []
     } finally {
       loading.zones = false
@@ -102,6 +110,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availablePlants.value = extractCollection<Plant>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load plants', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список растений'), 'error', TOAST_TIMEOUT.NORMAL)
       availablePlants.value = []
     } finally {
       loading.plants = false
@@ -115,6 +124,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availableRecipes.value = extractCollection<Recipe>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load recipes', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список рецептов'), 'error', TOAST_TIMEOUT.NORMAL)
       availableRecipes.value = []
     } finally {
       loading.recipes = false
@@ -131,6 +141,7 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
       availableNodes.value = extractCollection<Node>(response.data)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load nodes', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список узлов'), 'error', TOAST_TIMEOUT.NORMAL)
       availableNodes.value = []
     } finally {
       loading.nodes = false

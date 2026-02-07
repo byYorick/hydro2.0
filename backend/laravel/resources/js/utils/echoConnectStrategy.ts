@@ -1,8 +1,9 @@
 import { logger } from './logger'
+import type { EchoLike } from '@/ws/subscriptionTypes'
 
 interface EchoConnectionRuntime {
-  pusher: any
-  connection: any
+  pusher: NonNullable<EchoLike['connector']>['pusher']
+  connection: NonNullable<NonNullable<EchoLike['connector']>['pusher']>['connection']
 }
 
 interface AttemptEchoConnectDeps {

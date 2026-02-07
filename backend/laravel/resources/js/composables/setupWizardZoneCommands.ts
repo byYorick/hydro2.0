@@ -3,6 +3,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
   SetupWizardLoadingState,
   Zone,
@@ -82,6 +83,7 @@ export function createSetupWizardZoneCommands(
       await loaders.loadZones(greenhouseId)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to create zone', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось создать зону'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepZone = false
     }
@@ -104,6 +106,7 @@ export function createSetupWizardZoneCommands(
       showToast('Зона выбрана', 'success', TOAST_TIMEOUT.NORMAL)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to select zone', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось выбрать зону'), 'error', TOAST_TIMEOUT.NORMAL)
     } finally {
       loading.stepZone = false
     }
