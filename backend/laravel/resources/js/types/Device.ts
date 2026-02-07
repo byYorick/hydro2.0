@@ -14,6 +14,8 @@ export type DeviceStatus = 'online' | 'offline' | 'degraded' | 'unknown'
  * Канал устройства
  */
 export interface DeviceChannel {
+  id?: number
+  node_id?: number
   channel: string
   type: 'SENSOR' | 'ACTUATOR' | string
   metric: string | number | null

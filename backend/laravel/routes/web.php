@@ -1053,7 +1053,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $devices = \App\Models\DeviceNode::query()
                 ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                 ->where('zone_id', $zoneIdInt)
-                ->with('zone:id,name')
+                ->with([
+                    'zone:id,name',
+                    'channels:id,node_id,channel,type,metric,unit',
+                ])
                 ->get();
 
             $events = collect([]);

@@ -52,6 +52,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/zones/{id}/change-phase | auth:sanctum (operator/admin) | Сменить фазу рецепта |
 | POST | /api/zones/{id}/pause | auth:sanctum (operator/admin) | Приостановить зону |
 | POST | /api/zones/{id}/resume | auth:sanctum (operator/admin) | Возобновить зону |
+| POST | /api/zones/{id}/fill | auth:sanctum (operator/admin) | Режим наполнения зоны |
+| POST | /api/zones/{id}/drain | auth:sanctum (operator/admin) | Режим слива зоны |
+| POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin) | Калибровка датчика расхода |
+| POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin) | Калибровка дозирующей помпы (ml/sec) |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin) | Отправить команду зоне |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
@@ -75,6 +79,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin) | Отправка низкоуровневых команд |
+| PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
 
 ---
 

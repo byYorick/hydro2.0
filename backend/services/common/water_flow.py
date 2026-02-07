@@ -891,6 +891,25 @@ async def calibrate_pump(
     if duration_sec <= 0:
         raise ValueError("duration_sec must be positive")
 
+    normalized_component: Optional[str] = None
+    if component is not None:
+        candidate = str(component).strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "phup": "ph_up",
+            "phdown": "ph_down",
+            "ph_base": "ph_up",
+            "ph_acid": "ph_down",
+            "base": "ph_up",
+            "acid": "ph_down",
+        }
+        normalized_component = aliases.get(candidate, candidate)
+        allowed_components = {"npk", "calcium", "micro", "ph_up", "ph_down"}
+        if normalized_component not in allowed_components:
+            raise ValueError(
+                f"Unsupported calibration component '{component}'. "
+                f"Allowed: {', '.join(sorted(allowed_components))}"
+            )
+
     rows = await fetch(
         """
         SELECT
@@ -940,7 +959,7 @@ async def calibrate_pump(
                 "node_uid": node_uid,
                 "channel": channel,
                 "duration_sec": duration_sec,
-                "component": component,
+                "component": normalized_component,
                 "start_time": started_at.isoformat(),
             },
         )
@@ -954,7 +973,7 @@ async def calibrate_pump(
                 "node_uid": node_uid,
                 "channel": channel,
                 "duration_sec": duration_sec,
-                "component": component,
+                "component": normalized_component,
             },
         )
 
@@ -966,7 +985,7 @@ async def calibrate_pump(
             "node_uid": node_uid,
             "channel": channel,
             "duration_sec": duration_sec,
-            "component": component,
+            "component": normalized_component,
             "started_at": started_at.isoformat(),
         }
 
@@ -985,7 +1004,7 @@ async def calibrate_pump(
         "ml_per_sec": ml_per_sec,
         "duration_sec": duration_sec,
         "actual_ml": actual_ml_value,
-        "component": component,
+        "component": normalized_component,
         "calibrated_at": utcnow().isoformat(),
     }
 
@@ -1017,7 +1036,7 @@ async def calibrate_pump(
             "node_channel_id": node_channel_id,
             "node_uid": node_uid,
             "channel": channel,
-            "component": component,
+            "component": normalized_component,
             "duration_sec": duration_sec,
             "actual_ml": actual_ml_value,
             "ml_per_sec": ml_per_sec,
@@ -1031,7 +1050,7 @@ async def calibrate_pump(
         "node_channel_id": node_channel_id,
         "node_uid": node_uid,
         "channel": channel,
-        "component": component,
+        "component": normalized_component,
         "duration_sec": duration_sec,
         "actual_ml": actual_ml_value,
         "ml_per_sec": ml_per_sec,

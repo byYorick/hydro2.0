@@ -73,17 +73,21 @@
         :zone="zone"
         :devices="devices"
         :can-manage-devices="canManageDevices"
+        :can-operate-zone="canOperateZone"
         @attach="modals.open('attachNodes')"
         @configure="(device) => openNodeConfig(device.id, device)"
+        @open-pump-calibration="openPumpCalibrationModal"
       />
     </div>
     <ZoneDetailModals
       :show-action-modal="showActionModal"
       :show-growth-cycle-modal="showGrowthCycleModal"
+      :show-pump-calibration-modal="showPumpCalibrationModal"
       :show-attach-nodes-modal="showAttachNodesModal"
       :show-node-config-modal="showNodeConfigModal"
       :zone-id="zoneId"
       :zone-name="zone.name"
+      :devices="devices"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
       :growth-cycle-initial-data="growthCycleInitialData"
@@ -96,6 +100,9 @@
       :loading="loading"
       @close-action="modals.close('action')"
       @submit-action="onActionSubmit"
+      @close-pump-calibration="modals.close('pumpCalibration')"
+      @start-pump-calibration="onPumpCalibrationRun"
+      @save-pump-calibration="onPumpCalibrationSave"
       @close-attach-nodes="modals.close('attachNodes')"
       @nodes-attached="onNodesAttached"
       @close-node-config="modals.close('nodeConfig')"
@@ -128,6 +135,7 @@ const {
     modals,
     showActionModal,
     showGrowthCycleModal,
+    showPumpCalibrationModal,
     showAttachNodesModal,
     showNodeConfigModal,
     currentActionType,
@@ -162,7 +170,10 @@ const {
     onRunCycle,
     variant,
     openActionModal,
+    openPumpCalibrationModal,
     onActionSubmit,
+    onPumpCalibrationRun,
+    onPumpCalibrationSave,
     onGrowthCycleWizardSubmit,
     openNodeConfig,
     onNodesAttached,

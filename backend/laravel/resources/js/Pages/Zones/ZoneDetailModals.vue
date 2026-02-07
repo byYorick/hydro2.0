@@ -10,6 +10,18 @@
       @submit="$emit('submit-action', $event)"
     />
 
+    <PumpCalibrationModal
+      v-if="showPumpCalibrationModal"
+      :show="showPumpCalibrationModal"
+      :zone-id="zoneId"
+      :devices="devices"
+      :loading-run="loading.pumpCalibrationRun"
+      :loading-save="loading.pumpCalibrationSave"
+      @close="$emit('close-pump-calibration')"
+      @start="$emit('start-pump-calibration', $event)"
+      @save="$emit('save-pump-calibration', $event)"
+    />
+
     <!-- Модальное окно привязки узлов -->
     <AttachNodesModal
       v-if="showAttachNodesModal"
@@ -135,8 +147,9 @@
 </template>
 
 <script setup lang="ts">
-import type { CommandType } from '@/types'
+import type { CommandType, Device } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
@@ -162,11 +175,14 @@ interface LoadingState {
   cycleHarvest: boolean
   cycleAbort: boolean
   cycleChangeRecipe: boolean
+  pumpCalibrationRun: boolean
+  pumpCalibrationSave: boolean
 }
 
 interface Props {
   zoneId: number | null
   zoneName: string
+  devices: Device[]
   currentPhaseTargets: any | null
   activeCycle: any | null
   growthCycleInitialData?: {
@@ -181,6 +197,7 @@ interface Props {
   currentActionType: CommandType
   showActionModal: boolean
   showGrowthCycleModal: boolean
+  showPumpCalibrationModal: boolean
   showAttachNodesModal: boolean
   showNodeConfigModal: boolean
   harvestModal: HarvestModalState
@@ -194,6 +211,9 @@ defineProps<Props>()
 defineEmits<{
   (e: 'close-action'): void
   (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
+  (e: 'close-pump-calibration'): void
+  (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down' }): void
+  (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true }): void
   (e: 'close-attach-nodes'): void
   (e: 'nodes-attached', payload: number[]): void
   (e: 'close-node-config'): void

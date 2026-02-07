@@ -305,7 +305,7 @@ async def test_ec_controller_splits_dose_for_three_component_feeding():
     targets = {
         "ec": {"target": 2.0},
         "nutrition": {
-            "program_code": "GENERIC_3PART_V1",
+            "program_code": "MASTERBLEND_3PART_V1",
             "components": {
                 "npk": {"ratio_pct": 50},
                 "calcium": {"ratio_pct": 30},

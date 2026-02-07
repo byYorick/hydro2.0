@@ -138,6 +138,10 @@ created_at
 updated_at
 ```
 
+Практика для актуаторов-дозаторов:
+- калибровка насоса хранится в `node_channels.config.pump_calibration`:
+  `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`.
+
 ---
 
 # 4. Таблицы телеметрии
@@ -237,6 +241,23 @@ UNIQUE: (recipe_id, revision_number)
 INDEX: (recipe_id, status)
 ```
 
+## 5.2.1. nutrient_products (справочник продуктов питания)
+```
+id BIGSERIAL PK
+manufacturer VARCHAR(128)
+name VARCHAR(191)
+component VARCHAR(16) -- npk|calcium|micro
+composition VARCHAR(128) NULL
+recommended_stage VARCHAR(64) NULL
+notes TEXT NULL
+metadata JSONB NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (manufacturer, name, component)
+INDEX: nutrient_products_component_idx (component)
+```
+
 ## 5.3. recipe_revision_phases (шаблоны фаз)
 ```
 id BIGSERIAL PK
@@ -259,6 +280,11 @@ nutrient_micro_ratio_pct DECIMAL(5,2) NULL
 nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
 nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
 nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
+nutrient_npk_product_id BIGINT FK → nutrient_products NULL
+nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_dose_delay_sec INT NULL
+nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
@@ -372,6 +398,11 @@ nutrient_micro_ratio_pct DECIMAL(5,2) NULL
 nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
 nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
 nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
+nutrient_npk_product_id BIGINT FK → nutrient_products NULL
+nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_dose_delay_sec INT NULL
+nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL

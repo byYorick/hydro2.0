@@ -318,7 +318,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'phase_index' => 0,
             'name' => 'Nutrition Phase',
             'ec_target' => 2.1,
-            'nutrient_program_code' => 'GENERIC_3PART_V1',
+            'nutrient_program_code' => 'MASTERBLEND_3PART_V1',
             'nutrient_npk_ratio_pct' => 46,
             'nutrient_calcium_ratio_pct' => 34,
             'nutrient_micro_ratio_pct' => 20,
@@ -344,7 +344,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'phase_index' => 0,
             'name' => 'Nutrition Phase',
             'ec_target' => 2.1,
-            'nutrient_program_code' => 'GENERIC_3PART_V1',
+            'nutrient_program_code' => 'MASTERBLEND_3PART_V1',
             'nutrient_npk_ratio_pct' => 46,
             'nutrient_calcium_ratio_pct' => 34,
             'nutrient_micro_ratio_pct' => 20,
@@ -358,7 +358,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $result = $this->service->getEffectiveTargets($cycle->id);
 
         $this->assertArrayHasKey('nutrition', $result['targets']);
-        $this->assertEquals('GENERIC_3PART_V1', $result['targets']['nutrition']['program_code']);
+        $this->assertEquals('MASTERBLEND_3PART_V1', $result['targets']['nutrition']['program_code']);
         $this->assertEquals(46.0, $result['targets']['nutrition']['components']['npk']['ratio_pct']);
         $this->assertEquals(34.0, $result['targets']['nutrition']['components']['calcium']['ratio_pct']);
         $this->assertEquals(20.0, $result['targets']['nutrition']['components']['micro']['ratio_pct']);

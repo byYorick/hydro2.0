@@ -53,6 +53,21 @@ interface LoadingState extends Record<string, boolean> {
   cycleHarvest: boolean;
   cycleAbort: boolean;
   cycleChangeRecipe: boolean;
+  pumpCalibrationRun: boolean;
+  pumpCalibrationSave: boolean;
+}
+
+type PumpCalibrationComponent = "npk" | "calcium" | "micro" | "ph_up" | "ph_down";
+
+interface PumpCalibrationRunPayload {
+  node_channel_id: number;
+  duration_sec: number;
+  component: PumpCalibrationComponent;
+}
+
+interface PumpCalibrationSavePayload extends PumpCalibrationRunPayload {
+  actual_ml: number;
+  skip_run: true;
 }
 
 const zoneTabs = [
@@ -84,17 +99,20 @@ export function useZoneShowPage() {
   const modals = useModal<{
     action: boolean;
     growthCycle: boolean;
+    pumpCalibration: boolean;
     attachNodes: boolean;
     nodeConfig: boolean;
   }>({
     action: false,
     growthCycle: false,
+    pumpCalibration: false,
     attachNodes: false,
     nodeConfig: false,
   });
 
   const showActionModal = computed(() => modals.isModalOpen("action"));
   const showGrowthCycleModal = computed(() => modals.isModalOpen("growthCycle"));
+  const showPumpCalibrationModal = computed(() => modals.isModalOpen("pumpCalibration"));
   const showAttachNodesModal = computed(() => modals.isModalOpen("attachNodes"));
   const showNodeConfigModal = computed(() => modals.isModalOpen("nodeConfig"));
 
@@ -117,6 +135,8 @@ export function useZoneShowPage() {
     cycleHarvest: false,
     cycleAbort: false,
     cycleChangeRecipe: false,
+    pumpCalibrationRun: false,
+    pumpCalibrationSave: false,
   });
 
   const { showToast } = useToast();
@@ -674,6 +694,10 @@ export function useZoneShowPage() {
     modals.open("action");
   };
 
+  const openPumpCalibrationModal = (): void => {
+    modals.open("pumpCalibration");
+  };
+
   const onActionSubmit = async ({
     actionType,
     params,
@@ -709,6 +733,53 @@ export function useZoneShowPage() {
       showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, "error", TOAST_TIMEOUT.LONG);
     } finally {
       setLoading("irrigate", false);
+    }
+  };
+
+  const onPumpCalibrationRun = async (payload: PumpCalibrationRunPayload): Promise<void> => {
+    if (!zoneId.value) {
+      return;
+    }
+
+    setLoading("pumpCalibrationRun", true);
+    try {
+      await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, payload);
+      showToast(
+        "Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.",
+        "success",
+        TOAST_TIMEOUT.NORMAL,
+      );
+    } catch (error) {
+      handleError(error, {
+        component: "useZoneShowPage",
+        action: "pumpCalibrationRun",
+        zoneId: zoneId.value,
+      });
+    } finally {
+      setLoading("pumpCalibrationRun", false);
+    }
+  };
+
+  const onPumpCalibrationSave = async (payload: PumpCalibrationSavePayload): Promise<void> => {
+    if (!zoneId.value) {
+      return;
+    }
+
+    setLoading("pumpCalibrationSave", true);
+    try {
+      await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, {
+        ...payload,
+        skip_run: true,
+      });
+      showToast("Калибровка сохранена в конфигурации канала.", "success", TOAST_TIMEOUT.NORMAL);
+    } catch (error) {
+      handleError(error, {
+        component: "useZoneShowPage",
+        action: "pumpCalibrationSave",
+        zoneId: zoneId.value,
+      });
+    } finally {
+      setLoading("pumpCalibrationSave", false);
     }
   };
 
@@ -782,6 +853,7 @@ export function useZoneShowPage() {
     modals,
     showActionModal,
     showGrowthCycleModal,
+    showPumpCalibrationModal,
     showAttachNodesModal,
     showNodeConfigModal,
     currentActionType,
@@ -816,7 +888,10 @@ export function useZoneShowPage() {
     onRunCycle,
     variant,
     openActionModal,
+    openPumpCalibrationModal,
     onActionSubmit,
+    onPumpCalibrationRun,
+    onPumpCalibrationSave,
     onGrowthCycleWizardSubmit,
     openNodeConfig,
     onNodesAttached,

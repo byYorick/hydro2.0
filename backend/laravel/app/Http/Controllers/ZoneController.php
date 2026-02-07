@@ -353,7 +353,7 @@ class ZoneController extends Controller
             'duration_sec' => ['required', 'integer', 'min:1', 'max:120'],
             'actual_ml' => ['nullable', 'numeric', 'min:0.01', 'max:100000'],
             'skip_run' => ['nullable', 'boolean'],
-            'component' => ['nullable', 'string', 'in:npk,calcium,micro'],
+            'component' => ['nullable', 'string', 'in:npk,calcium,micro,ph_up,ph_down'],
         ]);
 
         $jobId = $this->operationsService->calibratePump($zone, $data);

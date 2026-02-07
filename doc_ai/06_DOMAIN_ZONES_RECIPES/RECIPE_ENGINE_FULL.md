@@ -100,11 +100,13 @@ CREATE TABLE recipe_revision_phases (
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
          "nutrition": {
-           "program_code": "GENERIC_3PART_V1",
+           "program_code": "MASTERBLEND_3PART_V1",
+           "dose_delay_sec": 12,
+           "ec_stop_tolerance": 0.07,
            "components": {
-             "npk": {"ratio_pct": 46.0},
-             "calcium": {"ratio_pct": 34.0},
-             "micro": {"ratio_pct": 20.0}
+             "npk": {"ratio_pct": 46.0, "product_id": 1, "manufacturer": "Masterblend"},
+             "calcium": {"ratio_pct": 34.0, "product_id": 2, "manufacturer": "Yara"},
+             "micro": {"ratio_pct": 20.0, "product_id": 3, "manufacturer": "Haifa"}
            }
          },
          "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600}
@@ -160,11 +162,13 @@ CREATE TABLE recipe_revision_phases (
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
          "nutrition": {
-           "program_code": "GENERIC_3PART_V1",
+           "program_code": "MASTERBLEND_3PART_V1",
+           "dose_delay_sec": 12,
+           "ec_stop_tolerance": 0.07,
            "components": {
-             "npk": {"ratio_pct": 46.0, "dose_ml_per_l": 1.8},
-             "calcium": {"ratio_pct": 34.0, "dose_ml_per_l": 1.2},
-             "micro": {"ratio_pct": 20.0, "dose_ml_per_l": 0.6}
+             "npk": {"ratio_pct": 46.0, "dose_ml_per_l": 1.8, "product_id": 1, "manufacturer": "Masterblend"},
+             "calcium": {"ratio_pct": 34.0, "dose_ml_per_l": 1.2, "product_id": 2, "manufacturer": "Yara"},
+             "micro": {"ratio_pct": 20.0, "dose_ml_per_l": 0.6, "product_id": 3, "manufacturer": "Haifa"}
            }
          },
          "irrigation": {

@@ -21,7 +21,6 @@ trait RefreshDatabase
 
         while (true) {
             try {
-                $this->terminateStalePostgresConnections();
                 $this->dropTimescaleHypertables();
                 $this->baseMigrateDatabases();
 
@@ -34,6 +33,7 @@ trait RefreshDatabase
                 }
 
                 DB::disconnect();
+                DB::reconnect();
                 usleep($attempt * 250_000);
             }
         }
@@ -123,26 +123,6 @@ trait RefreshDatabase
                 } catch (\Throwable $e) {
                 }
             }
-        }
-    }
-
-    protected function terminateStalePostgresConnections(): void
-    {
-        $connection = DB::connection();
-
-        if ($connection->getDriverName() !== 'pgsql') {
-            return;
-        }
-
-        try {
-            DB::statement("
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = current_database()
-                  AND pid <> pg_backend_pid()
-            ");
-        } catch (Throwable $e) {
-            // Ignore failures; retry logic in migrateDatabases will handle transient issues.
         }
     }
 

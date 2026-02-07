@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TelemetryPayloadModel(BaseModel):
@@ -105,4 +105,24 @@ class CalibratePumpRequest(BaseModel):
     duration_sec: int = Field(..., ge=1, le=120, description="Pump run duration (seconds)")
     actual_ml: Optional[float] = Field(None, gt=0.0, description="Measured real volume in ml")
     skip_run: bool = Field(False, description="Skip physical run and only persist calibration")
-    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|micro")
+    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|micro|ph_up|ph_down")
+
+    @field_validator("component")
+    @classmethod
+    def validate_component(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+        aliases = {
+            "phup": "ph_up",
+            "phdown": "ph_down",
+            "ph_base": "ph_up",
+            "ph_acid": "ph_down",
+            "base": "ph_up",
+            "acid": "ph_down",
+        }
+        normalized = aliases.get(normalized, normalized)
+        allowed = {"npk", "calcium", "micro", "ph_up", "ph_down"}
+        if normalized not in allowed:
+            raise ValueError("component must be one of npk|calcium|micro|ph_up|ph_down")
+        return normalized
