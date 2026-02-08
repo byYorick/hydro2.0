@@ -1,50 +1,24 @@
 {
-  "test_suite": "E68_dose_ml_l_only_incomplete_profile",
-  "generated_at": "2026-02-07T22:15:45.207334",
+  "test_suite": "E30_snapshot_contains_last_event_id",
+  "generated_at": "2026-02-08T09:43:48.111758",
   "test_cases": [
     {
-      "name": "stop_node_simulator_initial",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 10.26443886756897,
+      "duration": 0.07095575332641602,
       "error_message": null,
       "steps": [
         {
-          "name": "stop_node_simulator_initial",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-07T22:15:32.254424"
-    },
-    {
-      "name": "set_test_zone_uid",
-      "status": "passed",
-      "duration": 1.0013580322265625e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_test_zone_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-07T22:15:32.254559"
-    },
-    {
-      "name": "get_test_zone_id",
-      "status": "passed",
-      "duration": 0.0026526451110839844,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_test_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-07T22:15:32.257252"
+      "timestamp": "2026-02-08T09:43:47.982752"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 3.0994415283203125e-06,
+      "duration": 3.814697265625e-06,
       "error_message": null,
       "steps": [
         {
@@ -52,73 +26,71 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-07T22:15:32.257285"
+      "timestamp": "2026-02-08T09:43:47.982798"
     },
     {
-      "name": "ensure_zone_readiness_bindings",
+      "name": "get_max_event_id_from_db",
       "status": "passed",
-      "duration": 0.0036673545837402344,
+      "duration": 0.013851404190063477,
       "error_message": null,
       "steps": [
         {
-          "name": "ensure_zone_readiness_bindings",
+          "name": "get_max_event_id_from_db",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-07T22:15:32.260988"
+      "timestamp": "2026-02-08T09:43:47.996686"
     },
     {
-      "name": "ensure_ec_component_bindings",
-      "status": "failed",
-      "duration": 0.0012226104736328125,
-      "error_message": "there is no parameter $1\nLINE 1: $1\n        ^\nQUERY:  $1\nCONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization",
-      "steps": [
-        {
-          "name": "ensure_ec_component_bindings",
-          "status": "failed",
-          "error": "there is no parameter $1\nLINE 1: $1\n        ^\nQUERY:  $1\nCONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization"
-        }
-      ],
-      "timestamp": "2026-02-07T22:15:32.262457"
-    },
-    {
-      "name": "no_add_nutrients_commands_created",
+      "name": "get_snapshot",
       "status": "passed",
-      "duration": 0.008740425109863281,
+      "duration": 0.11242890357971191,
       "error_message": null,
       "steps": [
         {
-          "name": "no_add_nutrients_commands_created",
+          "name": "get_snapshot",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-07T22:15:32.271220"
+      "timestamp": "2026-02-08T09:43:48.109193"
     },
     {
-      "name": "skipped_due_to_incomplete_profile",
-      "status": "failed",
-      "duration": 10.080382347106934,
-      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND type = 'EC_CORRECTION_SKIPPED'\nAND details->>'reason' = 'ec_component_batch_unavailable'\nAND created_at > NOW() - INTERVAL '3 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
+      "name": "snapshot_api_call_successful",
+      "status": "passed",
+      "duration": 0.0005598068237304688,
+      "error_message": null,
       "steps": [
         {
-          "name": "skipped_due_to_incomplete_profile",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND type = 'EC_CORRECTION_SKIPPED'\nAND details->>'reason' = 'ec_component_batch_unavailable'\nAND created_at > NOW() - INTERVAL '3 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
+          "name": "snapshot_api_call_successful",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-02-07T22:15:42.351657"
+      "timestamp": "2026-02-08T09:43:48.109774"
+    },
+    {
+      "name": "last_event_id_exists",
+      "status": "passed",
+      "duration": 0.0016655921936035156,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "last_event_id_exists",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T09:43:48.111452"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E68_dose_ml_l_only_incomplete_profile": {
+    "E30_snapshot_contains_last_event_id": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 409,
+        "zone_id": 1,
         "zone_uid": "zn-test-1",
-        "node_id": 225,
+        "node_id": 21,
         "node_uid": "nd-ph-esp32una"
       }
     }

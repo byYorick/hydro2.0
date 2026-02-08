@@ -104,6 +104,11 @@ class AutomationEngineE2ESeeder extends Seeder
                 ],
             ]
         );
+        // Приводим ноду к ожидаемому состоянию при повторных прогонах сидера.
+        $node->status = 'online';
+        $node->lifecycle_state = 'ASSIGNED_TO_ZONE';
+        $node->last_seen_at = Carbon::now();
+        $node->save();
 
         $this->command->info("✓ Node created: {$node->id} (uid: {$node->uid})");
 
@@ -142,9 +147,17 @@ class AutomationEngineE2ESeeder extends Seeder
             ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
             ['channel' => 'mister', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
         ];
+        $zoneRoles = [
+            'main_pump' => 'main_pump',
+            'drain_pump' => 'drain',
+            'fan' => 'fan',
+            'heater' => 'heater',
+            'light' => 'light',
+            'mister' => 'mist',
+        ];
 
         foreach ($actuators as $actuatorData) {
-            NodeChannel::firstOrCreate(
+            NodeChannel::updateOrCreate(
                 [
                     'node_id' => $node->id,
                     'channel' => $actuatorData['channel'],
@@ -153,7 +166,10 @@ class AutomationEngineE2ESeeder extends Seeder
                     'type' => $actuatorData['type'],
                     'metric' => $actuatorData['metric'],
                     'unit' => $actuatorData['unit'],
-                    'config' => ['data_type' => $actuatorData['data_type']],
+                    'config' => [
+                        'data_type' => $actuatorData['data_type'],
+                        'zone_role' => $zoneRoles[$actuatorData['channel']] ?? $actuatorData['channel'],
+                    ],
                 ]
             );
         }

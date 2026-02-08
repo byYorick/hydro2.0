@@ -165,7 +165,7 @@
           :started-at="activeGrowCycle.started_at"
         />
         <div
-          v-else-if="displayCycle || zone.status === 'RUNNING'"
+          v-else-if="displayCycle"
           class="text-center py-6"
         >
           <div class="text-4xl mb-2">
@@ -187,6 +187,20 @@
             <div class="mt-2 text-[color:var(--text-dim)]">
               Привяжите рецепт для детального отслеживания прогресса фаз
             </div>
+          </div>
+        </div>
+        <div
+          v-else-if="zone.status === 'RUNNING' || zone.status === 'PAUSED'"
+          class="text-center py-6"
+        >
+          <div class="text-4xl mb-2">
+            🔄
+          </div>
+          <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+            Данные цикла ещё загружаются
+          </div>
+          <div class="text-xs text-[color:var(--text-muted)]">
+            Обновите данные зоны на вкладке «Цикл», чтобы синхронизировать активный цикл и таргеты
           </div>
         </div>
         <div

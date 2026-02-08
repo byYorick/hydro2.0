@@ -50,6 +50,7 @@
         :can-manage-cycle="canManageCycle"
         :loading="loading"
         @run-cycle="onRunCycle"
+        @refresh-cycle="refreshZoneState"
         @change-recipe="onCycleChangeRecipe"
         @pause="onCyclePause"
         @resume="onCycleResume"
@@ -170,6 +171,7 @@ const {
     chartDataEc,
     onChartTimeRangeChange,
     onRunCycle,
+    refreshZoneState,
     variant,
     openActionModal,
     openPumpCalibrationModal,

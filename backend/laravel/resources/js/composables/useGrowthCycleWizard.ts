@@ -155,8 +155,21 @@ export function useGrowthCycleWizard({
         return "Выберите ревизию рецепта.";
       }
     }
-    if (currentStep.value === 3 && !form.value.startedAt) {
-      return "Укажите дату начала цикла.";
+    if (currentStep.value === 3) {
+      if (!form.value.startedAt) {
+        return "Укажите дату начала цикла.";
+      }
+
+      const startDate = new Date(form.value.startedAt);
+      if (Number.isNaN(startDate.getTime())) {
+        return "Дата начала указана некорректно.";
+      }
+
+      const now = new Date();
+      now.setSeconds(0, 0);
+      if (startDate < now) {
+        return "Дата начала не может быть в прошлом.";
+      }
     }
 
     return "";
@@ -341,15 +354,18 @@ export function useGrowthCycleWizard({
           return false;
         }
 
-        let startDate = new Date(form.value.startedAt);
+        const startDate = new Date(form.value.startedAt);
+        if (Number.isNaN(startDate.getTime())) {
+          validationErrors.value.push("Дата начала указана некорректно");
+          return false;
+        }
+
         const now = new Date();
         now.setSeconds(0, 0);
 
         if (startDate < now) {
-          const corrected = getNowLocalDatetimeValue();
-          form.value.startedAt = corrected;
-          startDate = new Date(corrected);
-          showToast("Дата начала была в прошлом, время автоматически обновлено", "warning", TOAST_TIMEOUT.NORMAL);
+          validationErrors.value.push("Дата начала не может быть в прошлом");
+          return false;
         }
 
         if (form.value.expectedHarvestAt) {
@@ -498,8 +514,14 @@ export function useGrowthCycleWizard({
     } catch (err: any) {
       const errorMessage = extractSetupWizardErrorMessage(err, "Ошибка при создании цикла");
       const details = extractSetupWizardErrorDetails(err);
-      const isActiveCycleConflict = typeof errorMessage === "string" && errorMessage.includes("Zone already has an active cycle");
-      error.value = isActiveCycleConflict ? "В зоне уже активный цикл." : errorMessage;
+      const normalizedErrorMessage = String(errorMessage || "").toLowerCase();
+      const isActiveCycleConflict =
+        normalizedErrorMessage.includes("zone already has an active cycle") ||
+        normalizedErrorMessage.includes("в зоне уже активный цикл");
+
+      error.value = isActiveCycleConflict
+        ? "В зоне уже активный цикл. Остановите, завершите или прервите текущий цикл."
+        : errorMessage;
       errorDetails.value = details;
       logger.error("[GrowthCycleWizard] Failed to submit", err);
 

@@ -59,7 +59,8 @@ class ProcessDLQReplay extends Command
                         'status' => 'pending',
                         'attempts' => 0,
                         'last_error' => null,
-                        'last_attempt_at' => null,
+                        'next_retry_at' => null,
+                        'moved_to_dlq_at' => null,
                         'updated_at' => now(),
                     ]);
 
@@ -88,4 +89,3 @@ class ProcessDLQReplay extends Command
         return Command::SUCCESS;
     }
 }
-

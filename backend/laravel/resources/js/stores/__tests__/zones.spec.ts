@@ -346,6 +346,31 @@ describe('zones store', () => {
       expect(shouldUpdateZone(zone1, zone2)).toBe(false)
     })
 
+    it('should return true when active grow cycle changes with same updated_at', () => {
+      const zone1: Zone = {
+        ...mockZone1,
+        updated_at: '2024-01-01T12:00:00Z',
+        activeGrowCycle: {
+          id: 101,
+          status: 'RUNNING',
+          recipe_revision_id: 1001,
+          current_phase_id: 1,
+        },
+      }
+      const zone2: Zone = {
+        ...mockZone1,
+        updated_at: '2024-01-01T12:00:00Z',
+        activeGrowCycle: {
+          id: 102,
+          status: 'RUNNING',
+          recipe_revision_id: 1002,
+          current_phase_id: 1,
+        },
+      }
+
+      expect(shouldUpdateZone(zone1, zone2)).toBe(true)
+    })
+
     it('should return false when only devices array differs', () => {
       const zone1: Zone = {
         ...mockZone1,
@@ -512,6 +537,36 @@ describe('zones store', () => {
       expect(store.cacheVersion).toBeGreaterThan(firstCacheVersion)
       expect(store.zoneById(1)?.targets.ph_min).toBe(6.0)
     })
+
+    it('should update store when active grow cycle changes without updated_at change', () => {
+      const store = useZonesStore()
+      const zone1: Zone = {
+        ...mockZone1,
+        updated_at: '2024-01-01T12:00:00Z',
+        activeGrowCycle: {
+          id: 201,
+          status: 'RUNNING',
+          recipe_revision_id: 2001,
+          current_phase_id: 1,
+        },
+      }
+      const zone2: Zone = {
+        ...mockZone1,
+        updated_at: '2024-01-01T12:00:00Z',
+        activeGrowCycle: {
+          id: 202,
+          status: 'RUNNING',
+          recipe_revision_id: 2002,
+          current_phase_id: 2,
+        },
+      }
+
+      store.upsert(zone1)
+      const firstCacheVersion = store.cacheVersion
+      store.upsert(zone2)
+
+      expect(store.cacheVersion).toBeGreaterThan(firstCacheVersion)
+      expect(store.zoneById(1)?.activeGrowCycle?.id).toBe(202)
+    })
   })
 })
-

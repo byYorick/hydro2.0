@@ -10,8 +10,7 @@
             size="sm"
             :variant="displayCycle ? 'secondary' : 'primary'"
             data-testid="recipe-attach-btn"
-            :disabled="displayCycle && !hasDetailedCycle"
-            @click="displayCycle ? $emit('change-recipe') : $emit('run-cycle')"
+            @click="handleRecipeAction"
           >
             <span
               v-if="!displayCycle"
@@ -23,7 +22,7 @@
               Сменить ревизию
             </span>
             <span v-else>
-              Активный цикл
+              Обновить данные
             </span>
           </Button>
         </template>
@@ -62,10 +61,10 @@
         class="space-y-2"
       >
         <div class="text-sm text-[color:var(--text-dim)]">
-          Цикл уже активен
+          Цикл уже активен, но данные фаз ещё не синхронизированы
         </div>
         <div class="text-xs text-[color:var(--text-dim)]">
-          Обновите данные зоны, чтобы подтянуть детали активного цикла.
+          Нажмите «Обновить данные», чтобы подтянуть активный цикл, фазы и таргеты.
         </div>
       </div>
       <div
@@ -245,8 +244,9 @@ interface Props {
   loading: LoadingStateProps
 }
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'run-cycle'): void
+  (e: 'refresh-cycle'): void
   (e: 'change-recipe'): void
   (e: 'pause'): void
   (e: 'resume'): void
@@ -269,6 +269,20 @@ const displayCycle = computed(() => {
   return null
 })
 const hasDetailedCycle = computed(() => Boolean(props.activeGrowCycle))
+
+function handleRecipeAction(): void {
+  if (!displayCycle.value) {
+    emit('run-cycle')
+    return
+  }
+
+  if (hasDetailedCycle.value) {
+    emit('change-recipe')
+    return
+  }
+
+  emit('refresh-cycle')
+}
 
 function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_run?: string | null; interval?: number | null }): number {
   if (!cycle.last_run || !cycle.interval || !cycle.next_run) return 0

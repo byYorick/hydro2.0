@@ -268,7 +268,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       )
       
       // Should reload zone after command completion
-      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles'])
+      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
     }
   })
 
@@ -319,7 +319,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
         'Command failed'
       )
       
-      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles'])
+      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
     }
   })
 

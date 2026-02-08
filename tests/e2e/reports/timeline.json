@@ -1,11 +1,11 @@
 {
-  "test_suite": "E61_fail_closed_corrections",
-  "generated_at": "2026-01-01T21:38:46.390020",
+  "test_suite": "E63_backoff_on_errors",
+  "generated_at": "2026-02-08T08:00:28.412349",
   "test_cases": [
     {
       "name": "stop_node_simulator_initial",
       "status": "passed",
-      "duration": 15.278101921081543,
+      "duration": 15.289281606674194,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.695681"
+      "timestamp": "2026-02-08T08:00:19.914806"
+    },
+    {
+      "name": "start_node_simulator",
+      "status": "passed",
+      "duration": 5.778066873550415,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_node_simulator",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:25.692929"
     },
     {
       "name": "set_test_uids",
       "status": "passed",
-      "duration": 1.5974044799804688e-05,
+      "duration": 1.430511474609375e-05,
       "error_message": null,
       "steps": [
         {
@@ -26,25 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.695882"
-    },
-    {
-      "name": "get_automation_zone",
-      "status": "passed",
-      "duration": 0.07056927680969238,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_automation_zone",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T21:38:35.766481"
+      "timestamp": "2026-02-08T08:00:25.693112"
     },
     {
       "name": "set_zone_id_from_uid",
       "status": "passed",
-      "duration": 0.009018182754516602,
+      "duration": 0.008846282958984375,
       "error_message": null,
       "steps": [
         {
@@ -52,150 +52,242 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.775563"
+      "timestamp": "2026-02-08T08:00:25.701990"
     },
     {
-      "name": "set_zone_id",
+      "name": "set_node_id_from_uid",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 0.0026671886444091797,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "set_node_id_from_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.775689"
+      "timestamp": "2026-02-08T08:00:25.704732"
     },
     {
-      "name": "check_active_cycle",
+      "name": "set_ids",
       "status": "passed",
-      "duration": 0.0029234886169433594,
+      "duration": 3.0994415283203125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "check_active_cycle",
+          "name": "set_ids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.778651"
+      "timestamp": "2026-02-08T08:00:25.704782"
     },
     {
-      "name": "create_plant_if_needed",
+      "name": "cleanup_old_cycles",
       "status": "passed",
-      "duration": 0.060003042221069336,
+      "duration": 0.009877681732177734,
       "error_message": null,
       "steps": [
         {
-          "name": "create_plant_if_needed",
+          "name": "cleanup_old_cycles",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.838739"
+      "timestamp": "2026-02-08T08:00:25.714688"
     },
     {
-      "name": "create_recipe_if_needed",
+      "name": "create_plant",
       "status": "passed",
-      "duration": 0.06431984901428223,
+      "duration": 0.05745816230773926,
       "error_message": null,
       "steps": [
         {
-          "name": "create_recipe_if_needed",
+          "name": "create_plant",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.903151"
+      "timestamp": "2026-02-08T08:00:25.772259"
     },
     {
-      "name": "create_revision_if_needed",
+      "name": "create_recipe",
       "status": "passed",
-      "duration": 0.06473541259765625,
+      "duration": 0.06037473678588867,
       "error_message": null,
       "steps": [
         {
-          "name": "create_revision_if_needed",
+          "name": "create_recipe",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:35.967958"
+      "timestamp": "2026-02-08T08:00:25.832730"
     },
     {
-      "name": "add_phase_if_needed",
+      "name": "create_revision",
       "status": "passed",
-      "duration": 0.0636749267578125,
+      "duration": 0.05981326103210449,
       "error_message": null,
       "steps": [
         {
-          "name": "add_phase_if_needed",
+          "name": "create_revision",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:36.031730"
+      "timestamp": "2026-02-08T08:00:25.892601"
     },
     {
-      "name": "publish_revision_if_needed",
+      "name": "add_phase",
       "status": "passed",
-      "duration": 0.06394481658935547,
+      "duration": 0.06134366989135742,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_revision_if_needed",
+          "name": "add_phase",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T21:38:36.095736"
+      "timestamp": "2026-02-08T08:00:25.954012"
     },
     {
-      "name": "create_cycle_if_needed",
+      "name": "publish_revision",
+      "status": "passed",
+      "duration": 0.060916900634765625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:26.014978"
+    },
+    {
+      "name": "create_cycle",
+      "status": "passed",
+      "duration": 0.11232209205627441,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:26.127370"
+    },
+    {
+      "name": "set_cycle_id",
+      "status": "passed",
+      "duration": 3.337860107421875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_cycle_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:26.127417"
+    },
+    {
+      "name": "wait_for_effective_targets",
+      "status": "passed",
+      "duration": 2.0021095275878906,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_effective_targets",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:28.129539"
+    },
+    {
+      "name": "enable_capabilities",
+      "status": "passed",
+      "duration": 0.0019381046295166016,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "enable_capabilities",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:28.131559"
+    },
+    {
+      "name": "fetch_heater_channel",
+      "status": "passed",
+      "duration": 0.0009789466857910156,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_heater_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:28.132608"
+    },
+    {
+      "name": "fetch_heater_infra",
+      "status": "passed",
+      "duration": 0.001260519027709961,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_heater_infra",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:28.133928"
+    },
+    {
+      "name": "upsert_heater_binding",
+      "status": "passed",
+      "duration": 0.0016667842864990234,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "upsert_heater_binding",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T08:00:28.135653"
+    },
+    {
+      "name": "reset_backoff",
       "status": "failed",
-      "duration": 0.07119059562683105,
-      "error_message": "Client error '422 Unprocessable Content' for url 'http://localhost:8081/api/zones/1/grow-cycles'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422",
+      "duration": 0.022796154022216797,
+      "error_message": "Request URL is missing an 'http://' or 'https://' protocol.",
       "steps": [
         {
-          "name": "create_cycle_if_needed",
+          "name": "reset_backoff",
           "status": "failed",
-          "error": "Client error '422 Unprocessable Content' for url 'http://localhost:8081/api/zones/1/grow-cycles'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422"
+          "error": "Request URL is missing an 'http://' or 'https://' protocol."
         }
       ],
-      "timestamp": "2026-01-01T21:38:36.167155"
+      "timestamp": "2026-02-08T08:00:28.158616"
     },
     {
-      "name": "no_dosing_commands",
-      "status": "passed",
-      "duration": 0.004304409027099609,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "no_dosing_commands",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T21:38:36.171481"
-    },
-    {
-      "name": "skipped_event_created",
+      "name": "baseline_heater_command_created",
       "status": "failed",
-      "duration": 10.08517336845398,
-      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
+      "duration": 0.0012493133544921875,
+      "error_message": "invalid input syntax for type timestamp: \"\"\nCONTEXT:  unnamed portal parameter $2 = ''",
       "steps": [
         {
-          "name": "skipped_event_created",
+          "name": "baseline_heater_command_created",
           "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
+          "error": "invalid input syntax for type timestamp: \"\"\nCONTEXT:  unnamed portal parameter $2 = ''"
         }
       ],
-      "timestamp": "2026-01-01T21:38:46.256782"
+      "timestamp": "2026-02-08T08:00:28.159955"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E61_fail_closed_corrections": {
+    "E63_backoff_on_errors": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 1
+        "zone_id": 5,
+        "node_id": 2,
+        "cycle_id": 17
       }
     }
   }

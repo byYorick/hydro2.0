@@ -174,14 +174,32 @@ export function useZoneShowPage() {
 
   const zone = computed<Zone>(() => {
     const zoneIdValue = zoneId.value;
+    const rawZoneData = (page.props.zone || {}) as any;
+    const propsZone = rawZoneData?.id
+      ? ({
+          ...rawZoneData,
+          id: typeof rawZoneData.id === "string" ? Number.parseInt(rawZoneData.id, 10) : rawZoneData.id,
+        } as Zone)
+      : null;
+
+    const storeZone = zoneIdValue ? zonesStore.zoneById(zoneIdValue) : undefined;
+    if (storeZone && propsZone?.id) {
+      return {
+        ...storeZone,
+        ...propsZone,
+      } as Zone;
+    }
+
+    if (propsZone?.id) {
+      return propsZone;
+    }
+
     if (zoneIdValue) {
-      const storeZone = zonesStore.zoneById(zoneIdValue);
       if (storeZone && storeZone.id) {
         return storeZone;
       }
     }
 
-    const rawZoneData = (page.props.zone || {}) as any;
     const zoneData = { ...rawZoneData };
     if (!zoneData.id && zoneIdValue) {
       zoneData.id = zoneIdValue;
@@ -561,11 +579,45 @@ export function useZoneShowPage() {
   });
 
   let unsubscribeZoneCommands: (() => void) | null = null;
+  let propsReloadTimer: ReturnType<typeof setTimeout> | null = null;
+  const RELOAD_PROPS_DEBOUNCE_MS = 350;
+  const defaultZoneReloadProps = [
+    "zone",
+    "targets",
+    "current_phase",
+    "active_cycle",
+    "active_grow_cycle",
+    "cycles",
+    "events",
+    "devices",
+  ];
+
+  const reloadZonePageProps = (only: string[] = defaultZoneReloadProps): void => {
+    if (!zoneId.value) {
+      return;
+    }
+
+    if (propsReloadTimer) {
+      clearTimeout(propsReloadTimer);
+    }
+
+    propsReloadTimer = setTimeout(() => {
+      propsReloadTimer = null;
+      router.reload({
+        only,
+        preserveUrl: true,
+      });
+    }, RELOAD_PROPS_DEBOUNCE_MS);
+  };
 
   onUnmounted(() => {
     if (unsubscribeZoneCommands) {
       unsubscribeZoneCommands();
       unsubscribeZoneCommands = null;
+    }
+    if (propsReloadTimer) {
+      clearTimeout(propsReloadTimer);
+      propsReloadTimer = null;
     }
     flush();
   });
@@ -616,7 +668,8 @@ export function useZoneShowPage() {
         updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message);
         const finalStatuses = ["DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"];
         if (finalStatuses.includes(commandEvent.status) && zoneId.value) {
-          reloadZoneAfterCommand(zoneId.value, ["zone", "cycles"]);
+          reloadZoneAfterCommand(zoneId.value, ["zone", "cycles", "active_grow_cycle", "active_cycle"]);
+          reloadZonePageProps();
         }
       });
 
@@ -627,7 +680,8 @@ export function useZoneShowPage() {
         channel.listen(".App\\Events\\GrowCycleUpdated", (event: any) => {
           logger.info("[Zones/Show] GrowCycleUpdated event received", event);
           if (currentZoneId) {
-            reloadZone(currentZoneId, ["zone", "active_grow_cycle"]);
+            reloadZone(currentZoneId, ["zone", "active_grow_cycle", "active_cycle"]);
+            reloadZonePageProps();
           }
         });
 
@@ -665,7 +719,8 @@ export function useZoneShowPage() {
         return;
       }
 
-      reloadZone(zoneId.value, ["zone"]);
+      reloadZone(zoneId.value, ["zone", "active_grow_cycle", "active_cycle"]);
+      reloadZonePageProps();
     });
   });
 
@@ -727,7 +782,8 @@ export function useZoneShowPage() {
       await sendZoneCommand(zoneId.value, actionType, params);
       const actionName = actionNames[actionType] || "Действие";
       showToast(`${actionName} запущено успешно`, "success", TOAST_TIMEOUT.NORMAL);
-      reloadZoneAfterCommand(zoneId.value, ["zone", "cycles"]);
+      reloadZoneAfterCommand(zoneId.value, ["zone", "cycles", "active_grow_cycle", "active_cycle"]);
+      reloadZonePageProps();
     } catch (err) {
       logger.error(`Failed to execute ${actionType}:`, err);
       let errorMessage: string = ERROR_MESSAGES.UNKNOWN;
@@ -797,7 +853,17 @@ export function useZoneShowPage() {
   }): Promise<void> => {
     if (emittedZoneId) {
       reloadZoneAfterCommand(emittedZoneId, ["zone", "cycles", "active_grow_cycle", "active_cycle"]);
+      reloadZonePageProps();
     }
+  };
+
+  const refreshZoneState = (): void => {
+    if (!zoneId.value) {
+      return;
+    }
+
+    reloadZone(zoneId.value, ["zone", "active_grow_cycle", "active_cycle"]);
+    reloadZonePageProps();
   };
 
   const openNodeConfig = (nodeId: number, node: any): void => {
@@ -882,6 +948,7 @@ export function useZoneShowPage() {
     chartDataEc,
     onChartTimeRangeChange,
     onRunCycle,
+    refreshZoneState,
     variant,
     openActionModal,
     openPumpCalibrationModal,

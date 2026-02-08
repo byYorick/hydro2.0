@@ -200,6 +200,12 @@ actions:
     action: reset_backoff
 
   # Базовая проверка — климат работает
+  - step: baseline_window_open
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: baseline_start_ts
+
   - step: publish_temp_low_baseline
     type: mqtt_publish
     topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
@@ -210,22 +216,22 @@ actions:
     wait_seconds: 2
 
   - step: wait_for_baseline_command
-    type: sleep
-    seconds: 20
-
-  - step: baseline_timestamp
-    type: database_query
+    type: db.wait
     query: |
-      SELECT NOW() as ts
-    save: baseline_ts
-
-  - step: baseline_window_start
-    type: database_query
-    query: |
-      SELECT :baseline_ts::timestamp - INTERVAL '2 minutes' AS ts
+      SELECT id AS cmd_id, created_at AS cmd_ts
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at >= :baseline_start_ts
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
-      baseline_ts: ${baseline_ts.0.ts}
-    save: baseline_ts_min
+      zone_id: ${zone_id}
+      baseline_start_ts: ${baseline_start_ts.0.ts}
+    expected_rows: 1
+    timeout: 45.0
 
   # Включаем degraded mode через test hook
   - step: set_degraded_state
@@ -291,12 +297,12 @@ assertions:
         AND cmd = 'set_relay'
         AND channel = 'heater'
         AND params->>'state' = 'true'
-        AND created_at <= :baseline_ts
-        AND created_at > :baseline_ts_min
+        AND created_at >= :baseline_start_ts
+        AND created_at <= :degraded_ts
     params:
       zone_id: ${zone_id}
-      baseline_ts: ${baseline_ts.0.ts}
-      baseline_ts_min: ${baseline_ts_min.0.ts}
+      baseline_start_ts: ${baseline_start_ts.0.ts}
+      degraded_ts: ${degraded_ts.0.ts}
     expected:
       - field: cmd_count
         operator: greater_than

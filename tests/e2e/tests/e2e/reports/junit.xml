@@ -1,14 +1,2 @@
 <?xml version='1.0' encoding='utf-8'?>
-<testsuites name="E68_dose_ml_l_only_incomplete_profile" tests="8" failures="2" skipped="0" time="20.361117362976074"><testsuite name="E68_dose_ml_l_only_incomplete_profile" tests="8" failures="2" skipped="0" time="20.361117362976074"><testcase name="stop_node_simulator_initial" time="10.26443886756897" /><testcase name="set_test_zone_uid" time="1.0013580322265625e-05" /><testcase name="get_test_zone_id" time="0.0026526451110839844" /><testcase name="set_zone_id" time="3.0994415283203125e-06" /><testcase name="ensure_zone_readiness_bindings" time="0.0036673545837402344" /><testcase name="ensure_ec_component_bindings" time="0.0012226104736328125"><failure message="there is no parameter $1&#10;LINE 1: $1&#10;        ^&#10;QUERY:  $1&#10;CONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization">there is no parameter $1
-LINE 1: $1
-        ^
-QUERY:  $1
-CONTEXT:  PL/pgSQL function inline_code_block line 3 during statement block local variable initialization</failure></testcase><testcase name="no_add_nutrients_commands_created" time="0.008740425109863281" /><testcase name="skipped_due_to_incomplete_profile" time="10.080382347106934"><failure message="Timeout waiting for DB condition: SELECT id, type, details&#10;FROM zone_events&#10;WHERE zone_id = :zone_id&#10;AND type = 'EC_CORRECTION_SKIPPED'&#10;AND details-&gt;&gt;'reason' = 'ec_component_batch_unavailable'&#10;AND created_at &gt; NOW() - INTERVAL '3 minutes'&#10;ORDER BY created_at DESC&#10;LIMIT 1&#10;">Timeout waiting for DB condition: SELECT id, type, details
-FROM zone_events
-WHERE zone_id = :zone_id
-AND type = 'EC_CORRECTION_SKIPPED'
-AND details-&gt;&gt;'reason' = 'ec_component_batch_unavailable'
-AND created_at &gt; NOW() - INTERVAL '3 minutes'
-ORDER BY created_at DESC
-LIMIT 1
-</failure></testcase></testsuite></testsuites>
+<testsuites name="E30_snapshot_contains_last_event_id" tests="6" failures="0" skipped="0" time="0.19946527481079102"><testsuite name="E30_snapshot_contains_last_event_id" tests="6" failures="0" skipped="0" time="0.19946527481079102"><testcase name="get_zones" time="0.07095575332641602" /><testcase name="set_zone_id" time="3.814697265625e-06" /><testcase name="get_max_event_id_from_db" time="0.013851404190063477" /><testcase name="get_snapshot" time="0.11242890357971191" /><testcase name="snapshot_api_call_successful" time="0.0005598068237304688" /><testcase name="last_event_id_exists" time="0.0016655921936035156" /></testsuite></testsuites>

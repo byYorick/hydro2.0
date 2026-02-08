@@ -82,7 +82,8 @@ class ExtendedPendingAlertsSeeder extends Seeder
                 ]),
                 'attempts' => $attempts,
                 'max_attempts' => 3,
-                'last_attempt_at' => $attempts > 0 ? now()->subMinutes(rand(1, 60)) : null,
+                'next_retry_at' => $status === 'pending' ? now()->addMinutes(rand(1, 30)) : null,
+                'moved_to_dlq_at' => $status === 'dlq' ? now()->subMinutes(rand(1, 120)) : null,
                 'status' => $status,
                 'last_error' => $status === 'failed' ? 'Ошибка отправки алерта' : null,
                 'created_at' => now()->subHours(rand(0, 24)),
@@ -95,4 +96,3 @@ class ExtendedPendingAlertsSeeder extends Seeder
         return $created;
     }
 }
-

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\GrowCycle;
+use App\Models\ChannelBinding;
 use App\Models\Zone;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
@@ -471,6 +472,11 @@ class GrowCycleController extends Controller
                 if (! is_string($role)) {
                     continue;
                 }
+                $role = match ($role) {
+                    'drain_pump' => 'drain',
+                    'mister' => 'mist',
+                    default => $role,
+                };
 
                 if (array_key_exists($role, $requiredAssets)) {
                     $requiredAssets[$role] = true;
@@ -479,6 +485,33 @@ class GrowCycleController extends Controller
                 if (array_key_exists($role, $optionalAssets)) {
                     $optionalAssets[$role] = true;
                 }
+            }
+        }
+
+        // Фолбэк: учитываем роли из channel_bindings, если node channel config не содержит zone_role.
+        $bindingRoles = ChannelBinding::query()
+            ->select('channel_bindings.role')
+            ->join('infrastructure_instances as ii', 'ii.id', '=', 'channel_bindings.infrastructure_instance_id')
+            ->where('ii.owner_type', 'zone')
+            ->where('ii.owner_id', $zone->id)
+            ->pluck('channel_bindings.role');
+
+        foreach ($bindingRoles as $role) {
+            if (! is_string($role)) {
+                continue;
+            }
+            $role = match ($role) {
+                'drain_pump' => 'drain',
+                'mister' => 'mist',
+                default => $role,
+            };
+
+            if (array_key_exists($role, $requiredAssets)) {
+                $requiredAssets[$role] = true;
+            }
+
+            if (array_key_exists($role, $optionalAssets)) {
+                $optionalAssets[$role] = true;
             }
         }
 

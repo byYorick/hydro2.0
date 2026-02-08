@@ -226,7 +226,7 @@
                 v-model="form.expectedHarvestAt"
                 type="date"
                 class="input-field w-full"
-                :min="form.startedAt"
+                :min="form.startedAt ? form.startedAt.slice(0, 10) : undefined"
               />
               <div class="text-xs text-[color:var(--text-muted)] mt-1">
                 Используется для планирования и аналитики
@@ -369,7 +369,7 @@
           </Button>
           <Button
             v-if="currentStep < steps.length - 1"
-            :disabled="loading"
+            :disabled="loading || !canProceed"
             @click="nextStep"
           >
             Далее
@@ -449,6 +449,7 @@ const {
     minStartDate,
     totalDurationDays,
     canSubmit,
+    canProceed,
     nextStepBlockedReason,
     formatDateTime,
     formatDate,

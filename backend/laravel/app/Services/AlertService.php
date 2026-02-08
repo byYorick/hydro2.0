@@ -50,7 +50,8 @@ class AlertService
                 'attempts' => 0,
                 'max_attempts' => 3,
                 'last_error' => $e->getMessage(),
-                'last_attempt_at' => now(),
+                'next_retry_at' => now(),
+                'moved_to_dlq_at' => null,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -385,4 +386,3 @@ class AlertService
         event(new \App\Events\AlertUpdated($alertData));
     }
 }
-
