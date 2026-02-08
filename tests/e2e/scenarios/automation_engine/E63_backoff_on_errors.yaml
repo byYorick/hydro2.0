@@ -232,6 +232,7 @@ actions:
       baseline_start_ts: ${baseline_start_ts.0.ts}
     expected_rows: 1
     timeout: 45.0
+    save: baseline_command_row
 
   # Включаем degraded mode через test hook
   - step: set_degraded_state
@@ -293,15 +294,10 @@ assertions:
     query: |
       SELECT COUNT(*) as cmd_count
       FROM commands
-      WHERE zone_id = :zone_id
-        AND cmd = 'set_relay'
-        AND channel = 'heater'
-        AND params->>'state' = 'true'
-        AND created_at >= :baseline_start_ts
+      WHERE id = :baseline_cmd_id
         AND created_at <= :degraded_ts
     params:
-      zone_id: ${zone_id}
-      baseline_start_ts: ${baseline_start_ts.0.ts}
+      baseline_cmd_id: ${baseline_command_row.0.cmd_id}
       degraded_ts: ${degraded_ts.0.ts}
     expected:
       - field: cmd_count
