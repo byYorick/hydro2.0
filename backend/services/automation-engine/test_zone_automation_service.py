@@ -43,10 +43,12 @@ async def test_process_zone_no_recipe():
         infrastructure_repo,
         command_bus,
     )
+    service._emit_missing_targets_signal = AsyncMock()
     await service.process_zone(1)
     
     # Должен вернуться рано, не загружая данные зоны
     recipe_repo.get_zone_data_batch.assert_not_called()
+    service._emit_missing_targets_signal.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -236,9 +238,11 @@ async def test_process_zone_phase_transition():
             infrastructure_repo,
             command_bus,
         )
+        service._emit_missing_targets_signal = AsyncMock()
         await service.process_zone(1)
 
         mock_phase_check.assert_called_once_with(1, None)
+        service._emit_missing_targets_signal.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -377,6 +381,7 @@ async def test_process_zone_skips_all_work_when_in_backoff():
         infrastructure_repo,
         command_bus,
     )
+    service._emit_backoff_skip_signal = AsyncMock()
 
     now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
     service._zone_states[123] = {
@@ -389,6 +394,7 @@ async def test_process_zone_skips_all_work_when_in_backoff():
 
     grow_cycle_repo.get_active_grow_cycle.assert_not_called()
     recipe_repo.get_zone_data_batch.assert_not_called()
+    service._emit_backoff_skip_signal.assert_awaited_once_with(123)
 
 
 @pytest.mark.asyncio

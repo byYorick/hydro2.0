@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('manufacturer', 128);
             $table->string('name', 191);
-            $table->string('component', 16); // npk | calcium | micro
+            $table->string('component', 16); // npk | calcium | magnesium | micro
             $table->string('composition', 128)->nullable();
             $table->string('recommended_stage', 64)->nullable();
             $table->text('notes')->nullable();

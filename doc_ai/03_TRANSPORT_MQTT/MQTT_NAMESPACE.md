@@ -147,7 +147,7 @@ hydro/system/{subtopic}
 - `ph_main`;
 - `ec_main`;
 - `temp_air`, `temp_water`;
-- `pump_acid`, `pump_base`, `pump_nutrient`;
+- `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`;
 - `fan_in`, `fan_out`;
 - `light_main`.
 

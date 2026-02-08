@@ -16,6 +16,7 @@ from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneC
 from services.pid_config_service import get_config, invalidate_cache
 from services.pid_state_manager import PidStateManager
 from common.alerts import create_alert, AlertSource, AlertCode
+from common.infra_alerts import send_infra_alert
 from decision_context import DecisionContext
 from services.targets_accessor import get_ph_target, get_ec_target, get_nutrition_components
 
@@ -411,8 +412,29 @@ class CorrectionController:
         batch_commands = command.get('batch_commands')
         if isinstance(batch_commands, list) and batch_commands:
             dose_delay_sec, ec_stop_tolerance = self._resolve_batch_dose_control(command)
+            batch_aborted = False
             for idx, batch_cmd in enumerate(batch_commands):
-                await command_bus.publish_controller_command(zone_id, batch_cmd, context)
+                published = await self._publish_controller_command_with_retry(
+                    zone_id=zone_id,
+                    command_bus=command_bus,
+                    controller_command=batch_cmd,
+                    context=context,
+                    correction_type=correction_type_str,
+                )
+                if not published:
+                    batch_aborted = True
+                    await create_zone_event(
+                        zone_id,
+                        'EC_COMPONENT_BATCH_ABORTED',
+                        {
+                            'failed_component': batch_cmd.get('component'),
+                            'failed_channel': batch_cmd.get('channel'),
+                            'failed_node_uid': batch_cmd.get('node_uid'),
+                            'remaining_components': len(batch_commands) - idx - 1,
+                            'reason': 'command_unconfirmed',
+                        }
+                    )
+                    break
                 is_last = idx >= len(batch_commands) - 1
                 if is_last or self.correction_type != CorrectionType.EC:
                     continue
@@ -448,8 +470,29 @@ class CorrectionController:
                         }
                     )
                     break
+            if batch_aborted:
+                return
         else:
-            await command_bus.publish_controller_command(zone_id, command, context)
+            published = await self._publish_controller_command_with_retry(
+                zone_id=zone_id,
+                command_bus=command_bus,
+                controller_command=command,
+                context=context,
+                correction_type=correction_type_str,
+            )
+            if not published:
+                await create_zone_event(
+                    zone_id,
+                    'CORRECTION_ABORTED_COMMAND_FAILURE',
+                    {
+                        'correction_type': correction_type_str,
+                        'cmd': command.get('cmd'),
+                        'node_uid': command.get('node_uid'),
+                        'channel': command.get('channel'),
+                        'reason': 'command_unconfirmed',
+                    }
+                )
+                return
         
         # Записываем информацию о корректировке
         await record_correction(zone_id, correction_type_str, {
@@ -518,6 +561,119 @@ class CorrectionController:
                 'correction': correction_type
             }
         )
+
+    async def _publish_controller_command_with_retry(
+        self,
+        *,
+        zone_id: int,
+        command_bus,
+        controller_command: Dict[str, Any],
+        context: DecisionContext,
+        correction_type: str,
+    ) -> bool:
+        settings = get_settings()
+        max_attempts = max(1, int(settings.CORRECTION_COMMAND_MAX_ATTEMPTS))
+        timeout_sec = max(0.1, float(settings.CORRECTION_COMMAND_TIMEOUT_SEC))
+        retry_delay_sec = max(0.0, float(settings.CORRECTION_COMMAND_RETRY_DELAY_SEC))
+        tracker = getattr(command_bus, "tracker", None)
+
+        last_failure_reason = "unknown"
+        last_cmd_id: Optional[str] = None
+
+        for attempt in range(1, max_attempts + 1):
+            sent = await command_bus.publish_controller_command(zone_id, controller_command, context)
+            cmd_id = controller_command.get("cmd_id")
+            last_cmd_id = str(cmd_id) if cmd_id else None
+
+            if not sent:
+                last_failure_reason = "publish_failed"
+            elif tracker and cmd_id:
+                wait_result = await self._wait_command_done(
+                    tracker=tracker,
+                    cmd_id=str(cmd_id),
+                    timeout_sec=timeout_sec,
+                )
+                if wait_result is True:
+                    return True
+                if wait_result is None:
+                    last_failure_reason = f"ack_done_timeout_{timeout_sec}s"
+                    try:
+                        await tracker.confirm_command_status(
+                            str(cmd_id),
+                            "TIMEOUT",
+                            error=last_failure_reason,
+                        )
+                    except Exception as confirm_exc:
+                        logger.warning(
+                            "Zone %s: failed to mark correction timeout cmd_id=%s: %s",
+                            zone_id,
+                            cmd_id,
+                            confirm_exc,
+                            extra={"zone_id": zone_id},
+                        )
+                else:
+                    last_failure_reason = "command_failed_status"
+            else:
+                # Tracker отключен: подтверждение недоступно, считаем отправку успешной.
+                return True
+
+            await create_zone_event(
+                zone_id,
+                'CORRECTION_COMMAND_ATTEMPT_FAILED',
+                {
+                    'correction_type': correction_type,
+                    'attempt': attempt,
+                    'max_attempts': max_attempts,
+                    'cmd_id': last_cmd_id,
+                    'cmd': controller_command.get('cmd'),
+                    'node_uid': controller_command.get('node_uid'),
+                    'channel': controller_command.get('channel'),
+                    'component': controller_command.get('component'),
+                    'reason': last_failure_reason,
+                },
+            )
+
+            if attempt < max_attempts and retry_delay_sec > 0:
+                await asyncio.sleep(retry_delay_sec)
+
+        await send_infra_alert(
+            code='infra_correction_command_unconfirmed',
+            alert_type='Correction Command Unconfirmed',
+            message=f'Команда коррекции не подтверждена после {max_attempts} попыток',
+            severity='critical',
+            zone_id=zone_id,
+            service='automation-engine',
+            component='correction_controller',
+            node_uid=controller_command.get('node_uid'),
+            channel=controller_command.get('channel'),
+            cmd=controller_command.get('cmd'),
+            error_type='CommandUnconfirmed',
+            details={
+                'correction_type': correction_type,
+                'cmd_id': last_cmd_id,
+                'max_attempts': max_attempts,
+                'timeout_sec': timeout_sec,
+                'reason': last_failure_reason,
+                'component': controller_command.get('component'),
+            },
+        )
+
+        return False
+
+    async def _wait_command_done(self, *, tracker, cmd_id: str, timeout_sec: float) -> Optional[bool]:
+        try:
+            return await tracker.wait_for_command_done(
+                cmd_id=cmd_id,
+                timeout_sec=timeout_sec,
+                poll_interval_sec=min(1.0, max(0.25, timeout_sec / 10.0)),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed waiting correction command completion for cmd_id=%s: %s",
+                cmd_id,
+                exc,
+            )
+            return False
 
     async def _get_pid(self, zone_id: int, setpoint: float) -> AdaptivePid:
         """Получить/инициализировать PID для зоны с восстановлением состояния."""
@@ -689,6 +845,29 @@ class CorrectionController:
             )
             return []
 
+        # Fail-closed: для EC дозирования требуется валидная калибровка производительности насоса.
+        ml_per_sec_by_component: Dict[str, float] = {}
+        for component in required_components:
+            actuator = component_actuators[component]
+            ml_per_sec_raw = actuator.get("ml_per_sec")
+            try:
+                ml_per_sec = float(ml_per_sec_raw)
+            except (TypeError, ValueError):
+                ml_per_sec = 0.0
+            if ml_per_sec <= 0:
+                logger.warning(
+                    "EC component batch skipped due to invalid pump calibration",
+                    extra={
+                        "component": component,
+                        "role": actuator.get("role"),
+                        "node_uid": actuator.get("node_uid"),
+                        "channel": actuator.get("channel"),
+                        "ml_per_sec": ml_per_sec_raw,
+                    },
+                )
+                return []
+            ml_per_sec_by_component[component] = ml_per_sec
+
         nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
         components_cfg = get_nutrition_components(targets)
         if any(component not in components_cfg for component in required_components):
@@ -777,7 +956,9 @@ class CorrectionController:
                 continue
 
             actuator = component_actuators[component]
-            payload = self._build_correction_command(actuator, "add_nutrients", component_ml)
+            actuator_with_calibration = dict(actuator)
+            actuator_with_calibration["ml_per_sec"] = ml_per_sec_by_component[component]
+            payload = self._build_correction_command(actuator_with_calibration, "add_nutrients", component_ml)
             payload["params"]["component"] = component
             payload["params"]["ratio_pct"] = round(ratio_pct, 2)
 

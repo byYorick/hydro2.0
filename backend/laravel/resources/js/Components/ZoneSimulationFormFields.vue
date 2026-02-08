@@ -349,12 +349,13 @@ import type { SimulationSubmitForm } from '@/composables/useSimulationSubmit'
 type DriftTouchedKey = 'ph' | 'ec' | 'temp_air' | 'temp_water' | 'humidity_air' | 'noise'
 
 interface Props {
+  form: SimulationSubmitForm
   recipes: RecipeOption[]
   recipesLoading: boolean
   recipesError: string | null
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 defineEmits<{
   markDriftTouched: [key: DriftTouchedKey]
@@ -362,7 +363,7 @@ defineEmits<{
   resetDriftValues: []
 }>()
 
-const form = defineModel<SimulationSubmitForm>('form', { required: true })
+const form = props.form
 const recipeSearch = defineModel<string>('recipeSearch', { required: true })
 const driftPh = defineModel<number | null>('driftPh', { required: true })
 const driftEc = defineModel<number | null>('driftEc', { required: true })

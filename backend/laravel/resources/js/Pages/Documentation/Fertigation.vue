@@ -129,36 +129,84 @@ M_i (ml на бак) = x_i * V</code></pre>
           </thead>
           <tbody>
             <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">A (Ca)</td>
-              <td class="px-3 py-2">0.62</td>
-              <td class="px-3 py-2">0.32</td>
-              <td class="px-3 py-2">0.608</td>
-              <td class="px-3 py-2">0.981</td>
-              <td class="px-3 py-2">98.1</td>
+              <td class="px-3 py-2">
+                A (Ca)
+              </td>
+              <td class="px-3 py-2">
+                0.62
+              </td>
+              <td class="px-3 py-2">
+                0.32
+              </td>
+              <td class="px-3 py-2">
+                0.608
+              </td>
+              <td class="px-3 py-2">
+                0.981
+              </td>
+              <td class="px-3 py-2">
+                98.1
+              </td>
             </tr>
             <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">B (NPK)</td>
-              <td class="px-3 py-2">0.85</td>
-              <td class="px-3 py-2">0.48</td>
-              <td class="px-3 py-2">0.912</td>
-              <td class="px-3 py-2">1.073</td>
-              <td class="px-3 py-2">107.3</td>
+              <td class="px-3 py-2">
+                B (NPK)
+              </td>
+              <td class="px-3 py-2">
+                0.85
+              </td>
+              <td class="px-3 py-2">
+                0.48
+              </td>
+              <td class="px-3 py-2">
+                0.912
+              </td>
+              <td class="px-3 py-2">
+                1.073
+              </td>
+              <td class="px-3 py-2">
+                107.3
+              </td>
             </tr>
             <tr class="border-b border-[color:var(--border-muted)]">
-              <td class="px-3 py-2">C (MgSO4)</td>
-              <td class="px-3 py-2">0.50</td>
-              <td class="px-3 py-2">0.17</td>
-              <td class="px-3 py-2">0.323</td>
-              <td class="px-3 py-2">0.646</td>
-              <td class="px-3 py-2">64.6</td>
+              <td class="px-3 py-2">
+                C (MgSO4)
+              </td>
+              <td class="px-3 py-2">
+                0.50
+              </td>
+              <td class="px-3 py-2">
+                0.17
+              </td>
+              <td class="px-3 py-2">
+                0.323
+              </td>
+              <td class="px-3 py-2">
+                0.646
+              </td>
+              <td class="px-3 py-2">
+                64.6
+              </td>
             </tr>
             <tr>
-              <td class="px-3 py-2">D (Micro+Fe)</td>
-              <td class="px-3 py-2">0.30</td>
-              <td class="px-3 py-2">0.03</td>
-              <td class="px-3 py-2">0.057</td>
-              <td class="px-3 py-2">0.190</td>
-              <td class="px-3 py-2">19.0</td>
+              <td class="px-3 py-2">
+                D (Micro+Fe)
+              </td>
+              <td class="px-3 py-2">
+                0.30
+              </td>
+              <td class="px-3 py-2">
+                0.03
+              </td>
+              <td class="px-3 py-2">
+                0.057
+              </td>
+              <td class="px-3 py-2">
+                0.190
+              </td>
+              <td class="px-3 py-2">
+                19.0
+              </td>
             </tr>
           </tbody>
         </table>

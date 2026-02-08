@@ -2,16 +2,11 @@
 Тесты для проверки обновления кеша при изменении конфига в БД
 """
 import pytest
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timedelta
+from datetime import timedelta
 from common.utils.time import utcnow
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from services.pid_config_service import get_config, invalidate_cache
-from utils.adaptive_pid import AdaptivePidConfig, PidZone, PidZoneCoeffs
 
 
 @pytest.mark.asyncio

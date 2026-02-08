@@ -359,7 +359,7 @@ describe('Recipes/Edit.vue', () => {
       formInstance.phases[0].nutrient_micro_ratio_pct = 30
     }
 
-    const normalizeButton = wrapper.find('[data-testid=\"normalize-ratio-button\"]')
+    const normalizeButton = wrapper.find('[data-testid="normalize-ratio-button"]')
     expect(normalizeButton.exists()).toBe(true)
     if (normalizeButton.exists()) {
       await normalizeButton.trigger('click')

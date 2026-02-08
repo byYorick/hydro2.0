@@ -386,7 +386,7 @@ class TestLaravelRequestValidation:
             cmd="dose",
             params={"ml": 1.2},
             node_uid="nd-ph-1",
-            channel="pump_nutrient"
+            channel="pump_a"
         )
         assert request.cmd == "dose"
         assert request.params == {"ml": 1.2}
@@ -405,7 +405,7 @@ class TestProtocolCompatibility:
         # Создаём команду
         cmd = Command.create(
             cmd="dose",
-            params={"ml": 1.2, "channel": "pump_nutrient"},
+            params={"ml": 1.2, "channel": "pump_a"},
             sig="deadbeef"
         )
         

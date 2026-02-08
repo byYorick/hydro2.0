@@ -6,40 +6,24 @@ from typing import Dict, Any, Optional, List
 
 
 class ActuatorRegistry:
-    """Резолвер исполнительных устройств по ролям с fallback по каналам."""
+    """Строгий резолвер исполнительных устройств только по role-binding."""
 
     # Основные роли и алиасы, которые могут приходить из channel_bindings.role
     ROLE_ALIASES: Dict[str, List[str]] = {
         "irrigation_pump": ["irrigation_pump", "main_pump", "pump_irrigation", "pump", "irrig"],
         "recirculation_pump": ["recirculation_pump", "recirculation", "recirc"],
-        "ph_acid_pump": ["ph_acid_pump", "pump_acid", "acid_pump", "ph_acid", "acid"],
-        "ph_base_pump": ["ph_base_pump", "pump_base", "base_pump", "ph_base", "base"],
-        "ec_npk_pump": ["ec_npk_pump", "pump_nutrient_a", "pump_a", "nutrient_a", "npk"],
-        "ec_calcium_pump": ["ec_calcium_pump", "pump_nutrient_b", "pump_b", "nutrient_b", "calcium", "calmag"],
-        "ec_magnesium_pump": ["ec_magnesium_pump", "pump_nutrient_c", "pump_c", "nutrient_c", "magnesium", "mg", "mgso4"],
-        "ec_micro_pump": ["ec_micro_pump", "pump_nutrient_c", "pump_c", "nutrient_c", "micro"],
+        "ph_acid_pump": ["ph_acid_pump"],
+        "ph_base_pump": ["ph_base_pump"],
+        "ec_npk_pump": ["ec_npk_pump"],
+        "ec_calcium_pump": ["ec_calcium_pump"],
+        "ec_magnesium_pump": ["ec_magnesium_pump"],
+        "ec_micro_pump": ["ec_micro_pump"],
         "fan": ["vent", "fan", "ventilation"],
         "heater": ["heater", "heating"],
         "white_light": ["white_light", "light_white"],
         "uv_light": ["uv_light", "light_uv"],
         "flow_sensor": ["flow_sensor", "flow"],
         "soil_moisture_sensor": ["soil_moisture_sensor", "soil_moisture"],
-    }
-
-    # Fallback по именам каналов, если bindings по роли нет
-    CHANNEL_HINTS: Dict[str, List[str]] = {
-        "irrigation_pump": ["pump_irrigation", "irrigation", "main"],
-        "recirculation_pump": ["recirculation", "recirc"],
-        "ph_acid_pump": ["pump_acid", "acid"],
-        "ph_base_pump": ["pump_base", "base"],
-        "ec_npk_pump": ["pump_nutrient_a", "pump_a", "nutrient_a", "npk"],
-        "ec_calcium_pump": ["pump_nutrient_b", "pump_b", "nutrient_b", "calcium"],
-        "ec_magnesium_pump": ["pump_nutrient_c", "pump_c", "nutrient_c", "magnesium", "mg"],
-        "ec_micro_pump": ["pump_nutrient_d", "pump_d", "nutrient_d", "pump_nutrient_c", "pump_c", "nutrient_c", "micro"],
-        "fan": ["fan", "vent"],
-        "heater": ["heater"],
-        "white_light": ["white_light"],
-        "uv_light": ["uv_light"],
     }
 
     def resolve(
@@ -55,16 +39,13 @@ class ActuatorRegistry:
         Args:
             zone_id: ID зоны (для логирования — пока не используется)
             bindings: полученные из InfrastructureRepository bindings по роли
-            nodes: опционально узлы зоны (type/channel) для эвристик
+            nodes: не используется (оставлен для совместимости сигнатуры)
             hardware_profile: зарезервировано для будущей привязки
         """
         resolved: Dict[str, Dict[str, Any]] = {}
 
         for role, aliases in self.ROLE_ALIASES.items():
             binding = self._pick_from_bindings(aliases, bindings)
-            if not binding and nodes:
-                binding = self._pick_from_nodes(role, nodes)
-
             if binding:
                 resolved[role] = binding
 
@@ -90,27 +71,5 @@ class ActuatorRegistry:
                     "ml_per_sec": info.get("ml_per_sec"),
                     "k_ms_per_ml_l": info.get("k_ms_per_ml_l"),
                     "pump_calibration": info.get("pump_calibration"),
-                }
-        return None
-
-    def _pick_from_nodes(
-        self,
-        role: str,
-        nodes: Dict[str, Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
-        """Fallback по именам каналов/типов узла, если role binding не найден."""
-        hints = self.CHANNEL_HINTS.get(role, [])
-        for node in nodes.values():
-            channel = (node.get("channel") or "default").lower()
-            node_type = (node.get("type") or "").lower()
-            if channel in hints or node_type in hints:
-                return {
-                    "node_id": node.get("node_id"),
-                    "node_uid": node.get("node_uid"),
-                    "node_channel_id": node.get("node_channel_id"),
-                    "channel": node.get("channel") or "default",
-                    "asset_type": node.get("type"),
-                    "direction": "actuator",
-                    "role": role,
                 }
         return None

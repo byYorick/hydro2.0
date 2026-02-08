@@ -3,7 +3,7 @@
 Проверяет явный учет ошибок по зонам в gather.
 """
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from main import process_zones_parallel
 
 

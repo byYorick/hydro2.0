@@ -344,18 +344,22 @@ class FullServiceTestSeeder extends Seeder
                     $createdInfra++;
                 }
 
-                $binding = ChannelBinding::firstOrCreate(
+                $existingBinding = ChannelBinding::query()
+                    ->where('node_channel_id', $channel->id)
+                    ->first();
+
+                $binding = ChannelBinding::updateOrCreate(
                     [
-                        'infrastructure_instance_id' => $infra->id,
                         'node_channel_id' => $channel->id,
                     ],
                     [
+                        'infrastructure_instance_id' => $infra->id,
                         'direction' => $channel->type === 'sensor' ? 'sensor' : 'actuator',
                         'role' => $mapping['role'],
                     ]
                 );
 
-                if ($binding->wasRecentlyCreated) {
+                if ($binding && ! $existingBinding) {
                     $createdBindings++;
                 }
 

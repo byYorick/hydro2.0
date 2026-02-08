@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\ChannelBinding;
 use App\Models\GrowCycle;
 use App\Models\DeviceNode;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
@@ -57,23 +59,54 @@ class GrowCycleControllerTest extends TestCase
             'status' => 'online',
         ]);
 
-        NodeChannel::create([
+        $mainPumpChannel = NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_main',
             'type' => 'actuator',
             'metric' => 'pump',
             'unit' => null,
-            'config' => ['zone_role' => 'main_pump'],
+            'config' => [],
         ]);
 
-        NodeChannel::create([
+        $drainChannel = NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'drain_main',
             'type' => 'actuator',
             'metric' => 'valve',
             'unit' => null,
-            'config' => ['zone_role' => 'drain'],
+            'config' => [],
         ]);
+
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
+    }
+
+    private function bindChannelToRole(
+        Zone $zone,
+        NodeChannel $channel,
+        string $role,
+        string $label
+    ): void {
+        $instance = InfrastructureInstance::query()->firstOrCreate(
+            [
+                'owner_type' => 'zone',
+                'owner_id' => $zone->id,
+                'label' => $label,
+            ],
+            [
+                'asset_type' => 'PUMP',
+                'required' => true,
+            ]
+        );
+
+        ChannelBinding::query()->updateOrCreate(
+            ['node_channel_id' => $channel->id],
+            [
+                'infrastructure_instance_id' => $instance->id,
+                'direction' => 'actuator',
+                'role' => $role,
+            ]
+        );
     }
 
     #[Test]
@@ -140,6 +173,35 @@ class GrowCycleControllerTest extends TestCase
 
         $errors = $response->json('readiness_errors', []);
         $this->assertContains('Нет привязанных нод в зоне', $errors);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_ec_control_is_enabled_but_ec_pumps_are_missing(): void
+    {
+        $ecZone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => true,
+                'ph_control' => false,
+            ],
+        ]);
+        $this->attachRequiredInfrastructure($ecZone);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$ecZone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Насос EC NPK не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Calcium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Magnesium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Micro не привязан к каналу', $errors);
     }
 
     #[Test]

@@ -57,9 +57,13 @@ class AutomationSettings:
     EC_PID_MIN_INTERVAL_MS: int = 60000
     EC_PID_ENABLE_AUTOTUNE: bool = False
     EC_PID_ADAPTATION_RATE: float = 0.05
-    # Поэтапное дозирование 3-компонентного питания (NPK/Ca/Micro)
+    # Поэтапное дозирование 4-компонентного питания (NPK/Ca/Mg/Micro)
     EC_COMPONENT_DOSE_DELAY_SEC: float = float(os.getenv("EC_COMPONENT_DOSE_DELAY_SEC", "8"))
     EC_COMPONENT_RECHECK_TOLERANCE: float = float(os.getenv("EC_COMPONENT_RECHECK_TOLERANCE", "0.05"))
+    # Подтверждение команд дозирования (ACK/DONE) и повторы
+    CORRECTION_COMMAND_TIMEOUT_SEC: float = float(os.getenv("CORRECTION_COMMAND_TIMEOUT_SEC", "5"))
+    CORRECTION_COMMAND_MAX_ATTEMPTS: int = int(os.getenv("CORRECTION_COMMAND_MAX_ATTEMPTS", "2"))
+    CORRECTION_COMMAND_RETRY_DELAY_SEC: float = float(os.getenv("CORRECTION_COMMAND_RETRY_DELAY_SEC", "0.5"))
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут

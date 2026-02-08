@@ -515,7 +515,7 @@ class PythonBridgeService
             ],
             'FORCE_EC_CONTROL' => [
                 'node_type' => 'ec',
-                'channels' => ['pump_nutrient'],
+                'channels' => ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
             ],
             'FORCE_IRRIGATION' => [
                 'node_type' => 'irrig',

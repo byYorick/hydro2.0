@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\GrowCycle;
-use App\Models\ChannelBinding;
 use App\Models\Zone;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
@@ -12,6 +11,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Services\GrowCycleService;
 use App\Services\GrowCyclePresenter;
 use App\Services\EffectiveTargetsService;
+use App\Services\ZoneReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +23,8 @@ class GrowCycleController extends Controller
     public function __construct(
         private GrowCycleService $growCycleService,
         private GrowCyclePresenter $growCyclePresenter,
-        private EffectiveTargetsService $effectiveTargetsService
+        private EffectiveTargetsService $effectiveTargetsService,
+        private ZoneReadinessService $zoneReadinessService
     ) {
     }
 
@@ -447,94 +448,7 @@ class GrowCycleController extends Controller
      */
     private function checkZoneReadiness(Zone $zone): array
     {
-        $requiredAssets = [
-            'main_pump' => false,
-            'drain' => false,
-        ];
-
-        $optionalAssets = [
-            'light' => false,
-            'vent' => false,
-            'heater' => false,
-            'mist' => false,
-        ];
-
-        $onlineNodes = 0;
-        $totalNodes = $zone->nodes->count();
-
-        foreach ($zone->nodes as $node) {
-            if (is_string($node->status) && strtolower($node->status) === 'online') {
-                $onlineNodes++;
-            }
-
-            foreach ($node->channels as $channel) {
-                $role = $channel->config['zone_role'] ?? null;
-                if (! is_string($role)) {
-                    continue;
-                }
-                $role = match ($role) {
-                    'drain_pump' => 'drain',
-                    'mister' => 'mist',
-                    default => $role,
-                };
-
-                if (array_key_exists($role, $requiredAssets)) {
-                    $requiredAssets[$role] = true;
-                }
-
-                if (array_key_exists($role, $optionalAssets)) {
-                    $optionalAssets[$role] = true;
-                }
-            }
-        }
-
-        // Фолбэк: учитываем роли из channel_bindings, если node channel config не содержит zone_role.
-        $bindingRoles = ChannelBinding::query()
-            ->select('channel_bindings.role')
-            ->join('infrastructure_instances as ii', 'ii.id', '=', 'channel_bindings.infrastructure_instance_id')
-            ->where('ii.owner_type', 'zone')
-            ->where('ii.owner_id', $zone->id)
-            ->pluck('channel_bindings.role');
-
-        foreach ($bindingRoles as $role) {
-            if (! is_string($role)) {
-                continue;
-            }
-            $role = match ($role) {
-                'drain_pump' => 'drain',
-                'mister' => 'mist',
-                default => $role,
-            };
-
-            if (array_key_exists($role, $requiredAssets)) {
-                $requiredAssets[$role] = true;
-            }
-
-            if (array_key_exists($role, $optionalAssets)) {
-                $optionalAssets[$role] = true;
-            }
-        }
-
-        $hasOnlineNodes = $onlineNodes > 0;
-        $hasNodes = $totalNodes > 0;
-        $allRequiredReady = $requiredAssets['main_pump'] && $requiredAssets['drain'];
-
-        return [
-            'ready' => $allRequiredReady && $hasOnlineNodes && $hasNodes,
-            'required_assets' => $requiredAssets,
-            'optional_assets' => $optionalAssets,
-            'nodes' => [
-                'online' => $onlineNodes,
-                'total' => $totalNodes,
-                'all_online' => $onlineNodes === $totalNodes && $totalNodes > 0,
-            ],
-            'checks' => [
-                'main_pump' => $requiredAssets['main_pump'],
-                'drain' => $requiredAssets['drain'],
-                'online_nodes' => $hasOnlineNodes,
-                'has_nodes' => $hasNodes,
-            ],
-        ];
+        return $this->zoneReadinessService->checkZoneReadiness($zone);
     }
 
     /**
@@ -548,19 +462,40 @@ class GrowCycleController extends Controller
     private function buildZoneReadinessErrors(array $readiness): array
     {
         $errors = [];
+        $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
 
-        if (! ($readiness['checks']['has_nodes'] ?? false)) {
+        if (! ($checks['has_nodes'] ?? false)) {
             $errors[] = 'Нет привязанных нод в зоне';
         }
-        if (! ($readiness['checks']['main_pump'] ?? false)) {
-            $errors[] = 'Основная помпа не привязана к каналу';
-        }
-        if (! ($readiness['checks']['drain'] ?? false)) {
-            $errors[] = 'Дренаж не привязан к каналу';
-        }
-        if (! ($readiness['checks']['online_nodes'] ?? false)) {
+        if (! ($checks['online_nodes'] ?? false)) {
             $errors[] = 'Нет онлайн нод в зоне';
         }
+
+        $roleMessages = [
+            'main_pump' => 'Основная помпа не привязана к каналу',
+            'drain' => 'Дренаж не привязан к каналу',
+            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
+            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
+            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
+            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
+            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
+            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
+        ];
+        foreach ($roleMessages as $role => $message) {
+            if (array_key_exists($role, $checks) && ! $checks[$role]) {
+                $errors[] = $message;
+            }
+        }
+
+        foreach ($readiness['errors'] ?? [] as $issue) {
+            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
+                $errors[] = $issue['message'];
+            } elseif (is_string($issue)) {
+                $errors[] = $issue;
+            }
+        }
+
+        $errors = array_values(array_unique($errors));
 
         return $errors;
     }

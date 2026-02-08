@@ -126,6 +126,124 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: set_capabilities_without_ph_ec_requirements
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', false,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_zone_readiness_bindings
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'zone_role',
+        CASE
+          WHEN nc.channel = 'main_pump' THEN 'main_pump'
+          WHEN nc.channel = 'drain_pump' THEN 'drain'
+          ELSE nc.config->>'zone_role'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.id = :node_id
+        AND n.zone_id = :zone_id
+        AND nc.channel IN ('main_pump', 'drain_pump');
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
+  - step: ensure_main_and_drain_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('PUMP', 'E2E Main Pump'),
+            ('DRAIN', 'E2E Drain Pump')
+        ) AS m(asset_type, label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = m.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.id = :node_id
+         AND n.zone_id = zc.zone_id
+        JOIN (
+          VALUES
+            ('main_pump', 'main_pump', 'E2E Main Pump'),
+            ('drain_pump', 'drain', 'E2E Drain Pump')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
+  - step: verify_main_and_drain_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.id = :node_id
+        AND n.status = 'online'
+        AND cb.role IN ('main_pump', 'drain')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+    expected_rows: 2
+    timeout: 15.0
+
   - step: create_plant
     type: api_post
     endpoint: /api/plants

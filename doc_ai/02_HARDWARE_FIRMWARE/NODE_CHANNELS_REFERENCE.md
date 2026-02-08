@@ -142,7 +142,10 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ### 3.2. Насосы питательного раствора / подачи
 
-- `pump_nutrient` — насос питательного раствора;
+- `pump_a` — EC насос NPK;
+- `pump_b` — EC насос Calcium;
+- `pump_c` — EC насос Magnesium;
+- `pump_d` — EC насос Micro;
 - `pump_in` — насос/клапан подачи/наполнения;
 - при необходимости могут добавляться другие насосы, все они описываются аналогично.
 
@@ -238,7 +241,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Логика использования:
 
-- при включении любого насосного канала (`pump_acid`, `pump_base`, `pump_nutrient`, `pump_in`)
+- при включении любого насосного канала (`pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`, `pump_in`)
   ожидается рост тока по `pump_bus_current` выше заданного порога `min_bus_current_on`;
 - в NodeConfig могут быть заданы разные ожидаемые окна тока для разных режимов (например,
   “работает только один насос”);

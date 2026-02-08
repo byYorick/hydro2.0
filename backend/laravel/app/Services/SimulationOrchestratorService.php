@@ -356,6 +356,12 @@ class SimulationOrchestratorService
             ['channel' => 'solution_temp_c', 'type' => 'SENSOR', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
             ['channel' => 'air_temp_c', 'type' => 'SENSOR', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
             ['channel' => 'air_rh', 'type' => 'SENSOR', 'metric' => 'HUMIDITY', 'unit' => '%'],
+            ['channel' => 'pump_acid', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'ph_down']]],
+            ['channel' => 'pump_base', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'ph_up']]],
+            ['channel' => 'pump_a', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'npk']]],
+            ['channel' => 'pump_b', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'calcium']]],
+            ['channel' => 'pump_c', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'magnesium']]],
+            ['channel' => 'pump_d', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'micro']]],
             ['channel' => 'main_pump', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => ''],
             ['channel' => 'drain_pump', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => ''],
             ['channel' => 'fan', 'type' => 'ACTUATOR', 'metric' => 'FAN', 'unit' => ''],
@@ -421,18 +427,42 @@ class SimulationOrchestratorService
                 'label' => 'Насос дозирования кислоты',
                 'required' => true,
                 'enabled' => $phControl,
+                'calibration_component' => 'ph_down',
             ],
             'ph_base_pump' => [
                 'channel' => 'pump_base',
                 'label' => 'Насос дозирования щёлочи',
                 'required' => true,
                 'enabled' => $phControl,
+                'calibration_component' => 'ph_up',
             ],
-            'ec_nutrient_pump' => [
-                'channel' => 'pump_nutrient',
-                'label' => 'Насос питательных веществ',
+            'ec_npk_pump' => [
+                'channel' => 'pump_a',
+                'label' => 'Насос EC NPK',
                 'required' => true,
                 'enabled' => $ecControl,
+                'calibration_component' => 'npk',
+            ],
+            'ec_calcium_pump' => [
+                'channel' => 'pump_b',
+                'label' => 'Насос EC Calcium',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'calcium',
+            ],
+            'ec_magnesium_pump' => [
+                'channel' => 'pump_c',
+                'label' => 'Насос EC Magnesium',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'magnesium',
+            ],
+            'ec_micro_pump' => [
+                'channel' => 'pump_d',
+                'label' => 'Насос EC Micro',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'micro',
             ],
         ];
 
@@ -453,7 +483,23 @@ class SimulationOrchestratorService
                     'type' => 'ACTUATOR',
                     'metric' => 'PUMP',
                     'unit' => '',
+                    'config' => [
+                        'pump_calibration' => [
+                            'component' => $definition['calibration_component'] ?? null,
+                        ],
+                    ],
                 ]);
+            } elseif (! empty($definition['calibration_component'])) {
+                $channelConfig = is_array($nodeChannel->config) ? $nodeChannel->config : [];
+                $pumpCalibration = is_array($channelConfig['pump_calibration'] ?? null)
+                    ? $channelConfig['pump_calibration']
+                    : [];
+                if (($pumpCalibration['component'] ?? null) !== $definition['calibration_component']) {
+                    $pumpCalibration['component'] = $definition['calibration_component'];
+                    $channelConfig['pump_calibration'] = $pumpCalibration;
+                    $nodeChannel->config = $channelConfig;
+                    $nodeChannel->save();
+                }
             }
 
             $instance = InfrastructureInstance::firstOrCreate(

@@ -26,6 +26,7 @@ use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class LiteAutomationSeeder extends Seeder
@@ -411,6 +412,12 @@ class LiteAutomationSeeder extends Seeder
      */
     private function createInfrastructure(array $zones, array $zoneNodes): void
     {
+        if (! Schema::hasTable('infrastructure_instances') || ! Schema::hasTable('channel_bindings')) {
+            $this->command->warn('Infrastructure tables are missing, skipping channel bindings in LiteAutomationSeeder');
+
+            return;
+        }
+
         foreach ($zones as $zoneKey => $zone) {
             $assetMap = [
                 ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'main_pump', 'role' => 'main_pump', 'required' => true],
@@ -449,10 +456,10 @@ class LiteAutomationSeeder extends Seeder
 
                 ChannelBinding::updateOrCreate(
                     [
-                        'infrastructure_instance_id' => $infra->id,
                         'node_channel_id' => $channel->id,
                     ],
                     [
+                        'infrastructure_instance_id' => $infra->id,
                         'direction' => $channel->type === 'actuator' ? 'actuator' : 'sensor',
                         'role' => $asset['role'],
                     ]
@@ -651,6 +658,19 @@ class LiteAutomationSeeder extends Seeder
             ->first();
 
         if (! $cycle) {
+            // Для идемпотентности сидера переиспользуем уже существующий активный цикл зоны.
+            $cycle = GrowCycle::query()
+                ->where('zone_id', $zone->id)
+                ->whereIn('status', [
+                    GrowCycleStatus::PLANNED,
+                    GrowCycleStatus::RUNNING,
+                    GrowCycleStatus::PAUSED,
+                ])
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if (! $cycle) {
             $cycle = $service->createCycle($zone, $revision, $plantId, [
                 'start_immediately' => $status !== GrowCycleStatus::PLANNED,
                 'planting_at' => $plantingAt,
@@ -659,6 +679,9 @@ class LiteAutomationSeeder extends Seeder
         }
 
         $cycle->update([
+            'recipe_revision_id' => $revision->id,
+            'plant_id' => $plantId,
+            'batch_label' => $label,
             'status' => $status,
             'planting_at' => $plantingAt,
             'started_at' => $status === GrowCycleStatus::PLANNED ? null : $plantingAt,

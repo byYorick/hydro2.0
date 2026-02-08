@@ -122,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 
@@ -163,11 +163,37 @@ const emit = defineEmits<{
   'update:modelValue': [value: ChannelBinding[]]
 }>()
 
-const bindings = ref<ChannelBinding[]>(props.modelValue || [])
+function cloneBindings(value: ChannelBinding[] | undefined): ChannelBinding[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.map(binding => ({
+    node_id: binding.node_id,
+    channel_id: binding.channel_id,
+    role: binding.role,
+  }))
+}
+
+const bindings = ref<ChannelBinding[]>(cloneBindings(props.modelValue))
+
+watch(
+  () => props.modelValue,
+  (next) => {
+    bindings.value = cloneBindings(next)
+  },
+  { deep: true }
+)
 
 const availableRoles = [
   { value: 'main_pump', label: 'Основная помпа' },
   { value: 'drain', label: 'Дренаж' },
+  { value: 'ph_acid_pump', label: 'pH кислота' },
+  { value: 'ph_base_pump', label: 'pH щёлочь' },
+  { value: 'ec_npk_pump', label: 'EC NPK' },
+  { value: 'ec_calcium_pump', label: 'EC Calcium' },
+  { value: 'ec_magnesium_pump', label: 'EC Magnesium' },
+  { value: 'ec_micro_pump', label: 'EC Micro' },
   { value: 'mist', label: 'Туман' },
   { value: 'light', label: 'Свет' },
   { value: 'vent', label: 'Вентиляция' },
@@ -200,7 +226,7 @@ function updateBinding(channelId: number, nodeId: number, role: string | null) {
     }
   }
   
-  emit('update:modelValue', bindings.value)
+  emit('update:modelValue', cloneBindings(bindings.value))
 }
 
 function getNodeName(nodeId: number): string {

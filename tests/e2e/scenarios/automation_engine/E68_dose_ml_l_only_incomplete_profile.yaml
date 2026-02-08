@@ -39,6 +39,23 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: set_ec_only_capabilities_for_cycle_start
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   - step: ensure_zone_readiness_bindings
     type: database_execute
     query: |
@@ -57,6 +74,84 @@ actions:
         AND nc.channel IN ('main_pump', 'drain_pump');
     params:
       zone_id: ${zone_id}
+
+  - step: ensure_main_and_drain_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('PUMP', 'E2E Main Pump'),
+            ('DRAIN', 'E2E Drain Pump')
+        ) AS m(asset_type, label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = m.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('main_pump', 'main_pump', 'E2E Main Pump'),
+            ('drain_pump', 'drain', 'E2E Drain Pump')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+
+  - step: verify_main_and_drain_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('main_pump', 'drain')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 2
+    timeout: 15.0
 
   - step: force_primary_node_online
     type: database_execute
@@ -151,6 +246,28 @@ actions:
       zone_id: ${zone_id}
     expected_rows: 4
     timeout: 15.0
+
+  - step: ensure_ec_component_calibration
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'pump_calibration',
+        CASE nc.channel
+          WHEN 'fan' THEN jsonb_build_object('ml_per_sec', 0.12, 'k_ms_per_ml_l', 0.80)
+          WHEN 'heater' THEN jsonb_build_object('ml_per_sec', 0.10, 'k_ms_per_ml_l', 0.65)
+          WHEN 'light' THEN jsonb_build_object('ml_per_sec', 0.08, 'k_ms_per_ml_l', 0.50)
+          WHEN 'mister' THEN jsonb_build_object('ml_per_sec', 0.06, 'k_ms_per_ml_l', 0.35)
+          ELSE nc.config->'pump_calibration'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND nc.channel IN ('fan', 'heater', 'light', 'mister');
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_old_cycles
     type: database_execute
@@ -308,7 +425,7 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://localhost:9505
+    url: http://automation-engine:9505
     zone_id: ${zone_id}
     action: reset_backoff
 

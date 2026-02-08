@@ -21,7 +21,6 @@
         @click.stop
       >
         <ZoneSimulationFormFields
-          v-model:form="form"
           v-model:recipe-search="recipeSearch"
           v-model:drift-ph="driftPh"
           v-model:drift-ec="driftEc"
@@ -29,6 +28,7 @@
           v-model:drift-temp-water="driftTempWater"
           v-model:drift-humidity="driftHumidity"
           v-model:drift-noise="driftNoise"
+          :form="form"
           :recipes="recipes"
           :recipes-loading="recipesLoading"
           :recipes-error="recipesError"

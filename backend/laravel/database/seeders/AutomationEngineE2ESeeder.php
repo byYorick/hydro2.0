@@ -209,12 +209,12 @@ class AutomationEngineE2ESeeder extends Seeder
             if ($channel) {
                 $direction = $channel->type === 'actuator' ? 'actuator' : 'sensor';
 
-                ChannelBinding::firstOrCreate(
+                ChannelBinding::updateOrCreate(
                     [
-                        'infrastructure_instance_id' => $infra->id,
                         'node_channel_id' => $channel->id,
                     ],
                     [
+                        'infrastructure_instance_id' => $infra->id,
                         'direction' => $direction,
                         'role' => $infraData['role'] ?? $channel->channel,
                     ]

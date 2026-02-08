@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\ChannelBinding;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\DeviceNode;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
@@ -63,23 +65,54 @@ class ZonesTest extends TestCase
             'status' => 'online',
         ]);
 
-        NodeChannel::create([
+        $mainPumpChannel = NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_main',
             'type' => 'actuator',
             'metric' => 'pump',
             'unit' => null,
-            'config' => ['zone_role' => 'main_pump'],
+            'config' => [],
         ]);
 
-        NodeChannel::create([
+        $drainChannel = NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'drain_main',
             'type' => 'actuator',
             'metric' => 'valve',
             'unit' => null,
-            'config' => ['zone_role' => 'drain'],
+            'config' => [],
         ]);
+
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
+    }
+
+    private function bindChannelToRole(
+        Zone $zone,
+        NodeChannel $channel,
+        string $role,
+        string $label
+    ): void {
+        $instance = InfrastructureInstance::query()->firstOrCreate(
+            [
+                'owner_type' => 'zone',
+                'owner_id' => $zone->id,
+                'label' => $label,
+            ],
+            [
+                'asset_type' => 'PUMP',
+                'required' => true,
+            ]
+        );
+
+        ChannelBinding::query()->updateOrCreate(
+            ['node_channel_id' => $channel->id],
+            [
+                'infrastructure_instance_id' => $instance->id,
+                'direction' => 'actuator',
+                'role' => $role,
+            ]
+        );
     }
 
     public function test_zones_requires_auth(): void

@@ -335,11 +335,7 @@ if (typeof window !== 'undefined' && !window.__bootstrapHandlers) {
 const errorHandler = (event) => {
   // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
   // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
-  import('./utils/logger').then(({ logger }) => {
-      logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });
-  }).catch(() => {
-      // Игнорируем ошибки при логировании, чтобы не создавать цикл
-  });
+  logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });
   // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
   // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
 };
@@ -355,11 +351,7 @@ const unhandledRejectionHandler = (event) => {
   }
   // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
   // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
-  import('./utils/logger').then(({ logger }) => {
-      logger.error('[UNHANDLED REJECTION]', { reason: reason || event });
-  }).catch(() => {
-      // Игнорируем ошибки при логировании, чтобы не создавать цикл
-  });
+  logger.error('[UNHANDLED REJECTION]', { reason: reason || event });
   // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
   // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
 };
