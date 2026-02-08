@@ -12,6 +12,12 @@ description: |
 actions:
   - step: stop_node_simulator_initial
     type: stop_simulator
+    wait_seconds: 3
+    optional: true
+
+  - step: start_node_simulator
+    type: start_simulator
+    wait_seconds: 3
     optional: true
 
   - step: set_test_zone_uid
@@ -52,109 +58,99 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: force_primary_node_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND uid = 'nd-ph-esp32una';
+    params:
+      zone_id: ${zone_id}
+
   - step: ensure_ec_component_bindings
     type: database_execute
     query: |
-      DO $$
-      DECLARE
-        z_id bigint;
-        n_id bigint;
-        infra_a bigint;
-        infra_b bigint;
-        infra_c bigint;
-        infra_d bigint;
-      BEGIN
-        SELECT id INTO z_id
-        FROM zones
-        WHERE uid = 'zn-test-1'
-        LIMIT 1;
-
-        SELECT id INTO n_id
-        FROM nodes
-        WHERE zone_id = z_id AND uid = 'nd-ph-esp32una'
-        LIMIT 1;
-
-        INSERT INTO node_channels (node_id, channel, type, config, created_at, updated_at)
-        VALUES
-          (n_id, 'pump_a', 'ACTUATOR', '{"actuator_type":"PUMP"}'::jsonb, NOW(), NOW()),
-          (n_id, 'pump_b', 'ACTUATOR', '{"actuator_type":"PUMP"}'::jsonb, NOW(), NOW()),
-          (n_id, 'pump_c', 'ACTUATOR', '{"actuator_type":"PUMP"}'::jsonb, NOW(), NOW()),
-          (n_id, 'pump_d', 'ACTUATOR', '{"actuator_type":"PUMP"}'::jsonb, NOW(), NOW())
-        ON CONFLICT (node_id, channel) DO NOTHING;
-
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
         INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
-        SELECT 'zone', z_id, 'PUMP', 'E2E EC Pump A', false, NOW(), NOW()
+        SELECT 'zone', zc.zone_id, 'PUMP', x.label, false, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('E2E EC Pump A'),
+            ('E2E EC Pump B'),
+            ('E2E EC Pump C'),
+            ('E2E EC Pump D')
+        ) AS x(label)
         WHERE NOT EXISTS (
-          SELECT 1 FROM infrastructure_instances
-          WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump A'
-        );
-
-        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
-        SELECT 'zone', z_id, 'PUMP', 'E2E EC Pump B', false, NOW(), NOW()
-        WHERE NOT EXISTS (
-          SELECT 1 FROM infrastructure_instances
-          WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump B'
-        );
-
-        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
-        SELECT 'zone', z_id, 'PUMP', 'E2E EC Pump C', false, NOW(), NOW()
-        WHERE NOT EXISTS (
-          SELECT 1 FROM infrastructure_instances
-          WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump C'
-        );
-
-        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
-        SELECT 'zone', z_id, 'PUMP', 'E2E EC Pump D', false, NOW(), NOW()
-        WHERE NOT EXISTS (
-          SELECT 1 FROM infrastructure_instances
-          WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump D'
-        );
-
-        SELECT id INTO infra_a FROM infrastructure_instances WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump A' LIMIT 1;
-        SELECT id INTO infra_b FROM infrastructure_instances WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump B' LIMIT 1;
-        SELECT id INTO infra_c FROM infrastructure_instances WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump C' LIMIT 1;
-        SELECT id INTO infra_d FROM infrastructure_instances WHERE owner_type='zone' AND owner_id=z_id AND label='E2E EC Pump D' LIMIT 1;
-
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = x.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
         INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
-        SELECT infra_a, nc.id, 'actuator', 'ec_npk_pump', NOW(), NOW()
-        FROM node_channels nc
-        WHERE nc.node_id=n_id AND nc.channel='pump_a'
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('fan', 'ec_npk_pump', 'E2E EC Pump A'),
+            ('heater', 'ec_calcium_pump', 'E2E EC Pump B'),
+            ('light', 'ec_magnesium_pump', 'E2E EC Pump C'),
+            ('mister', 'ec_micro_pump', 'E2E EC Pump D')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
         ON CONFLICT (node_channel_id) DO UPDATE SET
-          infrastructure_instance_id=EXCLUDED.infrastructure_instance_id,
-          direction=EXCLUDED.direction,
-          role=EXCLUDED.role,
-          updated_at=NOW();
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
 
-        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
-        SELECT infra_b, nc.id, 'actuator', 'ec_calcium_pump', NOW(), NOW()
-        FROM node_channels nc
-        WHERE nc.node_id=n_id AND nc.channel='pump_b'
-        ON CONFLICT (node_channel_id) DO UPDATE SET
-          infrastructure_instance_id=EXCLUDED.infrastructure_instance_id,
-          direction=EXCLUDED.direction,
-          role=EXCLUDED.role,
-          updated_at=NOW();
-
-        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
-        SELECT infra_c, nc.id, 'actuator', 'ec_magnesium_pump', NOW(), NOW()
-        FROM node_channels nc
-        WHERE nc.node_id=n_id AND nc.channel='pump_c'
-        ON CONFLICT (node_channel_id) DO UPDATE SET
-          infrastructure_instance_id=EXCLUDED.infrastructure_instance_id,
-          direction=EXCLUDED.direction,
-          role=EXCLUDED.role,
-          updated_at=NOW();
-
-        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
-        SELECT infra_d, nc.id, 'actuator', 'ec_micro_pump', NOW(), NOW()
-        FROM node_channels nc
-        WHERE nc.node_id=n_id AND nc.channel='pump_d'
-        ON CONFLICT (node_channel_id) DO UPDATE SET
-          infrastructure_instance_id=EXCLUDED.infrastructure_instance_id,
-          direction=EXCLUDED.direction,
-          role=EXCLUDED.role,
-          updated_at=NOW();
-      END $$;
+  - step: verify_ec_component_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 4
+    timeout: 15.0
 
   - step: cleanup_old_cycles
     type: database_execute
@@ -212,7 +208,7 @@ actions:
       nutrient_program_code: E2E_EARLY_STOP
       nutrient_mode: ratio_ec_pid
       nutrient_solution_volume_l: 100
-      nutrient_dose_delay_sec: 8
+      nutrient_dose_delay_sec: 2
       nutrient_ec_stop_tolerance: 0.05
       nutrient_npk_ratio_pct: 40
       nutrient_calcium_ratio_pct: 30
@@ -257,9 +253,27 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: reset_recent_ec_correction_events
+    type: database_execute
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zone_id
+        AND (
+          type IN ('EC_DOSING', 'EC_CORRECTED')
+          OR (
+            type = 'DOSING'
+            AND (
+              POSITION('ec' IN LOWER(COALESCE(details->>'correction_type', ''))) > 0
+              OR POSITION('ec' IN LOWER(COALESCE(details->>'type', ''))) > 0
+            )
+          )
+        );
+    params:
+      zone_id: ${zone_id}
+
   - step: reset_backoff
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
+    url: http://localhost:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -298,7 +312,7 @@ actions:
     type: database_execute
     query: |
       UPDATE telemetry_last tl
-      SET last_value = 1.98,
+      SET last_value = 2.20,
           last_ts = NOW(),
           updated_at = NOW(),
           last_quality = 'GOOD'
@@ -361,6 +375,33 @@ assertions:
     expected_rows: 1
 
 cleanup:
+  - step: restore_default_roles_after_test
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      )
+      UPDATE channel_bindings cb
+      SET role = CASE nc.channel
+        WHEN 'fan' THEN 'fan'
+        WHEN 'heater' THEN 'heater'
+        WHEN 'light' THEN 'light'
+        WHEN 'mister' THEN 'mister'
+        ELSE cb.role
+      END,
+      updated_at = NOW()
+      FROM zone_ctx zc
+      JOIN nodes n
+        ON n.zone_id = zc.zone_id
+       AND n.uid = 'nd-ph-esp32una'
+      JOIN node_channels nc
+        ON nc.node_id = n.id
+      WHERE cb.node_channel_id = nc.id
+        AND nc.channel IN ('fan', 'heater', 'light', 'mister');
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
   - step: abort_cycle
     type: api_post
     endpoint: /api/grow-cycles/${cycle_id}/abort
