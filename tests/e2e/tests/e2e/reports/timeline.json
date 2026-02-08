@@ -1,11 +1,50 @@
 {
-  "test_suite": "E73_backoff_skip_signals",
-  "generated_at": "2026-02-08T17:15:33.975022",
+  "test_suite": "E63_backoff_on_errors",
+  "generated_at": "2026-02-08T15:03:43.762270",
   "test_cases": [
+    {
+      "name": "stop_node_simulator_initial",
+      "status": "passed",
+      "duration": 15.176851272583008,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "stop_node_simulator_initial",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:50.077940"
+    },
+    {
+      "name": "start_node_simulator",
+      "status": "passed",
+      "duration": 5.184841632843018,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_node_simulator",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.262919"
+    },
+    {
+      "name": "set_test_uids",
+      "status": "passed",
+      "duration": 1.6689300537109375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_test_uids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.263313"
+    },
     {
       "name": "set_zone_id_from_uid",
       "status": "passed",
-      "duration": 0.002286195755004883,
+      "duration": 0.00900411605834961,
       "error_message": null,
       "steps": [
         {
@@ -13,99 +52,487 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:13.879436"
+      "timestamp": "2026-02-08T15:01:55.272491"
     },
     {
-      "name": "set_zone_id",
+      "name": "set_node_id_from_uid",
       "status": "passed",
-      "duration": 4.291534423828125e-06,
+      "duration": 0.002407550811767578,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "set_node_id_from_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:13.879559"
+      "timestamp": "2026-02-08T15:01:55.275079"
     },
     {
-      "name": "clear_previous_state",
+      "name": "set_ids",
       "status": "passed",
-      "duration": 0.026882648468017578,
+      "duration": 1.2636184692382812e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "clear_previous_state",
+          "name": "set_ids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:13.906521"
+      "timestamp": "2026-02-08T15:01:55.275434"
     },
     {
-      "name": "backoff_window_start_ts",
+      "name": "ensure_main_pump_role",
       "status": "passed",
-      "duration": 0.0005404949188232422,
+      "duration": 0.0020742416381835938,
       "error_message": null,
       "steps": [
         {
-          "name": "backoff_window_start_ts",
+          "name": "ensure_main_pump_role",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:13.907163"
+      "timestamp": "2026-02-08T15:01:55.277663"
     },
     {
-      "name": "set_backoff_state",
+      "name": "ensure_drain_role",
       "status": "passed",
-      "duration": 0.025240421295166016,
+      "duration": 0.0009694099426269531,
       "error_message": null,
       "steps": [
         {
-          "name": "set_backoff_state",
+          "name": "ensure_drain_role",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:13.932585"
+      "timestamp": "2026-02-08T15:01:55.278783"
     },
     {
-      "name": "wait_for_automation_cycle",
+      "name": "cleanup_old_cycles",
       "status": "passed",
-      "duration": 20.000666618347168,
+      "duration": 0.0015916824340820312,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_automation_cycle",
+          "name": "cleanup_old_cycles",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:33.933303"
+      "timestamp": "2026-02-08T15:01:55.280532"
     },
     {
-      "name": "backoff_event_created",
-      "status": "failed",
-      "duration": 0.014291048049926758,
-      "error_message": "Expected field 'event_count' > 0, got 0",
+      "name": "create_plant",
+      "status": "passed",
+      "duration": 0.05899524688720703,
+      "error_message": null,
       "steps": [
         {
-          "name": "backoff_event_created",
-          "status": "failed",
-          "error": "Expected field 'event_count' > 0, got 0"
+          "name": "create_plant",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-02-08T17:15:33.947649"
+      "timestamp": "2026-02-08T15:01:55.339707"
+    },
+    {
+      "name": "create_recipe",
+      "status": "passed",
+      "duration": 0.06105613708496094,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.401002"
+    },
+    {
+      "name": "create_revision",
+      "status": "passed",
+      "duration": 0.06009221076965332,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.461245"
+    },
+    {
+      "name": "add_phase",
+      "status": "passed",
+      "duration": 0.06146383285522461,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "add_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.522942"
+    },
+    {
+      "name": "publish_revision",
+      "status": "passed",
+      "duration": 0.0628504753112793,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.586051"
+    },
+    {
+      "name": "create_cycle",
+      "status": "passed",
+      "duration": 0.11117696762084961,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.697617"
+    },
+    {
+      "name": "set_cycle_id",
+      "status": "passed",
+      "duration": 2.86102294921875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_cycle_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:55.697734"
+    },
+    {
+      "name": "wait_for_effective_targets",
+      "status": "passed",
+      "duration": 2.001149892807007,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_effective_targets",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.698911"
+    },
+    {
+      "name": "enable_capabilities",
+      "status": "passed",
+      "duration": 0.0018391609191894531,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "enable_capabilities",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.700987"
+    },
+    {
+      "name": "ensure_heater_infrastructure",
+      "status": "passed",
+      "duration": 0.002367734909057617,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "ensure_heater_infrastructure",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.703517"
+    },
+    {
+      "name": "fetch_heater_channel",
+      "status": "passed",
+      "duration": 0.0007119178771972656,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_heater_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.704486"
+    },
+    {
+      "name": "fetch_heater_infra",
+      "status": "passed",
+      "duration": 0.0007565021514892578,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_heater_infra",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.705424"
+    },
+    {
+      "name": "upsert_heater_binding",
+      "status": "passed",
+      "duration": 0.0017938613891601562,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "upsert_heater_binding",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.707458"
+    },
+    {
+      "name": "reset_backoff",
+      "status": "passed",
+      "duration": 0.011661767959594727,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_backoff",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.719260"
+    },
+    {
+      "name": "baseline_window_open",
+      "status": "passed",
+      "duration": 0.0003972053527832031,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "baseline_window_open",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:57.719744"
+    },
+    {
+      "name": "publish_temp_low_baseline",
+      "status": "passed",
+      "duration": 2.0019233226776123,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_temp_low_baseline",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:01:59.721924"
+    },
+    {
+      "name": "wait_for_baseline_command",
+      "status": "passed",
+      "duration": 9.732189416885376,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_baseline_command",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:09.454433"
+    },
+    {
+      "name": "degraded_timestamp",
+      "status": "passed",
+      "duration": 0.0003266334533691406,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "degraded_timestamp",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:09.454856"
+    },
+    {
+      "name": "set_degraded_state",
+      "status": "passed",
+      "duration": 0.011181831359863281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_degraded_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:09.466198"
+    },
+    {
+      "name": "publish_temp_low_degraded",
+      "status": "passed",
+      "duration": 2.0024259090423584,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_temp_low_degraded",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:11.468928"
+    },
+    {
+      "name": "wait_for_degraded_cycle",
+      "status": "passed",
+      "duration": 45.00186276435852,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_degraded_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:56.470922"
+    },
+    {
+      "name": "reset_backoff_after_degraded",
+      "status": "passed",
+      "duration": 0.013813495635986328,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_backoff_after_degraded",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:56.484907"
+    },
+    {
+      "name": "reset_timestamp",
+      "status": "passed",
+      "duration": 0.0004754066467285156,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_timestamp",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:56.485467"
+    },
+    {
+      "name": "publish_temp_low_after_reset",
+      "status": "passed",
+      "duration": 2.00227427482605,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_temp_low_after_reset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:02:58.487992"
+    },
+    {
+      "name": "wait_for_post_reset_command",
+      "status": "passed",
+      "duration": 45.00884222984314,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_post_reset_command",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.496939"
+    },
+    {
+      "name": "degraded_mode_event_created",
+      "status": "passed",
+      "duration": 0.012764453887939453,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "degraded_mode_event_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.509727"
+    },
+    {
+      "name": "degraded_mode_infra_alert_upserted",
+      "status": "passed",
+      "duration": 0.0016312599182128906,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "degraded_mode_infra_alert_upserted",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.511374"
+    },
+    {
+      "name": "baseline_heater_command_created",
+      "status": "passed",
+      "duration": 0.0010843276977539062,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "baseline_heater_command_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.512473"
+    },
+    {
+      "name": "no_commands_in_degraded_mode",
+      "status": "passed",
+      "duration": 0.0012555122375488281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_commands_in_degraded_mode",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.513737"
+    },
+    {
+      "name": "commands_after_reset",
+      "status": "passed",
+      "duration": 0.0018584728240966797,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "commands_after_reset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.515604"
+    },
+    {
+      "name": "zone_recovered_event_after_reset",
+      "status": "passed",
+      "duration": 0.002375364303588867,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "zone_recovered_event_after_reset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-08T15:03:43.517988"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E73_backoff_skip_signals": {
+    "E63_backoff_on_errors": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 15,
-        "zone_uid": "zn-test-1",
         "node_id": 14,
-        "node_uid": "nd-ph-esp32una"
+        "cycle_id": 26
       }
     }
   }

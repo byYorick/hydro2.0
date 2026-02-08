@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 import logging
 import os
+from datetime import datetime
 from infrastructure import CommandBus
 from common.infra_alerts import send_infra_exception_alert
 from common.trace_context import extract_trace_id_from_headers
@@ -132,6 +133,54 @@ class TestHookRequest(BaseModel):
     state: Optional[Dict[str, Any]] = Field(None, description="State override for set_state")
 
 
+def _parse_optional_datetime(value: Any, field_name: str) -> Optional[datetime]:
+    """Нормализовать datetime-поле override из JSON (None|ISO string|datetime)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw == "":
+            return None
+        # Поддержка ISO вида 2099-01-01T00:00:00Z
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid datetime format for '{field_name}': {value}",
+            ) from exc
+    raise HTTPException(
+        status_code=400,
+        detail=f"Field '{field_name}' must be null or ISO datetime string",
+    )
+
+
+def _normalize_state_override(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Привести override состояния зоны к безопасному внутреннему формату."""
+    error_streak_raw = state.get("error_streak", 0)
+    try:
+        error_streak = int(error_streak_raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Field 'error_streak' must be integer, got: {error_streak_raw}",
+        ) from exc
+    if error_streak < 0:
+        raise HTTPException(status_code=400, detail="Field 'error_streak' must be >= 0")
+
+    return {
+        "error_streak": error_streak,
+        "next_allowed_run_at": _parse_optional_datetime(state.get("next_allowed_run_at"), "next_allowed_run_at"),
+        "last_backoff_reported_until": _parse_optional_datetime(state.get("last_backoff_reported_until"), "last_backoff_reported_until"),
+        "degraded_alert_active": bool(state.get("degraded_alert_active", False)),
+        "last_missing_targets_report_at": _parse_optional_datetime(state.get("last_missing_targets_report_at"), "last_missing_targets_report_at"),
+    }
+
+
 @app.post("/test/hook")
 async def test_hook(req: TestHookRequest = Body(...)):
     """
@@ -172,16 +221,7 @@ async def test_hook(req: TestHookRequest = Body(...)):
     
     elif action == "reset_backoff":
         # Сброс backoff состояния для зоны
-        if zone_id in _zone_states_override:
-            _zone_states_override[zone_id] = {
-                "error_streak": 0,
-                "next_allowed_run_at": None
-            }
-        else:
-            _zone_states_override[zone_id] = {
-                "error_streak": 0,
-                "next_allowed_run_at": None
-            }
+        _zone_states_override[zone_id] = _normalize_state_override({"error_streak": 0})
         
         logger.info(f"[TEST_HOOK] Reset backoff for zone {zone_id}")
         return {"status": "ok", "message": f"Backoff reset for zone {zone_id}"}
@@ -190,8 +230,9 @@ async def test_hook(req: TestHookRequest = Body(...)):
         if not req.state:
             raise HTTPException(status_code=400, detail="set_state requires state")
         
-        _zone_states_override[zone_id] = req.state
-        logger.info(f"[TEST_HOOK] Set state for zone {zone_id}: {req.state}")
+        normalized_state = _normalize_state_override(req.state)
+        _zone_states_override[zone_id] = normalized_state
+        logger.info(f"[TEST_HOOK] Set state for zone {zone_id}: {normalized_state}")
         return {"status": "ok", "message": f"State set for zone {zone_id}"}
     
     else:

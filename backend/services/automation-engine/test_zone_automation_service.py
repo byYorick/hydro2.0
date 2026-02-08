@@ -416,6 +416,60 @@ async def test_process_zone_backoff_skip_emits_signal_once_per_window():
 
 
 @pytest.mark.asyncio
+async def test_process_zone_backoff_skip_retries_when_event_and_alert_fail():
+    service = _build_zone_service()
+    zone_id = 145
+    now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    next_allowed = now + timedelta(seconds=30)
+    service._zone_states[zone_id] = {
+        "error_streak": 2,
+        "next_allowed_run_at": next_allowed,
+        "last_backoff_reported_until": None,
+        "degraded_alert_active": False,
+        "last_missing_targets_report_at": None,
+    }
+
+    with patch("services.zone_automation_service.utcnow", return_value=now), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("db fail")) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=False) as mock_alert, \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_event_fail_alert:
+        await service.process_zone(zone_id)
+        await service.process_zone(zone_id)
+
+    assert mock_event.await_count == 2
+    assert mock_alert.await_count == 2
+    assert mock_event_fail_alert.await_count == 2
+    assert service._zone_states[zone_id]["last_backoff_reported_until"] is None
+
+
+@pytest.mark.asyncio
+async def test_process_zone_backoff_skip_marks_reported_when_alert_delivered():
+    service = _build_zone_service()
+    zone_id = 146
+    now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    next_allowed = now + timedelta(seconds=30)
+    service._zone_states[zone_id] = {
+        "error_streak": 2,
+        "next_allowed_run_at": next_allowed,
+        "last_backoff_reported_until": None,
+        "degraded_alert_active": False,
+        "last_missing_targets_report_at": None,
+    }
+
+    with patch("services.zone_automation_service.utcnow", return_value=now), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("db fail")) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=True) as mock_alert, \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_event_fail_alert:
+        await service.process_zone(zone_id)
+        await service.process_zone(zone_id)
+
+    assert mock_event.await_count == 1
+    assert mock_alert.await_count == 1
+    assert mock_event_fail_alert.await_count == 1
+    assert service._zone_states[zone_id]["last_backoff_reported_until"] == next_allowed
+
+
+@pytest.mark.asyncio
 async def test_process_zone_missing_targets_emits_throttled_alert():
     zone_repo = Mock(spec=ZoneRepository)
     telemetry_repo = Mock(spec=TelemetryRepository)
@@ -453,6 +507,46 @@ async def test_process_zone_missing_targets_emits_throttled_alert():
 
 
 @pytest.mark.asyncio
+async def test_process_zone_missing_targets_retries_when_event_and_alert_fail():
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={"targets": None})
+
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+    t0 = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=30)
+    with patch("services.zone_automation_service.ZoneAutomationService._check_zone_deletion", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_pid_config_updates", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.utcnow", side_effect=[t0, t1]), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("db fail")) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=False) as mock_alert, \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_event_fail_alert:
+        await service.process_zone(1)
+        await service.process_zone(1)
+
+    assert mock_event.await_count == 2
+    assert mock_alert.await_count == 2
+    assert mock_event_fail_alert.await_count == 2
+    assert service._zone_states[1]["last_missing_targets_report_at"] is None
+
+
+@pytest.mark.asyncio
 async def test_safe_process_controller_cooldown_skip_emits_throttled_signal():
     service = _build_zone_service()
     zone_id = 211
@@ -460,14 +554,58 @@ async def test_safe_process_controller_cooldown_skip_emits_throttled_signal():
     failure_time = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
     service._controller_failures[(zone_id, controller)] = failure_time
 
-    with patch("services.zone_automation_service.utcnow", side_effect=[failure_time + timedelta(seconds=10), failure_time + timedelta(seconds=20)]), \
+    with patch("services.zone_automation_service.utcnow", return_value=failure_time + timedelta(seconds=10)), \
          patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event, \
          patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
-        await service._safe_process_controller(controller, AsyncMock(return_value=None)(), zone_id)
-        await service._safe_process_controller(controller, AsyncMock(return_value=None)(), zone_id)
+        await service._safe_process_controller(controller, None, zone_id)
+        await service._safe_process_controller(controller, None, zone_id)
 
     assert mock_event.await_count == 1
     assert mock_alert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_safe_process_controller_cooldown_skip_retries_when_event_and_alert_fail():
+    service = _build_zone_service()
+    zone_id = 212
+    controller = "irrigation"
+    failure_time = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    service._controller_failures[(zone_id, controller)] = failure_time
+
+    with patch("services.zone_automation_service.utcnow", return_value=failure_time + timedelta(seconds=10)), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("db fail")) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=False) as mock_alert, \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_event_fail_alert:
+        await service._safe_process_controller(controller, None, zone_id)
+        await service._safe_process_controller(controller, None, zone_id)
+
+    assert mock_event.await_count == 2
+    assert mock_alert.await_count == 2
+    assert mock_event_fail_alert.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_emit_degraded_mode_signal_retries_when_event_and_alert_fail():
+    service = _build_zone_service()
+    zone_id = 188
+    service._zone_states[zone_id] = {
+        "error_streak": DEGRADED_MODE_THRESHOLD,
+        "next_allowed_run_at": None,
+        "last_backoff_reported_until": None,
+        "degraded_alert_active": False,
+        "last_missing_targets_report_at": None,
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("db fail")) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=False) as mock_alert, \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_event_fail_alert:
+        await service._emit_degraded_mode_signal(zone_id)
+        await service._emit_degraded_mode_signal(zone_id)
+
+    assert mock_event.await_count == 2
+    assert mock_alert.await_count == 2
+    assert mock_event_fail_alert.await_count == 2
+    assert service._zone_states[zone_id]["degraded_alert_active"] is False
 
 
 @pytest.mark.asyncio

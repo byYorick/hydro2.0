@@ -2,6 +2,7 @@
 import pytest
 import sys
 import os
+from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -224,6 +225,9 @@ def test_test_hook_reset_backoff_and_get_state(client):
         payload = state_resp.json()["data"]["state_override"]
         assert payload["error_streak"] == 0
         assert payload["next_allowed_run_at"] is None
+        assert payload["degraded_alert_active"] is False
+        assert payload["last_backoff_reported_until"] is None
+        assert payload["last_missing_targets_report_at"] is None
     finally:
         api._test_mode = old_mode
         api._test_hooks.clear()
@@ -253,6 +257,35 @@ def test_test_hook_set_state_and_unknown_action_validation(client):
         })
         assert unknown_action_resp.status_code == 400
         assert "Unknown action" in unknown_action_resp.json()["detail"]
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
+def test_test_hook_set_state_normalizes_datetime_fields(client):
+    """set_state должен преобразовывать ISO-дату в datetime внутри override."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        response = client.post("/test/hook", json={
+            "zone_id": 13,
+            "action": "set_state",
+            "state": {
+                "error_streak": 2,
+                "next_allowed_run_at": "2099-01-01T00:00:00Z",
+            },
+        })
+        assert response.status_code == 200
+
+        state = api._zone_states_override[13]
+        assert state["error_streak"] == 2
+        assert isinstance(state["next_allowed_run_at"], datetime)
+        assert state["next_allowed_run_at"].isoformat().startswith("2099-01-01T00:00:00")
+        assert state["degraded_alert_active"] is False
     finally:
         api._test_mode = old_mode
         api._zone_states_override.clear()

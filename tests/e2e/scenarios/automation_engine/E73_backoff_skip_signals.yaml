@@ -9,14 +9,52 @@ description: |
   - Проверяем, что создан zone_event ZONE_SKIPPED_BACKOFF
   - Проверяем, что создан/обновлен infra-алерт infra_zone_backoff_skip
 
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - air_temp_c
+        actuators:
+          - heater
+      telemetry:
+        interval_seconds: 60.0
+
 actions:
+  - step: set_test_uids
+    type: set
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: stop_node_simulator_initial
+    type: stop_simulator
+    wait_seconds: 5
+    optional: true
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true
+
   - step: set_zone_id_from_uid
     type: database_query
     query: |
       SELECT id
       FROM zones
-      WHERE uid = 'zn-test-1'
+      WHERE uid = :zone_uid
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     save: zone_row
     expected_rows: 1
 
@@ -24,10 +62,139 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: set_node_id_from_uid
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+    expected_rows: 1
+
+  - step: set_node_id
+    type: set
+    node_id: ${node_row.0.node_id}
+
+  - step: ensure_zone_online
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET status = 'online'
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_node_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE id = :node_id;
+    params:
+      node_id: ${node_id}
+
+  - step: ensure_main_pump_role
+    type: database_execute
+    query: |
+      UPDATE node_channels
+      SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('zone_role', 'main_pump')
+      WHERE node_id = :node_id
+        AND channel = 'heater';
+    params:
+      node_id: ${node_id}
+
+  - step: ensure_drain_role
+    type: database_execute
+    query: |
+      UPDATE node_channels
+      SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('zone_role', 'drain')
+      WHERE node_id = :node_id
+        AND channel = 'air_temp_c';
+    params:
+      node_id: ${node_id}
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e73-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e73-${TIMESTAMP_S}
+      description: Test recipe for E73
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E73
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      temp_air_target: 25.0
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
   - step: clear_previous_state
     type: ae_test_hook
     zone_id: ${zone_id}
     action: reset_backoff
+
+  - step: baseline_backoff_alert_counter
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(error_count), 0) AS baseline_error_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_zone_backoff_skip'
+        AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+    save: baseline_backoff_alert
 
   - step: backoff_window_start_ts
     type: database_query
@@ -42,10 +209,41 @@ actions:
     state:
       error_streak: 1
       next_allowed_run_at: "2099-01-01T00:00:00Z"
+      degraded_alert_active: false
 
-  - step: wait_for_automation_cycle
-    type: sleep
-    seconds: 20
+  - step: wait_for_backoff_event
+    type: db.wait
+    query: |
+      SELECT id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_SKIPPED_BACKOFF'
+        AND created_at >= :backoff_start_ts
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      backoff_start_ts: ${backoff_start_ts.0.ts}
+    expected_rows: 1
+    timeout: 120.0
+
+  - step: wait_for_backoff_alert
+    type: db.wait
+    query: |
+      SELECT id
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_zone_backoff_skip'
+        AND status = 'ACTIVE'
+        AND error_count > :baseline_error_count
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      baseline_error_count: ${baseline_backoff_alert.0.baseline_error_count}
+    expected_rows: 1
+    timeout: 120.0
 
 assertions:
   - name: backoff_event_created
@@ -67,24 +265,39 @@ assertions:
   - name: backoff_infra_alert_upserted
     type: database_query
     query: |
-      SELECT COUNT(*) as alert_count
+      SELECT COALESCE(MAX(error_count), 0) - :baseline_error_count AS error_count_delta
       FROM alerts
       WHERE zone_id = :zone_id
         AND source = 'infra'
         AND code = 'infra_zone_backoff_skip'
         AND status = 'ACTIVE'
-        AND updated_at >= :backoff_start_ts
     params:
       zone_id: ${zone_id}
-      backoff_start_ts: ${backoff_start_ts.0.ts}
+      baseline_error_count: ${baseline_backoff_alert.0.baseline_error_count}
     expected:
-      - field: alert_count
+      - field: error_count_delta
         operator: greater_than
         value: 0
 
 cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
   - step: clear_backoff_state
     type: ae_test_hook
     zone_id: ${zone_id}
     action: reset_backoff
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true
