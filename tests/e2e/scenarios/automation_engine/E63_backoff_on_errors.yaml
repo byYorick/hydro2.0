@@ -195,7 +195,6 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -237,7 +236,6 @@ actions:
   # Включаем degraded mode через test hook
   - step: set_degraded_state
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: set_state
     state:
@@ -265,7 +263,6 @@ actions:
 
   - step: reset_backoff_after_degraded
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -289,6 +286,42 @@ actions:
     seconds: 20
 
 assertions:
+  - name: degraded_mode_event_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_DEGRADED_MODE'
+        AND created_at >= :degraded_ts
+        AND created_at <= :reset_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+      reset_ts: ${reset_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
+  - name: degraded_mode_infra_alert_upserted
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_zone_degraded_mode'
+        AND status = 'ACTIVE'
+        AND updated_at >= :degraded_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+    expected:
+      - field: alert_count
+        operator: greater_than
+        value: 0
+
   - name: baseline_heater_command_created
     type: database_query
     query: |
@@ -342,6 +375,22 @@ assertions:
         operator: greater_than
         value: 0
 
+  - name: zone_recovered_event_after_reset
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_RECOVERED'
+        AND created_at > :degraded_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
 cleanup:
   - step: abort_cycle
     type: api_post
@@ -351,7 +400,6 @@ cleanup:
 
   - step: clear_state_override
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
     optional: true

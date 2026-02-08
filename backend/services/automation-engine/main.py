@@ -103,6 +103,23 @@ _shutdown_event = asyncio.Event()
 _zone_service: Optional[ZoneAutomationService] = None
 _command_tracker: Optional[CommandTracker] = None
 _command_bus: Optional[CommandBus] = None
+_last_db_circuit_open_alert_at: Optional[datetime] = None
+_DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
+
+
+def _should_emit_db_circuit_open_alert(now: datetime) -> bool:
+    """Троттлинг алертов об открытом DB circuit breaker."""
+    global _last_db_circuit_open_alert_at
+    if _last_db_circuit_open_alert_at is None:
+        _last_db_circuit_open_alert_at = now
+        return True
+
+    elapsed = (now - _last_db_circuit_open_alert_at).total_seconds()
+    if elapsed >= _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS:
+        _last_db_circuit_open_alert_at = now
+        return True
+
+    return False
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -805,6 +822,22 @@ async def main():
                         zones = await db_circuit_breaker.call(_get_zones)
                     except CircuitBreakerOpenError:
                         logger.warning("Database Circuit Breaker is OPEN, skipping zone processing")
+                        now = utcnow()
+                        if _should_emit_db_circuit_open_alert(now):
+                            await send_infra_alert(
+                                code="infra_db_circuit_open",
+                                alert_type="Database Circuit Breaker Open",
+                                message="Database circuit breaker is OPEN, zone processing is skipped",
+                                severity="critical",
+                                zone_id=None,
+                                service="automation-engine",
+                                component="main_loop",
+                                error_type="CircuitBreakerOpenError",
+                                details={
+                                    "throttle_seconds": _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+                                    "detected_at": now.isoformat(),
+                                },
+                            )
                         await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                         continue
                     

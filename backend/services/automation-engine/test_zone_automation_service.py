@@ -1,11 +1,17 @@
 """Tests for zone_automation_service."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from common.simulation_clock import SimulationClock
-from services.zone_automation_service import ZoneAutomationService
+from services.zone_automation_service import (
+    ZoneAutomationService,
+    INITIAL_BACKOFF_SECONDS,
+    MAX_BACKOFF_SECONDS,
+    DEGRADED_MODE_THRESHOLD,
+)
 from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository, GrowCycleRepository, InfrastructureRepository
 from infrastructure.command_bus import CommandBus
+from infrastructure.circuit_breaker import CircuitBreakerOpenError
 
 
 @pytest.mark.asyncio
@@ -272,3 +278,226 @@ async def test_check_phase_transitions_skips_for_live_simulation():
     await service._check_phase_transitions(1, sim_clock)
 
     grow_cycle_repo.get_current_phase_timing.assert_not_called()
+
+
+def _build_zone_service() -> ZoneAutomationService:
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+    return ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+
+def test_calculate_backoff_seconds_is_exponential_and_capped():
+    service = _build_zone_service()
+
+    assert service._calculate_backoff_seconds(0) == 0
+    assert service._calculate_backoff_seconds(1) == INITIAL_BACKOFF_SECONDS
+    assert service._calculate_backoff_seconds(2) == INITIAL_BACKOFF_SECONDS * 2
+    assert service._calculate_backoff_seconds(3) == INITIAL_BACKOFF_SECONDS * 4
+    assert service._calculate_backoff_seconds(100) == MAX_BACKOFF_SECONDS
+
+
+def test_record_zone_error_increments_streak_and_updates_next_allowed_time():
+    service = _build_zone_service()
+    zone_id = 77
+    t0 = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 2, 8, 12, 1, 0, tzinfo=timezone.utc)
+
+    with patch("services.zone_automation_service.utcnow", side_effect=[t0, t1]):
+        service._record_zone_error(zone_id)
+        state_after_first = service._get_zone_state(zone_id).copy()
+        service._record_zone_error(zone_id)
+        state_after_second = service._get_zone_state(zone_id).copy()
+
+    assert state_after_first["error_streak"] == 1
+    assert state_after_first["next_allowed_run_at"] == t0 + timedelta(seconds=INITIAL_BACKOFF_SECONDS)
+    assert state_after_second["error_streak"] == 2
+    assert state_after_second["next_allowed_run_at"] == t1 + timedelta(seconds=INITIAL_BACKOFF_SECONDS * 2)
+
+
+def test_should_process_zone_respects_backoff_window():
+    service = _build_zone_service()
+    zone_id = 88
+    next_allowed = datetime(2026, 2, 8, 12, 5, 0, tzinfo=timezone.utc)
+    service._zone_states[zone_id] = {
+        "error_streak": 1,
+        "next_allowed_run_at": next_allowed,
+    }
+
+    with patch("services.zone_automation_service.utcnow", return_value=next_allowed - timedelta(seconds=1)):
+        assert service._should_process_zone(zone_id) is False
+
+    with patch("services.zone_automation_service.utcnow", return_value=next_allowed + timedelta(seconds=1)):
+        assert service._should_process_zone(zone_id) is True
+
+
+def test_is_degraded_mode_uses_threshold():
+    service = _build_zone_service()
+    zone_id = 99
+
+    service._zone_states[zone_id] = {"error_streak": DEGRADED_MODE_THRESHOLD - 1, "next_allowed_run_at": None}
+    assert service._is_degraded_mode(zone_id) is False
+
+    service._zone_states[zone_id] = {"error_streak": DEGRADED_MODE_THRESHOLD, "next_allowed_run_at": None}
+    assert service._is_degraded_mode(zone_id) is True
+
+
+@pytest.mark.asyncio
+async def test_process_zone_skips_all_work_when_in_backoff():
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    recipe_repo.get_zone_data_batch = AsyncMock(return_value={})
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
+
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+    now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    service._zone_states[123] = {
+        "error_streak": 1,
+        "next_allowed_run_at": now + timedelta(seconds=30),
+    }
+
+    with patch("services.zone_automation_service.utcnow", return_value=now):
+        await service.process_zone(123)
+
+    grow_cycle_repo.get_active_grow_cycle.assert_not_called()
+    recipe_repo.get_zone_data_batch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_zone_backoff_skip_emits_signal_once_per_window():
+    service = _build_zone_service()
+    zone_id = 144
+    now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    next_allowed = now + timedelta(seconds=30)
+    service._zone_states[zone_id] = {
+        "error_streak": 2,
+        "next_allowed_run_at": next_allowed,
+        "last_backoff_reported_until": None,
+        "degraded_alert_active": False,
+        "last_missing_targets_report_at": None,
+    }
+
+    with patch("services.zone_automation_service.utcnow", return_value=now), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await service.process_zone(zone_id)
+        await service.process_zone(zone_id)
+
+    assert mock_event.await_count == 1
+    assert mock_alert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_process_zone_missing_targets_emits_throttled_alert():
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={"targets": None})
+
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+    t0 = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=30)
+    with patch("services.zone_automation_service.ZoneAutomationService._check_zone_deletion", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_pid_config_updates", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.utcnow", side_effect=[t0, t1]), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await service.process_zone(1)
+        await service.process_zone(1)
+
+    assert mock_event.await_count == 1
+    assert mock_alert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_safe_process_controller_cooldown_skip_emits_throttled_signal():
+    service = _build_zone_service()
+    zone_id = 211
+    controller = "irrigation"
+    failure_time = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    service._controller_failures[(zone_id, controller)] = failure_time
+
+    with patch("services.zone_automation_service.utcnow", side_effect=[failure_time + timedelta(seconds=10), failure_time + timedelta(seconds=20)]), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await service._safe_process_controller(controller, AsyncMock(return_value=None)(), zone_id)
+        await service._safe_process_controller(controller, AsyncMock(return_value=None)(), zone_id)
+
+    assert mock_event.await_count == 1
+    assert mock_alert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_process_zone_emits_alert_when_zone_data_unavailable():
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    grow_cycle_repo = Mock(spec=GrowCycleRepository)
+    infrastructure_repo = Mock(spec=InfrastructureRepository)
+    command_bus = Mock(spec=CommandBus)
+
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(side_effect=CircuitBreakerOpenError("db cb open"))
+
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+
+    with patch("services.zone_automation_service.ZoneAutomationService._check_zone_deletion", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_pid_config_updates", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        await service.process_zone(1)
+
+    mock_alert.assert_awaited_once()
+    kwargs = mock_alert.await_args.kwargs
+    assert kwargs["code"] == "infra_zone_data_unavailable"

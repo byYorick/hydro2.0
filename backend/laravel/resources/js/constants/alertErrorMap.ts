@@ -75,6 +75,42 @@ const ALERT_CODE_MAP: Record<string, AlertCodeMeta> = {
     recommendation: 'Проверьте детали контроллера и входную телеметрию.',
     severity: 'error',
   },
+  infra_controller_cooldown_skip: {
+    title: 'Контроллер в паузе после сбоя',
+    description: 'Контроллер временно пропущен из-за cooldown после ошибки.',
+    recommendation: 'Проверьте причину исходной ошибки контроллера и повторите после паузы.',
+    severity: 'warning',
+  },
+  infra_zone_backoff_skip: {
+    title: 'Зона пропущена по backoff',
+    description: 'Automation Engine временно не обрабатывает зону из-за серии ошибок.',
+    recommendation: 'Откройте детали зоны и устраните первичную ошибку обработки.',
+    severity: 'warning',
+  },
+  infra_zone_degraded_mode: {
+    title: 'Зона в деградированном режиме',
+    description: 'Выполняются только safety-проверки и health-мониторинг.',
+    recommendation: 'Проверьте контроллеры зоны и восстановите нормальную обработку.',
+    severity: 'error',
+  },
+  infra_zone_targets_missing: {
+    title: 'Пропуск зоны без targets',
+    description: 'У активного цикла отсутствуют или некорректны цели управления.',
+    recommendation: 'Проверьте активный цикл выращивания и структуру targets.',
+    severity: 'warning',
+  },
+  infra_zone_data_unavailable: {
+    title: 'Недоступны данные зоны',
+    description: 'Открыт DB circuit breaker, чтение данных зоны недоступно.',
+    recommendation: 'Проверьте базу данных, сетевую доступность и состояние circuit breaker.',
+    severity: 'critical',
+  },
+  infra_db_circuit_open: {
+    title: 'Открыт circuit breaker базы данных',
+    description: 'Главный цикл автоматики временно пропускает обработку зон.',
+    recommendation: 'Проверьте состояние PostgreSQL и подключение automation-engine к БД.',
+    severity: 'critical',
+  },
   infra_fill_mode_failed: {
     title: 'Ошибка режима Fill',
     description: 'Не удалось выполнить наполнение бака/контура.',
@@ -140,4 +176,3 @@ export function resolveAlertSeverity(
   if (rawSeverity === 'info') return 'info'
   return resolveAlertCodeMeta(code).severity
 }
-

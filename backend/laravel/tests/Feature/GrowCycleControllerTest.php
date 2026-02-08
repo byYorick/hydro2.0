@@ -260,4 +260,72 @@ class GrowCycleControllerTest extends TestCase
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::ABORTED, $cycle->status);
     }
+
+    #[Test]
+    public function it_returns_422_when_pausing_non_running_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::PLANNED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/pause");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is not running');
+    }
+
+    #[Test]
+    public function it_returns_422_when_resuming_non_paused_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/resume");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is not paused');
+    }
+
+    #[Test]
+    public function it_returns_422_when_harvesting_completed_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::HARVESTED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/harvest", [
+                'batch_label' => 'Batch-002',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is already completed');
+    }
+
+    #[Test]
+    public function it_returns_422_when_aborting_completed_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::ABORTED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/abort", [
+                'notes' => 'Already stopped',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is already completed');
+    }
 }

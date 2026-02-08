@@ -1,0 +1,90 @@
+# E73: Backoff Skip Signals - при backoff не тихий пропуск
+# DoD: при активном backoff создаются zone_event + infra alert
+
+name: E73_backoff_skip_signals
+description: |
+  Проверяет отсутствие "тихого" пропуска зоны при backoff:
+  - Принудительно выставляем состояние зоны в backoff через test hook
+  - Ждем цикл automation-engine
+  - Проверяем, что создан zone_event ZONE_SKIPPED_BACKOFF
+  - Проверяем, что создан/обновлен infra-алерт infra_zone_backoff_skip
+
+actions:
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: clear_previous_state
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: reset_backoff
+
+  - step: backoff_window_start_ts
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: backoff_start_ts
+
+  - step: set_backoff_state
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: set_state
+    state:
+      error_streak: 1
+      next_allowed_run_at: "2099-01-01T00:00:00Z"
+
+  - step: wait_for_automation_cycle
+    type: sleep
+    seconds: 20
+
+assertions:
+  - name: backoff_event_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_SKIPPED_BACKOFF'
+        AND created_at >= :backoff_start_ts
+    params:
+      zone_id: ${zone_id}
+      backoff_start_ts: ${backoff_start_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
+  - name: backoff_infra_alert_upserted
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_zone_backoff_skip'
+        AND status = 'ACTIVE'
+        AND updated_at >= :backoff_start_ts
+    params:
+      zone_id: ${zone_id}
+      backoff_start_ts: ${backoff_start_ts.0.ts}
+    expected:
+      - field: alert_count
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: clear_backoff_state
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: reset_backoff
+    optional: true

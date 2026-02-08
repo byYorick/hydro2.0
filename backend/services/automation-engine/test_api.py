@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 # Добавляем путь к модулю для импорта
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import api
 from api import app, set_command_bus
 from infrastructure.command_bus import CommandBus
 
@@ -185,3 +186,74 @@ async def test_scheduler_command_without_params(client, mock_command_bus):
         cmd="set_relay",
         params={}  # Пустой dict по умолчанию
     )
+
+
+def test_test_hook_forbidden_when_test_mode_disabled(client):
+    """Test hook should be unavailable when AE_TEST_MODE is disabled."""
+    old_mode = api._test_mode
+    try:
+        api._test_mode = False
+        response = client.post("/test/hook", json={
+            "zone_id": 1,
+            "action": "reset_backoff",
+        })
+        assert response.status_code == 403
+    finally:
+        api._test_mode = old_mode
+
+
+def test_test_hook_reset_backoff_and_get_state(client):
+    """Reset backoff should persist state override and be retrievable."""
+    old_mode = api._test_mode
+    old_hooks = dict(api._test_hooks)
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._test_hooks.clear()
+        api._zone_states_override.clear()
+
+        reset_resp = client.post("/test/hook", json={
+            "zone_id": 11,
+            "action": "reset_backoff",
+        })
+        assert reset_resp.status_code == 200
+        assert reset_resp.json()["status"] == "ok"
+
+        state_resp = client.get("/test/hook/11")
+        assert state_resp.status_code == 200
+        payload = state_resp.json()["data"]["state_override"]
+        assert payload["error_streak"] == 0
+        assert payload["next_allowed_run_at"] is None
+    finally:
+        api._test_mode = old_mode
+        api._test_hooks.clear()
+        api._test_hooks.update(old_hooks)
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
+def test_test_hook_set_state_and_unknown_action_validation(client):
+    """set_state should require state payload, unknown action should return 400."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        missing_state_resp = client.post("/test/hook", json={
+            "zone_id": 12,
+            "action": "set_state",
+        })
+        assert missing_state_resp.status_code == 400
+        assert "set_state requires state" in missing_state_resp.json()["detail"]
+
+        unknown_action_resp = client.post("/test/hook", json={
+            "zone_id": 12,
+            "action": "unknown_action",
+        })
+        assert unknown_action_resp.status_code == 400
+        assert "Unknown action" in unknown_action_resp.json()["detail"]
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
