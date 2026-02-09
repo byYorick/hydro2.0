@@ -118,6 +118,8 @@ class NodeRegistryService
         $attempt = 0;
         $uidAttempt = 0;
         $maxUidAttempts = 5;
+        $requestedNodeUid = $this->extractRequestedNodeUid($helloData);
+        $useRequestedNodeUid = !empty($requestedNodeUid);
         
         while ($attempt < $maxRetries) {
             $transactionLevelBefore = DB::transactionLevel();
@@ -139,7 +141,9 @@ class NodeRegistryService
 
                 if (!$node) {
                     $nodeType = $helloData['node_type'] ?? 'unknown';
-                    $uid = $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
+                    $uid = $useRequestedNodeUid
+                        ? $requestedNodeUid
+                        : $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
 
                     $node = new DeviceNode();
                     $node->uid = $uid;
@@ -155,7 +159,29 @@ class NodeRegistryService
                         'uid' => $uid,
                         'hardware_id' => $hardwareId,
                         'attempt' => $uidAttempt,
+                        'uid_source' => $useRequestedNodeUid ? 'provisioning_meta.node_uid' : 'generated',
                     ]);
+                } elseif ($useRequestedNodeUid && $requestedNodeUid && $node->uid !== $requestedNodeUid) {
+                    $uidAlreadyUsed = DeviceNode::where('uid', $requestedNodeUid)
+                        ->where('id', '!=', $node->id)
+                        ->exists();
+
+                    if (!$uidAlreadyUsed) {
+                        Log::info('NodeRegistryService: Aligning existing node uid with provisioning_meta.node_uid', [
+                            'node_id' => $node->id,
+                            'old_uid' => $node->uid,
+                            'new_uid' => $requestedNodeUid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                        $node->uid = $requestedNodeUid;
+                    } else {
+                        Log::warning('NodeRegistryService: Requested node_uid is already occupied, keeping existing uid', [
+                            'node_id' => $node->id,
+                            'current_uid' => $node->uid,
+                            'requested_uid' => $requestedNodeUid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                    }
                 }
 
                 $this->updateNodeAttributes($node, $helloData);
@@ -217,6 +243,17 @@ class NodeRegistryService
                 DB::rollBack();
 
                 if ($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) {
+                    if ($useRequestedNodeUid) {
+                        Log::warning('Requested node_uid caused unique collision, switching to generated uid', [
+                            'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                            'requested_uid' => $requestedNodeUid,
+                        ]);
+                        $useRequestedNodeUid = false;
+                        $uidAttempt = 0;
+                        usleep(100000);
+                        continue;
+                    }
+
                     $uidAttempt++;
 
                     if ($uidAttempt >= $maxUidAttempts) {
@@ -283,6 +320,39 @@ class NodeRegistryService
         if (isset($provisioningMeta['node_name'])) {
             $node->name = $provisioningMeta['node_name'];
         }
+    }
+
+    /**
+     * Извлечь запрошенный UID из provisioning_meta.node_uid.
+     *
+     * @param array $helloData
+     * @return string|null
+     */
+    private function extractRequestedNodeUid(array $helloData): ?string
+    {
+        $provisioningMeta = $helloData['provisioning_meta'] ?? null;
+        if (!is_array($provisioningMeta)) {
+            return null;
+        }
+
+        $rawNodeUid = $provisioningMeta['node_uid'] ?? null;
+        if (!is_string($rawNodeUid)) {
+            return null;
+        }
+
+        $nodeUid = strtolower(trim($rawNodeUid));
+        if ($nodeUid === '' || strlen($nodeUid) > 64) {
+            return null;
+        }
+
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $nodeUid)) {
+            Log::warning('NodeRegistryService: Invalid provisioning_meta.node_uid format, fallback to generated uid', [
+                'node_uid' => $rawNodeUid,
+            ]);
+            return null;
+        }
+
+        return $nodeUid;
     }
     
     /**

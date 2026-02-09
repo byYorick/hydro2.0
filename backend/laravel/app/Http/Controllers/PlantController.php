@@ -248,10 +248,18 @@ class PlantController extends Controller
         }
 
         $items = collect($request->validated('items'))
-            ->map(fn (array $item) => [
-                'id' => $item['id'],
-                'label' => $item['label'],
-            ])
+            ->map(function (array $item) use ($taxonomy): array {
+                $result = [
+                    'id' => $item['id'],
+                    'label' => $item['label'],
+                ];
+
+                if ($taxonomy === 'growing_system' && array_key_exists('uses_substrate', $item)) {
+                    $result['uses_substrate'] = (bool) $item['uses_substrate'];
+                }
+
+                return $result;
+            })
             ->values()
             ->all();
 

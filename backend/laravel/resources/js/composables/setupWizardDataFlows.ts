@@ -8,6 +8,7 @@ import type {
   Plant,
   PlantFormState,
   Recipe,
+  SetupWizardDeviceAssignments,
   SetupWizardLoadingState,
   Zone,
   ZoneFormState,
@@ -51,7 +52,7 @@ export type SetupWizardDataFlowActions = SetupWizardDataLoaderActions & {
   selectZone: () => Promise<void>
   createPlant: () => Promise<void>
   selectPlant: () => void
-  attachNodesToZone: () => Promise<void>
+  attachNodesToZone: (assignments?: SetupWizardDeviceAssignments | null) => Promise<void>
 }
 
 export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions): SetupWizardDataFlowActions {

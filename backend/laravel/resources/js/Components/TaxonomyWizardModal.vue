@@ -6,7 +6,10 @@
     @close="handleClose"
   >
     <div class="space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-[1fr_160px_auto] gap-2 items-end">
+      <div
+        class="grid grid-cols-1 gap-2 items-end"
+        :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
+      >
         <div>
           <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
           <input
@@ -28,6 +31,21 @@
             :disabled="loading"
             autocomplete="off"
           />
+        </div>
+        <div v-if="isGrowingSystem">
+          <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
+          <select
+            v-model="newItem.uses_substrate"
+            class="input-field h-9 w-full"
+            :disabled="loading"
+          >
+            <option :value="true">
+              С субстратом
+            </option>
+            <option :value="false">
+              Без субстрата
+            </option>
+          </select>
         </div>
         <Button
           type="button"
@@ -51,7 +69,8 @@
         <div
           v-for="(item, index) in localItems"
           :key="`${item.id}-${index}`"
-          class="grid grid-cols-1 md:grid-cols-[1fr_160px_auto] gap-2 items-center"
+          class="grid grid-cols-1 gap-2 items-center"
+          :class="isGrowingSystem ? 'md:grid-cols-[1fr_160px_170px_auto]' : 'md:grid-cols-[1fr_160px_auto]'"
         >
           <input
             v-model="item.label"
@@ -65,10 +84,23 @@
             class="input-field h-9 w-full"
             :disabled="loading || item.locked"
           />
+          <select
+            v-if="isGrowingSystem"
+            v-model="item.uses_substrate"
+            class="input-field h-9 w-full"
+            :disabled="loading"
+          >
+            <option :value="true">
+              С субстратом
+            </option>
+            <option :value="false">
+              Без субстрата
+            </option>
+          </select>
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant="danger"
             class="h-9 px-3"
             :disabled="loading"
             @click="removeItem(index)"
@@ -89,14 +121,6 @@
     <template #footer>
       <Button
         type="button"
-        variant="secondary"
-        :disabled="loading"
-        @click="handleClose"
-      >
-        Отмена
-      </Button>
-      <Button
-        type="button"
         :disabled="loading"
         @click="save"
       >
@@ -107,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import { useApi } from '@/composables/useApi'
@@ -117,6 +141,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 interface TaxonomyOption {
   id: string
   label: string
+  uses_substrate?: boolean
 }
 
 interface TaxonomyItem extends TaxonomyOption {
@@ -144,9 +169,11 @@ const localItems = ref<TaxonomyItem[]>([])
 const newItem = reactive({
   id: '',
   label: '',
+  uses_substrate: false,
 })
 const error = ref<string | null>(null)
 const loading = ref(false)
+const isGrowingSystem = computed(() => props.taxonomyKey === 'growing_system')
 
 watch(
   () => props.show,
@@ -170,10 +197,12 @@ function resetState(): void {
   localItems.value = props.items.map((item) => ({
     id: item.id,
     label: item.label,
+    uses_substrate: isGrowingSystem.value ? Boolean(item.uses_substrate) : undefined,
     locked: true,
   }))
   newItem.id = ''
   newItem.label = ''
+  newItem.uses_substrate = false
   error.value = null
 }
 
@@ -214,9 +243,15 @@ function addItem(): void {
     return
   }
 
-  localItems.value.push({ id, label, locked: false })
+  localItems.value.push({
+    id,
+    label,
+    uses_substrate: isGrowingSystem.value ? newItem.uses_substrate : undefined,
+    locked: false,
+  })
   newItem.id = ''
   newItem.label = ''
+  newItem.uses_substrate = false
 }
 
 function removeItem(index: number): void {
@@ -230,6 +265,7 @@ async function save(): Promise<void> {
     .map((item) => ({
       id: item.id.trim(),
       label: item.label.trim(),
+      uses_substrate: isGrowingSystem.value ? Boolean(item.uses_substrate) : undefined,
     }))
 
   if (normalized.some((item) => !item.id || !item.label)) {

@@ -68,8 +68,8 @@ describe('PlantCreateModal', () => {
         data: {
           substrate_type: [{ id: 'coco', label: 'Кокос' }],
           growing_system: [
-            { id: 'nft', label: 'NFT' },
-            { id: 'drip', label: 'Капельный полив' },
+            { id: 'nft', label: 'NFT', uses_substrate: false },
+            { id: 'drip', label: 'Капельный полив', uses_substrate: true },
           ],
           photoperiod_preset: [],
           seasonality: [],

@@ -9,6 +9,7 @@ import { logger } from '@/utils/logger'
 export interface TaxonomyOption {
   id: string
   label: string
+  uses_substrate?: boolean
 }
 
 interface RecipePhaseDraft {
@@ -42,8 +43,6 @@ const defaultSeasonality: TaxonomyOption[] = [
   { id: 'multi_cycle', label: 'Несколько циклов' },
   { id: 'seasonal', label: 'Сезонное выращивание' },
 ]
-
-const substrateSystems = new Set(['drip', 'ebb_flow', 'substrate_trays'])
 
 function createDefaultRecipePhases(): RecipePhaseDraft[] {
   return [
@@ -160,7 +159,20 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
     Object.keys(errors).forEach((key) => delete errors[key])
   }
 
-  const showSubstrateSelector = computed(() => substrateSystems.has(form.growing_system))
+  const showSubstrateSelector = computed(() => {
+    if (!form.growing_system) {
+      return false
+    }
+
+    const selectedSystem = taxonomyOptions.value.growing_system.find(
+      (option) => option.id === form.growing_system
+    )
+
+    if (typeof selectedSystem?.uses_substrate === 'boolean') {
+      return selectedSystem.uses_substrate
+    }
+    return false
+  })
 
   watch(
     show,

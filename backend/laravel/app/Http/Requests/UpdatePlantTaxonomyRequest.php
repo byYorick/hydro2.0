@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdatePlantTaxonomyRequest extends FormRequest
 {
@@ -21,10 +22,13 @@ class UpdatePlantTaxonomyRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isGrowingSystem = $this->route('taxonomy') === 'growing_system';
+
         return [
             'items' => ['required', 'array'],
             'items.*.id' => ['required', 'string', 'max:100'],
             'items.*.label' => ['required', 'string', 'max:255'],
+            'items.*.uses_substrate' => [Rule::requiredIf($isGrowingSystem), 'boolean'],
         ];
     }
 }

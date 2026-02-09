@@ -239,9 +239,6 @@ describe('Setup/Wizard.vue', () => {
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
     expect(plantSelect).toBeTruthy()
     await plantSelect?.setValue('5')
-    const applyPlantButton = wrapper.findAll('button').find((btn) => btn.text() === 'Применить')
-    expect(applyPlantButton).toBeTruthy()
-    await applyPlantButton?.trigger('click')
     await flushPromises()
 
     const applyAutomationButton = wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))
@@ -324,9 +321,6 @@ describe('Setup/Wizard.vue', () => {
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
     expect(plantSelect).toBeTruthy()
     await plantSelect?.setValue('5')
-    const applyPlantButton = wrapper.findAll('button').find((btn) => btn.text() === 'Применить')
-    expect(applyPlantButton).toBeTruthy()
-    await applyPlantButton?.trigger('click')
     await flushPromises()
 
     const climateToggle = wrapper.findAll('label').find((item) => item.text().includes('Управлять климатом'))
@@ -358,5 +352,94 @@ describe('Setup/Wizard.vue', () => {
     const openLaunchButton = wrapper.findAll('button').find((btn) => btn.text().includes('Открыть мастер запуска цикла'))
     expect(openLaunchButton).toBeTruthy()
     expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('перед привязкой нод вызывает серверную валидацию обязательных ролей', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/nodes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [
+              { id: 101, uid: 'nd-test-irrig-1', type: 'pump_node', channels: [{ channel: 'pump_irrigation' }] },
+              { id: 102, uid: 'nd-test-ph-1', type: 'ph_node', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
+              { id: 103, uid: 'nd-test-tank-1', type: 'water_sensor_node', channels: [{ channel: 'water_level' }, { channel: 'pump_in' }] },
+            ],
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    apiPostMock
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          status: 'ok',
+          data: { validated: true },
+        },
+      })
+
+    apiPatchMock.mockResolvedValue({
+      data: {
+        status: 'ok',
+      },
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
+    await flushPromises()
+
+    const irrigationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел полива'))
+    const correctionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции'))
+    const accumulationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите накопительный узел'))
+
+    expect(irrigationSelect).toBeTruthy()
+    expect(correctionSelect).toBeTruthy()
+    expect(accumulationSelect).toBeTruthy()
+
+    await irrigationSelect?.setValue('101')
+    await correctionSelect?.setValue('102')
+    await accumulationSelect?.setValue('103')
+
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Привязать ноды зоны'))?.trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/setup-wizard/validate-devices',
+      expect.objectContaining({
+        zone_id: 20,
+        assignments: expect.objectContaining({
+          irrigation: 101,
+          correction: 102,
+          accumulation: 103,
+        }),
+      }),
+      undefined
+    )
+
+    expect(apiPatchMock).toHaveBeenCalledTimes(3)
   })
 })

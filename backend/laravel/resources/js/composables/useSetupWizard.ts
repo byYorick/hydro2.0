@@ -135,7 +135,7 @@ export function useSetupWizard() {
   const stepZoneDone = computed(() => selectedZone.value !== null)
   const stepPlantDone = computed(() => selectedPlant.value !== null)
   const stepRecipeDone = computed(() => selectedRecipe.value !== null)
-  const stepDevicesDone = computed(() => attachedNodesCount.value > 0 || availableNodes.value.length === 0)
+  const stepDevicesDone = computed(() => attachedNodesCount.value >= 3)
   const stepAutomationDone = computed(() => automationAppliedAt.value !== null)
 
   const canLaunch = computed(() => {
@@ -143,6 +143,7 @@ export function useSetupWizard() {
       && stepZoneDone.value
       && stepPlantDone.value
       && stepRecipeDone.value
+      && stepDevicesDone.value
       && stepAutomationDone.value
   })
 

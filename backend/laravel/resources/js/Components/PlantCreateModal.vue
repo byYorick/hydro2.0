@@ -85,54 +85,6 @@
           />
         </div>
 
-        <div v-if="showSubstrateSelector">
-          <div class="flex items-center justify-between mb-1">
-            <label
-              for="plant-substrate"
-              class="block text-xs text-[color:var(--text-muted)]"
-            >Субстрат</label>
-          </div>
-          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-            <select
-              id="plant-substrate"
-              v-model="form.substrate_type"
-              name="substrate_type"
-              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
-            >
-              <option value="">
-                Не выбрано
-              </option>
-              <option
-                v-for="option in taxonomyOptions.substrate_type"
-                :key="option.id"
-                :value="option.id"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
-              @click="openTaxonomyWizard('substrate_type')"
-            >
-              <svg
-                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </Button>
-          </div>
-        </div>
-
         <div>
           <div class="flex items-center justify-between mb-1">
             <label
@@ -140,33 +92,33 @@
               class="block text-xs text-[color:var(--text-muted)]"
             >Система</label>
           </div>
-          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-            <select
-              id="plant-system"
-              v-model="form.growing_system"
-              name="growing_system"
-              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
-            >
-              <option value="">
-                Не выбрано
-              </option>
-              <option
-                v-for="option in taxonomyOptions.growing_system"
-                :key="option.id"
-                :value="option.id"
+          <div class="flex items-center gap-2">
+            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+              <select
+                id="plant-system"
+                v-model="form.growing_system"
+                name="growing_system"
+                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
               >
-                {{ option.label }}
-              </option>
-            </select>
-            <Button
+                <option value="">
+                  Не выбрано
+                </option>
+                <option
+                  v-for="option in taxonomyOptions.growing_system"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <button
               type="button"
-              size="sm"
-              variant="ghost"
-              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
+              class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
               @click="openTaxonomyWizard('growing_system')"
             >
               <svg
-                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
+                class="h-5 w-5 text-[color:var(--accent-primary)]"
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 aria-hidden="true"
@@ -177,7 +129,7 @@
                   clip-rule="evenodd"
                 />
               </svg>
-            </Button>
+            </button>
           </div>
           <p
             v-if="form.growing_system && !showSubstrateSelector"
@@ -187,64 +139,40 @@
           </p>
         </div>
 
-        <div>
-          <label
-            for="plant-photoperiod"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Фотопериод</label>
-          <select
-            id="plant-photoperiod"
-            v-model="form.photoperiod_preset"
-            name="photoperiod_preset"
-            class="input-select h-9 w-full"
-          >
-            <option value="">
-              Не выбрано
-            </option>
-            <option
-              v-for="option in taxonomyOptions.photoperiod_preset"
-              :key="option.id"
-              :value="option.id"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-        </div>
-
-        <div>
+        <div v-if="showSubstrateSelector">
           <div class="flex items-center justify-between mb-1">
             <label
-              for="plant-seasonality"
+              for="plant-substrate"
               class="block text-xs text-[color:var(--text-muted)]"
-            >Сезонность</label>
+            >Субстрат</label>
           </div>
-          <div class="relative flex items-center h-9 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-            <select
-              id="plant-seasonality"
-              v-model="form.seasonality"
-              name="seasonality"
-              class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2 pr-11"
-            >
-              <option value="">
-                Не выбрано
-              </option>
-              <option
-                v-for="option in seasonOptions"
-                :key="option.id"
-                :value="option.id"
+          <div class="flex items-center gap-2">
+            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+              <select
+                id="plant-substrate"
+                v-model="form.substrate_type"
+                name="substrate_type"
+                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
               >
-                {{ option.label }}
-              </option>
-            </select>
-            <Button
+                <option value="">
+                  Не выбрано
+                </option>
+                <option
+                  v-for="option in taxonomyOptions.substrate_type"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <button
               type="button"
-              size="sm"
-              variant="ghost"
-              class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 p-0 border border-[color:var(--border-muted)] rounded-md bg-[color:var(--bg-elevated)]"
-              @click="openTaxonomyWizard('seasonality')"
+              class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
+              @click="openTaxonomyWizard('substrate_type')"
             >
               <svg
-                class="h-3.5 w-3.5 text-[color:var(--text-primary)]"
+                class="h-5 w-5 text-[color:var(--accent-primary)]"
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 aria-hidden="true"
@@ -255,7 +183,55 @@
                   clip-rule="evenodd"
                 />
               </svg>
-            </Button>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label
+              for="plant-seasonality"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >Сезонность (опционально)</label>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+              <select
+                id="plant-seasonality"
+                v-model="form.seasonality"
+                name="seasonality"
+                class="h-9 w-full bg-transparent border-none focus:ring-0 focus:outline-none appearance-none px-2"
+              >
+                <option value="">
+                  Не выбрано
+                </option>
+                <option
+                  v-for="option in seasonOptions"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <button
+              type="button"
+              class="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-0"
+              @click="openTaxonomyWizard('seasonality')"
+            >
+              <svg
+                class="h-5 w-5 text-[color:var(--accent-primary)]"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -284,12 +260,20 @@
           Растение: <span class="text-[color:var(--text-primary)] font-semibold">{{ form.name }}</span>
         </div>
         <div>
-          <label
-            for="recipe-name"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >
-            Название рецепта <span class="text-[color:var(--accent-red)]">*</span>
-          </label>
+          <div class="mb-1 flex items-center gap-1">
+            <label
+              for="recipe-name"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >
+              Название рецепта <span class="text-[color:var(--accent-red)]">*</span>
+            </label>
+            <span class="group relative inline-flex cursor-help items-center">
+              <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+              <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                Используется в списке рецептов и при запуске цикла выращивания в зоне.
+              </span>
+            </span>
+          </div>
           <input
             id="recipe-name"
             v-model="form.recipe_name"
@@ -309,10 +293,18 @@
           </div>
         </div>
         <div>
-          <label
-            for="recipe-description"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Описание рецепта</label>
+          <div class="mb-1 flex items-center gap-1">
+            <label
+              for="recipe-description"
+              class="block text-xs text-[color:var(--text-muted)]"
+            >Описание рецепта</label>
+            <span class="group relative inline-flex cursor-help items-center">
+              <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+              <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                Короткая справка по рецепту: культура, цель, особенности режима.
+              </span>
+            </span>
+          </div>
           <textarea
             id="recipe-description"
             v-model="form.recipe_description"
@@ -358,120 +350,274 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input
-                v-model="phase.name"
-                type="text"
-                class="input-field h-9"
-                placeholder="Название фазы"
-              />
-              <input
-                v-model.number="phase.duration_days"
-                type="number"
-                min="1"
-                class="input-field h-9"
-                placeholder="Дней"
-              />
-              <select
-                v-model="phase.day_start_time"
-                class="input-field h-9"
-              >
-                <option value="06:00:00">
-                  День с 06:00
-                </option>
-                <option value="07:00:00">
-                  День с 07:00
-                </option>
-                <option value="08:00:00">
-                  День с 08:00
-                </option>
-              </select>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Название фазы</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Понятное название этапа: например, «Рассада», «Вегетация», «Цветение».
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model="phase.name"
+                  type="text"
+                  class="input-field h-9 w-full"
+                  placeholder="Название фазы"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Длительность, дни</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Сколько суток длится фаза. Используется для расчета календаря цикла.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.duration_days"
+                  type="number"
+                  min="1"
+                  class="input-field h-9 w-full"
+                  placeholder="Дней"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Начало дня</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Время начала дневного периода. От него считаются свет и параметры «день/ночь».
+                    </span>
+                  </span>
+                </div>
+                <select
+                  v-model="phase.day_start_time"
+                  class="input-field h-9 w-full"
+                >
+                  <option value="06:00:00">
+                    День с 06:00
+                  </option>
+                  <option value="07:00:00">
+                    День с 07:00
+                  </option>
+                  <option value="08:00:00">
+                    День с 08:00
+                  </option>
+                </select>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <input
-                v-model.number="phase.light_hours"
-                type="number"
-                min="0"
-                max="24"
-                class="input-field h-9"
-                placeholder="Свет, ч/сут"
-              />
-              <input
-                v-model.number="phase.ph_day"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="pH день"
-              />
-              <input
-                v-model.number="phase.ph_night"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="pH ночь"
-              />
-              <input
-                v-model.number="phase.ec_day"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="EC день"
-              />
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Свет, ч/сут</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Фотопериод: сколько часов в сутки включен свет.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.light_hours"
+                  type="number"
+                  min="0"
+                  max="24"
+                  class="input-field h-9 w-full"
+                  placeholder="Свет, ч/сут"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">pH (день)</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевой уровень pH раствора в дневной период.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.ph_day"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="pH день"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">pH (ночь)</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевой уровень pH раствора в ночной период.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.ph_night"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="pH ночь"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">EC (день)</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Электропроводность (EC) питательного раствора днем.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.ec_day"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="EC день"
+                />
+              </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <input
-                v-model.number="phase.ec_night"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="EC ночь"
-              />
-              <input
-                v-model.number="phase.temp_day"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="T день, °C"
-              />
-              <input
-                v-model.number="phase.temp_night"
-                type="number"
-                step="0.1"
-                class="input-field h-9"
-                placeholder="T ночь, °C"
-              />
-              <input
-                v-model.number="phase.humidity_day"
-                type="number"
-                step="1"
-                class="input-field h-9"
-                placeholder="Влажн. день, %"
-              />
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">EC (ночь)</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Электропроводность (EC) питательного раствора ночью.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.ec_night"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="EC ночь"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Температура (день), °C</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевая температура воздуха в дневной период.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.temp_day"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="T день, °C"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Температура (ночь), °C</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевая температура воздуха в ночной период.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.temp_night"
+                  type="number"
+                  step="0.1"
+                  class="input-field h-9 w-full"
+                  placeholder="T ночь, °C"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Влажность (день), %</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевая относительная влажность воздуха днем.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.humidity_day"
+                  type="number"
+                  step="1"
+                  class="input-field h-9 w-full"
+                  placeholder="Влажн. день, %"
+                />
+              </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <input
-                v-model.number="phase.humidity_night"
-                type="number"
-                step="1"
-                class="input-field h-9"
-                placeholder="Влажн. ночь, %"
-              />
-              <input
-                v-model.number="phase.irrigation_interval_sec"
-                type="number"
-                min="0"
-                class="input-field h-9"
-                placeholder="Интервал полива, сек"
-              />
-              <input
-                v-model.number="phase.irrigation_duration_sec"
-                type="number"
-                min="0"
-                class="input-field h-9"
-                placeholder="Длительность полива, сек"
-              />
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Влажность (ночь), %</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Целевая относительная влажность воздуха ночью.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.humidity_night"
+                  type="number"
+                  step="1"
+                  class="input-field h-9 w-full"
+                  placeholder="Влажн. ночь, %"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Интервал полива, сек</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Пауза между поливами в рамках фазы. 0 — без авто-полива по таймеру.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.irrigation_interval_sec"
+                  type="number"
+                  min="0"
+                  class="input-field h-9 w-full"
+                  placeholder="Интервал полива, сек"
+                />
+              </div>
+              <div class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-[color:var(--text-muted)]">Длительность полива, сек</span>
+                  <span class="group relative inline-flex cursor-help items-center">
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--border-muted)] text-[10px] text-[color:var(--text-dim)]">i</span>
+                    <span class="pointer-events-none absolute left-1/2 top-full z-50 mt-1 w-56 -translate-x-1/2 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] px-2 py-1.5 text-[10px] leading-4 text-[color:var(--text-primary)] opacity-0 shadow-[var(--shadow-card)] transition-opacity group-hover:opacity-100">
+                      Сколько секунд длится один цикл полива в данной фазе.
+                    </span>
+                  </span>
+                </div>
+                <input
+                  v-model.number="phase.irrigation_duration_sec"
+                  type="number"
+                  min="0"
+                  class="input-field h-9 w-full"
+                  placeholder="Длительность полива, сек"
+                />
+              </div>
             </div>
           </div>
         </div>

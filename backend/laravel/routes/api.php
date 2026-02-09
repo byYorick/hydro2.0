@@ -26,6 +26,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
+use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
@@ -254,6 +255,7 @@ Route::middleware([
 
         // Grow Cycle Wizard (operator+)
         Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
+        Route::post('setup-wizard/validate-devices', [SetupWizardController::class, 'validateDevices']);
 
         // AI endpoints (operator+)
         Route::post('ai/predict', [AiController::class, 'predict']);

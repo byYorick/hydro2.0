@@ -73,6 +73,20 @@ export interface Node {
   uid?: string
   name?: string
   type?: string
+  channels?: Array<{
+    channel?: string
+    type?: string
+    metric?: string | null
+    unit?: string | null
+  }>
+}
+
+export interface SetupWizardDeviceAssignments {
+  irrigation: number | null
+  correction: number | null
+  accumulation: number | null
+  climate: number | null
+  light: number | null
 }
 
 export interface RecipePhaseTargets {

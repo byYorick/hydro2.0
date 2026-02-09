@@ -252,33 +252,12 @@
           </Badge>
         </div>
 
-        <div class="flex gap-2">
-          <Button
-            size="sm"
-            :variant="plantMode === 'select' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="plantMode = 'select'"
-          >
-            Выбрать
-          </Button>
-          <Button
-            size="sm"
-            :variant="plantMode === 'create' ? 'primary' : 'secondary'"
-            :disabled="!canConfigure"
-            @click="plantMode = 'create'"
-          >
-            Создать
-          </Button>
-        </div>
-
-        <div
-          v-if="plantMode === 'select'"
-          class="grid gap-3 md:grid-cols-[1fr_auto]"
-        >
+        <div class="grid gap-3 md:grid-cols-[1fr_auto]">
           <select
             v-model.number="selectedPlantId"
             class="input-select"
             :disabled="!canConfigure || loading.plants"
+            @change="selectPlant"
           >
             <option :value="null">Выберите растение</option>
             <option
@@ -291,26 +270,11 @@
           </select>
           <Button
             size="sm"
-            :disabled="!canConfigure || !selectedPlantId || loading.stepPlant"
-            @click="selectPlant"
-          >
-            Применить
-          </Button>
-        </div>
-
-        <div
-          v-else
-          class="space-y-3"
-        >
-          <p class="text-sm text-[color:var(--text-muted)]">
-            Создание культуры выполняется через мастер с одновременным созданием рецепта.
-          </p>
-          <Button
-            size="sm"
+            variant="secondary"
             :disabled="!canConfigure"
-            @click="showPlantCreateWizard = true"
+            @click="openPlantCreateWizard"
           >
-            Открыть мастер культуры и рецепта
+            Создать
           </Button>
         </div>
 
@@ -349,31 +313,85 @@
           </Badge>
         </div>
 
-        <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          <label
-            v-for="node in availableNodes"
-            :key="node.id"
-            class="rounded-lg border border-[color:var(--border-muted)] p-2 text-sm"
-          >
-            <input
-              v-model="selectedNodeIds"
-              type="checkbox"
-              :value="node.id"
-              class="mr-2"
-              :disabled="!canConfigure || !stepZoneDone"
-            />
-            {{ node.name || node.uid || `Node #${node.id}` }}
-          </label>
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Полив (обязательно)</label>
+            <select
+              v-model.number="deviceAssignments.irrigation"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || irrigationNodes.length === 0"
+            >
+              <option :value="null">Выберите узел полива</option>
+              <option v-for="node in irrigationNodes" :key="`irrigation-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция pH/EC (обязательно)</label>
+            <select
+              v-model.number="deviceAssignments.correction"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || correctionNodes.length === 0"
+            >
+              <option :value="null">Выберите узел коррекции</option>
+              <option v-for="node in correctionNodes" :key="`correction-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Накопительный узел (обязательно)</label>
+            <select
+              v-model.number="deviceAssignments.accumulation"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || accumulationNodes.length === 0"
+            >
+              <option :value="null">Выберите накопительный узел</option>
+              <option v-for="node in accumulationNodes" :key="`accumulation-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Климат (опционально)</label>
+            <select
+              v-model.number="deviceAssignments.climate"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || climateNodes.length === 0"
+            >
+              <option :value="null">Не выбирать</option>
+              <option v-for="node in climateNodes" :key="`climate-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Свет (опционально)</label>
+            <select
+              v-model.number="deviceAssignments.light"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || lightNodes.length === 0"
+            >
+              <option :value="null">Не выбирать</option>
+              <option v-for="node in lightNodes" :key="`light-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
-          <span>Привязано: {{ attachedNodesCount }}</span>
+          <span>Привязано: {{ attachedNodesCount }} (минимум 3 обязательных)</span>
+          <span v-if="missingRequiredDevices.length > 0" class="text-[color:var(--badge-warning-text)]">
+            Не выбрано: {{ missingRequiredDevices.join(', ') }}
+          </span>
           <Button
             size="sm"
-            :disabled="!canConfigure || !stepZoneDone || selectedNodeIds.length === 0 || loading.stepDevices"
-            @click="attachNodesToZone"
+            :disabled="!canAttachRequiredNodes"
+            @click="attachConfiguredNodes"
           >
-            {{ loading.stepDevices ? 'Привязка...' : 'Привязать выбранные узлы' }}
+            {{ loading.stepDevices ? 'Привязка...' : 'Привязать ноды зоны' }}
           </Button>
         </div>
       </section>
@@ -483,20 +501,21 @@
 
     <PlantCreateModal
       :show="showPlantCreateWizard"
-      @close="showPlantCreateWizard = false"
+      @close="handlePlantCreateClose"
       @created="handlePlantCreated"
     />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import { useSetupWizard } from '@/composables/useSetupWizard'
+import type { Node, SetupWizardDeviceAssignments } from '@/composables/setupWizardTypes'
 
 const {
   canConfigure,
@@ -547,6 +566,108 @@ const {
 } = useSetupWizard()
 
 const showPlantCreateWizard = ref<boolean>(false)
+type DeviceRole = 'irrigation' | 'correction' | 'accumulation' | 'climate' | 'light'
+
+const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
+  irrigation: null,
+  correction: null,
+  accumulation: null,
+  climate: null,
+  light: null,
+})
+
+function nodeChannels(node: Node): string[] {
+  const channels = Array.isArray(node.channels) ? node.channels : []
+  return channels
+    .map((item) => String(item?.channel ?? '').toLowerCase())
+    .filter((item) => item.length > 0)
+}
+
+function nodeType(node: Node): string {
+  return String(node.type ?? '').toLowerCase()
+}
+
+function hasAnyChannel(node: Node, candidates: string[]): boolean {
+  const set = new Set(nodeChannels(node))
+  return candidates.some((candidate) => set.has(candidate))
+}
+
+function matchesRole(node: Node, role: DeviceRole): boolean {
+  const type = nodeType(node)
+
+  if (role === 'irrigation') {
+    return type.includes('irrig') || type.includes('pump') || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
+  }
+
+  if (role === 'correction') {
+    return type.includes('ph') || type.includes('ec') || hasAnyChannel(node, ['pump_acid', 'pump_base', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
+  }
+
+  if (role === 'accumulation') {
+    return type.includes('water') || type.includes('tank') || hasAnyChannel(node, ['water_level', 'pump_in', 'drain', 'drain_main'])
+  }
+
+  if (role === 'climate') {
+    return type.includes('climate') || hasAnyChannel(node, ['temp_air', 'air_temp_c', 'air_rh', 'humidity_air', 'co2_ppm', 'fan_air', 'heater_air', 'vent_drive'])
+  }
+
+  return type.includes('light') || hasAnyChannel(node, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main'])
+}
+
+function nodesByRole(role: DeviceRole): Node[] {
+  return availableNodes.value.filter((node) => matchesRole(node, role))
+}
+
+const irrigationNodes = computed<Node[]>(() => nodesByRole('irrigation'))
+const correctionNodes = computed<Node[]>(() => nodesByRole('correction'))
+const accumulationNodes = computed<Node[]>(() => nodesByRole('accumulation'))
+const climateNodes = computed<Node[]>(() => nodesByRole('climate'))
+const lightNodes = computed<Node[]>(() => nodesByRole('light'))
+
+watch(
+  availableNodes,
+  (nodes) => {
+    const ids = new Set(nodes.map((node) => node.id))
+    if (deviceAssignments.irrigation && !ids.has(deviceAssignments.irrigation)) deviceAssignments.irrigation = null
+    if (deviceAssignments.correction && !ids.has(deviceAssignments.correction)) deviceAssignments.correction = null
+    if (deviceAssignments.accumulation && !ids.has(deviceAssignments.accumulation)) deviceAssignments.accumulation = null
+    if (deviceAssignments.climate && !ids.has(deviceAssignments.climate)) deviceAssignments.climate = null
+    if (deviceAssignments.light && !ids.has(deviceAssignments.light)) deviceAssignments.light = null
+  },
+  { immediate: true }
+)
+
+const selectedNodeIdsByRoles = computed<number[]>(() => {
+  const ids = new Set<number>()
+  const values = [
+    deviceAssignments.irrigation,
+    deviceAssignments.correction,
+    deviceAssignments.accumulation,
+    deviceAssignments.climate,
+    deviceAssignments.light,
+  ]
+  values.forEach((id) => {
+    if (typeof id === 'number') {
+      ids.add(id)
+    }
+  })
+  return Array.from(ids)
+})
+
+const missingRequiredDevices = computed<string[]>(() => {
+  const missing: string[] = []
+  if (!deviceAssignments.irrigation) missing.push('полив')
+  if (!deviceAssignments.correction) missing.push('коррекция')
+  if (!deviceAssignments.accumulation) missing.push('накопительный узел')
+  return missing
+})
+
+const canAttachRequiredNodes = computed<boolean>(() => {
+  return canConfigure.value
+    && stepZoneDone.value
+    && missingRequiredDevices.value.length === 0
+    && !loading.stepDevices
+})
 
 const automationSystemLabel = computed<string>(() => {
   if (automationForm.systemType === 'drip') {
@@ -566,6 +687,7 @@ function handlePlantCreated(plant: { id?: number; name?: string } | null): void 
   showPlantCreateWizard.value = false
 
   if (!plant?.id) {
+    plantMode.value = 'select'
     return
   }
 
@@ -580,5 +702,28 @@ function handlePlantCreated(plant: { id?: number; name?: string } | null): void 
   selectedPlantId.value = plant.id
   plantMode.value = 'select'
   selectPlant()
+}
+
+function openPlantCreateWizard(): void {
+  if (!canConfigure.value) {
+    return
+  }
+
+  plantMode.value = 'create'
+  showPlantCreateWizard.value = true
+}
+
+function handlePlantCreateClose(): void {
+  showPlantCreateWizard.value = false
+  plantMode.value = 'select'
+}
+
+async function attachConfiguredNodes(): Promise<void> {
+  if (!canAttachRequiredNodes.value) {
+    return
+  }
+
+  selectedNodeIds.value = selectedNodeIdsByRoles.value
+  await attachNodesToZone({ ...deviceAssignments })
 }
 </script>

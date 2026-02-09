@@ -557,6 +557,27 @@ esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos,
     return mqtt_manager_publish_internal(topic, data, qos, retain);
 }
 
+esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos) {
+    if (!topic || topic[0] == '\0') {
+        ESP_LOGE(TAG, "Invalid subscribe topic");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_mqtt_client) {
+        ESP_LOGE(TAG, "MQTT manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int msg_id = esp_mqtt_client_subscribe(s_mqtt_client, topic, qos);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to subscribe raw topic: %s", topic);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Subscribed to raw topic: %s (msg_id=%d)", topic, msg_id);
+    return ESP_OK;
+}
+
 /**
  * @brief Внутренняя функция публикации
  */

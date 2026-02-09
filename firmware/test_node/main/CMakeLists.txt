@@ -7,6 +7,7 @@ idf_component_register(
     REQUIRES 
         mqtt_manager
         config_storage
+        setup_portal
         node_utils
         json
         wifi_manager
@@ -15,4 +16,3 @@ idf_component_register(
         esp_system
         esp_wifi
 )
-

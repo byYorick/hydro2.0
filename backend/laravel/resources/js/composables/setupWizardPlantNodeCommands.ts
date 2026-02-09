@@ -6,6 +6,7 @@ import { logger } from '@/utils/logger'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
   Plant,
+  SetupWizardDeviceAssignments,
   PlantFormState,
   SetupWizardLoadingState,
   Zone,
@@ -33,7 +34,7 @@ interface SetupWizardPlantNodeCommandsOptions {
 export interface SetupWizardPlantNodeCommandActions {
   createPlant: () => Promise<void>
   selectPlant: () => void
-  attachNodesToZone: () => Promise<void>
+  attachNodesToZone: (assignments?: SetupWizardDeviceAssignments | null) => Promise<void>
 }
 
 export function canSelectPlant(canConfigure: boolean, selectedPlantId: number | null): boolean {
@@ -115,13 +116,21 @@ export function createSetupWizardPlantNodeCommands(
     showToast('Растение выбрано', 'success', TOAST_TIMEOUT.NORMAL)
   }
 
-  async function attachNodesToZone(): Promise<void> {
+  async function attachNodesToZone(assignments?: SetupWizardDeviceAssignments | null): Promise<void> {
     if (!canConfigure.value || !selectedZone.value?.id || selectedNodeIds.value.length === 0) {
       return
     }
 
     loading.stepDevices = true
     try {
+      if (assignments) {
+        await api.post('/setup-wizard/validate-devices', {
+          zone_id: selectedZone.value.id,
+          assignments,
+          selected_node_ids: selectedNodeIds.value,
+        })
+      }
+
       await Promise.all(
         selectedNodeIds.value.map((nodeId) => api.patch(`/nodes/${nodeId}`, { zone_id: selectedZone.value?.id }))
       )

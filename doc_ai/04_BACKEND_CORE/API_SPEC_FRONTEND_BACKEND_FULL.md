@@ -398,6 +398,47 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 }
 ```
 
+### 3.9.7. POST /api/setup-wizard/validate-devices
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
+- Серверная валидация шага `4. Устройства` в мастере настройки.
+- Проверяет:
+ - обязательные роли (`irrigation`, `correction`, `accumulation`) заполнены;
+ - обязательные роли назначены на разные ноды;
+ - ноды доступны пользователю и не привязаны к другой зоне;
+ - выбранные ноды соответствуют ожидаемой роли по `type`/`channels`.
+
+Тело запроса:
+```json
+{
+  "zone_id": 12,
+  "assignments": {
+    "irrigation": 101,
+    "correction": 102,
+    "accumulation": 103,
+    "climate": null,
+    "light": null
+  },
+  "selected_node_ids": [101, 102, 103]
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "validated": true,
+    "zone_id": 12,
+    "required_roles": {
+      "irrigation": 101,
+      "correction": 102,
+      "accumulation": 103
+    }
+  }
+}
+```
+
 ---
 
 ## 4. Recipes API
