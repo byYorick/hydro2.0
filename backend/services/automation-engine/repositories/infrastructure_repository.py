@@ -65,6 +65,7 @@ class InfrastructureRepository:
                         AND ii.owner_id = (SELECT greenhouse_id FROM zones WHERE id = $1)
                     )
                 )
+                AND n.zone_id = $1
                 AND n.status = 'online'
                 """,
                 zone_id,
@@ -142,6 +143,7 @@ class InfrastructureRepository:
                     OR (ii.owner_type = 'greenhouse' AND ii.owner_id = z.greenhouse_id)
                 )
                 WHERE z.id = ANY($1::int[])
+                    AND n.zone_id = z.id
                     AND n.status = 'online'
                 """,
                 zone_ids,

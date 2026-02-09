@@ -25,6 +25,39 @@ def mock_command_bus():
     return Mock(spec=CommandBus)
 
 
+@pytest.fixture(autouse=True)
+def mock_api_fetch():
+    """Mock DB lookups used by scheduler API target validation."""
+    async def _mock_fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+
+        if "from nodes" in normalized and "where uid = $1" in normalized:
+            node_uid = args[0]
+            if node_uid == "nd-irrig-1":
+                return [{"id": 1, "zone_id": 1}]
+            if node_uid == "nd-relay-1":
+                return [{"id": 2, "zone_id": 1}]
+            if node_uid == "nd-other-zone":
+                return [{"id": 3, "zone_id": 2}]
+            return []
+
+        if "from node_channels" in normalized and "where node_id = $1 and channel = $2" in normalized:
+            node_id, channel = args
+            valid_channels = {
+                1: {"pump_a", "default"},
+                2: {"relay_1", "default"},
+            }
+            if channel in valid_channels.get(int(node_id), set()):
+                return [{"?column?": 1}]
+            return []
+
+        return []
+
+    with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = _mock_fetch
+        yield mock_fetch
+
+
 def test_health_endpoint(client):
     """Test health check endpoint."""
     response = client.get("/health")
@@ -187,6 +220,44 @@ async def test_scheduler_command_without_params(client, mock_command_bus):
         cmd="set_relay",
         params={}  # Пустой dict по умолчанию
     )
+
+
+@pytest.mark.asyncio
+async def test_scheduler_command_rejects_node_zone_mismatch(client, mock_command_bus):
+    """Scheduler command must fail if node belongs to another zone."""
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+
+    payload = {
+        "zone_id": 1,
+        "node_uid": "nd-other-zone",
+        "channel": "default",
+        "cmd": "run_pump"
+    }
+
+    response = client.post("/scheduler/command", json=payload)
+    assert response.status_code == 409
+    assert "assigned to zone 2" in response.json()["detail"]
+    mock_command_bus.publish_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_command_rejects_unknown_channel(client, mock_command_bus):
+    """Scheduler command must fail if channel is not present on node."""
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+
+    payload = {
+        "zone_id": 1,
+        "node_uid": "nd-irrig-1",
+        "channel": "unknown_channel",
+        "cmd": "run_pump"
+    }
+
+    response = client.post("/scheduler/command", json=payload)
+    assert response.status_code == 422
+    assert "Channel 'unknown_channel' not found" in response.json()["detail"]
+    mock_command_bus.publish_command.assert_not_called()
 
 
 def test_test_hook_forbidden_when_test_mode_disabled(client):

@@ -578,6 +578,27 @@ esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos) {
     return ESP_OK;
 }
 
+esp_err_t mqtt_manager_unsubscribe_raw(const char *topic) {
+    if (!topic || topic[0] == '\0') {
+        ESP_LOGE(TAG, "Invalid unsubscribe topic");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_mqtt_client) {
+        ESP_LOGE(TAG, "MQTT manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int msg_id = esp_mqtt_client_unsubscribe(s_mqtt_client, topic);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to unsubscribe raw topic: %s", topic);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Unsubscribed from raw topic: %s (msg_id=%d)", topic, msg_id);
+    return ESP_OK;
+}
+
 /**
  * @brief Внутренняя функция публикации
  */

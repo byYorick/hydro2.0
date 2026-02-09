@@ -313,6 +313,80 @@ class AlertService
     }
 
     /**
+     * Закрыть активный алерт по ключу (zone_id, code).
+     *
+     * @param int|null $zoneId ID зоны (null для unassigned alert)
+     * @param string $code Код алерта
+     * @param array $context Дополнительный контекст (например, details)
+     * @return array ['resolved' => bool, 'alert' => Alert|null, 'event_id' => int|null]
+     */
+    public function resolveByCode(?int $zoneId, string $code, array $context = []): array
+    {
+        return DB::transaction(function () use ($zoneId, $code, $context) {
+            $query = Alert::where('code', $code)
+                ->where('status', 'ACTIVE');
+
+            if ($zoneId === null) {
+                $query->whereNull('zone_id');
+            } else {
+                $query->where('zone_id', $zoneId);
+            }
+
+            $alert = $query->lockForUpdate()->first();
+            if (! $alert) {
+                return [
+                    'resolved' => false,
+                    'alert' => null,
+                    'event_id' => null,
+                ];
+            }
+
+            $now = now();
+            $details = is_array($alert->details) ? $alert->details : [];
+            if (isset($context['details']) && is_array($context['details'])) {
+                $details = array_merge($details, $context['details']);
+            }
+            $details['resolved_at'] = $now->toIso8601String();
+
+            $alert->update([
+                'status' => 'RESOLVED',
+                'resolved_at' => $now,
+                'details' => $details,
+            ]);
+
+            $eventId = null;
+            if ($alert->zone_id) {
+                $eventId = DB::table('zone_events')->insertGetId([
+                    'zone_id' => $alert->zone_id,
+                    'type' => 'ALERT_RESOLVED',
+                    'payload_json' => json_encode([
+                        'alert_id' => $alert->id,
+                        'code' => $alert->code,
+                        'resolved_at' => $now->toIso8601String(),
+                    ]),
+                    'created_at' => $now,
+                ]);
+            }
+
+            DB::afterCommit(function () use ($alert) {
+                $this->broadcastAlertUpdated($alert->fresh());
+            });
+
+            Log::info('Alert resolved by code', [
+                'alert_id' => $alert->id,
+                'zone_id' => $zoneId,
+                'code' => $code,
+            ]);
+
+            return [
+                'resolved' => true,
+                'alert' => $alert->fresh(),
+                'event_id' => $eventId,
+            ];
+        });
+    }
+
+    /**
      * Подтвердить/принять алерт
      */
     public function acknowledge(Alert $alert): Alert

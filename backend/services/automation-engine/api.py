@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 from infrastructure import CommandBus
 from common.infra_alerts import send_infra_exception_alert
+from common.db import fetch
 from common.trace_context import extract_trace_id_from_headers
 from utils.logging_context import set_trace_id
 
@@ -47,6 +48,72 @@ def set_command_bus(command_bus: CommandBus, gh_uid: str):
     _gh_uid = gh_uid
 
 
+async def _validate_scheduler_target(zone_id: int, node_uid: str, channel: str) -> None:
+    """Fail-closed проверка принадлежности ноды зоне для scheduler-команд."""
+    try:
+        node_rows = await fetch(
+            """
+            SELECT id, zone_id
+            FROM nodes
+            WHERE uid = $1
+            LIMIT 1
+            """,
+            node_uid,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to validate scheduler target (node lookup): zone_id=%s node_uid=%s error=%s",
+            zone_id,
+            node_uid,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=503, detail="Node validation unavailable") from exc
+
+    if not node_rows:
+        raise HTTPException(status_code=404, detail=f"Node '{node_uid}' not found")
+
+    node = node_rows[0]
+    node_zone_id = node.get("zone_id")
+    if node_zone_id != zone_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Node '{node_uid}' is assigned to zone {node_zone_id}, "
+                f"not zone {zone_id}"
+            ),
+        )
+
+    if channel != "default":
+        try:
+            channel_rows = await fetch(
+                """
+                SELECT 1
+                FROM node_channels
+                WHERE node_id = $1 AND channel = $2
+                LIMIT 1
+                """,
+                node["id"],
+                channel,
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to validate scheduler target (channel lookup): zone_id=%s node_uid=%s channel=%s error=%s",
+                zone_id,
+                node_uid,
+                channel,
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(status_code=503, detail="Channel validation unavailable") from exc
+
+        if not channel_rows:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Channel '{channel}' not found on node '{node_uid}'",
+            )
+
+
 class SchedulerCommandRequest(BaseModel):
     """Request model для команд от scheduler."""
     zone_id: int = Field(..., ge=1, description="Zone ID")
@@ -71,6 +138,8 @@ async def scheduler_command(request: Request, req: SchedulerCommandRequest = Bod
             f"channel={req.channel}, cmd={req.cmd}",
             extra={"zone_id": req.zone_id, "node_uid": req.node_uid}
         )
+
+        await _validate_scheduler_target(req.zone_id, req.node_uid, req.channel)
         
         # Отправляем команду через CommandBus (который использует history-logger)
         success = await _command_bus.publish_command(

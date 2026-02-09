@@ -668,3 +668,92 @@ async def test_process_zone_emits_alert_when_zone_data_unavailable():
     mock_alert.assert_awaited_once()
     kwargs = mock_alert.await_args.kwargs
     assert kwargs["code"] == "infra_zone_data_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_emit_zone_recovered_signal_sends_resolved_alerts():
+    service = _build_zone_service()
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.send_infra_resolved_alert", new_callable=AsyncMock, return_value=True) as mock_resolved:
+        await service._emit_zone_recovered_signal(zone_id=5, previous_error_streak=3)
+
+    sent_codes = [call.kwargs["code"] for call in mock_resolved.await_args_list]
+    assert sent_codes == [
+        "infra_zone_degraded_mode",
+        "infra_zone_data_unavailable",
+        "infra_zone_backoff_skip",
+        "infra_zone_targets_missing",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_light_controller_emits_circuit_open_alert():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(side_effect=CircuitBreakerOpenError("api cb open"))
+
+    light_cmd = {
+        "node_uid": "nd-light-1",
+        "channel": "default",
+        "cmd": "set_relay",
+        "params": {"state": True},
+        "event_type": "LIGHT_ON",
+        "event_details": {},
+    }
+    with patch("services.zone_automation_service.check_and_control_lighting", new_callable=AsyncMock, return_value=light_cmd), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=True) as mock_alert:
+        await service._process_light_controller(
+            zone_id=10,
+            targets={},
+            capabilities={"light_control": True},
+            bindings={},
+            current_time=datetime.now(timezone.utc),
+        )
+
+    sent_codes = [call.kwargs["code"] for call in mock_alert.await_args_list]
+    assert "infra_controller_command_skipped_circuit_open" in sent_codes
+
+
+@pytest.mark.asyncio
+async def test_process_irrigation_controller_emits_pump_blocked_alert():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+
+    irrigation_cmd = {
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_irrigation",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 1000},
+        "event_type": "IRRIGATION_STARTED",
+        "event_details": {},
+    }
+    with patch("services.zone_automation_service.check_and_control_irrigation", new_callable=AsyncMock, return_value=irrigation_cmd), \
+         patch("services.zone_automation_service.can_run_pump", new_callable=AsyncMock, return_value=(False, "safety blocked")), \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=True) as mock_alert:
+        await service._process_irrigation_controller(
+            zone_id=11,
+            targets={},
+            telemetry={},
+            capabilities={"irrigation_control": True},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+            current_time=datetime.now(timezone.utc),
+            time_scale=None,
+            sim_clock=None,
+        )
+
+    sent_codes = [call.kwargs["code"] for call in mock_alert.await_args_list]
+    assert "infra_irrigation_pump_blocked" in sent_codes
+
+
+@pytest.mark.asyncio
+async def test_check_zone_deletion_emits_alert_on_exception():
+    service = _build_zone_service()
+    with patch("common.db.fetch", new=AsyncMock(side_effect=RuntimeError("db unavailable"))), \
+         patch("services.zone_automation_service.send_infra_exception_alert", new_callable=AsyncMock) as mock_alert:
+        await service._check_zone_deletion(12)
+
+    mock_alert.assert_awaited_once()
+    assert mock_alert.await_args.kwargs["code"] == "infra_zone_deletion_check_failed"

@@ -9,7 +9,11 @@ import inspect
 from common.utils.time import utcnow
 from common.simulation_clock import SimulationClock
 from common.simulation_events import record_simulation_event
-from common.infra_alerts import send_infra_alert, send_infra_exception_alert
+from common.infra_alerts import (
+    send_infra_alert,
+    send_infra_exception_alert,
+    send_infra_resolved_alert,
+)
 from common.db import create_zone_event
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
@@ -50,6 +54,7 @@ BACKOFF_MULTIPLIER = 2  # Множитель для экспоненциальн
 DEGRADED_MODE_THRESHOLD = 3  # Количество ошибок для перехода в degraded mode
 SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений о пропусках
 COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений cooldown
+CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
 
 
 class ZoneAutomationService:
@@ -110,6 +115,8 @@ class ZoneAutomationService:
         self._zone_states: Dict[int, Dict[str, Any]] = {}
         # Ключ: (zone_id, controller_name), значение: datetime последнего cooldown skip report
         self._controller_cooldown_reported_at: Dict[tuple[int, str], datetime] = {}
+        # Ключ: (zone_id, controller_name), значение: datetime последнего alert о circuit-open skip
+        self._controller_circuit_open_reported_at: Dict[tuple[int, str], datetime] = {}
     
     async def save_all_pid_states(self):
         """Сохранить состояние всех PID контроллеров."""
@@ -714,6 +721,55 @@ class ZoneAutomationService:
             },
             signal_name="zone_recovered",
         )
+        for resolved_code in (
+            "infra_zone_degraded_mode",
+            "infra_zone_data_unavailable",
+            "infra_zone_backoff_skip",
+            "infra_zone_targets_missing",
+        ):
+            await send_infra_resolved_alert(
+                code=resolved_code,
+                alert_type="Zone Recovered",
+                message=f"Zone {zone_id} recovered after {previous_error_streak} consecutive errors",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_processing",
+                details={"previous_error_streak": previous_error_streak},
+            )
+
+    async def _emit_controller_circuit_open_signal(
+        self,
+        zone_id: int,
+        controller_name: str,
+        *,
+        channel: Optional[str] = None,
+        cmd: Optional[str] = None,
+    ) -> None:
+        """Алерт о пропуске команды из-за открытого API Circuit Breaker (с троттлингом)."""
+        key = (zone_id, controller_name)
+        now = utcnow()
+        last_reported = self._controller_circuit_open_reported_at.get(key)
+        if last_reported and (now - last_reported).total_seconds() < CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS:
+            return
+
+        alert_sent = await send_infra_alert(
+            code="infra_controller_command_skipped_circuit_open",
+            alert_type="Controller Command Skipped (Circuit Open)",
+            message=f"Zone {zone_id} controller '{controller_name}' skipped command due to open API circuit breaker",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component=f"controller:{controller_name}",
+            channel=channel,
+            cmd=cmd,
+            error_type="CircuitBreakerOpenError",
+            details={
+                "controller": controller_name,
+                "throttle_seconds": CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+            },
+        )
+        if alert_sent:
+            self._controller_circuit_open_reported_at[key] = now
     
     def _is_controller_in_cooldown(self, zone_id: int, controller_name: str) -> bool:
         """
@@ -1020,6 +1076,7 @@ class ZoneAutomationService:
                 zone_id,
                 extra={"zone_id": zone_id},
             )
+            await self._emit_controller_circuit_open_signal(zone_id, "phase_transition")
     
     async def _process_light_controller(
         self,
@@ -1044,6 +1101,12 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping light command",
                     extra={"zone_id": zone_id}
                 )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "light",
+                    channel=light_cmd.get("channel"),
+                    cmd=light_cmd.get("cmd"),
+                )
     
     async def _process_climate_controller(
         self,
@@ -1067,6 +1130,12 @@ class ZoneAutomationService:
                 logger.warning(
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping climate command",
                     extra={"zone_id": zone_id}
+                )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "climate",
+                    channel=cmd.get("channel"),
+                    cmd=cmd.get("cmd"),
                 )
                 break  # Прерываем цикл при открытом circuit breaker
     
@@ -1104,6 +1173,19 @@ class ZoneAutomationService:
             can_run, error_msg = await can_run_pump(zone_id, pump_channel)
             if not can_run:
                 logger.warning(f"Zone {zone_id}: Cannot run irrigation pump {pump_channel}: {error_msg}")
+                await send_infra_alert(
+                    code="infra_irrigation_pump_blocked",
+                    alert_type="Irrigation Pump Blocked",
+                    message=f"Zone {zone_id}: irrigation pump blocked by safety rules",
+                    severity="error",
+                    zone_id=zone_id,
+                    service="automation-engine",
+                    component="controller:irrigation",
+                    channel=pump_channel,
+                    cmd="run_pump",
+                    error_type="PumpSafetyBlocked",
+                    details={"reason": error_msg},
+                )
                 irrigation_cmd = None
         
         if irrigation_cmd:
@@ -1115,6 +1197,12 @@ class ZoneAutomationService:
                 logger.warning(
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping irrigation command",
                     extra={"zone_id": zone_id}
+                )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "irrigation",
+                    channel=irrigation_cmd.get("channel"),
+                    cmd=irrigation_cmd.get("cmd"),
                 )
     
     async def _process_recirculation_controller(
@@ -1154,6 +1242,12 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping recirculation command",
                     extra={"zone_id": zone_id}
                 )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "recirculation",
+                    channel=recirculation_cmd.get("channel"),
+                    cmd=recirculation_cmd.get("cmd"),
+                )
     
     async def _process_correction_controllers(
         self,
@@ -1185,6 +1279,12 @@ class ZoneAutomationService:
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping PH correction command",
                         extra={"zone_id": zone_id}
                     )
+                    await self._emit_controller_circuit_open_signal(
+                        zone_id,
+                        "ph_correction",
+                        channel=ph_cmd.get("channel"),
+                        cmd=ph_cmd.get("cmd"),
+                    )
         
         # EC Correction
         if capabilities.get("ec_control", False):
@@ -1200,6 +1300,12 @@ class ZoneAutomationService:
                     logger.warning(
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping EC correction command",
                         extra={"zone_id": zone_id}
+                    )
+                    await self._emit_controller_circuit_open_signal(
+                        zone_id,
+                        "ec_correction",
+                        channel=ec_cmd.get("channel"),
+                        cmd=ec_cmd.get("cmd"),
                     )
     
     async def _update_zone_health(self, zone_id: int) -> None:
@@ -1235,6 +1341,16 @@ class ZoneAutomationService:
                 logger.info(f"Cleared PID cache for deleted zone {zone_id}")
         except Exception as e:
             logger.warning(f"Failed to check zone deletion for zone {zone_id}: {e}", exc_info=True)
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_zone_deletion_check_failed",
+                alert_type="Zone Deletion Check Failed",
+                severity="warning",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_housekeeping",
+                details={"check": "zone_deletion"},
+            )
     
     async def _check_pid_config_updates(self, zone_id: int) -> None:
         """Проверить обновления PID конфигов и инвалидировать кеш при необходимости."""
@@ -1273,3 +1389,13 @@ class ZoneAutomationService:
                             self.ec_controller._last_pid_tick.pop(zone_id, None)
         except Exception as e:
             logger.warning(f"Failed to check PID config updates for zone {zone_id}: {e}", exc_info=True)
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_pid_config_update_check_failed",
+                alert_type="PID Config Update Check Failed",
+                severity="warning",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_housekeeping",
+                details={"check": "pid_config_updates"},
+            )

@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+import asyncpg
 from .utils.time import utcnow
 
 from .db import get_pool
@@ -252,8 +253,30 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
+                safe_zone_id = zone_id
+                details_payload = dict(details) if isinstance(details, dict) else details
+
+                # Fail-safe: если зоны уже нет, сохраняем алерт как unassigned (zone_id=NULL),
+                # чтобы не ловить FK-ошибку и не терять сам алерт.
+                if zone_id is not None:
+                    zone_exists = await conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM zones WHERE id = $1)",
+                        zone_id,
+                    )
+                    if not zone_exists:
+                        safe_zone_id = None
+                        if not isinstance(details_payload, dict):
+                            details_payload = {}
+                        details_payload.setdefault("requested_zone_id", zone_id)
+                        details_payload.setdefault("zone_validation", "zone_not_found")
+                        logger.warning(
+                            "Alert queue: zone_id=%s not found, enqueue as unassigned alert",
+                            zone_id,
+                            extra={"zone_id": zone_id, "code": code, "source": source},
+                        )
+
                 details_json = _pack_queue_details(
-                    details=details,
+                    details=details_payload,
                     node_uid=node_uid,
                     hardware_id=hardware_id,
                     severity=severity,
@@ -262,8 +285,35 @@ class AlertQueue:
                 await conn.execute("""
                     INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
                     VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
-                """, zone_id, source, code, type, status, details_json)
+                """, safe_zone_id, source, code, type, status, details_json)
                 return True
+            except asyncpg.ForeignKeyViolationError as e:
+                # Возможен race-condition: зона удалена после проверки выше.
+                # Переписываем запись как unassigned.
+                if zone_id is not None:
+                    details_payload = dict(details) if isinstance(details, dict) else {}
+                    details_payload.setdefault("requested_zone_id", zone_id)
+                    details_payload.setdefault("zone_validation", "zone_deleted_race")
+                    details_json = _pack_queue_details(
+                        details=details_payload,
+                        node_uid=node_uid,
+                        hardware_id=hardware_id,
+                        severity=severity,
+                        ts_device=ts_device,
+                    )
+                    await conn.execute("""
+                        INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
+                        VALUES (NULL, $1, $2, $3, $4, $5, 0, NOW())
+                    """, source, code, type, status, details_json)
+                    logger.warning(
+                        "Alert queue: FK race for zone_id=%s, enqueued as unassigned alert: %s",
+                        zone_id,
+                        e,
+                        extra={"zone_id": zone_id, "code": code, "source": source},
+                    )
+                    return True
+                logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
+                return False
             except Exception as e:
                 logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
                 return False
@@ -585,7 +635,8 @@ async def send_alert_to_laravel(
     node_uid: Optional[str] = None,
     hardware_id: Optional[str] = None,
     severity: Optional[str] = None,
-    ts_device: Optional[str] = None
+    ts_device: Optional[str] = None,
+    enqueue_on_failure: bool = True,
 ) -> bool:
     """
     Отправляет алерт в Laravel API.
@@ -603,6 +654,8 @@ async def send_alert_to_laravel(
         hardware_id: Hardware ID узла (опционально)
         severity: Уровень серьезности (опционально)
         ts_device: Временная метка устройства (опционально)
+        enqueue_on_failure: Добавлять запись в очередь при ошибке доставки.
+            Для retry_worker должно быть False, чтобы не дублировать запись.
         
     Returns:
         True если успешно отправлено, False если сохранено в очередь
@@ -612,20 +665,21 @@ async def send_alert_to_laravel(
     
     if not laravel_url:
         logger.error("[ALERT_DELIVERY] Laravel API URL not configured")
-        # Сохраняем в очередь для ретрая после настройки
-        queue = await get_alert_queue()
-        await queue.enqueue(
-            zone_id,
-            source,
-            code,
-            type,
-            status,
-            details,
-            node_uid=node_uid,
-            hardware_id=hardware_id,
-            severity=severity,
-            ts_device=ts_device,
-        )
+        if enqueue_on_failure:
+            # Сохраняем в очередь для ретрая после настройки
+            queue = await get_alert_queue()
+            await queue.enqueue(
+                zone_id,
+                source,
+                code,
+                type,
+                status,
+                details,
+                node_uid=node_uid,
+                hardware_id=hardware_id,
+                severity=severity,
+                ts_device=ts_device,
+            )
         return False
     
     ingest_token = (
@@ -680,6 +734,30 @@ async def send_alert_to_laravel(
                 f"[ALERT_DELIVERY] Laravel responded with {resp.status_code}: "
                 f"{resp.text[:200]}"
             )
+            if enqueue_on_failure:
+                # Сохраняем в очередь для ретрая
+                queue = await get_alert_queue()
+                await queue.enqueue(
+                    zone_id,
+                    source,
+                    code,
+                    type,
+                    status,
+                    details,
+                    node_uid=node_uid,
+                    hardware_id=hardware_id,
+                    severity=severity,
+                    ts_device=ts_device,
+                )
+            return False
+            
+    except Exception as e:
+        # Все ошибки (включая сетевые) обрабатываются здесь
+        # make_request уже обработал сетевые ошибки и вернул исключение
+        logger.warning(
+            f"[ALERT_DELIVERY] Error sending alert to Laravel: {e}"
+        )
+        if enqueue_on_failure:
             # Сохраняем в очередь для ретрая
             queue = await get_alert_queue()
             await queue.enqueue(
@@ -694,28 +772,6 @@ async def send_alert_to_laravel(
                 severity=severity,
                 ts_device=ts_device,
             )
-            return False
-            
-    except Exception as e:
-        # Все ошибки (включая сетевые) обрабатываются здесь
-        # make_request уже обработал сетевые ошибки и вернул исключение
-        logger.warning(
-            f"[ALERT_DELIVERY] Error sending alert to Laravel: {e}"
-        )
-        # Сохраняем в очередь для ретрая
-        queue = await get_alert_queue()
-        await queue.enqueue(
-            zone_id,
-            source,
-            code,
-            type,
-            status,
-            details,
-            node_uid=node_uid,
-            hardware_id=hardware_id,
-            severity=severity,
-            ts_device=ts_device,
-        )
         return False
 
 
@@ -776,7 +832,8 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         node_uid=node_uid,
                         hardware_id=hardware_id,
                         severity=severity,
-                        ts_device=ts_device
+                        ts_device=ts_device,
+                        enqueue_on_failure=False,
                     )
                     
                     if success:

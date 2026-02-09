@@ -4,9 +4,8 @@ Command Audit - полный аудит всех команд для прозр�
 """
 import json
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
-from common.db import execute
+from typing import Dict, Any
+from common.db import execute, fetch
 from decision_context import DecisionContext, ContextLike
 
 logger = logging.getLogger(__name__)
@@ -14,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 class CommandAudit:
     """Аудит всех команд системы."""
+    def __init__(self) -> None:
+        self._missing_zone_logged: set[int] = set()
     
     async def audit_command(
         self,
@@ -30,6 +31,25 @@ class CommandAudit:
             context: Контекст принятия решения (телеметрия, PID состояние, причина)
         """
         try:
+            zone_rows = await fetch(
+                """
+                SELECT 1
+                FROM zones
+                WHERE id = $1
+                LIMIT 1
+                """,
+                zone_id,
+            )
+            if not zone_rows:
+                if zone_id not in self._missing_zone_logged:
+                    self._missing_zone_logged.add(zone_id)
+                    logger.warning(
+                        "Zone %s not found, skip command audit to avoid FK violation",
+                        zone_id,
+                        extra={"zone_id": zone_id, "command": command},
+                    )
+                return
+
             command_type = command.get('cmd', 'unknown')
             
             # Извлекаем контекст
@@ -88,4 +108,3 @@ class CommandAudit:
                 exc_info=True,
                 extra={'zone_id': zone_id, 'command': command}
             )
-

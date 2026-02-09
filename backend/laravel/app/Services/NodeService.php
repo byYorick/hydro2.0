@@ -150,6 +150,7 @@ class NodeService
                 if ($oldZoneId && $oldZoneId != $newZoneId) {
                     $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                     $node->zone_id = null; // Явно очищаем старый zone_id
+                    $this->clearNodeChannelBindings($node->id, 'reassign_to_another_zone');
                     Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
                         'node_id' => $node->id,
                         'old_zone_id' => $oldZoneId,
@@ -214,6 +215,7 @@ class NodeService
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
                 $node->save();
+                $this->clearNodeChannelBindings($node->id, 'zone_cleared_via_update');
                 
                 Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
                     'node_id' => $node->id,
@@ -281,6 +283,7 @@ class NodeService
             $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
             
             $node->save();
+            $this->clearNodeChannelBindings($node->id, 'explicit_detach');
             
             Log::info('Node detached from zone', [
                 'node_id' => $node->id,
@@ -320,5 +323,32 @@ class NodeService
             $node->delete();
             Log::info('Node deleted', ['node_id' => $nodeId, 'uid' => $nodeUid]);
         });
+    }
+
+    private function clearNodeChannelBindings(int $nodeId, string $reason): void
+    {
+        try {
+            $deleted = DB::table('channel_bindings')
+                ->whereIn('node_channel_id', function ($query) use ($nodeId) {
+                    $query->select('id')
+                        ->from('node_channels')
+                        ->where('node_id', $nodeId);
+                })
+                ->delete();
+
+            if ($deleted > 0) {
+                Log::info('NodeService: Cleared channel bindings for node', [
+                    'node_id' => $nodeId,
+                    'deleted_bindings' => $deleted,
+                    'reason' => $reason,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::error('NodeService: Failed to clear node channel bindings', [
+                'node_id' => $nodeId,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

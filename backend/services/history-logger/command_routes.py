@@ -135,6 +135,60 @@ async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str
     return resolved_gh_uid
 
 
+async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
+    """
+    Fail-closed проверка: node_uid должен быть закреплен за zone_id.
+    Возвращает numeric node_id для записи в commands.
+    """
+    try:
+        rows = await fetch(
+            """
+            SELECT id, zone_id, pending_zone_id
+            FROM nodes
+            WHERE uid = $1
+            """,
+            node_uid,
+        )
+    except Exception as exc:
+        logger.error(
+            "[COMMAND_PUBLISH] Failed to validate node-zone assignment: node_uid=%s zone_id=%s error=%s",
+            node_uid,
+            zone_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to validate node assignment, try again later",
+        ) from exc
+
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Node '{node_uid}' not found")
+
+    node = rows[0]
+    node_zone_id = node.get("zone_id")
+    pending_zone_id = node.get("pending_zone_id")
+
+    if node_zone_id != zone_id:
+        if node_zone_id is None and pending_zone_id == zone_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Node '{node_uid}' is not assigned to zone {zone_id} yet "
+                    "(pending assignment confirmation)"
+                ),
+            )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Node '{node_uid}' is assigned to zone {node_zone_id}, "
+                f"not zone {zone_id}"
+            ),
+        )
+
+    return int(node["id"])
+
+
 @router.post("/nodes/{node_uid}/config")
 async def publish_node_config(
     request: Request,
@@ -301,6 +355,8 @@ async def publish_zone_command(
     if not req.get_command_name():
         raise HTTPException(status_code=400, detail="'cmd' is required")
 
+    node_id = await _require_node_assigned_to_zone(req.node_uid, zone_id)
+
     zone_uid = None
     s = get_settings()
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
@@ -356,15 +412,6 @@ async def publish_zone_command(
                 }
 
         if not existing_cmd:
-            node_rows = await fetch(
-                """
-                SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2
-                """,
-                req.node_uid,
-                zone_id,
-            )
-            node_id = node_rows[0]["id"] if node_rows else None
-
             await execute(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
@@ -542,6 +589,8 @@ async def publish_node_command(
     if not req.cmd:
         raise HTTPException(status_code=400, detail="'cmd' is required")
 
+    node_id = await _require_node_assigned_to_zone(node_uid, req.zone_id)
+
     zone_uid = None
     s = get_settings()
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
@@ -597,15 +646,6 @@ async def publish_node_command(
                 }
 
         if not existing_cmd:
-            node_rows = await fetch(
-                """
-                SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2
-                """,
-                node_uid,
-                req.zone_id,
-            )
-            node_id = node_rows[0]["id"] if node_rows else None
-
             await execute(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
@@ -781,6 +821,8 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
             detail="greenhouse_uid, zone_id, node_uid and channel are required",
         )
 
+    node_id = await _require_node_assigned_to_zone(req.node_uid, req.zone_id)
+
     zone_uid = None
     s = get_settings()
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
@@ -857,15 +899,6 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
                 }
 
         if not existing_cmd:
-            node_rows = await fetch(
-                """
-                SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2
-                """,
-                req.node_uid,
-                req.zone_id,
-            )
-            node_id = node_rows[0]["id"] if node_rows else None
-
             await execute(
                 """
                 INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)

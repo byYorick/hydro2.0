@@ -28,12 +28,16 @@ static const char *TAG = "test_node_multi";
 #define DEFAULT_MQTT_NODE_UID "nd-test-irrig-1"
 #define DEFAULT_GH_UID "gh-test-1"
 #define DEFAULT_ZONE_UID "zn-test-1"
+#define PRECONFIG_GH_UID "gh-temp"
+#define PRECONFIG_ZONE_UID "zn-temp"
 
 #define TELEMETRY_INTERVAL_MS 5000
 #define HEARTBEAT_INTERVAL_MS 5000
 #define CONFIG_REPORT_INTERVAL_MS 30000
 #define CONFIG_REPORT_INITIAL_DELAY_MS 3000
 #define COMMAND_QUEUE_LENGTH 32
+#define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
+#define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -148,9 +152,15 @@ static const virtual_node_t VIRTUAL_NODES[] = {
     {.node_uid = "nd-test-light-1", .node_type = "lighting_node", .channels = LIGHT_CHANNELS, .channels_count = sizeof(LIGHT_CHANNELS) / sizeof(LIGHT_CHANNELS[0])},
 };
 
-static char s_topic_gh[64] = DEFAULT_GH_UID;
-static char s_topic_zone[64] = DEFAULT_ZONE_UID;
-static bool s_preconfig_mode = false;
+#define VIRTUAL_NODE_COUNT (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0]))
+
+typedef struct {
+    char gh_uid[64];
+    char zone_uid[64];
+    bool preconfig_mode;
+} virtual_node_namespace_t;
+
+static virtual_node_namespace_t s_virtual_namespaces[VIRTUAL_NODE_COUNT] = {0};
 static int64_t s_start_time_seconds = 0;
 static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
@@ -183,10 +193,54 @@ static int64_t get_timestamp_ms(void) {
     return esp_timer_get_time() / 1000LL;
 }
 
-static void get_topic_namespace(char *gh_uid, size_t gh_uid_size, char *zone_uid, size_t zone_uid_size) {
+static bool find_virtual_node_index(const char *node_uid, size_t *index_out) {
+    size_t index;
+
+    if (!node_uid || node_uid[0] == '\0') {
+        return false;
+    }
+
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        if (strcmp(VIRTUAL_NODES[index].node_uid, node_uid) == 0) {
+            if (index_out) {
+                *index_out = index;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void init_virtual_namespaces(const char *gh_uid, const char *zone_uid) {
+    size_t index;
+    const char *safe_gh = (gh_uid && gh_uid[0] != '\0') ? gh_uid : DEFAULT_GH_UID;
+    const char *safe_zone = (zone_uid && zone_uid[0] != '\0') ? zone_uid : DEFAULT_ZONE_UID;
+    bool preconfig_mode = (strcmp(safe_gh, "gh-temp") == 0) || (strcmp(safe_zone, "zn-temp") == 0);
+
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        snprintf(s_virtual_namespaces[index].gh_uid, sizeof(s_virtual_namespaces[index].gh_uid), "%s", safe_gh);
+        snprintf(s_virtual_namespaces[index].zone_uid, sizeof(s_virtual_namespaces[index].zone_uid), "%s", safe_zone);
+        s_virtual_namespaces[index].preconfig_mode = preconfig_mode;
+    }
+}
+
+static bool get_node_namespace(
+    const char *node_uid,
+    char *gh_uid,
+    size_t gh_uid_size,
+    char *zone_uid,
+    size_t zone_uid_size,
+    bool *preconfig_mode
+) {
     bool locked = false;
-    if (!gh_uid || gh_uid_size == 0 || !zone_uid || zone_uid_size == 0) {
-        return;
+    size_t node_index = 0;
+
+    if (!gh_uid || gh_uid_size == 0 || !zone_uid || zone_uid_size == 0 || !node_uid) {
+        return false;
+    }
+    if (!find_virtual_node_index(node_uid, &node_index)) {
+        return false;
     }
 
     if (s_topic_mutex) {
@@ -195,12 +249,78 @@ static void get_topic_namespace(char *gh_uid, size_t gh_uid_size, char *zone_uid
         }
     }
 
-    snprintf(gh_uid, gh_uid_size, "%s", s_topic_gh);
-    snprintf(zone_uid, zone_uid_size, "%s", s_topic_zone);
+    snprintf(gh_uid, gh_uid_size, "%s", s_virtual_namespaces[node_index].gh_uid);
+    snprintf(zone_uid, zone_uid_size, "%s", s_virtual_namespaces[node_index].zone_uid);
+    if (preconfig_mode) {
+        *preconfig_mode = s_virtual_namespaces[node_index].preconfig_mode;
+    }
 
     if (locked) {
         xSemaphoreGive(s_topic_mutex);
     }
+
+    return true;
+}
+
+static bool namespace_matches_node(const char *node_uid, const char *gh_uid, const char *zone_uid) {
+    char current_gh[64] = {0};
+    char current_zone[64] = {0};
+
+    if (!node_uid || !gh_uid || !zone_uid) {
+        return false;
+    }
+
+    if (!get_node_namespace(node_uid, current_gh, sizeof(current_gh), current_zone, sizeof(current_zone), NULL)) {
+        return false;
+    }
+    return strcmp(current_gh, gh_uid) == 0 && strcmp(current_zone, zone_uid) == 0;
+}
+
+static bool update_node_namespace(const char *node_uid, const char *gh_uid, const char *zone_uid, const char *reason) {
+    size_t node_index = 0;
+    bool locked = false;
+    bool changed = false;
+
+    if (!node_uid || node_uid[0] == '\0') {
+        return false;
+    }
+    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return false;
+    }
+    if (!find_virtual_node_index(node_uid, &node_index)) {
+        return false;
+    }
+
+    if (s_topic_mutex && xSemaphoreTake(s_topic_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        locked = true;
+    }
+
+    if (
+        strcmp(s_virtual_namespaces[node_index].gh_uid, gh_uid) != 0 ||
+        strcmp(s_virtual_namespaces[node_index].zone_uid, zone_uid) != 0
+    ) {
+        snprintf(s_virtual_namespaces[node_index].gh_uid, sizeof(s_virtual_namespaces[node_index].gh_uid), "%s", gh_uid);
+        snprintf(s_virtual_namespaces[node_index].zone_uid, sizeof(s_virtual_namespaces[node_index].zone_uid), "%s", zone_uid);
+        s_virtual_namespaces[node_index].preconfig_mode = (strcmp(gh_uid, "gh-temp") == 0) || (strcmp(zone_uid, "zn-temp") == 0);
+        changed = true;
+    }
+
+    if (locked) {
+        xSemaphoreGive(s_topic_mutex);
+    }
+
+    if (changed) {
+        ESP_LOGI(
+            TAG,
+            "Node namespace updated: node=%s gh=%s zone=%s reason=%s",
+            node_uid,
+            gh_uid,
+            zone_uid,
+            reason ? reason : "unknown"
+        );
+    }
+
+    return changed;
 }
 
 static bool parse_config_topic(
@@ -216,6 +336,7 @@ static bool parse_config_topic(
     char *saveptr = NULL;
     char *token;
     int segment = 0;
+    const char *prefix = NULL;
     const char *gh_uid = NULL;
     const char *zone_uid = NULL;
     const char *node_uid = NULL;
@@ -232,7 +353,9 @@ static bool parse_config_topic(
     strcpy(topic_copy, topic);
     token = strtok_r(topic_copy, "/", &saveptr);
     while (token) {
-        if (segment == 1) {
+        if (segment == 0) {
+            prefix = token;
+        } else if (segment == 1) {
             gh_uid = token;
         } else if (segment == 2) {
             zone_uid = token;
@@ -248,6 +371,9 @@ static bool parse_config_topic(
     if (segment != 5) {
         return false;
     }
+    if (!prefix || strcmp(prefix, "hydro") != 0) {
+        return false;
+    }
     if (!gh_uid || !zone_uid || !node_uid || !message_type) {
         return false;
     }
@@ -259,44 +385,6 @@ static bool parse_config_topic(
     snprintf(out_zone_uid, out_zone_uid_size, "%s", zone_uid);
     snprintf(out_node_uid, out_node_uid_size, "%s", node_uid);
     return true;
-}
-
-static void update_topic_namespace(const char *gh_uid, const char *zone_uid, const char *reason) {
-    bool locked = false;
-    bool changed = false;
-
-    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
-        return;
-    }
-
-    if (s_topic_mutex) {
-        if (xSemaphoreTake(s_topic_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-            locked = true;
-        } else {
-            ESP_LOGW(TAG, "Failed to lock topic mutex for namespace update");
-        }
-    }
-
-    if ((strcmp(s_topic_gh, gh_uid) != 0) || (strcmp(s_topic_zone, zone_uid) != 0)) {
-        snprintf(s_topic_gh, sizeof(s_topic_gh), "%s", gh_uid);
-        snprintf(s_topic_zone, sizeof(s_topic_zone), "%s", zone_uid);
-        s_preconfig_mode = (strcmp(s_topic_gh, "gh-temp") == 0) || (strcmp(s_topic_zone, "zn-temp") == 0);
-        changed = true;
-    }
-
-    if (locked) {
-        xSemaphoreGive(s_topic_mutex);
-    }
-
-    if (changed) {
-        ESP_LOGI(
-            TAG,
-            "Namespace updated: gh=%s zone=%s reason=%s",
-            gh_uid,
-            zone_uid,
-            reason ? reason : "unknown"
-        );
-    }
 }
 
 static float clamp_float(float value, float min_value, float max_value) {
@@ -312,11 +400,9 @@ static float clamp_float(float value, float min_value, float max_value) {
 static void publish_all_config_reports(const char *reason);
 
 static const virtual_node_t *find_virtual_node(const char *node_uid) {
-    size_t index;
-    for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
-        if (strcmp(VIRTUAL_NODES[index].node_uid, node_uid) == 0) {
-            return &VIRTUAL_NODES[index];
-        }
+    size_t index = 0;
+    if (find_virtual_node_index(node_uid, &index)) {
+        return &VIRTUAL_NODES[index];
     }
     return NULL;
 }
@@ -361,7 +447,10 @@ static esp_err_t build_topic(char *buffer, size_t buffer_size, const char *node_
         return ESP_ERR_INVALID_ARG;
     }
 
-    get_topic_namespace(gh_uid, sizeof(gh_uid), zone_uid, sizeof(zone_uid));
+    if (!get_node_namespace(node_uid, gh_uid, sizeof(gh_uid), zone_uid, sizeof(zone_uid), NULL)) {
+        ESP_LOGW(TAG, "Failed to resolve namespace for node=%s", node_uid);
+        return ESP_ERR_NOT_FOUND;
+    }
 
     if (channel && channel[0] != '\0') {
         len = snprintf(
@@ -464,6 +553,9 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
 
 static void publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
+    char gh_uid[64] = {0};
+    char zone_uid[64] = {0};
+    bool node_preconfig_mode = false;
     cJSON *json;
     cJSON *channels;
     esp_err_t publish_err;
@@ -483,11 +575,17 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         return;
     }
 
+    if (!get_node_namespace(node->node_uid, gh_uid, sizeof(gh_uid), zone_uid, sizeof(zone_uid), &node_preconfig_mode)) {
+        ESP_LOGW(TAG, "Failed to resolve namespace for config_report node=%s", node->node_uid);
+        cJSON_Delete(json);
+        return;
+    }
+
     cJSON_AddStringToObject(json, "node_id", node->node_uid);
     cJSON_AddNumberToObject(json, "version", 3);
     cJSON_AddStringToObject(json, "type", node->node_type);
-    cJSON_AddStringToObject(json, "gh_uid", s_topic_gh);
-    cJSON_AddStringToObject(json, "zone_uid", s_topic_zone);
+    cJSON_AddStringToObject(json, "gh_uid", gh_uid);
+    cJSON_AddStringToObject(json, "zone_uid", zone_uid);
 
     channels = cJSON_CreateArray();
     if (!channels) {
@@ -525,12 +623,10 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
 
     cJSON_AddItemToObject(json, "channels", channels);
 
-    if (s_preconfig_mode) {
-        cJSON *wifi = cJSON_CreateObject();
-        if (wifi) {
-            cJSON_AddBoolToObject(wifi, "configured", true);
-            cJSON_AddItemToObject(json, "wifi", wifi);
-        }
+    cJSON *wifi = cJSON_CreateObject();
+    if (wifi) {
+        cJSON_AddBoolToObject(wifi, "configured", !node_preconfig_mode);
+        cJSON_AddItemToObject(json, "wifi", wifi);
     }
 
     publish_err = publish_json_payload(topic, json, 1, 0);
@@ -669,6 +765,10 @@ static void publish_node_hello_for_node(const virtual_node_t *node) {
 
 static bool parse_command_topic(
     const char *topic,
+    char *out_gh_uid,
+    size_t out_gh_uid_size,
+    char *out_zone_uid,
+    size_t out_zone_uid_size,
     char *out_node_uid,
     size_t out_node_uid_size,
     char *out_channel,
@@ -678,11 +778,14 @@ static bool parse_command_topic(
     char *saveptr = NULL;
     char *token;
     int segment = 0;
+    const char *prefix = NULL;
+    const char *gh_uid = NULL;
+    const char *zone_uid = NULL;
     const char *node = NULL;
     const char *channel = NULL;
     const char *message_type = NULL;
 
-    if (!topic || !out_node_uid || !out_channel) {
+    if (!topic || !out_gh_uid || !out_zone_uid || !out_node_uid || !out_channel) {
         return false;
     }
 
@@ -693,7 +796,13 @@ static bool parse_command_topic(
     strcpy(topic_copy, topic);
     token = strtok_r(topic_copy, "/", &saveptr);
     while (token) {
-        if (segment == 3) {
+        if (segment == 0) {
+            prefix = token;
+        } else if (segment == 1) {
+            gh_uid = token;
+        } else if (segment == 2) {
+            zone_uid = token;
+        } else if (segment == 3) {
             node = token;
         } else if (segment == 4) {
             channel = token;
@@ -704,13 +813,21 @@ static bool parse_command_topic(
         token = strtok_r(NULL, "/", &saveptr);
     }
 
-    if (!node || !channel || !message_type) {
+    if (segment != 6) {
+        return false;
+    }
+    if (!prefix || strcmp(prefix, "hydro") != 0) {
+        return false;
+    }
+    if (!gh_uid || !zone_uid || !node || !channel || !message_type) {
         return false;
     }
     if (strcmp(message_type, "command") != 0) {
         return false;
     }
 
+    snprintf(out_gh_uid, out_gh_uid_size, "%s", gh_uid);
+    snprintf(out_zone_uid, out_zone_uid_size, "%s", zone_uid);
     snprintf(out_node_uid, out_node_uid_size, "%s", node);
     snprintf(out_channel, out_channel_size, "%s", channel);
     return true;
@@ -1049,6 +1166,10 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
 }
 
 static void command_callback(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx) {
+    char topic_gh_uid[64] = {0};
+    char topic_zone_uid[64] = {0};
+    char current_gh_uid[64] = {0};
+    char current_zone_uid[64] = {0};
     char node_uid[64] = {0};
     char topic_channel[64] = {0};
     cJSON *command_json;
@@ -1065,7 +1186,33 @@ static void command_callback(const char *topic, const char *channel, const char 
         return;
     }
 
-    if (!parse_command_topic(topic, node_uid, sizeof(node_uid), topic_channel, sizeof(topic_channel))) {
+    if (!parse_command_topic(
+        topic,
+        topic_gh_uid,
+        sizeof(topic_gh_uid),
+        topic_zone_uid,
+        sizeof(topic_zone_uid),
+        node_uid,
+        sizeof(node_uid),
+        topic_channel,
+        sizeof(topic_channel)
+    )) {
+        return;
+    }
+
+    if (!namespace_matches_node(node_uid, topic_gh_uid, topic_zone_uid)) {
+        if (!get_node_namespace(node_uid, current_gh_uid, sizeof(current_gh_uid), current_zone_uid, sizeof(current_zone_uid), NULL)) {
+            snprintf(current_gh_uid, sizeof(current_gh_uid), "unknown");
+            snprintf(current_zone_uid, sizeof(current_zone_uid), "unknown");
+        }
+        ESP_LOGW(
+            TAG,
+            "Ignoring command from stale namespace: topic=%s node=%s current=%s/%s",
+            topic,
+            node_uid,
+            current_gh_uid,
+            current_zone_uid
+        );
         return;
     }
 
@@ -1138,15 +1285,15 @@ static void config_callback(const char *topic, const char *data, int data_len, v
     char topic_gh_uid[64] = {0};
     char topic_zone_uid[64] = {0};
     char topic_node_uid[64] = {0};
+    char current_gh_uid[64] = {0};
+    char current_zone_uid[64] = {0};
     char next_gh_uid[64] = {0};
     char next_zone_uid[64] = {0};
-    char command_topic[192];
-    char config_topic[192];
+    bool current_preconfig_mode = false;
     cJSON *config_json = NULL;
     cJSON *gh_uid_item;
     cJSON *zone_uid_item;
-    mqtt_node_info_t node_info = {0};
-    size_t index;
+    const virtual_node_t *node;
     (void)user_ctx;
 
     if (!topic || !data || data_len <= 0) {
@@ -1165,7 +1312,35 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         return;
     }
 
-    if (!find_virtual_node(topic_node_uid)) {
+    node = find_virtual_node(topic_node_uid);
+    if (!node) {
+        return;
+    }
+
+    if (!get_node_namespace(
+        topic_node_uid,
+        current_gh_uid,
+        sizeof(current_gh_uid),
+        current_zone_uid,
+        sizeof(current_zone_uid),
+        &current_preconfig_mode
+    )) {
+        ESP_LOGW(TAG, "Cannot resolve current namespace for node=%s", topic_node_uid);
+        return;
+    }
+
+    if (
+        !current_preconfig_mode &&
+        (strcmp(topic_gh_uid, current_gh_uid) != 0 || strcmp(topic_zone_uid, current_zone_uid) != 0)
+    ) {
+        ESP_LOGW(
+            TAG,
+            "Ignoring config from stale namespace: topic=%s node=%s current=%s/%s",
+            topic,
+            topic_node_uid,
+            current_gh_uid,
+            current_zone_uid
+        );
         return;
     }
 
@@ -1197,44 +1372,25 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         return;
     }
 
-    update_topic_namespace(next_gh_uid, next_zone_uid, "mqtt_config");
-
-    node_info.gh_uid = next_gh_uid;
-    node_info.zone_uid = next_zone_uid;
-    node_info.node_uid = DEFAULT_MQTT_NODE_UID;
-    if (mqtt_manager_update_node_info(&node_info) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to update mqtt_manager node info for new namespace");
+    if (!update_node_namespace(topic_node_uid, next_gh_uid, next_zone_uid, "mqtt_config")) {
+        ESP_LOGI(
+            TAG,
+            "Config namespace unchanged for node=%s gh=%s zone=%s",
+            topic_node_uid,
+            next_gh_uid,
+            next_zone_uid
+        );
     }
 
-    snprintf(
-        command_topic,
-        sizeof(command_topic),
-        "hydro/%s/%s/+/+/command",
-        next_gh_uid,
-        next_zone_uid
-    );
-    mqtt_manager_subscribe_raw(command_topic, 1);
-
-    snprintf(
-        config_topic,
-        sizeof(config_topic),
-        "hydro/%s/%s/+/config",
-        next_gh_uid,
-        next_zone_uid
-    );
-    mqtt_manager_subscribe_raw(config_topic, 1);
-
-    for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
-        publish_status_for_node(VIRTUAL_NODES[index].node_uid, "ONLINE");
-    }
-    publish_all_config_reports("config_apply");
+    publish_status_for_node(topic_node_uid, "ONLINE");
+    publish_config_report_for_node(node);
 
     ESP_LOGI(
         TAG,
-        "Config applied for virtual namespace: gh=%s zone=%s (from node=%s)",
+        "Config applied for virtual node: node=%s gh=%s zone=%s",
+        topic_node_uid,
         next_gh_uid,
-        next_zone_uid,
-        topic_node_uid
+        next_zone_uid
     );
 }
 
@@ -1361,44 +1517,50 @@ static void task_publish_config_reports(void *pv_parameters) {
 
 static void mqtt_connected_callback(bool connected, void *user_ctx) {
     size_t index;
-    char wildcard_topic[192];
-    char config_wildcard_topic[192];
-    char gh_uid[64];
-    char zone_uid[64];
+    size_t preconfig_count = 0;
     (void)user_ctx;
 
     if (!connected) {
         return;
     }
 
-    get_topic_namespace(gh_uid, sizeof(gh_uid), zone_uid, sizeof(zone_uid));
+    if (mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to subscribe command wildcard topic: %s", COMMAND_WILDCARD_TOPIC);
+    }
+    if (mqtt_manager_subscribe_raw(CONFIG_WILDCARD_TOPIC, 1) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to subscribe config wildcard topic: %s", CONFIG_WILDCARD_TOPIC);
+    }
 
-    snprintf(
-        wildcard_topic,
-        sizeof(wildcard_topic),
-        "hydro/%s/%s/+/+/command",
-        gh_uid,
-        zone_uid
-    );
-    mqtt_manager_subscribe_raw(wildcard_topic, 1);
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        bool node_preconfig_mode = false;
+        char node_gh_uid[64] = {0};
+        char node_zone_uid[64] = {0};
 
-    snprintf(
-        config_wildcard_topic,
-        sizeof(config_wildcard_topic),
-        "hydro/%s/%s/+/config",
-        gh_uid,
-        zone_uid
-    );
-    mqtt_manager_subscribe_raw(config_wildcard_topic, 1);
+        if (get_node_namespace(
+            VIRTUAL_NODES[index].node_uid,
+            node_gh_uid,
+            sizeof(node_gh_uid),
+            node_zone_uid,
+            sizeof(node_zone_uid),
+            &node_preconfig_mode
+        )) {
+            if (node_preconfig_mode) {
+                preconfig_count++;
+            }
+        }
 
-    for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
         publish_node_hello_for_node(&VIRTUAL_NODES[index]);
         publish_status_for_node(VIRTUAL_NODES[index].node_uid, "ONLINE");
     }
 
     publish_all_config_reports("mqtt_connected");
 
-    ESP_LOGI(TAG, "Virtual nodes ONLINE published (mode=%s)", s_preconfig_mode ? "setup/preconfig" : "configured");
+    ESP_LOGI(
+        TAG,
+        "Virtual nodes ONLINE published (preconfig=%u/%u)",
+        (unsigned)preconfig_count,
+        (unsigned)VIRTUAL_NODE_COUNT
+    );
 }
 
 static esp_err_t run_setup_portal_blocking(void) {
@@ -1432,6 +1594,32 @@ static bool has_valid_network_config(void) {
     }
 
     return true;
+}
+
+static void reset_runtime_namespace_to_preconfig(
+    mqtt_node_info_t *mqtt_node_info,
+    char *gh_uid,
+    size_t gh_uid_size,
+    char *zone_uid,
+    size_t zone_uid_size
+) {
+    if (!mqtt_node_info || !gh_uid || !zone_uid || gh_uid_size == 0 || zone_uid_size == 0) {
+        return;
+    }
+
+    // Важно: сбрасываем только runtime namespace тест-ноды.
+    // Wi-Fi/MQTT credentials в NVS не изменяются.
+    snprintf(gh_uid, gh_uid_size, "%s", PRECONFIG_GH_UID);
+    snprintf(zone_uid, zone_uid_size, "%s", PRECONFIG_ZONE_UID);
+    mqtt_node_info->gh_uid = gh_uid;
+    mqtt_node_info->zone_uid = zone_uid;
+
+    ESP_LOGW(
+        TAG,
+        "Runtime namespace reset to preconfig defaults on boot: %s/%s",
+        PRECONFIG_GH_UID,
+        PRECONFIG_ZONE_UID
+    );
 }
 
 esp_err_t test_node_app_init(void) {
@@ -1501,9 +1689,27 @@ esp_err_t test_node_app_init(void) {
         return run_setup_portal_blocking();
     }
 
-    snprintf(s_topic_gh, sizeof(s_topic_gh), "%s", mqtt_node_info.gh_uid ? mqtt_node_info.gh_uid : DEFAULT_GH_UID);
-    snprintf(s_topic_zone, sizeof(s_topic_zone), "%s", mqtt_node_info.zone_uid ? mqtt_node_info.zone_uid : DEFAULT_ZONE_UID);
-    s_preconfig_mode = (strcmp(s_topic_gh, "gh-temp") == 0) || (strcmp(s_topic_zone, "zn-temp") == 0);
+    reset_runtime_namespace_to_preconfig(
+        &mqtt_node_info,
+        gh_uid,
+        sizeof(gh_uid),
+        zone_uid,
+        sizeof(zone_uid)
+    );
+
+    s_topic_mutex = xSemaphoreCreateMutex();
+    if (!s_topic_mutex) {
+        ESP_LOGE(TAG, "Failed to create topic mutex");
+        return ESP_ERR_NO_MEM;
+    }
+
+    init_virtual_namespaces(mqtt_node_info.gh_uid, mqtt_node_info.zone_uid);
+
+    s_command_queue = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(pending_command_t));
+    if (!s_command_queue) {
+        ESP_LOGE(TAG, "Failed to create command queue");
+        return ESP_ERR_NO_MEM;
+    }
 
     err = mqtt_manager_init(&mqtt_config, &mqtt_node_info);
     if (err != ESP_OK) {
@@ -1521,23 +1727,35 @@ esp_err_t test_node_app_init(void) {
         return err;
     }
 
-    s_command_queue = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(pending_command_t));
-    if (!s_command_queue) {
-        ESP_LOGE(TAG, "Failed to create command queue");
-        return ESP_ERR_NO_MEM;
-    }
-
-    s_topic_mutex = xSemaphoreCreateMutex();
-    if (!s_topic_mutex) {
-        ESP_LOGE(TAG, "Failed to create topic mutex");
-        return ESP_ERR_NO_MEM;
-    }
-
     xTaskCreate(task_publish_telemetry, "telemetry_task", 4096, NULL, 5, NULL);
     xTaskCreate(task_publish_heartbeat, "heartbeat_task", 4096, NULL, 3, NULL);
     xTaskCreate(task_publish_config_reports, "config_task", 4096, NULL, 3, NULL);
     xTaskCreate(command_worker_task, "command_worker", 6144, NULL, 6, NULL);
 
-    ESP_LOGI(TAG, "Test node initialized: 6 virtual nodes, gh=%s zone=%s", s_topic_gh, s_topic_zone);
+    {
+        char base_gh_uid[64] = {0};
+        char base_zone_uid[64] = {0};
+        bool base_preconfig_mode = false;
+        if (!get_node_namespace(
+            VIRTUAL_NODES[0].node_uid,
+            base_gh_uid,
+            sizeof(base_gh_uid),
+            base_zone_uid,
+            sizeof(base_zone_uid),
+            &base_preconfig_mode
+        )) {
+            snprintf(base_gh_uid, sizeof(base_gh_uid), "unknown");
+            snprintf(base_zone_uid, sizeof(base_zone_uid), "unknown");
+        }
+
+        ESP_LOGI(
+            TAG,
+            "Test node initialized: virtual_nodes=%u base_namespace=%s/%s mode=%s",
+            (unsigned)VIRTUAL_NODE_COUNT,
+            base_gh_uid,
+            base_zone_uid,
+            base_preconfig_mode ? "setup/preconfig" : "configured"
+        );
+    }
     return ESP_OK;
 }

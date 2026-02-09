@@ -491,6 +491,7 @@ class PythonIngestController extends Controller
             'source' => ['required', 'string', 'in:biz,infra'],
             'code' => ['required', 'string', 'max:64'],
             'type' => ['required', 'string', 'max:64'],
+            'status' => ['nullable', 'string', 'in:ACTIVE,RESOLVED'],
             'severity' => ['nullable', 'string', 'max:32'],
             'details' => ['nullable', 'array'],
             'ts_device' => ['nullable', 'date'],
@@ -509,6 +510,27 @@ class PythonIngestController extends Controller
 
         try {
             $alertService = app(\App\Services\AlertService::class);
+            $status = strtoupper((string) ($data['status'] ?? 'ACTIVE'));
+
+            if ($status === 'RESOLVED') {
+                $result = $alertService->resolveByCode(
+                    zoneId: $data['zone_id'] ?? null,
+                    code: $data['code'],
+                    context: [
+                        'details' => $data['details'] ?? null,
+                    ],
+                );
+
+                return Response::json([
+                    'status' => 'ok',
+                    'data' => [
+                        'resolved' => (bool) ($result['resolved'] ?? false),
+                        'alert_id' => $result['alert']?->id,
+                        'event_id' => $result['event_id'] ?? null,
+                        'server_ts' => now()->toIso8601String(),
+                    ],
+                ]);
+            }
             
             // Используем createOrUpdateActive для дедупликации
             $result = $alertService->createOrUpdateActive([
@@ -522,6 +544,16 @@ class PythonIngestController extends Controller
                 'hardware_id' => $data['hardware_id'] ?? null,
                 'ts_device' => $data['ts_device'] ?? null,
             ]);
+
+            if (($result['rate_limited'] ?? false) || !isset($result['alert']) || $result['alert'] === null) {
+                return Response::json([
+                    'status' => 'ok',
+                    'data' => [
+                        'rate_limited' => true,
+                        'server_ts' => now()->toIso8601String(),
+                    ],
+                ], 202);
+            }
 
             $alert = $result['alert'];
             $serverTs = now()->toIso8601String();

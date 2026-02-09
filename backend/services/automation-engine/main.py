@@ -108,6 +108,16 @@ _command_tracker: Optional[CommandTracker] = None
 _command_bus: Optional[CommandBus] = None
 _last_db_circuit_open_alert_at: Optional[datetime] = None
 _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
+_last_health_unhealthy_alert_at: Optional[datetime] = None
+_HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS = 180
+_last_health_check_failed_alert_at: Optional[datetime] = None
+_HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS = 180
+_last_config_unavailable_alert_at: Optional[datetime] = None
+_CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS = 180
+_last_missing_gh_uid_alert_at: Optional[datetime] = None
+_MISSING_GH_UID_ALERT_THROTTLE_SECONDS = 300
+_last_config_fetch_error_alert_at: Dict[str, datetime] = {}
+_CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS = 180
 
 
 def _should_emit_db_circuit_open_alert(now: datetime) -> bool:
@@ -123,6 +133,97 @@ def _should_emit_db_circuit_open_alert(now: datetime) -> bool:
         return True
 
     return False
+
+
+def _should_emit_health_unhealthy_alert(now: datetime) -> bool:
+    global _last_health_unhealthy_alert_at
+    if _last_health_unhealthy_alert_at is None:
+        _last_health_unhealthy_alert_at = now
+        return True
+
+    elapsed = (now - _last_health_unhealthy_alert_at).total_seconds()
+    if elapsed >= _HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS:
+        _last_health_unhealthy_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_health_check_failed_alert(now: datetime) -> bool:
+    global _last_health_check_failed_alert_at
+    if _last_health_check_failed_alert_at is None:
+        _last_health_check_failed_alert_at = now
+        return True
+
+    elapsed = (now - _last_health_check_failed_alert_at).total_seconds()
+    if elapsed >= _HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS:
+        _last_health_check_failed_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_config_unavailable_alert(now: datetime) -> bool:
+    global _last_config_unavailable_alert_at
+    if _last_config_unavailable_alert_at is None:
+        _last_config_unavailable_alert_at = now
+        return True
+
+    elapsed = (now - _last_config_unavailable_alert_at).total_seconds()
+    if elapsed >= _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS:
+        _last_config_unavailable_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_missing_gh_uid_alert(now: datetime) -> bool:
+    global _last_missing_gh_uid_alert_at
+    if _last_missing_gh_uid_alert_at is None:
+        _last_missing_gh_uid_alert_at = now
+        return True
+
+    elapsed = (now - _last_missing_gh_uid_alert_at).total_seconds()
+    if elapsed >= _MISSING_GH_UID_ALERT_THROTTLE_SECONDS:
+        _last_missing_gh_uid_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_config_fetch_error_alert(now: datetime, error_type: str) -> bool:
+    last = _last_config_fetch_error_alert_at.get(error_type)
+    if last is None:
+        _last_config_fetch_error_alert_at[error_type] = now
+        return True
+
+    elapsed = (now - last).total_seconds()
+    if elapsed >= _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS:
+        _last_config_fetch_error_alert_at[error_type] = now
+        return True
+    return False
+
+
+async def _emit_config_fetch_failure_alert(
+    *,
+    error_type: str,
+    message: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    now = utcnow()
+    if not _should_emit_config_fetch_error_alert(now, error_type):
+        return
+
+    payload_details = dict(details) if isinstance(details, dict) else {}
+    payload_details["throttle_seconds"] = _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS
+
+    await send_infra_alert(
+        code="infra_config_fetch_failed",
+        alert_type="Config Fetch Failed",
+        message=message,
+        severity="error",
+        zone_id=None,
+        service="automation-engine",
+        component="config_fetch",
+        error_type=error_type,
+        details=payload_details,
+    )
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -529,6 +630,10 @@ async def fetch_full_config(
             if e.response.status_code == 401:
                 logger.error(f"Config fetch failed: Unauthorized (401) - invalid or missing token. Attempt {attempt + 1}/{max_retries}")
                 # Don't retry on 401 - it's a configuration issue
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message="Config fetch failed: Unauthorized (401) - invalid or missing token",
+                )
                 return None
             elif e.response.status_code == 429:
                 retry_after = e.response.headers.get("Retry-After")
@@ -544,6 +649,10 @@ async def fetch_full_config(
                     await asyncio.sleep(retry_after_sec)
                     continue
                 else:
+                    await _emit_config_fetch_failure_alert(
+                        error_type=error_type,
+                        message="Config fetch failed after retries: rate-limited by API (429)",
+                    )
                     return None
             elif e.response.status_code >= 500:
                 logger.warning(f"Config fetch failed: Server error {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
@@ -552,9 +661,17 @@ async def fetch_full_config(
                     continue
                 else:
                     logger.error(f"Config fetch failed after {max_retries} attempts: Server error {e.response.status_code}")
+                    await _emit_config_fetch_failure_alert(
+                        error_type=error_type,
+                        message=f"Config fetch failed after {max_retries} attempts: HTTP {e.response.status_code}",
+                    )
                     return None
             else:
                 logger.error(f"Config fetch failed: HTTP {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed: HTTP {e.response.status_code}",
+                )
                 return None
         except httpx.TimeoutException:
             error_type = "timeout"
@@ -565,6 +682,10 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: Timeout")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: timeout",
+                )
                 return None
         except httpx.NetworkError as e:
             error_type = "network_error"
@@ -575,6 +696,11 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: Network error - {e}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: network error",
+                    details={"error_message": str(e)},
+                )
                 return None
         except Exception as e:
             error_type = type(e).__name__
@@ -585,6 +711,11 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: {e}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: unexpected error",
+                    details={"error_message": str(e)},
+                )
                 return None
     
     return None
@@ -714,8 +845,38 @@ async def main():
                 health = await health_monitor.check_health()
                 if health['status'] != 'healthy':
                     logger.warning(f"System health: {health['status']}", extra=health)
+                    now = utcnow()
+                    if _should_emit_health_unhealthy_alert(now):
+                        await send_infra_alert(
+                            code="infra_system_unhealthy",
+                            alert_type="System Health Degraded",
+                            message=f"Automation system health is '{health['status']}'",
+                            severity="error",
+                            zone_id=None,
+                            service="automation-engine",
+                            component="health_monitor",
+                            error_type="Unhealthy",
+                            details={
+                                "health": health,
+                                "throttle_seconds": _HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS,
+                            },
+                        )
             except Exception as e:
                 logger.error(f"Health check failed: {e}", exc_info=True)
+                now = utcnow()
+                if _should_emit_health_check_failed_alert(now):
+                    await send_infra_exception_alert(
+                        error=e,
+                        code="infra_health_check_failed",
+                        alert_type="Health Check Failed",
+                        severity="error",
+                        zone_id=None,
+                        service="automation-engine",
+                        component="health_monitor",
+                        details={
+                            "throttle_seconds": _HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS,
+                        },
+                    )
             await asyncio.sleep(30)
     
     health_task = asyncio.create_task(health_check_loop())
@@ -752,6 +913,20 @@ async def main():
                                 last_config_ts = now
                             else:
                                 logger.warning("API Circuit Breaker is OPEN, no cached config available")
+                                if _should_emit_config_unavailable_alert(utcnow()):
+                                    await send_infra_alert(
+                                        code="infra_api_circuit_open_no_cache",
+                                        alert_type="API Circuit Open Without Cache",
+                                        message="API circuit breaker is open and no cached config is available",
+                                        severity="critical",
+                                        zone_id=None,
+                                        service="automation-engine",
+                                        component="config_fetch",
+                                        error_type="CircuitBreakerOpenError",
+                                        details={
+                                            "throttle_seconds": _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS,
+                                        },
+                                    )
                                 await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                                 continue
                     
@@ -762,6 +937,20 @@ async def main():
                                 last_config_ts = now
                             else:
                                 logger.warning("Config fetch returned None, sleeping before retry")
+                                if _should_emit_config_unavailable_alert(utcnow()):
+                                    await send_infra_alert(
+                                        code="infra_config_fetch_unavailable",
+                                        alert_type="Config Unavailable",
+                                        message="Config fetch returned empty response and no cached config is available",
+                                        severity="error",
+                                        zone_id=None,
+                                        service="automation-engine",
+                                        component="config_fetch",
+                                        error_type="ConfigUnavailable",
+                                        details={
+                                            "throttle_seconds": _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS,
+                                        },
+                                    )
                                 await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                                 continue
                         else:
@@ -781,6 +970,18 @@ async def main():
                     gh_uid = _extract_gh_uid_from_config(cfg)
                     if not gh_uid:
                         logger.warning("No greenhouse UID found in config, sleeping before retry")
+                        if _should_emit_missing_gh_uid_alert(utcnow()):
+                            await send_infra_alert(
+                                code="infra_config_missing_greenhouse_uid",
+                                alert_type="Config Missing Greenhouse UID",
+                                message="Config does not contain greenhouse UID",
+                                severity="error",
+                                zone_id=None,
+                                service="automation-engine",
+                                component="config_validation",
+                                error_type="MissingGreenhouseUid",
+                                details={"throttle_seconds": _MISSING_GH_UID_ALERT_THROTTLE_SECONDS},
+                            )
                         await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                         continue
                     

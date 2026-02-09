@@ -9,6 +9,7 @@ from main import (
     check_and_correct_zone,
     _extract_gh_uid_from_config,
     _should_emit_db_circuit_open_alert,
+    _should_emit_config_fetch_error_alert,
 )
 from datetime import datetime, timezone, timedelta
 
@@ -37,6 +38,20 @@ async def test_db_circuit_open_alert_throttling():
         assert _should_emit_db_circuit_open_alert(now) is True
         assert _should_emit_db_circuit_open_alert(later_short) is False
         assert _should_emit_db_circuit_open_alert(later_long) is True
+
+
+def test_config_fetch_error_alert_throttling():
+    """Config-fetch alerts should be throttled per error type."""
+    now = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    later_short = now + timedelta(seconds=60)
+    later_long = now + timedelta(seconds=180)
+
+    with patch("main._last_config_fetch_error_alert_at", {}):
+        assert _should_emit_config_fetch_error_alert(now, "timeout") is True
+        assert _should_emit_config_fetch_error_alert(later_short, "timeout") is False
+        assert _should_emit_config_fetch_error_alert(later_long, "timeout") is True
+        # Другой тип ошибки должен иметь независимый throttle state
+        assert _should_emit_config_fetch_error_alert(later_short, "http_500") is True
 
 
 @pytest.mark.asyncio

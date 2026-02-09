@@ -50,7 +50,7 @@ class ProcessAlert implements ShouldQueue
 
                 Log::info('Pending alert processed and deleted', [
                     'pending_alert_id' => $this->pendingAlertId,
-                    'alert_id' => $result['alert']->id ?? null,
+                    'alert_id' => $result['alert']?->id,
                 ]);
             }
 

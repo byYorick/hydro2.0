@@ -184,3 +184,77 @@ async def send_infra_exception_alert(
         error_type=type(error).__name__,
         ts_device=ts_device,
     )
+
+
+async def send_infra_resolved_alert(
+    *,
+    code: str,
+    message: str,
+    zone_id: Optional[int] = None,
+    alert_type: str = "Infrastructure Error",
+    details: Optional[Dict[str, Any]] = None,
+    service: Optional[str] = None,
+    component: Optional[str] = None,
+    node_uid: Optional[str] = None,
+    hardware_id: Optional[str] = None,
+    channel: Optional[str] = None,
+    cmd: Optional[str] = None,
+    ts_device: Optional[str] = None,
+) -> bool:
+    """
+    Публикует RESOLVED-статус для инфраструктурного алерта.
+    Используется для явного закрытия инцидента при восстановлении.
+    """
+    if not infra_alerts_enabled():
+        logger.debug(
+            "[INFRA_ALERT] Feature flag disabled, skip resolved alert",
+            extra={"code": code, "zone_id": zone_id},
+        )
+        return False
+
+    trace_id = get_trace_id()
+    payload_details = dict(details) if isinstance(details, dict) else {}
+    payload_details.update(
+        {
+            "message": message,
+            "service": service,
+            "component": component,
+            "channel": channel,
+            "cmd": cmd,
+            "trace_id": trace_id,
+            "resolved_at": utcnow().isoformat(),
+            "dedupe_key": _build_dedupe_key(
+                code=code,
+                zone_id=zone_id,
+                service=service,
+                component=component,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                error_type="resolved",
+            ),
+        }
+    )
+    payload_details = {k: v for k, v in payload_details.items() if v is not None}
+
+    try:
+        return await send_alert_to_laravel(
+            zone_id=zone_id,
+            source="infra",
+            code=code,
+            type=alert_type,
+            status="RESOLVED",
+            details=payload_details,
+            node_uid=node_uid,
+            hardware_id=hardware_id,
+            severity="info",
+            ts_device=ts_device,
+        )
+    except Exception as exc:
+        logger.error(
+            "[INFRA_ALERT] Failed to publish resolved infrastructure alert: %s",
+            exc,
+            exc_info=True,
+            extra={"code": code, "zone_id": zone_id},
+        )
+        return False

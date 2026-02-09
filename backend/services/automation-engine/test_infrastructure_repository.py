@@ -191,3 +191,31 @@ async def test_get_zone_bindings_by_role_with_circuit_breaker():
         
         assert "vent" in result
         mock_call.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_zone_bindings_by_role_filters_nodes_by_zone():
+    """Query must include explicit node zone filter to prevent stale cross-zone bindings."""
+    repo = InfrastructureRepository()
+
+    with patch("repositories.infrastructure_repository.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+
+        await repo.get_zone_bindings_by_role(5)
+
+        sql = mock_fetch.call_args[0][0]
+        assert "AND n.zone_id = $1" in sql
+
+
+@pytest.mark.asyncio
+async def test_get_zones_bindings_batch_filters_nodes_by_zone():
+    """Batch query must bind node.zone_id to selected zone id."""
+    repo = InfrastructureRepository()
+
+    with patch("repositories.infrastructure_repository.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+
+        await repo.get_zones_bindings_batch([5, 6])
+
+        sql = mock_fetch.call_args[0][0]
+        assert "AND n.zone_id = z.id" in sql

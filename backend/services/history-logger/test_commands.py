@@ -43,6 +43,40 @@ def mock_mqtt_client():
     return mqtt
 
 
+@pytest.fixture(autouse=True)
+def mock_command_routes_db():
+    """Mock DB calls used by command endpoints to keep tests deterministic."""
+    async def _mock_fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+
+        if "from nodes where uid = $1" in normalized and "zone_id = $2" not in normalized:
+            node_uid = args[0]
+            if node_uid in {"nd-irrig-1", "nd-relay-1", "nd-test"}:
+                return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+            if node_uid == "nd-pending-1":
+                return [{"id": 2, "zone_id": None, "pending_zone_id": 1}]
+            if node_uid == "nd-other-zone":
+                return [{"id": 3, "zone_id": 2, "pending_zone_id": None}]
+            return []
+
+        if "from nodes where uid = $1 and zone_id = $2" in normalized:
+            node_uid, zone_id = args
+            if node_uid in {"nd-irrig-1", "nd-relay-1", "nd-test"} and int(zone_id) == 1:
+                return [{"id": 1}]
+            return []
+
+        if "from commands where cmd_id = $1" in normalized:
+            return []
+
+        return []
+
+    with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes.execute", new_callable=AsyncMock) as mock_execute:
+        mock_fetch.side_effect = _mock_fetch
+        mock_execute.return_value = "OK"
+        yield
+
+
 @pytest.mark.asyncio
 async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /commands endpoint."""
@@ -71,6 +105,54 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         # Проверяем, что команда была опубликована в MQTT
         # Структура: mqtt_client._client._client.publish()
         assert mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_node_zone_mismatch(client, auth_headers, mock_mqtt_client):
+    """Command must be rejected if node belongs to another zone."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-other-zone",
+            "channel": "default",
+            "params": {"duration_ms": 60000}
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 409
+        assert "assigned to zone 2" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_pending_assignment(client, auth_headers, mock_mqtt_client):
+    """Command must be rejected until pending assignment is confirmed."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-pending-1",
+            "channel": "default",
+            "params": {"duration_ms": 60000}
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 409
+        assert "pending assignment confirmation" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio
