@@ -1,4 +1,6 @@
 """Tests for zone_automation_service."""
+import asyncio
+import inspect
 from datetime import datetime, timezone, timedelta
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
@@ -571,6 +573,26 @@ async def test_safe_process_controller_cooldown_skip_emits_throttled_signal():
 
 
 @pytest.mark.asyncio
+async def test_safe_process_controller_closes_coro_when_in_cooldown():
+    service = _build_zone_service()
+    zone_id = 240
+    controller = "light"
+    failure_time = datetime(2026, 2, 8, 12, 0, 0, tzinfo=timezone.utc)
+    service._controller_failures[(zone_id, controller)] = failure_time
+    service._emit_controller_cooldown_skip_signal = AsyncMock()
+    async def controller_coro():
+        await asyncio.sleep(60)
+
+    coro_obj = controller_coro()
+
+    with patch("services.zone_automation_service.utcnow", return_value=failure_time + timedelta(seconds=10)):
+        await service._safe_process_controller(controller, coro_obj, zone_id)
+
+    assert inspect.getcoroutinestate(coro_obj) == "CORO_CLOSED"
+    service._emit_controller_cooldown_skip_signal.assert_awaited_once_with(zone_id, controller)
+
+
+@pytest.mark.asyncio
 async def test_safe_process_controller_cooldown_skip_retries_when_event_and_alert_fail():
     service = _build_zone_service()
     zone_id = 212
@@ -639,6 +661,7 @@ async def test_process_zone_emits_alert_when_zone_data_unavailable():
     with patch("services.zone_automation_service.ZoneAutomationService._check_zone_deletion", new_callable=AsyncMock), \
          patch("services.zone_automation_service.ZoneAutomationService._check_pid_config_updates", new_callable=AsyncMock), \
          patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock), \
          patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock) as mock_alert:
         await service.process_zone(1)
 

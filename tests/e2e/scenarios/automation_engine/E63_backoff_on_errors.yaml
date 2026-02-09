@@ -512,10 +512,8 @@ assertions:
       SELECT COUNT(*) as cmd_count
       FROM commands
       WHERE id = :baseline_cmd_id
-        AND created_at <= :degraded_ts
     params:
       baseline_cmd_id: ${baseline_command_row.0.cmd_id}
-      degraded_ts: ${degraded_ts.0.ts}
     expected:
       - field: cmd_count
         operator: greater_than

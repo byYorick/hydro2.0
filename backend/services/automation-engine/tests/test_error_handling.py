@@ -3,7 +3,7 @@
 Проверяет явный учет ошибок по зонам в gather.
 """
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from main import process_zones_parallel
 
 
@@ -26,7 +26,9 @@ async def test_process_zones_parallel_tracks_errors():
         {'id': 2, 'name': 'Zone 2'},
     ]
     
-    results = await process_zones_parallel(zones, zone_service, max_concurrent=2)
+    with patch("main.send_infra_exception_alert", new_callable=AsyncMock), \
+         patch("error_handler.handle_zone_error"):
+        results = await process_zones_parallel(zones, zone_service, max_concurrent=2)
     
     # Проверяем результаты
     assert results['total'] == 2

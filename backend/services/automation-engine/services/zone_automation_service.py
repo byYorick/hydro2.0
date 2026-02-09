@@ -5,6 +5,7 @@ Zone Automation Service - оркестрация обработки зоны.
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
+import inspect
 from common.utils.time import utcnow
 from common.simulation_clock import SimulationClock
 from common.simulation_events import record_simulation_event
@@ -802,6 +803,11 @@ class ZoneAutomationService:
         """
         # Проверяем cooldown
         if self._is_controller_in_cooldown(zone_id, controller_name):
+            # Корутину создают до входа в _safe_process_controller.
+            # Если контроллер в cooldown, нужно явно закрыть её,
+            # иначе остаются "висящие" coroutine-объекты.
+            if inspect.iscoroutine(controller_coro):
+                controller_coro.close()
             await self._emit_controller_cooldown_skip_signal(zone_id, controller_name)
             return
         

@@ -47,6 +47,9 @@ install_exception_handlers("automation-engine")
 
 logger = logging.getLogger(__name__)
 
+# Таймаут отправки алертов, чтобы внешние сбои не блокировали цикл обработки зон.
+ALERT_SEND_TIMEOUT_SECONDS = 5.0
+
 # Метрики для отслеживания ошибок
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
@@ -358,18 +361,29 @@ async def process_zones_parallel(
                         exc_info=True,
                         extra={'zone_id': zone_id, 'zone_name': zone_name}
                     )
-                    await send_infra_exception_alert(
-                        error=e,
-                        code="infra_zone_processing_failed",
-                        alert_type="Zone Processing Failed",
-                        severity="error",
-                        zone_id=zone_id,
-                        service="automation-engine",
-                        component="zone_processing",
-                        details={
-                            "zone_name": zone_name,
-                        },
-                    )
+                    try:
+                        await asyncio.wait_for(
+                            send_infra_exception_alert(
+                                error=e,
+                                code="infra_zone_processing_failed",
+                                alert_type="Zone Processing Failed",
+                                severity="error",
+                                zone_id=zone_id,
+                                service="automation-engine",
+                                component="zone_processing",
+                                details={
+                                    "zone_name": zone_name,
+                                },
+                            ),
+                            timeout=ALERT_SEND_TIMEOUT_SECONDS,
+                        )
+                    except Exception as alert_error:
+                        logger.warning(
+                            "Zone %s: Failed to send infra exception alert: %s",
+                            zone_id,
+                            alert_error,
+                            extra={"zone_id": zone_id},
+                        )
         finally:
             # Очищаем контекст
             set_zone_id(None)
@@ -400,22 +414,32 @@ async def process_zones_parallel(
                     'errors': results['errors'][:10]  # Первые 10 ошибок
                 }
             )
-            await send_infra_alert(
-                code="infra_zone_failure_rate_high",
-                alert_type="Zone Failure Rate High",
-                message=f"Высокая доля ошибок обработки зон: {failure_rate:.1%}",
-                severity=severity,
-                zone_id=None,
-                service="automation-engine",
-                component="zone_processing",
-                error_type="HighFailureRate",
-                details={
-                    "total": results["total"],
-                    "failed": results["failed"],
-                    "failure_rate": failure_rate,
-                    "sample_errors": results["errors"][:5],
-                },
-            )
+            try:
+                await asyncio.wait_for(
+                    send_infra_alert(
+                        code="infra_zone_failure_rate_high",
+                        alert_type="Zone Failure Rate High",
+                        message=f"Высокая доля ошибок обработки зон: {failure_rate:.1%}",
+                        severity=severity,
+                        zone_id=None,
+                        service="automation-engine",
+                        component="zone_processing",
+                        error_type="HighFailureRate",
+                        details={
+                            "total": results["total"],
+                            "failed": results["failed"],
+                            "failure_rate": failure_rate,
+                            "sample_errors": results["errors"][:5],
+                        },
+                    ),
+                    timeout=ALERT_SEND_TIMEOUT_SECONDS,
+                )
+            except Exception as alert_error:
+                logger.warning(
+                    "Failed to send high failure-rate infra alert: %s",
+                    alert_error,
+                    extra={"failure_rate": failure_rate, "failed": results["failed"], "total": results["total"]},
+                )
     
     return results
 
