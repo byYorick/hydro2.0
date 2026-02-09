@@ -22,6 +22,14 @@ export interface Zone {
   id: number
   name: string
   greenhouse_id: number
+  active_grow_cycle?: {
+    id?: number
+    status?: string | null
+  } | null
+  activeGrowCycle?: {
+    id?: number
+    status?: string | null
+  } | null
 }
 
 export interface Plant {
@@ -83,7 +91,8 @@ export interface Node {
 
 export interface SetupWizardDeviceAssignments {
   irrigation: number | null
-  correction: number | null
+  ph_correction: number | null
+  ec_correction: number | null
   accumulation: number | null
   climate: number | null
   light: number | null

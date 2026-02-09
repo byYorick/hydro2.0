@@ -106,6 +106,35 @@ async def _emit_command_send_failed_alert(
     )
 
 
+async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str]) -> str:
+    """
+    Резолвить канонический gh_uid по zone_id.
+    Если БД временно недоступна, допускается fallback на запрошенный gh_uid.
+    """
+    try:
+        resolved_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
+    except Exception as exc:
+        if requested_gh_uid:
+            logger.warning(
+                "[MQTT_PUBLISH] Failed to resolve gh_uid from zone_id=%s, fallback to requested greenhouse_uid=%s, error=%s",
+                zone_id,
+                requested_gh_uid,
+                exc,
+            )
+            return requested_gh_uid
+        raise
+
+    if requested_gh_uid and requested_gh_uid != resolved_gh_uid:
+        logger.warning(
+            "[MQTT_PUBLISH] greenhouse_uid mismatch for zone_id=%s: requested=%s, resolved=%s. Using resolved value.",
+            zone_id,
+            requested_gh_uid,
+            resolved_gh_uid,
+        )
+
+    return resolved_gh_uid
+
+
 @router.post("/nodes/{node_uid}/config")
 async def publish_node_config(
     request: Request,
@@ -178,9 +207,7 @@ async def publish_node_config(
             detail="pending_zone_id does not match requested zone_id",
         )
 
-    gh_uid = req.greenhouse_uid
-    if not gh_uid:
-        gh_uid = await _get_gh_uid_from_zone_id(req.zone_id)
+    gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
     mqtt = await get_mqtt_client()
     config_payload = _ensure_node_secret(dict(req.config))
@@ -279,6 +306,7 @@ async def publish_zone_command(
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(zone_id)
     command_source = req.source or "api"
+    effective_gh_uid = await _resolve_effective_gh_uid(zone_id, req.greenhouse_uid)
 
     try:
         payload = _create_command_payload(
@@ -391,7 +419,7 @@ async def publish_zone_command(
         try:
             await publish_command_mqtt(
                 mqtt,
-                req.greenhouse_uid,
+                effective_gh_uid,
                 zone_id,
                 req.node_uid,
                 req.channel,
@@ -519,6 +547,7 @@ async def publish_node_command(
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
     command_source = req.source or "api"
+    effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
     try:
         payload = _create_command_payload(
@@ -631,7 +660,7 @@ async def publish_node_command(
         try:
             await publish_command_mqtt(
                 mqtt,
-                req.greenhouse_uid,
+                effective_gh_uid,
                 req.zone_id,
                 node_uid,
                 req.channel,
@@ -757,6 +786,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
     command_source = req.source or "api"
+    effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
     cmd_id = req.cmd_id
     params_without_cmd_id = req.params or {}
@@ -886,7 +916,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         try:
             await publish_command_mqtt(
                 mqtt,
-                req.greenhouse_uid,
+                effective_gh_uid,
                 req.zone_id,
                 req.node_uid,
                 req.channel,

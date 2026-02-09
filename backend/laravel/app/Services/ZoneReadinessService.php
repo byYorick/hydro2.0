@@ -289,8 +289,27 @@ class ZoneReadinessService
      */
     private function checkOnlineNodes(Zone $zone): array
     {
-        $nodes = $zone->nodes()
-            ->select('id', 'uid', 'name', 'status')
+        if (! DB::getSchemaBuilder()->hasTable('channel_bindings')) {
+            Log::error('channel_bindings table does not exist; readiness node check is fail-closed', [
+                'zone_id' => $zone->id,
+            ]);
+
+            return [
+                'online_count' => 0,
+                'offline_count' => 0,
+                'total_count' => 0,
+                'nodes' => [],
+            ];
+        }
+
+        $nodes = ChannelBinding::query()
+            ->join('node_channels', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
+            ->join('nodes', 'node_channels.node_id', '=', 'nodes.id')
+            ->join('infrastructure_instances', 'channel_bindings.infrastructure_instance_id', '=', 'infrastructure_instances.id')
+            ->where('infrastructure_instances.owner_type', 'zone')
+            ->where('infrastructure_instances.owner_id', $zone->id)
+            ->select('nodes.id', 'nodes.uid', 'nodes.name', 'nodes.status')
+            ->distinct()
             ->get();
 
         $onlineNodes = $nodes->filter(function ($node) {

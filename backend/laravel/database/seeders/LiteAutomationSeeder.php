@@ -60,7 +60,7 @@ class LiteAutomationSeeder extends Seeder
     private function createGreenhouses(): array
     {
         $first = Greenhouse::updateOrCreate(
-            ['uid' => 'gh-lite-automation-1'],
+            ['uid' => 'gh-1'],
             [
                 'name' => 'Automation Lite Greenhouse A',
                 'timezone' => 'Europe/Moscow',
@@ -134,7 +134,7 @@ class LiteAutomationSeeder extends Seeder
 
         return [
             'running' => Zone::updateOrCreate(
-                ['uid' => 'zn-lite-run-1'],
+                ['uid' => 'zn-zona-a'],
                 [
                     'greenhouse_id' => $greenhouses['first']->id,
                     'preset_id' => $presetId,
@@ -211,7 +211,7 @@ class LiteAutomationSeeder extends Seeder
             foreach ($templates as $role => $template) {
                 $uid = $this->nodeUidForZoneRole($zoneKey, $role);
 
-                $nodeStatus = $zoneKey === 'empty' && in_array($role, ['irrigation', 'dosing'], true)
+                $nodeStatus = $zoneKey === 'empty' && in_array($role, ['irrigation', 'ph', 'ec'], true)
                     ? 'offline'
                     : 'online';
 
@@ -242,59 +242,65 @@ class LiteAutomationSeeder extends Seeder
                 'sensor_channels' => [
                     ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
                     ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
-                    ['channel' => 'co2_ppm', 'metric' => 'CO2', 'unit' => 'ppm'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'vent_window_pct', 'metric' => 'PERCENT', 'unit' => '%', 'data_type' => 'float'],
+                    ['channel' => 'fan_air', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
             'irrigation' => [
                 'type' => 'irrig',
                 'name' => 'Irrigation Node',
                 'sensor_channels' => [
-                    ['channel' => 'line_pressure', 'metric' => 'PRESSURE', 'unit' => 'bar'],
-                    ['channel' => 'flow_l_min', 'metric' => 'PRESSURE', 'unit' => 'L/min'],
+                    ['channel' => 'flow_present', 'metric' => 'FLOW_RATE', 'unit' => 'L/min'],
+                    ['channel' => 'pump_bus_current', 'metric' => 'PUMP_CURRENT', 'unit' => 'mA'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'irrigation_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_irrigation', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
-            'dosing' => [
+            'ph' => [
                 'type' => 'ph',
-                'name' => 'PH/EC Node',
+                'name' => 'pH Node',
                 'sensor_channels' => [
                     ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
+                ],
+                'actuator_channels' => [
+                    ['channel' => 'pump_acid', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_base', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                ],
+            ],
+            'ec' => [
+                'type' => 'ec',
+                'name' => 'EC Node',
+                'sensor_channels' => [
                     ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'dose_ph_down', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'dose_ph_up', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'dose_npk', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_a', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_b', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_c', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_d', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
             'lighting' => [
                 'type' => 'light',
                 'name' => 'Lighting Node',
                 'sensor_channels' => [
-                    ['channel' => 'lux', 'metric' => 'LIGHT_INTENSITY', 'unit' => 'lux'],
+                    ['channel' => 'light_level', 'metric' => 'LIGHT_INTENSITY', 'unit' => 'lux'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'white_light', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
             'water' => [
                 'type' => 'water',
                 'name' => 'Water Tanks Node',
                 'sensor_channels' => [
-                    ['channel' => 'clean_tank_level', 'metric' => 'WATER_LEVEL', 'unit' => '%'],
-                    ['channel' => 'solution_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                    ['channel' => 'water_level', 'metric' => 'WATER_LEVEL', 'unit' => '%'],
                 ],
                 'actuator_channels' => [
-                    ['channel' => 'fill_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
-                    ['channel' => 'drain_valve', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'pump_in', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
+                    ['channel' => 'drain_main', 'metric' => 'RELAY', 'unit' => 'bool', 'data_type' => 'boolean'],
                 ],
             ],
         ];
@@ -302,10 +308,6 @@ class LiteAutomationSeeder extends Seeder
 
     private function nodeUidForZoneRole(string $zoneKey, string $role): string
     {
-        if ($zoneKey === 'running' && $role === 'climate') {
-            return 'nd-lite-ctrl-1';
-        }
-
         if ($zoneKey === 'paused' && $role === 'climate') {
             return 'nd-lite-climate-2';
         }
@@ -351,11 +353,13 @@ class LiteAutomationSeeder extends Seeder
         array $sensorChannels,
         array $actuatorChannels
     ): DeviceNode {
+        $hardwareId = $this->hardwareIdForNodeUid($uid);
+
         $node = DeviceNode::updateOrCreate(
             ['uid' => $uid],
             [
                 'zone_id' => $zone->id,
-                'hardware_id' => 'esp32-lite-'.Str::lower(Str::random(6)),
+                'hardware_id' => $hardwareId,
                 'type' => $type,
                 'name' => $name,
                 'status' => $status,
@@ -406,6 +410,11 @@ class LiteAutomationSeeder extends Seeder
         return $node;
     }
 
+    private function hardwareIdForNodeUid(string $uid): string
+    {
+        return 'esp32-lite-'.substr(md5($uid), 0, 6);
+    }
+
     /**
      * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
      * @param  array<string, array<string, DeviceNode>>  $zoneNodes
@@ -420,11 +429,16 @@ class LiteAutomationSeeder extends Seeder
 
         foreach ($zones as $zoneKey => $zone) {
             $assetMap = [
-                ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'main_pump', 'role' => 'main_pump', 'required' => true],
-                ['asset_type' => 'FAN', 'label' => 'Ventilation Fan', 'node_role' => 'climate', 'channel' => 'fan', 'role' => 'fan', 'required' => true],
-                ['asset_type' => 'HEATER', 'label' => 'Climate Heater', 'node_role' => 'climate', 'channel' => 'heater', 'role' => 'heater', 'required' => true],
-                ['asset_type' => 'LIGHT', 'label' => 'Grow Light', 'node_role' => 'lighting', 'channel' => 'light', 'role' => 'light', 'required' => false],
-                ['asset_type' => 'VENT', 'label' => 'Window Vent', 'node_role' => 'climate', 'channel' => 'vent_window_pct', 'role' => 'vent_window', 'required' => false],
+                ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'node_role' => 'irrigation', 'channel' => 'pump_irrigation', 'role' => 'main_pump', 'required' => true],
+                ['asset_type' => 'DRAIN', 'label' => 'Drain', 'node_role' => 'water', 'channel' => 'drain_main', 'role' => 'drain', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'pH Acid Pump', 'node_role' => 'ph', 'channel' => 'pump_acid', 'role' => 'ph_acid_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'pH Base Pump', 'node_role' => 'ph', 'channel' => 'pump_base', 'role' => 'ph_base_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC NPK Pump', 'node_role' => 'ec', 'channel' => 'pump_a', 'role' => 'ec_npk_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Calcium Pump', 'node_role' => 'ec', 'channel' => 'pump_b', 'role' => 'ec_calcium_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Magnesium Pump', 'node_role' => 'ec', 'channel' => 'pump_c', 'role' => 'ec_magnesium_pump', 'required' => true],
+                ['asset_type' => 'PUMP', 'label' => 'EC Micro Pump', 'node_role' => 'ec', 'channel' => 'pump_d', 'role' => 'ec_micro_pump', 'required' => true],
+                ['asset_type' => 'FAN', 'label' => 'Ventilation Fan', 'node_role' => 'climate', 'channel' => 'fan_air', 'role' => 'fan', 'required' => false],
+                ['asset_type' => 'LIGHT', 'label' => 'Grow Light', 'node_role' => 'lighting', 'channel' => 'white_light', 'role' => 'light', 'required' => false],
             ];
 
             foreach ($assetMap as $asset) {
@@ -730,7 +744,6 @@ class LiteAutomationSeeder extends Seeder
 
             $sensor = Sensor::updateOrCreate(
                 [
-                    'greenhouse_id' => $zone->greenhouse_id,
                     'zone_id' => $zone->id,
                     'node_id' => $node->id,
                     'scope' => 'inside',
@@ -738,6 +751,7 @@ class LiteAutomationSeeder extends Seeder
                     'label' => $this->buildSensorLabel($channel->channel, $sensorType),
                 ],
                 [
+                    'greenhouse_id' => $zone->greenhouse_id,
                     'unit' => $channel->unit,
                     'specs' => [
                         'channel' => $channel->channel,
@@ -823,7 +837,7 @@ class LiteAutomationSeeder extends Seeder
             ]
         );
 
-        $this->seedCycleCommand($zones['running'], $zoneNodes['running']['dosing'], 'FORCE_PH_CONTROL', $baseTime->copy()->subMinutes(10));
+        $this->seedCycleCommand($zones['running'], $zoneNodes['running']['ph'], 'FORCE_PH_CONTROL', $baseTime->copy()->subMinutes(10));
         $this->seedCycleCommand($zones['running'], $zoneNodes['running']['irrigation'], 'FORCE_IRRIGATION', $baseTime->copy()->subMinutes(6));
     }
 
@@ -860,6 +874,8 @@ class LiteAutomationSeeder extends Seeder
             'CO2' => 'CO2',
             'WATER_LEVEL' => 'WATER_LEVEL',
             'PRESSURE' => 'PRESSURE',
+            'FLOW_RATE' => 'FLOW_RATE',
+            'PUMP_CURRENT' => 'PUMP_CURRENT',
             'LIGHT_INTENSITY' => 'LIGHT_INTENSITY',
             default => null,
         };
@@ -875,6 +891,8 @@ class LiteAutomationSeeder extends Seeder
             'CO2' => 840.0,
             'WATER_LEVEL' => 73.0,
             'PRESSURE' => 1.6,
+            'FLOW_RATE' => 1.2,
+            'PUMP_CURRENT' => 180.0,
             'LIGHT_INTENSITY' => 18500.0,
             default => 0.0,
         };
@@ -890,6 +908,8 @@ class LiteAutomationSeeder extends Seeder
             'CO2' => 70.0,
             'WATER_LEVEL' => 4.0,
             'PRESSURE' => 0.35,
+            'FLOW_RATE' => 0.3,
+            'PUMP_CURRENT' => 25.0,
             'LIGHT_INTENSITY' => 1500.0,
             default => 1.0,
         };

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\GrowCycleStatus;
 use App\Events\GrowCycleUpdated;
+use App\Events\ZoneUpdated;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
@@ -104,6 +105,10 @@ class GrowCycleService
             // Отправляем WebSocket broadcast
             broadcast(new GrowCycleUpdated($cycle->fresh(), 'CREATED'));
 
+            if ($startImmediately) {
+                $this->syncZoneStatus($zone, 'RUNNING');
+            }
+
             Log::info('Grow cycle created', [
                 'cycle_id' => $cycle->id,
                 'zone_id' => $zone->id,
@@ -142,6 +147,7 @@ class GrowCycleService
                 'recipe_started_at' => $plantingAt,
                 'phase_started_at' => $plantingAt, // Устанавливаем phase_started_at при старте
             ]);
+            $this->syncZoneStatus($cycle->zone, 'RUNNING');
 
             // В новой модели фазы уже установлены при создании цикла через createPhaseSnapshot()
             // Вычисляем ожидаемую дату сбора
@@ -407,6 +413,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'PAUSED');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -448,6 +455,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'RUNNING');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -494,6 +502,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -539,6 +548,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -565,6 +575,17 @@ class GrowCycleService
 
             return $cycle->fresh();
         });
+    }
+
+    private function syncZoneStatus(Zone $zone, string $status): void
+    {
+        if ($zone->status === $status) {
+            return;
+        }
+
+        $zone->update(['status' => $status]);
+        $zone->refresh();
+        event(new ZoneUpdated($zone));
     }
 
     /**

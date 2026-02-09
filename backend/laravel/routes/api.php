@@ -256,6 +256,7 @@ Route::middleware([
         // Grow Cycle Wizard (operator+)
         Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
         Route::post('setup-wizard/validate-devices', [SetupWizardController::class, 'validateDevices']);
+        Route::post('setup-wizard/apply-device-bindings', [SetupWizardController::class, 'applyDeviceBindings']);
 
         // AI endpoints (operator+)
         Route::post('ai/predict', [AiController::class, 'predict']);

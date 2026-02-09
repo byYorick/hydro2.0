@@ -354,6 +354,20 @@ describe('Setup/Wizard.vue', () => {
     expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('обновляет список доступных нод по кнопке Обновить', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    apiGetMock.mockClear()
+
+    const refreshNodesButton = wrapper.findAll('button').find((btn) => btn.text().includes('Обновить'))
+    expect(refreshNodesButton).toBeTruthy()
+    await refreshNodesButton?.trigger('click')
+    await flushPromises()
+
+    expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', { params: { unassigned: true } })
+  })
+
   it('перед привязкой нод вызывает серверную валидацию обязательных ролей', async () => {
     apiGetMock.mockImplementation((url: string) => {
       if (url === '/api/nodes') {
@@ -363,6 +377,7 @@ describe('Setup/Wizard.vue', () => {
             data: [
               { id: 101, uid: 'nd-test-irrig-1', type: 'pump_node', channels: [{ channel: 'pump_irrigation' }] },
               { id: 102, uid: 'nd-test-ph-1', type: 'ph_node', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
+              { id: 104, uid: 'nd-test-ec-1', type: 'ec_node', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
               { id: 103, uid: 'nd-test-tank-1', type: 'water_sensor_node', channels: [{ channel: 'water_level' }, { channel: 'pump_in' }] },
             ],
           },
@@ -413,15 +428,18 @@ describe('Setup/Wizard.vue', () => {
     await flushPromises()
 
     const irrigationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел полива'))
-    const correctionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции'))
+    const phCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции pH'))
+    const ecCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции EC'))
     const accumulationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите накопительный узел'))
 
     expect(irrigationSelect).toBeTruthy()
-    expect(correctionSelect).toBeTruthy()
+    expect(phCorrectionSelect).toBeTruthy()
+    expect(ecCorrectionSelect).toBeTruthy()
     expect(accumulationSelect).toBeTruthy()
 
     await irrigationSelect?.setValue('101')
-    await correctionSelect?.setValue('102')
+    await phCorrectionSelect?.setValue('102')
+    await ecCorrectionSelect?.setValue('104')
     await accumulationSelect?.setValue('103')
 
     await wrapper.findAll('button').find((btn) => btn.text().includes('Привязать ноды зоны'))?.trigger('click')
@@ -433,13 +451,28 @@ describe('Setup/Wizard.vue', () => {
         zone_id: 20,
         assignments: expect.objectContaining({
           irrigation: 101,
-          correction: 102,
+          ph_correction: 102,
+          ec_correction: 104,
           accumulation: 103,
         }),
       }),
       undefined
     )
 
-    expect(apiPatchMock).toHaveBeenCalledTimes(3)
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/setup-wizard/apply-device-bindings',
+      expect.objectContaining({
+        zone_id: 20,
+        assignments: expect.objectContaining({
+          irrigation: 101,
+          ph_correction: 102,
+          ec_correction: 104,
+          accumulation: 103,
+        }),
+      }),
+      undefined
+    )
+
+    expect(apiPatchMock).toHaveBeenCalledTimes(4)
   })
 })

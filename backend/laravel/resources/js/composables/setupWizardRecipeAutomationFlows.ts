@@ -4,6 +4,7 @@ import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
+import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
 import type {
   AutomationFormState,
   Plant,
@@ -36,6 +37,8 @@ interface SetupWizardRecipeAutomationFlowsOptions {
   selectedRecipe: Ref<Recipe | null>
   automationForm: AutomationFormState
   selectedZone: Ref<Zone | null>
+  selectedZoneActiveCycleStatus: ComputedRef<string | null>
+  selectedZoneHasActiveCycle: ComputedRef<boolean>
   automationAppliedAt: Ref<string | null>
   loadRecipes: () => Promise<void>
   visit: (url: string) => void
@@ -154,6 +157,8 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     selectedRecipe,
     automationForm,
     selectedZone,
+    selectedZoneActiveCycleStatus,
+    selectedZoneHasActiveCycle,
     automationAppliedAt,
     loadRecipes,
     visit,
@@ -317,6 +322,15 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
   }
 
   async function openCycleWizard(): Promise<void> {
+    if (selectedZoneHasActiveCycle.value) {
+      showToast(
+        `Запуск недоступен: в зоне уже есть активный цикл (${zoneCycleStatusLabel(selectedZoneActiveCycleStatus.value)}).`,
+        'warning',
+        TOAST_TIMEOUT.NORMAL
+      )
+      return
+    }
+
     await ensureRecipeForPlant(false)
 
     if (!selectedZone.value?.id || !selectedRecipe.value?.id) {
@@ -326,6 +340,18 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
 
     loading.stepLaunch = true
     try {
+      const zoneResponse = await api.get(`/zones/${selectedZone.value.id}`)
+      const zonePayload = extractData<Record<string, unknown>>(zoneResponse.data)
+      const activeCycleStatus = extractZoneActiveCycleStatus(zonePayload)
+      if (isZoneCycleBlocking(activeCycleStatus)) {
+        showToast(
+          `Запуск недоступен: в зоне уже есть активный цикл (${zoneCycleStatusLabel(activeCycleStatus)}).`,
+          'warning',
+          TOAST_TIMEOUT.NORMAL
+        )
+        return
+      }
+
       const recipeRevisionId = selectedRecipe.value.latest_published_revision_id
         ?? selectedRecipe.value.latest_draft_revision_id
         ?? null

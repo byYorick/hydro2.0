@@ -80,6 +80,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin) | Отправка низкоуровневых команд |
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
+| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация обязательных ролей шага `4. Устройства` |
+| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка ролей (`main_pump`, `drain`, `ph_*`, `ec_*`, `vent/heater/light`) к каналам выбранных нод |
 
 ---
 

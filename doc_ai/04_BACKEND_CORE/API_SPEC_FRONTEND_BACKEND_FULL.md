@@ -403,7 +403,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
 - Серверная валидация шага `4. Устройства` в мастере настройки.
 - Проверяет:
- - обязательные роли (`irrigation`, `correction`, `accumulation`) заполнены;
+ - обязательные роли (`irrigation`, `ph_correction`, `ec_correction`, `accumulation`) заполнены;
  - обязательные роли назначены на разные ноды;
  - ноды доступны пользователю и не привязаны к другой зоне;
  - выбранные ноды соответствуют ожидаемой роли по `type`/`channels`.
@@ -414,12 +414,13 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   "zone_id": 12,
   "assignments": {
     "irrigation": 101,
-    "correction": 102,
+    "ph_correction": 102,
+    "ec_correction": 104,
     "accumulation": 103,
     "climate": null,
     "light": null
   },
-  "selected_node_ids": [101, 102, 103]
+  "selected_node_ids": [101, 102, 104, 103]
 }
 ```
 
@@ -432,9 +433,63 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
     "zone_id": 12,
     "required_roles": {
       "irrigation": 101,
-      "correction": 102,
+      "ph_correction": 102,
+      "ec_correction": 104,
       "accumulation": 103
     }
+  }
+}
+```
+
+### 3.9.8. POST /api/setup-wizard/apply-device-bindings
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
+- Применение шага `4. Устройства`:
+ - повторная серверная валидация назначения ролей;
+ - привязка ролей инфраструктуры зоны к каналам выбранных нод;
+ - для обязательных ролей создаются/обновляются bind-ы:
+   `main_pump`, `drain`, `ph_acid_pump`, `ph_base_pump`,
+   `ec_npk_pump`, `ec_calcium_pump`, `ec_magnesium_pump`, `ec_micro_pump`;
+ - для опциональных ролей, при наличии, создаются bind-ы `vent`, `heater`, `light`.
+
+Тело запроса:
+```json
+{
+  "zone_id": 12,
+  "assignments": {
+    "irrigation": 101,
+    "ph_correction": 102,
+    "ec_correction": 104,
+    "accumulation": 103,
+    "climate": 105,
+    "light": 106
+  },
+  "selected_node_ids": [101, 102, 104, 103, 105, 106]
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "validated": true,
+    "zone_id": 12,
+    "required_roles": {
+      "irrigation": 101,
+      "ph_correction": 102,
+      "ec_correction": 104,
+      "accumulation": 103
+    },
+    "applied_bindings": [
+      {
+        "assignment_role": "irrigation",
+        "binding_role": "main_pump",
+        "node_id": 101,
+        "node_uid": "nd-test-irrig-1",
+        "channel_id": 2001
+      }
+    ]
   }
 }
 ```

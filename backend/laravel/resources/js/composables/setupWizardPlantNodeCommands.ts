@@ -135,6 +135,14 @@ export function createSetupWizardPlantNodeCommands(
         selectedNodeIds.value.map((nodeId) => api.patch(`/nodes/${nodeId}`, { zone_id: selectedZone.value?.id }))
       )
 
+      if (assignments) {
+        await api.post('/setup-wizard/apply-device-bindings', {
+          zone_id: selectedZone.value.id,
+          assignments,
+          selected_node_ids: selectedNodeIds.value,
+        })
+      }
+
       attachedNodesCount.value = selectedNodeIds.value.length
       showToast(`Привязано узлов: ${attachedNodesCount.value}`, 'success', TOAST_TIMEOUT.NORMAL)
 

@@ -104,6 +104,7 @@ class ZoneController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'greenhouse_id' => ['required', 'integer', 'exists:greenhouses,id'],
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
+            'description' => ['nullable', 'string', 'max:1000'],
             'settings' => ['nullable', 'array'],
         ]);
 

@@ -76,6 +76,7 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertEquals(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertNotNull($startedCycle->planting_at);
+        $this->assertSame('RUNNING', $zone->fresh()->status);
     }
 
     #[Test]

@@ -17,7 +17,8 @@ class SetupWizardValidateDevicesRequest extends FormRequest
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
             'assignments' => ['required', 'array'],
             'assignments.irrigation' => ['required', 'integer', 'exists:nodes,id'],
-            'assignments.correction' => ['required', 'integer', 'exists:nodes,id'],
+            'assignments.ph_correction' => ['required', 'integer', 'exists:nodes,id'],
+            'assignments.ec_correction' => ['required', 'integer', 'exists:nodes,id'],
             'assignments.accumulation' => ['required', 'integer', 'exists:nodes,id'],
             'assignments.climate' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.light' => ['nullable', 'integer', 'exists:nodes,id'],
@@ -30,7 +31,8 @@ class SetupWizardValidateDevicesRequest extends FormRequest
     {
         return [
             'assignments.irrigation.required' => 'Нужно выбрать узел полива.',
-            'assignments.correction.required' => 'Нужно выбрать узел коррекции.',
+            'assignments.ph_correction.required' => 'Нужно выбрать узел коррекции pH.',
+            'assignments.ec_correction.required' => 'Нужно выбрать узел коррекции EC.',
             'assignments.accumulation.required' => 'Нужно выбрать накопительный узел.',
         ];
     }

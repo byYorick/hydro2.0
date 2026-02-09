@@ -200,6 +200,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
   watch(
     () => form.growing_system,
     () => {
+      errors.growing_system = ''
       if (!showSubstrateSelector.value) {
         form.substrate_type = ''
       }
@@ -289,7 +290,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
   })
   const isPrimaryDisabled = computed(() => {
     if (currentStep.value === 1) {
-      return !form.name.trim()
+      return !form.name.trim() || !form.growing_system
     }
 
     return !form.recipe_name.trim() || form.recipe_phases.length === 0
@@ -299,6 +300,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
     currentStep.value = 1
     errors.general = ''
     errors.recipe_name = ''
+    errors.growing_system = ''
   }
 
   async function createPlantIfNeeded(): Promise<boolean> {
@@ -430,8 +432,14 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
 
   async function onSubmit() {
     if (currentStep.value === 1) {
+      errors.growing_system = ''
       if (!form.name || !form.name.trim()) {
         showToast('Введите название растения', 'error', TOAST_TIMEOUT.NORMAL)
+        return
+      }
+      if (!form.growing_system) {
+        errors.growing_system = 'Выберите систему выращивания'
+        showToast('Выберите систему выращивания', 'error', TOAST_TIMEOUT.NORMAL)
         return
       }
 
@@ -456,6 +464,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
     loading.value = true
     errors.name = ''
     errors.recipe_name = ''
+    errors.growing_system = ''
     errors.general = ''
 
     try {

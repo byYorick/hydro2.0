@@ -152,6 +152,7 @@ class GrowCycleControllerTest extends TestCase
         $cycle = GrowCycle::where('zone_id', $this->zone->id)->first();
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
         $this->assertNotNull($cycle->planting_at);
+        $this->assertSame('RUNNING', $this->zone->fresh()->status);
     }
 
     #[Test]
@@ -252,6 +253,7 @@ class GrowCycleControllerTest extends TestCase
     #[Test]
     public function it_pauses_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -264,11 +266,13 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::PAUSED, $cycle->status);
+        $this->assertSame('PAUSED', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_resumes_a_cycle(): void
     {
+        $this->zone->update(['status' => 'PAUSED']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::PAUSED,
@@ -281,11 +285,13 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
+        $this->assertSame('RUNNING', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_harvests_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -302,11 +308,13 @@ class GrowCycleControllerTest extends TestCase
         $this->assertEquals(GrowCycleStatus::HARVESTED, $cycle->status);
         $this->assertEquals('Batch-001', $cycle->batch_label);
         $this->assertNotNull($cycle->actual_harvest_at);
+        $this->assertSame('NEW', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_aborts_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -321,6 +329,7 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::ABORTED, $cycle->status);
+        $this->assertSame('NEW', $this->zone->fresh()->status);
     }
 
     #[Test]

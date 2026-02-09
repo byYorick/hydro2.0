@@ -328,14 +328,27 @@
             </select>
           </div>
           <div class="space-y-1">
-            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция pH/EC (обязательно)</label>
+            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция pH (обязательно)</label>
             <select
-              v-model.number="deviceAssignments.correction"
+              v-model.number="deviceAssignments.ph_correction"
               class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || correctionNodes.length === 0"
+              :disabled="!canConfigure || !stepZoneDone || phCorrectionNodes.length === 0"
             >
-              <option :value="null">Выберите узел коррекции</option>
-              <option v-for="node in correctionNodes" :key="`correction-${node.id}`" :value="node.id">
+              <option :value="null">Выберите узел коррекции pH</option>
+              <option v-for="node in phCorrectionNodes" :key="`ph-correction-${node.id}`" :value="node.id">
+                {{ node.name || node.uid || `Node #${node.id}` }}
+              </option>
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция EC (обязательно)</label>
+            <select
+              v-model.number="deviceAssignments.ec_correction"
+              class="input-select"
+              :disabled="!canConfigure || !stepZoneDone || ecCorrectionNodes.length === 0"
+            >
+              <option :value="null">Выберите узел коррекции EC</option>
+              <option v-for="node in ecCorrectionNodes" :key="`ec-correction-${node.id}`" :value="node.id">
                 {{ node.name || node.uid || `Node #${node.id}` }}
               </option>
             </select>
@@ -382,10 +395,18 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
-          <span>Привязано: {{ attachedNodesCount }} (минимум 3 обязательных)</span>
+          <span>Привязано: {{ attachedNodesCount }} (минимум 4 обязательных)</span>
           <span v-if="missingRequiredDevices.length > 0" class="text-[color:var(--badge-warning-text)]">
             Не выбрано: {{ missingRequiredDevices.join(', ') }}
           </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canConfigure || loading.nodes"
+            @click="refreshAvailableNodes"
+          >
+            {{ loading.nodes ? 'Обновление...' : 'Обновить' }}
+          </Button>
           <Button
             size="sm"
             :disabled="!canAttachRequiredNodes"
@@ -496,6 +517,12 @@
             Перейти к зоне
           </Link>
         </div>
+        <div
+          v-if="selectedZoneHasActiveCycle && launchBlockedReason"
+          class="text-xs text-[color:var(--badge-warning-text)]"
+        >
+          {{ launchBlockedReason }}
+        </div>
       </section>
     </div>
 
@@ -546,6 +573,8 @@ const {
   stepRecipeDone,
   stepDevicesDone,
   stepAutomationDone,
+  selectedZoneHasActiveCycle,
+  launchBlockedReason,
   completedSteps,
   progressPercent,
   canLaunch,
@@ -560,17 +589,19 @@ const {
   selectZone,
   selectPlant,
   attachNodesToZone,
+  refreshAvailableNodes,
   applyAutomation,
   openCycleWizard,
   formatDateTime,
 } = useSetupWizard()
 
 const showPlantCreateWizard = ref<boolean>(false)
-type DeviceRole = 'irrigation' | 'correction' | 'accumulation' | 'climate' | 'light'
+type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'accumulation' | 'climate' | 'light'
 
 const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
   irrigation: null,
-  correction: null,
+  ph_correction: null,
+  ec_correction: null,
   accumulation: null,
   climate: null,
   light: null,
@@ -599,8 +630,12 @@ function matchesRole(node: Node, role: DeviceRole): boolean {
     return type.includes('irrig') || type.includes('pump') || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
   }
 
-  if (role === 'correction') {
-    return type.includes('ph') || type.includes('ec') || hasAnyChannel(node, ['pump_acid', 'pump_base', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
+  if (role === 'ph_correction') {
+    return type.includes('ph') || hasAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
+  }
+
+  if (role === 'ec_correction') {
+    return type.includes('ec') || hasAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
   }
 
   if (role === 'accumulation') {
@@ -619,7 +654,8 @@ function nodesByRole(role: DeviceRole): Node[] {
 }
 
 const irrigationNodes = computed<Node[]>(() => nodesByRole('irrigation'))
-const correctionNodes = computed<Node[]>(() => nodesByRole('correction'))
+const phCorrectionNodes = computed<Node[]>(() => nodesByRole('ph_correction'))
+const ecCorrectionNodes = computed<Node[]>(() => nodesByRole('ec_correction'))
 const accumulationNodes = computed<Node[]>(() => nodesByRole('accumulation'))
 const climateNodes = computed<Node[]>(() => nodesByRole('climate'))
 const lightNodes = computed<Node[]>(() => nodesByRole('light'))
@@ -629,7 +665,8 @@ watch(
   (nodes) => {
     const ids = new Set(nodes.map((node) => node.id))
     if (deviceAssignments.irrigation && !ids.has(deviceAssignments.irrigation)) deviceAssignments.irrigation = null
-    if (deviceAssignments.correction && !ids.has(deviceAssignments.correction)) deviceAssignments.correction = null
+    if (deviceAssignments.ph_correction && !ids.has(deviceAssignments.ph_correction)) deviceAssignments.ph_correction = null
+    if (deviceAssignments.ec_correction && !ids.has(deviceAssignments.ec_correction)) deviceAssignments.ec_correction = null
     if (deviceAssignments.accumulation && !ids.has(deviceAssignments.accumulation)) deviceAssignments.accumulation = null
     if (deviceAssignments.climate && !ids.has(deviceAssignments.climate)) deviceAssignments.climate = null
     if (deviceAssignments.light && !ids.has(deviceAssignments.light)) deviceAssignments.light = null
@@ -641,7 +678,8 @@ const selectedNodeIdsByRoles = computed<number[]>(() => {
   const ids = new Set<number>()
   const values = [
     deviceAssignments.irrigation,
-    deviceAssignments.correction,
+    deviceAssignments.ph_correction,
+    deviceAssignments.ec_correction,
     deviceAssignments.accumulation,
     deviceAssignments.climate,
     deviceAssignments.light,
@@ -657,7 +695,8 @@ const selectedNodeIdsByRoles = computed<number[]>(() => {
 const missingRequiredDevices = computed<string[]>(() => {
   const missing: string[] = []
   if (!deviceAssignments.irrigation) missing.push('полив')
-  if (!deviceAssignments.correction) missing.push('коррекция')
+  if (!deviceAssignments.ph_correction) missing.push('коррекция pH')
+  if (!deviceAssignments.ec_correction) missing.push('коррекция EC')
   if (!deviceAssignments.accumulation) missing.push('накопительный узел')
   return missing
 })

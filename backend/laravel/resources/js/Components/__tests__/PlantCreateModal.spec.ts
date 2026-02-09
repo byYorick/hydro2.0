@@ -124,6 +124,7 @@ describe('PlantCreateModal', () => {
     await flushPromises()
 
     await wrapper.find('#plant-name').setValue('Салат')
+    await wrapper.find('#plant-system').setValue('nft')
     const nextButton = wrapper.findAll('button').find((button) => button.text() === 'Далее')
     await nextButton?.trigger('click')
     await flushPromises()
@@ -142,5 +143,18 @@ describe('PlantCreateModal', () => {
       lighting_photoperiod_hours: expect.any(Number),
     }))
     expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/publish')
+  })
+
+  it('требует выбор системы выращивания перед переходом к шагу рецепта', async () => {
+    const wrapper = mount(PlantCreateModal, {
+      props: { show: false },
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    await wrapper.find('#plant-name').setValue('Салат')
+    const nextButton = wrapper.findAll('button').find((button) => button.text() === 'Далее')
+    expect(nextButton).toBeTruthy()
+    expect((nextButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 })

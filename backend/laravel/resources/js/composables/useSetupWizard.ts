@@ -5,6 +5,7 @@ import { useToast } from '@/composables/useToast'
 import { generateUid } from '@/utils/transliterate'
 import { createSetupWizardDataFlows } from './setupWizardDataFlows'
 import { createSetupWizardRecipeAutomationFlows } from './setupWizardRecipeAutomationFlows'
+import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
 import type {
   AutomationFormState,
   Greenhouse,
@@ -135,8 +136,17 @@ export function useSetupWizard() {
   const stepZoneDone = computed(() => selectedZone.value !== null)
   const stepPlantDone = computed(() => selectedPlant.value !== null)
   const stepRecipeDone = computed(() => selectedRecipe.value !== null)
-  const stepDevicesDone = computed(() => attachedNodesCount.value >= 3)
+  const stepDevicesDone = computed(() => attachedNodesCount.value >= 4)
   const stepAutomationDone = computed(() => automationAppliedAt.value !== null)
+  const selectedZoneActiveCycleStatus = computed(() => extractZoneActiveCycleStatus(selectedZone.value))
+  const selectedZoneHasActiveCycle = computed(() => isZoneCycleBlocking(selectedZoneActiveCycleStatus.value))
+  const launchBlockedReason = computed(() => {
+    if (!selectedZoneHasActiveCycle.value) {
+      return null
+    }
+
+    return `В зоне уже есть активный цикл (${zoneCycleStatusLabel(selectedZoneActiveCycleStatus.value)}). Завершите, поставьте на паузу или прервите цикл перед новым запуском.`
+  })
 
   const canLaunch = computed(() => {
     return stepGreenhouseDone.value
@@ -145,6 +155,7 @@ export function useSetupWizard() {
       && stepRecipeDone.value
       && stepDevicesDone.value
       && stepAutomationDone.value
+      && !selectedZoneHasActiveCycle.value
   })
 
   const completedSteps = computed(() => {
@@ -232,6 +243,8 @@ export function useSetupWizard() {
     selectedRecipe,
     automationForm,
     selectedZone,
+    selectedZoneActiveCycleStatus,
+    selectedZoneHasActiveCycle,
     automationAppliedAt,
     loadRecipes: dataFlows.loadRecipes,
     visit: (url) => router.visit(url),
@@ -373,6 +386,9 @@ export function useSetupWizard() {
     stepRecipeDone,
     stepDevicesDone,
     stepAutomationDone,
+    selectedZoneActiveCycleStatus,
+    selectedZoneHasActiveCycle,
+    launchBlockedReason,
     completedSteps,
     progressPercent,
     canLaunch,
@@ -391,6 +407,7 @@ export function useSetupWizard() {
     createRecipe: recipeAutomationFlows.createRecipe,
     selectRecipe: recipeAutomationFlows.selectRecipe,
     attachNodesToZone: dataFlows.attachNodesToZone,
+    refreshAvailableNodes: dataFlows.loadAvailableNodes,
     applyAutomation: recipeAutomationFlows.applyAutomation,
     openCycleWizard: recipeAutomationFlows.openCycleWizard,
     formatDateTime,

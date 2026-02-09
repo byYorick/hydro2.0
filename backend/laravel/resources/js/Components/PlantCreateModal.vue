@@ -90,10 +90,13 @@
             <label
               for="plant-system"
               class="block text-xs text-[color:var(--text-muted)]"
-            >Система</label>
+            >Система <span class="text-[color:var(--accent-red)]">*</span></label>
           </div>
           <div class="flex items-center gap-2">
-            <div class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+            <div
+              class="flex h-9 flex-1 items-center rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
+              :class="errors.growing_system ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            >
               <select
                 id="plant-system"
                 v-model="form.growing_system"
@@ -130,6 +133,12 @@
                 />
               </svg>
             </button>
+          </div>
+          <div
+            v-if="errors.growing_system"
+            class="text-xs text-[color:var(--accent-red)] mt-1"
+          >
+            {{ errors.growing_system }}
           </div>
           <p
             v-if="form.growing_system && !showSubstrateSelector"

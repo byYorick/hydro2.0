@@ -107,18 +107,43 @@ class ZoneReadinessServiceTest extends TestCase
             'zone_id' => $zone->id,
             'status' => 'ONLINE',
         ]);
-        DeviceNode::factory()->create([
+        $offlineNode = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'offline',
         ]);
 
         $this->createActuatorBinding($zone, $onlineNode, 'pump_main', 'main_pump', 'Основная помпа');
         $this->createActuatorBinding($zone, $onlineNode, 'drain_main', 'drain', 'Дренаж');
+        $this->createActuatorBinding($zone, $offlineNode, 'fan_main', 'vent', 'Вентиляция');
 
         $result = $this->service->validate($zone->id);
 
         $this->assertTrue($result['valid']);
         $this->assertContains('1 node(s) are offline', $result['warnings']);
+    }
+
+    public function test_check_zone_readiness_ignores_unbound_nodes_for_online_check(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $boundOnlineNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'offline',
+        ]);
+
+        $this->createActuatorBinding($zone, $boundOnlineNode, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $boundOnlineNode, 'drain_main', 'drain', 'Дренаж');
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertTrue($readiness['ready']);
+        $this->assertSame(1, $readiness['nodes']['total']);
+        $this->assertSame(1, $readiness['nodes']['online']);
+        $this->assertEmpty($readiness['warnings']);
     }
 
     private function createActuatorBinding(
