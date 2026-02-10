@@ -361,3 +361,132 @@ def test_test_hook_set_state_normalizes_datetime_fields(client):
         api._test_mode = old_mode
         api._zone_states_override.clear()
         api._zone_states_override.update(old_states)
+
+
+def test_test_hook_publish_command_success(client, mock_command_bus):
+    """publish_command в test hook должен вызывать CommandBus и возвращать флаг published."""
+    old_mode = api._test_mode
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        api._test_mode = True
+        mock_command_bus.publish_command = AsyncMock(return_value=False)
+        set_command_bus(mock_command_bus, "gh-test")
+
+        response = client.post("/test/hook", json={
+            "zone_id": 21,
+            "action": "publish_command",
+            "command": {
+                "node_uid": "nd-ph-esp32una",
+                "channel": "main_pump",
+                "cmd": "set_relay",
+                "params": {"state": 1, "marker": "e2e-marker"},
+                "cmd_id": "cmd-e2e-1",
+            },
+        })
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "ok"
+        assert payload["data"]["published"] is False
+        assert payload["data"]["zone_id"] == 21
+        assert payload["data"]["node_uid"] == "nd-ph-esp32una"
+
+        mock_command_bus.publish_command.assert_called_once_with(
+            zone_id=21,
+            node_uid="nd-ph-esp32una",
+            channel="main_pump",
+            cmd="set_relay",
+            params={"state": 1, "marker": "e2e-marker"},
+            cmd_id="cmd-e2e-1",
+        )
+    finally:
+        api._test_mode = old_mode
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_test_hook_publish_command_requires_payload(client, mock_command_bus):
+    """publish_command в test hook должен требовать command payload."""
+    old_mode = api._test_mode
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        api._test_mode = True
+        set_command_bus(mock_command_bus, "gh-test")
+
+        response = client.post("/test/hook", json={
+            "zone_id": 22,
+            "action": "publish_command",
+        })
+
+        assert response.status_code == 400
+        assert "publish_command requires command payload" in response.json()["detail"]
+    finally:
+        api._test_mode = old_mode
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_test_hook_publish_command_validates_required_fields(client, mock_command_bus):
+    """publish_command в test hook валидирует обязательные поля node_uid/channel/cmd."""
+    old_mode = api._test_mode
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        api._test_mode = True
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        set_command_bus(mock_command_bus, "gh-test")
+
+        response = client.post("/test/hook", json={
+            "zone_id": 23,
+            "action": "publish_command",
+            "command": {
+                "node_uid": "",
+                "channel": "main_pump",
+                "cmd": "set_relay",
+            },
+        })
+
+        assert response.status_code == 400
+        assert "command.node_uid" in response.json()["detail"]
+        mock_command_bus.publish_command.assert_not_called()
+    finally:
+        api._test_mode = old_mode
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_test_hook_publish_command_uses_temporary_command_bus_when_not_initialized(client):
+    """При отсутствии глобального CommandBus test hook должен поднять временный экземпляр."""
+    old_mode = api._test_mode
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        api._test_mode = True
+        set_command_bus(None, "")
+
+        temp_bus = Mock()
+        temp_bus.start = AsyncMock(return_value=None)
+        temp_bus.stop = AsyncMock(return_value=None)
+        temp_bus.publish_command = AsyncMock(return_value=False)
+
+        with patch("api.CommandBus", return_value=temp_bus) as command_bus_cls:
+            response = client.post("/test/hook", json={
+                "zone_id": 24,
+                "action": "publish_command",
+                "command": {
+                    "node_uid": "nd-ph-esp32una",
+                    "channel": "main_pump",
+                    "cmd": "set_relay",
+                    "params": {"state": 1},
+                },
+            })
+
+        assert response.status_code == 200
+        assert response.json()["data"]["published"] is False
+        command_bus_cls.assert_called_once()
+        assert command_bus_cls.call_args.kwargs["enforce_node_zone_assignment"] is True
+        temp_bus.start.assert_awaited_once()
+        temp_bus.publish_command.assert_awaited_once()
+        temp_bus.stop.assert_awaited_once()
+    finally:
+        api._test_mode = old_mode
+        set_command_bus(old_command_bus, old_gh_uid)

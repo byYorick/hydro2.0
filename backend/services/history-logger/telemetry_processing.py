@@ -11,6 +11,7 @@ import httpx
 import state
 from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
+from common.infra_alerts import send_infra_alert
 from common.simulation_events import record_simulation_event_throttled
 from common.redis_queue import TelemetryQueueItem
 from common.utils.time import utcnow
@@ -37,7 +38,6 @@ from utils import (
     _extract_gh_uid,
     _extract_node_uid,
     _extract_zone_uid,
-    extract_zone_id_from_uid,
     _filter_raw_data,
     _parse_json,
 )
@@ -59,6 +59,8 @@ _sensor_cache: "OrderedDict[tuple[int, Optional[int], str, str], int]" = Ordered
 _sensor_cache_max_size = int(os.getenv("SENSOR_CACHE_MAX_SIZE", "5000"))
 _cache_last_update = 0.0
 _cache_ttl = 60.0
+_anomaly_alert_last_sent: dict[str, float] = {}
+_anomaly_alert_throttle_sec = float(os.getenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "300"))
 
 # Backoff состояние для telemetry broadcast
 _broadcast_error_count = 0
@@ -196,6 +198,79 @@ def _build_realtime_key_from_update(update: dict) -> tuple:
         str(update.get("metric_type") or ""),
         str(update.get("channel") or ""),
     )
+
+
+def _build_anomaly_throttle_key(
+    *,
+    code: str,
+    gh_uid: Optional[str],
+    zone_uid: Optional[str],
+    node_uid: Optional[str],
+    channel: Optional[str],
+) -> str:
+    return "|".join(
+        [
+            code,
+            gh_uid or "-",
+            zone_uid or "-",
+            node_uid or "-",
+            channel or "-",
+        ]
+    )
+
+
+async def _emit_telemetry_anomaly_alert(
+    *,
+    code: str,
+    message: str,
+    zone_id: Optional[int] = None,
+    gh_uid: Optional[str] = None,
+    zone_uid: Optional[str] = None,
+    node_uid: Optional[str] = None,
+    channel: Optional[str] = None,
+    metric_type: Optional[str] = None,
+    details: Optional[dict] = None,
+) -> None:
+    throttle_key = _build_anomaly_throttle_key(
+        code=code,
+        gh_uid=gh_uid,
+        zone_uid=zone_uid,
+        node_uid=node_uid,
+        channel=channel,
+    )
+    now = time.time()
+    last_sent = _anomaly_alert_last_sent.get(throttle_key)
+    if last_sent and (now - last_sent) < _anomaly_alert_throttle_sec:
+        return
+
+    payload_details = dict(details) if isinstance(details, dict) else {}
+    payload_details.update(
+        {
+            "gh_uid": gh_uid,
+            "zone_uid": zone_uid,
+            "node_uid": node_uid,
+            "channel": channel,
+            "metric_type": metric_type,
+            "throttle_key": throttle_key,
+            "throttle_sec": _anomaly_alert_throttle_sec,
+        }
+    )
+    payload_details = {k: v for k, v in payload_details.items() if v is not None}
+
+    sent = await send_infra_alert(
+        code=code,
+        alert_type="Telemetry Anomaly",
+        message=message,
+        severity="warning",
+        zone_id=zone_id,
+        service="history-logger",
+        component="telemetry_processing",
+        node_uid=node_uid,
+        channel=channel,
+        details=payload_details,
+    )
+    if sent:
+        _anomaly_alert_last_sent[throttle_key] = now
 
 
 async def _enqueue_realtime_update(key: tuple, update: dict) -> None:
@@ -545,6 +620,22 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                                     "zone_uid": zone_uid,
                                 },
                             )
+                            await _emit_telemetry_anomaly_alert(
+                                code="infra_telemetry_timestamp_skew",
+                                message="Telemetry timestamp is too far in the future, fallback to server time",
+                                gh_uid=gh_uid,
+                                zone_uid=zone_uid,
+                                node_uid=node_uid,
+                                channel=None,
+                                metric_type=validated_data.metric_type,
+                                details={
+                                    "device_ts": ts_value,
+                                    "server_ts": server_timestamp,
+                                    "drift_sec": drift,
+                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                    "topic": topic,
+                                },
+                            )
                             ts = server_time
                         else:
                             if drift < -MAX_TIMESTAMP_DRIFT_SEC:
@@ -571,6 +662,20 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                                 "zone_uid": zone_uid,
                             },
                         )
+                        await _emit_telemetry_anomaly_alert(
+                            code="infra_telemetry_invalid_timestamp",
+                            message="Telemetry timestamp from device is invalid, fallback to server time",
+                            gh_uid=gh_uid,
+                            zone_uid=zone_uid,
+                            node_uid=node_uid,
+                            channel=None,
+                            metric_type=validated_data.metric_type,
+                            details={
+                                "device_ts": ts_value,
+                                "topic": topic,
+                                "reason": "numeric_timestamp_below_min_valid",
+                            },
+                        )
                 elif isinstance(raw_ts, str):
                     ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
                     ts_timestamp = ts.timestamp()
@@ -582,6 +687,20 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                                 "topic": topic,
                                 "node_uid": node_uid,
                                 "zone_uid": zone_uid,
+                            },
+                        )
+                        await _emit_telemetry_anomaly_alert(
+                            code="infra_telemetry_invalid_timestamp",
+                            message="Telemetry timestamp from device is invalid, fallback to server time",
+                            gh_uid=gh_uid,
+                            zone_uid=zone_uid,
+                            node_uid=node_uid,
+                            channel=None,
+                            metric_type=validated_data.metric_type,
+                            details={
+                                "device_ts": ts_timestamp,
+                                "topic": topic,
+                                "reason": "iso_timestamp_below_min_valid",
                             },
                         )
                         ts = None
@@ -598,6 +717,22 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                                     "topic": topic,
                                     "node_uid": node_uid,
                                     "zone_uid": zone_uid,
+                                },
+                            )
+                            await _emit_telemetry_anomaly_alert(
+                                code="infra_telemetry_timestamp_skew",
+                                message="Telemetry timestamp is too far in the future, fallback to server time",
+                                gh_uid=gh_uid,
+                                zone_uid=zone_uid,
+                                node_uid=node_uid,
+                                channel=None,
+                                metric_type=validated_data.metric_type,
+                                details={
+                                    "device_ts": ts_timestamp,
+                                    "server_ts": server_timestamp,
+                                    "drift_sec": drift,
+                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                    "topic": topic,
                                 },
                             )
                             ts = None
@@ -623,6 +758,20 @@ async def handle_telemetry(topic: str, payload: bytes) -> None:
                         "topic": topic,
                         "node_uid": node_uid,
                         "zone_uid": zone_uid,
+                    },
+                )
+                await _emit_telemetry_anomaly_alert(
+                    code="infra_telemetry_timestamp_parse_failed",
+                    message="Failed to parse telemetry timestamp, fallback to server time",
+                    gh_uid=gh_uid,
+                    zone_uid=zone_uid,
+                    node_uid=node_uid,
+                    channel=None,
+                    metric_type=validated_data.metric_type,
+                    details={
+                        "topic": topic,
+                        "raw_ts": validated_data.ts,
+                        "error": str(e),
                     },
                 )
 
@@ -850,6 +999,13 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
                         extra={"zone_uid": zone_uid, "gh_uid": gh_uid},
                     )
+                    await _emit_telemetry_anomaly_alert(
+                        code="infra_telemetry_zone_not_found",
+                        message="Telemetry received for unknown zone_uid",
+                        gh_uid=gh_uid,
+                        zone_uid=zone_uid,
+                        details={"missing_entity": "zone"},
+                    )
 
     node_uid_to_info: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
 
@@ -939,6 +1095,13 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         gh_uid,
                         extra={"node_uid": node_uid, "gh_uid": gh_uid},
                     )
+                    await _emit_telemetry_anomaly_alert(
+                        code="infra_telemetry_node_not_found",
+                        message="Telemetry received for unknown node_uid",
+                        gh_uid=gh_uid,
+                        node_uid=node_uid,
+                        details={"missing_entity": "node"},
+                    )
 
     resolved_samples: list[dict] = []
     zone_ids_for_greenhouse: set[int] = set()
@@ -949,8 +1112,6 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             zone_id = zone_uid_to_id.get((sample.zone_uid, sample.gh_uid))
             if zone_id is None and sample.gh_uid:
                 zone_id = zone_uid_to_id.get((sample.zone_uid, None))
-        if zone_id is None and sample.zone_uid:
-            zone_id = extract_zone_id_from_uid(sample.zone_uid)
 
         node_id = None
         node_zone_id = None
@@ -998,6 +1159,16 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 },
             )
             TELEMETRY_DROPPED.labels(reason="node_id_not_found").inc()
+            await _emit_telemetry_anomaly_alert(
+                code="infra_telemetry_sample_dropped_node_not_found",
+                message="Telemetry sample dropped: node_id not found for node_uid",
+                zone_id=zone_id,
+                gh_uid=sample.gh_uid,
+                zone_uid=sample.zone_uid,
+                node_uid=sample.node_uid,
+                channel=sample.channel,
+                metric_type=sample.metric_type,
+            )
             continue
 
         if node_zone_id is None:
@@ -1012,6 +1183,17 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 },
             )
             TELEMETRY_DROPPED.labels(reason="node_unassigned").inc()
+            await _emit_telemetry_anomaly_alert(
+                code="infra_telemetry_node_unassigned",
+                message="Telemetry sample dropped: node is not assigned to any zone",
+                zone_id=zone_id,
+                gh_uid=sample.gh_uid,
+                zone_uid=sample.zone_uid,
+                node_uid=sample.node_uid,
+                channel=sample.channel,
+                metric_type=sample.metric_type,
+                details={"node_id": node_id},
+            )
             continue
 
         if node_zone_id != zone_id:
@@ -1028,6 +1210,21 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 },
             )
             TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
+            await _emit_telemetry_anomaly_alert(
+                code="infra_telemetry_node_zone_mismatch",
+                message="Telemetry sample dropped: node-zone mismatch detected",
+                zone_id=zone_id,
+                gh_uid=sample.gh_uid,
+                zone_uid=sample.zone_uid,
+                node_uid=sample.node_uid,
+                channel=sample.channel,
+                metric_type=sample.metric_type,
+                details={
+                    "node_id": node_id,
+                    "node_zone_id": node_zone_id,
+                    "requested_zone_id": zone_id,
+                },
+            )
             continue
 
         sample_ts = sample.ts

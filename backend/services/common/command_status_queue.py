@@ -18,8 +18,87 @@ from enum import Enum
 from .db import get_pool
 from .env import get_settings
 from .http_client_pool import make_request, calculate_backoff_with_jitter
+from .infra_alerts import send_infra_alert
 
 logger = logging.getLogger(__name__)
+
+_COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS = 120
+_last_command_ack_not_found_alert_at: Dict[str, datetime] = {}
+
+
+def _decode_laravel_error_payload(resp: Any) -> Dict[str, Any]:
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {}
+
+
+def _is_command_not_found_response(resp: Any, payload: Dict[str, Any]) -> bool:
+    if getattr(resp, "status_code", None) != 404:
+        return False
+    return str(payload.get("code", "")).upper().strip() == "COMMAND_NOT_FOUND"
+
+
+def _should_emit_command_ack_not_found_alert(now: datetime, key: str) -> bool:
+    last = _last_command_ack_not_found_alert_at.get(key)
+    if last is None:
+        _last_command_ack_not_found_alert_at[key] = now
+        return True
+
+    if (now - last).total_seconds() >= _COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS:
+        _last_command_ack_not_found_alert_at[key] = now
+        return True
+
+    return False
+
+
+async def _emit_command_ack_not_found_alert(
+    *,
+    cmd_id: str,
+    status_value: str,
+    details: Optional[Dict[str, Any]],
+    http_status: int,
+) -> None:
+    zone_id_raw = None
+    if isinstance(details, dict):
+        zone_id_raw = details.get("zone_id")
+
+    zone_id: Optional[int] = None
+    if isinstance(zone_id_raw, int):
+        zone_id = zone_id_raw
+    elif isinstance(zone_id_raw, str):
+        try:
+            zone_id = int(zone_id_raw)
+        except ValueError:
+            zone_id = None
+
+    throttle_key = f"{zone_id or 'global'}:{status_value}"
+    now = utcnow()
+    if not _should_emit_command_ack_not_found_alert(now, throttle_key):
+        return
+
+    await send_infra_alert(
+        code="infra_command_ack_command_not_found",
+        alert_type="Command Ack Not Found",
+        message=f"Laravel не нашёл команду при обработке ACK: {cmd_id}",
+        severity="warning",
+        zone_id=zone_id,
+        service="history-logger",
+        component="command_status_delivery",
+        node_uid=details.get("node_uid") if isinstance(details, dict) else None,
+        channel=details.get("channel") if isinstance(details, dict) else None,
+        cmd=details.get("command") if isinstance(details, dict) else None,
+        error_type="command_not_found",
+        details={
+            "cmd_id": cmd_id,
+            "status": status_value,
+            "http_status": http_status,
+            "throttle_seconds": _COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS,
+        },
+    )
 
 
 class CommandStatus(str, Enum):
@@ -612,10 +691,30 @@ async def send_status_to_laravel(
             )
             return True
         else:
-            logger.warning(
-                f"[STATUS_DELIVERY] STEP 6.2: ERROR - Laravel responded with {resp.status_code}: "
-                f"{resp.text[:200]}"
-            )
+            error_payload = _decode_laravel_error_payload(resp)
+            if _is_command_not_found_response(resp, error_payload):
+                logger.warning(
+                    f"[STATUS_DELIVERY] STEP 6.2: COMMAND_NOT_FOUND for cmd_id={cmd_id}, "
+                    f"status={status_value}. Response body: {resp.text[:200]}"
+                )
+                try:
+                    await _emit_command_ack_not_found_alert(
+                        cmd_id=cmd_id,
+                        status_value=status_value,
+                        details=details,
+                        http_status=resp.status_code,
+                    )
+                except Exception as alert_error:
+                    logger.error(
+                        f"[STATUS_DELIVERY] Failed to emit COMMAND_NOT_FOUND alert for cmd_id={cmd_id}: {alert_error}",
+                        exc_info=True,
+                    )
+            else:
+                logger.warning(
+                    f"[STATUS_DELIVERY] STEP 6.2: ERROR - Laravel responded with {resp.status_code}: "
+                    f"{resp.text[:200]}"
+                )
+
             # Сохраняем в очередь для ретрая
             queue = await get_status_queue()
             await queue.enqueue(cmd_id, status, details)

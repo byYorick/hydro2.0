@@ -324,7 +324,13 @@ async def publish_correction_command(
     from infrastructure import CommandBus
     history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
     history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-    command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+    command_bus = CommandBus(
+        mqtt=None,
+        gh_uid=gh_uid,
+        history_logger_url=history_logger_url,
+        history_logger_token=history_logger_token,
+        enforce_node_zone_assignment=True,
+    )
     await command_bus.start()
     try:
         return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
@@ -576,7 +582,13 @@ async def check_and_correct_zone(
     if _command_bus is None:
         history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
         history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-        _command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+        _command_bus = CommandBus(
+            mqtt=None,
+            gh_uid=gh_uid,
+            history_logger_url=history_logger_url,
+            history_logger_token=history_logger_token,
+            enforce_node_zone_assignment=True,
+        )
         await _command_bus.start()
     
     command_bus = _command_bus
@@ -1013,7 +1025,8 @@ async def main():
                             command_validator=command_validator,
                             command_tracker=_command_tracker,
                             command_audit=command_audit,
-                            api_circuit_breaker=command_api_circuit_breaker
+                            api_circuit_breaker=command_api_circuit_breaker,
+                            enforce_node_zone_assignment=True,
                         )
                         await _command_bus.start()
                         logger.info("CommandBus initialized with long-lived HTTP client")

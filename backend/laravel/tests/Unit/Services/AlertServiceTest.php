@@ -34,7 +34,7 @@ class AlertServiceTest extends TestCase
 
         $this->assertInstanceOf(Alert::class, $alert);
         $this->assertEquals('ph_high', $alert->type);
-        $this->assertEquals('active', $alert->status);
+        $this->assertEquals('ACTIVE', $alert->status);
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
             'type' => 'ph_high',

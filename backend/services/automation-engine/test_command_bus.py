@@ -370,3 +370,55 @@ async def test_publish_controller_command_without_params_preserves_cmd_id():
         # Проверяем, что cmd_id из трекера совпадает с отправленным
         tracked_cmd_id = list(pending_commands.keys())[0]
         assert tracked_cmd_id == cmd_id_in_payload, "cmd_id из трекера должен совпадать с отправленным в history-logger"
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_node_zone_mismatch_when_guard_enabled():
+    """Command must be rejected if node_uid is not assigned to zone_id."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"zone_id": 2, "status": "online"}])) as mock_fetch, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock(return_value=True)) as mock_alert:
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            enforce_node_zone_assignment=True,
+        )
+        result = await command_bus.publish_command(
+            1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 1000}
+        )
+
+        assert result is False
+        mock_fetch.assert_awaited()
+        mock_zone_event.assert_awaited()
+        mock_alert.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_publish_command_allows_matching_node_zone_when_guard_enabled():
+    """Command should be sent when node_uid belongs to the target zone."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"zone_id": 1, "status": "online"}])):
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-guard-1"}})
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            command_bus = CommandBus(
+                mqtt=None,
+                gh_uid="gh-1",
+                history_logger_url="http://history-logger:9300",
+                history_logger_token="test-token",
+                enforce_node_zone_assignment=True,
+            )
+            result = await command_bus.publish_command(
+                1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 1000}
+            )
+
+            assert result is True
+            mock_client.post.assert_called_once()

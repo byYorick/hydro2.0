@@ -2132,6 +2132,7 @@ class E2ERunner:
             action = cfg.get("action")  # inject_error, clear_error, reset_backoff, set_state
             error_type = cfg.get("error_type")
             state = cfg.get("state")
+            command = cfg.get("command")
             
             if not zone_id:
                 raise ValueError("ae_test_hook requires zone_id")
@@ -2148,6 +2149,8 @@ class E2ERunner:
                 payload["error_type"] = error_type
             if state:
                 payload["state"] = state
+            if command:
+                payload["command"] = self._resolve_variables(command)
             
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(f"{automation_engine_url}/test/hook", json=payload)

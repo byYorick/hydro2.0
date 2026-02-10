@@ -149,6 +149,7 @@ class ZoneDataService
         $afterId = $request->integer('after_id');
         $limit = $request->integer('limit', 50);
         $limit = min(max($limit, 1), 200);
+        $eventMessageFormatter = app(ZoneEventMessageFormatter::class);
 
         $cycleOnly = $request->boolean('cycle_only', false);
 
@@ -169,17 +170,16 @@ class ZoneDataService
                 'ZONE_COMMAND',
             ];
 
-            $query->where(function ($q) use ($cycleEventTypes) {
-                $q->whereIn('type', $cycleEventTypes);
-            });
-
             $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
                 ? 'payload_json'
                 : 'details';
 
-            $query->orWhere(function ($q) use ($detailsColumn) {
-                $q->whereIn('type', ['ALERT_CREATED', 'alert_created'])
-                    ->whereRaw("{$detailsColumn}->>'severity' = 'CRITICAL'");
+            $query->where(function ($q) use ($cycleEventTypes, $detailsColumn) {
+                $q->whereIn('type', $cycleEventTypes)
+                    ->orWhere(function ($criticalAlerts) use ($detailsColumn) {
+                        $criticalAlerts->whereIn('type', ['ALERT_CREATED', 'alert_created'])
+                            ->whereRaw("{$detailsColumn}->>'severity' = 'CRITICAL'");
+                    });
             });
         }
 
@@ -201,12 +201,21 @@ class ZoneDataService
                 DB::raw("{$detailsColumn} as details"),
                 'created_at',
             ])
-            ->map(function ($event) {
-                if (is_string($event->details)) {
-                    $event->details = json_decode($event->details, true) ?? [];
+            ->map(function ($event) use ($eventMessageFormatter) {
+                $details = [];
+                if (is_array($event->details)) {
+                    $details = $event->details;
+                } elseif (is_string($event->details)) {
+                    $details = json_decode($event->details, true) ?? [];
+                } elseif (is_object($event->details)) {
+                    $details = json_decode(json_encode($event->details), true) ?? [];
                 }
-                $event->payload = $event->details;
-                $event->payload_json = json_encode($event->details);
+
+                $event->details = $details;
+                $event->payload = $details;
+                $event->payload_json = json_encode($details);
+                $event->message = $eventMessageFormatter->format($event->type, $details);
+
                 return $event;
             })
             ->values();

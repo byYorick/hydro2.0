@@ -48,6 +48,84 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Source:</label>
+          <select
+            v-model="sourceFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="biz">
+              biz
+            </option>
+            <option value="infra">
+              infra
+            </option>
+            <option value="node">
+              node
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Severity:</label>
+          <select
+            v-model="severityFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="critical">
+              critical
+            </option>
+            <option value="error">
+              error
+            </option>
+            <option value="warning">
+              warning
+            </option>
+            <option value="info">
+              info
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Category:</label>
+          <select
+            v-model="categoryFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="agronomy">
+              agronomy
+            </option>
+            <option value="operations">
+              operations
+            </option>
+            <option value="infrastructure">
+              infrastructure
+            </option>
+            <option value="node">
+              node
+            </option>
+            <option value="safety">
+              safety
+            </option>
+            <option value="config">
+              config
+            </option>
+            <option value="other">
+              other
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
           <input
             v-model="searchQuery"
@@ -356,7 +434,7 @@ import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity } from '@/constants/alertErrorMap'
+import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type AlertCodeMeta } from '@/constants/alertErrorMap'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Alert } from '@/types/Alert'
 
@@ -371,6 +449,14 @@ interface AlertRecord extends Omit<Alert, 'zone'> {
 interface PageProps {
   alerts?: AlertRecord[]
   [key: string]: any
+}
+
+interface AlertCatalogItem {
+  code: string
+  title: string
+  description: string
+  recommendation?: string
+  severity?: AlertSeverity
 }
 
 const page = usePage<PageProps>()
@@ -402,6 +488,38 @@ const zoneIdFilter = useUrlState<string>({
   parse: (value) => {
     if (!value) return ''
     return /^\d+$/.test(value) ? value : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const sourceFilter = useUrlState<string>({
+  key: 'source',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['biz', 'infra', 'node'].includes(normalized) ? normalized : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const severityFilter = useUrlState<string>({
+  key: 'severity',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['critical', 'error', 'warning', 'info'].includes(normalized) ? normalized : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const categoryFilter = useUrlState<string>({
+  key: 'category',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['agronomy', 'operations', 'infrastructure', 'node', 'safety', 'config', 'other'].includes(normalized)
+      ? normalized
+      : ''
   },
   serialize: (value) => value || null,
 })
@@ -441,6 +559,7 @@ watch(
 )
 
 const alerts = computed(() => alertsStore.items as AlertRecord[])
+const catalogMetaByCode = ref<Record<string, AlertCodeMeta>>({})
 
 const isRefreshing = ref(false)
 const isInitialLoading = computed(() => isRefreshing.value && alerts.value.length === 0)
@@ -456,6 +575,15 @@ const loadAlerts = async (): Promise<void> => {
     }
     if (zoneIdFilter.value) {
       params.zone_id = parseInt(zoneIdFilter.value)
+    }
+    if (sourceFilter.value) {
+      params.source = sourceFilter.value
+    }
+    if (severityFilter.value) {
+      params.severity = severityFilter.value
+    }
+    if (categoryFilter.value) {
+      params.category = categoryFilter.value
     }
 
     const response = await api.get('/api/alerts', { params })
@@ -480,6 +608,10 @@ watch([statusFilter, zoneIdFilter], () => {
   loadAlerts()
 }, { immediate: true })
 
+watch([sourceFilter, severityFilter, categoryFilter], () => {
+  loadAlerts()
+})
+
 const zoneOptions = computed(() => {
   const map = new Map<number, string>()
   alerts.value.forEach((alert) => {
@@ -493,7 +625,13 @@ const zoneOptions = computed(() => {
 
 const searchNeedle = computed(() => searchQuery.value.trim().toLowerCase())
 
-const getAlertMeta = (alert?: AlertRecord | null) => resolveAlertCodeMeta(alert?.code)
+const getAlertMeta = (alert?: AlertRecord | null): AlertCodeMeta => {
+  const code = String(alert?.code || '').trim().toLowerCase()
+  if (code && catalogMetaByCode.value[code]) {
+    return catalogMetaByCode.value[code]
+  }
+  return resolveAlertCodeMeta(alert?.code)
+}
 
 const getAlertMessage = (alert?: AlertRecord | null): string => {
   if (!alert) return ''
@@ -527,6 +665,21 @@ const filteredAlerts = computed(() => {
 
     if (zoneIdFilter.value) {
       if (String(alert.zone_id || '') !== zoneIdFilter.value) return false
+    }
+
+    if (sourceFilter.value) {
+      const source = String(alert.source || '').toLowerCase()
+      if (source !== sourceFilter.value) return false
+    }
+
+    if (severityFilter.value) {
+      const severity = String(alert.severity || resolveAlertSeverity(alert.code, alert.details)).toLowerCase()
+      if (severity !== severityFilter.value) return false
+    }
+
+    if (categoryFilter.value) {
+      const category = String(alert.category || alert.details?.category || '').toLowerCase()
+      if (category !== categoryFilter.value) return false
     }
 
     if (recentOnly.value && alert.created_at) {
@@ -820,8 +973,32 @@ watch(toastSuppressionSec, (value) => {
 
 let unsubscribeAlerts: (() => void) | null = null
 
+const loadAlertCatalog = async (): Promise<void> => {
+  try {
+    const response = await api.get('/api/alerts/catalog')
+    const items = response?.data?.data?.items
+    if (!Array.isArray(items)) return
+
+    const map: Record<string, AlertCodeMeta> = {}
+    items.forEach((item: AlertCatalogItem) => {
+      const code = String(item?.code || '').trim().toLowerCase()
+      if (!code) return
+      map[code] = {
+        title: item.title || 'Системное предупреждение',
+        description: item.description || 'Сервис сообщил о состоянии, которое требует проверки.',
+        recommendation: item.recommendation || 'Проверьте детали алерта и журналы сервиса.',
+        severity: (item.severity || 'warning') as AlertSeverity,
+      }
+    })
+    catalogMetaByCode.value = map
+  } catch (err) {
+    logger.warn('[Alerts] Failed to load alert catalog', err)
+  }
+}
+
 onMounted(() => {
   loadToastSuppressionPreference()
+  loadAlertCatalog()
   unsubscribeAlerts = subscribeAlerts((event) => {
     const payload = event as AlertRecord
     if (payload?.id) {

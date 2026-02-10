@@ -421,6 +421,12 @@ class PythonIngestController extends Controller
                 'status' => $data['status'],
                 'normalized_status' => $normalizedStatus,
             ]);
+
+            return Response::json([
+                'status' => 'error',
+                'code' => 'COMMAND_NOT_FOUND',
+                'message' => 'Command not found',
+            ], 404);
         }
 
         Log::info('[COMMAND_ACK] STEP 11: Returning response');
@@ -488,19 +494,48 @@ class PythonIngestController extends Controller
             'zone_id' => ['nullable', 'integer'],
             'node_uid' => ['nullable', 'string', 'max:100'],
             'hardware_id' => ['nullable', 'string', 'max:100'],
-            'source' => ['required', 'string', 'in:biz,infra'],
+            'source' => ['required', 'string', 'max:16'],
             'code' => ['required', 'string', 'max:64'],
             'type' => ['required', 'string', 'max:64'],
-            'status' => ['nullable', 'string', 'in:ACTIVE,RESOLVED'],
+            'status' => ['nullable', 'string', 'max:32'],
             'severity' => ['nullable', 'string', 'max:32'],
             'details' => ['nullable', 'array'],
             'ts_device' => ['nullable', 'date'],
         ]);
-        
+
+        $source = strtolower(trim((string) ($data['source'] ?? '')));
+        if (! in_array($source, ['biz', 'infra', 'node'], true)) {
+            return Response::json([
+                'status' => 'error',
+                'message' => 'Invalid source. Allowed values: biz, infra, node',
+            ], 422);
+        }
+
+        $status = strtoupper(trim((string) ($data['status'] ?? 'ACTIVE')));
+        if (! in_array($status, ['ACTIVE', 'RESOLVED'], true)) {
+            return Response::json([
+                'status' => 'error',
+                'message' => 'Invalid status. Allowed values: ACTIVE, RESOLVED',
+            ], 422);
+        }
+
+        $severity = null;
+        if (isset($data['severity'])) {
+            $severity = strtolower(trim((string) $data['severity']));
+            if (! in_array($severity, ['info', 'warning', 'error', 'critical'], true)) {
+                return Response::json([
+                    'status' => 'error',
+                    'message' => 'Invalid severity. Allowed values: info, warning, error, critical',
+                ], 422);
+            }
+        }
+
+        $details = isset($data['details']) && is_array($data['details']) ? $data['details'] : [];
+
         // Валидируем zone_id отдельно, если он указан (для unassigned hardware разрешаем null)
         if (isset($data['zone_id']) && $data['zone_id'] !== null) {
             $zoneExists = \App\Models\Zone::where('id', $data['zone_id'])->exists();
-            if (!$zoneExists) {
+            if (! $zoneExists) {
                 return Response::json([
                     'status' => 'error',
                     'message' => 'Zone not found',
@@ -510,14 +545,13 @@ class PythonIngestController extends Controller
 
         try {
             $alertService = app(\App\Services\AlertService::class);
-            $status = strtoupper((string) ($data['status'] ?? 'ACTIVE'));
 
             if ($status === 'RESOLVED') {
                 $result = $alertService->resolveByCode(
                     zoneId: $data['zone_id'] ?? null,
                     code: $data['code'],
                     context: [
-                        'details' => $data['details'] ?? null,
+                        'details' => $details,
                     ],
                 );
 
@@ -535,17 +569,17 @@ class PythonIngestController extends Controller
             // Используем createOrUpdateActive для дедупликации
             $result = $alertService->createOrUpdateActive([
                 'zone_id' => $data['zone_id'] ?? null,
-                'source' => $data['source'],
+                'source' => $source,
                 'code' => $data['code'],
                 'type' => $data['type'],
-                'details' => $data['details'] ?? null,
-                'severity' => $data['severity'] ?? null,
+                'details' => $details,
+                'severity' => $severity,
                 'node_uid' => $data['node_uid'] ?? null,
                 'hardware_id' => $data['hardware_id'] ?? null,
                 'ts_device' => $data['ts_device'] ?? null,
             ]);
 
-            if (($result['rate_limited'] ?? false) || !isset($result['alert']) || $result['alert'] === null) {
+            if (($result['rate_limited'] ?? false) || ! isset($result['alert']) || $result['alert'] === null) {
                 return Response::json([
                     'status' => 'ok',
                     'data' => [
@@ -575,7 +609,7 @@ class PythonIngestController extends Controller
 
             return Response::json([
                 'status' => 'error',
-                'message' => 'Failed to create/update alert: ' . $e->getMessage(),
+                'message' => 'Failed to create/update alert: '.$e->getMessage(),
             ], 500);
         }
     }

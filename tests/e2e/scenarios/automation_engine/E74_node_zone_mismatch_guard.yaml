@@ -1,0 +1,242 @@
+# E74: Node/Zone mismatch guard - блокировка команды + infra alert + zone event
+# DoD: при node/zone mismatch команда блокируется, появляется infra alert и zone event
+
+name: E74_node_zone_mismatch_guard
+description: |
+  Проверяет fail-closed guard publish_command для привязки node -> zone:
+  - искусственно переносим ноду в другую зону
+  - отправляем команду в исходную зону через AE test hook (publish_command)
+  - убеждаемся, что команда НЕ отправлена
+  - убеждаемся, что создан zone_event COMMAND_ZONE_NODE_MISMATCH
+  - убеждаемся, что создан/обновлен infra alert infra_command_node_zone_mismatch
+
+actions:
+  - step: set_test_context
+    type: set
+    test_zone_uid: zn-test-1
+    test_node_uid: nd-ph-esp32una
+    mismatch_zone_uid: zn-e74-mismatch-${TIMESTAMP_S}
+    mismatch_marker: e74-node-zone-${TIMESTAMP_S}
+
+  - step: get_zone_row
+    type: database_query
+    query: |
+      SELECT id, greenhouse_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: get_node_row
+    type: database_query
+    query: |
+      SELECT id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+    expected_rows: 1
+
+  - step: set_node_id
+    type: set
+    node_id: ${node_row.0.id}
+
+  - step: baseline_mismatch_alert_counter
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(error_count), 0) AS baseline_error_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_command_node_zone_mismatch'
+        AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+    save: baseline_mismatch_alert
+
+  - step: mismatch_window_start_ts
+    type: database_query
+    query: |
+      SELECT NOW() AS ts
+    save: mismatch_start_ts
+
+  - step: create_mismatch_zone
+    type: database_query
+    query: |
+      INSERT INTO zones (uid, greenhouse_id, name, description, status, created_at, updated_at)
+      SELECT
+        :mismatch_zone_uid,
+        z.greenhouse_id,
+        'E2E Mismatch Zone',
+        'Temporary zone for E74 mismatch guard smoke test',
+        'offline',
+        NOW(),
+        NOW()
+      FROM zones z
+      WHERE z.id = :zone_id
+      RETURNING id
+    params:
+      zone_id: ${zone_id}
+      mismatch_zone_uid: ${mismatch_zone_uid}
+    save: mismatch_zone_row
+    expected_rows: 1
+
+  - step: set_mismatch_zone_id
+    type: set
+    mismatch_zone_id: ${mismatch_zone_row.0.id}
+
+  - step: move_node_to_mismatch_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :mismatch_zone_id,
+          updated_at = NOW()
+      WHERE id = :node_id;
+    params:
+      mismatch_zone_id: ${mismatch_zone_id}
+      node_id: ${node_id}
+
+  - step: publish_mismatch_command
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    command:
+      node_uid: ${test_node_uid}
+      channel: main_pump
+      cmd: set_relay
+      params:
+        state: 1
+        marker: ${mismatch_marker}
+    save: publish_result
+
+  - step: wait_for_mismatch_zone_event
+    type: db.wait
+    query: |
+      SELECT id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'COMMAND_ZONE_NODE_MISMATCH'
+        AND details->>'reason' = 'zone_mismatch'
+        AND details->>'node_uid' = :node_uid
+        AND created_at >= :mismatch_start_ts
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
+      mismatch_start_ts: ${mismatch_start_ts.0.ts}
+    expected_rows: 1
+    timeout: 30.0
+
+  - step: wait_for_mismatch_infra_alert
+    type: db.wait
+    query: |
+      SELECT id
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_command_node_zone_mismatch'
+        AND status = 'ACTIVE'
+        AND error_count > :baseline_error_count
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      baseline_error_count: ${baseline_mismatch_alert.0.baseline_error_count}
+    expected_rows: 1
+    timeout: 30.0
+
+assertions:
+  - name: command_publish_blocked
+    type: json_assertion
+    source: publish_result
+    path: data
+    expected:
+      - field: published
+        operator: equals
+        value: false
+
+  - name: mismatch_zone_event_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) AS event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'COMMAND_ZONE_NODE_MISMATCH'
+        AND details->>'reason' = 'zone_mismatch'
+        AND details->>'node_uid' = :node_uid
+        AND created_at >= :mismatch_start_ts
+    params:
+      zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
+      mismatch_start_ts: ${mismatch_start_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
+  - name: mismatch_infra_alert_upserted
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(error_count), 0) - :baseline_error_count AS error_count_delta
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_command_node_zone_mismatch'
+        AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+      baseline_error_count: ${baseline_mismatch_alert.0.baseline_error_count}
+    expected:
+      - field: error_count_delta
+        operator: greater_than
+        value: 0
+
+  - name: no_command_persisted_for_mismatch_request
+    type: database_query
+    query: |
+      SELECT COUNT(*) AS command_count
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND params->>'marker' = :marker
+        AND created_at >= :mismatch_start_ts
+    params:
+      zone_id: ${zone_id}
+      marker: ${mismatch_marker}
+      mismatch_start_ts: ${mismatch_start_ts.0.ts}
+    expected:
+      - field: command_count
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: restore_node_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :zone_id,
+          updated_at = NOW()
+      WHERE id = :node_id;
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+    optional: true
+
+  - step: delete_mismatch_zone
+    type: database_execute
+    query: |
+      DELETE FROM zones
+      WHERE id = :mismatch_zone_id;
+    params:
+      mismatch_zone_id: ${mismatch_zone_id}
+    optional: true

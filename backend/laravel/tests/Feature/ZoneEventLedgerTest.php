@@ -225,6 +225,72 @@ class ZoneEventLedgerTest extends TestCase
         }
     }
 
+    public function test_events_api_returns_human_readable_message_field(): void
+    {
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $token = $this->token();
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'ALERT_UPDATED',
+            'entity_type' => 'alert',
+            'entity_id' => '101',
+            'payload_json' => json_encode([
+                'code' => 'BIZ_HIGH_TEMP',
+                'error_count' => 3,
+            ]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now(),
+        ]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zone->id}/events");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.0.type', 'ALERT_UPDATED')
+            ->assertJsonPath('data.0.message', 'Алерт BIZ_HIGH_TEMP обновлён (повторений: 3)');
+    }
+
+    public function test_cycle_only_filter_does_not_leak_events_from_other_zones(): void
+    {
+        $greenhouse = Greenhouse::factory()->create();
+        $zoneA = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $zoneB = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $token = $this->token('admin');
+
+        $zoneAEventId = DB::table('zone_events')->insertGetId([
+            'zone_id' => $zoneA->id,
+            'type' => 'CYCLE_CREATED',
+            'entity_type' => 'grow_cycle',
+            'entity_id' => '1',
+            'payload_json' => json_encode(['cycle_id' => 1]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now(),
+        ]);
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zoneB->id,
+            'type' => 'ALERT_CREATED',
+            'entity_type' => 'alert',
+            'entity_id' => '2',
+            'payload_json' => json_encode([
+                'code' => 'BIZ_NO_FLOW',
+                'severity' => 'CRITICAL',
+            ]),
+            'server_ts' => now()->timestamp * 1000,
+            'created_at' => now(),
+        ]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/zones/{$zoneA->id}/events?cycle_only=1");
+
+        $response->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.event_id', $zoneAEventId)
+            ->assertJsonPath('data.0.zone_id', $zoneA->id);
+    }
+
     public function test_events_api_requires_authentication(): void
     {
         $greenhouse = Greenhouse::factory()->create();

@@ -632,10 +632,19 @@ PK (zone_id)
 
 ```
 id PK
-zone_id FK
+zone_id FK → zones NULL
+source VARCHAR (biz/infra/node)
+code VARCHAR
 type VARCHAR
 details JSONB
 status VARCHAR (ACTIVE/RESOLVED)
+category VARCHAR (agronomy/infrastructure/operations/node/config/safety/other)
+severity VARCHAR (info/warning/error/critical)
+node_uid VARCHAR NULL
+hardware_id VARCHAR NULL
+error_count INTEGER DEFAULT 1
+first_seen_at TIMESTAMP NULL
+last_seen_at TIMESTAMP NULL
 created_at
 resolved_at
 ```
@@ -643,6 +652,11 @@ resolved_at
 Индексы:
 ```
 alerts_zone_status_idx
+alerts_source_code_status_idx
+alerts_zone_status_severity_idx
+alerts_zone_status_category_idx
+alerts_node_uid_idx
+alerts_hardware_id_idx
 ```
 
 ---

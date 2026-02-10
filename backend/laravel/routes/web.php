@@ -13,11 +13,13 @@ use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
+use App\Services\ZoneEventMessageFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
@@ -1098,64 +1100,34 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {
                 try {
+                    $eventMessageFormatter = app(ZoneEventMessageFormatter::class);
+                    $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+                    $eventSelect = ['id', 'type', 'details', 'created_at'];
+                    if ($hasPayloadJson) {
+                        $eventSelect[] = 'payload_json';
+                    }
+
                     $eventsRaw = \App\Models\Event::query()
                         ->where('zone_id', $zoneIdInt)
-                        ->select(['id', 'type', 'details', 'created_at'])
+                        ->select($eventSelect)
                         ->latest('created_at')
                         ->limit(20)
                         ->get();
 
-                    $events = $eventsRaw->map(function ($event) {
-                        $details = $event->details ?? [];
-                        $message = $details['message'] ?? $details['msg'] ?? null;
+                    $events = $eventsRaw->map(function ($event) use ($eventMessageFormatter, $hasPayloadJson) {
+                        $details = is_array($event->details ?? null) ? $event->details : [];
 
-                        if (str_starts_with($event->type ?? '', 'CYCLE_') && isset($details['subsystems']) && is_array($details['subsystems'])) {
-                            $parts = [];
-                            $subs = $details['subsystems'];
-
-                            if (isset($subs['ph']['enabled']) && $subs['ph']['enabled'] === true && isset($subs['ph']['targets']) && is_array($subs['ph']['targets'])) {
-                                $t = $subs['ph']['targets'];
-                                if (isset($t['min']) && isset($t['max'])) {
-                                    $parts[] = sprintf('pH %.1f–%.1f', (float) $t['min'], (float) $t['max']);
-                                }
-                            }
-
-                            if (isset($subs['ec']['enabled']) && $subs['ec']['enabled'] === true && isset($subs['ec']['targets']) && is_array($subs['ec']['targets'])) {
-                                $t = $subs['ec']['targets'];
-                                if (isset($t['min']) && isset($t['max'])) {
-                                    $parts[] = sprintf('EC %.1f–%.1f', (float) $t['min'], (float) $t['max']);
-                                }
-                            }
-
-                            if (isset($subs['climate']['enabled']) && $subs['climate']['enabled'] === true && isset($subs['climate']['targets']) && is_array($subs['climate']['targets'])) {
-                                $t = $subs['climate']['targets'];
-                                if (isset($t['temperature']) && isset($t['humidity'])) {
-                                    $parts[] = sprintf('Климат t=%.1f°C, RH=%.0f%%', (float) $t['temperature'], (float) $t['humidity']);
-                                }
-                            }
-
-                            if (isset($subs['lighting']['enabled']) && $subs['lighting']['enabled'] === true && isset($subs['lighting']['targets']) && is_array($subs['lighting']['targets'])) {
-                                $t = $subs['lighting']['targets'];
-                                if (isset($t['hours_on']) && isset($t['hours_off'])) {
-                                    $parts[] = sprintf('Свет %.1fч / пауза %.1fч', (float) $t['hours_on'], (float) $t['hours_off']);
-                                }
-                            }
-
-                            if (isset($subs['irrigation']['enabled']) && $subs['irrigation']['enabled'] === true && isset($subs['irrigation']['targets']) && is_array($subs['irrigation']['targets'])) {
-                                $t = $subs['irrigation']['targets'];
-                                if (isset($t['interval_minutes']) && isset($t['duration_seconds'])) {
-                                    $parts[] = sprintf('Полив каждые %d мин, %d с', (int) $t['interval_minutes'], (int) $t['duration_seconds']);
-                                }
-                            }
-
-                            if (! empty($parts)) {
-                                $message = implode('; ', $parts);
+                        if ($details === [] && $hasPayloadJson) {
+                            $payload = $event->payload_json ?? null;
+                            if (is_array($payload)) {
+                                $details = $payload;
+                            } elseif (is_string($payload) && $payload !== '') {
+                                $decoded = json_decode($payload, true);
+                                $details = is_array($decoded) ? $decoded : [];
                             }
                         }
 
-                        if (! $message) {
-                            $message = $event->type ?? '';
-                        }
+                        $message = $eventMessageFormatter->format($event->type, $details);
 
                         return [
                             'id' => $event->id,

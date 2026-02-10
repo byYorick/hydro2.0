@@ -307,6 +307,7 @@ Route::middleware([
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts (viewer+)
+    Route::get('alerts/catalog', [AlertController::class, 'catalog']);
     Route::get('alerts', [AlertController::class, 'index'])->middleware('throttle:'.$apiThrottle);
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)

@@ -382,6 +382,7 @@ main() {
                 "automation_engine/E61_fail_closed_corrections"
                 "automation_engine/E62_controller_fault_isolation"
                 "automation_engine/E63_backoff_on_errors"
+                "automation_engine/E74_node_zone_mismatch_guard"
             )
             
             log_info "Запуск полного набора E2E сценариев (${#SCENARIOS[@]} сценариев, без CHAOS)..."
@@ -492,6 +493,14 @@ main() {
                 exit 1
             fi
 
+            log_info "Запуск AE smoke guard (node/zone mismatch)..."
+            if run_scenario "automation_engine/E74_node_zone_mismatch_guard"; then
+                log_info "✓ AE mismatch guard smoke passed"
+            else
+                log_error "✗ AE mismatch guard smoke failed"
+                exit 1
+            fi
+
             # Запуск UI smoke через Playwright
             log_info "Запуск UI smoke тестов..."
             if run_ui_smoke; then
@@ -524,6 +533,15 @@ main() {
             else
                 log_error "✗ API smoke failed"
                 FAILED_SCENARIOS+=("API smoke")
+                API_SMOKE_FAILED=true
+            fi
+
+            log_info "Запуск AE smoke guard (node/zone mismatch)..."
+            if run_scenario "automation_engine/E74_node_zone_mismatch_guard"; then
+                log_info "✓ AE mismatch guard smoke passed"
+            else
+                log_error "✗ AE mismatch guard smoke failed"
+                FAILED_SCENARIOS+=("AE mismatch guard smoke")
                 API_SMOKE_FAILED=true
             fi
 

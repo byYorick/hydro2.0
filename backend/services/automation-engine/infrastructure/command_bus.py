@@ -8,7 +8,7 @@ import logging
 import httpx
 import os
 from common.mqtt import MqttClient
-from common.db import create_zone_event
+from common.db import create_zone_event, fetch
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.simulation_events import record_simulation_event
 from prometheus_client import Counter, Histogram
@@ -20,6 +20,7 @@ from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from decision_context import ContextLike, normalize_context
 
 logger = logging.getLogger(__name__)
+_TRUE_VALUES = {"1", "true", "yes", "on"}
 
 # Метрики для отслеживания ошибок публикации
 REST_PUBLISH_ERRORS = Counter("rest_command_errors_total", "REST command publish errors", ["error_type"])
@@ -42,7 +43,8 @@ class CommandBus:
         command_tracker: Optional[CommandTracker] = None,
         command_audit: Optional[CommandAudit] = None,
         http_timeout: float = 5.0,
-        api_circuit_breaker: Optional[CircuitBreaker] = None
+        api_circuit_breaker: Optional[CircuitBreaker] = None,
+        enforce_node_zone_assignment: Optional[bool] = None,
     ):
         """
         Инициализация Command Bus.
@@ -68,9 +70,134 @@ class CommandBus:
         self.audit = command_audit or CommandAudit()
         self.http_timeout = http_timeout
         self.api_circuit_breaker = api_circuit_breaker
+        if enforce_node_zone_assignment is None:
+            raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "0")).strip().lower()
+            self.enforce_node_zone_assignment = raw_guard in _TRUE_VALUES
+        else:
+            self.enforce_node_zone_assignment = bool(enforce_node_zone_assignment)
         
         # Долгоживущий HTTP клиент для переиспользования соединений
         self._http_client: Optional[httpx.AsyncClient] = None
+
+    async def _verify_node_zone_assignment(
+        self,
+        *,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        cmd: str,
+    ) -> bool:
+        if not self.enforce_node_zone_assignment:
+            return True
+
+        try:
+            rows = await fetch(
+                """
+                SELECT zone_id, status
+                FROM nodes
+                WHERE uid = $1
+                LIMIT 1
+                """,
+                node_uid,
+            )
+        except Exception as exc:
+            logger.error(
+                "Zone %s: failed to verify node-zone assignment for node_uid=%s: %s",
+                zone_id,
+                node_uid,
+                exc,
+                exc_info=True,
+            )
+            await send_infra_exception_alert(
+                error=exc,
+                code="infra_command_node_zone_validation_failed",
+                alert_type="Command Node-Zone Validation Failed",
+                severity="critical",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="command_bus",
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+            )
+            return False
+
+        if not rows:
+            try:
+                await create_zone_event(
+                    zone_id,
+                    "COMMAND_ZONE_NODE_MISMATCH",
+                    {
+                        "reason": "node_not_found",
+                        "expected_zone_id": zone_id,
+                        "node_uid": node_uid,
+                        "channel": channel,
+                        "cmd": cmd,
+                    },
+                )
+            except Exception:
+                logger.warning("Zone %s: failed to create COMMAND_ZONE_NODE_MISMATCH event", zone_id, exc_info=True)
+            await send_infra_alert(
+                code="infra_command_node_zone_mismatch",
+                alert_type="Command Node-Zone Mismatch",
+                message=f"Команда {cmd} отклонена: node_uid={node_uid} не найден",
+                severity="critical",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="command_bus",
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                error_type="NodeNotFound",
+                details={
+                    "reason": "node_not_found",
+                    "expected_zone_id": zone_id,
+                    "actual_zone_id": None,
+                },
+            )
+            return False
+
+        actual_zone_id = rows[0].get("zone_id")
+        if actual_zone_id is None or int(actual_zone_id) != int(zone_id):
+            try:
+                await create_zone_event(
+                    zone_id,
+                    "COMMAND_ZONE_NODE_MISMATCH",
+                    {
+                        "reason": "zone_mismatch",
+                        "expected_zone_id": zone_id,
+                        "actual_zone_id": actual_zone_id,
+                        "node_uid": node_uid,
+                        "channel": channel,
+                        "cmd": cmd,
+                    },
+                )
+            except Exception:
+                logger.warning("Zone %s: failed to create COMMAND_ZONE_NODE_MISMATCH event", zone_id, exc_info=True)
+            await send_infra_alert(
+                code="infra_command_node_zone_mismatch",
+                alert_type="Command Node-Zone Mismatch",
+                message=(
+                    f"Команда {cmd} отклонена: node_uid={node_uid} закреплен за zone_id={actual_zone_id}, "
+                    f"ожидался zone_id={zone_id}"
+                ),
+                severity="critical",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="command_bus",
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                error_type="NodeZoneMismatch",
+                details={
+                    "reason": "zone_mismatch",
+                    "expected_zone_id": zone_id,
+                    "actual_zone_id": actual_zone_id,
+                },
+            )
+            return False
+
+        return True
     
     async def start(self):
         """Инициализировать долгоживущий HTTP клиент."""
@@ -159,6 +286,35 @@ class CommandBus:
         start_time = time.time()
         
         try:
+            is_assigned = await self._verify_node_zone_assignment(
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+            )
+            if not is_assigned:
+                COMMAND_VALIDATION_FAILED.labels(zone_id=str(zone_id), reason="node_zone_mismatch").inc()
+                logger.error(
+                    "Zone %s: command validation failed - node_uid=%s is not assigned to this zone",
+                    zone_id,
+                    node_uid,
+                )
+                await record_simulation_event(
+                    zone_id,
+                    service="automation-engine",
+                    stage="command_validate",
+                    status="validation_failed",
+                    level="error",
+                    message="Команда отклонена: node_uid не привязан к зоне",
+                    payload={
+                        "node_uid": node_uid,
+                        "channel": channel,
+                        "cmd": cmd,
+                        "reason": "node_zone_mismatch",
+                    },
+                )
+                return False
+
             # Получаем trace_id из контекста логирования
             trace_id = get_trace_id()
             if cmd_id:

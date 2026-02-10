@@ -99,6 +99,7 @@ class TestSuite:
             "smoke": [
                 str(base_path / "core" / "E00_schema_smoke.yaml"),
                 str(base_path / "core" / "E00_api_smoke.yaml"),
+                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
             "core": [
                 str(base_path / "core" / "E00_schema_smoke.yaml"),
@@ -155,6 +156,7 @@ class TestSuite:
                 str(base_path / "automation_engine" / "E68_dose_ml_l_only_incomplete_profile.yaml"),
                 str(base_path / "automation_engine" / "E69_ec_batch_early_stop_tolerance.yaml"),
                 str(base_path / "automation_engine" / "E73_backoff_skip_signals.yaml"),
+                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
             "scheduler": [
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),

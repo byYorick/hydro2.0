@@ -110,5 +110,66 @@ class AlertsTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertEquals('active', $data[0]['status']);
     }
-}
 
+    public function test_filter_alerts_by_extended_fields(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create();
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'node',
+            'code' => 'node_error_sensor_timeout',
+            'type' => 'node_error',
+            'status' => 'ACTIVE',
+            'severity' => 'critical',
+            'category' => 'node',
+            'node_uid' => 'nd-test-1',
+            'hardware_id' => 'esp32-test-1',
+            'details' => ['message' => 'sensor timeout'],
+        ]);
+
+        Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_command_timeout',
+            'type' => 'Command Publish Failed',
+            'status' => 'ACTIVE',
+            'severity' => 'error',
+            'category' => 'operations',
+            'node_uid' => 'nd-test-2',
+            'hardware_id' => 'esp32-test-2',
+            'details' => ['message' => 'command timeout'],
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/alerts?source=node&severity=critical&category=node&node_uid=nd-test-1&hardware_id=esp32-test-1&q=sensor');
+
+        $resp->assertOk();
+        $data = $resp->json('data.data');
+        $this->assertCount(1, $data);
+        $this->assertSame('node_error_sensor_timeout', $data[0]['code']);
+    }
+
+    public function test_alert_catalog_endpoint_returns_codes(): void
+    {
+        $token = $this->token();
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/alerts/catalog');
+
+        $resp->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonStructure([
+                'status',
+                'data' => [
+                    'meta' => ['version', 'updated_at', 'count'],
+                    'items',
+                ],
+            ]);
+
+        $items = $resp->json('data.items');
+        $this->assertIsArray($items);
+        $this->assertGreaterThan(0, count($items));
+    }
+}

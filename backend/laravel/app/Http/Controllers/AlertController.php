@@ -3,14 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Alert;
+use App\Services\AlertCatalogService;
 use App\Services\AlertService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 class AlertController extends Controller
 {
     public function __construct(
-        private AlertService $alertService
+        private AlertService $alertService,
+        private AlertCatalogService $alertCatalogService,
     ) {}
 
     public function index(Request $request)
@@ -23,30 +26,24 @@ class AlertController extends Controller
             ], 401);
         }
 
-        // Получаем список доступных зон для пользователя
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
 
-        // Eager loading для предотвращения N+1 запросов
         $query = Alert::query()
-            ->with(['zone:id,name,status']); // Загружаем только нужные поля зоны
+            ->with(['zone:id,name,status']);
 
-        // Если запрашивается конкретная зона, проверяем доступ к ней
         if ($request->filled('zone_id')) {
             $requestedZoneId = $request->integer('zone_id');
-            // Проверяем, что запрашиваемая зона доступна пользователю
             if (! empty($accessibleZoneIds) && in_array($requestedZoneId, $accessibleZoneIds)) {
                 $query->where('zone_id', $requestedZoneId);
             } else {
-                // Если запрашиваемая зона недоступна, возвращаем пустой результат
                 $query->whereRaw('1 = 0');
             }
         } elseif (! empty($accessibleZoneIds)) {
-            // Если конкретная зона не запрашивается, фильтруем по всем доступным зонам
             $query->whereIn('zone_id', $accessibleZoneIds);
         } else {
-            // Если у пользователя нет доступа ни к одной зоне, не возвращаем алерты
             $query->whereRaw('1 = 0');
         }
+
         if ($request->filled('status')) {
             $status = strtoupper(trim($request->string('status')->toString()));
             if (in_array($status, ['ACTIVE', 'RESOLVED'], true)) {
@@ -57,11 +54,106 @@ class AlertController extends Controller
                 });
             }
         }
+
+        if ($request->filled('source')) {
+            $source = strtolower(trim($request->string('source')->toString()));
+            if (in_array($source, ['biz', 'infra', 'node'], true)) {
+                $query->whereRaw('LOWER(source) = ?', [$source]);
+            }
+        }
+
+        if ($request->filled('severity')) {
+            $severity = strtolower(trim($request->string('severity')->toString()));
+            if (in_array($severity, ['info', 'warning', 'error', 'critical'], true)) {
+                $query->whereRaw("LOWER(COALESCE(severity, '')) = ?", [$severity]);
+            }
+        }
+
+        if ($request->filled('category')) {
+            $category = strtolower(trim($request->string('category')->toString()));
+            if (in_array($category, ['agronomy', 'infrastructure', 'operations', 'node', 'config', 'safety', 'other'], true)) {
+                $query->whereRaw("LOWER(COALESCE(category, '')) = ?", [$category]);
+            }
+        }
+
+        if ($request->filled('code')) {
+            $code = strtolower(trim($request->string('code')->toString()));
+            $query->whereRaw("LOWER(COALESCE(code, '')) LIKE ?", ["%{$code}%"]);
+        }
+
+        if ($request->filled('type')) {
+            $type = strtolower(trim($request->string('type')->toString()));
+            $query->whereRaw("LOWER(COALESCE(type, '')) LIKE ?", ["%{$type}%"]);
+        }
+
+        if ($request->filled('node_uid')) {
+            $nodeUid = trim($request->string('node_uid')->toString());
+            $query->where('node_uid', $nodeUid);
+        }
+
+        if ($request->filled('hardware_id')) {
+            $hardwareId = trim($request->string('hardware_id')->toString());
+            $query->where('hardware_id', $hardwareId);
+        }
+
+        if ($request->filled('q')) {
+            $needle = trim($request->string('q')->toString());
+            $driver = DB::connection()->getDriverName();
+
+            if ($needle !== '') {
+                if ($driver === 'pgsql') {
+                    $query->where(function ($searchQuery) use ($needle) {
+                        $like = "%{$needle}%";
+                        $searchQuery
+                            ->whereRaw('code ILIKE ?', [$like])
+                            ->orWhereRaw('type ILIKE ?', [$like])
+                            ->orWhereRaw('source ILIKE ?', [$like])
+                            ->orWhereRaw("COALESCE(severity, '') ILIKE ?", [$like])
+                            ->orWhereRaw("COALESCE(category, '') ILIKE ?", [$like])
+                            ->orWhereRaw("COALESCE(node_uid, '') ILIKE ?", [$like])
+                            ->orWhereRaw("COALESCE(hardware_id, '') ILIKE ?", [$like])
+                            ->orWhereRaw('CAST(details AS TEXT) ILIKE ?', [$like]);
+                    });
+                } else {
+                    $needleLower = strtolower($needle);
+                    $query->where(function ($searchQuery) use ($needleLower) {
+                        $like = "%{$needleLower}%";
+                        $searchQuery
+                            ->whereRaw("LOWER(COALESCE(code, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(type, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(source, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(severity, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(category, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(node_uid, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(hardware_id, '')) LIKE ?", [$like])
+                            ->orWhereRaw("LOWER(COALESCE(CAST(details AS CHAR), '')) LIKE ?", [$like]);
+                    });
+                }
+            }
+        }
+
         $items = $query->orderByDesc('id')->paginate(50);
 
-        // Фильтрация по зонам уже выполнена выше через whereIn('zone_id', $accessibleZoneIds)
-        // Это гарантирует, что пользователь видит только алерты из своих зон
         return response()->json(['status' => 'ok', 'data' => $items]);
+    }
+
+    public function catalog(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'meta' => $this->alertCatalogService->metadata(),
+                'items' => $this->alertCatalogService->all(),
+            ],
+        ]);
     }
 
     public function show(Request $request, Alert $alert)
@@ -74,7 +166,6 @@ class AlertController extends Controller
             ], 401);
         }
 
-        // Проверяем доступ к зоне алерта
         if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
             return response()->json([
                 'status' => 'error',
@@ -95,7 +186,6 @@ class AlertController extends Controller
             ], 401);
         }
 
-        // Проверяем доступ к зоне алерта
         if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
             return response()->json([
                 'status' => 'error',
@@ -121,28 +211,26 @@ class AlertController extends Controller
     public function replayDlq(Request $request, int $id)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
 
-        // Проверяем наличие pending_alert в DLQ
         $pendingAlert = \Illuminate\Support\Facades\DB::table('pending_alerts')
             ->where('id', $id)
             ->where('status', 'dlq')
             ->first();
 
-        if (!$pendingAlert) {
+        if (! $pendingAlert) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Pending alert not found in DLQ',
             ], 404);
         }
 
-        // Проверяем доступ к зоне (если есть)
-        if ($pendingAlert->zone_id && !\App\Helpers\ZoneAccessHelper::canAccessZone($user, $pendingAlert->zone_id)) {
+        if ($pendingAlert->zone_id && ! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $pendingAlert->zone_id)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied',
@@ -150,7 +238,6 @@ class AlertController extends Controller
         }
 
         try {
-            // Обновляем статус обратно на pending и сбрасываем счетчик попыток
             \Illuminate\Support\Facades\DB::table('pending_alerts')
                 ->where('id', $id)
                 ->update([
@@ -162,7 +249,6 @@ class AlertController extends Controller
                     'updated_at' => now(),
                 ]);
 
-            // Создаем Job для обработки алерта
             $alertData = [
                 'zone_id' => $pendingAlert->zone_id,
                 'source' => $pendingAlert->source ?? 'biz',
@@ -178,11 +264,10 @@ class AlertController extends Controller
                 'message' => 'Alert queued for replay',
                 'data' => ['pending_alert_id' => $id],
             ], Response::HTTP_OK);
-
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to replay alert: ' . $e->getMessage(),
+                'message' => 'Failed to replay alert: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }

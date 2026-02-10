@@ -95,7 +95,7 @@ class AlertQueue:
                 CREATE TABLE IF NOT EXISTS pending_alerts (
                     id BIGSERIAL PRIMARY KEY,
                     zone_id INTEGER,
-                    source VARCHAR(16) NOT NULL CHECK (source IN ('biz', 'infra')),
+                    source VARCHAR(16) NOT NULL CHECK (source IN ('biz', 'infra', 'node')),
                     code VARCHAR(64) NOT NULL,
                     type VARCHAR(64) NOT NULL,
                     status VARCHAR(16) NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED')),
@@ -125,6 +125,22 @@ class AlertQueue:
                     ADD COLUMN IF NOT EXISTS last_error TEXT
                 """)
             except Exception:
+                pass
+
+            # Обновляем check-constraint source для поддержки node-алертов.
+            try:
+                await conn.execute(
+                    "ALTER TABLE pending_alerts DROP CONSTRAINT IF EXISTS pending_alerts_source_check"
+                )
+                await conn.execute(
+                    """
+                    ALTER TABLE pending_alerts
+                    ADD CONSTRAINT pending_alerts_source_check
+                    CHECK (source IN ('biz', 'infra', 'node'))
+                    """
+                )
+            except Exception:
+                # В старых схемах имя constraint может отличаться; не прерываем startup.
                 pass
             
             try:
