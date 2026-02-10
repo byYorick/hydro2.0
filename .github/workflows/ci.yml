@@ -277,3 +277,60 @@ jobs:
           name: playwright-report
           path: backend/laravel/playwright-report
           retention-days: 7
+
+  scheduler-chaos:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Docker info
+        run: |
+          docker --version
+          docker compose version
+      - name: Run scheduler chaos scripts
+        run: |
+          mkdir -p test-results/scheduler-chaos
+          export CHAOS_LOG_DIR="test-results/scheduler-chaos"
+
+          set +e
+          failures=0
+
+          run_chaos() {
+            local script="$1"
+            echo "[ci][chaos] running ${script}"
+            bash "${script}"
+            local rc=$?
+            if [ "${rc}" -ne 0 ]; then
+              echo "[ci][chaos][FAIL] ${script} (exit=${rc})"
+              failures=1
+            else
+              echo "[ci][chaos][PASS] ${script}"
+            fi
+          }
+
+          run_chaos tests/e2e/scheduler/scheduler_leader_failover_chaos.sh
+          run_chaos tests/e2e/scheduler/scheduler_restart_recovery_chaos.sh
+          run_chaos tests/e2e/scheduler/automation_engine_restart_recovery_chaos.sh
+
+          exit "${failures}"
+      - name: Collect scheduler chaos logs
+        if: always()
+        run: |
+          mkdir -p test-results/scheduler-chaos
+          for c in backend-db-1 backend-redis-1 backend-mqtt-1 backend-laravel-1 backend-automation-engine-1 backend-scheduler-1; do
+            docker logs "${c}" > "test-results/scheduler-chaos/${c}.log" 2>&1 || true
+          done
+          docker compose -f backend/docker-compose.dev.yml ps > test-results/scheduler-chaos/compose-ps.log 2>&1 || true
+      - name: Upload scheduler chaos logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-chaos-logs
+          path: test-results/scheduler-chaos
+          retention-days: 7
+      - name: Cleanup scheduler chaos environment
+        if: always()
+        run: docker compose -f backend/docker-compose.dev.yml down -v || true
