@@ -31,8 +31,12 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
   return null
 }
 
-export function buildGrowthCycleConfigPayload(forms: ZoneAutomationForms): Record<string, unknown> {
+export function buildGrowthCycleConfigPayload(
+  forms: ZoneAutomationForms,
+  options?: { includeSystemType?: boolean }
+): Record<string, unknown> {
   const { climateForm, waterForm, lightingForm } = forms
+  const includeSystemType = options?.includeSystemType ?? true
   const phTarget = clamp(normalizeNumber(waterForm.targetPh, 5.8), 4, 9)
   const ecTarget = clamp(normalizeNumber(waterForm.targetEc, 1.6), 0.1, 10)
 
@@ -65,7 +69,7 @@ export function buildGrowthCycleConfigPayload(forms: ZoneAutomationForms): Recor
         targets: {
           interval_minutes: clamp(Math.round(waterForm.intervalMinutes), 5, 1440),
           duration_seconds: clamp(Math.round(waterForm.durationSeconds), 1, 3600),
-          system_type: waterForm.systemType,
+          ...(includeSystemType ? { system_type: waterForm.systemType } : {}),
           tanks_count: waterForm.tanksCount,
           fill_strategy: 'volume',
           correction_strategy: 'feedback_target',

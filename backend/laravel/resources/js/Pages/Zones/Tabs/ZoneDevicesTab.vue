@@ -28,11 +28,15 @@
         :limit="5"
       />
     </div>
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+      <AutomationEngine :zone-id="zone.id" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import Button from '@/Components/Button.vue'
+import AutomationEngine from '@/Components/AutomationEngine.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
 import type { Device, Zone } from '@/types'

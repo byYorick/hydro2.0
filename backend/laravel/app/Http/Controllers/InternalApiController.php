@@ -40,7 +40,18 @@ class InternalApiController extends Controller
      *       "cycle_id": 123,
      *       "zone_id": 1,
      *       "phase": {...},
-     *       "targets": {...}
+     *       "targets": {
+     *         "...": "...",
+     *         "irrigation": {
+     *           "...": "...",
+     *           "execution": {
+     *             "node_types": ["irrigation", "irrig"],
+     *             "cmd": "run_pump",
+     *             "params": {"duration_sec": 120},
+     *             "fallback_mode": "none"
+     *           }
+     *         }
+     *       }
      *     },
      *     "2": {...},
      *     "3": null  // если нет активного цикла

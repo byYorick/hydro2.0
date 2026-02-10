@@ -61,6 +61,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment(['testing', 'e2e'])) {
+            Vite::useHotFile(storage_path('framework/vite.hot'));
+        }
+
         Vite::prefetch(concurrency: 3);
 
         // Настройка rate limiting для регистрации нод

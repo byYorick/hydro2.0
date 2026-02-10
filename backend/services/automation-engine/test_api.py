@@ -1,7 +1,9 @@
 """Tests for automation-engine REST API."""
+import asyncio
 import pytest
 import sys
 import os
+import time
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
@@ -27,35 +29,74 @@ def mock_command_bus():
 
 @pytest.fixture(autouse=True)
 def mock_api_fetch():
-    """Mock DB lookups used by scheduler API target validation."""
+    """Mock DB lookups used by scheduler task API."""
     async def _mock_fetch(query, *args):
         normalized = " ".join(str(query).split()).lower()
 
-        if "from nodes" in normalized and "where uid = $1" in normalized:
-            node_uid = args[0]
-            if node_uid == "nd-irrig-1":
-                return [{"id": 1, "zone_id": 1}]
-            if node_uid == "nd-relay-1":
-                return [{"id": 2, "zone_id": 1}]
-            if node_uid == "nd-other-zone":
-                return [{"id": 3, "zone_id": 2}]
+        if "from zones" in normalized and "where id = $1" in normalized:
+            zone_id = int(args[0])
+            if zone_id in {1, 11, 12}:
+                return [{"id": zone_id}]
             return []
 
-        if "from node_channels" in normalized and "where node_id = $1 and channel = $2" in normalized:
-            node_id, channel = args
-            valid_channels = {
-                1: {"pump_a", "default"},
-                2: {"relay_1", "default"},
-            }
-            if channel in valid_channels.get(int(node_id), set()):
-                return [{"?column?": 1}]
+        if "from scheduler_logs" in normalized and "where task_name = $1" in normalized:
+            task_name = str(args[0])
+            if task_name == "ae_scheduler_task_st-persisted":
+                return [{
+                    "status": "completed",
+                    "details": {
+                        "task_id": "st-persisted",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "completed",
+                        "created_at": "2026-02-10T00:00:00",
+                        "updated_at": "2026-02-10T00:00:05",
+                        "result": {"success": True},
+                    },
+                    "created_at": datetime(2026, 2, 10, 0, 0, 5),
+                }]
             return []
 
         return []
 
-    with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+    with patch("api.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("api.create_zone_event", new_callable=AsyncMock), \
+         patch("api.create_scheduler_log", new_callable=AsyncMock):
         mock_fetch.side_effect = _mock_fetch
         yield mock_fetch
+
+
+@pytest.fixture(autouse=True)
+def reset_scheduler_task_state():
+    api._scheduler_tasks.clear()
+    yield
+    api._scheduler_tasks.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_bootstrap_state():
+    old_enforce = api._SCHEDULER_BOOTSTRAP_ENFORCE
+    api._SCHEDULER_BOOTSTRAP_ENFORCE = True
+    api._scheduler_bootstrap_leases.clear()
+    yield
+    api._scheduler_bootstrap_leases.clear()
+    api._SCHEDULER_BOOTSTRAP_ENFORCE = old_enforce
+
+
+def bootstrap_headers(client: TestClient, scheduler_id: str = "scheduler-test") -> dict:
+    response = client.post("/scheduler/bootstrap", json={
+        "scheduler_id": scheduler_id,
+        "scheduler_version": "test",
+        "protocol_version": "2.0",
+    })
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["bootstrap_status"] == "ready"
+    lease_id = data["lease_id"]
+    return {
+        "X-Scheduler-Id": scheduler_id,
+        "X-Scheduler-Lease-Id": lease_id,
+    }
 
 
 def test_health_endpoint(client):
@@ -67,197 +108,292 @@ def test_health_endpoint(client):
     assert data["service"] == "automation-engine"
 
 
-@pytest.mark.asyncio
-async def test_scheduler_command_success(client, mock_command_bus):
-    """Test successful scheduler command."""
+def test_scheduler_command_endpoint_removed(client):
+    """Legacy device-level endpoint must not be exposed anymore."""
+    response = client.post("/scheduler/command", json={"zone_id": 1})
+    assert response.status_code == 404
+
+
+def test_scheduler_bootstrap_wait_when_command_bus_not_ready(client):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(None, "")
+        response = client.post("/scheduler/bootstrap", json={
+            "scheduler_id": "scheduler-test",
+            "scheduler_version": "test",
+            "protocol_version": "2.0",
+        })
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["bootstrap_status"] == "wait"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     mock_command_bus.publish_command = AsyncMock(return_value=True)
     set_command_bus(mock_command_bus, "gh-1")
-    
-    payload = {
-        "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "default",
-        "cmd": "run_pump",
-        "params": {"duration_ms": 60000}
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
+
+    bootstrap_response = client.post("/scheduler/bootstrap", json={
+        "scheduler_id": "scheduler-test",
+        "scheduler_version": "test",
+        "protocol_version": "2.0",
+    })
+    assert bootstrap_response.status_code == 200
+    bootstrap_data = bootstrap_response.json()["data"]
+    assert bootstrap_data["bootstrap_status"] == "ready"
+    lease_id = bootstrap_data["lease_id"]
+
+    heartbeat_response = client.post("/scheduler/bootstrap/heartbeat", json={
+        "scheduler_id": "scheduler-test",
+        "lease_id": lease_id,
+    })
+    assert heartbeat_response.status_code == 200
+    heartbeat_data = heartbeat_response.json()["data"]
+    assert heartbeat_data["bootstrap_status"] == "ready"
+    assert heartbeat_data["lease_id"] == lease_id
+
+
+def test_scheduler_internal_enqueue_creates_pending_entry(client):
+    with patch("scheduler_internal_enqueue.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
+         patch("scheduler_internal_enqueue.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+        response = client.post("/scheduler/internal/enqueue", json={
+            "zone_id": 1,
+            "task_type": "irrigation",
+            "payload": {"config": {"duration_sec": 20}},
+            "scheduled_for": "2026-02-10T10:00:00+03:00",
+            "expires_at": "2026-02-10T12:00:00+03:00",
+            "source": "automation-engine",
+        })
+
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-    assert data["data"]["zone_id"] == 1
-    assert data["data"]["node_uid"] == "nd-irrig-1"
-    assert data["data"]["channel"] == "default"
-    assert data["data"]["cmd"] == "run_pump"
-    
-    mock_command_bus.publish_command.assert_called_once_with(
-        zone_id=1,
-        node_uid="nd-irrig-1",
-        channel="default",
-        cmd="run_pump",
-        params={"duration_ms": 60000}
-    )
+    data = response.json()["data"]
+    assert data["status"] == "pending"
+    assert data["zone_id"] == 1
+    assert data["task_type"] == "irrigation"
+    assert data["scheduled_for"] == "2026-02-10T07:00:00"
+    assert data["expires_at"] == "2026-02-10T09:00:00"
+    assert data["correlation_id"].startswith("ae:self:1:irrigation:enq-")
+    mock_scheduler_log.assert_awaited_once()
+    assert mock_scheduler_log.await_args.args[1] == "pending"
+    assert mock_zone_event.await_args.args[1] == "SELF_TASK_ENQUEUED"
 
 
 @pytest.mark.asyncio
-async def test_scheduler_command_failed(client, mock_command_bus):
-    """Test scheduler command when publish fails."""
-    mock_command_bus.publish_command = AsyncMock(return_value=False)
-    set_command_bus(mock_command_bus, "gh-1")
-    
-    payload = {
-        "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "default",
-        "cmd": "run_pump"
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 500
-    assert "Failed to publish command" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_scheduler_command_not_initialized(client):
-    """Test scheduler command when CommandBus is not initialized."""
-    set_command_bus(None, "")
-    
-    payload = {
-        "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "default",
-        "cmd": "run_pump"
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 503
-    assert "CommandBus not initialized" in response.json()["detail"]
-
-
-def test_scheduler_command_validation_error(client, mock_command_bus):
-    """Test scheduler command with validation error."""
-    set_command_bus(mock_command_bus, "gh-1")
-    
-    # Missing required fields
-    payload = {
-        "zone_id": 1,
-        # Missing node_uid, channel, cmd
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 422  # Validation error
-
-
-def test_scheduler_command_invalid_zone_id(client, mock_command_bus):
-    """Test scheduler command with invalid zone_id."""
-    set_command_bus(mock_command_bus, "gh-1")
-    
-    payload = {
-        "zone_id": 0,  # Invalid: must be >= 1
-        "node_uid": "nd-irrig-1",
-        "channel": "default",
-        "cmd": "run_pump"
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 422  # Validation error
-
-
-def test_scheduler_command_empty_strings(client, mock_command_bus):
-    """Test scheduler command with empty strings."""
-    set_command_bus(mock_command_bus, "gh-1")
-    
-    payload = {
-        "zone_id": 1,
-        "node_uid": "",  # Invalid: min_length=1
-        "channel": "default",
-        "cmd": "run_pump"
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 422  # Validation error
-
-
-@pytest.mark.asyncio
-async def test_scheduler_command_exception(client, mock_command_bus):
-    """Test scheduler command when exception occurs."""
-    mock_command_bus.publish_command = AsyncMock(side_effect=Exception("Internal error"))
-    set_command_bus(mock_command_bus, "gh-1")
-    
-    payload = {
-        "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "default",
-        "cmd": "run_pump"
-    }
-    
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 500
-    assert "Internal server error" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_scheduler_command_without_params(client, mock_command_bus):
-    """Test scheduler command without params."""
+async def test_scheduler_task_success(client, mock_command_bus):
+    """Task endpoint should return accepted and expose status."""
     mock_command_bus.publish_command = AsyncMock(return_value=True)
     set_command_bus(mock_command_bus, "gh-1")
-    
+    headers = bootstrap_headers(client)
+
     payload = {
         "zone_id": 1,
-        "node_uid": "nd-relay-1",
-        "channel": "default",
-        "cmd": "set_relay"
-        # params не указан, должен использоваться default_factory=dict
+        "task_type": "diagnostics",
+        "payload": {"reason": "scheduled_check"},
+        "correlation_id": "sch:z1:diagnostics:success",
     }
-    
-    response = client.post("/scheduler/command", json=payload)
+
+    response = client.post("/scheduler/task", json=payload, headers=headers)
     assert response.status_code == 200
-    
-    mock_command_bus.publish_command.assert_called_once_with(
-        zone_id=1,
-        node_uid="nd-relay-1",
-        channel="default",
-        cmd="set_relay",
-        params={}  # Пустой dict по умолчанию
-    )
+    data = response.json()["data"]
+    assert data["status"] in {"accepted", "running", "completed"}
+    assert data["zone_id"] == 1
+    assert data["task_type"] == "diagnostics"
+    task_id = data["task_id"]
+
+    status_response = client.get(f"/scheduler/task/{task_id}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert status_data["task_id"] == task_id
+    assert status_data["task_type"] == "diagnostics"
 
 
-@pytest.mark.asyncio
-async def test_scheduler_command_rejects_node_zone_mismatch(client, mock_command_bus):
-    """Scheduler command must fail if node belongs to another zone."""
+def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
+    """Task endpoint должен пройти lifecycle accepted->running->completed и записать snapshots."""
     mock_command_bus.publish_command = AsyncMock(return_value=True)
     set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
 
-    payload = {
-        "zone_id": 1,
-        "node_uid": "nd-other-zone",
-        "channel": "default",
-        "cmd": "run_pump"
-    }
+    async def _execute(**kwargs):
+        await asyncio.sleep(0.01)
+        return {"success": True, "commands_sent": 1, "task_type": kwargs.get("task_type")}
 
-    response = client.post("/scheduler/command", json=payload)
-    assert response.status_code == 409
-    assert "assigned to zone 2" in response.json()["detail"]
-    mock_command_bus.publish_command.assert_not_called()
+    with patch("api.SchedulerTaskExecutor") as mock_executor_cls, \
+         patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
+         patch("api.create_zone_event", new_callable=AsyncMock):
+        mock_executor = mock_executor_cls.return_value
+        mock_executor.execute = AsyncMock(side_effect=_execute)
+
+        response = client.post("/scheduler/task", json={
+            "zone_id": 1,
+            "task_type": "diagnostics",
+            "payload": {"reason": "scheduled_check"},
+            "correlation_id": "sch:z1:diagnostics:lifecycle",
+        }, headers=headers)
+        assert response.status_code == 200
+        task_id = response.json()["data"]["task_id"]
+
+        terminal_status = None
+        for _ in range(30):
+            status_response = client.get(f"/scheduler/task/{task_id}")
+            assert status_response.status_code == 200
+            terminal_status = status_response.json()["data"]["status"]
+            if terminal_status in {"completed", "failed"}:
+                break
+            time.sleep(0.01)
+
+        assert terminal_status == "completed"
+        snapshots = [call.args[1] for call in mock_scheduler_log.await_args_list]
+        assert "accepted" in snapshots
+        assert "running" in snapshots
+        assert "completed" in snapshots
+        execute_kwargs = mock_executor.execute.await_args.kwargs
+        assert execute_kwargs["task_context"]["task_id"] == task_id
+        assert execute_kwargs["task_context"]["correlation_id"] == "sch:z1:diagnostics:lifecycle"
 
 
-@pytest.mark.asyncio
-async def test_scheduler_command_rejects_unknown_channel(client, mock_command_bus):
-    """Scheduler command must fail if channel is not present on node."""
-    mock_command_bus.publish_command = AsyncMock(return_value=True)
+def test_scheduler_task_validation_error(client, mock_command_bus):
+    """Task endpoint must validate task_type."""
     set_command_bus(mock_command_bus, "gh-1")
-
     payload = {
         "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "unknown_channel",
-        "cmd": "run_pump"
+        "task_type": "unknown_task",
+        "correlation_id": "sch:z1:unknown:validation",
     }
-
-    response = client.post("/scheduler/command", json=payload)
+    response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
     assert response.status_code == 422
-    assert "Channel 'unknown_channel' not found" in response.json()["detail"]
-    mock_command_bus.publish_command.assert_not_called()
+
+
+def test_scheduler_task_zone_not_found(client, mock_command_bus):
+    """Task endpoint must reject unknown zone."""
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = {
+        "zone_id": 999,
+        "task_type": "diagnostics",
+        "correlation_id": "sch:z999:diagnostics:notfound",
+    }
+    response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
+    assert response.status_code == 404
+
+
+def test_scheduler_task_requires_bootstrap_headers(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = {
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "correlation_id": "sch:z1:diagnostics:no-lease",
+    }
+    response = client.post("/scheduler/task", json=payload)
+    assert response.status_code == 403
+    assert "scheduler_bootstrap_required" in response.json()["detail"]
+
+
+def test_scheduler_task_idempotent_duplicate_returns_same_task(client, mock_command_bus):
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    payload = {
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"reason": "scheduled_check"},
+        "correlation_id": "sch:z1:diagnostics:duplicate",
+    }
+
+    first = client.post("/scheduler/task", json=payload, headers=headers)
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+    assert first_data["is_duplicate"] is False
+
+    second = client.post("/scheduler/task", json=payload, headers=headers)
+    assert second.status_code == 200
+    second_data = second.json()["data"]
+    assert second_data["is_duplicate"] is True
+    assert second_data["task_id"] == first_data["task_id"]
+
+
+def test_scheduler_task_idempotency_payload_mismatch_returns_409(client, mock_command_bus):
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    correlation_id = "sch:z1:diagnostics:mismatch"
+
+    first = client.post("/scheduler/task", json={
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"reason": "first"},
+        "correlation_id": correlation_id,
+    }, headers=headers)
+    assert first.status_code == 200
+
+    second = client.post("/scheduler/task", json={
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"reason": "second"},
+        "correlation_id": correlation_id,
+    }, headers=headers)
+    assert second.status_code == 409
+    assert "idempotency_payload_mismatch" in second.json()["detail"]
+
+
+def test_scheduler_task_status_not_found(client):
+    """Status endpoint must return 404 for unknown task."""
+    response = client.get("/scheduler/task/st-unknown")
+    assert response.status_code == 404
+
+
+def test_scheduler_task_status_reads_persisted_snapshot(client):
+    """Status endpoint should load snapshot from scheduler_logs when task is not in memory."""
+    response = client.get("/scheduler/task/st-persisted")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["task_id"] == "st-persisted"
+    assert data["status"] == "completed"
+    assert data["task_type"] == "diagnostics"
+
+
+def test_scheduler_task_status_triggers_cleanup_and_memory_limit(client):
+    """Status endpoint должен выполнять cleanup TTL и ограничение размера in-memory кэша."""
+    old_ttl = api._SCHEDULER_TASK_TTL_SECONDS
+    old_max = api._SCHEDULER_TASK_MAX_IN_MEMORY
+    try:
+        api._SCHEDULER_TASK_TTL_SECONDS = 1
+        api._SCHEDULER_TASK_MAX_IN_MEMORY = 2
+        api._scheduler_tasks.clear()
+        api._scheduler_tasks.update({
+            "st-old-1": {
+                "task_id": "st-old-1",
+                "zone_id": 1,
+                "task_type": "diagnostics",
+                "status": "running",
+                "created_at": "2026-02-10T00:00:00",
+                "updated_at": "2026-02-10T00:00:00",
+            },
+            "st-old-2": {
+                "task_id": "st-old-2",
+                "zone_id": 1,
+                "task_type": "diagnostics",
+                "status": "running",
+                "created_at": "2026-02-10T00:00:00",
+                "updated_at": "2026-02-10T00:00:01",
+            },
+            "st-new-1": {
+                "task_id": "st-new-1",
+                "zone_id": 1,
+                "task_type": "diagnostics",
+                "status": "running",
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        })
+
+        response = client.get("/scheduler/task/st-unknown-cleanup")
+        assert response.status_code == 404
+        assert len(api._scheduler_tasks) <= 2
+        assert "st-new-1" in api._scheduler_tasks
+    finally:
+        api._SCHEDULER_TASK_TTL_SECONDS = old_ttl
+        api._SCHEDULER_TASK_MAX_IN_MEMORY = old_max
 
 
 def test_test_hook_forbidden_when_test_mode_disabled(client):

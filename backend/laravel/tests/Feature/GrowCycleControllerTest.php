@@ -156,6 +156,38 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_saves_irrigation_start_parameters_in_cycle_settings(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+                'irrigation' => [
+                    'system_type' => 'nft',
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 20,
+                    'clean_tank_fill_l' => 300,
+                    'nutrient_tank_target_l' => 280,
+                ],
+            ]);
+
+        $response->assertStatus(201);
+
+        $cycle = GrowCycle::query()
+            ->where('zone_id', $this->zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($cycle);
+        $this->assertSame('nft', data_get($cycle->settings, 'subsystems.irrigation.targets.system_type'));
+        $this->assertSame(20, data_get($cycle->settings, 'subsystems.irrigation.targets.interval_minutes'));
+        $this->assertSame(20, data_get($cycle->settings, 'subsystems.irrigation.targets.duration_seconds'));
+        $this->assertSame(300, data_get($cycle->settings, 'subsystems.irrigation.targets.clean_tank_fill_l'));
+        $this->assertSame(280, data_get($cycle->settings, 'subsystems.irrigation.targets.nutrient_tank_target_l'));
+    }
+
+    #[Test]
     public function it_blocks_cycle_start_when_zone_has_no_bound_nodes(): void
     {
         $zoneWithoutNodes = Zone::factory()->create();

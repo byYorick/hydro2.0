@@ -9,7 +9,7 @@
         />
       </div>
       <ZoneOverviewTab
-        v-show="activeTab === 'overview'"
+        v-if="activeTab === 'overview'"
         :zone="zone"
         :variant="variant"
         :active-grow-cycle="activeGrowCycle"
@@ -25,7 +25,7 @@
         @force-irrigation="openActionModal('FORCE_IRRIGATION')"
       />
       <ZoneTelemetryTab
-        v-show="activeTab === 'telemetry'"
+        v-else-if="activeTab === 'telemetry'"
         :zone-id="zoneId"
         :chart-time-range="chartTimeRange"
         :chart-data-ph="chartDataPh"
@@ -35,7 +35,7 @@
         @time-range-change="onChartTimeRangeChange"
       />
       <ZoneCycleTab
-        v-show="activeTab === 'cycle'"
+        v-else-if="activeTab === 'cycle'"
         :active-grow-cycle="activeGrowCycle"
         :current-phase="currentPhase"
         :zone-status="zone.status"
@@ -59,18 +59,19 @@
         @next-phase="onNextPhase"
       />
       <ZoneAutomationTab
-        v-show="activeTab === 'automation'"
+        v-else-if="activeTab === 'automation'"
         :zone-id="zoneId"
         :targets="targets"
         :telemetry="telemetry"
+        :active-grow-cycle="activeGrowCycle"
       />
       <ZoneEventsTab
-        v-show="activeTab === 'events'"
+        v-else-if="activeTab === 'events'"
         :events="events"
         :zone-id="zoneId"
       />
       <ZoneDevicesTab
-        v-show="activeTab === 'devices'"
+        v-else-if="activeTab === 'devices'"
         :zone="zone"
         :devices="devices"
         :can-manage-devices="canManageDevices"

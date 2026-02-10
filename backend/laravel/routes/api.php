@@ -24,6 +24,7 @@ use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
+use App\Http\Controllers\SchedulerTaskController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SetupWizardController;
@@ -305,6 +306,8 @@ Route::middleware([
 
     // Commands status (viewer+)
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
+    Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
+    Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);
 
     // Alerts (viewer+)
     Route::get('alerts/catalog', [AlertController::class, 'catalog']);

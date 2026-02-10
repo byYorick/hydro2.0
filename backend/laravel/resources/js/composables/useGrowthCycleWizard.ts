@@ -61,6 +61,13 @@ export function useGrowthCycleWizard({
     zoneId: props.zoneId || null,
     startedAt: getNowLocalDatetimeValue(),
     expectedHarvestAt: "",
+    irrigation: {
+      systemType: "drip" as "drip" | "substrate_trays" | "nft",
+      intervalMinutes: 30,
+      durationSeconds: 120,
+      cleanTankFillL: 300,
+      nutrientTankTargetL: 280,
+    },
   });
 
   const availableZones = ref<any[]>([]);
@@ -169,6 +176,16 @@ export function useGrowthCycleWizard({
       now.setSeconds(0, 0);
       if (startDate < now) {
         return "Дата начала не может быть в прошлом.";
+      }
+
+      if (form.value.irrigation.intervalMinutes < 5 || form.value.irrigation.intervalMinutes > 1440) {
+        return "Интервал полива должен быть в диапазоне 5-1440 минут.";
+      }
+      if (form.value.irrigation.durationSeconds < 1 || form.value.irrigation.durationSeconds > 3600) {
+        return "Длительность полива должна быть в диапазоне 1-3600 секунд.";
+      }
+      if (form.value.irrigation.cleanTankFillL < 10 || form.value.irrigation.nutrientTankTargetL < 10) {
+        return "Объёмы баков должны быть не меньше 10 л.";
       }
     }
 
@@ -375,6 +392,19 @@ export function useGrowthCycleWizard({
             return false;
           }
         }
+
+        if (form.value.irrigation.intervalMinutes < 5 || form.value.irrigation.intervalMinutes > 1440) {
+          validationErrors.value.push("Интервал полива должен быть в диапазоне 5-1440 минут");
+          return false;
+        }
+        if (form.value.irrigation.durationSeconds < 1 || form.value.irrigation.durationSeconds > 3600) {
+          validationErrors.value.push("Длительность полива должна быть в диапазоне 1-3600 секунд");
+          return false;
+        }
+        if (form.value.irrigation.cleanTankFillL < 10 || form.value.irrigation.nutrientTankTargetL < 10) {
+          validationErrors.value.push("Объёмы баков должны быть не меньше 10 л");
+          return false;
+        }
         break;
       }
       default:
@@ -418,6 +448,7 @@ export function useGrowthCycleWizard({
         recipeRevisionId: selectedRevisionId.value,
         startedAt: form.value.startedAt,
         expectedHarvestAt: form.value.expectedHarvestAt,
+        irrigation: form.value.irrigation,
         currentStep: currentStep.value,
       };
       localStorage.setItem(getDraftStorageKey(), JSON.stringify(draft));
@@ -454,6 +485,12 @@ export function useGrowthCycleWizard({
       }
       if (draft.expectedHarvestAt) {
         form.value.expectedHarvestAt = draft.expectedHarvestAt;
+      }
+      if (draft.irrigation) {
+        form.value.irrigation = {
+          ...form.value.irrigation,
+          ...draft.irrigation,
+        };
       }
       if (draft.currentStep !== undefined) {
         currentStep.value = draft.currentStep;
@@ -492,6 +529,13 @@ export function useGrowthCycleWizard({
         plant_id: selectedPlantId.value,
         planting_at: plantingAt,
         start_immediately: true,
+        irrigation: {
+          system_type: form.value.irrigation.systemType,
+          interval_minutes: form.value.irrigation.intervalMinutes,
+          duration_seconds: form.value.irrigation.durationSeconds,
+          clean_tank_fill_l: form.value.irrigation.cleanTankFillL,
+          nutrient_tank_target_l: form.value.irrigation.nutrientTankTargetL,
+        },
         settings: {
           expected_harvest_at: form.value.expectedHarvestAt || undefined,
         },
@@ -557,6 +601,13 @@ export function useGrowthCycleWizard({
       zoneId: props.zoneId || null,
       startedAt: getNowLocalDatetimeValue(),
       expectedHarvestAt: "",
+      irrigation: {
+        systemType: "drip",
+        intervalMinutes: 30,
+        durationSeconds: 120,
+        cleanTankFillL: 300,
+        nutrientTankTargetL: 280,
+      },
     };
     selectedPlantId.value = null;
     selectedRecipeId.value = null;
@@ -596,6 +647,14 @@ export function useGrowthCycleWizard({
 
   watch(selectedRecipeId, () => {
     syncSelectedRecipe();
+  });
+
+  watch(selectedRevision, (revision) => {
+    const firstPhase = revision?.phases?.[0];
+    const intervalSec = Number(firstPhase?.irrigation_interval_sec);
+    if (Number.isFinite(intervalSec) && intervalSec > 0) {
+      form.value.irrigation.intervalMinutes = Math.max(5, Math.round(intervalSec / 60));
+    }
   });
 
   watch(availableRecipes, () => {

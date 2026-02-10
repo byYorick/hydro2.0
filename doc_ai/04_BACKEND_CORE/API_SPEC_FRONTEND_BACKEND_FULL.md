@@ -230,6 +230,58 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Тело:** `{"zone_ids": [1, 2, 3]}`
 - **Ответ:** Массив effective targets по зонам
 
+#### Контракт scheduler-task execution (обязательная структура `targets.*.execution`)
+
+`scheduler` и `automation-engine` используют `effective-targets.targets` как единый контракт
+для task-level автоматизации.
+
+Для каждого task типа допускаются ключи:
+
+- `targets.irrigation`
+- `targets.lighting`
+- `targets.ventilation`
+- `targets.solution_change`
+- `targets.mist`
+- `targets.diagnostics`
+
+Каждый из этих объектов может содержать блок `execution`:
+
+```json
+{
+  "execution": {
+    "node_types": ["irrigation", "irrig"],
+    "cmd": "run_pump",
+    "cmd_true": "light_on",
+    "cmd_false": "light_off",
+    "state_key": "desired_state",
+    "default_state": true,
+    "params": {
+      "state": true
+    },
+    "duration_sec": 120,
+    "fallback_mode": "none"
+  }
+}
+```
+
+Правила:
+- `node_types` (array<string>): типы нод для выполнения.
+- `cmd` (string): основная команда для task.
+- `cmd_true`/`cmd_false` (string): команды для state-based task (например свет).
+- `state_key` (string): имя поля в payload для выбора ветки `cmd_true/cmd_false`.
+- `default_state` (bool): значение по умолчанию, если `state_key` не задан.
+- `params` (object): дефолтные параметры команды.
+- `duration_sec` (number): дефолтная длительность; нормализуется в `duration_ms` на стороне automation-engine.
+- `fallback_mode` (enum: `none|zone_service|event_only`): поведение при отсутствии online узлов.
+
+Если `execution` отсутствует, используется встроенный mapping automation-engine.
+
+#### Контракт scheduler-schedule (рекомендуемые поля в `targets`)
+
+- `<task>.interval_sec` — интервальное расписание.
+- `<task>.times` — массив времён `HH:MM`.
+- `<task>_schedule` — альтернативный ключ расписания (строка, массив или объект с `times`).
+
 ### 5.2. POST /api/internal/realtime/telemetry-batch
 
 - **Описание:** Batched realtime ingest телеметрии для WebSocket
@@ -295,6 +347,30 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  - активный рецепт и фаза;
  - привязанные узлы и каналы;
  - последние значения ключевых метрик.
+
+### 3.5.1. GET /api/zones/{id}/scheduler-tasks
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает последние scheduler-task для зоны из `scheduler_logs`.
+- **Параметры запроса:**
+  - `limit` (1..100, default=20)
+  - `include_timeline` (bool, default=false) — при `true` добавляет `timeline[]` из `zone_events` для каждого task.
+- **Поля ответа:** `task_id`, `status`, `result`, `error`, `error_code`, `action_required`, `decision`, `reason_code`, `reason`, `source`, `lifecycle[]`, `timeline[]`.
+- **Lifecycle:** снимки статусов из `scheduler_logs` (типично `accepted/running/completed/failed`).
+- **Timeline:** task-события из `zone_events` (`TASK_STARTED`, `DECISION_MADE`, `COMMAND_DISPATCHED`, `COMMAND_FAILED`, `TASK_FINISHED`, ...),
+  фильтрация по `task_id` и/или `correlation_id`.
+
+### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId}
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает актуальный статус scheduler-task по `taskId`.
+- **Поведение:** Laravel сначала запрашивает `automation-engine /scheduler/task/{taskId}`,
+  при недоступности upstream использует fallback из `scheduler_logs`.
+- **Источник:** в `data.source` возвращается `automation_engine` или `scheduler_logs`.
+- **Дополнительно:** ответ всегда содержит:
+  - `lifecycle[]` (снимки `scheduler_logs`);
+  - `timeline[]` (детальные task-события из `zone_events`);
+  - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`.
 
 ### 3.6. POST /api/zones
 

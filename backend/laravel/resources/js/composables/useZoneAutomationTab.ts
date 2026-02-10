@@ -1,6 +1,7 @@
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import { useCommands } from '@/composables/useCommands'
+import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
@@ -23,6 +24,66 @@ export interface ZoneAutomationTabProps {
   zoneId: number | null
   targets: ZoneTargetsType | PredictionTargets
   telemetry?: ZoneTelemetry | null
+  activeGrowCycle?: { status?: string | null } | null
+}
+
+export interface SchedulerTaskLifecycleItem {
+  status: string
+  at: string | null
+  error?: string | null
+  source?: string | null
+}
+
+export interface SchedulerTaskTimelineItem {
+  event_id: string
+  event_seq?: number | null
+  event_type: string
+  type?: string | null
+  at: string | null
+  task_id?: string | null
+  correlation_id?: string | null
+  task_type?: string | null
+  action_required?: boolean | null
+  decision?: string | null
+  reason_code?: string | null
+  reason?: string | null
+  node_uid?: string | null
+  channel?: string | null
+  cmd?: string | null
+  error_code?: string | null
+  source?: string | null
+  details?: Record<string, unknown> | null
+}
+
+export interface SchedulerTaskStatus {
+  task_id: string
+  zone_id: number
+  task_type: string | null
+  status: string | null
+  created_at: string | null
+  updated_at: string | null
+  scheduled_for: string | null
+  correlation_id: string | null
+  result?: Record<string, unknown> | null
+  error?: string | null
+  error_code?: string | null
+  action_required?: boolean | null
+  decision?: string | null
+  reason_code?: string | null
+  reason?: string | null
+  source?: string | null
+  lifecycle: SchedulerTaskLifecycleItem[]
+  timeline?: SchedulerTaskTimelineItem[]
+}
+
+interface SchedulerTasksResponse {
+  status: string
+  data?: SchedulerTaskStatus[]
+}
+
+interface SchedulerTaskResponse {
+  status: string
+  data?: SchedulerTaskStatus
 }
 
 function toFiniteNumber(value: unknown): number | null {
@@ -45,12 +106,17 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const page = usePage<{ auth?: { user?: { role?: string } } }>()
   const { showToast } = useToast()
   const { sendZoneCommand } = useCommands(showToast)
+  const { get } = useApi(showToast)
 
   const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
   const canConfigureAutomation = computed(() => role.value === 'agronomist' || role.value === 'admin')
   const canOperateAutomation = computed(
     () => role.value === 'agronomist' || role.value === 'admin' || role.value === 'operator'
   )
+  const isSystemTypeLocked = computed(() => {
+    const status = String(props.activeGrowCycle?.status ?? '').toUpperCase()
+    return status === 'RUNNING' || status === 'PAUSED' || status === 'PLANNED'
+  })
 
   const climateForm = reactive<ClimateFormState>({
     enabled: true,
@@ -111,6 +177,14 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   const isApplyingProfile = ref(false)
   const lastAppliedAt = ref<string | null>(null)
+  const schedulerTaskIdInput = ref('')
+  const schedulerTaskLookupLoading = ref(false)
+  const schedulerTaskListLoading = ref(false)
+  const schedulerTaskError = ref<string | null>(null)
+  const schedulerTaskStatus = ref<SchedulerTaskStatus | null>(null)
+  const recentSchedulerTasks = ref<SchedulerTaskStatus[]>([])
+  const schedulerTasksUpdatedAt = ref<string | null>(null)
+  let schedulerTasksPollTimer: ReturnType<typeof setTimeout> | null = null
 
   const predictionTargets = computed<PredictionTargets>(() => {
     const targets = props.targets
@@ -151,6 +225,112 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const profileStorageKey = computed(() => {
     return props.zoneId ? `zone:${props.zoneId}:automation-profile:v2` : null
   })
+
+  function normalizeTaskId(rawValue?: string): string {
+    const source = typeof rawValue === 'string' ? rawValue : schedulerTaskIdInput.value
+    return source.trim()
+  }
+
+  function schedulerTaskStatusVariant(status: string | null | undefined): 'success' | 'warning' | 'danger' | 'info' | 'secondary' {
+    const normalized = String(status ?? '').toLowerCase()
+    if (normalized === 'completed' || normalized === 'done') return 'success'
+    if (normalized === 'failed' || normalized === 'error' || normalized === 'rejected' || normalized === 'timeout') return 'danger'
+    if (normalized === 'running') return 'warning'
+    if (normalized === 'accepted' || normalized === 'queued') return 'info'
+
+    return 'secondary'
+  }
+
+  function schedulerTaskStatusLabel(status: string | null | undefined): string {
+    const normalized = String(status ?? '').toLowerCase()
+    if (normalized === 'accepted') return 'Принята'
+    if (normalized === 'running') return 'Выполняется'
+    if (normalized === 'completed' || normalized === 'done') return 'Выполнена'
+    if (normalized === 'failed') return 'Ошибка'
+    if (normalized === 'timeout') return 'Таймаут'
+    if (normalized === 'rejected') return 'Отклонена'
+
+    return status ? String(status) : 'Неизвестно'
+  }
+
+  function schedulerTaskEventLabel(eventType: string | null | undefined): string {
+    const normalized = String(eventType ?? '').toUpperCase()
+    if (normalized === 'TASK_RECEIVED') return 'Задача получена'
+    if (normalized === 'TASK_STARTED') return 'Выполнение начато'
+    if (normalized === 'DECISION_MADE') return 'Решение принято'
+    if (normalized === 'COMMAND_DISPATCHED') return 'Команда отправлена'
+    if (normalized === 'COMMAND_FAILED') return 'Ошибка отправки команды'
+    if (normalized === 'TASK_FINISHED') return 'Задача завершена'
+    if (normalized === 'CYCLE_START_INITIATED') return 'Запуск цикла инициирован'
+    if (normalized === 'NODES_AVAILABILITY_CHECKED') return 'Проверена доступность нод'
+    if (normalized === 'TANK_LEVEL_CHECKED') return 'Проверен уровень бака'
+    if (normalized === 'TANK_REFILL_STARTED') return 'Запущено наполнение бака'
+    if (normalized === 'TANK_REFILL_COMPLETED') return 'Наполнение бака завершено'
+    if (normalized === 'TANK_REFILL_TIMEOUT') return 'Таймаут наполнения бака'
+    if (normalized === 'SELF_TASK_ENQUEUED') return 'Запланирована отложенная проверка'
+    if (normalized === 'SELF_TASK_DISPATCHED') return 'Отложенная задача отправлена'
+    if (normalized === 'SELF_TASK_DISPATCH_FAILED') return 'Отложенная задача не отправлена'
+    if (normalized === 'SELF_TASK_EXPIRED') return 'Отложенная задача просрочена'
+    if (normalized === 'SCHEDULE_TASK_ACCEPTED') return 'Scheduler: задача принята'
+    if (normalized === 'SCHEDULE_TASK_COMPLETED') return 'Scheduler: задача завершена'
+    if (normalized === 'SCHEDULE_TASK_FAILED') return 'Scheduler: задача завершилась с ошибкой'
+
+    return eventType ? String(eventType) : 'Событие'
+  }
+
+  function schedulerTaskDecisionLabel(decision: string | null | undefined): string {
+    const normalized = String(decision ?? '').toLowerCase()
+    if (normalized === 'execute') return 'Выполнить'
+    if (normalized === 'skip') return 'Пропустить'
+    return decision ? String(decision) : '-'
+  }
+
+  function schedulerTaskReasonLabel(reasonCode: string | null | undefined, reasonText?: string | null): string {
+    const normalized = String(reasonCode ?? '').trim().toLowerCase()
+    if (!normalized) return reasonText ? String(reasonText) : '-'
+
+    const reasonMap: Record<string, string> = {
+      required_nodes_checked: 'Проверка обязательных нод выполнена',
+      tank_level_checked: 'Проверка уровня бака выполнена',
+      tank_refill_required: 'Требуется наполнение бака',
+      tank_refill_started: 'Наполнение бака запущено',
+      tank_refill_in_progress: 'Наполнение бака в процессе',
+      tank_refill_completed: 'Наполнение бака завершено',
+      tank_refill_not_required: 'Наполнение бака не требуется',
+      cycle_start_blocked_nodes_unavailable: 'Старт цикла заблокирован: недоступны обязательные ноды',
+      cycle_start_tank_level_unavailable: 'Старт цикла заблокирован: нет данных уровня бака',
+      cycle_start_refill_timeout: 'Таймаут наполнения бака',
+      cycle_start_refill_command_failed: 'Ошибка отправки команды наполнения бака',
+      cycle_start_self_task_enqueue_failed: 'Не удалось запланировать отложенную проверку',
+      lighting_already_in_target_state: 'Свет уже в целевом состоянии',
+    }
+    if (reasonMap[normalized]) return `${reasonMap[normalized]} (${normalized})`
+    if (normalized.endsWith('_not_required')) return `Действие не требуется (${normalized})`
+    if (normalized.endsWith('_required')) return `Действие требуется (${normalized})`
+    return reasonText ? `${reasonText} (${normalized})` : normalized
+  }
+
+  function schedulerTaskErrorLabel(errorCode: string | null | undefined, errorText?: string | null): string {
+    const normalized = String(errorCode ?? '').trim().toLowerCase()
+    if (!normalized) return errorText ? String(errorText) : '-'
+
+    const errorMap: Record<string, string> = {
+      command_publish_failed: 'Ошибка отправки команды',
+      mapping_not_found: 'Конфигурация команды не найдена',
+      no_online_nodes: 'Нет online-нод для выполнения',
+      cycle_start_required_nodes_unavailable: 'Недоступны обязательные ноды для старта цикла',
+      cycle_start_tank_level_unavailable: 'Нет телеметрии уровня бака',
+      cycle_start_refill_timeout: 'Таймаут наполнения бака',
+      cycle_start_refill_node_not_found: 'Не найден узел для наполнения бака',
+      cycle_start_refill_command_failed: 'Команда наполнения бака не отправлена',
+      cycle_start_self_task_enqueue_failed: 'Не удалось запланировать self-task',
+      command_bus_unavailable: 'CommandBus недоступен',
+      execution_exception: 'Исключение во время выполнения задачи',
+      task_execution_failed: 'Задача завершилась с ошибкой',
+    }
+    if (errorMap[normalized]) return `${errorMap[normalized]} (${normalized})`
+    return errorText ? `${errorText} (${normalized})` : normalized
+  }
 
   watch(
     () => waterForm.systemType,
@@ -209,7 +389,31 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   onMounted(() => {
     loadProfileFromStorage()
     applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
+    void fetchRecentSchedulerTasks()
+    if (import.meta.env.MODE !== 'test') {
+      void pollSchedulerTasksCycle()
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+      }
+    }
   })
+
+  onUnmounted(() => {
+    clearSchedulerTasksPollTimer()
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  })
+
+  watch(
+    () => props.zoneId,
+    () => {
+      schedulerTaskStatus.value = null
+      schedulerTaskError.value = null
+      void fetchRecentSchedulerTasks()
+      scheduleSchedulerTasksPoll()
+    }
+  )
 
   watch(
     () => props.targets,
@@ -219,29 +423,84 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     { deep: true }
   )
 
-  async function applyAutomationProfile(): Promise<void> {
-    if (!props.zoneId || isApplyingProfile.value) return
+  async function fetchRecentSchedulerTasks(): Promise<void> {
+    if (!props.zoneId) {
+      recentSchedulerTasks.value = []
+      return
+    }
+
+    schedulerTaskListLoading.value = true
+    schedulerTaskError.value = null
+    try {
+      const response = await get<SchedulerTasksResponse>(`/api/zones/${props.zoneId}/scheduler-tasks`, {
+        params: { limit: 20 },
+      })
+
+      const items = Array.isArray(response.data?.data) ? response.data.data : []
+      recentSchedulerTasks.value = items
+      schedulerTasksUpdatedAt.value = new Date().toISOString()
+    } catch (error) {
+      logger.warn('[ZoneAutomationTab] Failed to fetch scheduler tasks', { error, zoneId: props.zoneId })
+      schedulerTaskError.value = 'Не удалось получить список scheduler-задач.'
+    } finally {
+      schedulerTaskListLoading.value = false
+    }
+  }
+
+  async function lookupSchedulerTask(taskIdRaw?: string): Promise<void> {
+    if (!props.zoneId) return
+
+    const taskId = normalizeTaskId(taskIdRaw)
+    if (!taskId) {
+      schedulerTaskStatus.value = null
+      schedulerTaskError.value = 'Укажите task_id вида st-...'
+      return
+    }
+
+    schedulerTaskLookupLoading.value = true
+    schedulerTaskError.value = null
+    try {
+      const response = await get<SchedulerTaskResponse>(`/api/zones/${props.zoneId}/scheduler-tasks/${encodeURIComponent(taskId)}`)
+      schedulerTaskStatus.value = response.data?.data ?? null
+      schedulerTaskIdInput.value = taskId
+    } catch (error: any) {
+      logger.warn('[ZoneAutomationTab] Failed to lookup scheduler task', { error, zoneId: props.zoneId, taskId })
+      schedulerTaskStatus.value = null
+      schedulerTaskError.value = error?.response?.data?.message ?? 'Не удалось получить статус задачи.'
+    } finally {
+      schedulerTaskLookupLoading.value = false
+      scheduleSchedulerTasksPoll()
+    }
+  }
+
+  async function applyAutomationProfile(): Promise<boolean> {
+    if (!props.zoneId || isApplyingProfile.value) return false
 
     if (!canConfigureAutomation.value) {
       showToast('Изменение профиля доступно только агроному.', 'warning')
-      return
+      return false
     }
 
     const validationError = validateForms({ climateForm, waterForm })
     if (validationError) {
       showToast(validationError, 'error')
-      return
+      return false
     }
 
     isApplyingProfile.value = true
 
     try {
-      const payload = buildGrowthCycleConfigPayload({ climateForm, waterForm, lightingForm })
+      const payload = buildGrowthCycleConfigPayload(
+        { climateForm, waterForm, lightingForm },
+        { includeSystemType: !isSystemTypeLocked.value }
+      )
       await sendZoneCommand(props.zoneId, 'GROWTH_CYCLE_CONFIG', payload)
       lastAppliedAt.value = new Date().toISOString()
       showToast('Профиль автоматики отправлен в scheduler.', 'success')
+      return true
     } catch (error) {
       logger.error('[ZoneAutomationTab] Failed to apply automation profile', { error })
+      return false
     } finally {
       isApplyingProfile.value = false
     }
@@ -326,10 +585,56 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     return new Date(value).toLocaleString('ru-RU')
   }
 
+  function clearSchedulerTasksPollTimer(): void {
+    if (schedulerTasksPollTimer) {
+      clearTimeout(schedulerTasksPollTimer)
+      schedulerTasksPollTimer = null
+    }
+  }
+
+  function hasActiveSchedulerTask(): boolean {
+    const isActive = (status: string | null | undefined): boolean => {
+      const normalized = String(status ?? '').toLowerCase()
+      return normalized === 'accepted' || normalized === 'running' || normalized === 'queued'
+    }
+
+    if (isActive(schedulerTaskStatus.value?.status)) return true
+    return recentSchedulerTasks.value.some((task) => isActive(task.status))
+  }
+
+  function getSchedulerPollDelayMs(): number {
+    return hasActiveSchedulerTask() ? 3000 : 15000
+  }
+
+  function scheduleSchedulerTasksPoll(): void {
+    if (import.meta.env.MODE === 'test') return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+
+    clearSchedulerTasksPollTimer()
+    schedulerTasksPollTimer = setTimeout(() => {
+      void pollSchedulerTasksCycle()
+    }, getSchedulerPollDelayMs())
+  }
+
+  async function pollSchedulerTasksCycle(): Promise<void> {
+    await fetchRecentSchedulerTasks()
+    scheduleSchedulerTasksPoll()
+  }
+
+  function handleVisibilityChange(): void {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState === 'visible') {
+      void pollSchedulerTasksCycle()
+      return
+    }
+    clearSchedulerTasksPollTimer()
+  }
+
   return {
     role,
     canConfigureAutomation,
     canOperateAutomation,
+    isSystemTypeLocked,
     climateForm,
     waterForm,
     lightingForm,
@@ -346,6 +651,21 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     runManualLighting,
     runManualPh,
     runManualEc,
+    schedulerTaskIdInput,
+    schedulerTaskLookupLoading,
+    schedulerTaskListLoading,
+    schedulerTaskError,
+    schedulerTaskStatus,
+    recentSchedulerTasks,
+    schedulerTasksUpdatedAt,
+    fetchRecentSchedulerTasks,
+    lookupSchedulerTask,
+    schedulerTaskStatusVariant,
+    schedulerTaskStatusLabel,
+    schedulerTaskEventLabel,
+    schedulerTaskDecisionLabel,
+    schedulerTaskReasonLabel,
+    schedulerTaskErrorLabel,
     formatDateTime,
   }
 }

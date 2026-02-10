@@ -11,7 +11,7 @@ import httpx
 import state
 from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
-from common.infra_alerts import send_infra_alert
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from common.simulation_events import record_simulation_event_throttled
 from common.redis_queue import TelemetryQueueItem
 from common.utils.time import utcnow
@@ -61,6 +61,10 @@ _cache_last_update = 0.0
 _cache_ttl = 60.0
 _anomaly_alert_last_sent: dict[str, float] = {}
 _anomaly_alert_throttle_sec = float(os.getenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "300"))
+_anomaly_resolved_last_sent: dict[str, float] = {}
+_anomaly_resolved_throttle_sec = float(
+    os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300")
+)
 
 # Backoff состояние для telemetry broadcast
 _broadcast_error_count = 0
@@ -271,6 +275,56 @@ async def _emit_telemetry_anomaly_alert(
     )
     if sent:
         _anomaly_alert_last_sent[throttle_key] = now
+
+
+async def _emit_telemetry_anomaly_resolved_alert(
+    *,
+    code: str,
+    message: str,
+    zone_id: int,
+    gh_uid: Optional[str] = None,
+    zone_uid: Optional[str] = None,
+    node_uid: Optional[str] = None,
+    channel: Optional[str] = None,
+    metric_type: Optional[str] = None,
+) -> None:
+    throttle_key = "|".join(
+        [
+            "resolved",
+            code,
+            str(zone_id),
+            node_uid or "-",
+        ]
+    )
+    now = time.time()
+    last_sent = _anomaly_resolved_last_sent.get(throttle_key)
+    if last_sent and (now - last_sent) < _anomaly_resolved_throttle_sec:
+        return
+
+    details = {
+        "gh_uid": gh_uid,
+        "zone_uid": zone_uid,
+        "node_uid": node_uid,
+        "channel": channel,
+        "metric_type": metric_type,
+        "throttle_key": throttle_key,
+        "throttle_sec": _anomaly_resolved_throttle_sec,
+    }
+    details = {k: v for k, v in details.items() if v is not None}
+
+    sent = await send_infra_resolved_alert(
+        code=code,
+        alert_type="Telemetry Anomaly",
+        message=message,
+        zone_id=zone_id,
+        service="history-logger",
+        component="telemetry_processing",
+        node_uid=node_uid,
+        channel=channel,
+        details=details,
+    )
+    if sent:
+        _anomaly_resolved_last_sent[throttle_key] = now
 
 
 async def _enqueue_realtime_update(key: tuple, update: dict) -> None:
@@ -1104,6 +1158,9 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     )
 
     resolved_samples: list[dict] = []
+    node_unassigned_recovery_candidates: dict[
+        tuple[int, str], TelemetrySampleModel
+    ] = {}
     zone_ids_for_greenhouse: set[int] = set()
 
     for sample in samples:
@@ -1260,10 +1317,24 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 "node_id": node_id,
             }
         )
+        if sample.node_uid:
+            node_unassigned_recovery_candidates[(zone_id, sample.node_uid)] = sample
         zone_ids_for_greenhouse.add(zone_id)
 
     if not resolved_samples:
         return
+
+    for (zone_id, _), recovery_sample in node_unassigned_recovery_candidates.items():
+        await _emit_telemetry_anomaly_resolved_alert(
+            code="infra_telemetry_node_unassigned",
+            message="Telemetry processing recovered: node is assigned to zone",
+            zone_id=zone_id,
+            gh_uid=recovery_sample.gh_uid,
+            zone_uid=recovery_sample.zone_uid,
+            node_uid=recovery_sample.node_uid,
+            channel=recovery_sample.channel,
+            metric_type=recovery_sample.metric_type,
+        )
 
     missing_zone_ids = [
         zone_id

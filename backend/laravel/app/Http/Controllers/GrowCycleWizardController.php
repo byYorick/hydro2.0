@@ -139,6 +139,7 @@ class GrowCycleWizardController extends Controller
                             'ec_target' => $phase->ec_target,
                             'ec_min' => $phase->ec_min,
                             'ec_max' => $phase->ec_max,
+                            'irrigation_interval_sec' => $phase->irrigation_interval_sec,
                             'temp_air_target' => $phase->temp_air_target,
                             'humidity_target' => $phase->humidity_target,
                             'co2_target' => $phase->co2_target,

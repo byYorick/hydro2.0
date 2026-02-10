@@ -15,6 +15,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
 
 class ZoneCommandController extends Controller
 {
@@ -80,6 +81,23 @@ class ZoneCommandController extends Controller
                         'can_start_anyway' => true,
                     ],
                 ], 422);
+            }
+        }
+
+        if (($data['type'] ?? '') === 'GROWTH_CYCLE_CONFIG' && ($data['params']['mode'] ?? '') === 'adjust') {
+            $activeCycle = $this->findActiveCycle($zone);
+            if ($activeCycle) {
+                $requestedSystemType = Arr::get($data, 'params.subsystems.irrigation.targets.system_type');
+                if (is_string($requestedSystemType) && $requestedSystemType !== '') {
+                    $currentSystemType = Arr::get($activeCycle->settings ?? [], 'subsystems.irrigation.targets.system_type');
+                    if (!is_string($currentSystemType) || $currentSystemType !== $requestedSystemType) {
+                        return response()->json([
+                            'status' => 'error',
+                            'code' => 'SYSTEM_TYPE_LOCKED',
+                            'message' => 'Тип системы нельзя изменять в активном цикле. Он задаётся только при старте.',
+                        ], 422);
+                    }
+                }
             }
         }
 
@@ -191,6 +209,15 @@ class ZoneCommandController extends Controller
         return $exception->getMessage();
     }
 
+    private function findActiveCycle(Zone $zone): ?GrowCycle
+    {
+        return GrowCycle::query()
+            ->where('zone_id', $zone->id)
+            ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
+            ->latest('started_at')
+            ->first();
+    }
+
     /**
      * Логирование команды в историю зоны через ZoneEvent.
      *
@@ -237,11 +264,7 @@ class ZoneCommandController extends Controller
                 }
             } elseif ($mode === 'adjust') {
                 // Обновляем текущий активный цикл (если есть)
-                $activeCycle = GrowCycle::query()
-                    ->where('zone_id', $zone->id)
-                    ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
-                    ->latest('started_at')
-                    ->first();
+                $activeCycle = $this->findActiveCycle($zone);
 
                 if ($activeCycle && $subsystems) {
                     // Обновляем settings цикла с subsystems

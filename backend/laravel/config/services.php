@@ -51,6 +51,11 @@ return [
         'token' => env('HISTORY_LOGGER_API_TOKEN') ?? env('PY_INGEST_TOKEN'), // Токен для аутентификации
     ],
 
+    'automation_engine' => [
+        'api_url' => env('AUTOMATION_ENGINE_API_URL', 'http://automation-engine:9405'),
+        'timeout' => env('AUTOMATION_ENGINE_API_TIMEOUT_SEC', 2.0),
+    ],
+
     'digital_twin' => [
         'url' => env('DIGITAL_TWIN_URL', 'http://digital-twin:8003'),
     ],

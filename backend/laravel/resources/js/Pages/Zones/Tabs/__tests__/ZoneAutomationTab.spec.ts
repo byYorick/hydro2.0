@@ -51,6 +51,69 @@ vi.mock('@/composables/useCommands', () => ({
   }),
 }))
 
+vi.mock('@/composables/useApi', () => ({
+  useApi: () => ({
+    get: vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/scheduler-tasks/')) {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              task_id: 'st-test',
+              zone_id: 42,
+              task_type: 'irrigation',
+              status: 'completed',
+              created_at: '2026-02-10T08:00:00Z',
+              updated_at: '2026-02-10T08:01:00Z',
+              scheduled_for: null,
+              correlation_id: null,
+              decision: 'execute',
+              reason_code: 'tank_refill_started',
+              error_code: null,
+              lifecycle: [
+                { status: 'accepted', at: '2026-02-10T08:00:00Z' },
+                { status: 'completed', at: '2026-02-10T08:01:00Z' },
+              ],
+              timeline: [
+                {
+                  event_id: 'evt-1',
+                  event_type: 'CYCLE_START_INITIATED',
+                  at: '2026-02-10T08:00:00Z',
+                },
+                {
+                  event_id: 'evt-2',
+                  event_type: 'TANK_LEVEL_CHECKED',
+                  reason_code: 'tank_level_checked',
+                  at: '2026-02-10T08:00:30Z',
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({
+        data: {
+          status: 'ok',
+          data: [
+            {
+              task_id: 'st-recent',
+              zone_id: 42,
+              task_type: 'lighting',
+              status: 'running',
+              created_at: '2026-02-10T07:59:00Z',
+              updated_at: '2026-02-10T08:00:00Z',
+              scheduled_for: null,
+              correlation_id: null,
+              lifecycle: [],
+            },
+          ],
+        },
+      })
+    }),
+  }),
+}))
+
 vi.mock('@/utils/logger', () => ({
   logger: {
     warn: vi.fn(),
@@ -177,5 +240,55 @@ describe('ZoneAutomationTab.vue', () => {
 
     const vm = wrapper.vm as any
     expect(vm.telemetryLabel).toBe('24.4°C / 58%')
+  })
+
+  it('блокирует изменение system_type при активном цикле', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        activeGrowCycle: { status: 'RUNNING' } as any,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect(vm.isSystemTypeLocked).toBe(true)
+    expect(wrapper.text()).toContain('Тип системы зафиксирован для активного цикла.')
+  })
+
+  it('показывает lifecycle scheduler-task и открывает задачу из списка', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Scheduler Task Lifecycle')
+    expect(wrapper.text()).toContain('st-recent')
+    expect(wrapper.text()).toContain('Выполняется')
+
+    const openButton = wrapper.findAll('button').find((btn) => btn.text() === 'Открыть')
+    expect(openButton).toBeTruthy()
+
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('st-test')
+    expect(wrapper.text()).toContain('Решение автоматики')
+    expect(wrapper.text()).toContain('Выполнить')
+    expect(wrapper.text()).toContain('Запуск цикла инициирован')
+    expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
+    expect(wrapper.text()).toContain('tank_level_checked')
   })
 })

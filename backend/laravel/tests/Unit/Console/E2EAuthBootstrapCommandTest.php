@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Console;
 
+use App\Models\Greenhouse;
 use App\Models\User;
+use App\Models\Zone;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -101,5 +103,26 @@ class E2EAuthBootstrapCommandTest extends TestCase
         $this->assertNotNull($user);
         $this->assertEquals($role, $user->role);
     }
-}
 
+    public function test_can_bootstrap_e2e_zone_fixture(): void
+    {
+        Zone::query()->where('uid', 'e2e-zone-main')->delete();
+        Greenhouse::query()->where('uid', 'e2e-gh-main')->delete();
+
+        Artisan::call('e2e:auth-bootstrap', [
+            '--email' => 'agronomist@example.com',
+            '--role' => 'admin',
+            '--with-zone' => true,
+        ]);
+
+        $this->assertDatabaseHas('greenhouses', [
+            'uid' => 'e2e-gh-main',
+            'name' => 'E2E Greenhouse',
+        ]);
+        $this->assertDatabaseHas('zones', [
+            'uid' => 'e2e-zone-main',
+            'name' => 'E2E Zone',
+            'status' => 'online',
+        ]);
+    }
+}

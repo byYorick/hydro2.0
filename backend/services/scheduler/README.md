@@ -1,49 +1,55 @@
 # Scheduler Service
 
-Планировщик поливов и освещения с интеграцией через automation-engine REST API.
+Планировщик расписаний зоны (planner-only режим).
 
-## Описание
+## Роль сервиса
 
-Scheduler читает расписания из Laravel API `effective-targets` (GrowCycle) и публикует команды через automation-engine REST API.
+`Scheduler` больше не отправляет device-level команды и не выполняет safety/аварийный контроль.
 
-## Функционал
+Сервис делает только 2 вещи:
+- формирует расписания из `effective-targets` Laravel API;
+- отправляет в `automation-engine` **абстрактные задачи** и ждёт статусы `accepted/completed|failed`.
 
-- Чтение расписаний из `effective-targets.targets`:
-  - `irrigation_schedule` / `irrigation`: расписание и параметры поливов
-  - `lighting` (`photoperiod_hours`, `start_time`) и `lighting_schedule`: окно освещения (например, `"06:00-22:00"`)
-- Публикация команд через automation-engine REST API
-- Мониторинг безопасности насосов (защита от сухого хода)
-- Проверка уровня воды перед поливом
-- Расчет объема полива
+## Поддерживаемые типы задач
 
-## Архитектура команд
+- `irrigation` — полив по расписанию
+- `lighting` — свет по расписанию
+- `ventilation` — проветривание по расписанию
+- `solution_change` — смена раствора по расписанию
+- `mist` — туман по расписанию
+- `diagnostics` — диагностика системы по расписанию
+
+## Контракт
 
 ```
-Scheduler → REST API (automation-engine:9405) → automation-engine → REST API (history-logger:9300) → history-logger → MQTT → Ноды
+Scheduler -> POST /scheduler/bootstrap (automation-engine)
+Scheduler -> POST /scheduler/bootstrap/heartbeat (automation-engine)
+Scheduler -> POST /scheduler/task (automation-engine, with lease headers)
+Scheduler <- GET  /scheduler/task/{task_id} (status polling)
 ```
 
-**Важно:** Scheduler **не публикует команды напрямую в MQTT**. Все команды проходят через automation-engine и history-logger.
+Примечания:
+- dispatch задач выполняется только после `bootstrap_status=ready`;
+- каждое `POST /scheduler/task` отправляет обязательный `correlation_id` для идемпотентности.
 
 ## Метрики Prometheus
 
-Метрики доступны на порту 9402 (`/metrics`):
+Порт `9402`:
 
-- `schedule_executions_total{zone_id, task_type}` - выполненные расписания
-- `active_schedules` - количество активных расписаний
-- `scheduler_command_rest_errors_total{error_type}` - ошибки REST запросов к automation-engine
+- `schedule_executions_total{zone_id,task_type}`
+- `active_schedules`
+- `scheduler_command_rest_errors_total{error_type}`
+- `scheduler_diagnostics_total{reason}`
+- `scheduler_task_status_total{task_type,status}`
 
 ## Конфигурация
 
-### Переменные окружения
+- `AUTOMATION_ENGINE_URL` (default: `http://automation-engine:9405`)
+- `SCHEDULER_TASK_TIMEOUT_SEC` (default: `30`)
+- `SCHEDULER_TASK_POLL_INTERVAL_SEC` (default: `1.0`)
 
-- `AUTOMATION_ENGINE_URL` - URL automation-engine (по умолчанию: `http://automation-engine:9405`)
-- `PG_HOST`, `PG_PORT`, `PG_DB`, `PG_USER`, `PG_PASS` - настройки PostgreSQL
-- `MQTT_HOST`, `MQTT_PORT` - настройки MQTT (только для чтения статуса, опционально)
-
-## Тестирование
+## Тесты
 
 ```bash
-pytest scheduler/test_main.py -v
+pytest -q test_main.py
 ```
-
-**Покрытие:** 9 тестов, включая тесты REST интеграции.

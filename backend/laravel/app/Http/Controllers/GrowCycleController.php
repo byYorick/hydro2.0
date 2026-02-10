@@ -389,6 +389,14 @@ class GrowCycleController extends Controller
             'batch_label' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
             'start_immediately' => ['nullable', 'boolean'],
+            'settings' => ['nullable', 'array'],
+            'settings.expected_harvest_at' => ['nullable', 'date'],
+            'irrigation' => ['nullable', 'array'],
+            'irrigation.system_type' => ['nullable', 'string', 'in:drip,substrate_trays,nft'],
+            'irrigation.interval_minutes' => ['nullable', 'integer', 'min:5', 'max:1440'],
+            'irrigation.duration_seconds' => ['nullable', 'integer', 'min:1', 'max:3600'],
+            'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
+            'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
         ]);
 
         $zone->loadMissing('nodes.channels');

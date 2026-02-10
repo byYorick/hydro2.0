@@ -1051,6 +1051,11 @@ async def main():
                         command_bus, 
                         pid_state_manager
                     )
+                    try:
+                        from api import set_zone_service
+                        set_zone_service(_zone_service)
+                    except ImportError:
+                        logger.warning("API module not available, scheduler task executor fallback is disabled")
                     
                     # Get active zones with recipes через Circuit Breaker
                     try:

@@ -2,17 +2,29 @@
 FastAPI endpoints для automation-engine.
 Предоставляет REST API для scheduler и других сервисов.
 """
-from fastapi import FastAPI, HTTPException, Body, Request
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+import asyncio
+import hashlib
+import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException, Body, Request
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, Literal, Tuple
+
 from infrastructure import CommandBus
 from common.infra_alerts import send_infra_exception_alert
-from common.db import fetch
+from common.db import fetch, create_scheduler_log, create_zone_event
 from common.trace_context import extract_trace_id_from_headers
-from utils.logging_context import set_trace_id
+from utils.logging_context import set_trace_id, get_trace_id
+from scheduler_task_executor import SchedulerTaskExecutor
+from scheduler_internal_enqueue import (
+    SUPPORTED_SCHEDULER_TASK_TYPES,
+    enqueue_internal_scheduler_task,
+    parse_iso_datetime as parse_enqueue_iso_datetime,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +46,19 @@ async def trace_middleware(request: Request, call_next):
 # Глобальные переменные для доступа к CommandBus
 _command_bus: Optional[CommandBus] = None
 _gh_uid: str = ""
+_zone_service: Optional[Any] = None
+_scheduler_tasks: Dict[str, Dict[str, Any]] = {}
+_scheduler_tasks_lock = asyncio.Lock()
+_SCHEDULER_TASK_TTL_SECONDS = max(60, int(os.getenv("SCHEDULER_TASK_TTL_SECONDS", "3600")))
+_SCHEDULER_TASK_MAX_IN_MEMORY = max(100, int(os.getenv("SCHEDULER_TASK_MAX_IN_MEMORY", "5000")))
+_SCHEDULER_DEDUPE_WINDOW_SEC = max(60, int(os.getenv("SCHEDULER_DEDUPE_WINDOW_SEC", "86400")))
+_SCHEDULER_TASK_TYPES = set(SUPPORTED_SCHEDULER_TASK_TYPES)
+_SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC = max(10, int(os.getenv("SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC", "60")))
+_SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC", "5")))
+_SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC", "30")))
+_SCHEDULER_BOOTSTRAP_ENFORCE = os.getenv("SCHEDULER_BOOTSTRAP_ENFORCE", "1") == "1"
+_scheduler_bootstrap_leases: Dict[str, Dict[str, Any]] = {}
+_scheduler_bootstrap_lock = asyncio.Lock()
 
 # Test hooks для детерминированных ошибок (только в test mode)
 _test_mode = os.getenv("AE_TEST_MODE", "0") == "1"
@@ -41,149 +66,647 @@ _test_hooks: Dict[str, Dict[str, Any]] = {}  # zone_id -> {controller: error_typ
 _zone_states_override: Dict[int, Dict[str, Any]] = {}  # zone_id -> {error_streak: int, next_allowed_run_at: datetime}
 
 
-def set_command_bus(command_bus: CommandBus, gh_uid: str):
+def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str):
     """Установить CommandBus для использования в endpoints."""
     global _command_bus, _gh_uid
     _command_bus = command_bus
     _gh_uid = gh_uid
 
 
-async def _validate_scheduler_target(zone_id: int, node_uid: str, channel: str) -> None:
-    """Fail-closed проверка принадлежности ноды зоне для scheduler-команд."""
+def set_zone_service(zone_service: Any) -> None:
+    """Установить ZoneAutomationService для scheduler-task fallback сценариев."""
+    global _zone_service
+    _zone_service = zone_service
+
+
+async def _validate_scheduler_zone(zone_id: int) -> None:
+    """Проверка, что зона существует."""
     try:
-        node_rows = await fetch(
+        rows = await fetch(
             """
-            SELECT id, zone_id
-            FROM nodes
-            WHERE uid = $1
+            SELECT id
+            FROM zones
+            WHERE id = $1
             LIMIT 1
             """,
-            node_uid,
+            zone_id,
         )
     except Exception as exc:
         logger.error(
-            "Failed to validate scheduler target (node lookup): zone_id=%s node_uid=%s error=%s",
+            "Failed to validate scheduler zone: zone_id=%s error=%s",
             zone_id,
-            node_uid,
             exc,
             exc_info=True,
         )
-        raise HTTPException(status_code=503, detail="Node validation unavailable") from exc
+        raise HTTPException(status_code=503, detail="Zone validation unavailable") from exc
 
-    if not node_rows:
-        raise HTTPException(status_code=404, detail=f"Node '{node_uid}' not found")
-
-    node = node_rows[0]
-    node_zone_id = node.get("zone_id")
-    if node_zone_id != zone_id:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Node '{node_uid}' is assigned to zone {node_zone_id}, "
-                f"not zone {zone_id}"
-            ),
-        )
-
-    if channel != "default":
-        try:
-            channel_rows = await fetch(
-                """
-                SELECT 1
-                FROM node_channels
-                WHERE node_id = $1 AND channel = $2
-                LIMIT 1
-                """,
-                node["id"],
-                channel,
-            )
-        except Exception as exc:
-            logger.error(
-                "Failed to validate scheduler target (channel lookup): zone_id=%s node_uid=%s channel=%s error=%s",
-                zone_id,
-                node_uid,
-                channel,
-                exc,
-                exc_info=True,
-            )
-            raise HTTPException(status_code=503, detail="Channel validation unavailable") from exc
-
-        if not channel_rows:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Channel '{channel}' not found on node '{node_uid}'",
-            )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"Zone '{zone_id}' not found")
 
 
-class SchedulerCommandRequest(BaseModel):
-    """Request model для команд от scheduler."""
+class SchedulerTaskRequest(BaseModel):
+    """Абстрактная задача расписания от scheduler."""
+
     zone_id: int = Field(..., ge=1, description="Zone ID")
-    node_uid: str = Field(..., min_length=1, max_length=128, description="Node UID")
-    channel: str = Field(..., min_length=1, max_length=64, description="Channel name")
-    cmd: str = Field(..., min_length=1, max_length=64, description="Command name")
-    params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Command parameters")
+    task_type: Literal[
+        "irrigation",
+        "lighting",
+        "ventilation",
+        "solution_change",
+        "mist",
+        "diagnostics",
+    ] = Field(..., description="Abstract task type")
+    payload: Dict[str, Any] = Field(default_factory=dict, description="Task payload")
+    scheduled_for: Optional[str] = Field(default=None, description="ISO datetime when task was scheduled")
+    due_at: Optional[str] = Field(default=None, description="ISO datetime when task must be started")
+    expires_at: Optional[str] = Field(default=None, description="ISO datetime when task should be rejected")
+    correlation_id: str = Field(..., min_length=8, max_length=128, description="Mandatory idempotency correlation ID")
 
 
-@app.post("/scheduler/command")
-async def scheduler_command(request: Request, req: SchedulerCommandRequest = Body(...)):
-    """
-    Endpoint для scheduler для отправки команд через automation-engine.
-    Scheduler не должен общаться с нодами напрямую, только через automation-engine.
-    """
-    if not _command_bus:
-        raise HTTPException(status_code=503, detail="CommandBus not initialized")
-    
+class SchedulerBootstrapRequest(BaseModel):
+    scheduler_id: str = Field(..., min_length=1, max_length=64)
+    scheduler_version: Optional[str] = Field(default=None, max_length=64)
+    protocol_version: Optional[str] = Field(default="2.0", max_length=16)
+    started_at: Optional[str] = Field(default=None)
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SchedulerBootstrapHeartbeatRequest(BaseModel):
+    scheduler_id: str = Field(..., min_length=1, max_length=64)
+    lease_id: str = Field(..., min_length=8, max_length=128)
+
+
+class SchedulerInternalEnqueueRequest(BaseModel):
+    zone_id: int = Field(..., ge=1, description="Zone ID")
+    task_type: Literal[
+        "irrigation",
+        "lighting",
+        "ventilation",
+        "solution_change",
+        "mist",
+        "diagnostics",
+    ] = Field(..., description="Abstract task type")
+    payload: Dict[str, Any] = Field(default_factory=dict, description="Task payload")
+    scheduled_for: Optional[str] = Field(default=None, description="ISO datetime when task should be dispatched")
+    expires_at: Optional[str] = Field(default=None, description="ISO datetime when enqueued task expires")
+    correlation_id: Optional[str] = Field(default=None, max_length=128, description="Optional custom correlation_id")
+    source: str = Field(default="automation-engine", max_length=64)
+
+
+def _task_public_payload(task: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "task_id": task["task_id"],
+        "zone_id": task["zone_id"],
+        "task_type": task["task_type"],
+        "status": task["status"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "scheduled_for": task.get("scheduled_for"),
+        "correlation_id": task.get("correlation_id"),
+        "result": task.get("result"),
+        "error": task.get("error"),
+        "error_code": task.get("error_code"),
+    }
+
+
+def _new_scheduler_task_id() -> str:
+    return f"st-{uuid4().hex}"
+
+
+def _new_scheduler_lease_id() -> str:
+    return f"lease-{uuid4().hex}"
+
+
+def _canonical_json(payload: Any) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _task_payload_fingerprint(req: SchedulerTaskRequest) -> str:
+    raw = {
+        "zone_id": req.zone_id,
+        "task_type": req.task_type,
+        "payload": req.payload or {},
+        "scheduled_for": req.scheduled_for,
+        "due_at": req.due_at,
+        "expires_at": req.expires_at,
+    }
+    return hashlib.sha256(_canonical_json(raw).encode("utf-8")).hexdigest()
+
+
+def _task_payload_matches(req: SchedulerTaskRequest, existing_task: Dict[str, Any], expected_fingerprint: str) -> bool:
+    existing_fingerprint = existing_task.get("payload_fingerprint")
+    if isinstance(existing_fingerprint, str) and existing_fingerprint:
+        return existing_fingerprint == expected_fingerprint
+
+    if int(existing_task.get("zone_id") or 0) != int(req.zone_id):
+        return False
+    if str(existing_task.get("task_type") or "").strip().lower() != str(req.task_type).strip().lower():
+        return False
+    if (existing_task.get("scheduled_for") or None) != (req.scheduled_for or None):
+        return False
+    return _canonical_json(existing_task.get("payload") or {}) == _canonical_json(req.payload or {})
+
+
+def _is_scheduler_protocol_supported(protocol_version: Optional[str]) -> bool:
+    version = str(protocol_version or "2.0").strip()
+    return version.startswith("2.")
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    return parse_enqueue_iso_datetime(value)
+
+
+async def _cleanup_scheduler_tasks_locked(now: datetime) -> None:
+    to_delete = []
+    threshold = now - timedelta(seconds=_SCHEDULER_TASK_TTL_SECONDS)
+    for task_id, task in _scheduler_tasks.items():
+        updated_at_raw = task.get("updated_at")
+        try:
+            updated_at = datetime.fromisoformat(str(updated_at_raw))
+        except Exception:
+            updated_at = now
+        if updated_at < threshold:
+            to_delete.append(task_id)
+    for task_id in to_delete:
+        _scheduler_tasks.pop(task_id, None)
+
+    overflow = len(_scheduler_tasks) - _SCHEDULER_TASK_MAX_IN_MEMORY
+    if overflow > 0:
+        sortable = []
+        for task_id, task in _scheduler_tasks.items():
+            updated_at_raw = task.get("updated_at")
+            try:
+                updated_at = datetime.fromisoformat(str(updated_at_raw))
+            except Exception:
+                updated_at = now
+            sortable.append((updated_at, task_id))
+        sortable.sort(key=lambda item: item[0])
+        for _, task_id in sortable[:overflow]:
+            _scheduler_tasks.pop(task_id, None)
+
+
+def _cleanup_bootstrap_leases_locked(now: datetime) -> None:
+    stale_ids = []
+    for scheduler_id, lease in _scheduler_bootstrap_leases.items():
+        expires_at = lease.get("expires_at")
+        if not isinstance(expires_at, datetime):
+            stale_ids.append(scheduler_id)
+            continue
+        if expires_at <= now:
+            stale_ids.append(scheduler_id)
+    for scheduler_id in stale_ids:
+        _scheduler_bootstrap_leases.pop(scheduler_id, None)
+
+
+def _bootstrap_status() -> str:
+    return "ready" if _command_bus is not None else "wait"
+
+
+async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optional[Dict[str, Any]]:
+    threshold = datetime.utcnow() - timedelta(seconds=_SCHEDULER_DEDUPE_WINDOW_SEC)
     try:
-        logger.info(
-            f"Scheduler command request: zone_id={req.zone_id}, node_uid={req.node_uid}, "
-            f"channel={req.channel}, cmd={req.cmd}",
-            extra={"zone_id": req.zone_id, "node_uid": req.node_uid}
+        rows = await fetch(
+            """
+            SELECT details
+            FROM scheduler_logs
+            WHERE task_name LIKE 'ae_scheduler_task_st-%'
+              AND details->>'correlation_id' = $1
+              AND created_at >= $2
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            correlation_id,
+            threshold,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to read scheduler task by correlation_id from DB: correlation_id=%s",
+            correlation_id,
+            exc_info=True,
+        )
+        return None
+
+    if not rows:
+        return None
+    details = rows[0].get("details")
+    if not isinstance(details, dict):
+        return None
+    if not details.get("task_id") or not details.get("zone_id") or not details.get("task_type"):
+        return None
+    return details
+
+
+async def _create_scheduler_task(req: SchedulerTaskRequest) -> Tuple[Dict[str, Any], bool]:
+    now_iso = datetime.utcnow().isoformat()
+    payload_fingerprint = _task_payload_fingerprint(req)
+
+    async with _scheduler_tasks_lock:
+        await _cleanup_scheduler_tasks_locked(datetime.utcnow())
+
+        existing_in_memory: Optional[Dict[str, Any]] = None
+        for candidate in _scheduler_tasks.values():
+            if candidate.get("correlation_id") == req.correlation_id:
+                existing_in_memory = dict(candidate)
+                break
+
+        existing = existing_in_memory
+        if existing is None:
+            existing = await _load_scheduler_task_by_correlation_id(req.correlation_id)
+            if existing is not None:
+                _scheduler_tasks[str(existing["task_id"])] = dict(existing)
+
+        if existing is not None:
+            if not _task_payload_matches(req, existing, payload_fingerprint):
+                raise HTTPException(status_code=409, detail="idempotency_payload_mismatch")
+            return dict(existing), True
+        task = {
+            "task_id": _new_scheduler_task_id(),
+            "zone_id": req.zone_id,
+            "task_type": req.task_type,
+            "status": "accepted",
+            "payload": req.payload or {},
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "scheduled_for": req.scheduled_for,
+            "correlation_id": req.correlation_id,
+            "payload_fingerprint": payload_fingerprint,
+            "result": None,
+            "error": None,
+            "error_code": None,
+        }
+        _scheduler_tasks[task["task_id"]] = task
+    await _persist_scheduler_task_snapshot(task)
+    return task, False
+
+
+async def _update_scheduler_task(
+    *,
+    task_id: str,
+    status: str,
+    result: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+    error_code: Optional[str] = None,
+) -> None:
+    async with _scheduler_tasks_lock:
+        task = _scheduler_tasks.get(task_id)
+        if not task:
+            return
+        task["status"] = status
+        task["updated_at"] = datetime.utcnow().isoformat()
+        if result is not None:
+            task["result"] = result
+        if error is not None:
+            task["error"] = error
+        if error_code is not None:
+            task["error_code"] = error_code
+        snapshot = dict(task)
+    await _persist_scheduler_task_snapshot(snapshot)
+
+
+def _scheduler_task_log_name(task_id: str) -> str:
+    return f"ae_scheduler_task_{task_id}"
+
+
+async def _persist_scheduler_task_snapshot(task: Dict[str, Any]) -> None:
+    try:
+        await create_scheduler_log(
+            _scheduler_task_log_name(task["task_id"]),
+            str(task.get("status") or "unknown"),
+            dict(task),
+        )
+    except Exception:
+        logger.warning(
+            "Failed to persist scheduler task snapshot: task_id=%s",
+            task.get("task_id"),
+            exc_info=True,
         )
 
-        await _validate_scheduler_target(req.zone_id, req.node_uid, req.channel)
-        
-        # Отправляем команду через CommandBus (который использует history-logger)
-        success = await _command_bus.publish_command(
-            zone_id=req.zone_id,
-            node_uid=req.node_uid,
-            channel=req.channel,
-            cmd=req.cmd,
-            params=req.params
+
+async def _load_scheduler_task_snapshot(task_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        rows = await fetch(
+            """
+            SELECT status, details, created_at
+            FROM scheduler_logs
+            WHERE task_name = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            _scheduler_task_log_name(task_id),
         )
-        
-        if success:
-            return {
-                "status": "ok",
-                "data": {
-                    "zone_id": req.zone_id,
-                    "node_uid": req.node_uid,
-                    "channel": req.channel,
-                    "cmd": req.cmd
-                }
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to publish command")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
+    except Exception:
+        logger.warning("Failed to read scheduler task snapshot from DB: task_id=%s", task_id, exc_info=True)
+        return None
+
+    if not rows:
+        return None
+
+    row = rows[0]
+    details = row.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    row_created_at = row.get("created_at")
+    row_created_iso = row_created_at.isoformat() if row_created_at else None
+
+    task_snapshot = {
+        "task_id": details.get("task_id") or task_id,
+        "zone_id": details.get("zone_id"),
+        "task_type": details.get("task_type"),
+        "status": details.get("status") or row.get("status") or "unknown",
+        "created_at": details.get("created_at") or row_created_iso,
+        "updated_at": details.get("updated_at") or row_created_iso,
+        "scheduled_for": details.get("scheduled_for"),
+        "correlation_id": details.get("correlation_id"),
+        "payload_fingerprint": details.get("payload_fingerprint"),
+        "result": details.get("result"),
+        "error": details.get("error"),
+        "error_code": details.get("error_code"),
+        "payload": details.get("payload") if isinstance(details.get("payload"), dict) else {},
+    }
+
+    if not task_snapshot["zone_id"] or not task_snapshot["task_type"]:
+        return None
+    return task_snapshot
+
+
+async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace_id: Optional[str]) -> None:
+    if trace_id:
+        set_trace_id(trace_id)
+
+    command_bus = _command_bus
+    if command_bus is None:
+        await _update_scheduler_task(
+            task_id=task_id,
+            status="failed",
+            error="command_bus_unavailable",
+            error_code="command_bus_unavailable",
+        )
+        return
+
+    await _update_scheduler_task(task_id=task_id, status="running")
+
+    try:
+        executor = SchedulerTaskExecutor(command_bus=command_bus, zone_service=_zone_service)
+        result = await executor.execute(
+            zone_id=req.zone_id,
+            task_type=req.task_type,
+            payload=req.payload or {},
+            task_context={
+                "task_id": task_id,
+                "correlation_id": req.correlation_id,
+                "scheduled_for": req.scheduled_for,
+            },
+        )
+        success = bool(result.get("success"))
+        await _update_scheduler_task(
+            task_id=task_id,
+            status="completed" if success else "failed",
+            result=result,
+            error=None if success else str(result.get("error") or "task_execution_failed"),
+            error_code=None if success else str(result.get("error_code") or "task_execution_failed"),
+        )
+    except Exception as exc:
         logger.error(
-            f"Error processing scheduler command: {e}",
+            "Scheduler task execution failed: task_id=%s zone_id=%s task_type=%s error=%s",
+            task_id,
+            req.zone_id,
+            req.task_type,
+            exc,
             exc_info=True,
-            extra={"zone_id": req.zone_id, "node_uid": req.node_uid}
+        )
+        await _update_scheduler_task(
+            task_id=task_id,
+            status="failed",
+            error=str(exc),
+            error_code="execution_exception",
         )
         await send_infra_exception_alert(
-            error=e,
+            error=exc,
             code="infra_unknown_error",
-            alert_type="Automation API Unexpected Error",
+            alert_type="Automation Scheduler Task Execution Error",
             severity="error",
             zone_id=req.zone_id,
             service="automation-engine",
-            component="api:/scheduler/command",
-            node_uid=req.node_uid,
-            channel=req.channel,
-            cmd=req.cmd,
+            component="api:/scheduler/task",
+            error_type=type(exc).__name__,
+            details={"task_id": task_id, "task_type": req.task_type},
         )
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+async def _validate_scheduler_dispatch_lease(request: Request) -> None:
+    if not _SCHEDULER_BOOTSTRAP_ENFORCE:
+        return
+
+    scheduler_id = str(request.headers.get("x-scheduler-id") or "").strip()
+    lease_id = str(request.headers.get("x-scheduler-lease-id") or "").strip()
+    if not scheduler_id or not lease_id:
+        raise HTTPException(status_code=403, detail="scheduler_bootstrap_required")
+
+    now = datetime.utcnow()
+    async with _scheduler_bootstrap_lock:
+        _cleanup_bootstrap_leases_locked(now)
+        lease = _scheduler_bootstrap_leases.get(scheduler_id)
+        if not lease:
+            raise HTTPException(status_code=409, detail="scheduler_lease_not_found")
+        if lease.get("lease_id") != lease_id:
+            raise HTTPException(status_code=409, detail="scheduler_lease_mismatch")
+        expires_at = lease.get("expires_at")
+        if not isinstance(expires_at, datetime) or expires_at <= now:
+            _scheduler_bootstrap_leases.pop(scheduler_id, None)
+            raise HTTPException(status_code=409, detail="scheduler_lease_expired")
+
+
+@app.post("/scheduler/bootstrap")
+async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
+    now = datetime.utcnow()
+    bootstrap_status = _bootstrap_status()
+    if not _is_scheduler_protocol_supported(req.protocol_version):
+        bootstrap_status = "deny"
+
+    response_payload: Dict[str, Any] = {
+        "bootstrap_status": bootstrap_status,
+        "lease_ttl_sec": _SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC,
+        "poll_interval_sec": _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
+        "task_timeout_sec": _SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC,
+        "dedupe_window_sec": _SCHEDULER_DEDUPE_WINDOW_SEC,
+        "server_time": now.isoformat(),
+    }
+
+    async with _scheduler_bootstrap_lock:
+        _cleanup_bootstrap_leases_locked(now)
+        if bootstrap_status == "ready":
+            current = _scheduler_bootstrap_leases.get(req.scheduler_id)
+            lease_id = str(current.get("lease_id")) if isinstance(current, dict) and current.get("lease_id") else _new_scheduler_lease_id()
+            _scheduler_bootstrap_leases[req.scheduler_id] = {
+                "lease_id": lease_id,
+                "scheduler_version": req.scheduler_version,
+                "protocol_version": req.protocol_version,
+                "created_at": current.get("created_at") if isinstance(current, dict) and current.get("created_at") else now,
+                "last_heartbeat_at": now,
+                "expires_at": now + timedelta(seconds=_SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC),
+            }
+            response_payload["lease_id"] = lease_id
+        else:
+            _scheduler_bootstrap_leases.pop(req.scheduler_id, None)
+
+    await create_scheduler_log(
+        f"ae_scheduler_bootstrap_{req.scheduler_id}",
+        bootstrap_status,
+        {
+            "scheduler_id": req.scheduler_id,
+            "scheduler_version": req.scheduler_version,
+            "protocol_version": req.protocol_version,
+            "started_at": req.started_at,
+            "bootstrap_status": bootstrap_status,
+            "response": response_payload,
+        },
+    )
+    return {"status": "ok", "data": response_payload}
+
+
+@app.post("/scheduler/bootstrap/heartbeat")
+async def scheduler_bootstrap_heartbeat(req: SchedulerBootstrapHeartbeatRequest = Body(...)):
+    now = datetime.utcnow()
+    async with _scheduler_bootstrap_lock:
+        _cleanup_bootstrap_leases_locked(now)
+        lease = _scheduler_bootstrap_leases.get(req.scheduler_id)
+        if lease is None or str(lease.get("lease_id") or "") != req.lease_id:
+            return {
+                "status": "ok",
+                "data": {
+                    "bootstrap_status": "wait",
+                    "reason": "lease_not_found",
+                    "poll_interval_sec": _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
+                    "server_time": now.isoformat(),
+                },
+            }
+        if _bootstrap_status() != "ready":
+            _scheduler_bootstrap_leases.pop(req.scheduler_id, None)
+            return {
+                "status": "ok",
+                "data": {
+                    "bootstrap_status": "wait",
+                    "reason": "automation_not_ready",
+                    "poll_interval_sec": _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
+                    "server_time": now.isoformat(),
+                },
+            }
+
+        lease["last_heartbeat_at"] = now
+        lease["expires_at"] = now + timedelta(seconds=_SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC)
+        response_payload = {
+            "bootstrap_status": "ready",
+            "lease_id": req.lease_id,
+            "lease_ttl_sec": _SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC,
+            "lease_expires_at": lease["expires_at"].isoformat(),
+            "server_time": now.isoformat(),
+        }
+
+    await create_scheduler_log(
+        f"ae_scheduler_bootstrap_{req.scheduler_id}",
+        "heartbeat",
+        {
+            "scheduler_id": req.scheduler_id,
+            "lease_id": req.lease_id,
+            "bootstrap_status": response_payload["bootstrap_status"],
+            "response": response_payload,
+        },
+    )
+    return {"status": "ok", "data": response_payload}
+
+
+@app.post("/scheduler/internal/enqueue")
+async def scheduler_internal_enqueue(req: SchedulerInternalEnqueueRequest = Body(...)):
+    await _validate_scheduler_zone(req.zone_id)
+    if req.task_type not in _SCHEDULER_TASK_TYPES:
+        raise HTTPException(status_code=422, detail=f"Unsupported task_type: {req.task_type}")
+
+    try:
+        enqueue_result = await enqueue_internal_scheduler_task(
+            zone_id=req.zone_id,
+            task_type=req.task_type,
+            payload=req.payload or {},
+            scheduled_for=req.scheduled_for,
+            expires_at=req.expires_at,
+            correlation_id=req.correlation_id,
+            source=req.source,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "status": "ok",
+        "data": {
+            "enqueue_id": enqueue_result["enqueue_id"],
+            "status": enqueue_result["status"],
+            "zone_id": enqueue_result["zone_id"],
+            "task_type": enqueue_result["task_type"],
+            "scheduled_for": enqueue_result["scheduled_for"],
+            "expires_at": enqueue_result["expires_at"],
+            "correlation_id": enqueue_result["correlation_id"],
+        },
+    }
+
+
+@app.post("/scheduler/task")
+async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)):
+    """
+    Абстрактный task-level endpoint для scheduler.
+    Scheduler не отправляет device-level команды, а публикует тип задачи.
+    """
+    if not _command_bus:
+        raise HTTPException(status_code=503, detail="CommandBus not initialized")
+
+    if req.task_type not in _SCHEDULER_TASK_TYPES:
+        raise HTTPException(status_code=422, detail=f"Unsupported task_type: {req.task_type}")
+
+    await _validate_scheduler_dispatch_lease(request)
+    await _validate_scheduler_zone(req.zone_id)
+
+    task, is_duplicate = await _create_scheduler_task(req)
+    if not is_duplicate:
+        await create_zone_event(
+            req.zone_id,
+            "SCHEDULE_TASK_ACCEPTED",
+            {
+                "task_id": task["task_id"],
+                "task_type": req.task_type,
+                "scheduled_for": req.scheduled_for,
+                "correlation_id": req.correlation_id,
+            },
+        )
+
+        trace_id = get_trace_id()
+        asyncio.create_task(_execute_scheduler_task(task["task_id"], req, trace_id))
+
+    return {
+        "status": "ok",
+        "data": {
+            "task_id": task["task_id"],
+            "zone_id": req.zone_id,
+            "task_type": req.task_type,
+            "status": task["status"],
+            "is_duplicate": is_duplicate,
+        },
+    }
+
+
+@app.get("/scheduler/task/{task_id}")
+async def scheduler_task_status(task_id: str):
+    """Статус абстрактной задачи scheduler."""
+    async with _scheduler_tasks_lock:
+        await _cleanup_scheduler_tasks_locked(datetime.utcnow())
+        task = _scheduler_tasks.get(task_id)
+    if task is None:
+        persisted = await _load_scheduler_task_snapshot(task_id)
+        if persisted is None:
+            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+        async with _scheduler_tasks_lock:
+            _scheduler_tasks[task_id] = persisted
+        task = persisted
+    payload = _task_public_payload(task)
+
+    return {"status": "ok", "data": payload}
 
 
 @app.get("/health")

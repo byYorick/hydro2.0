@@ -669,9 +669,25 @@ alerts_hardware_id_idx
 id PK
 zone_id FK
 type VARCHAR
-details JSONB
+entity_type VARCHAR NULL
+entity_id TEXT NULL
+server_ts BIGINT NULL
+payload_json JSONB NULL
+details JSONB -- generated column над payload_json (для обратной читаемости запросов)
 created_at
 ```
+
+Индексы:
+```
+zone_events_zone_id_created_at_idx
+zone_events_type_idx
+zone_events_zone_entity_idx
+zone_events_zone_id_id_idx
+```
+
+Примечание:
+- Основной payload хранится в `payload_json`.
+- `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
 
 ---
 
@@ -723,6 +739,31 @@ updated_at
 simulation_reports_simulation_id_unique (simulation_id)
 simulation_reports_zone_id_index (zone_id)
 simulation_reports_status_index (status)
+```
+
+---
+
+## 8.4. scheduler_logs
+
+```
+id PK
+task_name VARCHAR
+status VARCHAR
+details JSONB NULL
+created_at TIMESTAMP
+```
+
+Назначение:
+- lifecycle/snapshot записи scheduler и automation-engine;
+- хранение статусов task-level исполнения (`accepted/running/completed/failed` и служебные статусы scheduler).
+
+Индексы:
+```
+scheduler_logs_task_created_idx
+scheduler_logs_status_idx
+scheduler_logs_created_at_idx
+scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id'
+scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
 ```
 
 ---
@@ -825,6 +866,7 @@ sensor 1—N telemetry_samples
 sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
+zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
 zone 1—N commands
 zone 1—N zone_simulations
 zone_simulation 1—N simulation_events
@@ -894,11 +936,37 @@ channel_binding 1—1 node_channel
   "targets": {
     "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
     "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
-    "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600, "duration_sec": 300}
+    "irrigation": {
+      "mode": "SUBSTRATE",
+      "interval_sec": 3600,
+      "duration_sec": 300,
+      "execution": {
+        "node_types": ["irrigation", "irrig"],
+        "cmd": "run_pump",
+        "params": {"duration_sec": 300},
+        "fallback_mode": "none"
+      }
+    }
     // ... остальные цели
   }
 }
 ```
+
+### 13.1. Контракт `targets.*.execution` для scheduler-task
+
+Для task-level исполнения scheduler/automation-engine поддерживаются execution-конфиги
+в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.
+
+Поля:
+- `node_types: string[]`
+- `cmd: string`
+- `cmd_true: string`
+- `cmd_false: string`
+- `state_key: string`
+- `default_state: bool`
+- `params: object`
+- `duration_sec: number`
+- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"`
 
 **Устаревший подход (до рефакторинга):**
 - ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`

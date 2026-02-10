@@ -203,6 +203,15 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.lighting.targets.photoperiod.hours_on).toBe(24)
   })
 
+  it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {
+    const forms = createForms()
+
+    const payload = buildGrowthCycleConfigPayload(forms, { includeSystemType: false }) as any
+    const targets = payload.subsystems.irrigation.targets
+
+    expect(targets.system_type).toBeUndefined()
+  })
+
   it('validateForms возвращает сообщение для некорректных значений', () => {
     const forms = createForms()
 

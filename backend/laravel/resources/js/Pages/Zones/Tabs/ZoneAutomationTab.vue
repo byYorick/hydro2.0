@@ -1,5 +1,4 @@
 <template>
-  <!-- eslint-disable vue/singleline-html-element-content-newline -->
   <div class="space-y-4">
     <div
       v-if="!zoneId"
@@ -19,7 +18,7 @@
               Климат, вода и досветка
             </h2>
             <p class="text-sm text-[color:var(--text-muted)] mt-1 max-w-3xl">
-              Настройка целевых параметров и быстрых ручных действий для оператора.
+              Значения на карточках берутся из активного рецепта/таргетов. Редактирование доступно через мастер.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
@@ -29,301 +28,99 @@
             <Badge variant="info">
               Телеметрия: {{ telemetryLabel }}
             </Badge>
+            <Button
+              v-if="canConfigureAutomation"
+              size="sm"
+              @click="showEditWizard = true"
+            >
+              Редактировать
+            </Button>
           </div>
         </div>
 
         <div class="ui-kpi-grid md:grid-cols-2 xl:grid-cols-4 mt-4">
           <article class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Форточки
-            </div>
-            <div class="ui-kpi-value !text-lg">
-              {{ climateForm.ventMinPercent }}-{{ climateForm.ventMaxPercent }}%
-            </div>
-            <div class="ui-kpi-hint">
-              Диапазон открытия
-            </div>
+            <div class="ui-kpi-label">Форточки</div>
+            <div class="ui-kpi-value !text-lg">{{ climateForm.ventMinPercent }}-{{ climateForm.ventMaxPercent }}%</div>
+            <div class="ui-kpi-hint">Диапазон открытия</div>
           </article>
 
           <article class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Водный узел
-            </div>
-            <div class="ui-kpi-value !text-lg">
-              {{ waterForm.tanksCount }} бака
-            </div>
-            <div class="ui-kpi-hint">
-              {{ waterTopologyLabel }}
-            </div>
+            <div class="ui-kpi-label">Водный узел</div>
+            <div class="ui-kpi-value !text-lg">{{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}</div>
+            <div class="ui-kpi-hint">{{ waterTopologyLabel }}</div>
           </article>
 
           <article class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Коррекция pH / EC
-            </div>
-            <div class="ui-kpi-value !text-lg">
-              pH {{ waterForm.targetPh.toFixed(1) }} · EC {{ waterForm.targetEc.toFixed(1) }}
-            </div>
-            <div class="ui-kpi-hint">
-              Параметры узла коррекции
-            </div>
+            <div class="ui-kpi-label">Коррекция pH / EC</div>
+            <div class="ui-kpi-value !text-lg">pH {{ waterForm.targetPh.toFixed(1) }} · EC {{ waterForm.targetEc.toFixed(1) }}</div>
+            <div class="ui-kpi-hint">Интервал {{ waterForm.intervalMinutes }} мин, {{ waterForm.durationSeconds }} сек</div>
           </article>
 
           <article class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Досветка
-            </div>
-            <div class="ui-kpi-value !text-lg">
-              {{ lightingForm.luxDay }} lux
-            </div>
-            <div class="ui-kpi-hint">
-              {{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }}
-            </div>
+            <div class="ui-kpi-label">Досветка</div>
+            <div class="ui-kpi-value !text-lg">{{ lightingForm.luxDay }} lux</div>
+            <div class="ui-kpi-hint">{{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }}</div>
           </article>
         </div>
       </section>
 
       <section class="grid gap-4 xl:grid-cols-2">
-        <article class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-              Климат
-            </h3>
-            <label class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
-              <input
-                v-model="climateForm.enabled"
-                type="checkbox"
-                class="rounded border-[color:var(--border-muted)]"
-                :disabled="!canConfigureAutomation"
-              />
-              Автоклимат
-            </label>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Температура день
-              <input
-                v-model.number="climateForm.dayTemp"
-                type="number"
-                min="10"
-                max="35"
-                step="0.5"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Температура ночь
-              <input
-                v-model.number="climateForm.nightTemp"
-                type="number"
-                min="10"
-                max="35"
-                step="0.5"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Влажность день
-              <input
-                v-model.number="climateForm.dayHumidity"
-                type="number"
-                min="30"
-                max="90"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Влажность ночь
-              <input
-                v-model.number="climateForm.nightHumidity"
-                type="number"
-                min="30"
-                max="90"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Min форточек (%)
-              <input
-                v-model.number="climateForm.ventMinPercent"
-                type="number"
-                min="0"
-                max="100"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Max форточек (%)
-              <input
-                v-model.number="climateForm.ventMaxPercent"
-                type="number"
-                min="0"
-                max="100"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-          </div>
+        <article class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Климат</h3>
+          <dl class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Температура</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ climateForm.dayTemp }}°C день / {{ climateForm.nightTemp }}°C ночь</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Влажность</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ climateForm.dayHumidity }}% день / {{ climateForm.nightHumidity }}% ночь</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Профиль</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ climateForm.enabled ? 'Автоклимат включен' : 'Автоклимат выключен' }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Внешний guard</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ climateForm.useExternalTelemetry ? 'Включен' : 'Выключен' }}</dd>
+            </div>
+          </dl>
         </article>
 
-        <article class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-              Вода и узел коррекции
-            </h3>
-            <Badge :variant="waterForm.tanksCount === 3 ? 'info' : 'success'">
-              {{ waterForm.tanksCount }} бака
-            </Badge>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Тип системы
-              <select
-                v-model="waterForm.systemType"
-                class="input-select mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              >
-                <option value="drip">drip</option>
-                <option value="substrate_trays">substrate_trays</option>
-                <option value="nft">nft</option>
-              </select>
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              target pH
-              <input
-                v-model.number="waterForm.targetPh"
-                type="number"
-                min="4"
-                max="9"
-                step="0.1"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              target EC
-              <input
-                v-model.number="waterForm.targetEc"
-                type="number"
-                min="0.1"
-                max="10"
-                step="0.1"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Интервал (мин)
-              <input
-                v-model.number="waterForm.intervalMinutes"
-                type="number"
-                min="5"
-                max="1440"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Длительность (сек)
-              <input
-                v-model.number="waterForm.durationSeconds"
-                type="number"
-                min="1"
-                max="3600"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigureAutomation"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Полив вручную (сек)
-              <input
-                v-model.number="waterForm.manualIrrigationSeconds"
-                type="number"
-                min="1"
-                max="3600"
-                class="input-field mt-1 w-full"
-                :disabled="!canOperateAutomation"
-              />
-            </label>
-          </div>
+        <article class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Вода и узел коррекции</h3>
+          <dl class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Тип системы</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ waterForm.systemType }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Объём баков</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ waterForm.cleanTankFillL }} / {{ waterForm.nutrientTankTargetL }} л</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Полив</dt>
+              <dd class="text-[color:var(--text-primary)]">Каждые {{ waterForm.intervalMinutes }} мин, {{ waterForm.durationSeconds }} сек</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Коррекция</dt>
+              <dd class="text-[color:var(--text-primary)]">pH {{ waterForm.targetPh.toFixed(1) }} · EC {{ waterForm.targetEc.toFixed(1) }}</dd>
+            </div>
+          </dl>
+          <p
+            v-if="isSystemTypeLocked"
+            class="text-xs text-[color:var(--text-dim)]"
+          >
+            Тип системы зафиксирован для активного цикла.
+          </p>
         </article>
-      </section>
-
-      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
-        <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-          Досветка
-        </h3>
-
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label class="text-xs text-[color:var(--text-muted)]">
-            Lux day
-            <input
-              v-model.number="lightingForm.luxDay"
-              type="number"
-              min="0"
-              max="120000"
-              class="input-field mt-1 w-full"
-              :disabled="!canConfigureAutomation"
-            />
-          </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
-            Lux night
-            <input
-              v-model.number="lightingForm.luxNight"
-              type="number"
-              min="0"
-              max="120000"
-              class="input-field mt-1 w-full"
-              :disabled="!canConfigureAutomation"
-            />
-          </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
-            Hours on
-            <input
-              v-model.number="lightingForm.hoursOn"
-              type="number"
-              min="0"
-              max="24"
-              step="0.5"
-              class="input-field mt-1 w-full"
-              :disabled="!canConfigureAutomation"
-            />
-          </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
-            Manual intensity
-            <input
-              v-model.number="lightingForm.manualIntensity"
-              type="number"
-              min="0"
-              max="100"
-              class="input-field mt-1 w-full"
-              :disabled="!canOperateAutomation"
-            />
-          </label>
-        </div>
       </section>
 
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            Операционные команды
-          </h3>
-          <div class="text-xs text-[color:var(--text-muted)]">
-            Быстрые действия оператора
-          </div>
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Операционные команды</h3>
+          <div class="text-xs text-[color:var(--text-muted)]">Быстрые действия оператора</div>
         </div>
 
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -372,9 +169,7 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
-            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-              Применение профиля автоматики
-            </h3>
+            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Применение профиля автоматики</h3>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
               Команда отправляется как `GROWTH_CYCLE_CONFIG` (`mode=adjust`).
             </p>
@@ -404,6 +199,196 @@
         </div>
       </section>
 
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Scheduler Task Lifecycle</h3>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Мониторинг статусов `accepted -> running -> completed/failed` по `task_id`.
+            </p>
+          </div>
+          <div class="text-xs text-[color:var(--text-muted)]">
+            <span v-if="schedulerTasksUpdatedAt">Обновлено: {{ formatDateTime(schedulerTasksUpdatedAt) }}</span>
+            <span v-else>Ожидание данных</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-2">
+          <input
+            v-model="schedulerTaskIdInput"
+            type="text"
+            class="w-full md:flex-1 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-sm"
+            placeholder="st-..."
+          />
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="schedulerTaskLookupLoading"
+              @click="lookupSchedulerTask()"
+            >
+              {{ schedulerTaskLookupLoading ? 'Проверка...' : 'Проверить task_id' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="schedulerTaskListLoading"
+              @click="fetchRecentSchedulerTasks()"
+            >
+              {{ schedulerTaskListLoading ? 'Обновление...' : 'Обновить список' }}
+            </Button>
+          </div>
+        </div>
+
+        <p
+          v-if="schedulerTaskError"
+          class="text-xs text-red-500"
+        >
+          {{ schedulerTaskError }}
+        </p>
+
+        <article
+          v-if="schedulerTaskStatus"
+          class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--surface-muted)]/40 p-3 space-y-3"
+        >
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+            <div class="text-sm">
+              <span class="text-[color:var(--text-dim)]">task_id:</span>
+              <span class="font-mono text-[color:var(--text-primary)] ml-1">{{ schedulerTaskStatus.task_id }}</span>
+            </div>
+            <Badge :variant="schedulerTaskStatusVariant(schedulerTaskStatus.status)">
+              {{ schedulerTaskStatusLabel(schedulerTaskStatus.status) }}
+            </Badge>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Тип</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ schedulerTaskStatus.task_type || '-' }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Создана</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.created_at) }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Обновлена</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.updated_at) }}</dd>
+            </div>
+          </dl>
+          <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Решение автоматики</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ schedulerTaskDecisionLabel(schedulerTaskStatus.decision) }}
+                <span
+                  v-if="schedulerTaskStatus.action_required === false"
+                  class="text-[color:var(--text-dim)]"
+                >
+                  (действие не требуется)
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Причина</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ schedulerTaskReasonLabel(schedulerTaskStatus.reason_code, schedulerTaskStatus.reason) }}
+              </dd>
+            </div>
+          </dl>
+          <dl
+            v-if="schedulerTaskStatus.error_code || schedulerTaskStatus.error"
+            class="grid grid-cols-1 gap-2 text-xs"
+          >
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Ошибка</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ schedulerTaskErrorLabel(schedulerTaskStatus.error_code, schedulerTaskStatus.error) }}
+              </dd>
+            </div>
+          </dl>
+
+          <ul
+            v-if="schedulerTaskStatus.timeline && schedulerTaskStatus.timeline.length > 0"
+            class="space-y-1 text-xs"
+          >
+            <li
+              v-for="(step, index) in schedulerTaskStatus.timeline"
+              :key="`${schedulerTaskStatus.task_id}-timeline-${step.event_id || index}`"
+              class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
+            >
+              <div class="text-[color:var(--text-primary)]">
+                {{ schedulerTaskEventLabel(step.event_type) }}
+                <span
+                  v-if="step.reason_code"
+                  class="text-[color:var(--text-dim)]"
+                >
+                  · {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
+                </span>
+                <span
+                  v-if="step.error_code"
+                  class="text-red-500"
+                >
+                  · {{ schedulerTaskErrorLabel(step.error_code) }}
+                </span>
+              </div>
+              <div class="text-[color:var(--text-dim)]">
+                {{ formatDateTime(step.at) }}
+              </div>
+            </li>
+          </ul>
+          <ul
+            v-else
+            class="space-y-1 text-xs"
+          >
+            <li
+              v-for="(step, index) in schedulerTaskStatus.lifecycle"
+              :key="`${schedulerTaskStatus.task_id}-step-${index}`"
+              class="flex items-center justify-between gap-2 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
+            >
+              <span class="text-[color:var(--text-primary)]">{{ schedulerTaskStatusLabel(step.status) }}</span>
+              <span class="text-[color:var(--text-dim)]">{{ formatDateTime(step.at) }}</span>
+            </li>
+          </ul>
+        </article>
+
+        <div class="space-y-2">
+          <h4 class="text-sm font-medium text-[color:var(--text-primary)]">Последние задачи зоны</h4>
+          <ul
+            v-if="recentSchedulerTasks.length > 0"
+            class="space-y-2"
+          >
+            <li
+              v-for="task in recentSchedulerTasks"
+              :key="task.task_id"
+              class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-xl border border-[color:var(--border-muted)] px-3 py-2"
+            >
+              <div class="min-w-0">
+                <p class="font-mono text-xs text-[color:var(--text-primary)] truncate">{{ task.task_id }}</p>
+                <p class="text-xs text-[color:var(--text-dim)]">
+                  {{ task.task_type || '-' }} · {{ formatDateTime(task.updated_at) }}
+                </p>
+              </div>
+              <div class="flex items-center gap-2">
+                <Badge :variant="schedulerTaskStatusVariant(task.status)">
+                  {{ schedulerTaskStatusLabel(task.status) }}
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  @click="lookupSchedulerTask(task.task_id)"
+                >
+                  Открыть
+                </Button>
+              </div>
+            </li>
+          </ul>
+          <p
+            v-else
+            class="text-xs text-[color:var(--text-dim)]"
+          >
+            Локальные lifecycle-снимки scheduler-задач пока не найдены.
+          </p>
+        </div>
+      </section>
+
       <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
         <AIPredictionsSection
           :zone-id="zoneId"
@@ -414,19 +399,27 @@
         />
       </div>
 
-      <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-        <AutomationEngine :zone-id="zoneId" />
-      </div>
+      <ZoneAutomationEditWizard
+        :open="showEditWizard"
+        :climate-form="climateForm"
+        :water-form="waterForm"
+        :lighting-form="lightingForm"
+        :is-applying="isApplyingProfile"
+        :is-system-type-locked="isSystemTypeLocked"
+        @close="showEditWizard = false"
+        @reset="resetToRecommended"
+        @apply="onApplyFromWizard"
+      />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { ref, toRef } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
-import AutomationEngine from '@/Components/AutomationEngine.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
@@ -437,6 +430,7 @@ const props = defineProps<ZoneAutomationTabProps>()
 const {
   canConfigureAutomation,
   canOperateAutomation,
+  isSystemTypeLocked,
   climateForm,
   waterForm,
   lightingForm,
@@ -453,8 +447,31 @@ const {
   runManualLighting,
   runManualPh,
   runManualEc,
+  schedulerTaskIdInput,
+  schedulerTaskLookupLoading,
+  schedulerTaskListLoading,
+  schedulerTaskError,
+  schedulerTaskStatus,
+  recentSchedulerTasks,
+  schedulerTasksUpdatedAt,
+  fetchRecentSchedulerTasks,
+  lookupSchedulerTask,
+  schedulerTaskStatusVariant,
+  schedulerTaskStatusLabel,
+  schedulerTaskEventLabel,
+  schedulerTaskDecisionLabel,
+  schedulerTaskReasonLabel,
+  schedulerTaskErrorLabel,
   formatDateTime,
 } = useZoneAutomationTab(props)
 
 const zoneId = toRef(props, 'zoneId')
+const showEditWizard = ref(false)
+
+async function onApplyFromWizard(): Promise<void> {
+  const success = await applyAutomationProfile()
+  if (success) {
+    showEditWizard.value = false
+  }
+}
 </script>

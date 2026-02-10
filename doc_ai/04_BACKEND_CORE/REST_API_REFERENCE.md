@@ -57,6 +57,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin) | Калибровка датчика расхода |
 | POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin) | Калибровка дозирующей помпы (ml/sec) |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin) | Отправить команду зоне |
+| GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
+| GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy + fallback) + `timeline` и outcome (`decision/reason_code`) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 

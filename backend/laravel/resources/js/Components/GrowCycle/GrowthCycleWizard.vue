@@ -232,6 +232,62 @@
                 Используется для планирования и аналитики
               </div>
             </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">
+              <div class="md:col-span-2 text-sm font-medium">
+                Параметры водного узла на старте
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Тип системы</label>
+                <select
+                  v-model="form.irrigation.systemType"
+                  class="input-select w-full"
+                >
+                  <option value="drip">drip</option>
+                  <option value="substrate_trays">substrate_trays</option>
+                  <option value="nft">nft</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Интервал полива (мин)</label>
+                <input
+                  v-model.number="form.irrigation.intervalMinutes"
+                  type="number"
+                  min="5"
+                  max="1440"
+                  class="input-field w-full"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Длительность полива (сек)</label>
+                <input
+                  v-model.number="form.irrigation.durationSeconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  class="input-field w-full"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Объём чистого бака (л)</label>
+                <input
+                  v-model.number="form.irrigation.cleanTankFillL"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  class="input-field w-full"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Объём питательного бака (л)</label>
+                <input
+                  v-model.number="form.irrigation.nutrientTankTargetL"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  class="input-field w-full"
+                />
+              </div>
+            </div>
             <div
               v-if="selectedRecipe"
               class="p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]"
@@ -278,6 +334,17 @@
               </div>
               <div class="text-sm font-medium">
                 {{ formatDateTime(form.startedAt) }}
+              </div>
+            </div>
+            <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Параметры водного узла
+              </div>
+              <div class="text-sm font-medium">
+                {{ form.irrigation.cleanTankFillL }} / {{ form.irrigation.nutrientTankTargetL }} л
+              </div>
+              <div class="text-xs text-[color:var(--text-muted)] mt-1">
+                Полив: каждые {{ form.irrigation.intervalMinutes }} мин, {{ form.irrigation.durationSeconds }} сек · {{ form.irrigation.systemType }}
               </div>
             </div>
             <div
