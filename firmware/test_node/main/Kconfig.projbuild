@@ -16,13 +16,26 @@ config TEST_NODE_LCD_V_RES
 
 config TEST_NODE_LCD_BUFFER_LINES
     int "LVGL draw buffer lines"
-    default 40
+    default 20
     range 10 120
 
 config TEST_NODE_LCD_PIXEL_CLOCK_HZ
     int "LCD SPI pixel clock (Hz)"
     default 20000000
     range 1000000 40000000
+
+config TEST_NODE_LCD_IO_QUEUE_DEPTH
+    int "LCD SPI transaction queue depth"
+    default 10
+    range 1 10
+
+config TEST_NODE_LCD_SINGLE_BUFFER
+    bool "Use single LVGL draw buffer (more stable, lower RAM)"
+    default n
+
+config TEST_NODE_LCD_SWAP_COLOR_BYTES
+    bool "LVGL RGB565 byte order swap (for some ILI9341 boards)"
+    default y
 
 config TEST_NODE_LCD_RGB_ORDER_BGR
     bool "LCD RGB element order: BGR (ILI9341 typical)"
@@ -34,11 +47,11 @@ config TEST_NODE_LCD_SWAP_XY
 
 config TEST_NODE_LCD_MIRROR_X
     bool "LCD mirror X"
-    default n
+    default y
 
 config TEST_NODE_LCD_MIRROR_Y
     bool "LCD mirror Y"
-    default y
+    default n
 
 config TEST_NODE_LCD_INVERT_COLORS
     bool "LCD invert colors"
@@ -86,17 +99,17 @@ config TEST_NODE_LCD_BK_LIGHT_ON_LEVEL
 
 config TEST_NODE_ENCODER_PIN_A
     int "Encoder pin A (CLK)"
-    default 1
+    default 5
     range 0 48
 
 config TEST_NODE_ENCODER_PIN_B
     int "Encoder pin B (DT)"
-    default 2
+    default 4
     range 0 48
 
 config TEST_NODE_ENCODER_PIN_SW
     int "Encoder pin SW"
-    default 3
+    default 6
     range 0 48
 
 endmenu

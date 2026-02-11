@@ -25,6 +25,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -50,11 +51,29 @@ static const char *TAG = "test_node_ui";
 #define CONFIG_TEST_NODE_LCD_INVERT_COLORS 0
 #endif
 
+#ifndef CONFIG_TEST_NODE_LCD_IO_QUEUE_DEPTH
+#define CONFIG_TEST_NODE_LCD_IO_QUEUE_DEPTH 2
+#endif
+
+#ifdef CONFIG_TEST_NODE_LCD_SWAP_COLOR_BYTES
+#define TEST_NODE_LCD_SWAP_COLOR_BYTES 1
+#else
+#define TEST_NODE_LCD_SWAP_COLOR_BYTES 0
+#endif
+
+#ifdef CONFIG_TEST_NODE_LCD_SINGLE_BUFFER
+#define TEST_NODE_LCD_SINGLE_BUFFER 1
+#else
+#define TEST_NODE_LCD_SINGLE_BUFFER 0
+#endif
+
 #if CONFIG_TEST_NODE_UI_ENABLE
 
 #define LCD_HOST SPI2_HOST
-#define LVGL_TASK_PERIOD_MS 5
-#define LVGL_TASK_STACK_SIZE 12288
+#define LCD_DMA_MIN_TRANSFER_LINES 80
+#define LVGL_TICK_PERIOD_MS 2
+#define LVGL_TASK_PERIOD_MS 10
+#define LVGL_TASK_STACK_SIZE 10240
 #define LVGL_TASK_PRIORITY 5
 #define UI_EVENT_QUEUE_LEN 64
 #define UI_LOG_EVENT_QUEUE_LEN 256
@@ -72,8 +91,13 @@ static const char *TAG = "test_node_ui";
 #define UI_HB_BLINK_TICKS 6
 #define UI_LWT_BLINK_TICKS 8
 #define UI_SCROLL_LOG_STEP 1
+#define UI_DEBUG_DUMP_PERIOD_MS 0
 #define ENCODER_TRANSITIONS_PER_STEP 2
 #define ENCODER_BUTTON_DEBOUNCE_MS 25
+
+#if LV_COLOR_DEPTH != 16
+#error "test_node_ui requires LV_COLOR_DEPTH=16"
+#endif
 
 #if defined(CONFIG_LV_FONT_MONTSERRAT_12) && CONFIG_LV_FONT_MONTSERRAT_12
 #define UI_FONT_SMALL (&lv_font_montserrat_12)
@@ -122,6 +146,7 @@ static lv_color_t *s_buf_b = NULL;
 static QueueHandle_t s_event_queue_hp = NULL;
 static QueueHandle_t s_event_queue_log = NULL;
 static TaskHandle_t s_lvgl_task_handle = NULL;
+static esp_timer_handle_t s_lvgl_tick_timer = NULL;
 
 static lv_obj_t *s_wifi_label = NULL;
 static lv_obj_t *s_mqtt_label = NULL;
@@ -195,6 +220,10 @@ static void ui_refresh_setup_box(void) {
         lv_obj_clear_flag(s_setup_box, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_nodes_box, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x2A1014), 0);
+        lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(lv_scr_act(), 0, 0);
+        lv_obj_set_style_pad_all(lv_scr_act(), 0, 0);
+        lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_border_color(s_log_box, lv_color_hex(0x8A2A3A), 0);
         lv_label_set_text_static(s_setup_title, "SETUP PORTAL");
         snprintf(
@@ -213,6 +242,10 @@ static void ui_refresh_setup_box(void) {
     lv_obj_add_flag(s_setup_box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_nodes_box, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x06141D), 0);
+    lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(lv_scr_act(), 0, 0);
+    lv_obj_set_style_pad_all(lv_scr_act(), 0, 0);
+    lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_color(s_log_box, lv_color_hex(0x1A5F74), 0);
 }
 
@@ -231,6 +264,11 @@ static bool panel_io_color_trans_done(
         lv_display_flush_ready(disp);
     }
     return false;
+}
+
+static void lvgl_tick_timer_cb(void *arg) {
+    (void)arg;
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
 }
 
 static void ui_make_short_name(const char *node_uid, char *out, size_t out_size) {
@@ -810,6 +848,7 @@ static void ui_process_queue(void) {
     }
 }
 
+#if UI_DEBUG_DUMP_PERIOD_MS > 0
 static void ui_debug_dump_state(void) {
     size_t nodes_in_use = 0;
     size_t i;
@@ -894,6 +933,7 @@ static void ui_debug_dump_state(void) {
         s_dbg_hp_drop_total
     );
 }
+#endif
 
 static void ui_tick_blink(void) {
     size_t i;
@@ -972,8 +1012,13 @@ static void ui_enqueue_event(
 }
 
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)lv_display_get_user_data(disp);
+#if TEST_NODE_LCD_SWAP_COLOR_BYTES
+    uint32_t px_count = (uint32_t)(area->x2 - area->x1 + 1) * (uint32_t)(area->y2 - area->y1 + 1);
+    lv_draw_sw_rgb565_swap(px_map, px_count);
+#endif
     esp_err_t err = esp_lcd_panel_draw_bitmap(
-        s_panel_handle,
+        panel ? panel : s_panel_handle,
         area->x1,
         area->y1,
         area->x2 + 1,
@@ -1109,13 +1154,28 @@ static void init_encoder_gpio(void) {
 
 static esp_err_t init_lcd_panel(void) {
     esp_err_t err;
+    size_t max_transfer_lines = (size_t)CONFIG_TEST_NODE_LCD_BUFFER_LINES;
 
-    gpio_config_t bk_gpio_config = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (1ULL << CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT),
-    };
-    ESP_RETURN_ON_ERROR(gpio_config(&bk_gpio_config), TAG, "backlight gpio_config failed");
-    gpio_set_level(CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT, !CONFIG_TEST_NODE_LCD_BK_LIGHT_ON_LEVEL);
+    if (CONFIG_TEST_NODE_LCD_PIN_SCLK < 0 || CONFIG_TEST_NODE_LCD_PIN_MOSI < 0 ||
+        CONFIG_TEST_NODE_LCD_PIN_DC < 0 || CONFIG_TEST_NODE_LCD_PIN_CS < 0) {
+        ESP_LOGE(TAG, "Invalid LCD pins: SCLK/MOSI/DC/CS must be >= 0");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT >= 0) {
+        gpio_config_t bk_gpio_config = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pin_bit_mask = (1ULL << CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT),
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&bk_gpio_config), TAG, "backlight gpio_config failed");
+        gpio_set_level(CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT, !CONFIG_TEST_NODE_LCD_BK_LIGHT_ON_LEVEL);
+    } else {
+        ESP_LOGW(TAG, "LCD backlight pin disabled (CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT = -1)");
+    }
+
+    if (max_transfer_lines < LCD_DMA_MIN_TRANSFER_LINES) {
+        max_transfer_lines = LCD_DMA_MIN_TRANSFER_LINES;
+    }
 
     spi_bus_config_t buscfg = {
         .sclk_io_num = CONFIG_TEST_NODE_LCD_PIN_SCLK,
@@ -1123,11 +1183,14 @@ static esp_err_t init_lcd_panel(void) {
         .miso_io_num = CONFIG_TEST_NODE_LCD_PIN_MISO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = CONFIG_TEST_NODE_LCD_H_RES * CONFIG_TEST_NODE_LCD_BUFFER_LINES * sizeof(lv_color_t) + 8,
+        .max_transfer_sz = CONFIG_TEST_NODE_LCD_H_RES * max_transfer_lines * sizeof(uint16_t),
     };
 
     err = spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_INVALID_STATE) {
+            ESP_LOGE(TAG, "spi_bus_initialize: SPI bus already initialized (possible LCD SPI conflict)");
+        }
         ESP_LOGE(TAG, "spi_bus_initialize failed: %s", esp_err_to_name(err));
         return err;
     }
@@ -1139,9 +1202,7 @@ static esp_err_t init_lcd_panel(void) {
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,
-        .trans_queue_depth = 10,
-        .on_color_trans_done = panel_io_color_trans_done,
-        .user_ctx = NULL,
+        .trans_queue_depth = CONFIG_TEST_NODE_LCD_IO_QUEUE_DEPTH,
     };
 
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi(LCD_HOST, &io_config, &s_panel_io), TAG, "new_panel_io_spi failed");
@@ -1166,42 +1227,103 @@ static esp_err_t init_lcd_panel(void) {
     ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(s_panel_handle, CONFIG_TEST_NODE_LCD_INVERT_COLORS), TAG, "panel_invert failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "panel_on failed");
 
-    gpio_set_level(CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT, CONFIG_TEST_NODE_LCD_BK_LIGHT_ON_LEVEL);
+    if (CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT >= 0) {
+        gpio_set_level(CONFIG_TEST_NODE_LCD_PIN_BK_LIGHT, CONFIG_TEST_NODE_LCD_BK_LIGHT_ON_LEVEL);
+    }
 
     ESP_LOGI(
         TAG,
-        "LCD cfg: rgb=%s swap_xy=%d mirror_x=%d mirror_y=%d invert=%d",
+        "LCD cfg: rgb=%s swap_xy=%d mirror_x=%d mirror_y=%d invert=%d swap_bytes=%d pclk=%d qdepth=%d single_buf=%d",
         CONFIG_TEST_NODE_LCD_RGB_ORDER_BGR ? "BGR" : "RGB",
         CONFIG_TEST_NODE_LCD_SWAP_XY,
         CONFIG_TEST_NODE_LCD_MIRROR_X,
         CONFIG_TEST_NODE_LCD_MIRROR_Y,
-        CONFIG_TEST_NODE_LCD_INVERT_COLORS
+        CONFIG_TEST_NODE_LCD_INVERT_COLORS,
+        TEST_NODE_LCD_SWAP_COLOR_BYTES,
+        CONFIG_TEST_NODE_LCD_PIXEL_CLOCK_HZ,
+        CONFIG_TEST_NODE_LCD_IO_QUEUE_DEPTH,
+        TEST_NODE_LCD_SINGLE_BUFFER
     );
 
     return ESP_OK;
 }
 
+static void *ui_dma_alloc(size_t size_bytes) {
+    void *buf = spi_bus_dma_memory_alloc(LCD_HOST, size_bytes, 0);
+    if (!buf) {
+        buf = heap_caps_malloc(size_bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+    if (!buf) {
+        buf = heap_caps_malloc(size_bytes, MALLOC_CAP_DMA);
+    }
+    return buf;
+}
+
 static esp_err_t init_lvgl(void) {
+    esp_err_t err;
     size_t buffer_pixels = (size_t)(CONFIG_TEST_NODE_LCD_H_RES * CONFIG_TEST_NODE_LCD_BUFFER_LINES);
     size_t buffer_size_bytes = buffer_pixels * sizeof(lv_color_t);
+    const esp_lcd_panel_io_callbacks_t panel_io_cbs = {
+        .on_color_trans_done = panel_io_color_trans_done,
+    };
 
     lv_init();
 
-    s_buf_a = heap_caps_malloc(buffer_size_bytes, MALLOC_CAP_DMA);
-    s_buf_b = heap_caps_malloc(buffer_size_bytes, MALLOC_CAP_DMA);
-    if (!s_buf_a || !s_buf_b) {
-        ESP_LOGE(TAG, "LVGL draw buffer alloc failed");
+    if (!s_lvgl_tick_timer) {
+        const esp_timer_create_args_t lvgl_tick_timer_args = {
+            .callback = lvgl_tick_timer_cb,
+            .name = "lvgl_tick",
+        };
+        err = esp_timer_create(&lvgl_tick_timer_args, &s_lvgl_tick_timer);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_timer_create(lvgl_tick) failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        err = esp_timer_start_periodic(s_lvgl_tick_timer, LVGL_TICK_PERIOD_MS * 1000);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_timer_start_periodic(lvgl_tick) failed: %s", esp_err_to_name(err));
+            (void)esp_timer_delete(s_lvgl_tick_timer);
+            s_lvgl_tick_timer = NULL;
+            return err;
+        }
+    }
+
+    s_buf_a = ui_dma_alloc(buffer_size_bytes);
+    if (!s_buf_a) {
+        ESP_LOGE(TAG, "LVGL draw buffer A alloc failed");
         return ESP_ERR_NO_MEM;
+    }
+    memset(s_buf_a, 0, buffer_size_bytes);
+
+#if TEST_NODE_LCD_SINGLE_BUFFER
+    s_buf_b = NULL;
+#else
+    s_buf_b = ui_dma_alloc(buffer_size_bytes);
+#endif
+
+    if (!TEST_NODE_LCD_SINGLE_BUFFER && !s_buf_b) {
+        ESP_LOGE(TAG, "LVGL draw buffer B alloc failed");
+        if (s_buf_a) {
+            free(s_buf_a);
+            s_buf_a = NULL;
+        }
+        return ESP_ERR_NO_MEM;
+    }
+    if (s_buf_b) {
+        memset(s_buf_b, 0, buffer_size_bytes);
     }
 
     s_lv_display = lv_display_create(CONFIG_TEST_NODE_LCD_H_RES, CONFIG_TEST_NODE_LCD_V_RES);
     if (!s_lv_display) {
         ESP_LOGE(TAG, "lv_display_create failed");
+        free(s_buf_a);
+        free(s_buf_b);
+        s_buf_a = NULL;
+        s_buf_b = NULL;
         return ESP_FAIL;
     }
     lv_display_set_default(s_lv_display);
-    // Для ILI9341 на этой плате нужен swapped RGB565, иначе текст и графика искажаются.
-    lv_display_set_color_format(s_lv_display, LV_COLOR_FORMAT_RGB565_SWAPPED);
+    lv_display_set_color_format(s_lv_display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(
         s_lv_display,
         s_buf_a,
@@ -1209,11 +1331,23 @@ static esp_err_t init_lvgl(void) {
         buffer_size_bytes,
         LV_DISPLAY_RENDER_MODE_PARTIAL
     );
+    lv_display_set_user_data(s_lv_display, s_panel_handle);
     lv_display_set_flush_cb(s_lv_display, lvgl_flush_cb);
+    ESP_RETURN_ON_ERROR(
+        esp_lcd_panel_io_register_event_callbacks(s_panel_io, &panel_io_cbs, s_lv_display),
+        TAG,
+        "panel_io callbacks registration failed"
+    );
 
     s_encoder_indev = lv_indev_create();
     if (!s_encoder_indev) {
         ESP_LOGE(TAG, "lv_indev_create failed");
+        lv_display_delete(s_lv_display);
+        s_lv_display = NULL;
+        free(s_buf_a);
+        free(s_buf_b);
+        s_buf_a = NULL;
+        s_buf_b = NULL;
         return ESP_FAIL;
     }
     lv_indev_set_type(s_encoder_indev, LV_INDEV_TYPE_ENCODER);
@@ -1221,6 +1355,10 @@ static esp_err_t init_lvgl(void) {
     lv_indev_set_display(s_encoder_indev, s_lv_display);
 
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x06141D), 0);
+    lv_obj_set_style_bg_opa(lv_scr_act(), LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(lv_scr_act(), 0, 0);
+    lv_obj_set_style_pad_all(lv_scr_act(), 0, 0);
+    lv_obj_clear_flag(lv_scr_act(), LV_OBJ_FLAG_SCROLLABLE);
 
     s_wifi_label = lv_label_create(lv_scr_act());
     lv_obj_set_style_text_font(s_wifi_label, UI_FONT_SMALL, 0);
@@ -1264,6 +1402,7 @@ static esp_err_t init_lvgl(void) {
     lv_obj_align(s_nodes_box, LV_ALIGN_TOP_MID, 0, 20);
     lv_obj_clear_flag(s_nodes_box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(s_nodes_box, lv_color_hex(0x0B1E2A), 0);
+    lv_obj_set_style_bg_opa(s_nodes_box, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_nodes_box, lv_color_hex(0x24485C), 0);
     lv_obj_set_style_border_width(s_nodes_box, 1, 0);
     lv_obj_set_style_radius(s_nodes_box, 2, 0);
@@ -1281,6 +1420,7 @@ static esp_err_t init_lvgl(void) {
     lv_obj_align(s_setup_box, LV_ALIGN_TOP_MID, 0, 20);
     lv_obj_clear_flag(s_setup_box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(s_setup_box, lv_color_hex(0x3A1A20), 0);
+    lv_obj_set_style_bg_opa(s_setup_box, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_setup_box, lv_color_hex(0xB8485A), 0);
     lv_obj_set_style_border_width(s_setup_box, 2, 0);
     lv_obj_set_style_radius(s_setup_box, 4, 0);
@@ -1304,6 +1444,7 @@ static esp_err_t init_lvgl(void) {
     lv_obj_align(s_log_box, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_obj_clear_flag(s_log_box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(s_log_box, lv_color_hex(0x041016), 0);
+    lv_obj_set_style_bg_opa(s_log_box, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_log_box, lv_color_hex(0x1A5F74), 0);
     lv_obj_set_style_border_width(s_log_box, 1, 0);
     lv_obj_set_style_radius(s_log_box, 2, 0);
@@ -1325,17 +1466,17 @@ static esp_err_t init_lvgl(void) {
     ui_refresh_nodes_label();
     ui_refresh_log_label();
     ui_refresh_setup_box();
+    lv_obj_invalidate(lv_scr_act());
+    lv_refr_now(s_lv_display);
 
     return ESP_OK;
 }
 
 static void lvgl_task(void *arg) {
     uint32_t blink_update_ms = 0;
-    uint32_t force_refresh_ms = 0;
     (void)arg;
 
     while (1) {
-        lv_tick_inc(LVGL_TASK_PERIOD_MS);
         ui_process_queue();
         lv_timer_handler();
 
@@ -1345,21 +1486,16 @@ static void lvgl_task(void *arg) {
             ui_tick_blink();
         }
 
+#if UI_DEBUG_DUMP_PERIOD_MS > 0
         {
             static uint32_t dbg_elapsed_ms = 0;
             dbg_elapsed_ms += LVGL_TASK_PERIOD_MS;
-            if (dbg_elapsed_ms >= 1000) {
+            if (dbg_elapsed_ms >= UI_DEBUG_DUMP_PERIOD_MS) {
                 dbg_elapsed_ms = 0;
                 ui_debug_dump_state();
             }
         }
-
-        force_refresh_ms += LVGL_TASK_PERIOD_MS;
-        if (force_refresh_ms >= 500) {
-            force_refresh_ms = 0;
-            lv_obj_invalidate(lv_scr_act());
-            lv_refr_now(NULL);
-        }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(LVGL_TASK_PERIOD_MS));
     }
@@ -1367,6 +1503,7 @@ static void lvgl_task(void *arg) {
 
 esp_err_t test_node_ui_init(void) {
     esp_err_t err;
+    int lvgl_task_core = 0;
 
     s_boot_us = esp_timer_get_time();
 
@@ -1417,6 +1554,11 @@ esp_err_t test_node_ui_init(void) {
         &s_lvgl_task_handle
     );
     #else
+    lvgl_task_core = xPortGetCoreID();
+    if (lvgl_task_core < 0 || lvgl_task_core >= portNUM_PROCESSORS) {
+        lvgl_task_core = 0;
+    }
+    ESP_LOGI(TAG, "LVGL task pin core=%d (same as init core)", lvgl_task_core);
     BaseType_t lvgl_task_ok = xTaskCreatePinnedToCore(
         lvgl_task,
         "lvgl_task",
@@ -1424,7 +1566,7 @@ esp_err_t test_node_ui_init(void) {
         NULL,
         LVGL_TASK_PRIORITY,
         &s_lvgl_task_handle,
-        1
+        lvgl_task_core
     );
     if (lvgl_task_ok != pdPASS) {
         lvgl_task_ok = xTaskCreate(
