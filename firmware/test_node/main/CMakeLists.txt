@@ -2,6 +2,7 @@ idf_component_register(
     SRCS 
         "main.c"
         "test_node_app.c"
+        "test_node_ui.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -15,4 +16,8 @@ idf_component_register(
         esp_timer
         esp_system
         esp_wifi
+        driver
+        esp_lcd
+        esp_lcd_ili9341
+        lvgl
 )

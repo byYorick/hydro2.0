@@ -8,6 +8,7 @@
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "setup_portal.h"
+#include "test_node_ui.h"
 #include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -21,6 +22,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 
 static const char *TAG = "test_node_multi";
@@ -32,12 +34,14 @@ static const char *TAG = "test_node_multi";
 #define PRECONFIG_ZONE_UID "zn-temp"
 
 #define TELEMETRY_INTERVAL_MS 5000
-#define HEARTBEAT_INTERVAL_MS 5000
 #define CONFIG_REPORT_INTERVAL_MS 30000
-#define CONFIG_REPORT_INITIAL_DELAY_MS 3000
 #define COMMAND_QUEUE_LENGTH 32
 #define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
 #define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
+#define TASK_STACK_TELEMETRY 4096
+#define TASK_STACK_TELEMETRY_FALLBACK 3584
+#define TASK_STACK_COMMAND_WORKER 6144
+#define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -185,6 +189,23 @@ static virtual_state_t s_virtual_state = {
     .correction_boost_ticks = 0,
 };
 
+static void ui_logf(const char *node_uid, const char *fmt, ...) {
+    char line[96];
+    const char *origin = (node_uid && node_uid[0] != '\0') ? node_uid : "SYS";
+    va_list args;
+
+    if (!fmt || fmt[0] == '\0') {
+        return;
+    }
+
+    va_start(args, fmt);
+    vsnprintf(line, sizeof(line), fmt, args);
+    va_end(args);
+
+    ESP_LOGI(TAG, "UI_LOG [%s] %s", origin, line);
+    test_node_ui_log_event(node_uid, line);
+}
+
 static int64_t get_timestamp_seconds(void) {
     return esp_timer_get_time() / 1000000LL;
 }
@@ -262,6 +283,43 @@ static bool get_node_namespace(
     return true;
 }
 
+static void ui_sync_all_virtual_nodes(bool set_offline_status) {
+    size_t index;
+    ESP_LOGI(TAG, "UI sync nodes start (set_offline=%d)", (int)set_offline_status);
+    ui_logf(NULL, "ui_sync nodes start");
+
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        char gh_uid[64] = {0};
+        char zone_uid[64] = {0};
+
+        if (!get_node_namespace(
+            VIRTUAL_NODES[index].node_uid,
+            gh_uid,
+            sizeof(gh_uid),
+            zone_uid,
+            sizeof(zone_uid),
+            NULL
+        )) {
+            snprintf(zone_uid, sizeof(zone_uid), "--");
+        }
+
+        test_node_ui_register_node(VIRTUAL_NODES[index].node_uid, zone_uid);
+        test_node_ui_set_node_zone(VIRTUAL_NODES[index].node_uid, zone_uid);
+        ESP_LOGI(
+            TAG,
+            "UI sync node[%u]: uid=%s zone=%s",
+            (unsigned)index,
+            VIRTUAL_NODES[index].node_uid,
+            zone_uid
+        );
+        if (set_offline_status) {
+            test_node_ui_set_node_status(VIRTUAL_NODES[index].node_uid, "OFFLINE");
+        }
+    }
+    ui_logf(NULL, "ui_sync nodes done");
+    ESP_LOGI(TAG, "UI sync nodes done");
+}
+
 static bool namespace_matches_node(const char *node_uid, const char *gh_uid, const char *zone_uid) {
     char current_gh[64] = {0};
     char current_zone[64] = {0};
@@ -310,6 +368,8 @@ static bool update_node_namespace(const char *node_uid, const char *gh_uid, cons
     }
 
     if (changed) {
+        test_node_ui_set_node_zone(node_uid, zone_uid);
+        ui_logf(node_uid, "zone -> %s", zone_uid);
         ESP_LOGI(
             TAG,
             "Node namespace updated: node=%s gh=%s zone=%s reason=%s",
@@ -498,6 +558,11 @@ static void publish_status_for_node(const char *node_uid, const char *status) {
     cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
 
     publish_json_payload(topic, json, 1, 1);
+    test_node_ui_set_node_status(node_uid, status);
+    if (status && strcmp(status, "ONLINE") != 0) {
+        test_node_ui_mark_node_lwt(node_uid);
+    }
+    ui_logf(node_uid, "status %s", status ? status : "UNKNOWN");
     cJSON_Delete(json);
 }
 
@@ -525,6 +590,8 @@ static void publish_heartbeat_for_node(const char *node_uid) {
     }
 
     publish_json_payload(topic, json, 1, 0);
+    test_node_ui_mark_node_heartbeat(node_uid);
+    ui_logf(node_uid, "hb up=%lds heap=%u", (long)uptime_seconds, (unsigned)esp_get_free_heap_size());
     cJSON_Delete(json);
 }
 
@@ -548,6 +615,13 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
     cJSON_AddBoolToObject(json, "stub", true);
 
     publish_json_payload(topic, json, 1, 0);
+    ui_logf(
+        node_uid,
+        "tel %s/%s=%.2f",
+        channel ? channel : "-",
+        metric_type ? metric_type : "-",
+        (double)value
+    );
     cJSON_Delete(json);
 }
 
@@ -631,6 +705,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
 
     publish_err = publish_json_payload(topic, json, 1, 0);
     if (publish_err != ESP_OK) {
+        ui_logf(node->node_uid, "cfg_report err=%s", esp_err_to_name(publish_err));
         ESP_LOGW(
             TAG,
             "config_report publish failed: node=%s channels=%u err=%s",
@@ -639,6 +714,8 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
             esp_err_to_name(publish_err)
         );
     } else {
+        test_node_ui_set_node_zone(node->node_uid, zone_uid);
+        ui_logf(node->node_uid, "cfg_report ch=%u", (unsigned)node->channels_count);
         ESP_LOGI(
             TAG,
             "config_report published: node=%s channels=%u",
@@ -755,8 +832,10 @@ static void publish_node_hello_for_node(const virtual_node_t *node) {
     }
 
     if (publish_json_payload("hydro/node_hello", hello, 1, 0) != ESP_OK) {
+        ui_logf(node->node_uid, "node_hello publish FAIL");
         ESP_LOGW(TAG, "Failed to publish node_hello for %s", node->node_uid);
     } else {
+        ui_logf(node->node_uid, "node_hello sent");
         ESP_LOGI(TAG, "node_hello published for virtual node: %s", node->node_uid);
     }
 
@@ -855,6 +934,7 @@ static void publish_command_response(
 
     if (build_topic(topic, sizeof(topic), node_uid, channel, "command_response") == ESP_OK) {
         publish_json_payload(topic, json, 1, 0);
+        ui_logf(node_uid, "cmd_resp %s %s", status ? status : "?", channel ? channel : "-");
     } else {
         ESP_LOGE(TAG, "Failed to build command_response topic for %s/%s", node_uid, channel);
     }
@@ -1091,6 +1171,7 @@ static void execute_pending_command(const pending_command_t *job) {
     cJSON_AddStringToObject(details, "channel", job->channel);
     cJSON_AddStringToObject(details, "cmd", job->cmd);
     cJSON_AddNumberToObject(details, "exec_delay_ms", job->execute_delay_ms);
+    ui_logf(job->node_uid, "cmd run %s/%s dly=%d", job->channel, job->cmd, job->execute_delay_ms);
 
     if (job->kind == COMMAND_KIND_SENSOR_PROBE) {
         cJSON *probe = build_sensor_probe_details(job->channel);
@@ -1112,6 +1193,7 @@ static void execute_pending_command(const pending_command_t *job) {
     }
 
     publish_command_response(job->node_uid, job->channel, job->cmd_id, final_status, details);
+    ui_logf(job->node_uid, "cmd done %s/%s -> %s", job->channel, job->cmd, final_status);
     cJSON_Delete(details);
 }
 
@@ -1213,6 +1295,7 @@ static void command_callback(const char *topic, const char *channel, const char 
             current_gh_uid,
             current_zone_uid
         );
+        ui_logf(node_uid, "cmd stale ns ignored");
         return;
     }
 
@@ -1229,6 +1312,7 @@ static void command_callback(const char *topic, const char *channel, const char 
             publish_command_response(node_uid, topic_channel, "unknown", "INVALID", details);
             cJSON_Delete(details);
         }
+        ui_logf(node_uid, "cmd invalid_json");
         return;
     }
 
@@ -1244,6 +1328,7 @@ static void command_callback(const char *topic, const char *channel, const char 
             publish_command_response(node_uid, topic_channel, cmd_id, "INVALID", details);
             cJSON_Delete(details);
         }
+        ui_logf(node_uid, "cmd missing_cmd");
         cJSON_Delete(command_json);
         return;
     }
@@ -1259,6 +1344,7 @@ static void command_callback(const char *topic, const char *channel, const char 
     extract_command_params(command_json, &job);
 
     publish_command_response(node_uid, topic_channel, cmd_id, "ACK", NULL);
+    ui_logf(node_uid, "cmd ack %s/%s", topic_channel, cmd_name);
 
     if (!s_command_queue || xQueueSend(s_command_queue, &job, 0) != pdTRUE) {
         cJSON *details = cJSON_CreateObject();
@@ -1267,6 +1353,9 @@ static void command_callback(const char *topic, const char *channel, const char 
             publish_command_response(node_uid, topic_channel, cmd_id, "BUSY", details);
             cJSON_Delete(details);
         }
+        ui_logf(node_uid, "cmd busy queue_full");
+    } else {
+        ui_logf(node_uid, "cmd queued %s/%s", topic_channel, cmd_name);
     }
 
     cJSON_Delete(command_json);
@@ -1341,12 +1430,14 @@ static void config_callback(const char *topic, const char *data, int data_len, v
             current_gh_uid,
             current_zone_uid
         );
+        ui_logf(topic_node_uid, "config stale ns ignored");
         return;
     }
 
     config_json = cJSON_ParseWithLength(data, data_len);
     if (!config_json) {
         ESP_LOGW(TAG, "Failed to parse config payload for topic=%s", topic);
+        ui_logf(topic_node_uid, "config invalid_json");
         return;
     }
 
@@ -1369,6 +1460,7 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 
     if (next_gh_uid[0] == '\0' || next_zone_uid[0] == '\0') {
         ESP_LOGW(TAG, "Config ignored: invalid namespace gh=%s zone=%s", next_gh_uid, next_zone_uid);
+        ui_logf(topic_node_uid, "config invalid namespace");
         return;
     }
 
@@ -1384,6 +1476,8 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 
     publish_status_for_node(topic_node_uid, "ONLINE");
     publish_config_report_for_node(node);
+    test_node_ui_set_node_zone(topic_node_uid, next_zone_uid);
+    ui_logf(topic_node_uid, "config applied zone=%s", next_zone_uid);
 
     ESP_LOGI(
         TAG,
@@ -1464,54 +1558,85 @@ static void publish_virtual_telemetry_batch(void) {
 }
 
 static void task_publish_telemetry(void *pv_parameters) {
+    size_t index;
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(TELEMETRY_INTERVAL_MS);
+    bool last_wifi_connected = false;
+    bool last_mqtt_connected = false;
+    bool has_wifi_state = false;
+    bool has_mqtt_state = false;
+    char last_wifi_text[33] = {0};
+    uint8_t node_resync_ticks = 0;
+    uint32_t config_elapsed_ms = 0;
     (void)pv_parameters;
 
     ESP_LOGI(TAG, "Telemetry task started");
     while (1) {
+        bool wifi_connected;
+        bool mqtt_connected;
+        char wifi_text[33] = "X";
+
         vTaskDelayUntil(&last_wake_time, interval);
-        if (!mqtt_manager_is_connected()) {
-            continue;
-        }
         publish_virtual_telemetry_batch();
+        wifi_connected = wifi_manager_is_connected();
+        mqtt_connected = mqtt_manager_is_connected();
+
+        if (wifi_connected) {
+            wifi_ap_record_t ap_info = {0};
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK && ap_info.ssid[0] != '\0') {
+                memcpy(wifi_text, ap_info.ssid, sizeof(ap_info.ssid));
+                wifi_text[sizeof(wifi_text) - 1] = '\0';
+            } else {
+                snprintf(wifi_text, sizeof(wifi_text), "OK");
+            }
+        }
+
+        if (!has_wifi_state || wifi_connected != last_wifi_connected || strcmp(wifi_text, last_wifi_text) != 0) {
+            test_node_ui_set_wifi_status(wifi_connected, wifi_text);
+            has_wifi_state = true;
+            last_wifi_connected = wifi_connected;
+            snprintf(last_wifi_text, sizeof(last_wifi_text), "%s", wifi_text);
+        }
+
+        if (!has_mqtt_state || mqtt_connected != last_mqtt_connected) {
+            test_node_ui_set_mqtt_status(mqtt_connected, mqtt_connected ? "OK" : "X");
+            has_mqtt_state = true;
+            last_mqtt_connected = mqtt_connected;
+        }
+
+        if (mqtt_connected) {
+            for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
+                publish_heartbeat_for_node(VIRTUAL_NODES[index].node_uid);
+            }
+
+            config_elapsed_ms += TELEMETRY_INTERVAL_MS;
+            if (config_elapsed_ms >= CONFIG_REPORT_INTERVAL_MS) {
+                publish_all_config_reports("periodic");
+                config_elapsed_ms = 0;
+            }
+        }
+
+        node_resync_ticks++;
+        if (node_resync_ticks >= 2) {
+            node_resync_ticks = 0;
+            ui_sync_all_virtual_nodes(false);
+        }
+
+        if (!mqtt_connected) {
+            ui_logf(NULL, "tel local (mqtt off)");
+            config_elapsed_ms = 0;
+        }
     }
 }
 
-static void task_publish_heartbeat(void *pv_parameters) {
-    size_t index;
-    TickType_t last_wake_time = xTaskGetTickCount();
-    const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
-    (void)pv_parameters;
+static void wifi_connected_callback(bool connected, void *user_ctx) {
+    (void)user_ctx;
 
-    ESP_LOGI(TAG, "Heartbeat task started");
-    while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
-        if (!mqtt_manager_is_connected()) {
-            continue;
-        }
-
-        for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
-            publish_heartbeat_for_node(VIRTUAL_NODES[index].node_uid);
-        }
-    }
-}
-
-static void task_publish_config_reports(void *pv_parameters) {
-    TickType_t last_wake_time;
-    const TickType_t interval = pdMS_TO_TICKS(CONFIG_REPORT_INTERVAL_MS);
-    (void)pv_parameters;
-
-    ESP_LOGI(TAG, "Config-report task started");
-
-    vTaskDelay(pdMS_TO_TICKS(CONFIG_REPORT_INITIAL_DELAY_MS));
-    last_wake_time = xTaskGetTickCount();
-
-    while (1) {
-        if (mqtt_manager_is_connected()) {
-            publish_all_config_reports("periodic");
-        }
-        vTaskDelayUntil(&last_wake_time, interval);
+    if (connected) {
+        // Важно: callback вызывается из системного event-task (sys_evt), здесь только лёгкая работа.
+        test_node_ui_set_wifi_status(true, "OK");
+    } else {
+        test_node_ui_set_wifi_status(false, "X");
     }
 }
 
@@ -1521,8 +1646,19 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     (void)user_ctx;
 
     if (!connected) {
+        test_node_ui_set_mqtt_status(false, "X");
+        ui_logf(NULL, "mqtt disconnected");
+        for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+            test_node_ui_mark_node_lwt(VIRTUAL_NODES[index].node_uid);
+            test_node_ui_set_node_status(VIRTUAL_NODES[index].node_uid, "OFFLINE");
+        }
+        test_node_ui_show_step("MQTT disconnected");
         return;
     }
+
+    test_node_ui_set_mqtt_status(true, "OK");
+    ui_logf(NULL, "mqtt connected");
+    test_node_ui_show_step("MQTT connected: subscribing");
 
     if (mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to subscribe command wildcard topic: %s", COMMAND_WILDCARD_TOPIC);
@@ -1554,6 +1690,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     }
 
     publish_all_config_reports("mqtt_connected");
+    test_node_ui_show_step("MQTT connected: virtual nodes ONLINE");
 
     ESP_LOGI(
         TAG,
@@ -1564,15 +1701,46 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 }
 
 static esp_err_t run_setup_portal_blocking(void) {
+    esp_err_t err;
     setup_portal_full_config_t setup_cfg = {
         .node_type_prefix = "TESTNODE",
         .ap_password = "hydro2025",
         .enable_oled = false,
         .oled_user_ctx = NULL,
     };
+    char setup_pin[7] = {0};
+    char ap_ssid[32] = {0};
+    const char *ap_password = setup_cfg.ap_password ? setup_cfg.ap_password : "hydro2025";
 
     ESP_LOGW(TAG, "Launching setup portal for WiFi/MQTT configuration");
-    return setup_portal_run_full_setup(&setup_cfg);
+    test_node_ui_set_mode("SETUP");
+    test_node_ui_set_wifi_status(false, "X");
+    test_node_ui_set_mqtt_status(false, "X");
+    test_node_ui_set_setup_info("...", ap_password, "......");
+    ui_logf(NULL, "setup portal start");
+    test_node_ui_show_step("=== NODE SETUP MODE ACTIVATED ===");
+    if (setup_portal_generate_pin(setup_pin, sizeof(setup_pin)) == ESP_OK) {
+        snprintf(ap_ssid, sizeof(ap_ssid), "%s_SETUP_%s", setup_cfg.node_type_prefix, setup_pin);
+        test_node_ui_set_setup_info(ap_ssid, ap_password, setup_pin);
+        ui_logf(NULL, "=== NODE SETUP MODE ACTIVATED ===");
+        ui_logf(NULL, "Connection data:");
+        ui_logf(NULL, "  WiFi SSID:    %s", ap_ssid);
+        ui_logf(NULL, "  WiFi Pass:    [%u characters]", (unsigned)strlen(ap_password));
+        ui_logf(NULL, "  PIN:          [%u characters]", (unsigned)strlen(setup_pin));
+        ui_logf(NULL, "  Open browser: http://192.168.4.1");
+    } else {
+        test_node_ui_set_setup_info("TESTNODE_SETUP_??????", ap_password, "------");
+        ui_logf(NULL, "setup pin generate failed");
+    }
+    test_node_ui_show_step("Setup portal started");
+    err = setup_portal_run_full_setup(&setup_cfg);
+    if (err == ESP_OK) {
+        test_node_ui_set_mode("RUN");
+        test_node_ui_show_step("Setup portal completed");
+    } else {
+        test_node_ui_set_mode("SETUP_ERR");
+    }
+    return err;
 }
 
 static bool has_valid_network_config(void) {
@@ -1622,6 +1790,73 @@ static void reset_runtime_namespace_to_preconfig(
     );
 }
 
+static esp_err_t start_worker_task(
+    TaskFunction_t task_fn,
+    const char *task_name,
+    uint32_t stack_size,
+    uint32_t fallback_stack_size,
+    UBaseType_t priority,
+    bool required
+) {
+    BaseType_t created = pdFAIL;
+    char step_line[96];
+    uint32_t free_heap_before = esp_get_free_heap_size();
+    uint32_t used_stack = stack_size;
+
+    created = xTaskCreate(task_fn, task_name, stack_size, NULL, priority, NULL);
+    if (created != pdPASS && fallback_stack_size > 0 && fallback_stack_size < stack_size) {
+        ESP_LOGW(
+            TAG,
+            "Task '%s' start failed with stack=%u, retry with fallback=%u (heap=%u)",
+            task_name ? task_name : "unknown",
+            (unsigned)stack_size,
+            (unsigned)fallback_stack_size,
+            (unsigned)free_heap_before
+        );
+        created = xTaskCreate(task_fn, task_name, fallback_stack_size, NULL, priority, NULL);
+        used_stack = fallback_stack_size;
+    }
+
+    if (created != pdPASS) {
+        snprintf(step_line, sizeof(step_line), "Task %s FAILED (OOM)", task_name ? task_name : "unknown");
+        test_node_ui_show_step(step_line);
+        ui_logf(NULL, "task %s FAIL heap=%u", task_name ? task_name : "unknown", (unsigned)free_heap_before);
+
+        if (required) {
+            ESP_LOGE(
+                TAG,
+                "Failed to start required task '%s' (stack=%u prio=%u heap=%u)",
+                task_name ? task_name : "unknown",
+                (unsigned)used_stack,
+                (unsigned)priority,
+                (unsigned)free_heap_before
+            );
+            return ESP_ERR_NO_MEM;
+        }
+
+        ESP_LOGW(
+            TAG,
+            "Failed to start optional task '%s' (stack=%u prio=%u heap=%u)",
+            task_name ? task_name : "unknown",
+            (unsigned)used_stack,
+            (unsigned)priority,
+            (unsigned)free_heap_before
+        );
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Task started: %s (stack=%u prio=%u heap_after=%u)",
+        task_name ? task_name : "unknown",
+        (unsigned)used_stack,
+        (unsigned)priority,
+        (unsigned)esp_get_free_heap_size()
+    );
+    ui_logf(NULL, "task %s started", task_name ? task_name : "unknown");
+    return ESP_OK;
+}
+
 esp_err_t test_node_app_init(void) {
     esp_err_t err;
     char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
@@ -1637,39 +1872,61 @@ esp_err_t test_node_app_init(void) {
     mqtt_node_info_t mqtt_node_info = {0};
 
     s_start_time_seconds = get_timestamp_seconds();
+    test_node_ui_set_mode("BOOT");
+    test_node_ui_set_wifi_status(false, "X");
+    test_node_ui_set_mqtt_status(false, "X");
+    test_node_ui_show_step("App init: config_storage_init");
 
     err = config_storage_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "config_storage_init failed: %s", esp_err_to_name(err));
+        test_node_ui_show_step("App init: config_storage_init FAILED");
         return err;
     }
+    test_node_ui_show_step("App init: config_storage_init OK");
 
+    test_node_ui_show_step("App init: config_storage_load");
     if (config_storage_load() != ESP_OK || !has_valid_network_config()) {
+        test_node_ui_show_step("App init: no config, entering setup");
         err = run_setup_portal_blocking();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "setup_portal_run_full_setup failed: %s", esp_err_to_name(err));
+            test_node_ui_show_step("Setup portal FAILED");
             return err;
         }
+        test_node_ui_show_step("Setup portal done, continue init");
     }
 
+    test_node_ui_show_step("App init: wifi_manager_init");
     err = wifi_manager_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "wifi_manager_init failed: %s", esp_err_to_name(err));
+        test_node_ui_show_step("App init: wifi_manager_init FAILED");
         return err;
     }
+    test_node_ui_show_step("App init: wifi_manager_init OK");
+    wifi_manager_register_connection_cb(wifi_connected_callback, NULL);
 
+    test_node_ui_show_step("App init: load WiFi config");
     err = node_utils_init_wifi_config(&wifi_config, wifi_ssid, wifi_password);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "WiFi config unavailable, running setup mode");
+        test_node_ui_show_step("WiFi config missing, setup mode");
         return run_setup_portal_blocking();
     }
+    test_node_ui_set_wifi_status(false, wifi_ssid);
 
+    test_node_ui_show_step("App init: WiFi connect");
     err = wifi_manager_connect(&wifi_config);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "wifi_manager_connect failed (%s), running setup mode", esp_err_to_name(err));
+        test_node_ui_show_step("WiFi connect FAILED, setup mode");
         return run_setup_portal_blocking();
     }
+    test_node_ui_show_step("App init: WiFi connect requested");
+    test_node_ui_set_wifi_status(false, wifi_ssid);
 
+    test_node_ui_show_step("App init: load MQTT config");
     err = node_utils_init_mqtt_config(
         &mqtt_config,
         &mqtt_node_info,
@@ -1686,8 +1943,10 @@ esp_err_t test_node_app_init(void) {
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "MQTT config invalid, running setup mode");
+        test_node_ui_show_step("MQTT config invalid, setup mode");
         return run_setup_portal_blocking();
     }
+    test_node_ui_show_step("App init: MQTT config OK");
 
     reset_runtime_namespace_to_preconfig(
         &mqtt_node_info,
@@ -1696,26 +1955,35 @@ esp_err_t test_node_app_init(void) {
         zone_uid,
         sizeof(zone_uid)
     );
+    test_node_ui_show_step("App init: preconfig namespace set");
 
     s_topic_mutex = xSemaphoreCreateMutex();
     if (!s_topic_mutex) {
         ESP_LOGE(TAG, "Failed to create topic mutex");
+        test_node_ui_show_step("App init: topic mutex FAILED");
         return ESP_ERR_NO_MEM;
     }
+    test_node_ui_show_step("App init: topic mutex OK");
 
     init_virtual_namespaces(mqtt_node_info.gh_uid, mqtt_node_info.zone_uid);
+    ui_sync_all_virtual_nodes(true);
 
     s_command_queue = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(pending_command_t));
     if (!s_command_queue) {
         ESP_LOGE(TAG, "Failed to create command queue");
+        test_node_ui_show_step("App init: command queue FAILED");
         return ESP_ERR_NO_MEM;
     }
+    test_node_ui_show_step("App init: command queue OK");
 
+    test_node_ui_show_step("App init: mqtt_manager_init");
     err = mqtt_manager_init(&mqtt_config, &mqtt_node_info);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt_manager_init failed: %s", esp_err_to_name(err));
+        test_node_ui_show_step("App init: mqtt_manager_init FAILED");
         return err;
     }
+    test_node_ui_show_step("App init: mqtt_manager_init OK");
 
     mqtt_manager_register_command_cb(command_callback, NULL);
     mqtt_manager_register_config_cb(config_callback, NULL);
@@ -1724,13 +1992,41 @@ esp_err_t test_node_app_init(void) {
     err = mqtt_manager_start();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt_manager_start failed: %s", esp_err_to_name(err));
+        test_node_ui_show_step("App init: mqtt_manager_start FAILED");
         return err;
     }
+    test_node_ui_show_step("App init: MQTT service started");
+    test_node_ui_set_mqtt_status(false, "...");
 
-    xTaskCreate(task_publish_telemetry, "telemetry_task", 4096, NULL, 5, NULL);
-    xTaskCreate(task_publish_heartbeat, "heartbeat_task", 4096, NULL, 3, NULL);
-    xTaskCreate(task_publish_config_reports, "config_task", 4096, NULL, 3, NULL);
-    xTaskCreate(command_worker_task, "command_worker", 6144, NULL, 6, NULL);
+    // Критичные задачи (без них UI/зоны/логи не будут обновляться)
+    err = start_worker_task(
+        command_worker_task,
+        "command_worker",
+        TASK_STACK_COMMAND_WORKER,
+        TASK_STACK_COMMAND_WORKER_FALLBACK,
+        6,
+        true
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = start_worker_task(
+        task_publish_telemetry,
+        "telemetry_task",
+        TASK_STACK_TELEMETRY,
+        TASK_STACK_TELEMETRY_FALLBACK,
+        5,
+        true
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+    // task_ui_state_sync перенесён в telemetry_task (экономия heap под OOM).
+
+    // Heartbeat и periodic config_report выполняются внутри telemetry_task
+    // (уменьшаем число RTOS-задач, чтобы убрать OOM на старте).
+
+    test_node_ui_show_step("App init: worker tasks started (checked)");
 
     {
         char base_gh_uid[64] = {0};
@@ -1757,5 +2053,7 @@ esp_err_t test_node_app_init(void) {
             base_preconfig_mode ? "setup/preconfig" : "configured"
         );
     }
+    test_node_ui_show_step("App init: completed");
+    test_node_ui_set_mode("RUN");
     return ESP_OK;
 }
