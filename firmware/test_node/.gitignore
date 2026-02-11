@@ -1,1 +1,4 @@
 managed_components/
+.cache/
+.vscode/
+build/

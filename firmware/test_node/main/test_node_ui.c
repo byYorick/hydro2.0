@@ -154,10 +154,12 @@ static lv_obj_t *s_mode_label = NULL;
 static lv_obj_t *s_diag_label = NULL;
 static lv_obj_t *s_diag_big_label = NULL;
 static lv_obj_t *s_nodes_box = NULL;
-static lv_obj_t *s_nodes_label = NULL;
+static lv_obj_t *s_nodes_label_rows[UI_MAX_NODES] = {NULL};
+static size_t s_nodes_rows_count = UI_MAX_NODES;
 static lv_obj_t *s_log_box = NULL;
 static lv_obj_t *s_log_title = NULL;
-static lv_obj_t *s_log_label = NULL;
+static lv_obj_t *s_log_label_rows[UI_LOG_VISIBLE_LINES] = {NULL};
+static size_t s_log_rows_count = UI_LOG_VISIBLE_LINES;
 static lv_obj_t *s_setup_box = NULL;
 static lv_obj_t *s_setup_title = NULL;
 static lv_obj_t *s_setup_details = NULL;
@@ -175,8 +177,8 @@ static int64_t s_boot_us = 0;
 static char s_wifi_line_buf[24] = "";
 static char s_mqtt_line_buf[12] = "";
 static char s_mode_line_buf[UI_TEXT_MAX + 12] = "";
-static char s_nodes_text_buf[640] = "";
-static char s_log_text_buf[(UI_LOG_VISIBLE_LINES * UI_LOG_LINE_MAX) + 32] = "";
+static char s_nodes_row_text_buf[UI_MAX_NODES][UI_TEXT_MAX] = {{0}};
+static char s_log_row_text_buf[UI_LOG_VISIBLE_LINES][UI_LOG_LINE_MAX] = {{0}};
 static char s_log_title_buf[48] = "";
 static char s_setup_details_buf[(UI_TEXT_MAX * 4) + 64] = "";
 static char s_diag_line_buf[48] = "";
@@ -494,15 +496,14 @@ static void ui_refresh_status_labels(void) {
 }
 
 static void ui_refresh_nodes_label(void) {
-    int written = 0;
     size_t i;
+    size_t row = 0;
 
-    if (!s_nodes_label) {
+    if (!s_nodes_label_rows[0]) {
         return;
     }
 
-    s_nodes_text_buf[0] = '\0';
-    for (i = 0; i < UI_MAX_NODES; i++) {
+    for (i = 0; i < UI_MAX_NODES && row < s_nodes_rows_count; i++) {
         char hb_mark = '.';
         char lwt_mark = '.';
         char state_mark;
@@ -528,33 +529,34 @@ static void ui_refresh_nodes_label(void) {
             s_nodes[i].zone_uid
         );
 
-        if ((size_t)written < sizeof(s_nodes_text_buf)) {
-            written += snprintf(
-                s_nodes_text_buf + written,
-                sizeof(s_nodes_text_buf) - (size_t)written,
-                "%s %-10s %c%c%c\n",
-                s_nodes[i].short_name,
-                zone_short,
-                hb_mark,
-                lwt_mark,
-                state_mark
-            );
-        }
-
-        if ((size_t)written >= sizeof(s_nodes_text_buf)) {
-            break;
-        }
+        snprintf(
+            s_nodes_row_text_buf[row],
+            sizeof(s_nodes_row_text_buf[row]),
+            "%s %-10s %c%c%c",
+            s_nodes[i].short_name,
+            zone_short,
+            hb_mark,
+            lwt_mark,
+            state_mark
+        );
+        lv_label_set_text(s_nodes_label_rows[row], s_nodes_row_text_buf[row]);
+        lv_obj_invalidate(s_nodes_label_rows[row]);
+        row++;
     }
 
-    if (written == 0) {
-        snprintf(s_nodes_text_buf, sizeof(s_nodes_text_buf), "%s", "(nodes empty)");
-    } else {
-        if (written > 0 && s_nodes_text_buf[written - 1] == '\n') {
-            s_nodes_text_buf[written - 1] = '\0';
-        }
+    if (row == 0) {
+        snprintf(s_nodes_row_text_buf[0], sizeof(s_nodes_row_text_buf[0]), "%s", "(nodes empty)");
+        lv_label_set_text(s_nodes_label_rows[0], s_nodes_row_text_buf[0]);
+        lv_obj_invalidate(s_nodes_label_rows[0]);
+        row = 1;
     }
-    lv_label_set_text_static(s_nodes_label, s_nodes_text_buf);
-    lv_obj_invalidate(s_nodes_label);
+
+    for (i = row; i < s_nodes_rows_count; i++) {
+        s_nodes_row_text_buf[i][0] = '\0';
+        lv_label_set_text(s_nodes_label_rows[i], s_nodes_row_text_buf[i]);
+        lv_obj_invalidate(s_nodes_label_rows[i]);
+    }
+
     if (s_nodes_box) {
         lv_obj_invalidate(s_nodes_box);
     }
@@ -567,22 +569,29 @@ static const char *ui_get_log_line(size_t logical_index) {
 }
 
 static void ui_refresh_log_label(void) {
-    size_t visible = UI_LOG_VISIBLE_LINES;
+    size_t visible = s_log_rows_count;
     size_t max_scroll;
     size_t start_index;
     size_t i;
-    int written = 0;
 
-    if (!s_log_label || !s_log_title) {
+    if (!s_log_label_rows[0] || !s_log_title) {
         return;
     }
 
     if (s_log_count == 0) {
-        snprintf(s_log_text_buf, sizeof(s_log_text_buf), "%s", "[SYS] waiting logs...");
+        snprintf(s_log_row_text_buf[0], sizeof(s_log_row_text_buf[0]), "%s", "[SYS] waiting logs...");
+        for (i = 1; i < s_log_rows_count; i++) {
+            s_log_row_text_buf[i][0] = '\0';
+        }
         snprintf(s_log_title_buf, sizeof(s_log_title_buf), "%s", "LOG (enc scroll)");
-        lv_label_set_text_static(s_log_label, s_log_text_buf);
-        lv_label_set_text_static(s_log_title, s_log_title_buf);
-        lv_obj_invalidate(s_log_label);
+        lv_label_set_text(s_log_label_rows[0], s_log_row_text_buf[0]);
+        for (i = 1; i < s_log_rows_count; i++) {
+            lv_label_set_text(s_log_label_rows[i], s_log_row_text_buf[i]);
+        }
+        lv_label_set_text(s_log_title, s_log_title_buf);
+        for (i = 0; i < s_log_rows_count; i++) {
+            lv_obj_invalidate(s_log_label_rows[i]);
+        }
         lv_obj_invalidate(s_log_title);
         if (s_log_box) {
             lv_obj_invalidate(s_log_box);
@@ -601,26 +610,19 @@ static void ui_refresh_log_label(void) {
 
     start_index = s_log_count - visible - s_log_scroll_offset;
 
-    s_log_text_buf[0] = '\0';
-    for (i = 0; i < visible; i++) {
-        const char *line = ui_get_log_line(start_index + i);
-        if ((size_t)written >= sizeof(s_log_text_buf)) {
-            break;
+    for (i = 0; i < s_log_rows_count; i++) {
+        if (i < visible) {
+            const char *line = ui_get_log_line(start_index + i);
+            snprintf(s_log_row_text_buf[i], sizeof(s_log_row_text_buf[i]), "%s", line);
+        } else {
+            s_log_row_text_buf[i][0] = '\0';
         }
-
-        written += snprintf(
-            s_log_text_buf + written,
-            sizeof(s_log_text_buf) - (size_t)written,
-            "%s%s",
-            (i == 0) ? "" : "\n",
-            line
-        );
+        lv_label_set_text(s_log_label_rows[i], s_log_row_text_buf[i]);
+        lv_obj_invalidate(s_log_label_rows[i]);
     }
 
     snprintf(s_log_title_buf, sizeof(s_log_title_buf), "LOG (enc scroll)  off:%u", (unsigned)s_log_scroll_offset);
-    lv_label_set_text_static(s_log_label, s_log_text_buf);
-    lv_label_set_text_static(s_log_title, s_log_title_buf);
-    lv_obj_invalidate(s_log_label);
+    lv_label_set_text(s_log_title, s_log_title_buf);
     lv_obj_invalidate(s_log_title);
     if (s_log_box) {
         lv_obj_invalidate(s_log_box);
@@ -628,11 +630,51 @@ static void ui_refresh_log_label(void) {
     ui_refresh_diag_label();
 }
 
+static bool ui_log_is_command_line(const char *message) {
+    if (!message || message[0] == '\0') {
+        return false;
+    }
+
+    if (strncmp(message, "cmd_resp ", 9) == 0) {
+        return true;
+    }
+
+    if (strncmp(message, "cmd ack ", 8) == 0) {
+        return true;
+    }
+
+    if (strncmp(message, "cmd queued ", 11) == 0) {
+        return true;
+    }
+
+    if (strncmp(message, "cmd run ", 8) == 0) {
+        return true;
+    }
+
+    if (strncmp(message, "cmd done ", 9) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool ui_log_should_display(const char *message) {
+    if (!message || message[0] == '\0') {
+        return false;
+    }
+
+    if (strncmp(message, "tel ", 4) == 0) {
+        return true;
+    }
+
+    return ui_log_is_command_line(message);
+}
+
 static void ui_append_log_line(const char *node_uid, const char *message) {
     char line[UI_LOG_LINE_MAX];
     const char *prefix = "SYS";
 
-    if (!message || message[0] == '\0') {
+    if (!ui_log_should_display(message)) {
         return;
     }
 
@@ -656,7 +698,7 @@ static void ui_append_log_line(const char *node_uid, const char *message) {
 }
 
 static void ui_scroll_logs(int32_t diff) {
-    size_t visible = (s_log_count < UI_LOG_VISIBLE_LINES) ? s_log_count : UI_LOG_VISIBLE_LINES;
+    size_t visible = (s_log_count < s_log_rows_count) ? s_log_count : s_log_rows_count;
     size_t max_scroll = (s_log_count > visible) ? (s_log_count - visible) : 0;
 
     if (diff == 0) {
@@ -885,16 +927,20 @@ static void ui_debug_dump_state(void) {
         log_hidden = lv_obj_has_flag(s_log_box, LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (s_nodes_label) {
-        nodes_text = lv_label_get_text(s_nodes_label);
-        if (nodes_text) {
-            nodes_text_len = strlen(nodes_text);
+    if (s_nodes_label_rows[0]) {
+        for (i = 0; i < s_nodes_rows_count; i++) {
+            nodes_text = lv_label_get_text(s_nodes_label_rows[i]);
+            if (nodes_text) {
+                nodes_text_len += strlen(nodes_text);
+            }
         }
     }
-    if (s_log_label) {
-        log_text = lv_label_get_text(s_log_label);
-        if (log_text) {
-            log_text_len = strlen(log_text);
+    if (s_log_label_rows[0]) {
+        for (i = 0; i < s_log_rows_count; i++) {
+            log_text = lv_label_get_text(s_log_label_rows[i]);
+            if (log_text) {
+                log_text_len += strlen(log_text);
+            }
         }
     }
 
@@ -1408,12 +1454,40 @@ static esp_err_t init_lvgl(void) {
     lv_obj_set_style_radius(s_nodes_box, 2, 0);
     lv_obj_set_style_pad_all(s_nodes_box, 4, 0);
 
-    s_nodes_label = lv_label_create(s_nodes_box);
-    lv_obj_set_style_text_font(s_nodes_label, UI_FONT_SMALL, 0);
-    lv_obj_set_width(s_nodes_label, lv_obj_get_width(s_nodes_box) - 2);
-    lv_obj_set_style_text_color(s_nodes_label, lv_color_hex(0xD6E9F5), 0);
-    lv_label_set_long_mode(s_nodes_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(s_nodes_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    {
+        int32_t line_h = lv_font_get_line_height(UI_FONT_SMALL);
+        int32_t line_step;
+        int32_t available_h = lv_obj_get_height(s_nodes_box) - 8;
+        int32_t line_w = CONFIG_TEST_NODE_LCD_H_RES - 8 - (4 * 2);
+        size_t i;
+
+        if (line_h < 8) {
+            line_h = 12;
+        }
+        line_step = line_h + 1;
+        s_nodes_rows_count = UI_MAX_NODES;
+        if (available_h > 0) {
+            size_t fit_rows = (size_t)(available_h / line_step);
+            if (fit_rows == 0) {
+                fit_rows = 1;
+            }
+            if (fit_rows < s_nodes_rows_count) {
+                s_nodes_rows_count = fit_rows;
+            }
+        }
+
+        for (i = 0; i < s_nodes_rows_count; i++) {
+            s_nodes_label_rows[i] = lv_label_create(s_nodes_box);
+            lv_obj_set_style_text_font(s_nodes_label_rows[i], UI_FONT_SMALL, 0);
+            lv_obj_set_width(s_nodes_label_rows[i], line_w);
+            lv_obj_set_style_text_color(s_nodes_label_rows[i], lv_color_hex(0xD6E9F5), 0);
+            lv_obj_set_style_text_opa(s_nodes_label_rows[i], LV_OPA_COVER, 0);
+            lv_label_set_long_mode(s_nodes_label_rows[i], LV_LABEL_LONG_CLIP);
+            lv_obj_align(s_nodes_label_rows[i], LV_ALIGN_TOP_LEFT, 0, (int32_t)(i * line_step));
+            s_nodes_row_text_buf[i][0] = '\0';
+            lv_label_set_text(s_nodes_label_rows[i], s_nodes_row_text_buf[i]);
+        }
+    }
 
     s_setup_box = lv_obj_create(lv_scr_act());
     lv_obj_set_size(s_setup_box, CONFIG_TEST_NODE_LCD_H_RES - 8, 98);
@@ -1453,14 +1527,43 @@ static esp_err_t init_lvgl(void) {
     s_log_title = lv_label_create(s_log_box);
     lv_obj_set_style_text_font(s_log_title, UI_FONT_SMALL, 0);
     lv_obj_set_style_text_color(s_log_title, lv_color_hex(0x89D6FF), 0);
+    lv_obj_set_style_text_opa(s_log_title, LV_OPA_COVER, 0);
     lv_obj_align(s_log_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    s_log_label = lv_label_create(s_log_box);
-    lv_obj_set_style_text_font(s_log_label, UI_FONT_SMALL, 0);
-    lv_obj_set_width(s_log_label, lv_obj_get_width(s_log_box) - 2);
-    lv_obj_set_style_text_color(s_log_label, lv_color_hex(0xD9F8D8), 0);
-    lv_label_set_long_mode(s_log_label, LV_LABEL_LONG_WRAP);
-    lv_obj_align(s_log_label, LV_ALIGN_TOP_LEFT, 0, 16);
+    {
+        int32_t line_h = lv_font_get_line_height(UI_FONT_SMALL);
+        int32_t available_h = lv_obj_get_height(s_log_box) - 16 - 4;
+        int32_t line_step;
+        int32_t line_w = CONFIG_TEST_NODE_LCD_H_RES - 8 - (4 * 2);
+        size_t i;
+
+        if (line_h < 8) {
+            line_h = 12;
+        }
+        line_step = line_h + 1;
+        s_log_rows_count = UI_LOG_VISIBLE_LINES;
+        if (available_h > 0) {
+            size_t fit_rows = (size_t)(available_h / line_step);
+            if (fit_rows == 0) {
+                fit_rows = 1;
+            }
+            if (fit_rows < s_log_rows_count) {
+                s_log_rows_count = fit_rows;
+            }
+        }
+
+        for (i = 0; i < s_log_rows_count; i++) {
+            s_log_label_rows[i] = lv_label_create(s_log_box);
+            lv_obj_set_style_text_font(s_log_label_rows[i], UI_FONT_SMALL, 0);
+            lv_obj_set_width(s_log_label_rows[i], line_w);
+            lv_obj_set_style_text_color(s_log_label_rows[i], lv_color_hex(0xD9F8D8), 0);
+            lv_obj_set_style_text_opa(s_log_label_rows[i], LV_OPA_COVER, 0);
+            lv_label_set_long_mode(s_log_label_rows[i], LV_LABEL_LONG_CLIP);
+            lv_obj_align(s_log_label_rows[i], LV_ALIGN_TOP_LEFT, 0, 16 + ((int32_t)i * line_step));
+            s_log_row_text_buf[i][0] = '\0';
+            lv_label_set_text(s_log_label_rows[i], s_log_row_text_buf[i]);
+        }
+    }
 
     ui_refresh_status_labels();
     ui_refresh_nodes_label();
