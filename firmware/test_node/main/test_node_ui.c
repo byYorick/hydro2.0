@@ -299,15 +299,15 @@ static void ui_make_short_name(const char *node_uid, char *out, size_t out_size)
         return;
     }
     if (strstr(node_uid, "-tank-") != NULL) {
-        snprintf(out, out_size, "TANK");
+        snprintf(out, out_size, "TNK");
         return;
     }
     if (strstr(node_uid, "-climate-") != NULL) {
-        snprintf(out, out_size, "CLIM");
+        snprintf(out, out_size, "CLI");
         return;
     }
     if (strstr(node_uid, "-light-") != NULL) {
-        snprintf(out, out_size, "LIGHT");
+        snprintf(out, out_size, "LGT");
         return;
     }
 
@@ -643,10 +643,6 @@ static bool ui_log_is_command_line(const char *message) {
         return true;
     }
 
-    if (strncmp(message, "cmd queued ", 11) == 0) {
-        return true;
-    }
-
     if (strncmp(message, "cmd run ", 8) == 0) {
         return true;
     }
@@ -670,8 +666,190 @@ static bool ui_log_should_display(const char *message) {
     return ui_log_is_command_line(message);
 }
 
+static void ui_compact_channel_name(const char *channel, char *out, size_t out_size) {
+    if (!out || out_size == 0) {
+        return;
+    }
+    if (!channel || channel[0] == '\0') {
+        snprintf(out, out_size, "-");
+        return;
+    }
+
+    if (strcmp(channel, "ph_sensor") == 0) {
+        snprintf(out, out_size, "ph");
+        return;
+    }
+    if (strcmp(channel, "ec_sensor") == 0) {
+        snprintf(out, out_size, "ec");
+        return;
+    }
+    if (strcmp(channel, "water_level") == 0) {
+        snprintf(out, out_size, "lvl");
+        return;
+    }
+    if (strcmp(channel, "air_temp_c") == 0) {
+        snprintf(out, out_size, "tmp");
+        return;
+    }
+    if (strcmp(channel, "air_rh") == 0) {
+        snprintf(out, out_size, "rh");
+        return;
+    }
+    if (strcmp(channel, "light_level") == 0) {
+        snprintf(out, out_size, "lux");
+        return;
+    }
+    if (strcmp(channel, "flow_present") == 0) {
+        snprintf(out, out_size, "flow");
+        return;
+    }
+    if (strcmp(channel, "pump_bus_current") == 0) {
+        snprintf(out, out_size, "amp");
+        return;
+    }
+
+    snprintf(out, out_size, "%.6s", channel);
+}
+
+static void ui_compact_cmd_name(const char *cmd, char *out, size_t out_size) {
+    if (!out || out_size == 0) {
+        return;
+    }
+    if (!cmd || cmd[0] == '\0') {
+        snprintf(out, out_size, "-");
+        return;
+    }
+
+    if (strcmp(cmd, "test_sensor") == 0 || strcmp(cmd, "probe_sensor") == 0) {
+        snprintf(out, out_size, "probe");
+        return;
+    }
+    if (strcmp(cmd, "set_relay") == 0) {
+        snprintf(out, out_size, "relay");
+        return;
+    }
+    if (strcmp(cmd, "set_pwm") == 0) {
+        snprintf(out, out_size, "pwm");
+        return;
+    }
+    if (strcmp(cmd, "run_pump") == 0) {
+        snprintf(out, out_size, "pump");
+        return;
+    }
+    if (strcmp(cmd, "dose") == 0) {
+        snprintf(out, out_size, "dose");
+        return;
+    }
+    if (strcmp(cmd, "restart") == 0 || strcmp(cmd, "reboot") == 0) {
+        snprintf(out, out_size, "rst");
+        return;
+    }
+    if (
+        strcmp(cmd, "report_config") == 0 ||
+        strcmp(cmd, "config_report") == 0 ||
+        strcmp(cmd, "get_config") == 0 ||
+        strcmp(cmd, "sync_config") == 0
+    ) {
+        snprintf(out, out_size, "cfg");
+        return;
+    }
+
+    snprintf(out, out_size, "%.6s", cmd);
+}
+
+static void ui_trim_number_text(char *num_text) {
+    size_t len;
+
+    if (!num_text || num_text[0] == '\0') {
+        return;
+    }
+
+    len = strlen(num_text);
+    while (len > 0 && num_text[len - 1] == '0') {
+        num_text[len - 1] = '\0';
+        len--;
+    }
+    if (len > 0 && num_text[len - 1] == '.') {
+        num_text[len - 1] = '\0';
+    }
+}
+
+static void ui_compact_log_message(const char *message, char *out, size_t out_size) {
+    char work[UI_TEXT_MAX + 8];
+    char ch[12];
+    char cmd[12];
+    char status[16];
+    char value[20];
+    const char *p;
+    const char *slash;
+    const char *eq;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+
+    out[0] = '\0';
+    if (!message || message[0] == '\0') {
+        return;
+    }
+
+    if (strncmp(message, "tel ", 4) == 0) {
+        p = message + 4;
+        slash = strchr(p, '/');
+        eq = strchr(p, '=');
+        if (slash && eq && eq > slash) {
+            size_t ch_len = (size_t)(slash - p);
+            size_t val_len = strlen(eq + 1);
+            if (ch_len >= sizeof(work)) {
+                ch_len = sizeof(work) - 1;
+            }
+            if (val_len >= sizeof(value)) {
+                val_len = sizeof(value) - 1;
+            }
+            memcpy(work, p, ch_len);
+            work[ch_len] = '\0';
+            memcpy(value, eq + 1, val_len);
+            value[val_len] = '\0';
+            ui_compact_channel_name(work, ch, sizeof(ch));
+            ui_trim_number_text(value);
+            snprintf(out, out_size, "T %s=%s", ch, value);
+            return;
+        }
+    }
+
+    if (sscanf(message, "cmd ack %31[^/]/%31s", work, value) == 2) {
+        ui_compact_channel_name(work, ch, sizeof(ch));
+        ui_compact_cmd_name(value, cmd, sizeof(cmd));
+        snprintf(out, out_size, "C+ %s/%s", ch, cmd);
+        return;
+    }
+
+    if (sscanf(message, "cmd run %31[^/]/%31s", work, value) == 2) {
+        ui_compact_channel_name(work, ch, sizeof(ch));
+        ui_compact_cmd_name(value, cmd, sizeof(cmd));
+        snprintf(out, out_size, "C> %s/%s", ch, cmd);
+        return;
+    }
+
+    if (sscanf(message, "cmd done %31[^/]/%31s -> %15s", work, value, status) == 3) {
+        ui_compact_channel_name(work, ch, sizeof(ch));
+        ui_compact_cmd_name(value, cmd, sizeof(cmd));
+        snprintf(out, out_size, "C= %s/%s %s", ch, cmd, status);
+        return;
+    }
+
+    if (sscanf(message, "cmd_resp %15s %31s", status, work) == 2) {
+        ui_compact_channel_name(work, ch, sizeof(ch));
+        snprintf(out, out_size, "R %s %s", status, ch);
+        return;
+    }
+
+    snprintf(out, out_size, "%.26s", message);
+}
+
 static void ui_append_log_line(const char *node_uid, const char *message) {
     char line[UI_LOG_LINE_MAX];
+    char compact_msg[UI_TEXT_MAX];
     const char *prefix = "SYS";
 
     if (!ui_log_should_display(message)) {
@@ -683,7 +861,11 @@ static void ui_append_log_line(const char *node_uid, const char *message) {
         prefix = ui_node_short_or_uid(node_uid);
     }
 
-    snprintf(line, sizeof(line), "[%s] %s", prefix, message);
+    ui_compact_log_message(message, compact_msg, sizeof(compact_msg));
+    if (compact_msg[0] == '\0') {
+        return;
+    }
+    snprintf(line, sizeof(line), "[%s] %s", prefix, compact_msg);
 
     if (s_log_count < UI_LOG_LINES_MAX) {
         size_t idx = (s_log_start + s_log_count) % UI_LOG_LINES_MAX;
