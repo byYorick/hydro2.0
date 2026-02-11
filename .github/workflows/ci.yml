@@ -190,8 +190,12 @@ jobs:
           cleanup() {
             echo "Cleaning up background processes..."
             # Kill specific processes by PID if they exist
-            [ -n "$MIGRATE_PID" ] && kill $MIGRATE_PID 2>/dev/null || true
-            [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
+            if [ -n "$MIGRATE_PID" ]; then
+              kill "$MIGRATE_PID" 2>/dev/null || true
+            fi
+            if [ -n "$SERVE_PID" ]; then
+              kill "$SERVE_PID" 2>/dev/null || true
+            fi
             # Fallback: kill any matching processes
             pkill -f "php artisan migrate" 2>/dev/null || true
             pkill -f "php artisan serve" 2>/dev/null || true
@@ -244,7 +248,11 @@ jobs:
           SERVE_PID=$!
           
           # Wait for migration to complete
-          wait $MIGRATE_PID || true
+          if ! wait "$MIGRATE_PID"; then
+            echo "ERROR: migrate:fresh failed"
+            exit 1
+          fi
+          MIGRATE_PID=""
           php artisan db:seed --class=AdminUserSeeder --force
           
           # Wait for server to be ready with health check

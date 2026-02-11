@@ -766,6 +766,33 @@ scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id
 scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
 ```
 
+### 8.4.1. Контракт `scheduler_logs.details` (Protocol 2.0)
+
+Обязательные ключи task snapshot:
+- `task_id: string`
+- `zone_id: int`
+- `task_type: string`
+- `status: string`
+- `correlation_id: string`
+- `scheduled_for: ISO8601|null`
+- `due_at: ISO8601`
+- `expires_at: ISO8601`
+
+Обязательные ключи terminal outcome (`completed|failed|rejected|expired`):
+- `result.action_required: bool`
+- `result.decision: \"execute\"|\"skip\"`
+- `result.reason_code: string`
+- `result.error_code: string|null`
+- `result.command_submitted: bool|null`
+- `result.command_effect_confirmed: bool|null`
+- `result.commands_total: int|null`
+- `result.commands_effect_confirmed: int|null`
+- `result.commands_failed: int|null`
+
+Owner-модель статусов:
+- business (automation-engine): `accepted|running|completed|failed|rejected|expired`;
+- transport (scheduler reconcile): `timeout|not_found` (не являются business outcome decision-layer).
+
 ---
 
 # 9. Пользователи и роли

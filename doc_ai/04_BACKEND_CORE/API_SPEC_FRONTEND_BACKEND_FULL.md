@@ -14,7 +14,7 @@
 Задача документа:
 - зафиксировать **контракты**;
 - помочь ИИ-агентам не плодить несогласованные эндпоинты;
-- обеспечить обратную совместимость при эволюции API.
+- обеспечить консистентную эволюцию API в рамках целевого Protocol 2.0.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -113,7 +113,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 3. Grow Cycles API (НОВОЕ после рефакторинга)
 
-**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `agronomist`.
+**Аутентификация:** `GET /api/zones/{zone}/grow-cycle` требует `auth:sanctum`; mutating-endpoint-ы grow-cycle требуют роль `operator`, `admin`, `agronomist` или `engineer`.
 
 **Центр API для управления циклами выращивания.**
 
@@ -258,8 +258,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
     "params": {
       "state": true
     },
-    "duration_sec": 120,
-    "fallback_mode": "none"
+    "duration_sec": 120
   }
 }
 ```
@@ -272,7 +271,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `default_state` (bool): значение по умолчанию, если `state_key` не задан.
 - `params` (object): дефолтные параметры команды.
 - `duration_sec` (number): дефолтная длительность; нормализуется в `duration_ms` на стороне automation-engine.
-- `fallback_mode` (enum: `none|zone_service|event_only`): поведение при отсутствии online узлов.
 
 Если `execution` отсутствует, используется встроенный mapping automation-engine.
 
@@ -359,14 +357,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Lifecycle:** снимки статусов из `scheduler_logs` (типично `accepted/running/completed/failed`).
 - **Timeline:** task-события из `zone_events` (`TASK_STARTED`, `DECISION_MADE`, `COMMAND_DISPATCHED`, `COMMAND_FAILED`, `TASK_FINISHED`, ...),
   фильтрация по `task_id` и/или `correlation_id`.
+- **Сортировка timeline:** строго по времени события по возрастанию (`created_at ASC`, затем `id ASC`).
+- **Инварианты контракта:** `correlation_id`, `due_at`, `expires_at` обязательны на уровне task-source (`automation-engine`).
 
 ### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId}
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - **Описание:** Возвращает актуальный статус scheduler-task по `taskId`.
-- **Поведение:** Laravel сначала запрашивает `automation-engine /scheduler/task/{taskId}`,
-  при недоступности upstream использует fallback из `scheduler_logs`.
-- **Источник:** в `data.source` возвращается `automation_engine` или `scheduler_logs`.
+- **Поведение:** Laravel запрашивает `automation-engine /scheduler/task/{taskId}` без fallback на legacy-ветки.
+- **Источник:** в `data.source` возвращается только `automation_engine`.
 - **Дополнительно:** ответ всегда содержит:
   - `lifecycle[]` (снимки `scheduler_logs`);
   - `timeline[]` (детальные task-события из `zone_events`);
@@ -616,33 +615,25 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
 - Удаление фазы рецепта.
 
-### 4.7. POST /api/zones/{id}/attach-recipe
+### 4.7. POST /api/zones/{zone}/grow-cycles
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Назначение рецепта на зону.
-- Тело:
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Создание нового grow cycle для зоны.
 
-```json
-{
- "recipe_id": 1,
- "start_at": "2025-11-15T10:00:00Z"
-}
-```
+### 4.8. POST /api/grow-cycles/{growCycle}/set-phase
 
-### 4.8. POST /api/zones/{id}/change-phase
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Ручной переход фазы grow cycle.
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Ручной переход зоны на другую фазу.
+### 4.9. POST /api/grow-cycles/{growCycle}/pause
 
-### 4.9. POST /api/zones/{id}/pause
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Приостановка grow cycle.
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Приостановка работы зоны (временная остановка автоматизации).
+### 4.10. POST /api/grow-cycles/{growCycle}/resume
 
-### 4.10. POST /api/zones/{id}/resume
-
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Возобновление работы зоны после паузы.
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Возобновление grow cycle.
 
 ### 4.11. GET /api/zones/{id}/cycles
 
@@ -721,11 +712,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 6. Commands API
 
-**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `operator` или `admin`.
+**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`.
 
 ### 6.1. POST /api/zones/{id}/commands
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Валидация:** Используется `StoreZoneCommandRequest` для валидации входных данных
 - **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
@@ -738,7 +729,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  - `FORCE_LIGHTING` - принудительное управление освещением;
  - `FORCE_CLIMATE` - принудительное управление климатом;
  - `FORCE_LIGHT_ON/OFF` - включение/выключение света (устаревшая, используйте `FORCE_LIGHTING`);
- - `ZONE_PAUSE/RESUME` - приостановка/возобновление зоны (лучше использовать `/api/zones/{id}/pause` и `/api/zones/{id}/resume`).
+ - `ZONE_PAUSE/RESUME` - legacy-команды управления зоной (предпочтителен lifecycle через grow-cycle endpoints).
 
 Тело запроса:
 
@@ -764,7 +755,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 6.2. POST /api/nodes/{id}/commands
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Валидация:** Используется `StoreNodeCommandRequest` для валидации входных данных
 - **Авторизация:** Проверка прав через `DeviceNodePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
@@ -788,7 +779,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 7.3. PATCH /api/alerts/{id}/ack
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - Подтверждение алерта оператором.
 
 ### 7.4. GET /api/alerts/stream

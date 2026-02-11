@@ -72,7 +72,9 @@
 - `POST /scheduler/bootstrap` -> `ready|wait|deny` + lease
 - `POST /scheduler/bootstrap/heartbeat` -> refresh lease
 - `POST /scheduler/task` -> `accepted` + `task_id`
-- `GET /scheduler/task/{task_id}` -> `accepted|running|completed|failed`
+- `GET /scheduler/task/{task_id}` -> `accepted|running|completed|failed|rejected|expired`
+- `GET /health/live` -> liveness probe
+- `GET /health/ready` -> readiness probe (`CommandBus + DB + bootstrap lease-store`)
 
 Поддерживаемые `task_type`:
 - `irrigation`

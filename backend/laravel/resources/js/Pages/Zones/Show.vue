@@ -117,6 +117,10 @@
       @confirm-abort="confirmAbort"
       @close-change-recipe="closeChangeRecipeModal"
       @confirm-change-recipe="confirmChangeRecipe"
+      @update-harvest-batch-label="harvestModal.batchLabel = $event"
+      @update-abort-notes="abortModal.notes = $event"
+      @update-change-recipe-revision-id="changeRecipeModal.recipeRevisionId = $event"
+      @update-change-recipe-apply-mode="changeRecipeModal.applyMode = $event"
     />
   </AppLayout>
 </template>

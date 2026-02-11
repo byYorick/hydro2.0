@@ -204,7 +204,7 @@
           <div>
             <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Scheduler Task Lifecycle</h3>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Мониторинг статусов `accepted -> running -> completed/failed` по `task_id`.
+              Мониторинг статусов `accepted -> running -> completed/failed/rejected/expired` по `task_id`.
             </p>
           </div>
           <div class="text-xs text-[color:var(--text-muted)]">
@@ -273,6 +273,27 @@
               <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.updated_at) }}</dd>
             </div>
           </dl>
+          <dl class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Scheduled</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.scheduled_for) }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Due</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.due_at || null) }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Expires</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.expires_at || null) }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">SLA-контроль</dt>
+              <dd class="space-y-1">
+                <Badge :variant="schedulerTaskSla.variant">{{ schedulerTaskSla.label }}</Badge>
+                <p class="text-[color:var(--text-dim)]">{{ schedulerTaskSla.hint }}</p>
+              </dd>
+            </div>
+          </dl>
           <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
             <div>
               <dt class="text-[color:var(--text-dim)]">Решение автоматики</dt>
@@ -290,6 +311,24 @@
               <dt class="text-[color:var(--text-dim)]">Причина</dt>
               <dd class="text-[color:var(--text-primary)]">
                 {{ schedulerTaskReasonLabel(schedulerTaskStatus.reason_code, schedulerTaskStatus.reason) }}
+              </dd>
+            </div>
+          </dl>
+          <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Подтверждение ноды DONE</dt>
+              <dd class="space-y-1">
+                <Badge :variant="schedulerTaskDone.variant">{{ schedulerTaskDone.label }}</Badge>
+                <p class="text-[color:var(--text-dim)]">{{ schedulerTaskDone.hint }}</p>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Командный итог</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ schedulerTaskStatus.commands_effect_confirmed ?? schedulerTaskStatus.result?.commands_effect_confirmed ?? '-' }}
+                /
+                {{ schedulerTaskStatus.commands_total ?? schedulerTaskStatus.result?.commands_total ?? '-' }}
+                подтверждено DONE
               </dd>
             </div>
           </dl>
@@ -334,29 +373,49 @@
               </div>
             </li>
           </ul>
-          <ul
+          <p
             v-else
-            class="space-y-1 text-xs"
+            class="text-xs text-[color:var(--text-dim)]"
           >
-            <li
-              v-for="(step, index) in schedulerTaskStatus.lifecycle"
-              :key="`${schedulerTaskStatus.task_id}-step-${index}`"
-              class="flex items-center justify-between gap-2 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
-            >
-              <span class="text-[color:var(--text-primary)]">{{ schedulerTaskStatusLabel(step.status) }}</span>
-              <span class="text-[color:var(--text-dim)]">{{ formatDateTime(step.at) }}</span>
-            </li>
-          </ul>
+            Timeline событий недоступен: ожидается event-contract (`event_id`, `event_type`, `at`).
+          </p>
         </article>
 
         <div class="space-y-2">
           <h4 class="text-sm font-medium text-[color:var(--text-primary)]">Последние задачи зоны</h4>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-2">
+            <input
+              v-model="schedulerTaskSearch"
+              type="text"
+              class="w-full rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-xs"
+              placeholder="Поиск: task_id/status/error_code/reason_code"
+            />
+            <select
+              v-model="schedulerTaskPreset"
+              class="w-full rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-xs"
+            >
+              <option
+                v-for="preset in schedulerTaskPresetOptions"
+                :key="preset.value"
+                :value="preset.value"
+              >
+                {{ preset.label }}
+              </option>
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              @click="schedulerTaskPreset = 'all'; schedulerTaskSearch = ''"
+            >
+              Сбросить фильтры
+            </Button>
+          </div>
           <ul
-            v-if="recentSchedulerTasks.length > 0"
+            v-if="filteredRecentSchedulerTasks.length > 0"
             class="space-y-2"
           >
             <li
-              v-for="task in recentSchedulerTasks"
+              v-for="task in filteredRecentSchedulerTasks"
               :key="task.task_id"
               class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-xl border border-[color:var(--border-muted)] px-3 py-2"
             >
@@ -384,7 +443,7 @@
             v-else
             class="text-xs text-[color:var(--text-dim)]"
           >
-            Локальные lifecycle-снимки scheduler-задач пока не найдены.
+            По текущим фильтрам задачи не найдены.
           </p>
         </div>
       </section>
@@ -407,7 +466,6 @@
         :is-applying="isApplyingProfile"
         :is-system-type-locked="isSystemTypeLocked"
         @close="showEditWizard = false"
-        @reset="resetToRecommended"
         @apply="onApplyFromWizard"
       />
     </template>
@@ -415,15 +473,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from '@/composables/zoneAutomationTypes'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
 } from '@/composables/useZoneAutomationTab'
+
+interface ZoneAutomationWizardApplyPayload {
+  climateForm: ClimateFormState
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
+}
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -452,7 +521,10 @@ const {
   schedulerTaskListLoading,
   schedulerTaskError,
   schedulerTaskStatus,
-  recentSchedulerTasks,
+  filteredRecentSchedulerTasks,
+  schedulerTaskSearch,
+  schedulerTaskPreset,
+  schedulerTaskPresetOptions,
   schedulerTasksUpdatedAt,
   fetchRecentSchedulerTasks,
   lookupSchedulerTask,
@@ -462,13 +534,21 @@ const {
   schedulerTaskDecisionLabel,
   schedulerTaskReasonLabel,
   schedulerTaskErrorLabel,
+  schedulerTaskSlaMeta,
+  schedulerTaskDoneMeta,
   formatDateTime,
 } = useZoneAutomationTab(props)
 
 const zoneId = toRef(props, 'zoneId')
 const showEditWizard = ref(false)
+const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
+const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
 
-async function onApplyFromWizard(): Promise<void> {
+async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Promise<void> {
+  Object.assign(climateForm, payload.climateForm)
+  Object.assign(waterForm, payload.waterForm)
+  Object.assign(lightingForm, payload.lightingForm)
+
   const success = await applyAutomationProfile()
   if (success) {
     showEditWizard.value = false

@@ -3,8 +3,7 @@ import asyncio
 import pytest
 import sys
 import os
-import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -99,13 +98,85 @@ def bootstrap_headers(client: TestClient, scheduler_id: str = "scheduler-test") 
     }
 
 
-def test_health_endpoint(client):
-    """Test health check endpoint."""
+def scheduler_task_payload(**overrides) -> dict:
+    base_scheduled_for = (datetime.utcnow() + timedelta(minutes=5)).replace(microsecond=0)
+    base_due_at = base_scheduled_for + timedelta(seconds=15)
+    base_expires_at = base_scheduled_for + timedelta(minutes=2)
+
+    payload = {
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"reason": "scheduled_check"},
+        "scheduled_for": base_scheduled_for.isoformat(),
+        "due_at": base_due_at.isoformat(),
+        "expires_at": base_expires_at.isoformat(),
+        "correlation_id": "sch:z1:diagnostics:test",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_health_legacy_endpoint_removed(client):
+    """Legacy /health alias must not be exposed."""
     response = client.get("/health")
+    assert response.status_code == 404
+
+
+def test_health_live_endpoint(client):
+    response = client.get("/health/live")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
     assert data["service"] == "automation-engine"
+
+
+def test_health_ready_endpoint_when_ready(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        response = client.get("/health/ready")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ready"] is True
+        assert data["checks"]["command_bus"]["ok"] is True
+        assert data["checks"]["db"]["ok"] is True
+        assert data["checks"]["bootstrap_store"]["ok"] is True
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_health_ready_endpoint_when_command_bus_not_ready(client):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(None, "")
+        response = client.get("/health/ready")
+        assert response.status_code == 503
+        data = response.json()
+        assert data["ready"] is False
+        assert data["checks"]["command_bus"]["ok"] is False
+        assert data["checks"]["command_bus"]["reason"] == "command_bus_unavailable"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_health_ready_endpoint_when_db_probe_fails(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("db down")
+            response = client.get("/health/ready")
+
+        assert response.status_code == 503
+        data = response.json()
+        assert data["ready"] is False
+        assert data["checks"]["db"]["ok"] is False
+        assert data["checks"]["db"]["reason"] == "RuntimeError"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
 
 
 def test_scheduler_command_endpoint_removed(client):
@@ -127,6 +198,30 @@ def test_scheduler_bootstrap_wait_when_command_bus_not_ready(client):
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["bootstrap_status"] == "wait"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_scheduler_bootstrap_wait_when_db_not_ready(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("db unavailable")
+            response = client.post("/scheduler/bootstrap", json={
+                "scheduler_id": "scheduler-db-wait",
+                "scheduler_version": "test",
+                "protocol_version": "2.0",
+            })
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["bootstrap_status"] == "wait"
+        assert data["reason"] == "automation_not_ready"
+        assert data["readiness_reason"] == "RuntimeError"
+        assert "lease_id" not in data
+        assert "scheduler-db-wait" not in api._scheduler_bootstrap_leases
     finally:
         set_command_bus(old_command_bus, old_gh_uid)
 
@@ -155,15 +250,73 @@ def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     assert heartbeat_data["lease_id"] == lease_id
 
 
+def test_scheduler_bootstrap_heartbeat_wait_when_automation_not_ready(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        set_command_bus(mock_command_bus, "gh-1")
+        scheduler_id = "scheduler-heartbeat-wait"
+
+        headers = bootstrap_headers(client, scheduler_id=scheduler_id)
+        lease_id = headers["X-Scheduler-Lease-Id"]
+
+        set_command_bus(None, "")
+        heartbeat_response = client.post("/scheduler/bootstrap/heartbeat", json={
+            "scheduler_id": scheduler_id,
+            "lease_id": lease_id,
+        })
+
+        assert heartbeat_response.status_code == 200
+        heartbeat_data = heartbeat_response.json()["data"]
+        assert heartbeat_data["bootstrap_status"] == "wait"
+        assert heartbeat_data["reason"] == "automation_not_ready"
+        assert scheduler_id not in api._scheduler_bootstrap_leases
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_scheduler_bootstrap_heartbeat_wait_when_db_not_ready(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        set_command_bus(mock_command_bus, "gh-1")
+        scheduler_id = "scheduler-heartbeat-db-wait"
+
+        headers = bootstrap_headers(client, scheduler_id=scheduler_id)
+        lease_id = headers["X-Scheduler-Lease-Id"]
+
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("db unavailable")
+            heartbeat_response = client.post("/scheduler/bootstrap/heartbeat", json={
+                "scheduler_id": scheduler_id,
+                "lease_id": lease_id,
+            })
+
+        assert heartbeat_response.status_code == 200
+        heartbeat_data = heartbeat_response.json()["data"]
+        assert heartbeat_data["bootstrap_status"] == "wait"
+        assert heartbeat_data["reason"] == "automation_not_ready"
+        assert heartbeat_data["readiness_reason"] == "RuntimeError"
+        assert scheduler_id not in api._scheduler_bootstrap_leases
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
 def test_scheduler_internal_enqueue_creates_pending_entry(client):
+    tz_msk = timezone(timedelta(hours=3))
+    scheduled_for = (datetime.now(tz_msk) + timedelta(minutes=5)).replace(microsecond=0)
+    expires_at = scheduled_for + timedelta(hours=2)
+
     with patch("scheduler_internal_enqueue.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
          patch("scheduler_internal_enqueue.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
         response = client.post("/scheduler/internal/enqueue", json={
             "zone_id": 1,
             "task_type": "irrigation",
             "payload": {"config": {"duration_sec": 20}},
-            "scheduled_for": "2026-02-10T10:00:00+03:00",
-            "expires_at": "2026-02-10T12:00:00+03:00",
+            "scheduled_for": scheduled_for.isoformat(),
+            "expires_at": expires_at.isoformat(),
             "source": "automation-engine",
         })
 
@@ -172,8 +325,8 @@ def test_scheduler_internal_enqueue_creates_pending_entry(client):
     assert data["status"] == "pending"
     assert data["zone_id"] == 1
     assert data["task_type"] == "irrigation"
-    assert data["scheduled_for"] == "2026-02-10T07:00:00"
-    assert data["expires_at"] == "2026-02-10T09:00:00"
+    assert data["scheduled_for"] == scheduled_for.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+    assert data["expires_at"] == expires_at.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
     assert data["correlation_id"].startswith("ae:self:1:irrigation:enq-")
     mock_scheduler_log.assert_awaited_once()
     assert mock_scheduler_log.await_args.args[1] == "pending"
@@ -187,12 +340,7 @@ async def test_scheduler_task_success(client, mock_command_bus):
     set_command_bus(mock_command_bus, "gh-1")
     headers = bootstrap_headers(client)
 
-    payload = {
-        "zone_id": 1,
-        "task_type": "diagnostics",
-        "payload": {"reason": "scheduled_check"},
-        "correlation_id": "sch:z1:diagnostics:success",
-    }
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:success")
 
     response = client.post("/scheduler/task", json=payload, headers=headers)
     assert response.status_code == 200
@@ -207,6 +355,8 @@ async def test_scheduler_task_success(client, mock_command_bus):
     status_data = status_response.json()["data"]
     assert status_data["task_id"] == task_id
     assert status_data["task_type"] == "diagnostics"
+    assert status_data["due_at"] == payload["due_at"]
+    assert status_data["expires_at"] == payload["expires_at"]
 
 
 def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
@@ -219,30 +369,38 @@ def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
         await asyncio.sleep(0.01)
         return {"success": True, "commands_sent": 1, "task_type": kwargs.get("task_type")}
 
+    def _cancel_background_task(coro):
+        coro.close()
+        return Mock()
+
     with patch("api.SchedulerTaskExecutor") as mock_executor_cls, \
          patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
-         patch("api.create_zone_event", new_callable=AsyncMock):
+         patch("api.create_zone_event", new_callable=AsyncMock), \
+         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
         mock_executor = mock_executor_cls.return_value
         mock_executor.execute = AsyncMock(side_effect=_execute)
+        payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lifecycle")
 
-        response = client.post("/scheduler/task", json={
-            "zone_id": 1,
-            "task_type": "diagnostics",
-            "payload": {"reason": "scheduled_check"},
-            "correlation_id": "sch:z1:diagnostics:lifecycle",
-        }, headers=headers)
+        response = client.post(
+            "/scheduler/task",
+            json=payload,
+            headers=headers,
+        )
         assert response.status_code == 200
         task_id = response.json()["data"]["task_id"]
+        mock_create_task.assert_called_once()
 
-        terminal_status = None
-        for _ in range(30):
-            status_response = client.get(f"/scheduler/task/{task_id}")
-            assert status_response.status_code == 200
-            terminal_status = status_response.json()["data"]["status"]
-            if terminal_status in {"completed", "failed"}:
-                break
-            time.sleep(0.01)
+        asyncio.run(
+            api._execute_scheduler_task(
+                task_id=task_id,
+                req=api.SchedulerTaskRequest(**payload),
+                trace_id=None,
+            )
+        )
 
+        status_response = client.get(f"/scheduler/task/{task_id}")
+        assert status_response.status_code == 200
+        terminal_status = status_response.json()["data"]["status"]
         assert terminal_status == "completed"
         snapshots = [call.args[1] for call in mock_scheduler_log.await_args_list]
         assert "accepted" in snapshots
@@ -256,11 +414,10 @@ def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
 def test_scheduler_task_validation_error(client, mock_command_bus):
     """Task endpoint must validate task_type."""
     set_command_bus(mock_command_bus, "gh-1")
-    payload = {
-        "zone_id": 1,
-        "task_type": "unknown_task",
-        "correlation_id": "sch:z1:unknown:validation",
-    }
+    payload = scheduler_task_payload(
+        task_type="unknown_task",
+        correlation_id="sch:z1:unknown:validation",
+    )
     response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
     assert response.status_code == 422
 
@@ -268,37 +425,221 @@ def test_scheduler_task_validation_error(client, mock_command_bus):
 def test_scheduler_task_zone_not_found(client, mock_command_bus):
     """Task endpoint must reject unknown zone."""
     set_command_bus(mock_command_bus, "gh-1")
-    payload = {
-        "zone_id": 999,
-        "task_type": "diagnostics",
-        "correlation_id": "sch:z999:diagnostics:notfound",
-    }
+    payload = scheduler_task_payload(
+        zone_id=999,
+        correlation_id="sch:z999:diagnostics:notfound",
+    )
     response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
     assert response.status_code == 404
 
 
 def test_scheduler_task_requires_bootstrap_headers(client, mock_command_bus):
     set_command_bus(mock_command_bus, "gh-1")
-    payload = {
-        "zone_id": 1,
-        "task_type": "diagnostics",
-        "correlation_id": "sch:z1:diagnostics:no-lease",
-    }
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:no-lease")
     response = client.post("/scheduler/task", json=payload)
     assert response.status_code == 403
     assert "scheduler_bootstrap_required" in response.json()["detail"]
+
+
+def test_scheduler_task_rejects_lease_mismatch(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client, scheduler_id="scheduler-lease-mismatch")
+    headers["X-Scheduler-Lease-Id"] = "lease-invalid"
+
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lease-mismatch")
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 409
+    assert "scheduler_lease_mismatch" in response.json()["detail"]
+
+
+def test_scheduler_task_rejects_expired_lease(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    scheduler_id = "scheduler-lease-expired"
+    headers = bootstrap_headers(client, scheduler_id=scheduler_id)
+
+    api._scheduler_bootstrap_leases[scheduler_id]["expires_at"] = datetime.utcnow() - timedelta(seconds=1)
+
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lease-expired")
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 409
+    assert "scheduler_lease_not_found" in response.json()["detail"]
+    assert scheduler_id not in api._scheduler_bootstrap_leases
+
+
+def test_scheduler_task_requires_due_at_and_expires_at(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+
+    payload_missing_due = scheduler_task_payload(correlation_id="sch:z1:diagnostics:missing-due")
+    payload_missing_due.pop("due_at")
+    due_response = client.post("/scheduler/task", json=payload_missing_due, headers=headers)
+    assert due_response.status_code == 422
+    assert "due_at" in str(due_response.json().get("detail", ""))
+
+    payload_missing_expires = scheduler_task_payload(correlation_id="sch:z1:diagnostics:missing-exp")
+    payload_missing_expires.pop("expires_at")
+    expires_response = client.post("/scheduler/task", json=payload_missing_expires, headers=headers)
+    assert expires_response.status_code == 422
+    assert "expires_at" in str(expires_response.json().get("detail", ""))
+
+
+def test_scheduler_task_deadline_fast_fail_rejected(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    now = datetime.utcnow().replace(microsecond=0)
+
+    payload = scheduler_task_payload(
+        correlation_id="sch:z1:diagnostics:late-due",
+        scheduled_for=(now - timedelta(seconds=20)).isoformat(),
+        due_at=(now - timedelta(seconds=5)).isoformat(),
+        expires_at=(now + timedelta(seconds=30)).isoformat(),
+    )
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "rejected"
+    assert data["is_duplicate"] is False
+
+    status_response = client.get(f"/scheduler/task/{data['task_id']}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert status_data["status"] == "rejected"
+    assert status_data["error_code"] == "task_due_deadline_exceeded"
+
+
+def test_scheduler_task_deadline_fast_fail_expired(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    now = datetime.utcnow().replace(microsecond=0)
+
+    payload = scheduler_task_payload(
+        correlation_id="sch:z1:diagnostics:expired",
+        scheduled_for=(now - timedelta(seconds=50)).isoformat(),
+        due_at=(now - timedelta(seconds=30)).isoformat(),
+        expires_at=(now - timedelta(seconds=5)).isoformat(),
+    )
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "expired"
+    assert data["is_duplicate"] is False
+
+    status_response = client.get(f"/scheduler/task/{data['task_id']}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert status_data["status"] == "expired"
+    assert status_data["error_code"] == "task_expired"
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_command_bus_unavailable_sets_structured_failure(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        req = api.SchedulerTaskRequest(**scheduler_task_payload(correlation_id="sch:z1:diagnostics:bus-down"))
+        task, _ = await api._create_scheduler_task(req)
+
+        set_command_bus(None, "")
+        await api._execute_scheduler_task(task["task_id"], req, None)
+
+        stored = api._scheduler_tasks[task["task_id"]]
+        assert stored["status"] == "failed"
+        assert stored["error_code"] == "command_bus_unavailable"
+        assert stored["result"]["reason_code"] == "command_bus_unavailable"
+        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["action_required"] is True
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_exception_sets_structured_failure(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        req = api.SchedulerTaskRequest(**scheduler_task_payload(correlation_id="sch:z1:diagnostics:executor-exc"))
+        task, _ = await api._create_scheduler_task(req)
+
+        with patch("api.SchedulerTaskExecutor.execute", new_callable=AsyncMock) as mock_execute, \
+             patch("api.send_infra_exception_alert", new_callable=AsyncMock) as mock_alert:
+            mock_execute.side_effect = RuntimeError("executor exploded")
+            await api._execute_scheduler_task(task["task_id"], req, None)
+
+        stored = api._scheduler_tasks[task["task_id"]]
+        assert stored["status"] == "failed"
+        assert stored["error_code"] == "execution_exception"
+        assert stored["result"]["reason_code"] == "execution_exception"
+        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["action_required"] is True
+        assert stored["result"]["exception_type"] == "RuntimeError"
+        mock_alert.assert_awaited_once()
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_normalizes_failed_result_without_codes(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        req = api.SchedulerTaskRequest(**scheduler_task_payload(correlation_id="sch:z1:diagnostics:no-codes"))
+        task, _ = await api._create_scheduler_task(req)
+
+        with patch("api.SchedulerTaskExecutor.execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = {
+                "success": False,
+                "mode": "custom_failed_mode",
+            }
+            await api._execute_scheduler_task(task["task_id"], req, None)
+
+        stored = api._scheduler_tasks[task["task_id"]]
+        assert stored["status"] == "failed"
+        assert stored["error_code"] == "task_execution_failed"
+        assert stored["result"]["reason_code"] == "task_execution_failed"
+        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["action_required"] is True
+        assert stored["result"]["mode"] == "custom_failed_mode"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_updates_command_effect_confirm_rate_metric(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        api._command_effect_totals.clear()
+        api._command_effect_confirmed_totals.clear()
+        set_command_bus(mock_command_bus, "gh-1")
+        req = api.SchedulerTaskRequest(**scheduler_task_payload(task_type="irrigation", correlation_id="sch:z1:irrigation:metric"))
+        task, _ = await api._create_scheduler_task(req)
+
+        with patch("api.SchedulerTaskExecutor.execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = {
+                "success": False,
+                "commands_total": 2,
+                "commands_effect_confirmed": 1,
+                "command_effect_confirmed": False,
+                "error_code": "command_no_effect",
+            }
+            await api._execute_scheduler_task(task["task_id"], req, None)
+
+        assert api._command_effect_totals["irrigation"] == 2
+        assert api._command_effect_confirmed_totals["irrigation"] == 1
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
 
 
 def test_scheduler_task_idempotent_duplicate_returns_same_task(client, mock_command_bus):
     mock_command_bus.publish_command = AsyncMock(return_value=True)
     set_command_bus(mock_command_bus, "gh-1")
     headers = bootstrap_headers(client)
-    payload = {
-        "zone_id": 1,
-        "task_type": "diagnostics",
-        "payload": {"reason": "scheduled_check"},
-        "correlation_id": "sch:z1:diagnostics:duplicate",
-    }
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:duplicate")
 
     first = client.post("/scheduler/task", json=payload, headers=headers)
     assert first.status_code == 200
@@ -318,20 +659,24 @@ def test_scheduler_task_idempotency_payload_mismatch_returns_409(client, mock_co
     headers = bootstrap_headers(client)
     correlation_id = "sch:z1:diagnostics:mismatch"
 
-    first = client.post("/scheduler/task", json={
-        "zone_id": 1,
-        "task_type": "diagnostics",
-        "payload": {"reason": "first"},
-        "correlation_id": correlation_id,
-    }, headers=headers)
+    first = client.post(
+        "/scheduler/task",
+        json=scheduler_task_payload(
+            payload={"reason": "first"},
+            correlation_id=correlation_id,
+        ),
+        headers=headers,
+    )
     assert first.status_code == 200
 
-    second = client.post("/scheduler/task", json={
-        "zone_id": 1,
-        "task_type": "diagnostics",
-        "payload": {"reason": "second"},
-        "correlation_id": correlation_id,
-    }, headers=headers)
+    second = client.post(
+        "/scheduler/task",
+        json=scheduler_task_payload(
+            payload={"reason": "second"},
+            correlation_id=correlation_id,
+        ),
+        headers=headers,
+    )
     assert second.status_code == 409
     assert "idempotency_payload_mismatch" in second.json()["detail"]
 
@@ -350,6 +695,196 @@ def test_scheduler_task_status_reads_persisted_snapshot(client):
     assert data["task_id"] == "st-persisted"
     assert data["status"] == "completed"
     assert data["task_type"] == "diagnostics"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_scheduler_tasks_locked_handles_timezone_aware_updated_at():
+    api._scheduler_tasks.clear()
+    api._scheduler_tasks["st-aware-stale"] = {
+        "task_id": "st-aware-stale",
+        "updated_at": "2026-02-10T00:00:00+00:00",
+    }
+
+    with patch("api._SCHEDULER_TASK_TTL_SECONDS", 60):
+        await api._cleanup_scheduler_tasks_locked(datetime(2026, 2, 10, 0, 2, 0))
+
+    assert "st-aware-stale" not in api._scheduler_tasks
+
+
+@pytest.mark.asyncio
+async def test_load_scheduler_task_by_correlation_id_uses_deterministic_order():
+    with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+        result = await api._load_scheduler_task_by_correlation_id("sch:z1:diagnostics:det-order")
+
+    assert result is None
+    query = " ".join(str(mock_fetch.await_args.args[0]).split()).lower()
+    assert "order by created_at desc, id desc" in query
+
+
+@pytest.mark.asyncio
+async def test_load_scheduler_task_snapshot_uses_deterministic_order():
+    with patch("api.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+        result = await api._load_scheduler_task_snapshot("st-order-check")
+
+    assert result is None
+    query = " ".join(str(mock_fetch.await_args.args[0]).split()).lower()
+    assert "order by created_at desc, id desc" in query
+
+
+@pytest.mark.asyncio
+async def test_recover_inflight_scheduler_tasks_marks_running_as_failed():
+    old_enabled = api._AE_TASK_RECOVERY_ENABLED
+    api._AE_TASK_RECOVERY_ENABLED = True
+    try:
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            mock_fetch.return_value = [
+                {
+                    "task_name": "ae_scheduler_task_st-recover-1",
+                    "status": "running",
+                    "details": {
+                        "task_id": "st-recover-1",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "running",
+                        "created_at": "2026-02-10T10:00:00",
+                        "updated_at": "2026-02-10T10:00:03",
+                        "correlation_id": "sch:z1:diagnostics:recover-1",
+                    },
+                    "created_at": datetime(2026, 2, 10, 10, 0, 3),
+                }
+            ]
+
+            summary = await api._recover_inflight_scheduler_tasks()
+
+        assert summary["scanned"] == 1
+        assert summary["inflight"] == 1
+        assert summary["recovered"] == 1
+        assert "st-recover-1" in api._scheduler_tasks
+        recovered_task = api._scheduler_tasks["st-recover-1"]
+        assert recovered_task["status"] == "failed"
+        assert recovered_task["error_code"] == "task_recovered_after_restart"
+        assert recovered_task["result"]["reason_code"] == "task_recovered_after_restart"
+        mock_scheduler_log.assert_awaited_once()
+        mock_zone_event.assert_awaited_once()
+    finally:
+        api._AE_TASK_RECOVERY_ENABLED = old_enabled
+
+
+@pytest.mark.asyncio
+async def test_recover_inflight_scheduler_tasks_updates_recovery_success_rate_metric():
+    old_enabled = api._AE_TASK_RECOVERY_ENABLED
+    api._AE_TASK_RECOVERY_ENABLED = True
+    try:
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("api.create_scheduler_log", new_callable=AsyncMock), \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            mock_fetch.return_value = [
+                {
+                    "task_name": "ae_scheduler_task_st-recover-metric-1",
+                    "status": "running",
+                    "details": {
+                        "task_id": "st-recover-metric-1",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "running",
+                    },
+                    "created_at": datetime(2026, 2, 10, 10, 0, 3),
+                },
+                {
+                    "task_name": "ae_scheduler_task_st-recover-metric-2",
+                    "status": "completed",
+                    "details": {
+                        "task_id": "st-recover-metric-2",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "completed",
+                    },
+                    "created_at": datetime(2026, 2, 10, 10, 0, 4),
+                },
+            ]
+
+            summary = await api._recover_inflight_scheduler_tasks()
+
+        assert summary["scanned"] == 2
+        assert summary["inflight"] == 1
+        assert summary["recovered"] == 1
+        assert api.TASK_RECOVERY_SUCCESS_RATE._value.get() == pytest.approx(1.0)
+    finally:
+        api._AE_TASK_RECOVERY_ENABLED = old_enabled
+
+
+@pytest.mark.asyncio
+async def test_recover_inflight_scheduler_tasks_skips_terminal_snapshots():
+    old_enabled = api._AE_TASK_RECOVERY_ENABLED
+    api._AE_TASK_RECOVERY_ENABLED = True
+    try:
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            mock_fetch.return_value = [
+                {
+                    "task_name": "ae_scheduler_task_st-done-1",
+                    "status": "completed",
+                    "details": {
+                        "task_id": "st-done-1",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "completed",
+                    },
+                    "created_at": datetime(2026, 2, 10, 10, 0, 3),
+                }
+            ]
+
+            summary = await api._recover_inflight_scheduler_tasks()
+
+        assert summary["scanned"] == 1
+        assert summary["inflight"] == 0
+        assert summary["recovered"] == 0
+        assert "st-done-1" not in api._scheduler_tasks
+        mock_scheduler_log.assert_not_awaited()
+        mock_zone_event.assert_not_awaited()
+    finally:
+        api._AE_TASK_RECOVERY_ENABLED = old_enabled
+
+
+@pytest.mark.asyncio
+async def test_recover_inflight_scheduler_tasks_continues_when_zone_event_publish_fails():
+    old_enabled = api._AE_TASK_RECOVERY_ENABLED
+    api._AE_TASK_RECOVERY_ENABLED = True
+    try:
+        with patch("api.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("api._persist_scheduler_task_snapshot", new_callable=AsyncMock), \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
+             patch("api.send_infra_exception_alert", new_callable=AsyncMock) as mock_alert:
+            mock_fetch.return_value = [
+                {
+                    "task_name": "ae_scheduler_task_st-recover-zone-event-fail",
+                    "status": "running",
+                    "details": {
+                        "task_id": "st-recover-zone-event-fail",
+                        "zone_id": 1,
+                        "task_type": "diagnostics",
+                        "status": "running",
+                    },
+                    "created_at": datetime(2026, 2, 10, 10, 0, 3),
+                }
+            ]
+            mock_zone_event.side_effect = RuntimeError("zone events unavailable")
+
+            summary = await api._recover_inflight_scheduler_tasks()
+
+        assert summary["scanned"] == 1
+        assert summary["inflight"] == 1
+        assert summary["recovered"] == 1
+        assert "st-recover-zone-event-fail" in api._scheduler_tasks
+        mock_alert.assert_awaited_once()
+        assert mock_alert.await_args.kwargs["code"] == "infra_scheduler_task_recovery_event_failed"
+    finally:
+        api._AE_TASK_RECOVERY_ENABLED = old_enabled
 
 
 def test_scheduler_task_status_triggers_cleanup_and_memory_limit(client):

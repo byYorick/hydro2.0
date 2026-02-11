@@ -19,7 +19,6 @@ def test_mapping_override_from_execution_config():
                 "node_types": ["fogger"],
                 "params": {"state": False, "pulse_ms": 3000},
                 "default_state": False,
-                "fallback_mode": "event_only",
             }
         },
     )
@@ -27,4 +26,3 @@ def test_mapping_override_from_execution_config():
     assert mapping.node_types == ("fogger",)
     assert mapping.default_params["pulse_ms"] == 3000
     assert mapping.default_state is False
-    assert mapping.fallback_mode == "event_only"

@@ -48,19 +48,25 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 | Метод | Путь | Auth | Описание |
 |-------|-----------------------------------|------|------------------------------------|
-| POST | /api/zones/{id}/attach-recipe | auth:sanctum (operator/admin) | Назначить рецепт |
-| POST | /api/zones/{id}/change-phase | auth:sanctum (operator/admin) | Сменить фазу рецепта |
-| POST | /api/zones/{id}/pause | auth:sanctum (operator/admin) | Приостановить зону |
-| POST | /api/zones/{id}/resume | auth:sanctum (operator/admin) | Возобновить зону |
-| POST | /api/zones/{id}/fill | auth:sanctum (operator/admin) | Режим наполнения зоны |
-| POST | /api/zones/{id}/drain | auth:sanctum (operator/admin) | Режим слива зоны |
-| POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin) | Калибровка датчика расхода |
-| POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin) | Калибровка дозирующей помпы (ml/sec) |
-| POST | /api/zones/{id}/commands | auth:sanctum (operator/admin) | Отправить команду зоне |
+| POST | /api/zones/{id}/fill | auth:sanctum (operator/admin/agronomist/engineer) | Режим наполнения зоны |
+| POST | /api/zones/{id}/drain | auth:sanctum (operator/admin/agronomist/engineer) | Режим слива зоны |
+| POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка датчика расхода |
+| POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка дозирующей помпы (ml/sec) |
+| POST | /api/zones/{id}/grow-cycles | auth:sanctum (operator/admin/agronomist/engineer) | Создать новый grow cycle для зоны |
+| POST | /api/grow-cycles/{id}/pause | auth:sanctum (operator/admin/agronomist/engineer) | Пауза grow cycle |
+| POST | /api/grow-cycles/{id}/resume | auth:sanctum (operator/admin/agronomist/engineer) | Возобновление grow cycle |
+| POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (operator/admin/agronomist/engineer) | Ручной переход фазы grow cycle |
+| POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (operator/admin/agronomist/engineer) | Переход на следующую фазу grow cycle |
+| POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
 | GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
-| GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy + fallback) + `timeline` и outcome (`decision/reason_code`) |
+| GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy к automation-engine) + `timeline` и outcome (`decision/reason_code`) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
+
+Инварианты scheduler-task (`/api/zones/{id}/scheduler-tasks*`):
+- terminal business-статусы: `completed|failed|rejected|expired`;
+- transport-статусы scheduler уровня: `timeout|not_found` (только для lifecycle/diagnostics);
+- `timeline[]` должен быть отсортирован по времени события по возрастанию.
 
 ---
 
@@ -245,3 +251,29 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  должны проходить через Python-сервис, а не напрямую в MQTT.
 
 Этот документ должен использоваться как **справочник** и основа для автодокументации (например, Swagger).
+
+---
+
+## 18. Internal Python Services (service-to-service)
+
+### 18.1 Automation-engine health endpoints
+
+| Метод | Путь | Auth | Описание |
+|-------|----------------------|------|----------------------------------------------|
+| GET | /health/live | internal | Liveness: процесс API доступен |
+| GET | /health/ready | internal | Readiness: `CommandBus`, DB и bootstrap lease-store готовы |
+
+### 18.2 Automation-engine scheduler endpoints
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------|------|----------------------------------------------------|
+| POST | /scheduler/bootstrap | internal | Startup-handshake scheduler -> automation-engine |
+| POST | /scheduler/bootstrap/heartbeat | internal | Heartbeat/lease keepalive для scheduler |
+| POST | /scheduler/task | internal | Принять task intent от scheduler |
+| GET | /scheduler/task/{task_id} | internal | Получить task status/outcome |
+| POST | /scheduler/internal/enqueue | internal | Внутренний enqueue self-task (AE -> scheduler) |
+
+Инварианты task-level API (`POST /scheduler/task`):
+- обязательны `correlation_id`, `due_at`, `expires_at`;
+- идемпотентность по `correlation_id` + `idempotency_payload_mismatch` при mismatch payload;
+- успех execute-пути считается подтвержденным только при статусе ноды `DONE`.

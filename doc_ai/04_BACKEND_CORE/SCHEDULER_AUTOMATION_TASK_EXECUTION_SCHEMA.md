@@ -1,4 +1,4 @@
-# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.1)
+# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.2)
 
 **Дата:** 2026-02-10  
 **Статус:** Актуализировано после реализации cycle-start/refill workflow  
@@ -51,7 +51,7 @@ Breaking-change: обратная совместимость для старых
   - отдает UI API:
     - `GET /api/zones/{zone}/scheduler-tasks`
     - `GET /api/zones/{zone}/scheduler-tasks/{taskId}`
-  - при `show` сначала пробует статус из `automation-engine`, затем fallback из `scheduler_logs`.
+  - при `show` использует только upstream статус из `automation-engine` (legacy fallback удалён).
 
 ## 2.2 Реально существующие endpoint-ы
 
@@ -62,7 +62,8 @@ Breaking-change: обратная совместимость для старых
 - `POST /scheduler/bootstrap`
 - `POST /scheduler/bootstrap/heartbeat`
 - `POST /scheduler/internal/enqueue`
-- `GET /health`
+- `GET /health/live`
+- `GET /health/ready`
 - `POST /test/hook` (только test mode)
 
 ### laravel
@@ -92,7 +93,7 @@ Breaking-change: обратная совместимость для старых
 
 Текущее поведение:
 - `correlation_id` обязателен.
-- `due_at`, `expires_at` поддерживаются (опционально), используются scheduler для дедлайнов.
+- `due_at`, `expires_at` обязательны, используются для детерминированного fail-fast (`rejected/expired`).
 - реализована идемпотентность по `correlation_id` с `idempotency_payload_mismatch=409`.
 
 ### `POST /scheduler/task` response (as-is)
@@ -122,21 +123,36 @@ Breaking-change: обратная совместимость для старых
     "created_at": "2026-02-10T10:00:00",
     "updated_at": "2026-02-10T10:00:01",
     "scheduled_for": "2026-02-10T10:00:00",
+    "due_at": "2026-02-10T10:00:15",
+    "expires_at": "2026-02-10T10:02:00",
     "correlation_id": "sch:z28:irrigation:abc123def456",
     "result": null,
-    "error": null
+    "error": null,
+    "error_code": null
   }
 }
 ```
 
 ### Статусы (as-is)
 
-- В `automation-engine` задача проходит: `accepted -> running -> completed|failed`.
+- В `automation-engine`:
+  - при валидных дедлайнах: `accepted -> running -> completed|failed`;
+  - при дедлайнах в прошлом: immediate terminal `rejected|expired` (без запуска executor).
 - В `scheduler` дополнительно есть локальные транспортные/наблюдательные terminal-состояния:
   - `timeout`
   - `not_found`
 
-Важно: сейчас нет строгого формального разделения бизнес-статусов и транспортных статусов на уровне контракта.
+## 2.3.1 Формальная owner-модель статусов (фиксировано, R0)
+
+- Business-статусы (owner: `automation-engine`, источник истины: `/scheduler/task/{task_id}`):
+  - `accepted`, `running`, `completed`, `failed`, `rejected`, `expired`.
+- Transport/observability-статусы (owner: `scheduler`, источник истины: `scheduler_logs` reconcile):
+  - `timeout`, `not_found`.
+
+Инварианты owner-модели:
+1. `automation-engine` не возвращает транспортные статусы `timeout|not_found` в `GET /scheduler/task/{task_id}`.
+2. `scheduler` не интерпретирует transport-статусы как business outcome automation-layer.
+3. UI/аналитика обязаны трактовать `timeout|not_found` как транспортную деградацию планировщика, а не как решение decision-layer.
 
 ## 2.4 События и наблюдаемость (as-is)
 
@@ -148,16 +164,30 @@ Breaking-change: обратная совместимость для старых
   - `SCHEDULE_TASK_FAILED`
 
 - `automation-engine / scheduler_task_executor`:
+  - `TASK_RECEIVED`
+  - `TASK_STARTED`
+  - `DECISION_MADE`
+  - `COMMAND_DISPATCHED`
+  - `COMMAND_FAILED`
+  - `COMMAND_EFFECT_NOT_CONFIRMED`
+  - `TASK_FINISHED`
   - `SCHEDULE_TASK_EXECUTION_STARTED`
   - `SCHEDULE_TASK_EXECUTION_FINISHED`
-  - иногда `SCHEDULE_TASK_FALLBACK_EVENT_ONLY`, `SCHEDULE_DIAGNOSTICS_REQUESTED`
+  - `DIAGNOSTICS_SERVICE_UNAVAILABLE`
 
 Ограничения текущей реализации (после апдейта 2026-02-10):
 - task-события `event_id/event_seq` публикуются из `automation-engine`, но не все legacy события нормализованы;
 - Laravel API уже отдает `timeline[]` из `zone_events` для `GET /api/zones/{zone}/scheduler-tasks/{taskId}`
-  (и опционально для списка через `include_timeline=1`), но UI покрывает только базовый рендер;
-- сценарий refill/tank-cycle реализован в `SchedulerTaskExecutor` (events: `CYCLE_START_*`, `TANK_*`, `SELF_TASK_ENQUEUED`),
-  но e2e-покрытие фронта еще не завершено.
+  (и опционально для списка через `include_timeline=1`), UI рендерит lifecycle/timeline/SLA в `ZoneAutomationTab`,
+  browser e2e сценарий для SLA/timeline добавлен (`tests/e2e/browser/specs/03-zone-detail.spec.ts`);
+- в `automation-engine` реализован startup recovery scanner:
+  latest snapshot задач со статусами `accepted|running` после рестарта финализируется как `failed`
+  (`error_code=task_recovered_after_restart`) для исключения “зависших” lifecycle;
+- в `scheduler` реализован startup recovery scanner:
+  latest snapshot задач со статусом `accepted` после рестарта поднимается в `_ACTIVE_TASKS`,
+  после чего reconcile доводит задачу до terminal `completed|failed|timeout|not_found`;
+- сценарий refill/tank-cycle реализован в `SchedulerTaskExecutor` (events: `CYCLE_START_*`, `TANK_*`, `SELF_TASK_ENQUEUED`);
+  recovery/chaos сценарии lease-loss/restart покрыты docker-скриптами в `tests/e2e/scheduler/*`.
 
 ## 2.5 Что уже соответствует целевой идее
 
@@ -180,17 +210,21 @@ Breaking-change: обратная совместимость для старых
 
 ## 3.2 Высокие (P2)
 
-1. Нет формального owner-моделя для статусов (business vs transport).  
-Риск: UI/аналитика трактует транспортные ошибки как бизнес-ошибки автоматики.
+1. Закрыто в v3.2: owner-модель статусов зафиксирована
+   (`accepted|running|completed|failed|rejected|expired` vs `timeout|not_found`).
 
-2. Нет обязательного decision outcome при `completed` (почему выполнено/почему скип).
+2. Закрыто в v3.2: decision outcome для terminal `completed` формализован
+   (`action_required/decision/reason_code`).
 
-3. Нет формального task-event контракта для фронта (таймлайн действий automation-engine).
+3. Закрыто в v3.2: task-event контракт для фронта формализован (обязательные поля timeline).
 
 ## 3.3 Средние (P3)
 
-1. `error_code` добавлен в snapshot/API; требуется выравнивание кодов по всем failure-веткам.
-2. Нет lifecycle-гарантий на случай restart и сетевых сбоев (as-is описано частично, но не формализовано).
+1. Закрыто в v3.2: `error_code/reason_code` унифицированы в task-result для API-level failure веток
+   (`command_bus_unavailable`, `execution_exception`, fallback `task_execution_failed`).
+2. Закрыто в v3.4: recovery-гарантии покрыты для обоих сервисов:
+   `automation-engine` (`accepted|running` -> terminal `failed`) и `scheduler` (`accepted` -> reconcile terminal),
+   добавлены docker chaos проверки restart/failover (`tests/e2e/scheduler/*`).
 
 ---
 
@@ -302,6 +336,25 @@ Breaking-change: обратная совместимость для старых
 2. Потеря lease переводит scheduler в safe mode.
 3. После рестарта любого из сервисов bootstrap обязателен заново.
 
+## 6.3 Single-leader failover semantics (R2)
+
+Статус: реализовано (unit + service-level + process-level + container-level chaos, `backend/services/scheduler/main.py`).
+
+Инварианты:
+1. При `SCHEDULER_LEADER_ELECTION=1` dispatch выполняет только лидер-инстанс scheduler.
+2. Лидер определяется через PostgreSQL advisory lock (`pg_try_advisory_lock`) с scope `SCHEDULER_LEADER_LOCK_SCOPE`.
+3. Потеря лидерского DB-соединения переводит инстанс в follower-mode и немедленно останавливает dispatch.
+4. Повторный захват лидера выполняется с backoff (`SCHEDULER_LEADER_RETRY_BACKOFF_SEC`).
+
+Container-level chaos:
+- `tests/e2e/scheduler/scheduler_leader_failover_chaos.sh` проверяет single-leader и takeover после остановки лидера.
+
+Наблюдаемость (anti-silent):
+- scheduler публикует diagnostics/alerts при `leader retry backoff`, `bootstrap retry backoff`,
+  `bootstrap heartbeat http error`, `bootstrap heartbeat not-ready`, `schedule busy skip`,
+  `task status timeout/http/not_found`, `internal enqueue invalid/expired/dispatch_failed`;
+- добавлена метрика `scheduler_dispatch_skips_total{reason}` и dispatch-cycle summary service logs.
+
 ---
 
 ## 7. Логика исполнения (to-be)
@@ -364,6 +417,11 @@ Breaking-change: обратная совместимость для старых
 
 Нормализованные коды outcome (актуально):
 - reason:
+  - `task_due_deadline_exceeded`
+  - `task_expired`
+  - `command_bus_unavailable`
+  - `execution_exception`
+  - `task_execution_failed`
   - `required_nodes_checked`
   - `tank_level_checked`
   - `tank_refill_required`
@@ -373,19 +431,36 @@ Breaking-change: обратная совместимость для старых
   - `tank_refill_not_required`
   - `cycle_start_blocked_nodes_unavailable`
   - `cycle_start_tank_level_unavailable`
+  - `cycle_start_tank_level_stale`
   - `cycle_start_refill_timeout`
   - `cycle_start_refill_command_failed`
   - `cycle_start_self_task_enqueue_failed`
+  - `diagnostics_service_unavailable`
 - error:
+  - `task_due_deadline_exceeded`
+  - `task_expired`
+  - `command_bus_unavailable`
+  - `execution_exception`
+  - `task_execution_failed`
   - `command_publish_failed`
+  - `command_send_failed`
+  - `command_timeout`
+  - `command_error`
+  - `command_invalid`
+  - `command_busy`
+  - `command_no_effect`
+  - `command_tracker_unavailable`
+  - `command_effect_not_confirmed`
   - `mapping_not_found`
   - `no_online_nodes`
   - `cycle_start_required_nodes_unavailable`
   - `cycle_start_tank_level_unavailable`
+  - `cycle_start_tank_level_stale`
   - `cycle_start_refill_timeout`
   - `cycle_start_refill_node_not_found`
   - `cycle_start_refill_command_failed`
   - `cycle_start_self_task_enqueue_failed`
+  - `diagnostics_service_unavailable`
 
 ---
 
@@ -410,6 +485,7 @@ Breaking-change: обратная совместимость для старых
 - `decision`
 - `reason_code`
 - `node_uid`/`channel`/`cmd` (если применимо)
+- `command_submitted`/`command_effect_confirmed` (если применимо)
 
 ## 8.3 Минимальный список событий
 
@@ -428,18 +504,27 @@ Breaking-change: обратная совместимость для старых
   - `TANK_REFILL_TIMEOUT`
   - `SELF_TASK_ENQUEUED`
 
+## 8.4 Порядок сортировки timeline (фиксировано, R0)
+
+Норматив для API/UI:
+1. Backend возвращает `timeline[]` в стабильном порядке `created_at ASC`, затем `id ASC`
+   (эквивалент: `occurred_at ASC`, при равенстве — по внутреннему идентификатору события).
+2. `event_seq` используется как семантический sequence-id события и не должен ломать стабильность выдачи.
+3. UI не должен переупорядочивать timeline; допускается только отображение в порядке, полученном от API.
+
 ---
 
 ## 9. Матрица разрывов (as-is -> to-be)
 
 | Область | As-Is | To-Be | Приоритет |
 |---|---|---|---|
-| Startup handshake | реализован (`/scheduler/bootstrap`, `/scheduler/bootstrap/heartbeat`) | hardening: lease-loss recovery e2e | P1 |
+| Startup handshake | реализован (`/scheduler/bootstrap`, `/scheduler/bootstrap/heartbeat`) + readiness-gate (`CommandBus+DB+lease-store`) + chaos-проверки lease/restart recovery | chaos suite подключен в отдельный CI stage `scheduler-chaos` | P1 |
+| Single-leader scheduler | реализован feature-flag путь (`pg advisory lock`, follower safe-mode, reconnect backoff) + unit/service-level/process-level/container-level chaos failover | выполнять regression прогоны chaos-suite в CI | P1 |
 | Idempotency | реализован (`correlation_id` required + payload mismatch) | расширить observability dedupe hit-rate | P1 |
-| Decision layer | реализован (structured result + skip/execute) | унифицировать reason_code taxonomy | P1 |
-| error_code | реализован в snapshot/API | доравнять коды во всех failure-ветках | P2 |
-| Event timeline | реализован базовый timeline + tank/refill events | финальная нормализация frontend render + SLA | P2 |
-| Self-task enqueue | реализован (`/scheduler/internal/enqueue` + scheduler scan/dispatched) | e2e сценарии восстановления после рестарта | P2 |
+| Decision layer | реализован (structured result + skip/execute + normalized failure fallback) | UI labels/локализация reason_code | P2 |
+| error_code | реализован в snapshot/API + унифицирован для API-level failure веток | поддерживать словарь при новых workflow | P3 |
+| Event timeline | реализован базовый timeline + tank/refill events + SLA-render в ZoneAutomationTab + browser e2e UI-сценарий | расширить операторские пресеты при добавлении новых workflow | P2 |
+| Self-task enqueue | реализован (`/scheduler/internal/enqueue` + scheduler scan/dispatched) + anti-silent diagnostics | расширить сценарии ретраев/backoff | P2 |
 | Tank refill workflow | реализован в diagnostics workflow (`cycle_start/refill_check`) | расширить policy (retries/backoff/limits) | P2 |
 
 ---
@@ -450,11 +535,11 @@ Breaking-change: обратная совместимость для старых
 2. **Startup-handshake** (`/scheduler/bootstrap`, `/scheduler/bootstrap/heartbeat`) — реализовано.  
 3. **Mandatory `correlation_id` + persistent dedupe** — реализовано.  
 4. **Decision layer + structured result** — реализовано.  
-5. **`error_code` в snapshot/API** — реализовано, требуется унификация словаря кодов.  
+5. **`error_code` в snapshot/API** — реализовано, унификация словаря кодов закрыта для текущих веток.  
 6. **AE -> scheduler internal enqueue** — реализовано.  
-7. **Task timeline contract + детальные события** — реализовано в backend, требуется финальный UI polishing/e2e.  
-8. **Доработать laravel/UI** для отображения timeline + reason_code/decision.  
-9. **Обновить API и data model документацию** по факту внедрения.  
+7. **Task timeline contract + детальные события** — реализовано в backend, базовый UI polishing выполнен (ZoneAutomationTab).  
+8. **Доработать laravel/UI** для отображения timeline + reason_code/decision + SLA — реализовано в ZoneAutomationTab и подтверждено browser e2e (`03-zone-detail.spec.ts`).  
+9. **Обновить API и data model документацию** по факту внедрения — выполнено в v3.2.  
 
 ---
 
@@ -479,7 +564,7 @@ Breaking-change: обратная совместимость для старых
 Покрыть:
 - bootstrap handshake и safe mode scheduler;
 - task lifecycle end-to-end между scheduler и automation-engine;
-- laravel proxy/fallback контракт;
+- laravel proxy контракт;
 - internal enqueue сценарий self-task.
 
 Файлы:

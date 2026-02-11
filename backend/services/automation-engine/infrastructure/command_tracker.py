@@ -13,7 +13,7 @@
 - ERROR: команда завершилась с ошибкой (терминальный)
 - INVALID: команда отклонена (терминальный)
 - BUSY: узел занят (терминальный)
-- NO_EFFECT: команда не изменила состояние (терминальный)
+- NO_EFFECT: команда не изменила состояние (терминальный, неуспех для closed-loop)
 - TIMEOUT: таймаут выполнения команды (терминальный)
 - SEND_FAILED: ошибка отправки команды (терминальный)
 
@@ -24,7 +24,7 @@ import json
 import logging
 import time
 from typing import Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from common.utils.time import utcnow
 from common.db import execute, fetch, create_zone_event
 from common.infra_alerts import send_infra_alert
@@ -88,6 +88,14 @@ class CommandTracker:
         self._timeout_tasks: Dict[str, asyncio.Task] = {}
         self._poll_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
+
+    @staticmethod
+    def _normalize_utc_datetime(value: Any) -> datetime:
+        if not isinstance(value, datetime):
+            return utcnow()
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
     
     async def track_command(
         self,
@@ -167,18 +175,20 @@ class CommandTracker:
         command_type = command_info['command_type']
         
         # Отменяем таймаут
-        if cmd_id in self._timeout_tasks:
-            self._timeout_tasks[cmd_id].cancel()
-            del self._timeout_tasks[cmd_id]
+        timeout_task = self._timeout_tasks.pop(cmd_id, None)
+        current_task = asyncio.current_task()
+        if timeout_task is not None and timeout_task is not current_task and not timeout_task.done():
+            timeout_task.cancel()
         
-        # Определяем успешность на основе статуса
-        # ВАЖНО: Успехом считается DONE или NO_EFFECT
-        # ACK - промежуточный статус (команда принята, но еще выполняется)
-        success = status in ('DONE', 'NO_EFFECT')
+        # Определяем успешность на основе статуса.
+        # ВАЖНО: closed-loop успех только при DONE.
+        # NO_EFFECT/BUSY/INVALID/ERROR/TIMEOUT/SEND_FAILED считаются неуспехом.
+        success = status == "DONE"
         
         # Обновляем статус
         command_info['status'] = status
-        command_info['completed_at'] = utcnow()
+        command_info['completed_at'] = self._normalize_utc_datetime(utcnow())
+        command_info['sent_at'] = self._normalize_utc_datetime(command_info.get('sent_at'))
         if response:
             command_info['response'] = response
         if error:
@@ -253,6 +263,7 @@ class CommandTracker:
             "ERROR": ("infra_command_failed", "error"),
             "INVALID": ("infra_command_invalid", "error"),
             "BUSY": ("infra_command_busy", "warning"),
+            "NO_EFFECT": ("infra_command_no_effect", "warning"),
         }
         code, severity = code_map.get(status_upper, ("infra_command_unknown_status", "error"))
 
@@ -313,12 +324,25 @@ class CommandTracker:
                 db_status = await self._get_command_status_from_db(cmd_id)
                 
                 if db_status and db_status in ('DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED'):
-                    # Команда уже обработана, просто удаляем из pending
-                    logger.debug(f"Command {cmd_id} already processed in DB (status: {db_status}), removing from pending")
-                    del self.pending_commands[cmd_id]
-                    if cmd_id in self._timeout_tasks:
-                        self._timeout_tasks[cmd_id].cancel()
-                        del self._timeout_tasks[cmd_id]
+                    # Команда уже обработана в БД: проводим через единый confirm-путь,
+                    # чтобы не терять метрики/алерты/финализацию pending-состояния.
+                    normalized_status = str(db_status).upper()
+                    logger.debug(
+                        "Command %s already processed in DB (status: %s), confirming via tracker",
+                        cmd_id,
+                        normalized_status,
+                    )
+
+                    timeout_task = self._timeout_tasks.pop(cmd_id, None)
+                    current_task = asyncio.current_task()
+                    if timeout_task is not None and timeout_task is not current_task and not timeout_task.done():
+                        timeout_task.cancel()
+
+                    error = None
+                    if normalized_status in ('ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED'):
+                        error = f"Command {normalized_status}"
+
+                    await self._confirm_command_internal(cmd_id, normalized_status, error=error)
                     return
                 
                 if command_info['status'] in ('QUEUED', 'SENT', 'ACK'):
@@ -338,7 +362,6 @@ class CommandTracker:
                     )
                     
                     COMMAND_TIMEOUT.labels(zone_id=str(zone_id), command_type=command_type).inc()
-                    PENDING_COMMANDS.labels(zone_id=str(zone_id)).dec()
                     
                     # Подтверждаем как timeout
                     await self._confirm_command_internal(cmd_id, 'TIMEOUT', error='timeout')
@@ -470,7 +493,7 @@ class CommandTracker:
                     (sent_at IS NOT NULL AND sent_at > NOW() - ($1 * INTERVAL '1 second'))
                     OR (sent_at IS NULL AND created_at > NOW() - ($2 * INTERVAL '1 second'))
                 )
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, cmd_id DESC
                 LIMIT 1000
                 """,
                 self.command_timeout,
@@ -492,7 +515,7 @@ class CommandTracker:
                     'zone_id': zone_id,
                     'command': {'cmd': cmd, 'params': params},
                     'command_type': cmd,
-                    'sent_at': sent_at if isinstance(sent_at, datetime) else utcnow(),
+                    'sent_at': self._normalize_utc_datetime(sent_at),
                     'status': status,
                     'context': {}
                 }
@@ -521,9 +544,10 @@ class CommandTracker:
         poll_interval_sec: float = 1.0
     ) -> Optional[bool]:
         """
-        Явно ждать завершения команды (DONE/NO_EFFECT).
+        Явно ждать завершения команды (DONE).
         
-        ВАЖНО: Успехом считается DONE или NO_EFFECT.
+        ВАЖНО: Успехом считается только DONE.
+        NO_EFFECT трактуется как неуспех команды.
         ACK - промежуточный статус, команда еще выполняется.
         
         Args:
@@ -532,8 +556,8 @@ class CommandTracker:
             poll_interval_sec: Интервал проверки статуса в секундах
         
         Returns:
-            True если команда завершилась со статусом DONE/NO_EFFECT
-            False если команда завершилась со статусом ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
+            True если команда завершилась со статусом DONE
+            False если команда завершилась со статусом NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
             None если истек таймаут
         """
         if timeout_sec is None:
@@ -544,16 +568,16 @@ class CommandTracker:
         while (time.time() - start_time) < timeout_sec:
             db_status = await self._get_command_status_from_db(cmd_id)
             
-            if db_status in ('DONE', 'NO_EFFECT'):
-                # Команда успешно завершена
+            if db_status == "DONE":
+                # Команда успешно завершена.
                 if cmd_id in self.pending_commands:
                     await self._confirm_command_internal(cmd_id, db_status)
                 return True
             
-            if db_status in ('ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'):
-                # Команда завершилась с ошибкой
+            if db_status in ("NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"):
+                # Команда завершилась неуспешно.
                 if cmd_id in self.pending_commands:
-                    error = f'Command {db_status}'
+                    error = f"Command {db_status}"
                     await self._confirm_command_internal(cmd_id, db_status, error=error)
                 return False
             

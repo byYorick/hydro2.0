@@ -21,6 +21,8 @@ from decision_context import ContextLike, normalize_context
 
 logger = logging.getLogger(__name__)
 _TRUE_VALUES = {"1", "true", "yes", "on"}
+_DEFAULT_CLOSED_LOOP_TIMEOUT_SEC = max(1.0, float(os.getenv("AE_COMMAND_CLOSED_LOOP_TIMEOUT_SEC", "60")))
+_TERMINAL_COMMAND_STATUSES = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
 
 # Метрики для отслеживания ошибок публикации
 REST_PUBLISH_ERRORS = Counter("rest_command_errors_total", "REST command publish errors", ["error_type"])
@@ -255,6 +257,47 @@ class CommandBus:
             error_type=error_type,
             details={
                 "http_status": http_status,
+                "error_message": error,
+            },
+        )
+
+    async def _emit_closed_loop_failure_alert(
+        self,
+        *,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        cmd: str,
+        cmd_id: Optional[str],
+        terminal_status: str,
+        error: Optional[str],
+    ) -> None:
+        status = str(terminal_status or "").strip().upper() or "UNKNOWN"
+        code_map = {
+            "SEND_FAILED": ("infra_command_send_failed", "critical"),
+            "TRACKER_UNAVAILABLE": ("infra_command_tracker_unavailable", "error"),
+            "TIMEOUT": ("infra_command_timeout", "critical"),
+            "ERROR": ("infra_command_failed", "error"),
+            "INVALID": ("infra_command_invalid", "error"),
+            "BUSY": ("infra_command_busy", "warning"),
+            "NO_EFFECT": ("infra_command_no_effect", "warning"),
+        }
+        code, severity = code_map.get(status, ("infra_command_effect_not_confirmed", "error"))
+        await send_infra_alert(
+            code=code,
+            alert_type="Command Closed-Loop Not Confirmed",
+            message=f"Команда {cmd} не подтверждена DONE (status={status})",
+            severity=severity,
+            zone_id=zone_id,
+            service="automation-engine",
+            component="command_bus",
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            error_type=status,
+            details={
+                "cmd_id": cmd_id,
+                "terminal_status": status,
                 "error_message": error,
             },
         )
@@ -576,7 +619,14 @@ class CommandBus:
         channel = command.get('channel', 'default')
         cmd = command.get('cmd')
         params = command.get('params')
-        cmd_id = command.get('cmd_id')
+        incoming_cmd_id_raw = command.get('cmd_id')
+        incoming_cmd_id = str(incoming_cmd_id_raw).strip() if isinstance(incoming_cmd_id_raw, str) else None
+        if incoming_cmd_id == "":
+            incoming_cmd_id = None
+        # Очищаем возможный stale cmd_id от предыдущих попыток/переиспользования dict.
+        # Актуальный cmd_id должен формироваться только в текущем вызове tracker.track_command.
+        command.pop('cmd_id', None)
+        cmd_id = None
         normalized_context = normalize_context(context)
         
         if not node_uid or not cmd:
@@ -628,6 +678,9 @@ class CommandBus:
         else:
             # Если tracker не настроен, используем исходные params
             params = command.get('params')
+            cmd_id = incoming_cmd_id
+            if cmd_id:
+                command['cmd_id'] = cmd_id
         
         # Публикация команды (cmd_id передается top-level)
         success = await self.publish_command(zone_id, node_uid, channel, cmd, params, cmd_id=cmd_id)
@@ -643,3 +696,139 @@ class CommandBus:
             await self.tracker.confirm_command_status(cmd_id, "SEND_FAILED", error="publish_failed")
 
         return success
+
+    async def publish_controller_command_closed_loop(
+        self,
+        zone_id: int,
+        command: Dict[str, Any],
+        context: ContextLike = None,
+        timeout_sec: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Публикация команды с closed-loop подтверждением эффекта.
+
+        Успех фиксируется только при терминальном статусе DONE.
+        """
+        effective_timeout = float(timeout_sec) if timeout_sec is not None else _DEFAULT_CLOSED_LOOP_TIMEOUT_SEC
+        effective_timeout = max(1.0, effective_timeout)
+        tracker = self.tracker
+        result: Dict[str, Any] = {
+            "command_submitted": False,
+            "command_effect_confirmed": False,
+            "terminal_status": None,
+            "cmd_id": None,
+            "error_code": None,
+            "error": None,
+        }
+        node_uid = str(command.get("node_uid") or "").strip() or "unknown"
+        channel = str(command.get("channel") or "").strip() or "default"
+        cmd = str(command.get("cmd") or "").strip() or "unknown"
+
+        submitted = await self.publish_controller_command(zone_id, command, context)
+        cmd_id = str(command.get("cmd_id") or "").strip() or None
+        result["command_submitted"] = bool(submitted)
+        result["cmd_id"] = cmd_id
+
+        if not submitted:
+            result["terminal_status"] = "SEND_FAILED"
+            result["error_code"] = "SEND_FAILED"
+            result["error"] = "publish_failed"
+            await create_zone_event(
+                zone_id,
+                "COMMAND_EFFECT_NOT_CONFIRMED",
+                {
+                    "cmd_id": cmd_id,
+                    "cmd": cmd,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "terminal_status": "SEND_FAILED",
+                    "reason": "publish_failed",
+                },
+            )
+            await self._emit_closed_loop_failure_alert(
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                cmd_id=cmd_id,
+                terminal_status="SEND_FAILED",
+                error="publish_failed",
+            )
+            return result
+
+        if tracker is None or cmd_id is None:
+            result["terminal_status"] = "TRACKER_UNAVAILABLE"
+            result["error_code"] = "TRACKER_UNAVAILABLE"
+            result["error"] = "command_tracker_required_for_closed_loop"
+            await create_zone_event(
+                zone_id,
+                "COMMAND_EFFECT_NOT_CONFIRMED",
+                {
+                    "cmd_id": cmd_id,
+                    "cmd": cmd,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "terminal_status": "TRACKER_UNAVAILABLE",
+                    "reason": "tracker_or_cmd_id_missing",
+                },
+            )
+            await self._emit_closed_loop_failure_alert(
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                cmd_id=cmd_id,
+                terminal_status="TRACKER_UNAVAILABLE",
+                error="command_tracker_required_for_closed_loop",
+            )
+            return result
+
+        wait_result = await tracker.wait_for_command_done(
+            cmd_id=cmd_id,
+            timeout_sec=effective_timeout,
+            poll_interval_sec=min(1.0, max(0.25, effective_timeout / 20.0)),
+        )
+        if wait_result is True:
+            result["command_effect_confirmed"] = True
+            result["terminal_status"] = "DONE"
+            return result
+
+        terminal_status = await tracker._get_command_status_from_db(cmd_id)  # noqa: SLF001
+        normalized_status = str(terminal_status or "").strip().upper()
+
+        if wait_result is None:
+            normalized_status = "TIMEOUT"
+            try:
+                await tracker.confirm_command_status(cmd_id, "TIMEOUT", error="closed_loop_timeout")
+            except Exception:
+                logger.warning("Zone %s: failed to mark TIMEOUT for cmd_id=%s", zone_id, cmd_id, exc_info=True)
+
+        if normalized_status not in _TERMINAL_COMMAND_STATUSES:
+            normalized_status = "ERROR"
+
+        result["terminal_status"] = normalized_status
+        result["error_code"] = normalized_status
+        result["error"] = f"command_terminal_status_{normalized_status.lower()}"
+
+        await create_zone_event(
+            zone_id,
+            "COMMAND_EFFECT_NOT_CONFIRMED",
+            {
+                "cmd_id": cmd_id,
+                "cmd": cmd,
+                "node_uid": node_uid,
+                "channel": channel,
+                "terminal_status": normalized_status,
+                "reason": "terminal_status_not_done",
+            },
+        )
+        await self._emit_closed_loop_failure_alert(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            cmd_id=cmd_id,
+            terminal_status=normalized_status,
+            error=result["error"],
+        )
+        return result

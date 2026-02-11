@@ -2,13 +2,16 @@ import asyncio
 import hashlib
 import logging
 import os
+import random
 import socket
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import asyncpg
 import httpx
 from common.db import create_scheduler_log, create_zone_event, fetch
+from common.env import get_settings
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.logging_setup import install_exception_handlers, setup_standard_logging
 from common.service_logs import send_service_log
@@ -53,9 +56,34 @@ SCHEDULER_TASK_COMPLETION_LATENCY_SEC = Histogram(
     ["task_type", "status"],
     buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300),
 )
+TASK_ACCEPT_TO_TERMINAL_LATENCY = Histogram(
+    "task_accept_to_terminal_latency",
+    "Scheduler task accept-to-terminal latency (seconds)",
+    ["task_type", "status"],
+    buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300),
+)
+TASK_DEADLINE_VIOLATION_RATE = Gauge(
+    "task_deadline_violation_rate",
+    "Share of tasks with deadline violations (rejected/expired)",
+    ["task_type"],
+)
 SCHEDULER_ACTIVE_TASKS = Gauge(
     "scheduler_active_tasks",
     "Current number of active abstract scheduler tasks",
+)
+SCHEDULER_LEADER_ROLE = Gauge(
+    "scheduler_leader_role",
+    "Scheduler leader role: 1 leader, 0 follower",
+)
+SCHEDULER_LEADER_TRANSITIONS = Counter(
+    "scheduler_leader_transitions_total",
+    "Scheduler leader transitions",
+    ["transition"],
+)
+SCHEDULER_DISPATCH_SKIPS = Counter(
+    "scheduler_dispatch_skips_total",
+    "Scheduler dispatch skips by reason",
+    ["reason"],
 )
 
 # URL automation-engine для отправки абстрактных задач
@@ -71,6 +99,24 @@ SCHEDULER_VERSION = os.getenv("SCHEDULER_VERSION", "3.0.0")
 SCHEDULER_PROTOCOL_VERSION = os.getenv("SCHEDULER_PROTOCOL_VERSION", "2.0")
 SCHEDULER_MAIN_TICK_SEC = max(1.0, float(os.getenv("SCHEDULER_MAIN_TICK_SEC", "5")))
 SCHEDULER_DISPATCH_INTERVAL_SEC = max(1.0, float(os.getenv("SCHEDULER_DISPATCH_INTERVAL_SEC", "60")))
+SCHEDULER_LEADER_ELECTION_ENABLED = os.getenv("SCHEDULER_LEADER_ELECTION", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+SCHEDULER_LEADER_LOCK_SCOPE = os.getenv("SCHEDULER_LEADER_LOCK_SCOPE", "cluster:default")
+SCHEDULER_LEADER_RETRY_BACKOFF_SEC = max(1.0, float(os.getenv("SCHEDULER_LEADER_RETRY_BACKOFF_SEC", "2")))
+SCHEDULER_LEADER_DB_TIMEOUT_SEC = max(1.0, float(os.getenv("SCHEDULER_LEADER_DB_TIMEOUT_SEC", "5")))
+SCHEDULER_LEADER_HEALTHCHECK_SEC = max(1.0, float(os.getenv("SCHEDULER_LEADER_HEALTHCHECK_SEC", "10")))
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_CATCHUP_POLICIES = {"skip", "replay_limited", "replay_all"}
+_raw_catchup_policy = os.getenv("SCHEDULER_CATCHUP_POLICY", "replay_limited").strip().lower()
+SCHEDULER_CATCHUP_POLICY = _raw_catchup_policy if _raw_catchup_policy in _CATCHUP_POLICIES else "replay_limited"
+SCHEDULER_CATCHUP_MAX_WINDOWS = max(1, int(os.getenv("SCHEDULER_CATCHUP_MAX_WINDOWS", "3")))
+SCHEDULER_CATCHUP_RATE_LIMIT_PER_CYCLE = max(1, int(os.getenv("SCHEDULER_CATCHUP_RATE_LIMIT_PER_CYCLE", "20")))
+SCHEDULER_CATCHUP_JITTER_SEC = max(0.0, float(os.getenv("SCHEDULER_CATCHUP_JITTER_SEC", "0")))
+SCHEDULER_CURSOR_PERSIST_ENABLED = str(os.getenv("SCHEDULER_CURSOR_PERSIST_ENABLED", "1")).strip().lower() in _TRUE_VALUES
 
 # Bootstrap / heartbeat state
 _BOOTSTRAP_BACKOFF_STEPS_SEC = (1, 2, 5, 10, 15)
@@ -83,13 +129,23 @@ _bootstrap_next_heartbeat_at: Optional[datetime] = None
 _bootstrap_lease_expires_at: Optional[datetime] = None
 _bootstrap_retry_idx: int = 0
 
+# Leader election state
+_leader_conn: Optional[asyncpg.Connection] = None
+_leader_active: bool = False
+_leader_next_attempt_at: Optional[datetime] = None
+_leader_next_healthcheck_at: Optional[datetime] = None
+
 # Временное хранилище последнего тика per zone (для sim-time пересечений)
 _LAST_SCHEDULE_CHECKS: Dict[int, datetime] = {}
+_LOADED_ZONE_CURSORS: set[int] = set()
+_TASK_TERMINAL_COUNTS: Dict[str, int] = {}
+_TASK_DEADLINE_VIOLATIONS: Dict[str, int] = {}
 _ACTIVE_TASKS: Dict[str, Dict[str, Any]] = {}
 _ACTIVE_SCHEDULE_TASKS: Dict[str, str] = {}
 _WINDOW_LAST_STATE: Dict[str, bool] = {}
 _INTERNAL_ENQUEUE_TASK_NAME_PREFIX = "ae_internal_enqueue_"
 _INTERNAL_ENQUEUE_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_SCAN_LIMIT", "500")))
+_ACTIVE_TASK_RECOVERY_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_ACTIVE_TASK_RECOVERY_SCAN_LIMIT", "1000")))
 
 # Анти-спам для сервисных логов/алертов
 _LAST_DIAGNOSTIC_AT: Dict[str, datetime] = {}
@@ -218,14 +274,108 @@ def _extract_simulation_clock(row: Dict[str, Any]) -> Optional[SimulationClock]:
     return SimulationClock(real_start=real_start, sim_start=sim_start, time_scale=time_scale_value)
 
 
-def _get_last_check(zone_id: int, now_dt: datetime, sim_clock: Optional[SimulationClock]) -> datetime:
-    last_check = _LAST_SCHEDULE_CHECKS.get(zone_id)
-    if last_check is not None:
-        return last_check
+def _default_last_check(now_dt: datetime, sim_clock: Optional[SimulationClock]) -> datetime:
     delta_seconds = 60.0
     if sim_clock:
         delta_seconds *= sim_clock.time_scale
     return now_dt - timedelta(seconds=delta_seconds)
+
+
+def _get_last_check(zone_id: int, now_dt: datetime, sim_clock: Optional[SimulationClock]) -> datetime:
+    last_check = _LAST_SCHEDULE_CHECKS.get(zone_id)
+    if last_check is not None:
+        return last_check
+    return _default_last_check(now_dt, sim_clock)
+
+
+async def _resolve_zone_last_check(zone_id: int, now_dt: datetime, sim_clock: Optional[SimulationClock]) -> datetime:
+    last_check = _LAST_SCHEDULE_CHECKS.get(zone_id)
+    if last_check is not None:
+        return last_check
+
+    fallback = _default_last_check(now_dt, sim_clock)
+    if not SCHEDULER_CURSOR_PERSIST_ENABLED:
+        _LAST_SCHEDULE_CHECKS[zone_id] = fallback
+        return fallback
+
+    if zone_id in _LOADED_ZONE_CURSORS:
+        _LAST_SCHEDULE_CHECKS[zone_id] = fallback
+        return fallback
+
+    task_name = f"scheduler_cursor_zone_{zone_id}"
+    try:
+        rows = await fetch(
+            """
+            SELECT details
+            FROM scheduler_logs
+            WHERE task_name = $1
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            task_name,
+        )
+    except Exception as exc:
+        await _emit_scheduler_diagnostic(
+            reason="schedule_cursor_load_failed",
+            message=f"Scheduler не смог загрузить персистентный cursor для зоны {zone_id}",
+            level="error",
+            zone_id=zone_id,
+            details={"error": str(exc), "task_name": task_name},
+            alert_code="infra_scheduler_cursor_load_failed",
+            error_type=type(exc).__name__,
+        )
+        return fallback
+
+    _LOADED_ZONE_CURSORS.add(zone_id)
+    if rows:
+        details = rows[0].get("details")
+        if isinstance(details, dict):
+            parsed = _parse_iso_datetime_utc(str(details.get("last_check") or details.get("cursor_at") or ""))
+            if parsed is not None:
+                _LAST_SCHEDULE_CHECKS[zone_id] = parsed
+                return parsed
+
+    _LAST_SCHEDULE_CHECKS[zone_id] = fallback
+    return fallback
+
+
+async def _persist_zone_cursor(zone_id: int, cursor_at: datetime) -> None:
+    if not SCHEDULER_CURSOR_PERSIST_ENABLED:
+        return
+
+    task_name = f"scheduler_cursor_zone_{zone_id}"
+    try:
+        await create_scheduler_log(
+            task_name,
+            "cursor",
+            {
+                "zone_id": zone_id,
+                "last_check": cursor_at.isoformat(),
+                "cursor_at": cursor_at.isoformat(),
+                "catchup_policy": SCHEDULER_CATCHUP_POLICY,
+            },
+        )
+    except Exception as exc:
+        await _emit_scheduler_diagnostic(
+            reason="schedule_cursor_persist_failed",
+            message=f"Scheduler не смог сохранить cursor для зоны {zone_id}",
+            level="error",
+            zone_id=zone_id,
+            details={"error": str(exc), "task_name": task_name},
+            alert_code="infra_scheduler_cursor_persist_failed",
+            error_type=type(exc).__name__,
+        )
+
+
+def _apply_catchup_policy(crossings: List[datetime], now_dt: datetime) -> List[datetime]:
+    if not crossings:
+        return []
+
+    if SCHEDULER_CATCHUP_POLICY == "skip":
+        return [now_dt]
+    if SCHEDULER_CATCHUP_POLICY == "replay_limited":
+        return crossings[-SCHEDULER_CATCHUP_MAX_WINDOWS :]
+    return crossings
 
 
 def _schedule_crossings(last_dt: datetime, now_dt: datetime, target: time) -> List[datetime]:
@@ -560,8 +710,8 @@ async def _should_run_interval_task(
             """
             SELECT created_at
             FROM scheduler_logs
-            WHERE task_name = $1 AND status = 'completed'
-            ORDER BY created_at DESC
+            WHERE task_name = $1 AND status IN ('completed', 'failed')
+            ORDER BY created_at DESC, id DESC
             LIMIT 1
             """,
             task_name,
@@ -604,7 +754,7 @@ def _build_schedule_key(zone_id: int, schedule: Dict[str, Any]) -> str:
 
 
 def _is_terminal_status(status: str) -> bool:
-    return status in {"completed", "done", "failed", "rejected", "timeout", "error", "not_found"}
+    return status in {"completed", "done", "failed", "rejected", "expired", "timeout", "error", "not_found"}
 
 
 def _normalize_terminal_status(status: str) -> str:
@@ -613,6 +763,52 @@ def _normalize_terminal_status(status: str) -> str:
     if status == "error":
         return "failed"
     return status
+
+
+def _update_deadline_violation_rate(task_type: str, terminal_status: str) -> None:
+    normalized_task_type = str(task_type or "unknown")
+    total = _TASK_TERMINAL_COUNTS.get(normalized_task_type, 0) + 1
+    violations = _TASK_DEADLINE_VIOLATIONS.get(normalized_task_type, 0)
+    if terminal_status in {"rejected", "expired"}:
+        violations += 1
+
+    _TASK_TERMINAL_COUNTS[normalized_task_type] = total
+    _TASK_DEADLINE_VIOLATIONS[normalized_task_type] = violations
+    TASK_DEADLINE_VIOLATION_RATE.labels(task_type=normalized_task_type).set(violations / max(total, 1))
+
+
+def _extract_task_outcome_fields(status_payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = status_payload if isinstance(status_payload, dict) else {}
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+
+    action_required = payload.get("action_required")
+    if not isinstance(action_required, bool):
+        action_required = result.get("action_required") if isinstance(result.get("action_required"), bool) else None
+
+    decision = payload.get("decision")
+    if not isinstance(decision, str):
+        decision = result.get("decision") if isinstance(result.get("decision"), str) else None
+
+    reason_code = payload.get("reason_code")
+    if not isinstance(reason_code, str):
+        reason_code = result.get("reason_code") if isinstance(result.get("reason_code"), str) else None
+
+    error_code = payload.get("error_code")
+    if not isinstance(error_code, str):
+        error_code = result.get("error_code") if isinstance(result.get("error_code"), str) else None
+
+    error = payload.get("error")
+    if not isinstance(error, str):
+        error = result.get("error") if isinstance(result.get("error"), str) else None
+
+    return {
+        "action_required": action_required,
+        "decision": decision,
+        "reason_code": reason_code,
+        "error_code": error_code,
+        "error": error,
+        "result": result if result else None,
+    }
 
 
 def _parse_iso_datetime_utc(value: Optional[str]) -> Optional[datetime]:
@@ -657,6 +853,18 @@ def _compute_task_deadlines(scheduled_for: Optional[str]) -> Tuple[Optional[str]
     due_at = scheduled_dt + timedelta(seconds=SCHEDULER_DUE_GRACE_SEC)
     expires_at = scheduled_dt + timedelta(seconds=SCHEDULER_EXPIRES_AFTER_SEC)
     return due_at.isoformat(), expires_at.isoformat()
+
+
+def _build_leader_lock_key(scope: str) -> int:
+    normalized = (scope or "cluster:default").strip().lower()
+    digest = hashlib.sha256(normalized.encode("utf-8")).digest()
+    key_unsigned = int.from_bytes(digest[:8], byteorder="big", signed=False)
+    if key_unsigned >= (1 << 63):
+        return key_unsigned - (1 << 64)
+    return key_unsigned
+
+
+_LEADER_LOCK_KEY = _build_leader_lock_key(SCHEDULER_LEADER_LOCK_SCOPE)
 
 
 async def _load_pending_internal_enqueues() -> List[Dict[str, Any]]:
@@ -708,6 +916,14 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
         enqueue_id = str(item.get("enqueue_id") or "").strip()
         task_name = f"{_INTERNAL_ENQUEUE_TASK_NAME_PREFIX}{enqueue_id}" if enqueue_id else ""
         if not task_name:
+            await _emit_scheduler_diagnostic(
+                reason="internal_enqueue_missing_id",
+                message="Scheduler пропустил internal enqueue без enqueue_id",
+                level="error",
+                details={"payload": item},
+                alert_code="infra_scheduler_internal_enqueue_invalid_payload",
+                error_type="missing_enqueue_id",
+            )
             continue
 
         zone_id_raw = item.get("zone_id")
@@ -715,9 +931,26 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
         try:
             zone_id = int(zone_id_raw)
         except (TypeError, ValueError):
+            await _emit_scheduler_diagnostic(
+                reason="internal_enqueue_invalid_zone",
+                message=f"Scheduler получил internal enqueue с некорректным zone_id: {zone_id_raw}",
+                level="error",
+                details={"enqueue_id": enqueue_id, "payload": item},
+                alert_code="infra_scheduler_internal_enqueue_invalid_payload",
+                error_type="invalid_zone_id",
+            )
             await _mark_internal_enqueue_status(task_name, "failed", {**item, "error": "invalid_zone_id"})
             continue
         if task_type not in SUPPORTED_TASK_TYPES:
+            await _emit_scheduler_diagnostic(
+                reason="internal_enqueue_unsupported_task_type",
+                message=f"Scheduler получил internal enqueue с неподдерживаемым task_type={task_type}",
+                level="error",
+                zone_id=zone_id,
+                details={"enqueue_id": enqueue_id, "payload": item},
+                alert_code="infra_scheduler_internal_enqueue_invalid_payload",
+                error_type="unsupported_task_type",
+            )
             await _mark_internal_enqueue_status(task_name, "failed", {**item, "error": "unsupported_task_type"})
             continue
 
@@ -729,6 +962,20 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
         expires_at_raw = item.get("expires_at")
         expires_at_dt = _parse_iso_datetime_utc(str(expires_at_raw)) if expires_at_raw else None
         if expires_at_dt and now_dt > expires_at_dt:
+            await _emit_scheduler_diagnostic(
+                reason="internal_enqueue_expired_before_dispatch",
+                message=f"Scheduler отметил internal enqueue как expired до dispatch (enqueue_id={enqueue_id})",
+                level="warning",
+                zone_id=zone_id,
+                details={
+                    "enqueue_id": enqueue_id,
+                    "task_type": task_type,
+                    "scheduled_for": scheduled_for,
+                    "expires_at": expires_at_dt.isoformat(),
+                },
+                alert_code="infra_scheduler_internal_enqueue_expired",
+                error_type="expired_before_dispatch",
+            )
             await _mark_internal_enqueue_status(task_name, "expired", {**item, "error": "expired_before_dispatch"})
             await create_zone_event(
                 zone_id,
@@ -757,6 +1004,19 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
             schedule_key=schedule_key,
         )
         if not dispatched:
+            await _emit_scheduler_diagnostic(
+                reason="internal_enqueue_dispatch_failed",
+                message=f"Scheduler не смог dispatch-ить internal enqueue задачу (enqueue_id={enqueue_id})",
+                level="error",
+                zone_id=zone_id,
+                details={
+                    "enqueue_id": enqueue_id,
+                    "task_type": task_type,
+                    "scheduled_for": scheduled_for,
+                },
+                alert_code="infra_scheduler_internal_enqueue_dispatch_failed",
+                error_type="dispatch_failed",
+            )
             await _mark_internal_enqueue_status(task_name, "failed", {**item, "error": "dispatch_failed"})
             await create_zone_event(
                 zone_id,
@@ -791,6 +1051,157 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
         )
 
 
+async def _transition_to_follower(*, now: datetime, reason: str, retry: bool) -> None:
+    global _leader_conn, _leader_active, _leader_next_attempt_at, _leader_next_healthcheck_at
+
+    conn = _leader_conn
+    was_leader = _leader_active
+    _leader_conn = None
+    _leader_active = False
+    _leader_next_healthcheck_at = None
+    _leader_next_attempt_at = (
+        now + timedelta(seconds=SCHEDULER_LEADER_RETRY_BACKOFF_SEC) if retry else None
+    )
+    SCHEDULER_LEADER_ROLE.set(0)
+
+    if conn is not None:
+        try:
+            if was_leader and not conn.is_closed():
+                await conn.execute("SELECT pg_advisory_unlock($1::bigint)", _LEADER_LOCK_KEY)
+        except Exception:
+            pass
+        try:
+            if not conn.is_closed():
+                await conn.close()
+        except Exception:
+            pass
+
+    if was_leader:
+        SCHEDULER_LEADER_TRANSITIONS.labels(transition="leader_to_follower").inc()
+        send_service_log(
+            service="scheduler",
+            level="warning",
+            message="Scheduler switched to follower mode",
+            context={"reason": reason, "scope": SCHEDULER_LEADER_LOCK_SCOPE, "scheduler_id": SCHEDULER_ID},
+        )
+
+
+async def release_scheduler_leader(reason: str = "shutdown") -> None:
+    if not SCHEDULER_LEADER_ELECTION_ENABLED:
+        return
+    now = utcnow().replace(tzinfo=None)
+    await _transition_to_follower(now=now, reason=reason, retry=False)
+
+
+async def ensure_scheduler_leader() -> bool:
+    global _leader_conn, _leader_active, _leader_next_attempt_at, _leader_next_healthcheck_at
+
+    if not SCHEDULER_LEADER_ELECTION_ENABLED:
+        _leader_active = True
+        SCHEDULER_LEADER_ROLE.set(1)
+        return True
+
+    now = utcnow().replace(tzinfo=None)
+
+    if _leader_active and _leader_conn is not None and not _leader_conn.is_closed():
+        if _leader_next_healthcheck_at is None or now >= _leader_next_healthcheck_at:
+            try:
+                await _leader_conn.fetchval("SELECT 1")
+            except Exception as exc:
+                await _emit_scheduler_diagnostic(
+                    reason="scheduler_leader_connection_lost",
+                    message="Scheduler потерял лидерское соединение с БД",
+                    level="error",
+                    details={"error": str(exc)},
+                    alert_code="infra_scheduler_leader_connection_lost",
+                    error_type=type(exc).__name__,
+                )
+                await _transition_to_follower(now=now, reason="connection_lost", retry=True)
+                return False
+            _leader_next_healthcheck_at = now + timedelta(seconds=SCHEDULER_LEADER_HEALTHCHECK_SEC)
+        return True
+
+    if _leader_next_attempt_at and now < _leader_next_attempt_at:
+        SCHEDULER_DISPATCH_SKIPS.labels(reason="leader_retry_backoff").inc()
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_leader_retry_backoff",
+            message="Scheduler пропускает dispatch: активен backoff повторного захвата лидерского lock",
+            level="warning",
+            details={
+                "next_attempt_at": _leader_next_attempt_at.isoformat(),
+                "scope": SCHEDULER_LEADER_LOCK_SCOPE,
+                "scheduler_id": SCHEDULER_ID,
+            },
+            alert_code="infra_scheduler_leader_retry_backoff",
+            error_type="leader_backoff",
+        )
+        return False
+
+    settings = get_settings()
+    conn: Optional[asyncpg.Connection] = None
+    try:
+        conn = await asyncpg.connect(
+            host=settings.pg_host,
+            port=settings.pg_port,
+            database=settings.pg_db,
+            user=settings.pg_user,
+            password=settings.pg_pass,
+            timeout=SCHEDULER_LEADER_DB_TIMEOUT_SEC,
+            command_timeout=SCHEDULER_LEADER_DB_TIMEOUT_SEC,
+        )
+        acquired = bool(await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", _LEADER_LOCK_KEY))
+    except Exception as exc:
+        if conn is not None:
+            try:
+                if not conn.is_closed():
+                    await conn.close()
+            except Exception:
+                pass
+        _leader_next_attempt_at = now + timedelta(seconds=SCHEDULER_LEADER_RETRY_BACKOFF_SEC)
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_leader_acquire_error",
+            message="Scheduler не смог попытаться захватить лидерский lock",
+            level="error",
+            details={"error": str(exc)},
+            alert_code="infra_scheduler_leader_acquire_failed",
+            error_type=type(exc).__name__,
+        )
+        return False
+
+    if not acquired:
+        try:
+            if not conn.is_closed():
+                await conn.close()
+        except Exception:
+            pass
+        _leader_active = False
+        _leader_next_attempt_at = now + timedelta(seconds=SCHEDULER_LEADER_RETRY_BACKOFF_SEC)
+        _leader_next_healthcheck_at = None
+        SCHEDULER_LEADER_ROLE.set(0)
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_leader_lock_busy",
+            message="Scheduler работает в follower mode: лидерский lock удерживается другим инстансом",
+            level="warning",
+            details={"scope": SCHEDULER_LEADER_LOCK_SCOPE, "scheduler_id": SCHEDULER_ID},
+            error_type="lock_busy",
+        )
+        return False
+
+    _leader_conn = conn
+    _leader_active = True
+    _leader_next_attempt_at = None
+    _leader_next_healthcheck_at = now + timedelta(seconds=SCHEDULER_LEADER_HEALTHCHECK_SEC)
+    SCHEDULER_LEADER_ROLE.set(1)
+    SCHEDULER_LEADER_TRANSITIONS.labels(transition="follower_to_leader").inc()
+    send_service_log(
+        service="scheduler",
+        level="info",
+        message="Scheduler acquired leader lock",
+        context={"scope": SCHEDULER_LEADER_LOCK_SCOPE, "scheduler_id": SCHEDULER_ID},
+    )
+    return True
+
+
 def _mark_bootstrap_wait(now: datetime, retry: bool = True) -> None:
     global _bootstrap_ready, _bootstrap_lease_id, _bootstrap_next_heartbeat_at, _bootstrap_lease_expires_at, _bootstrap_next_attempt_at, _bootstrap_retry_idx
     _bootstrap_ready = False
@@ -811,6 +1222,18 @@ async def ensure_scheduler_bootstrap_ready() -> bool:
     if _bootstrap_ready and _bootstrap_lease_expires_at and now < _bootstrap_lease_expires_at:
         return True
     if _bootstrap_next_attempt_at and now < _bootstrap_next_attempt_at:
+        SCHEDULER_DISPATCH_SKIPS.labels(reason="bootstrap_retry_backoff").inc()
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_bootstrap_retry_backoff",
+            message="Scheduler пропускает dispatch: bootstrap в backoff-режиме",
+            level="warning",
+            details={
+                "next_attempt_at": _bootstrap_next_attempt_at.isoformat(),
+                "scheduler_id": SCHEDULER_ID,
+            },
+            alert_code="infra_scheduler_bootstrap_retry_backoff",
+            error_type="bootstrap_backoff",
+        )
         return False
 
     payload = {
@@ -917,6 +1340,14 @@ async def send_scheduler_bootstrap_heartbeat() -> bool:
     if _bootstrap_next_heartbeat_at and now < _bootstrap_next_heartbeat_at:
         return True
     if not _bootstrap_lease_id:
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_bootstrap_heartbeat_missing_lease",
+            message="Scheduler не может отправить heartbeat: отсутствует lease_id",
+            level="error",
+            details={"scheduler_id": SCHEDULER_ID},
+            alert_code="infra_scheduler_bootstrap_heartbeat_missing_lease",
+            error_type="missing_lease_id",
+        )
         _mark_bootstrap_wait(now, retry=True)
         return False
 
@@ -944,6 +1375,14 @@ async def send_scheduler_bootstrap_heartbeat() -> bool:
 
     if response.status_code != 200:
         COMMAND_REST_ERRORS.labels(error_type=f"bootstrap_heartbeat_http_{response.status_code}").inc()
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_bootstrap_heartbeat_http_error",
+            message=f"Scheduler получил HTTP {response.status_code} на bootstrap heartbeat",
+            level="error",
+            details={"response": response.text[:300]},
+            alert_code="infra_scheduler_bootstrap_heartbeat_failed",
+            error_type=f"http_{response.status_code}",
+        )
         _mark_bootstrap_wait(now, retry=True)
         return False
 
@@ -951,11 +1390,20 @@ async def send_scheduler_bootstrap_heartbeat() -> bool:
     data = body.get("data") if isinstance(body, dict) else {}
     status = str(data.get("bootstrap_status") or "").lower()
     if status != "ready":
+        await _emit_scheduler_diagnostic(
+            reason="scheduler_bootstrap_heartbeat_not_ready",
+            message=f"Scheduler heartbeat вернул bootstrap_status={status or 'unknown'}",
+            level="warning",
+            details={"body": body},
+            alert_code="infra_scheduler_bootstrap_heartbeat_not_ready",
+            error_type=status or "unknown",
+        )
         _mark_bootstrap_wait(now, retry=True)
         return False
 
-    _bootstrap_lease_expires_at = now + timedelta(seconds=max(10, int(data.get("lease_ttl_sec") or _bootstrap_lease_ttl_sec)))
-    _bootstrap_next_heartbeat_at = now + timedelta(seconds=max(1, _bootstrap_lease_ttl_sec // 2))
+    lease_ttl_sec = max(10, int(data.get("lease_ttl_sec") or _bootstrap_lease_ttl_sec))
+    _bootstrap_lease_expires_at = now + timedelta(seconds=lease_ttl_sec)
+    _bootstrap_next_heartbeat_at = now + timedelta(seconds=max(1, lease_ttl_sec // 2))
     return True
 
 
@@ -966,7 +1414,8 @@ async def submit_task_to_automation_engine(
     payload: Optional[Dict[str, Any]] = None,
     scheduled_for: Optional[str] = None,
     correlation_id: Optional[str] = None,
-) -> Optional[str]:
+    include_response_meta: bool = False,
+) -> Optional[Union[str, Dict[str, Any]]]:
     created_trace = False
     if not get_trace_id():
         set_trace_id()
@@ -1024,6 +1473,7 @@ async def submit_task_to_automation_engine(
         body = response.json()
         data = body.get("data") if isinstance(body, dict) else None
         task_id = data.get("task_id") if isinstance(data, dict) else None
+        task_status = str(data.get("status") or "accepted").strip().lower() if isinstance(data, dict) else "accepted"
         if not task_id:
             COMMAND_REST_ERRORS.labels(error_type="task_id_missing").inc()
             await _emit_scheduler_diagnostic(
@@ -1041,10 +1491,21 @@ async def submit_task_to_automation_engine(
             zone_id,
             service="scheduler",
             stage="task_submit",
-            status="accepted",
+            status=task_status,
             message="Абстрактная задача передана в automation-engine",
-            payload={"task_id": task_id, "task_type": task_type, "correlation_id": effective_correlation_id},
+            payload={
+                "task_id": task_id,
+                "task_type": task_type,
+                "task_status": task_status,
+                "correlation_id": effective_correlation_id,
+            },
         )
+        if include_response_meta:
+            return {
+                "task_id": str(task_id),
+                "status": task_status,
+                "payload": data if isinstance(data, dict) else {},
+            }
         return str(task_id)
 
     except httpx.TimeoutException as e:
@@ -1135,7 +1596,7 @@ async def wait_task_completion(
 
                 if status in {"completed", "done"}:
                     return True, "completed", status_payload
-                if status in {"failed", "rejected", "timeout", "error"}:
+                if status in {"failed", "rejected", "expired", "timeout", "error"}:
                     return False, status, status_payload
 
                 await asyncio.sleep(SCHEDULER_TASK_POLL_INTERVAL_SEC)
@@ -1146,7 +1607,12 @@ async def wait_task_completion(
             clear_trace_id()
 
 
-async def _fetch_task_status_once(task_id: str) -> Tuple[Optional[str], Dict[str, Any]]:
+async def _fetch_task_status_once(
+    task_id: str,
+    *,
+    zone_id: Optional[int] = None,
+    task_type: Optional[str] = None,
+) -> Tuple[Optional[str], Dict[str, Any]]:
     headers = _scheduler_headers()
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -1156,16 +1622,67 @@ async def _fetch_task_status_once(task_id: str) -> Tuple[Optional[str], Dict[str
             )
     except httpx.TimeoutException:
         COMMAND_REST_ERRORS.labels(error_type="task_status_timeout").inc()
+        await _emit_scheduler_diagnostic(
+            reason="task_status_timeout",
+            message=(
+                f"Scheduler получил timeout при чтении статуса задачи {task_type or 'unknown'} "
+                f"({task_id}) для зоны {zone_id or 'unknown'}"
+            ),
+            level="warning",
+            zone_id=zone_id,
+            details={"task_id": task_id, "task_type": task_type},
+            alert_code="infra_scheduler_task_status_timeout",
+            error_type="timeout",
+        )
         return None, {}
     except Exception as exc:
         COMMAND_REST_ERRORS.labels(error_type="task_status_request_error").inc()
-        logger.warning("Scheduler task status request failed: task_id=%s error=%s", task_id, exc, exc_info=True)
+        await _emit_scheduler_diagnostic(
+            reason="task_status_request_failed",
+            message=(
+                f"Scheduler не смог получить статус задачи {task_type or 'unknown'} "
+                f"({task_id}) для зоны {zone_id or 'unknown'}"
+            ),
+            level="error",
+            zone_id=zone_id,
+            details={"task_id": task_id, "task_type": task_type, "error": str(exc)},
+            alert_code="infra_scheduler_task_status_failed",
+            error_type=type(exc).__name__,
+        )
         return None, {}
 
     if response.status_code == 404:
+        await _emit_scheduler_diagnostic(
+            reason="task_status_not_found",
+            message=(
+                f"Scheduler получил 404 при чтении статуса задачи {task_type or 'unknown'} "
+                f"({task_id}) для зоны {zone_id or 'unknown'}"
+            ),
+            level="warning",
+            zone_id=zone_id,
+            details={"task_id": task_id, "task_type": task_type},
+            alert_code="infra_scheduler_task_status_not_found",
+            error_type="not_found",
+        )
         return "not_found", {}
     if response.status_code != 200:
         COMMAND_REST_ERRORS.labels(error_type=f"task_status_http_{response.status_code}").inc()
+        await _emit_scheduler_diagnostic(
+            reason="task_status_http_error",
+            message=(
+                f"Scheduler получил HTTP {response.status_code} при чтении статуса "
+                f"задачи {task_type or 'unknown'} ({task_id})"
+            ),
+            level="warning",
+            zone_id=zone_id,
+            details={
+                "task_id": task_id,
+                "task_type": task_type,
+                "status_code": response.status_code,
+            },
+            alert_code="infra_scheduler_task_status_failed",
+            error_type=f"http_{response.status_code}",
+        )
         return None, {}
 
     body = response.json() if response.content else {}
@@ -1196,6 +1713,110 @@ def _is_schedule_busy(schedule_key: str) -> bool:
     return bool(task_id and task_id in _ACTIVE_TASKS)
 
 
+async def recover_active_tasks_after_restart() -> int:
+    if _ACTIVE_TASKS:
+        SCHEDULER_ACTIVE_TASKS.set(len(_ACTIVE_TASKS))
+        return len(_ACTIVE_TASKS)
+
+    try:
+        rows = await fetch(
+            """
+            WITH recent_logs AS (
+                SELECT id, details, status, created_at
+                FROM scheduler_logs
+                WHERE details ? 'task_id'
+                  AND status IN ('accepted', 'completed', 'failed')
+                ORDER BY created_at DESC, id DESC
+                LIMIT $1
+            )
+            SELECT DISTINCT ON (details->>'task_id')
+                details, status, created_at
+            FROM recent_logs
+            ORDER BY (details->>'task_id'), created_at DESC, id DESC
+            """,
+            _ACTIVE_TASK_RECOVERY_SCAN_LIMIT,
+        )
+    except Exception as exc:
+        await _emit_scheduler_diagnostic(
+            reason="active_task_recovery_failed",
+            message="Scheduler не смог выполнить startup recovery активных задач",
+            level="error",
+            details={"error": str(exc)},
+            alert_code="infra_scheduler_active_task_recovery_failed",
+            error_type=type(exc).__name__,
+        )
+        return 0
+
+    recovered = 0
+    skipped_invalid = 0
+    for row in rows:
+        status = str(row.get("status") or "").strip().lower()
+        if status != "accepted":
+            continue
+
+        details = row.get("details")
+        if not isinstance(details, dict):
+            skipped_invalid += 1
+            continue
+
+        task_id = str(details.get("task_id") or "").strip()
+        if not task_id or task_id in _ACTIVE_TASKS:
+            continue
+
+        try:
+            zone_id = int(details.get("zone_id"))
+        except (TypeError, ValueError):
+            skipped_invalid += 1
+            continue
+
+        task_type = str(details.get("task_type") or "").strip().lower()
+        if not task_type:
+            skipped_invalid += 1
+            continue
+
+        schedule_key = str(details.get("schedule_key") or "")
+        correlation_id = str(details.get("correlation_id") or "")
+        accepted_at = _parse_iso_datetime_utc(str(details.get("accepted_at") or ""))
+        if accepted_at is None:
+            created_at = row.get("created_at")
+            accepted_at = created_at if isinstance(created_at, datetime) else utcnow().replace(tzinfo=None)
+
+        _register_active_task(
+            task_id,
+            {
+                "zone_id": zone_id,
+                "task_type": task_type,
+                "task_name": f"{task_type}_zone_{zone_id}",
+                "accepted_at": accepted_at,
+                "schedule_key": schedule_key,
+                "correlation_id": correlation_id,
+                "recovered_after_restart": True,
+            },
+        )
+        recovered += 1
+
+    if skipped_invalid > 0:
+        await _emit_scheduler_diagnostic(
+            reason="active_task_recovery_invalid_payload",
+            message="Scheduler обнаружил некорректные snapshot-и при startup recovery активных задач",
+            level="warning",
+            details={"skipped_invalid": skipped_invalid},
+            alert_code="infra_scheduler_active_task_recovery_invalid_payload",
+            error_type="invalid_payload",
+        )
+
+    if recovered > 0:
+        send_service_log(
+            service="scheduler",
+            level="warning",
+            message="Scheduler восстановил активные задачи после рестарта",
+            context={"recovered_tasks": recovered},
+        )
+
+    SCHEDULER_ACTIVE_TASKS.set(len(_ACTIVE_TASKS))
+    return recovered
+
+
 async def reconcile_active_tasks() -> None:
     if not _ACTIVE_TASKS:
         SCHEDULER_ACTIVE_TASKS.set(0)
@@ -1209,7 +1830,11 @@ async def reconcile_active_tasks() -> None:
         accepted_at = metadata.get("accepted_at")
         accepted_dt = accepted_at if isinstance(accepted_at, datetime) else now
 
-        status, status_payload = await _fetch_task_status_once(task_id)
+        status, status_payload = await _fetch_task_status_once(
+            task_id,
+            zone_id=zone_id,
+            task_type=task_type,
+        )
 
         if status is None:
             elapsed = max(0.0, (now - accepted_dt).total_seconds())
@@ -1224,6 +1849,9 @@ async def reconcile_active_tasks() -> None:
         terminal_status = _normalize_terminal_status(status)
         completion_elapsed = max(0.0, (now - accepted_dt).total_seconds())
         SCHEDULER_TASK_COMPLETION_LATENCY_SEC.labels(task_type=task_type, status=terminal_status).observe(completion_elapsed)
+        TASK_ACCEPT_TO_TERMINAL_LATENCY.labels(task_type=task_type, status=terminal_status).observe(completion_elapsed)
+        _update_deadline_violation_rate(task_type, terminal_status)
+        outcome = _extract_task_outcome_fields(status_payload)
 
         if terminal_status == "completed":
             SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type=task_type).inc()
@@ -1237,12 +1865,23 @@ async def reconcile_active_tasks() -> None:
                     "task_id": task_id,
                     "status": terminal_status,
                     "status_payload": status_payload,
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
+                    "result": outcome["result"],
                 },
             )
             await create_zone_event(
                 zone_id,
                 "SCHEDULE_TASK_COMPLETED",
-                {"task_type": task_type, "task_id": task_id, "status": terminal_status},
+                {
+                    "task_type": task_type,
+                    "task_id": task_id,
+                    "status": terminal_status,
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
+                },
             )
         else:
             final_status = terminal_status or "failed"
@@ -1256,12 +1895,26 @@ async def reconcile_active_tasks() -> None:
                     "task_id": task_id,
                     "status": final_status,
                     "status_payload": status_payload,
+                    "error": outcome["error"],
+                    "error_code": outcome["error_code"],
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
                 },
             )
             await create_zone_event(
                 zone_id,
                 "SCHEDULE_TASK_FAILED",
-                {"task_type": task_type, "task_id": task_id, "status": final_status},
+                {
+                    "task_type": task_type,
+                    "task_id": task_id,
+                    "status": final_status,
+                    "error": outcome["error"],
+                    "error_code": outcome["error_code"],
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
+                },
             )
 
         _drop_active_task(task_id)
@@ -1289,6 +1942,20 @@ async def execute_scheduled_task(
     task_name = f"{task_type}_zone_{zone_id}"
     normalized_key = schedule_key or _build_schedule_key(zone_id, schedule)
     if _is_schedule_busy(normalized_key):
+        SCHEDULER_DISPATCH_SKIPS.labels(reason="schedule_busy").inc()
+        await _emit_scheduler_diagnostic(
+            reason="schedule_busy_skip",
+            message=f"Scheduler пропустил dispatch: активная задача уже выполняется (zone={zone_id}, task={task_type})",
+            level="warning",
+            zone_id=zone_id,
+            details={
+                "task_type": task_type,
+                "schedule_key": normalized_key,
+                "active_task_id": _ACTIVE_SCHEDULE_TASKS.get(normalized_key),
+            },
+            alert_code="infra_scheduler_schedule_busy_skip",
+            error_type="schedule_busy",
+        )
         return False
 
     await create_scheduler_log(
@@ -1324,20 +1991,38 @@ async def execute_scheduled_task(
 
     submitted_at = utcnow().replace(tzinfo=None)
     preset_correlation_id = str(schedule.get("correlation_id") or "").strip()
+    correlation_anchor = trigger_time.isoformat()
+    raw_catchup_trigger = payload.get("catchup_original_trigger_time")
+    if isinstance(raw_catchup_trigger, str):
+        parsed_catchup_trigger = _parse_iso_datetime_utc(raw_catchup_trigger)
+        if parsed_catchup_trigger is not None:
+            correlation_anchor = parsed_catchup_trigger.isoformat()
     correlation_id = preset_correlation_id or _build_scheduler_correlation_id(
         zone_id=zone_id,
         task_type=task_type,
-        scheduled_for=trigger_time.isoformat(),
+        scheduled_for=correlation_anchor,
         schedule_key=normalized_key,
     )
-    task_id = await submit_task_to_automation_engine(
+    submit_result = await submit_task_to_automation_engine(
         zone_id=zone_id,
         task_type=task_type,
         payload=payload,
         scheduled_for=trigger_time.isoformat(),
         correlation_id=correlation_id,
+        include_response_meta=True,
     )
     accepted_at = utcnow().replace(tzinfo=None)
+
+    task_id: Optional[str]
+    submit_status = "accepted"
+    submit_payload: Dict[str, Any] = {}
+    if isinstance(submit_result, dict):
+        raw_task_id = submit_result.get("task_id")
+        task_id = str(raw_task_id).strip() if raw_task_id else None
+        submit_status = str(submit_result.get("status") or "accepted").strip().lower()
+        submit_payload = submit_result.get("payload") if isinstance(submit_result.get("payload"), dict) else {}
+    else:
+        task_id = str(submit_result).strip() if submit_result else None
 
     if not task_id:
         SCHEDULER_TASK_STATUS.labels(task_type=task_type, status="submit_failed").inc()
@@ -1362,9 +2047,95 @@ async def execute_scheduled_task(
         )
         return False
 
-    SCHEDULER_TASK_ACCEPT_LATENCY_SEC.labels(task_type=task_type).observe(
-        max(0.0, (accepted_at - submitted_at).total_seconds())
-    )
+    accept_latency_sec = max(0.0, (accepted_at - submitted_at).total_seconds())
+    SCHEDULER_TASK_ACCEPT_LATENCY_SEC.labels(task_type=task_type).observe(accept_latency_sec)
+
+    if _is_terminal_status(submit_status):
+        terminal_status = _normalize_terminal_status(submit_status)
+        terminal_payload = submit_payload
+
+        fetched_status, fetched_payload = await _fetch_task_status_once(
+            task_id,
+            zone_id=zone_id,
+            task_type=task_type,
+        )
+        if fetched_status and _is_terminal_status(fetched_status):
+            terminal_status = _normalize_terminal_status(fetched_status)
+            if isinstance(fetched_payload, dict) and fetched_payload:
+                terminal_payload = fetched_payload
+
+        outcome = _extract_task_outcome_fields(terminal_payload)
+        SCHEDULER_TASK_COMPLETION_LATENCY_SEC.labels(task_type=task_type, status=terminal_status).observe(accept_latency_sec)
+        TASK_ACCEPT_TO_TERMINAL_LATENCY.labels(task_type=task_type, status=terminal_status).observe(accept_latency_sec)
+        _update_deadline_violation_rate(task_type, terminal_status)
+        if terminal_status == "completed":
+            SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type=task_type).inc()
+            SCHEDULER_TASK_STATUS.labels(task_type=task_type, status="completed").inc()
+            await create_scheduler_log(
+                task_name,
+                "completed",
+                {
+                    "zone_id": zone_id,
+                    "task_type": task_type,
+                    "task_id": task_id,
+                    "status": terminal_status,
+                    "status_payload": terminal_payload,
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
+                    "result": outcome["result"],
+                    "terminal_on_submit": True,
+                },
+            )
+            await create_zone_event(
+                zone_id,
+                "SCHEDULE_TASK_COMPLETED",
+                {
+                    "task_type": task_type,
+                    "task_id": task_id,
+                    "status": terminal_status,
+                    "action_required": outcome["action_required"],
+                    "decision": outcome["decision"],
+                    "reason_code": outcome["reason_code"],
+                    "terminal_on_submit": True,
+                },
+            )
+            return True
+
+        SCHEDULER_TASK_STATUS.labels(task_type=task_type, status=terminal_status).inc()
+        await create_scheduler_log(
+            task_name,
+            "failed",
+            {
+                "zone_id": zone_id,
+                "task_type": task_type,
+                "task_id": task_id,
+                "status": terminal_status,
+                "status_payload": terminal_payload,
+                "error": outcome["error"],
+                "error_code": outcome["error_code"],
+                "action_required": outcome["action_required"],
+                "decision": outcome["decision"],
+                "reason_code": outcome["reason_code"],
+                "terminal_on_submit": True,
+            },
+        )
+        await create_zone_event(
+            zone_id,
+            "SCHEDULE_TASK_FAILED",
+            {
+                "task_type": task_type,
+                "task_id": task_id,
+                "status": terminal_status,
+                "error": outcome["error"],
+                "error_code": outcome["error_code"],
+                "action_required": outcome["action_required"],
+                "decision": outcome["decision"],
+                "reason_code": outcome["reason_code"],
+                "terminal_on_submit": True,
+            },
+        )
+        return False
 
     await create_zone_event(
         zone_id,
@@ -1375,6 +2146,19 @@ async def execute_scheduled_task(
             "trigger_time": trigger_time.isoformat(),
             "schedule_key": normalized_key,
             "correlation_id": correlation_id,
+        },
+    )
+    await create_scheduler_log(
+        task_name,
+        "accepted",
+        {
+            "zone_id": zone_id,
+            "task_type": task_type,
+            "task_id": task_id,
+            "trigger_time": trigger_time.isoformat(),
+            "schedule_key": normalized_key,
+            "correlation_id": correlation_id,
+            "accepted_at": accepted_at.isoformat(),
         },
     )
     _register_active_task(
@@ -1397,6 +2181,10 @@ async def check_and_execute_schedules(_unused: Any = None):
     now_for_internal = utcnow().replace(tzinfo=None)
     await process_internal_enqueued_tasks(now_for_internal)
     schedules = await get_active_schedules()
+    attempted_dispatches = 0
+    successful_dispatches = 0
+    triggerless_count = 0
+    replay_budget = SCHEDULER_CATCHUP_RATE_LIMIT_PER_CYCLE
     zone_ids = sorted({schedule["zone_id"] for schedule in schedules})
     simulation_clocks = await get_simulation_clocks(zone_ids)
 
@@ -1405,6 +2193,8 @@ async def check_and_execute_schedules(_unused: Any = None):
     observed_window_keys: set = set()
     zone_now: Dict[int, datetime] = {}
     zone_last: Dict[int, datetime] = {}
+    zones_with_pending_time_dispatch: set[int] = set()
+    zones_with_successful_time_dispatch: set[int] = set()
 
     for schedule in schedules:
         zone_id = schedule["zone_id"]
@@ -1418,7 +2208,7 @@ async def check_and_execute_schedules(_unused: Any = None):
         if zone_id not in zone_now:
             now_dt = sim_clock.now() if sim_clock else real_now
             zone_now[zone_id] = now_dt
-            zone_last[zone_id] = _get_last_check(zone_id, now_dt, sim_clock)
+            zone_last[zone_id] = await _resolve_zone_last_check(zone_id, now_dt, sim_clock)
 
         now_dt = zone_now[zone_id]
         last_dt = zone_last[zone_id]
@@ -1433,6 +2223,7 @@ async def check_and_execute_schedules(_unused: Any = None):
                 sim_clock=sim_clock,
             )
             if should_run:
+                attempted_dispatches += 1
                 dispatched = await execute_scheduled_task(
                     zone_id=zone_id,
                     schedule=schedule,
@@ -1440,20 +2231,105 @@ async def check_and_execute_schedules(_unused: Any = None):
                     schedule_key=key,
                 )
                 if dispatched:
+                    successful_dispatches += 1
                     executed.add(key)
             continue
 
         schedule_time = schedule.get("time")
         if schedule_time:
             crossings = _schedule_crossings(last_dt, now_dt, schedule_time)
-            for trigger_time in crossings:
-                await execute_scheduled_task(
+            planned_triggers = _apply_catchup_policy(crossings, now_dt)
+            had_dispatch_success = False
+
+            if crossings and len(planned_triggers) < len(crossings):
+                await _emit_scheduler_diagnostic(
+                    reason="catchup_windows_limited",
+                    message=(
+                        f"Scheduler ограничил catch-up окна для зоны {zone_id} "
+                        f"({len(crossings)} -> {len(planned_triggers)})"
+                    ),
+                    level="warning",
                     zone_id=zone_id,
-                    schedule=schedule,
-                    trigger_time=trigger_time,
+                    details={
+                        "task_type": task_type,
+                        "policy": SCHEDULER_CATCHUP_POLICY,
+                        "crossings_total": len(crossings),
+                        "planned_triggers": len(planned_triggers),
+                        "max_windows": SCHEDULER_CATCHUP_MAX_WINDOWS,
+                    },
+                    alert_code="infra_scheduler_catchup_windows_limited",
+                    error_type="catchup_limited",
+                )
+
+            for trigger_time in planned_triggers:
+                is_replay = trigger_time < now_dt
+                if is_replay:
+                    if replay_budget <= 0:
+                        SCHEDULER_DISPATCH_SKIPS.labels(reason="catchup_rate_limited").inc()
+                        await _emit_scheduler_diagnostic(
+                            reason="catchup_rate_limit_exhausted",
+                            message="Scheduler исчерпал лимит replay dispatch в текущем цикле",
+                            level="warning",
+                            zone_id=zone_id,
+                            details={
+                                "task_type": task_type,
+                                "policy": SCHEDULER_CATCHUP_POLICY,
+                                "rate_limit": SCHEDULER_CATCHUP_RATE_LIMIT_PER_CYCLE,
+                            },
+                            alert_code="infra_scheduler_catchup_rate_limited",
+                            error_type="catchup_rate_limited",
+                        )
+                        break
+                    replay_budget -= 1
+
+                dispatch_trigger = trigger_time
+                dispatch_schedule = schedule
+                if is_replay:
+                    dispatch_payload = dict(schedule.get("payload") or {}) if isinstance(schedule.get("payload"), dict) else {}
+                    dispatch_payload["catchup_original_trigger_time"] = trigger_time.isoformat()
+                    dispatch_payload["catchup_policy"] = SCHEDULER_CATCHUP_POLICY
+                    dispatch_schedule = dict(schedule)
+                    dispatch_schedule["payload"] = dispatch_payload
+
+                    if (now_dt - trigger_time).total_seconds() > SCHEDULER_DUE_GRACE_SEC:
+                        dispatch_trigger = now_dt
+                    if SCHEDULER_CATCHUP_JITTER_SEC > 0:
+                        dispatch_trigger = dispatch_trigger + timedelta(
+                            seconds=random.uniform(0, SCHEDULER_CATCHUP_JITTER_SEC)
+                        )
+
+                attempted_dispatches += 1
+                dispatched = await execute_scheduled_task(
+                    zone_id=zone_id,
+                    schedule=dispatch_schedule,
+                    trigger_time=dispatch_trigger,
                     schedule_key=key,
                 )
-            if crossings:
+                if dispatched:
+                    successful_dispatches += 1
+                    had_dispatch_success = True
+                    zones_with_successful_time_dispatch.add(zone_id)
+                    break
+            if planned_triggers and not had_dispatch_success:
+                zones_with_pending_time_dispatch.add(zone_id)
+                await _emit_scheduler_diagnostic(
+                    reason="schedule_time_dispatch_retry_pending",
+                    message=(
+                        f"Scheduler оставил курсор зоны {zone_id} без продвижения: "
+                        f"time-trigger задача {task_type} не была успешно отправлена"
+                    ),
+                    level="warning",
+                    zone_id=zone_id,
+                    details={
+                        "task_type": task_type,
+                        "planned_triggers": len(planned_triggers),
+                        "last_check": last_dt.isoformat(),
+                        "now": now_dt.isoformat(),
+                    },
+                    alert_code="infra_scheduler_time_dispatch_retry_pending",
+                    error_type="dispatch_retry_pending",
+                )
+            if planned_triggers:
                 executed.add(key)
             continue
 
@@ -1467,6 +2343,7 @@ async def check_and_execute_schedules(_unused: Any = None):
             )
             last_state = _WINDOW_LAST_STATE.get(key)
             if last_state is None or last_state != desired_state:
+                attempted_dispatches += 1
                 dispatched = await execute_scheduled_task(
                     zone_id=zone_id,
                     schedule=schedule,
@@ -1474,10 +2351,12 @@ async def check_and_execute_schedules(_unused: Any = None):
                     schedule_key=key,
                 )
                 if dispatched:
+                    successful_dispatches += 1
                     _WINDOW_LAST_STATE[key] = desired_state
             executed.add(key)
             continue
 
+        triggerless_count += 1
         await _emit_scheduler_diagnostic(
             reason="schedule_without_trigger",
             message=f"Scheduler пропустил задачу {task_type} зоны {zone_id}: отсутствует trigger",
@@ -1487,12 +2366,47 @@ async def check_and_execute_schedules(_unused: Any = None):
             alert_code="infra_scheduler_schedule_without_trigger",
         )
 
+    zones_pending_time_retry = 0
     for zone_id, now_dt in zone_now.items():
-        _LAST_SCHEDULE_CHECKS[zone_id] = now_dt
+        cursor_retry_pending = (
+            zone_id in zones_with_pending_time_dispatch and zone_id not in zones_with_successful_time_dispatch
+        )
+        if cursor_retry_pending:
+            zones_pending_time_retry += 1
+        cursor_at = zone_last.get(zone_id, now_dt) if cursor_retry_pending else now_dt
+        _LAST_SCHEDULE_CHECKS[zone_id] = cursor_at
+        await _persist_zone_cursor(zone_id, cursor_at)
 
     for stale_key in list(_WINDOW_LAST_STATE.keys()):
         if stale_key not in observed_window_keys:
             _WINDOW_LAST_STATE.pop(stale_key, None)
+
+    send_service_log(
+        service="scheduler",
+        level="info",
+        message="Scheduler dispatch cycle completed",
+        context={
+            "schedules_total": len(schedules),
+            "attempted_dispatches": attempted_dispatches,
+            "successful_dispatches": successful_dispatches,
+            "triggerless_schedules": triggerless_count,
+            "active_tasks": len(_ACTIVE_TASKS),
+            "zones_pending_time_retry": zones_pending_time_retry,
+        },
+    )
+    if attempted_dispatches > 0 and successful_dispatches == 0:
+        await _emit_scheduler_diagnostic(
+            reason="dispatch_cycle_no_success",
+            message="Scheduler не смог успешно dispatch-ить ни одной задачи в текущем цикле",
+            level="warning",
+            details={
+                "schedules_total": len(schedules),
+                "attempted_dispatches": attempted_dispatches,
+                "active_tasks": len(_ACTIVE_TASKS),
+            },
+            alert_code="infra_scheduler_dispatch_cycle_no_success",
+            error_type="dispatch_no_success",
+        )
 
 
 async def main():
@@ -1503,37 +2417,57 @@ async def main():
         message="Scheduler service started",
         context={"port": 9402, "mode": "planner-only"},
     )
+    await recover_active_tasks_after_restart()
     last_dispatch_at: Optional[datetime] = None
 
-    while True:
-        try:
-            ready = await ensure_scheduler_bootstrap_ready()
-            await send_scheduler_bootstrap_heartbeat()
-            now = utcnow().replace(tzinfo=None)
-            should_dispatch = False
-            if ready:
-                if last_dispatch_at is None:
-                    should_dispatch = True
+    try:
+        while True:
+            try:
+                is_leader = await ensure_scheduler_leader()
+                if not is_leader:
+                    SCHEDULER_DISPATCH_SKIPS.labels(reason="not_leader").inc()
+                    last_dispatch_at = None
                 else:
-                    elapsed = (now - last_dispatch_at).total_seconds()
-                    should_dispatch = elapsed >= SCHEDULER_DISPATCH_INTERVAL_SEC
-            if should_dispatch:
-                await check_and_execute_schedules()
-                last_dispatch_at = now
-        except KeyboardInterrupt:
-            logger.info("Received interrupt signal, shutting down")
-            break
-        except Exception as e:
-            logger.exception(f"Error in scheduler main loop: {e}")
-            send_service_log(
-                service="scheduler",
-                level="error",
-                message="Error in scheduler main loop",
-                context={"error": str(e)},
-            )
-            await asyncio.sleep(max(1.0, SCHEDULER_MAIN_TICK_SEC))
+                    ready = await ensure_scheduler_bootstrap_ready()
+                    heartbeat_ok = await send_scheduler_bootstrap_heartbeat()
+                    if ready and not heartbeat_ok:
+                        SCHEDULER_DISPATCH_SKIPS.labels(reason="heartbeat_not_ready").inc()
+                        await _emit_scheduler_diagnostic(
+                            reason="scheduler_heartbeat_not_ready",
+                            message="Scheduler переведен в safe-mode: heartbeat подтвердил not-ready состояние",
+                            level="warning",
+                            details={"scheduler_id": SCHEDULER_ID},
+                            alert_code="infra_scheduler_heartbeat_not_ready",
+                            error_type="heartbeat_not_ready",
+                        )
+                        ready = False
+                    now = utcnow().replace(tzinfo=None)
+                    should_dispatch = False
+                    if ready:
+                        if last_dispatch_at is None:
+                            should_dispatch = True
+                        else:
+                            elapsed = (now - last_dispatch_at).total_seconds()
+                            should_dispatch = elapsed >= SCHEDULER_DISPATCH_INTERVAL_SEC
+                    if should_dispatch:
+                        await check_and_execute_schedules()
+                        last_dispatch_at = now
+            except KeyboardInterrupt:
+                logger.info("Received interrupt signal, shutting down")
+                break
+            except Exception as e:
+                logger.exception(f"Error in scheduler main loop: {e}")
+                send_service_log(
+                    service="scheduler",
+                    level="error",
+                    message="Error in scheduler main loop",
+                    context={"error": str(e)},
+                )
+                await asyncio.sleep(max(1.0, SCHEDULER_MAIN_TICK_SEC))
 
-        await asyncio.sleep(max(1.0, SCHEDULER_MAIN_TICK_SEC))
+            await asyncio.sleep(max(1.0, SCHEDULER_MAIN_TICK_SEC))
+    finally:
+        await release_scheduler_leader(reason="shutdown")
 
 
 if __name__ == "__main__":

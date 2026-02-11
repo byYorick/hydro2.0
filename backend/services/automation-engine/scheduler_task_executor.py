@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import uuid4
 
@@ -37,6 +37,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 CYCLE_START_REQUIRED_NODE_TYPES = tuple(
     item.strip()
     for item in os.getenv("AE_CYCLE_START_REQUIRED_NODE_TYPES", "irrig,irrigation,climate,light,lighting").split(",")
@@ -46,17 +53,31 @@ CLEAN_TANK_FULL_THRESHOLD = max(0.0, min(1.0, _env_float("AE_CLEAN_TANK_FULL_THR
 REFILL_CHECK_DELAY_SEC = max(10, _env_int("AE_REFILL_CHECK_DELAY_SEC", 60))
 REFILL_TIMEOUT_SEC = max(30, _env_int("AE_REFILL_TIMEOUT_SEC", 600))
 REFILL_COMMAND_DURATION_SEC = max(1, _env_int("AE_REFILL_COMMAND_DURATION_SEC", 30))
+TASK_EXECUTE_CLOSED_LOOP_ENFORCE = _env_bool("AE_TASK_EXECUTE_CLOSED_LOOP", True)
+TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC = max(1.0, _env_float("AE_TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC", 60.0))
+TELEMETRY_FRESHNESS_ENFORCE = _env_bool("AE_TELEMETRY_FRESHNESS_ENFORCE", True)
+TELEMETRY_FRESHNESS_MAX_AGE_SEC = max(30, _env_int("AE_TELEMETRY_FRESHNESS_MAX_AGE_SEC", 300))
 
 
 ERR_COMMAND_PUBLISH_FAILED = "command_publish_failed"
+ERR_COMMAND_SEND_FAILED = "command_send_failed"
+ERR_COMMAND_TIMEOUT = "command_timeout"
+ERR_COMMAND_ERROR = "command_error"
+ERR_COMMAND_INVALID = "command_invalid"
+ERR_COMMAND_BUSY = "command_busy"
+ERR_COMMAND_NO_EFFECT = "command_no_effect"
+ERR_COMMAND_TRACKER_UNAVAILABLE = "command_tracker_unavailable"
+ERR_COMMAND_EFFECT_NOT_CONFIRMED = "command_effect_not_confirmed"
 ERR_MAPPING_NOT_FOUND = "mapping_not_found"
 ERR_NO_ONLINE_NODES = "no_online_nodes"
 ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE = "cycle_start_required_nodes_unavailable"
 ERR_CYCLE_TANK_LEVEL_UNAVAILABLE = "cycle_start_tank_level_unavailable"
+ERR_CYCLE_TANK_LEVEL_STALE = "cycle_start_tank_level_stale"
 ERR_CYCLE_REFILL_TIMEOUT = "cycle_start_refill_timeout"
 ERR_CYCLE_REFILL_NODE_NOT_FOUND = "cycle_start_refill_node_not_found"
 ERR_CYCLE_REFILL_COMMAND_FAILED = "cycle_start_refill_command_failed"
 ERR_CYCLE_SELF_TASK_ENQUEUE_FAILED = "cycle_start_self_task_enqueue_failed"
+ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
 
 REASON_REQUIRED_NODES_CHECKED = "required_nodes_checked"
 REASON_TANK_LEVEL_CHECKED = "tank_level_checked"
@@ -67,9 +88,11 @@ REASON_TANK_REFILL_COMPLETED = "tank_refill_completed"
 REASON_TANK_REFILL_NOT_REQUIRED = "tank_refill_not_required"
 REASON_CYCLE_BLOCKED_NODES_UNAVAILABLE = "cycle_start_blocked_nodes_unavailable"
 REASON_CYCLE_TANK_LEVEL_UNAVAILABLE = "cycle_start_tank_level_unavailable"
+REASON_CYCLE_TANK_LEVEL_STALE = "cycle_start_tank_level_stale"
 REASON_CYCLE_REFILL_TIMEOUT = "cycle_start_refill_timeout"
 REASON_CYCLE_REFILL_COMMAND_FAILED = "cycle_start_refill_command_failed"
 REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED = "cycle_start_self_task_enqueue_failed"
+REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
 
 
 @dataclass(frozen=True)
@@ -107,6 +130,16 @@ class SchedulerTaskExecutor:
             "event_seq": 0,
         }
 
+        await self._emit_task_event(
+            zone_id=zone_id,
+            task_type=task_type,
+            context=context,
+            event_type="TASK_RECEIVED",
+            payload={
+                "payload": payload,
+                "scheduled_for": context.get("scheduled_for"),
+            },
+        )
         await self._emit_task_event(
             zone_id=zone_id,
             task_type=task_type,
@@ -159,7 +192,12 @@ class SchedulerTaskExecutor:
                 decision=decision,
             )
         elif task_type == "diagnostics":
-            result = await self._execute_diagnostics(zone_id, payload)
+            result = await self._execute_diagnostics(
+                zone_id,
+                payload,
+                context=context,
+                decision=decision,
+            )
         else:
             result = await self._execute_device_task(
                 zone_id,
@@ -315,7 +353,11 @@ class SchedulerTaskExecutor:
         decision: DecisionOutcome,
     ) -> Dict[str, Any]:
         commands_total = 0
+        commands_submitted = 0
+        commands_effect_confirmed = 0
         commands_failed = 0
+        first_failure_error_code: Optional[str] = None
+        command_statuses: List[Dict[str, Any]] = []
 
         for node in nodes:
             node_uid = node["node_uid"]
@@ -337,15 +379,75 @@ class SchedulerTaskExecutor:
             )
 
             commands_total += 1
-            ok = await self.command_bus.publish_command(
-                zone_id=zone_id,
-                node_uid=node_uid,
-                channel=channel,
-                cmd=cmd,
-                params=params or {},
+            controller_command = {
+                "node_uid": node_uid,
+                "channel": channel,
+                "cmd": cmd,
+                "params": params or {},
+            }
+
+            submitted = False
+            effect_confirmed = False
+            terminal_status = "SEND_FAILED"
+            failure_error_code = ERR_COMMAND_SEND_FAILED
+            cmd_id: Optional[str] = None
+
+            if TASK_EXECUTE_CLOSED_LOOP_ENFORCE and hasattr(self.command_bus, "publish_controller_command_closed_loop"):
+                closed_loop_result = await self.command_bus.publish_controller_command_closed_loop(
+                    zone_id=zone_id,
+                    command=controller_command,
+                    context={
+                        "task_id": context.get("task_id"),
+                        "correlation_id": context.get("correlation_id"),
+                        "task_type": task_type,
+                        "reason_code": decision.reason_code,
+                    },
+                    timeout_sec=TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC,
+                )
+                submitted = bool(closed_loop_result.get("command_submitted"))
+                effect_confirmed = bool(closed_loop_result.get("command_effect_confirmed"))
+                terminal_status = str(closed_loop_result.get("terminal_status") or "ERROR").upper()
+                cmd_id_raw = closed_loop_result.get("cmd_id")
+                cmd_id = str(cmd_id_raw).strip() if isinstance(cmd_id_raw, str) and cmd_id_raw.strip() else None
+                failure_error_code = self._terminal_status_to_error_code(terminal_status)
+            elif TASK_EXECUTE_CLOSED_LOOP_ENFORCE:
+                submitted = False
+                effect_confirmed = False
+                terminal_status = "TRACKER_UNAVAILABLE"
+                failure_error_code = ERR_COMMAND_TRACKER_UNAVAILABLE
+            else:
+                submitted = await self.command_bus.publish_command(
+                    zone_id=zone_id,
+                    node_uid=node_uid,
+                    channel=channel,
+                    cmd=cmd,
+                    params=params or {},
+                )
+                effect_confirmed = bool(submitted)
+                terminal_status = "DONE" if submitted else "SEND_FAILED"
+                failure_error_code = self._terminal_status_to_error_code(terminal_status)
+
+            if submitted:
+                commands_submitted += 1
+            if effect_confirmed:
+                commands_effect_confirmed += 1
+
+            command_statuses.append(
+                {
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "cmd": cmd,
+                    "cmd_id": cmd_id,
+                    "command_submitted": submitted,
+                    "command_effect_confirmed": effect_confirmed,
+                    "terminal_status": terminal_status,
+                }
             )
-            if not ok:
+
+            if not effect_confirmed:
                 commands_failed += 1
+                if first_failure_error_code is None:
+                    first_failure_error_code = failure_error_code
                 await self._emit_task_event(
                     zone_id=zone_id,
                     task_type=task_type,
@@ -356,26 +458,56 @@ class SchedulerTaskExecutor:
                         "channel": channel,
                         "cmd": cmd,
                         "params": params or {},
-                        "error_code": ERR_COMMAND_PUBLISH_FAILED,
+                        "cmd_id": cmd_id,
+                        "terminal_status": terminal_status,
+                        "command_submitted": submitted,
+                        "command_effect_confirmed": effect_confirmed,
+                        "error_code": failure_error_code,
                         "action_required": decision.action_required,
                         "decision": decision.decision,
                         "reason_code": decision.reason_code,
                     },
                 )
 
-        success = commands_total > 0 and commands_failed == 0
+        success = commands_total > 0 and commands_effect_confirmed == commands_total and commands_failed == 0
         result = {
             "success": success,
             "task_type": task_type,
             "commands_total": commands_total,
+            "commands_submitted": commands_submitted,
+            "commands_effect_confirmed": commands_effect_confirmed,
             "commands_failed": commands_failed,
+            "command_submitted": commands_total > 0 and commands_submitted == commands_total,
+            "command_effect_confirmed": commands_total > 0 and commands_effect_confirmed == commands_total,
+            "command_statuses": command_statuses,
             "cmd": cmd,
             "params": params or {},
         }
         if not success:
-            result["error"] = ERR_COMMAND_PUBLISH_FAILED
-            result["error_code"] = ERR_COMMAND_PUBLISH_FAILED
+            result["error"] = first_failure_error_code or ERR_COMMAND_EFFECT_NOT_CONFIRMED
+            result["error_code"] = first_failure_error_code or ERR_COMMAND_EFFECT_NOT_CONFIRMED
         return result
+
+    @staticmethod
+    def _terminal_status_to_error_code(status: str) -> str:
+        normalized = str(status or "").strip().upper()
+        if normalized == "DONE":
+            return ""
+        if normalized == "SEND_FAILED":
+            return ERR_COMMAND_SEND_FAILED
+        if normalized == "TIMEOUT":
+            return ERR_COMMAND_TIMEOUT
+        if normalized == "ERROR":
+            return ERR_COMMAND_ERROR
+        if normalized == "INVALID":
+            return ERR_COMMAND_INVALID
+        if normalized == "BUSY":
+            return ERR_COMMAND_BUSY
+        if normalized == "NO_EFFECT":
+            return ERR_COMMAND_NO_EFFECT
+        if normalized == "TRACKER_UNAVAILABLE":
+            return ERR_COMMAND_TRACKER_UNAVAILABLE
+        return ERR_COMMAND_EFFECT_NOT_CONFIRMED
 
     @staticmethod
     def _extract_duration_sec(payload: Dict[str, Any], mapping: SchedulerTaskMapping) -> Optional[float]:
@@ -453,28 +585,20 @@ class SchedulerTaskExecutor:
 
         nodes = await self._get_zone_nodes(zone_id, mapping.node_types)
         if not nodes:
-            if mapping.fallback_mode == "zone_service" and self.zone_service is not None:
-                await self.zone_service.process_zone(zone_id)
-                return {
-                    "success": True,
+            await send_infra_alert(
+                code="infra_task_no_online_nodes",
+                alert_type="Scheduler Task No Online Nodes",
+                message=f"Задача {mapping.task_type} не выполнена: нет online-нод целевых типов",
+                severity="warning",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="scheduler_task_executor",
+                error_type=ERR_NO_ONLINE_NODES,
+                details={
                     "task_type": mapping.task_type,
-                    "mode": "zone_service_fallback",
-                    "commands_total": 0,
-                    "commands_failed": 0,
-                }
-            if mapping.fallback_mode == "event_only":
-                await create_zone_event(
-                    zone_id,
-                    "SCHEDULE_TASK_FALLBACK_EVENT_ONLY",
-                    {"task_type": mapping.task_type, "payload": payload},
-                )
-                return {
-                    "success": True,
-                    "task_type": mapping.task_type,
-                    "mode": "event_only_fallback",
-                    "commands_total": 0,
-                    "commands_failed": 0,
-                }
+                    "node_types": list(mapping.node_types),
+                },
+            )
             return {
                 "success": False,
                 "task_type": mapping.task_type,
@@ -700,6 +824,8 @@ class SchedulerTaskExecutor:
                 "sensor_label": None,
                 "level": None,
                 "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
                 "threshold": threshold,
                 "has_level": False,
                 "is_full": False,
@@ -715,12 +841,26 @@ class SchedulerTaskExecutor:
         has_level = level is not None
         is_full = bool(has_level and level >= threshold)
         sample_ts_raw = row.get("sample_ts")
-        sample_ts = sample_ts_raw.isoformat() if hasattr(sample_ts_raw, "isoformat") else sample_ts_raw
+        if isinstance(sample_ts_raw, datetime):
+            sample_dt = sample_ts_raw
+        elif isinstance(sample_ts_raw, str):
+            sample_dt = parse_iso_datetime(sample_ts_raw)
+        else:
+            sample_dt = None
+
+        if isinstance(sample_dt, datetime) and sample_dt.tzinfo is not None:
+            sample_dt = sample_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        sample_ts = sample_dt.isoformat() if isinstance(sample_dt, datetime) else None
+        sample_age_sec = max(0.0, (datetime.utcnow() - sample_dt).total_seconds()) if sample_dt else None
+        is_stale = bool(has_level and (sample_dt is None or (sample_age_sec or 0.0) > TELEMETRY_FRESHNESS_MAX_AGE_SEC))
         return {
             "sensor_id": row.get("sensor_id"),
             "sensor_label": row.get("sensor_label"),
             "level": level,
             "sample_ts": sample_ts,
+            "sample_age_sec": sample_age_sec,
+            "is_stale": is_stale,
             "threshold": threshold,
             "has_level": has_level,
             "is_full": is_full,
@@ -905,6 +1045,8 @@ class SchedulerTaskExecutor:
                 "threshold": tank_level["threshold"],
                 "is_full": tank_level["is_full"],
                 "sample_ts": tank_level["sample_ts"],
+                "sample_age_sec": tank_level["sample_age_sec"],
+                "is_stale": tank_level["is_stale"],
                 "action_required": decision.action_required,
                 "decision": decision.decision,
                 "reason_code": REASON_TANK_LEVEL_CHECKED,
@@ -936,6 +1078,58 @@ class SchedulerTaskExecutor:
                 "reason": "Нет данных уровня бака чистой воды",
                 "error": error,
                 "error_code": error,
+            }
+
+        if TELEMETRY_FRESHNESS_ENFORCE and tank_level["is_stale"]:
+            error = ERR_CYCLE_TANK_LEVEL_STALE
+            await self._emit_task_event(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                context=context,
+                event_type="TANK_LEVEL_STALE",
+                payload={
+                    "sensor_id": tank_level["sensor_id"],
+                    "sensor_label": tank_level["sensor_label"],
+                    "level": tank_level["level"],
+                    "sample_ts": tank_level["sample_ts"],
+                    "sample_age_sec": tank_level["sample_age_sec"],
+                    "max_age_sec": TELEMETRY_FRESHNESS_MAX_AGE_SEC,
+                    "action_required": True,
+                    "decision": "execute",
+                    "reason_code": REASON_CYCLE_TANK_LEVEL_STALE,
+                    "error_code": error,
+                },
+            )
+            await self._emit_cycle_alert(
+                zone_id=zone_id,
+                code="infra_cycle_start_tank_level_stale",
+                message="Старт цикла заблокирован: телеметрия уровня бака устарела",
+                severity="error",
+                details={
+                    "workflow": workflow,
+                    "sensor_id": tank_level["sensor_id"],
+                    "sensor_label": tank_level["sensor_label"],
+                    "sample_ts": tank_level["sample_ts"],
+                    "sample_age_sec": tank_level["sample_age_sec"],
+                    "max_age_sec": TELEMETRY_FRESHNESS_MAX_AGE_SEC,
+                },
+            )
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "cycle_start",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "execute",
+                "reason_code": REASON_CYCLE_TANK_LEVEL_STALE,
+                "reason": "Телеметрия уровня бака устарела, выполнение запрещено fail-safe политикой",
+                "error": error,
+                "error_code": error,
+                "sample_ts": tank_level["sample_ts"],
+                "sample_age_sec": tank_level["sample_age_sec"],
+                "max_age_sec": TELEMETRY_FRESHNESS_MAX_AGE_SEC,
             }
 
         if tank_level["is_full"]:
@@ -1085,7 +1279,7 @@ class SchedulerTaskExecutor:
                 "action_required": True,
                 "decision": "execute",
                 "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
-                "reason": "Команда наполнения бака не была отправлена",
+                "reason": "Команда наполнения бака не получила подтверждение DONE",
                 "error": str(publish_result.get("error") or ERR_CYCLE_REFILL_COMMAND_FAILED),
                 "error_code": error_code,
             }
@@ -1197,34 +1391,101 @@ class SchedulerTaskExecutor:
             },
         }
 
-    async def _execute_diagnostics(self, zone_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
-        if self.zone_service is not None:
-            try:
-                await self.zone_service.process_zone(zone_id)
-                return {
-                    "success": True,
-                    "task_type": "diagnostics",
-                    "mode": "zone_service",
-                    "commands_total": 0,
-                    "commands_failed": 0,
-                }
-            except Exception as exc:
-                logger.warning(
-                    "Zone %s: diagnostics via zone_service failed: %s",
-                    zone_id,
-                    exc,
-                    exc_info=True,
-                )
+    async def _execute_diagnostics(
+        self,
+        zone_id: int,
+        payload: Dict[str, Any],
+        *,
+        context: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> Dict[str, Any]:
+        if self.zone_service is None:
+            await self._emit_task_event(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                context=context,
+                event_type="DIAGNOSTICS_SERVICE_UNAVAILABLE",
+                payload={
+                    "action_required": decision.action_required,
+                    "decision": decision.decision,
+                    "reason_code": REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                    "error_code": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                },
+            )
+            await send_infra_alert(
+                code="infra_diagnostics_service_unavailable",
+                alert_type="Diagnostics Service Unavailable",
+                message="Diagnostics задача не выполнена: ZoneAutomationService недоступен",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="scheduler_task_executor",
+                error_type=ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                details={"payload": payload},
+            )
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "diagnostics_unavailable",
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": decision.action_required,
+                "decision": decision.decision,
+                "reason_code": REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                "reason": "Diagnostics задача не может быть исполнена без ZoneAutomationService",
+                "error": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                "error_code": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+            }
 
-        await create_zone_event(
-            zone_id,
-            "SCHEDULE_DIAGNOSTICS_REQUESTED",
-            {"payload": payload},
-        )
-        return {
-            "success": True,
-            "task_type": "diagnostics",
-            "mode": "event_only",
-            "commands_total": 0,
-            "commands_failed": 0,
-        }
+        try:
+            await self.zone_service.process_zone(zone_id)
+            return {
+                "success": True,
+                "task_type": "diagnostics",
+                "mode": "zone_service",
+                "commands_total": 0,
+                "commands_failed": 0,
+            }
+        except Exception as exc:
+            logger.warning(
+                "Zone %s: diagnostics via zone_service failed: %s",
+                zone_id,
+                exc,
+                exc_info=True,
+            )
+            await self._emit_task_event(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                context=context,
+                event_type="DIAGNOSTICS_SERVICE_UNAVAILABLE",
+                payload={
+                    "action_required": decision.action_required,
+                    "decision": decision.decision,
+                    "reason_code": REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                    "error_code": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                },
+            )
+            await send_infra_alert(
+                code="infra_diagnostics_service_unavailable",
+                alert_type="Diagnostics Service Unavailable",
+                message=f"Diagnostics задача завершилась ошибкой zone_service: {exc}",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="scheduler_task_executor",
+                error_type=type(exc).__name__,
+                details={"payload": payload, "error": str(exc)},
+            )
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "diagnostics_failed",
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": decision.action_required,
+                "decision": decision.decision,
+                "reason_code": REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                "reason": "Diagnostics задача завершилась ошибкой ZoneAutomationService",
+                "error": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+                "error_code": ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
+            }

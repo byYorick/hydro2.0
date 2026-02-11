@@ -11,7 +11,9 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Body, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from prometheus_client import Gauge
 from typing import Optional, Dict, Any, Literal, Tuple
 
 from infrastructure import CommandBus
@@ -59,6 +61,25 @@ _SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRA
 _SCHEDULER_BOOTSTRAP_ENFORCE = os.getenv("SCHEDULER_BOOTSTRAP_ENFORCE", "1") == "1"
 _scheduler_bootstrap_leases: Dict[str, Dict[str, Any]] = {}
 _scheduler_bootstrap_lock = asyncio.Lock()
+_AE_TASK_RECOVERY_ENABLED = os.getenv("AE_TASK_RECOVERY_ENABLED", "1") == "1"
+_AE_TASK_RECOVERY_SCAN_LIMIT = max(10, int(os.getenv("AE_TASK_RECOVERY_SCAN_LIMIT", "500")))
+TASK_RECOVERY_SUCCESS_RATE = Gauge(
+    "task_recovery_success_rate",
+    "Share of startup recovery tasks finalized successfully",
+)
+COMMAND_EFFECT_CONFIRM_RATE = Gauge(
+    "command_effect_confirm_rate",
+    "Share of commands confirmed by node DONE for closed-loop scheduler tasks",
+    ["task_type"],
+)
+_command_effect_totals: Dict[str, int] = {}
+_command_effect_confirmed_totals: Dict[str, int] = {}
+
+ERR_TASK_EXPIRED = "task_expired"
+ERR_TASK_DUE_DEADLINE_EXCEEDED = "task_due_deadline_exceeded"
+ERR_COMMAND_BUS_UNAVAILABLE = "command_bus_unavailable"
+ERR_TASK_EXECUTION_FAILED = "task_execution_failed"
+ERR_EXECUTION_EXCEPTION = "execution_exception"
 
 # Test hooks для детерминированных ошибок (только в test mode)
 _test_mode = os.getenv("AE_TEST_MODE", "0") == "1"
@@ -73,8 +94,41 @@ def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str):
     _gh_uid = gh_uid
 
 
+def _update_command_effect_confirm_rate(task_type: str, result: Dict[str, Any]) -> None:
+    normalized_task_type = str(task_type or "unknown")
+
+    commands_total_raw = result.get("commands_total")
+    commands_confirmed_raw = result.get("commands_effect_confirmed")
+    bool_confirmed = result.get("command_effect_confirmed")
+
+    try:
+        commands_total = int(commands_total_raw) if commands_total_raw is not None else 0
+    except (TypeError, ValueError):
+        commands_total = 0
+
+    if commands_total <= 0:
+        return
+
+    try:
+        commands_confirmed = int(commands_confirmed_raw) if commands_confirmed_raw is not None else None
+    except (TypeError, ValueError):
+        commands_confirmed = None
+
+    if commands_confirmed is None:
+        if isinstance(bool_confirmed, bool):
+            commands_confirmed = commands_total if bool_confirmed else 0
+        else:
+            commands_confirmed = 0
+
+    total = _command_effect_totals.get(normalized_task_type, 0) + commands_total
+    confirmed = _command_effect_confirmed_totals.get(normalized_task_type, 0) + max(0, min(commands_confirmed, commands_total))
+    _command_effect_totals[normalized_task_type] = total
+    _command_effect_confirmed_totals[normalized_task_type] = confirmed
+    COMMAND_EFFECT_CONFIRM_RATE.labels(task_type=normalized_task_type).set(confirmed / max(total, 1))
+
+
 def set_zone_service(zone_service: Any) -> None:
-    """Установить ZoneAutomationService для scheduler-task fallback сценариев."""
+    """Установить ZoneAutomationService для выполнения scheduler-task diagnostics."""
     global _zone_service
     _zone_service = zone_service
 
@@ -118,8 +172,8 @@ class SchedulerTaskRequest(BaseModel):
     ] = Field(..., description="Abstract task type")
     payload: Dict[str, Any] = Field(default_factory=dict, description="Task payload")
     scheduled_for: Optional[str] = Field(default=None, description="ISO datetime when task was scheduled")
-    due_at: Optional[str] = Field(default=None, description="ISO datetime when task must be started")
-    expires_at: Optional[str] = Field(default=None, description="ISO datetime when task should be rejected")
+    due_at: str = Field(..., description="ISO datetime when task must be started")
+    expires_at: str = Field(..., description="ISO datetime when task should be rejected")
     correlation_id: str = Field(..., min_length=8, max_length=128, description="Mandatory idempotency correlation ID")
 
 
@@ -162,6 +216,8 @@ def _task_public_payload(task: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": task["created_at"],
         "updated_at": task["updated_at"],
         "scheduled_for": task.get("scheduled_for"),
+        "due_at": task.get("due_at"),
+        "expires_at": task.get("expires_at"),
         "correlation_id": task.get("correlation_id"),
         "result": task.get("result"),
         "error": task.get("error"),
@@ -204,6 +260,10 @@ def _task_payload_matches(req: SchedulerTaskRequest, existing_task: Dict[str, An
         return False
     if (existing_task.get("scheduled_for") or None) != (req.scheduled_for or None):
         return False
+    if (existing_task.get("due_at") or None) != (req.due_at or None):
+        return False
+    if (existing_task.get("expires_at") or None) != (req.expires_at or None):
+        return False
     return _canonical_json(existing_task.get("payload") or {}) == _canonical_json(req.payload or {})
 
 
@@ -216,15 +276,120 @@ def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     return parse_enqueue_iso_datetime(value)
 
 
+def _require_iso_datetime(value: Optional[str], field_name: str) -> datetime:
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        raise HTTPException(status_code=422, detail=f"{field_name}_required_or_invalid")
+    return parsed
+
+
+def _build_deadline_terminal_result(
+    *,
+    status: str,
+    now: datetime,
+    due_at: datetime,
+    expires_at: datetime,
+) -> Dict[str, Any]:
+    if status == "expired":
+        reason_code = ERR_TASK_EXPIRED
+        reason = "Задача получена после expires_at и не может быть исполнена"
+        error_code = ERR_TASK_EXPIRED
+    else:
+        reason_code = ERR_TASK_DUE_DEADLINE_EXCEEDED
+        reason = "Задача получена позже due_at и отклонена без запуска исполнения"
+        error_code = ERR_TASK_DUE_DEADLINE_EXCEEDED
+
+    return {
+        "success": False,
+        "mode": "deadline_rejected",
+        "action_required": False,
+        "decision": "skip",
+        "reason_code": reason_code,
+        "reason": reason,
+        "received_at": now.isoformat(),
+        "due_at": due_at.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "error": error_code,
+        "error_code": error_code,
+    }
+
+
+def _build_execution_terminal_result(
+    *,
+    error_code: str,
+    reason: str,
+    mode: str,
+    action_required: bool = True,
+    decision: str = "execute",
+    reason_code: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "success": False,
+        "mode": mode,
+        "action_required": action_required,
+        "decision": decision,
+        "reason_code": reason_code or error_code,
+        "reason": reason,
+        "error": error_code,
+        "error_code": error_code,
+    }
+    if isinstance(extra, dict):
+        result.update(extra)
+    return result
+
+
+def _normalize_failed_execution_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(result) if isinstance(result, dict) else {}
+    error_code_raw = normalized.get("error_code") or normalized.get("error")
+    error_code = str(error_code_raw or ERR_TASK_EXECUTION_FAILED)
+
+    action_required = normalized.get("action_required")
+    if not isinstance(action_required, bool):
+        action_required = True
+
+    decision = normalized.get("decision")
+    if not isinstance(decision, str) or not decision.strip():
+        decision = "execute"
+
+    reason_code = normalized.get("reason_code")
+    if not isinstance(reason_code, str) or not reason_code.strip():
+        reason_code = error_code
+
+    reason = normalized.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        reason = "Задача завершилась ошибкой в automation-engine"
+
+    error = normalized.get("error")
+    if not isinstance(error, str) or not error.strip():
+        error = error_code
+
+    normalized["error"] = error
+    normalized["error_code"] = error_code
+    normalized["action_required"] = action_required
+    normalized["decision"] = decision
+    normalized["reason_code"] = reason_code
+    normalized["reason"] = reason
+    normalized.setdefault("mode", "execution_failed")
+    normalized["success"] = False
+    return normalized
+
+
+def _normalize_cleanup_timestamp(raw_value: Any, fallback: datetime) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(raw_value))
+    except Exception:
+        return fallback
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
 async def _cleanup_scheduler_tasks_locked(now: datetime) -> None:
     to_delete = []
     threshold = now - timedelta(seconds=_SCHEDULER_TASK_TTL_SECONDS)
     for task_id, task in _scheduler_tasks.items():
-        updated_at_raw = task.get("updated_at")
-        try:
-            updated_at = datetime.fromisoformat(str(updated_at_raw))
-        except Exception:
-            updated_at = now
+        updated_at = _normalize_cleanup_timestamp(task.get("updated_at"), now)
         if updated_at < threshold:
             to_delete.append(task_id)
     for task_id in to_delete:
@@ -234,11 +399,7 @@ async def _cleanup_scheduler_tasks_locked(now: datetime) -> None:
     if overflow > 0:
         sortable = []
         for task_id, task in _scheduler_tasks.items():
-            updated_at_raw = task.get("updated_at")
-            try:
-                updated_at = datetime.fromisoformat(str(updated_at_raw))
-            except Exception:
-                updated_at = now
+            updated_at = _normalize_cleanup_timestamp(task.get("updated_at"), now)
             sortable.append((updated_at, task_id))
         sortable.sort(key=lambda item: item[0])
         for _, task_id in sortable[:overflow]:
@@ -258,8 +419,20 @@ def _cleanup_bootstrap_leases_locked(now: datetime) -> None:
         _scheduler_bootstrap_leases.pop(scheduler_id, None)
 
 
-def _bootstrap_status() -> str:
-    return "ready" if _command_bus is not None else "wait"
+async def _scheduler_bootstrap_state() -> Tuple[str, str]:
+    command_bus_ready, command_bus_reason = _is_command_bus_ready()
+    if not command_bus_ready:
+        return "wait", command_bus_reason
+
+    db_ready, db_reason = await _is_db_ready()
+    if not db_ready:
+        return "wait", db_reason
+
+    bootstrap_store_ready, bootstrap_store_reason = _is_bootstrap_store_ready()
+    if not bootstrap_store_ready:
+        return "wait", bootstrap_store_reason
+
+    return "ready", "ok"
 
 
 async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optional[Dict[str, Any]]:
@@ -272,7 +445,7 @@ async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optiona
             WHERE task_name LIKE 'ae_scheduler_task_st-%'
               AND details->>'correlation_id' = $1
               AND created_at >= $2
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 1
             """,
             correlation_id,
@@ -296,7 +469,14 @@ async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optiona
     return details
 
 
-async def _create_scheduler_task(req: SchedulerTaskRequest) -> Tuple[Dict[str, Any], bool]:
+async def _create_scheduler_task(
+    req: SchedulerTaskRequest,
+    *,
+    initial_status: str = "accepted",
+    initial_result: Optional[Dict[str, Any]] = None,
+    initial_error: Optional[str] = None,
+    initial_error_code: Optional[str] = None,
+) -> Tuple[Dict[str, Any], bool]:
     now_iso = datetime.utcnow().isoformat()
     payload_fingerprint = _task_payload_fingerprint(req)
 
@@ -323,16 +503,18 @@ async def _create_scheduler_task(req: SchedulerTaskRequest) -> Tuple[Dict[str, A
             "task_id": _new_scheduler_task_id(),
             "zone_id": req.zone_id,
             "task_type": req.task_type,
-            "status": "accepted",
+            "status": initial_status,
             "payload": req.payload or {},
             "created_at": now_iso,
             "updated_at": now_iso,
             "scheduled_for": req.scheduled_for,
+            "due_at": req.due_at,
+            "expires_at": req.expires_at,
             "correlation_id": req.correlation_id,
             "payload_fingerprint": payload_fingerprint,
-            "result": None,
-            "error": None,
-            "error_code": None,
+            "result": dict(initial_result) if isinstance(initial_result, dict) else None,
+            "error": initial_error,
+            "error_code": initial_error_code,
         }
         _scheduler_tasks[task["task_id"]] = task
     await _persist_scheduler_task_snapshot(task)
@@ -389,7 +571,7 @@ async def _load_scheduler_task_snapshot(task_id: str) -> Optional[Dict[str, Any]
             SELECT status, details, created_at
             FROM scheduler_logs
             WHERE task_name = $1
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 1
             """,
             _scheduler_task_log_name(task_id),
@@ -416,6 +598,8 @@ async def _load_scheduler_task_snapshot(task_id: str) -> Optional[Dict[str, Any]
         "created_at": details.get("created_at") or row_created_iso,
         "updated_at": details.get("updated_at") or row_created_iso,
         "scheduled_for": details.get("scheduled_for"),
+        "due_at": details.get("due_at"),
+        "expires_at": details.get("expires_at"),
         "correlation_id": details.get("correlation_id"),
         "payload_fingerprint": details.get("payload_fingerprint"),
         "result": details.get("result"),
@@ -429,17 +613,177 @@ async def _load_scheduler_task_snapshot(task_id: str) -> Optional[Dict[str, Any]
     return task_snapshot
 
 
+def _task_id_from_log_name(task_name: Any) -> Optional[str]:
+    if not isinstance(task_name, str):
+        return None
+    prefix = "ae_scheduler_task_"
+    if not task_name.startswith(prefix):
+        return None
+    task_id = task_name[len(prefix):].strip()
+    return task_id or None
+
+
+async def _recover_inflight_scheduler_tasks() -> Dict[str, int]:
+    if not _AE_TASK_RECOVERY_ENABLED:
+        return {"scanned": 0, "inflight": 0, "recovered": 0}
+
+    try:
+        rows = await fetch(
+            """
+            WITH recent_logs AS (
+                SELECT id, task_name, status, details, created_at
+                FROM scheduler_logs
+                WHERE task_name LIKE 'ae_scheduler_task_st-%'
+                ORDER BY created_at DESC, id DESC
+                LIMIT $1
+            )
+            SELECT DISTINCT ON (task_name)
+                task_name, status, details, created_at
+            FROM recent_logs
+            ORDER BY task_name, created_at DESC, id DESC
+            """,
+            _AE_TASK_RECOVERY_SCAN_LIMIT,
+        )
+    except Exception:
+        logger.warning("Scheduler task recovery scan failed", exc_info=True)
+        return {"scanned": 0, "inflight": 0, "recovered": 0}
+
+    scanned = len(rows)
+    inflight = 0
+    recovered = 0
+    now_iso = datetime.utcnow().isoformat()
+
+    for row in rows:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        raw_status = details.get("status") if isinstance(details, dict) else None
+        if not raw_status:
+            raw_status = row.get("status")
+        status = str(raw_status or "").strip().lower()
+        if status not in {"accepted", "running"}:
+            continue
+        inflight += 1
+
+        task_id = details.get("task_id") if isinstance(details, dict) else None
+        if not task_id:
+            task_id = _task_id_from_log_name(row.get("task_name"))
+        zone_id = details.get("zone_id") if isinstance(details, dict) else None
+        task_type = details.get("task_type") if isinstance(details, dict) else None
+        if not task_id or not zone_id or not task_type:
+            continue
+
+        recovery_result = _build_execution_terminal_result(
+            error_code="task_recovered_after_restart",
+            reason="Automation-engine перезапущен: in-flight задача финализирована recovery-политикой",
+            mode="startup_recovery_finalize",
+            action_required=True,
+            decision="execute",
+            reason_code="task_recovered_after_restart",
+        )
+
+        recovered_task = {
+            "task_id": task_id,
+            "zone_id": zone_id,
+            "task_type": task_type,
+            "status": "failed",
+            "created_at": details.get("created_at") if isinstance(details, dict) else None,
+            "updated_at": now_iso,
+            "scheduled_for": details.get("scheduled_for") if isinstance(details, dict) else None,
+            "due_at": details.get("due_at") if isinstance(details, dict) else None,
+            "expires_at": details.get("expires_at") if isinstance(details, dict) else None,
+            "correlation_id": details.get("correlation_id") if isinstance(details, dict) else None,
+            "payload_fingerprint": details.get("payload_fingerprint") if isinstance(details, dict) else None,
+            "payload": details.get("payload") if isinstance(details.get("payload"), dict) else {},
+            "result": recovery_result,
+            "error": "task_recovered_after_restart",
+            "error_code": "task_recovered_after_restart",
+        }
+
+        if not recovered_task["created_at"]:
+            created_at = row.get("created_at")
+            recovered_task["created_at"] = created_at.isoformat() if hasattr(created_at, "isoformat") else now_iso
+
+        async with _scheduler_tasks_lock:
+            _scheduler_tasks[task_id] = recovered_task
+
+        try:
+            await _persist_scheduler_task_snapshot(recovered_task)
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist recovered scheduler task snapshot: task_id=%s error=%s",
+                task_id,
+                exc,
+                exc_info=True,
+            )
+            await send_infra_exception_alert(
+                error=exc,
+                code="infra_scheduler_task_recovery_persist_failed",
+                alert_type="Scheduler Task Recovery Persist Failed",
+                severity="error",
+                zone_id=int(zone_id),
+                service="automation-engine",
+                component="scheduler_task_recovery",
+                error_type=type(exc).__name__,
+                details={"task_id": task_id, "task_type": task_type},
+            )
+
+        try:
+            await create_zone_event(
+                int(zone_id),
+                "SCHEDULE_TASK_FAILED",
+                {
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "status": "failed",
+                    "error_code": "task_recovered_after_restart",
+                    "source": "automation_engine_startup_recovery",
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to publish recovery zone event: task_id=%s zone_id=%s error=%s",
+                task_id,
+                zone_id,
+                exc,
+                exc_info=True,
+            )
+            await send_infra_exception_alert(
+                error=exc,
+                code="infra_scheduler_task_recovery_event_failed",
+                alert_type="Scheduler Task Recovery Event Failed",
+                severity="error",
+                zone_id=int(zone_id),
+                service="automation-engine",
+                component="scheduler_task_recovery",
+                error_type=type(exc).__name__,
+                details={"task_id": task_id, "task_type": task_type},
+            )
+        recovered += 1
+
+    if inflight <= 0:
+        TASK_RECOVERY_SUCCESS_RATE.set(1.0)
+    else:
+        TASK_RECOVERY_SUCCESS_RATE.set(recovered / inflight)
+
+    return {"scanned": scanned, "inflight": inflight, "recovered": recovered}
+
+
 async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace_id: Optional[str]) -> None:
     if trace_id:
         set_trace_id(trace_id)
 
     command_bus = _command_bus
     if command_bus is None:
+        failure_result = _build_execution_terminal_result(
+            error_code=ERR_COMMAND_BUS_UNAVAILABLE,
+            reason="CommandBus недоступен, задача не может быть исполнена",
+            mode="dispatch_unavailable",
+        )
         await _update_scheduler_task(
             task_id=task_id,
             status="failed",
-            error="command_bus_unavailable",
-            error_code="command_bus_unavailable",
+            result=failure_result,
+            error=str(failure_result["error"]),
+            error_code=str(failure_result["error_code"]),
         )
         return
 
@@ -457,13 +801,16 @@ async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace
                 "scheduled_for": req.scheduled_for,
             },
         )
+        result = result if isinstance(result, dict) else {}
+        _update_command_effect_confirm_rate(req.task_type, result)
         success = bool(result.get("success"))
+        failed_result = _normalize_failed_execution_result(result)
         await _update_scheduler_task(
             task_id=task_id,
             status="completed" if success else "failed",
-            result=result,
-            error=None if success else str(result.get("error") or "task_execution_failed"),
-            error_code=None if success else str(result.get("error_code") or "task_execution_failed"),
+            result=result if success else failed_result,
+            error=None if success else str(failed_result["error"]),
+            error_code=None if success else str(failed_result["error_code"]),
         )
     except Exception as exc:
         logger.error(
@@ -474,11 +821,21 @@ async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace
             exc,
             exc_info=True,
         )
+        failure_result = _build_execution_terminal_result(
+            error_code=ERR_EXECUTION_EXCEPTION,
+            reason="Во время исполнения scheduler-task произошло необработанное исключение",
+            mode="execution_exception",
+            extra={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
         await _update_scheduler_task(
             task_id=task_id,
             status="failed",
-            error=str(exc),
-            error_code="execution_exception",
+            result=failure_result,
+            error=str(failure_result["error"]),
+            error_code=str(failure_result["error_code"]),
         )
         await send_infra_exception_alert(
             error=exc,
@@ -519,9 +876,10 @@ async def _validate_scheduler_dispatch_lease(request: Request) -> None:
 @app.post("/scheduler/bootstrap")
 async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
     now = datetime.utcnow()
-    bootstrap_status = _bootstrap_status()
+    bootstrap_status, readiness_reason = await _scheduler_bootstrap_state()
     if not _is_scheduler_protocol_supported(req.protocol_version):
         bootstrap_status = "deny"
+        readiness_reason = "protocol_not_supported"
 
     response_payload: Dict[str, Any] = {
         "bootstrap_status": bootstrap_status,
@@ -531,6 +889,9 @@ async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
         "dedupe_window_sec": _SCHEDULER_DEDUPE_WINDOW_SEC,
         "server_time": now.isoformat(),
     }
+    if bootstrap_status != "ready":
+        response_payload["reason"] = "automation_not_ready" if bootstrap_status == "wait" else readiness_reason
+        response_payload["readiness_reason"] = readiness_reason
 
     async with _scheduler_bootstrap_lock:
         _cleanup_bootstrap_leases_locked(now)
@@ -580,13 +941,15 @@ async def scheduler_bootstrap_heartbeat(req: SchedulerBootstrapHeartbeatRequest 
                     "server_time": now.isoformat(),
                 },
             }
-        if _bootstrap_status() != "ready":
+        bootstrap_status, readiness_reason = await _scheduler_bootstrap_state()
+        if bootstrap_status != "ready":
             _scheduler_bootstrap_leases.pop(req.scheduler_id, None)
             return {
                 "status": "ok",
                 "data": {
                     "bootstrap_status": "wait",
                     "reason": "automation_not_ready",
+                    "readiness_reason": readiness_reason,
                     "poll_interval_sec": _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
                     "server_time": now.isoformat(),
                 },
@@ -663,21 +1026,82 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
     await _validate_scheduler_dispatch_lease(request)
     await _validate_scheduler_zone(req.zone_id)
 
-    task, is_duplicate = await _create_scheduler_task(req)
-    if not is_duplicate:
-        await create_zone_event(
-            req.zone_id,
-            "SCHEDULE_TASK_ACCEPTED",
-            {
-                "task_id": task["task_id"],
-                "task_type": req.task_type,
-                "scheduled_for": req.scheduled_for,
-                "correlation_id": req.correlation_id,
-            },
+    scheduled_for_dt: Optional[datetime] = None
+    if req.scheduled_for:
+        scheduled_for_dt = _parse_iso_datetime(req.scheduled_for)
+        if scheduled_for_dt is None:
+            raise HTTPException(status_code=422, detail="scheduled_for_invalid")
+
+    due_at_dt = _require_iso_datetime(req.due_at, "due_at")
+    expires_at_dt = _require_iso_datetime(req.expires_at, "expires_at")
+    if expires_at_dt <= due_at_dt:
+        raise HTTPException(status_code=422, detail="expires_at_must_be_after_due_at")
+    if scheduled_for_dt is not None and due_at_dt < scheduled_for_dt:
+        raise HTTPException(status_code=422, detail="due_at_must_be_gte_scheduled_for")
+
+    now = datetime.utcnow()
+    terminal_status: Optional[str] = None
+    terminal_result: Optional[Dict[str, Any]] = None
+    if now > expires_at_dt:
+        terminal_status = "expired"
+        terminal_result = _build_deadline_terminal_result(
+            status=terminal_status,
+            now=now,
+            due_at=due_at_dt,
+            expires_at=expires_at_dt,
+        )
+    elif now > due_at_dt:
+        terminal_status = "rejected"
+        terminal_result = _build_deadline_terminal_result(
+            status=terminal_status,
+            now=now,
+            due_at=due_at_dt,
+            expires_at=expires_at_dt,
         )
 
-        trace_id = get_trace_id()
-        asyncio.create_task(_execute_scheduler_task(task["task_id"], req, trace_id))
+    task, is_duplicate = await _create_scheduler_task(
+        req,
+        initial_status=terminal_status or "accepted",
+        initial_result=terminal_result if terminal_status else None,
+        initial_error=str(terminal_result.get("error")) if terminal_status and terminal_result else None,
+        initial_error_code=str(terminal_result.get("error_code")) if terminal_status and terminal_result else None,
+    )
+    if not is_duplicate:
+        if terminal_status and terminal_result:
+            await create_zone_event(
+                req.zone_id,
+                "SCHEDULE_TASK_FAILED",
+                {
+                    "task_id": task["task_id"],
+                    "task_type": req.task_type,
+                    "status": terminal_status,
+                    "scheduled_for": req.scheduled_for,
+                    "due_at": req.due_at,
+                    "expires_at": req.expires_at,
+                    "correlation_id": req.correlation_id,
+                    "error": task["error"],
+                    "error_code": task["error_code"],
+                    "decision": terminal_result.get("decision"),
+                    "reason_code": terminal_result.get("reason_code"),
+                    "action_required": terminal_result.get("action_required"),
+                },
+            )
+        else:
+            await create_zone_event(
+                req.zone_id,
+                "SCHEDULE_TASK_ACCEPTED",
+                {
+                    "task_id": task["task_id"],
+                    "task_type": req.task_type,
+                    "scheduled_for": req.scheduled_for,
+                    "due_at": req.due_at,
+                    "expires_at": req.expires_at,
+                    "correlation_id": req.correlation_id,
+                },
+            )
+
+            trace_id = get_trace_id()
+            asyncio.create_task(_execute_scheduler_task(task["task_id"], req, trace_id))
 
     return {
         "status": "ok",
@@ -709,10 +1133,70 @@ async def scheduler_task_status(task_id: str):
     return {"status": "ok", "data": payload}
 
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
+@app.on_event("startup")
+async def run_scheduler_task_recovery_on_startup() -> None:
+    summary = await _recover_inflight_scheduler_tasks()
+    if summary["recovered"] > 0:
+        logger.warning(
+            "Recovered in-flight scheduler tasks after restart: recovered=%s scanned=%s",
+            summary["recovered"],
+            summary["scanned"],
+        )
+
+
+def _is_command_bus_ready() -> Tuple[bool, str]:
+    if _command_bus is None:
+        return False, "command_bus_unavailable"
+    return True, "ok"
+
+
+def _is_bootstrap_store_ready() -> Tuple[bool, str]:
+    if not isinstance(_scheduler_bootstrap_leases, dict):
+        return False, "lease_store_invalid"
+    if _scheduler_bootstrap_lock is None:
+        return False, "lease_lock_missing"
+    return True, "ok"
+
+
+async def _is_db_ready() -> Tuple[bool, str]:
+    try:
+        # Lightweight readiness probe for DB transport path used by API.
+        await fetch("SELECT 1 AS ready")
+        return True, "ok"
+    except Exception as exc:
+        logger.warning("Readiness DB probe failed: %s", exc, exc_info=True)
+        return False, type(exc).__name__
+
+
+async def _readiness_payload() -> Dict[str, Any]:
+    command_bus_ready, command_bus_reason = _is_command_bus_ready()
+    db_ready, db_reason = await _is_db_ready()
+    bootstrap_store_ready, bootstrap_store_reason = _is_bootstrap_store_ready()
+
+    ready = command_bus_ready and db_ready and bootstrap_store_ready
+    return {
+        "status": "ok" if ready else "degraded",
+        "service": "automation-engine",
+        "ready": ready,
+        "checks": {
+            "command_bus": {"ok": command_bus_ready, "reason": command_bus_reason},
+            "db": {"ok": db_ready, "reason": db_reason},
+            "bootstrap_store": {"ok": bootstrap_store_ready, "reason": bootstrap_store_reason},
+        },
+    }
+
+
+@app.get("/health/live")
+async def health_live():
     return {"status": "ok", "service": "automation-engine"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    payload = await _readiness_payload()
+    if payload["ready"]:
+        return payload
+    return JSONResponse(status_code=503, content=payload)
 
 
 # Test hooks (только в test mode)

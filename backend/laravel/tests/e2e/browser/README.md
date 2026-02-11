@@ -31,14 +31,14 @@ tests/e2e/browser/
 
 ## Требования
 
-1. **Окружение**: Laravel должен быть запущен через `docker-compose -f tests/e2e/docker-compose.e2e.yml up -d`
+1. **Окружение**: Laravel должен быть запущен через `docker compose -f tests/e2e/docker-compose.e2e.yml up -d`
    - Laravel на `http://localhost:8081`
    - WebSocket Reverb на `ws://localhost:6002/app/local`
    - MQTT на порту 1884
    - PostgreSQL на порту 5433
 
-2. **Пользователь**: Используется сидированный админ
-   - По умолчанию: `admin@hydro.local` / `password`
+2. **Пользователь**: Используется сидированный агроном
+   - По умолчанию: `agronomist@example.com` / `password`
    - Можно переопределить через переменные окружения:
      - `E2E_AUTH_EMAIL` - email для авторизации
      - `E2E_AUTH_PASSWORD` - пароль для авторизации
@@ -194,7 +194,7 @@ test('example', async ({ apiHelper, testZone }) => {
 ## Переменные окружения
 
 - `LARAVEL_URL` - URL Laravel приложения (по умолчанию `http://localhost:8081`)
-- `E2E_AUTH_EMAIL` - Email для авторизации (по умолчанию `admin@hydro.local`)
+- `E2E_AUTH_EMAIL` - Email для авторизации (по умолчанию `agronomist@example.com`)
 - `E2E_AUTH_PASSWORD` - Пароль для авторизации (по умолчанию `password`)
 - `CI` - Если установлена, тесты запускаются в headless режиме с retries=2
 

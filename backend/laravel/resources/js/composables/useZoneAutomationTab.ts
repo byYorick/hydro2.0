@@ -51,6 +51,9 @@ export interface SchedulerTaskTimelineItem {
   channel?: string | null
   cmd?: string | null
   error_code?: string | null
+  command_submitted?: boolean | null
+  command_effect_confirmed?: boolean | null
+  terminal_status?: string | null
   source?: string | null
   details?: Record<string, unknown> | null
 }
@@ -63,6 +66,8 @@ export interface SchedulerTaskStatus {
   created_at: string | null
   updated_at: string | null
   scheduled_for: string | null
+  due_at?: string | null
+  expires_at?: string | null
   correlation_id: string | null
   result?: Record<string, unknown> | null
   error?: string | null
@@ -71,6 +76,11 @@ export interface SchedulerTaskStatus {
   decision?: string | null
   reason_code?: string | null
   reason?: string | null
+  command_submitted?: boolean | null
+  command_effect_confirmed?: boolean | null
+  commands_total?: number | null
+  commands_effect_confirmed?: number | null
+  commands_failed?: number | null
   source?: string | null
   lifecycle: SchedulerTaskLifecycleItem[]
   timeline?: SchedulerTaskTimelineItem[]
@@ -85,6 +95,22 @@ interface SchedulerTaskResponse {
   status: string
   data?: SchedulerTaskStatus
 }
+
+type SchedulerTaskSlaVariant = 'success' | 'warning' | 'danger' | 'info' | 'secondary'
+
+interface SchedulerTaskSlaMeta {
+  variant: SchedulerTaskSlaVariant
+  label: string
+  hint: string
+}
+
+interface SchedulerTaskDoneMeta {
+  variant: SchedulerTaskSlaVariant
+  label: string
+  hint: string
+}
+
+type SchedulerTaskPreset = 'all' | 'failed' | 'deadline' | 'done_confirmed' | 'done_unconfirmed'
 
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number') {
@@ -102,6 +128,123 @@ function toFiniteNumber(value: unknown): number | null {
   return null
 }
 
+const TARGET_SCHEDULER_STATUSES = ['accepted', 'running', 'completed', 'failed', 'rejected', 'expired'] as const
+type TargetSchedulerStatus = (typeof TARGET_SCHEDULER_STATUSES)[number]
+
+function normalizeTargetSchedulerStatus(status: string | null | undefined): TargetSchedulerStatus | null {
+  const normalized = String(status ?? '').trim().toLowerCase()
+  if (normalized === 'done') return 'completed'
+  if (TARGET_SCHEDULER_STATUSES.includes(normalized as TargetSchedulerStatus)) {
+    return normalized as TargetSchedulerStatus
+  }
+  return null
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === 1 || value === '1' || value === 'true') return true
+  if (value === 0 || value === '0' || value === 'false') return false
+  return fallback
+}
+
+function toNumber(value: unknown, fallback: number): number {
+  const parsed = toFiniteNumber(value)
+  return parsed === null ? fallback : parsed
+}
+
+function toRoundedNumber(value: unknown, fallback: number): number {
+  return Math.round(toNumber(value, fallback))
+}
+
+function toTimeHHmm(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return fallback
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return fallback
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function toIrrigationSystem(value: unknown, fallback: IrrigationSystem): IrrigationSystem {
+  if (value === 'drip' || value === 'substrate_trays' || value === 'nft') {
+    return value
+  }
+  return fallback
+}
+
+function sanitizeClimateForm(raw: Partial<ClimateFormState> | undefined, fallback: ClimateFormState): ClimateFormState {
+  return {
+    enabled: toBoolean(raw?.enabled, fallback.enabled),
+    dayTemp: clamp(toNumber(raw?.dayTemp, fallback.dayTemp), 10, 35),
+    nightTemp: clamp(toNumber(raw?.nightTemp, fallback.nightTemp), 10, 35),
+    dayHumidity: clamp(toNumber(raw?.dayHumidity, fallback.dayHumidity), 30, 90),
+    nightHumidity: clamp(toNumber(raw?.nightHumidity, fallback.nightHumidity), 30, 90),
+    dayStart: toTimeHHmm(raw?.dayStart, fallback.dayStart),
+    nightStart: toTimeHHmm(raw?.nightStart, fallback.nightStart),
+    ventMinPercent: clamp(toRoundedNumber(raw?.ventMinPercent, fallback.ventMinPercent), 0, 100),
+    ventMaxPercent: clamp(toRoundedNumber(raw?.ventMaxPercent, fallback.ventMaxPercent), 0, 100),
+    useExternalTelemetry: toBoolean(raw?.useExternalTelemetry, fallback.useExternalTelemetry),
+    outsideTempMin: clamp(toNumber(raw?.outsideTempMin, fallback.outsideTempMin), -30, 45),
+    outsideTempMax: clamp(toNumber(raw?.outsideTempMax, fallback.outsideTempMax), -30, 45),
+    outsideHumidityMax: clamp(toRoundedNumber(raw?.outsideHumidityMax, fallback.outsideHumidityMax), 20, 100),
+    manualOverrideEnabled: toBoolean(raw?.manualOverrideEnabled, fallback.manualOverrideEnabled),
+    overrideMinutes: clamp(toRoundedNumber(raw?.overrideMinutes, fallback.overrideMinutes), 5, 120),
+  }
+}
+
+function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: WaterFormState): WaterFormState {
+  const systemType = toIrrigationSystem(raw?.systemType, fallback.systemType)
+  const tanksRaw = toRoundedNumber(raw?.tanksCount, fallback.tanksCount)
+  const tanksCount = tanksRaw === 3 ? 3 : 2
+
+  const sanitized: WaterFormState = {
+    systemType,
+    tanksCount,
+    cleanTankFillL: clamp(toRoundedNumber(raw?.cleanTankFillL, fallback.cleanTankFillL), 10, 5000),
+    nutrientTankTargetL: clamp(toRoundedNumber(raw?.nutrientTankTargetL, fallback.nutrientTankTargetL), 10, 5000),
+    irrigationBatchL: clamp(toRoundedNumber(raw?.irrigationBatchL, fallback.irrigationBatchL), 1, 500),
+    intervalMinutes: clamp(toRoundedNumber(raw?.intervalMinutes, fallback.intervalMinutes), 5, 1440),
+    durationSeconds: clamp(toRoundedNumber(raw?.durationSeconds, fallback.durationSeconds), 1, 3600),
+    fillTemperatureC: clamp(toNumber(raw?.fillTemperatureC, fallback.fillTemperatureC), 5, 35),
+    fillWindowStart: toTimeHHmm(raw?.fillWindowStart, fallback.fillWindowStart),
+    fillWindowEnd: toTimeHHmm(raw?.fillWindowEnd, fallback.fillWindowEnd),
+    targetPh: clamp(toNumber(raw?.targetPh, fallback.targetPh), 4, 9),
+    targetEc: clamp(toNumber(raw?.targetEc, fallback.targetEc), 0.1, 10),
+    valveSwitching: toBoolean(raw?.valveSwitching, fallback.valveSwitching),
+    correctionDuringIrrigation: toBoolean(raw?.correctionDuringIrrigation, fallback.correctionDuringIrrigation),
+    enableDrainControl: toBoolean(raw?.enableDrainControl, fallback.enableDrainControl),
+    drainTargetPercent: clamp(toRoundedNumber(raw?.drainTargetPercent, fallback.drainTargetPercent), 0, 100),
+    manualIrrigationSeconds: clamp(
+      toRoundedNumber(raw?.manualIrrigationSeconds, fallback.manualIrrigationSeconds),
+      1,
+      3600
+    ),
+  }
+
+  syncSystemToTankLayout(sanitized, sanitized.systemType)
+  sanitized.tanksCount = sanitized.systemType === 'drip' ? 2 : tanksCount
+  if (sanitized.tanksCount === 2) {
+    sanitized.enableDrainControl = false
+  }
+  return sanitized
+}
+
+function sanitizeLightingForm(raw: Partial<LightingFormState> | undefined, fallback: LightingFormState): LightingFormState {
+  return {
+    enabled: toBoolean(raw?.enabled, fallback.enabled),
+    luxDay: clamp(toRoundedNumber(raw?.luxDay, fallback.luxDay), 0, 120000),
+    luxNight: clamp(toRoundedNumber(raw?.luxNight, fallback.luxNight), 0, 120000),
+    hoursOn: clamp(toNumber(raw?.hoursOn, fallback.hoursOn), 0, 24),
+    scheduleStart: toTimeHHmm(raw?.scheduleStart, fallback.scheduleStart),
+    scheduleEnd: toTimeHHmm(raw?.scheduleEnd, fallback.scheduleEnd),
+    manualIntensity: clamp(toRoundedNumber(raw?.manualIntensity, fallback.manualIntensity), 0, 100),
+    manualDurationHours: clamp(toNumber(raw?.manualDurationHours, fallback.manualDurationHours), 0.5, 24),
+  }
+}
+
 export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const page = usePage<{ auth?: { user?: { role?: string } } }>()
   const { showToast } = useToast()
@@ -111,7 +254,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
   const canConfigureAutomation = computed(() => role.value === 'agronomist' || role.value === 'admin')
   const canOperateAutomation = computed(
-    () => role.value === 'agronomist' || role.value === 'admin' || role.value === 'operator'
+    () => role.value === 'agronomist' || role.value === 'admin' || role.value === 'operator' || role.value === 'engineer'
   )
   const isSystemTypeLocked = computed(() => {
     const status = String(props.activeGrowCycle?.status ?? '').toUpperCase()
@@ -176,6 +319,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   })
 
   const isApplyingProfile = ref(false)
+  const isHydratingProfile = ref(false)
   const lastAppliedAt = ref<string | null>(null)
   const schedulerTaskIdInput = ref('')
   const schedulerTaskLookupLoading = ref(false)
@@ -183,8 +327,20 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const schedulerTaskError = ref<string | null>(null)
   const schedulerTaskStatus = ref<SchedulerTaskStatus | null>(null)
   const recentSchedulerTasks = ref<SchedulerTaskStatus[]>([])
+  const schedulerTaskSearch = ref('')
+  const schedulerTaskPreset = ref<SchedulerTaskPreset>('all')
   const schedulerTasksUpdatedAt = ref<string | null>(null)
   let schedulerTasksPollTimer: ReturnType<typeof setTimeout> | null = null
+  let schedulerTaskListRequestVersion = 0
+  let schedulerTaskLookupRequestVersion = 0
+
+  const schedulerTaskPresetOptions: Array<{ value: SchedulerTaskPreset; label: string }> = [
+    { value: 'all', label: 'Все' },
+    { value: 'failed', label: 'Ошибки' },
+    { value: 'deadline', label: 'Дедлайны' },
+    { value: 'done_confirmed', label: 'DONE подтвержден' },
+    { value: 'done_unconfirmed', label: 'DONE не подтвержден' },
+  ]
 
   const predictionTargets = computed<PredictionTargets>(() => {
     const targets = props.targets
@@ -232,25 +388,25 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   }
 
   function schedulerTaskStatusVariant(status: string | null | undefined): 'success' | 'warning' | 'danger' | 'info' | 'secondary' {
-    const normalized = String(status ?? '').toLowerCase()
-    if (normalized === 'completed' || normalized === 'done') return 'success'
-    if (normalized === 'failed' || normalized === 'error' || normalized === 'rejected' || normalized === 'timeout') return 'danger'
+    const normalized = normalizeTargetSchedulerStatus(status)
+    if (normalized === 'completed') return 'success'
+    if (normalized === 'failed' || normalized === 'rejected' || normalized === 'expired') return 'danger'
     if (normalized === 'running') return 'warning'
-    if (normalized === 'accepted' || normalized === 'queued') return 'info'
+    if (normalized === 'accepted') return 'info'
 
     return 'secondary'
   }
 
   function schedulerTaskStatusLabel(status: string | null | undefined): string {
-    const normalized = String(status ?? '').toLowerCase()
+    const normalized = normalizeTargetSchedulerStatus(status)
     if (normalized === 'accepted') return 'Принята'
     if (normalized === 'running') return 'Выполняется'
-    if (normalized === 'completed' || normalized === 'done') return 'Выполнена'
+    if (normalized === 'completed') return 'Выполнена'
     if (normalized === 'failed') return 'Ошибка'
-    if (normalized === 'timeout') return 'Таймаут'
     if (normalized === 'rejected') return 'Отклонена'
+    if (normalized === 'expired') return 'Просрочена'
 
-    return status ? String(status) : 'Неизвестно'
+    return 'Неизвестно'
   }
 
   function schedulerTaskEventLabel(eventType: string | null | undefined): string {
@@ -260,10 +416,15 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (normalized === 'DECISION_MADE') return 'Решение принято'
     if (normalized === 'COMMAND_DISPATCHED') return 'Команда отправлена'
     if (normalized === 'COMMAND_FAILED') return 'Ошибка отправки команды'
+    if (normalized === 'COMMAND_EFFECT_NOT_CONFIRMED') return 'Команда не подтверждена нодой (не DONE)'
     if (normalized === 'TASK_FINISHED') return 'Задача завершена'
+    if (normalized === 'SCHEDULE_TASK_EXECUTION_STARTED') return 'Automation-engine: execution started'
+    if (normalized === 'SCHEDULE_TASK_EXECUTION_FINISHED') return 'Automation-engine: execution finished'
+    if (normalized === 'DIAGNOSTICS_SERVICE_UNAVAILABLE') return 'Diagnostics service недоступен'
     if (normalized === 'CYCLE_START_INITIATED') return 'Запуск цикла инициирован'
     if (normalized === 'NODES_AVAILABILITY_CHECKED') return 'Проверена доступность нод'
     if (normalized === 'TANK_LEVEL_CHECKED') return 'Проверен уровень бака'
+    if (normalized === 'TANK_LEVEL_STALE') return 'Телеметрия бака устарела'
     if (normalized === 'TANK_REFILL_STARTED') return 'Запущено наполнение бака'
     if (normalized === 'TANK_REFILL_COMPLETED') return 'Наполнение бака завершено'
     if (normalized === 'TANK_REFILL_TIMEOUT') return 'Таймаут наполнения бака'
@@ -290,6 +451,11 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (!normalized) return reasonText ? String(reasonText) : '-'
 
     const reasonMap: Record<string, string> = {
+      task_due_deadline_exceeded: 'Задача отклонена: пропущен дедлайн due_at',
+      task_expired: 'Задача просрочена: превышен expires_at',
+      command_bus_unavailable: 'CommandBus недоступен',
+      execution_exception: 'Исключение во время исполнения',
+      task_execution_failed: 'Исполнение завершилось с ошибкой',
       required_nodes_checked: 'Проверка обязательных нод выполнена',
       tank_level_checked: 'Проверка уровня бака выполнена',
       tank_refill_required: 'Требуется наполнение бака',
@@ -299,6 +465,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       tank_refill_not_required: 'Наполнение бака не требуется',
       cycle_start_blocked_nodes_unavailable: 'Старт цикла заблокирован: недоступны обязательные ноды',
       cycle_start_tank_level_unavailable: 'Старт цикла заблокирован: нет данных уровня бака',
+      cycle_start_tank_level_stale: 'Старт цикла заблокирован: телеметрия уровня бака устарела',
       cycle_start_refill_timeout: 'Таймаут наполнения бака',
       cycle_start_refill_command_failed: 'Ошибка отправки команды наполнения бака',
       cycle_start_self_task_enqueue_failed: 'Не удалось запланировать отложенную проверку',
@@ -315,11 +482,22 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (!normalized) return errorText ? String(errorText) : '-'
 
     const errorMap: Record<string, string> = {
+      task_due_deadline_exceeded: 'Превышен дедлайн due_at',
+      task_expired: 'Превышен срок expires_at',
       command_publish_failed: 'Ошибка отправки команды',
+      command_send_failed: 'Команда не отправлена',
+      command_timeout: 'Таймаут ожидания DONE от ноды',
+      command_error: 'Нода вернула ERROR',
+      command_invalid: 'Нода вернула INVALID',
+      command_busy: 'Нода вернула BUSY',
+      command_no_effect: 'Нода вернула NO_EFFECT',
+      command_tracker_unavailable: 'Невозможно подтвердить DONE: tracker недоступен',
+      command_effect_not_confirmed: 'Нода не подтвердила DONE',
       mapping_not_found: 'Конфигурация команды не найдена',
       no_online_nodes: 'Нет online-нод для выполнения',
       cycle_start_required_nodes_unavailable: 'Недоступны обязательные ноды для старта цикла',
       cycle_start_tank_level_unavailable: 'Нет телеметрии уровня бака',
+      cycle_start_tank_level_stale: 'Телеметрия бака устарела',
       cycle_start_refill_timeout: 'Таймаут наполнения бака',
       cycle_start_refill_node_not_found: 'Не найден узел для наполнения бака',
       cycle_start_refill_command_failed: 'Команда наполнения бака не отправлена',
@@ -332,6 +510,314 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     return errorText ? `${errorText} (${normalized})` : normalized
   }
 
+  function normalizeOptionalBool(value: unknown): boolean | null {
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') {
+      if (value === 1) return true
+      if (value === 0) return false
+      return null
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === 'true' || normalized === '1') return true
+      if (normalized === 'false' || normalized === '0') return false
+    }
+    return null
+  }
+
+  function resolveTaskCommandSubmitted(task: SchedulerTaskStatus | null | undefined): boolean | null {
+    if (!task) return null
+    const fromRoot = normalizeOptionalBool(task.command_submitted)
+    if (fromRoot !== null) return fromRoot
+    const fromResult = normalizeOptionalBool(task.result?.command_submitted)
+    return fromResult
+  }
+
+  function resolveTaskCommandEffectConfirmed(task: SchedulerTaskStatus | null | undefined): boolean | null {
+    if (!task) return null
+    const fromRoot = normalizeOptionalBool(task.command_effect_confirmed)
+    if (fromRoot !== null) return fromRoot
+    const fromResult = normalizeOptionalBool(task.result?.command_effect_confirmed)
+    return fromResult
+  }
+
+  function resolveTaskCommandsTotal(task: SchedulerTaskStatus | null | undefined): number | null {
+    const direct = toFiniteNumber(task?.commands_total ?? null)
+    if (direct !== null) return Math.max(0, Math.round(direct))
+    const fromResult = toFiniteNumber(task?.result?.commands_total)
+    if (fromResult !== null) return Math.max(0, Math.round(fromResult))
+    return null
+  }
+
+  function resolveTaskCommandsEffectConfirmed(task: SchedulerTaskStatus | null | undefined): number | null {
+    const direct = toFiniteNumber(task?.commands_effect_confirmed ?? null)
+    if (direct !== null) return Math.max(0, Math.round(direct))
+    const fromResult = toFiniteNumber(task?.result?.commands_effect_confirmed)
+    if (fromResult !== null) return Math.max(0, Math.round(fromResult))
+    return null
+  }
+
+  function normalizeIsoInput(rawValue: string): string {
+    const raw = rawValue.trim()
+    if (!raw) return raw
+
+    const hasTimezone = /(?:Z|z|[+-]\d{2}:\d{2})$/.test(raw)
+    const looksIsoDateTime = /^\d{4}-\d{2}-\d{2}T/.test(raw)
+    if (looksIsoDateTime && !hasTimezone) {
+      return `${raw}Z`
+    }
+    return raw
+  }
+
+  function schedulerTaskDoneMeta(task: SchedulerTaskStatus | null | undefined): SchedulerTaskDoneMeta {
+    if (!task) {
+      return { variant: 'secondary', label: 'DONE не определен', hint: 'Нет данных task status' }
+    }
+
+    const status = normalizeTargetSchedulerStatus(task.status)
+    const actionRequired = normalizeOptionalBool(task.action_required ?? task.result?.action_required)
+    const submitted = resolveTaskCommandSubmitted(task)
+    const effectConfirmed = resolveTaskCommandEffectConfirmed(task)
+    const commandsTotal = resolveTaskCommandsTotal(task)
+    const commandsConfirmed = resolveTaskCommandsEffectConfirmed(task)
+
+    if (actionRequired === false || String(task.decision ?? task.result?.decision ?? '').toLowerCase() === 'skip') {
+      return {
+        variant: 'info',
+        label: 'Команды не требовались',
+        hint: 'Decision layer вернул skip/action_required=false',
+      }
+    }
+
+    if (status !== 'completed') {
+      return {
+        variant: 'secondary',
+        label: 'Ожидание terminal DONE',
+        hint: 'Подтверждение эффекта доступно после terminal статуса',
+      }
+    }
+
+    if (commandsTotal === 0) {
+      return {
+        variant: 'info',
+        label: 'Команды не отправлялись',
+        hint: 'Для этой задачи commands_total=0, подтверждение DONE не требуется',
+      }
+    }
+
+    if (submitted === false) {
+      return {
+        variant: 'danger',
+        label: 'Команда не отправлена',
+        hint: 'command_submitted=false (SEND_FAILED или transport failure)',
+      }
+    }
+
+    if (effectConfirmed === true) {
+      if (commandsTotal !== null && commandsConfirmed !== null) {
+        return {
+          variant: 'success',
+          label: 'DONE подтвержден',
+          hint: `Подтверждено ${commandsConfirmed}/${commandsTotal} команд`,
+        }
+      }
+      return {
+        variant: 'success',
+        label: 'DONE подтвержден',
+        hint: 'Нода вернула terminal статус DONE',
+      }
+    }
+
+    return {
+      variant: 'danger',
+      label: 'DONE не подтвержден',
+      hint: 'Команда завершилась неуспешным terminal-статусом или подтверждение отсутствует',
+    }
+  }
+
+  function parseIsoDate(value: string | null | undefined): Date | null {
+    const raw = normalizeIsoInput(String(value ?? ''))
+    if (!raw) return null
+    const parsed = new Date(raw)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  function formatRelativeMs(ms: number): string {
+    const totalSeconds = Math.max(0, Math.round(ms / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    if (minutes <= 0) return `${seconds}с`
+    if (minutes < 60) return `${minutes}м ${seconds}с`
+    const hours = Math.floor(minutes / 60)
+    const restMinutes = minutes % 60
+    return `${hours}ч ${restMinutes}м`
+  }
+
+  function schedulerTaskSlaMeta(task: SchedulerTaskStatus | null | undefined): SchedulerTaskSlaMeta {
+    if (!task) {
+      return { variant: 'secondary', label: 'SLA не определен', hint: 'Нет данных задачи' }
+    }
+
+    const status = normalizeTargetSchedulerStatus(task.status)
+    const dueAt = parseIsoDate(task.due_at)
+    const expiresAt = parseIsoDate(task.expires_at)
+    const updatedAt = parseIsoDate(task.updated_at)
+    const scheduledFor = parseIsoDate(task.scheduled_for)
+    const now = new Date()
+
+    const windowParts: string[] = []
+    if (scheduledFor) windowParts.push(`scheduled: ${formatDateTime(task.scheduled_for ?? null)}`)
+    if (dueAt) windowParts.push(`due: ${formatDateTime(task.due_at ?? null)}`)
+    if (expiresAt) windowParts.push(`expires: ${formatDateTime(task.expires_at ?? null)}`)
+    const windowHint = windowParts.join(' · ')
+
+    if (!dueAt && !expiresAt) {
+      return {
+        variant: 'secondary',
+        label: 'SLA не задан',
+        hint: windowHint || 'В payload задачи нет due_at/expires_at',
+      }
+    }
+
+    if (status === 'expired') {
+      return {
+        variant: 'danger',
+        label: 'SLA нарушен: expires_at',
+        hint: windowHint || 'Задача завершена статусом expired',
+      }
+    }
+
+    if (status === 'rejected') {
+      return {
+        variant: 'danger',
+        label: 'SLA нарушен: due_at',
+        hint: windowHint || 'Задача завершена статусом rejected',
+      }
+    }
+
+    if (status === 'completed') {
+      if (dueAt && updatedAt && updatedAt.getTime() > dueAt.getTime()) {
+        return {
+          variant: 'warning',
+          label: 'SLA пограничный: завершена после due_at',
+          hint: windowHint || 'Проверьте интервал dispatch->execute',
+        }
+      }
+      return {
+        variant: 'success',
+        label: 'SLA выполнен',
+        hint: windowHint || 'Задача завершена в SLA-окне',
+      }
+    }
+
+    if (status === 'failed') {
+      return {
+        variant: 'danger',
+        label: 'SLA риск: task failed',
+        hint: windowHint || 'Задача завершена ошибкой',
+      }
+    }
+
+    if (expiresAt && now.getTime() > expiresAt.getTime()) {
+      return {
+        variant: 'danger',
+        label: 'SLA нарушен: expires_at',
+        hint: windowHint || 'Текущее время больше expires_at',
+      }
+    }
+
+    if (dueAt && now.getTime() > dueAt.getTime()) {
+      return {
+        variant: 'danger',
+        label: 'SLA нарушен: due_at',
+        hint: windowHint || 'Текущее время больше due_at',
+      }
+    }
+
+    if (dueAt) {
+      const msLeft = dueAt.getTime() - now.getTime()
+      if (msLeft <= 30_000) {
+        return {
+          variant: 'warning',
+          label: 'SLA: дедлайн близко',
+          hint: `До due_at: ${formatRelativeMs(msLeft)}${windowHint ? ` · ${windowHint}` : ''}`,
+        }
+      }
+      return {
+        variant: 'info',
+        label: 'SLA-окно активно',
+        hint: `До due_at: ${formatRelativeMs(msLeft)}${windowHint ? ` · ${windowHint}` : ''}`,
+      }
+    }
+
+    return {
+      variant: 'info',
+      label: 'SLA-окно активно',
+      hint: windowHint || 'Ожидание исполнения задачи',
+    }
+  }
+
+  function taskMatchesPreset(task: SchedulerTaskStatus, preset: SchedulerTaskPreset): boolean {
+    if (preset === 'all') return true
+
+    const status = normalizeTargetSchedulerStatus(task.status)
+    const reasonCode = String(task.reason_code ?? task.result?.reason_code ?? '').toLowerCase()
+    const errorCode = String(task.error_code ?? task.result?.error_code ?? '').toLowerCase()
+    const effectConfirmed = resolveTaskCommandEffectConfirmed(task)
+    const commandsTotal = resolveTaskCommandsTotal(task)
+    const actionRequired = normalizeOptionalBool(task.action_required ?? task.result?.action_required)
+
+    if (preset === 'failed') {
+      return status === 'failed' || status === 'rejected' || status === 'expired'
+    }
+
+    if (preset === 'deadline') {
+      if (status === 'rejected' || status === 'expired') return true
+      return (
+        reasonCode === 'task_due_deadline_exceeded' ||
+        reasonCode === 'task_expired' ||
+        errorCode === 'task_due_deadline_exceeded' ||
+        errorCode === 'task_expired'
+      )
+    }
+
+    if (preset === 'done_confirmed') {
+      return status === 'completed' && commandsTotal !== 0 && effectConfirmed === true
+    }
+
+    if (preset === 'done_unconfirmed') {
+      return status === 'completed' && commandsTotal !== 0 && actionRequired !== false && effectConfirmed !== true
+    }
+
+    return true
+  }
+
+  function taskMatchesSearch(task: SchedulerTaskStatus, rawQuery: string): boolean {
+    const query = rawQuery.trim().toLowerCase()
+    if (!query) return true
+
+    const haystack = [
+      task.task_id,
+      task.task_type,
+      task.status,
+      task.decision,
+      task.reason_code,
+      task.error_code,
+      task.reason,
+      task.error,
+    ]
+      .map((item) => String(item ?? '').toLowerCase())
+      .join(' ')
+
+    return haystack.includes(query)
+  }
+
+  const filteredRecentSchedulerTasks = computed(() => {
+    return recentSchedulerTasks.value.filter((task) => {
+      return taskMatchesPreset(task, schedulerTaskPreset.value) && taskMatchesSearch(task, schedulerTaskSearch.value)
+    })
+  })
+
   watch(
     () => waterForm.systemType,
     (value) => syncSystemToTankLayout(waterForm, value),
@@ -339,6 +825,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   )
 
   function saveProfileToStorage(): void {
+    if (isHydratingProfile.value) return
     if (typeof window === 'undefined' || !profileStorageKey.value) return
 
     const payload = {
@@ -366,16 +853,17 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       }
 
       if (parsed.climate) {
-        Object.assign(climateForm, parsed.climate)
+        Object.assign(climateForm, sanitizeClimateForm(parsed.climate, climateForm))
       }
       if (parsed.water) {
-        Object.assign(waterForm, parsed.water)
-        syncSystemToTankLayout(waterForm, waterForm.systemType)
+        Object.assign(waterForm, sanitizeWaterForm(parsed.water, waterForm))
       }
       if (parsed.lighting) {
-        Object.assign(lightingForm, parsed.lighting)
+        Object.assign(lightingForm, sanitizeLightingForm(parsed.lighting, lightingForm))
       }
-      lastAppliedAt.value = parsed.lastAppliedAt ?? null
+
+      const parsedLastAppliedAt = parseIsoDate(parsed.lastAppliedAt ?? null)
+      lastAppliedAt.value = parsedLastAppliedAt ? parsedLastAppliedAt.toISOString() : null
     } catch (error) {
       logger.warn('[ZoneAutomationTab] Failed to parse stored automation profile', { error })
     }
@@ -386,9 +874,20 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   watch(lightingForm, saveProfileToStorage, { deep: true })
   watch(lastAppliedAt, saveProfileToStorage)
 
+  function hydrateAutomationProfileFromCurrentZone(): void {
+    isHydratingProfile.value = true
+    try {
+      resetFormsToRecommended({ climateForm, waterForm, lightingForm })
+      lastAppliedAt.value = null
+      loadProfileFromStorage()
+      applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
+    } finally {
+      isHydratingProfile.value = false
+    }
+  }
+
   onMounted(() => {
-    loadProfileFromStorage()
-    applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
+    hydrateAutomationProfileFromCurrentZone()
     void fetchRecentSchedulerTasks()
     if (import.meta.env.MODE !== 'test') {
       void pollSchedulerTasksCycle()
@@ -408,8 +907,16 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   watch(
     () => props.zoneId,
     () => {
+      schedulerTaskListRequestVersion += 1
+      schedulerTaskLookupRequestVersion += 1
+      schedulerTaskIdInput.value = ''
       schedulerTaskStatus.value = null
+      recentSchedulerTasks.value = []
       schedulerTaskError.value = null
+      schedulerTasksUpdatedAt.value = null
+      schedulerTaskListLoading.value = false
+      schedulerTaskLookupLoading.value = false
+      hydrateAutomationProfileFromCurrentZone()
       void fetchRecentSchedulerTasks()
       scheduleSchedulerTasksPoll()
     }
@@ -426,24 +933,37 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   async function fetchRecentSchedulerTasks(): Promise<void> {
     if (!props.zoneId) {
       recentSchedulerTasks.value = []
+      schedulerTasksUpdatedAt.value = null
+      schedulerTaskListLoading.value = false
       return
     }
 
+    const requestZoneId = props.zoneId
+    const requestVersion = ++schedulerTaskListRequestVersion
     schedulerTaskListLoading.value = true
     schedulerTaskError.value = null
     try {
-      const response = await get<SchedulerTasksResponse>(`/api/zones/${props.zoneId}/scheduler-tasks`, {
+      const response = await get<SchedulerTasksResponse>(`/api/zones/${requestZoneId}/scheduler-tasks`, {
         params: { limit: 20 },
       })
+
+      if (requestVersion !== schedulerTaskListRequestVersion || requestZoneId !== props.zoneId) {
+        return
+      }
 
       const items = Array.isArray(response.data?.data) ? response.data.data : []
       recentSchedulerTasks.value = items
       schedulerTasksUpdatedAt.value = new Date().toISOString()
     } catch (error) {
+      if (requestVersion !== schedulerTaskListRequestVersion || requestZoneId !== props.zoneId) {
+        return
+      }
       logger.warn('[ZoneAutomationTab] Failed to fetch scheduler tasks', { error, zoneId: props.zoneId })
       schedulerTaskError.value = 'Не удалось получить список scheduler-задач.'
     } finally {
-      schedulerTaskListLoading.value = false
+      if (requestVersion === schedulerTaskListRequestVersion && requestZoneId === props.zoneId) {
+        schedulerTaskListLoading.value = false
+      }
     }
   }
 
@@ -457,19 +977,31 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       return
     }
 
+    const requestZoneId = props.zoneId
+    const requestVersion = ++schedulerTaskLookupRequestVersion
     schedulerTaskLookupLoading.value = true
     schedulerTaskError.value = null
     try {
-      const response = await get<SchedulerTaskResponse>(`/api/zones/${props.zoneId}/scheduler-tasks/${encodeURIComponent(taskId)}`)
+      const response = await get<SchedulerTaskResponse>(`/api/zones/${requestZoneId}/scheduler-tasks/${encodeURIComponent(taskId)}`)
+
+      if (requestVersion !== schedulerTaskLookupRequestVersion || requestZoneId !== props.zoneId) {
+        return
+      }
+
       schedulerTaskStatus.value = response.data?.data ?? null
       schedulerTaskIdInput.value = taskId
     } catch (error: any) {
+      if (requestVersion !== schedulerTaskLookupRequestVersion || requestZoneId !== props.zoneId) {
+        return
+      }
       logger.warn('[ZoneAutomationTab] Failed to lookup scheduler task', { error, zoneId: props.zoneId, taskId })
       schedulerTaskStatus.value = null
       schedulerTaskError.value = error?.response?.data?.message ?? 'Не удалось получить статус задачи.'
     } finally {
-      schedulerTaskLookupLoading.value = false
-      scheduleSchedulerTasksPoll()
+      if (requestVersion === schedulerTaskLookupRequestVersion && requestZoneId === props.zoneId) {
+        schedulerTaskLookupLoading.value = false
+        scheduleSchedulerTasksPoll()
+      }
     }
   }
 
@@ -581,8 +1113,9 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   }
 
   function formatDateTime(value: string | null): string {
-    if (!value) return '-'
-    return new Date(value).toLocaleString('ru-RU')
+    const parsed = parseIsoDate(value)
+    if (!parsed) return '-'
+    return parsed.toLocaleString('ru-RU')
   }
 
   function clearSchedulerTasksPollTimer(): void {
@@ -594,8 +1127,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   function hasActiveSchedulerTask(): boolean {
     const isActive = (status: string | null | undefined): boolean => {
-      const normalized = String(status ?? '').toLowerCase()
-      return normalized === 'accepted' || normalized === 'running' || normalized === 'queued'
+      const normalized = normalizeTargetSchedulerStatus(status)
+      return normalized === 'accepted' || normalized === 'running'
     }
 
     if (isActive(schedulerTaskStatus.value?.status)) return true
@@ -657,6 +1190,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTaskError,
     schedulerTaskStatus,
     recentSchedulerTasks,
+    filteredRecentSchedulerTasks,
+    schedulerTaskSearch,
+    schedulerTaskPreset,
+    schedulerTaskPresetOptions,
     schedulerTasksUpdatedAt,
     fetchRecentSchedulerTasks,
     lookupSchedulerTask,
@@ -666,6 +1203,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTaskDecisionLabel,
     schedulerTaskReasonLabel,
     schedulerTaskErrorLabel,
+    schedulerTaskSlaMeta,
+    schedulerTaskDoneMeta,
     formatDateTime,
   }
 }

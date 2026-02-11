@@ -27,7 +27,7 @@ case "${LARAVEL_URL}" in
 esac
 
 export LARAVEL_URL
-export E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL:-admin@hydro.local}"
+export E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL:-agronomist@example.com}"
 export E2E_AUTH_PASSWORD="${E2E_AUTH_PASSWORD:-password}"
 export HEADLESS="${HEADLESS:-true}"
 

@@ -82,6 +82,56 @@ class SchedulerTaskControllerTest extends TestCase
         $this->assertCount(2, $response->json('data.0.lifecycle'));
     }
 
+    public function test_scheduler_tasks_index_orders_lifecycle_deterministically_when_timestamps_match(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $sameTimestamp = now()->subMinute()->startOfSecond();
+
+        SchedulerLog::create([
+            'task_name' => 'ae_scheduler_task_st-same-time',
+            'status' => 'accepted',
+            'details' => [
+                'task_id' => 'st-same-time',
+                'zone_id' => $zone->id,
+                'task_type' => 'irrigation',
+                'status' => 'accepted',
+                'created_at' => $sameTimestamp->toIso8601String(),
+                'updated_at' => $sameTimestamp->toIso8601String(),
+            ],
+            'created_at' => $sameTimestamp,
+            'updated_at' => $sameTimestamp,
+        ]);
+
+        SchedulerLog::create([
+            'task_name' => 'ae_scheduler_task_st-same-time',
+            'status' => 'completed',
+            'details' => [
+                'task_id' => 'st-same-time',
+                'zone_id' => $zone->id,
+                'task_type' => 'irrigation',
+                'status' => 'completed',
+                'created_at' => $sameTimestamp->toIso8601String(),
+                'updated_at' => $sameTimestamp->toIso8601String(),
+            ],
+            'created_at' => $sameTimestamp,
+            'updated_at' => $sameTimestamp,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.0.task_id', 'st-same-time')
+            ->assertJsonPath('data.0.status', 'completed');
+
+        $statuses = array_column($response->json('data.0.lifecycle') ?? [], 'status');
+        $this->assertSame(['accepted', 'completed'], $statuses);
+    }
+
     public function test_scheduler_task_show_prefers_automation_engine_status(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
@@ -110,6 +160,8 @@ class SchedulerTaskControllerTest extends TestCase
                     'created_at' => now()->subMinute()->toIso8601String(),
                     'updated_at' => now()->toIso8601String(),
                     'scheduled_for' => null,
+                    'due_at' => now()->addSeconds(30)->toIso8601String(),
+                    'expires_at' => now()->addMinutes(2)->toIso8601String(),
                     'correlation_id' => null,
                     'result' => null,
                     'error' => null,
@@ -126,6 +178,9 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('data.task_id', 'st-live01')
             ->assertJsonPath('data.status', 'running')
             ->assertJsonPath('data.source', 'automation_engine');
+
+        $this->assertNotNull($response->json('data.due_at'));
+        $this->assertNotNull($response->json('data.expires_at'));
     }
 
     public function test_scheduler_tasks_index_can_include_timeline(): void
@@ -172,7 +227,7 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('data.0.timeline.0.event_type', 'TASK_STARTED');
     }
 
-    public function test_scheduler_task_show_falls_back_to_scheduler_logs_when_automation_missing(): void
+    public function test_scheduler_task_show_returns_not_found_when_automation_missing_even_if_scheduler_log_exists(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
@@ -202,11 +257,53 @@ class SchedulerTaskControllerTest extends TestCase
             ->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/zones/{$zone->id}/scheduler-tasks/st-fallback");
 
-        $response->assertOk()
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.task_id', 'st-fallback')
-            ->assertJsonPath('data.status', 'completed')
-            ->assertJsonPath('data.source', 'scheduler_logs');
+        $response->assertNotFound()
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'NOT_FOUND');
+    }
+
+    public function test_scheduler_task_show_returns_upstream_error_for_unexpected_automation_exception(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        Http::fake([
+            'http://automation-engine:9405/scheduler/task/st-upstream-error' => static function () {
+                throw new \RuntimeException('malformed upstream payload');
+            },
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks/st-upstream-error");
+
+        $response->assertStatus(503)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'UPSTREAM_ERROR');
+    }
+
+    public function test_scheduler_task_show_returns_upstream_error_when_automation_returns_non_ok_payload(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        Http::fake([
+            'http://automation-engine:9405/scheduler/task/st-upstream-non-ok' => Http::response([
+                'status' => 'error',
+                'code' => 'TASK_STATUS_UNAVAILABLE',
+                'message' => 'temporary degradation',
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks/st-upstream-non-ok");
+
+        $response->assertStatus(503)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'UPSTREAM_ERROR');
     }
 
     public function test_scheduler_task_show_returns_timeline_events_from_zone_events(): void
@@ -269,9 +366,21 @@ class SchedulerTaskControllerTest extends TestCase
 
         Http::fake([
             'http://automation-engine:9405/scheduler/task/st-timeline' => Http::response([
-                'status' => 'error',
-                'message' => 'not found',
-            ], 404),
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => 'st-timeline',
+                    'zone_id' => $zone->id,
+                    'task_type' => 'irrigation',
+                    'status' => 'completed',
+                    'correlation_id' => 'sch:z'.$zone->id.':irrigation:timeline',
+                    'result' => [
+                        'action_required' => false,
+                        'decision' => 'skip',
+                        'reason_code' => 'irrigation_not_required',
+                        'reason' => 'Влажность в норме',
+                    ],
+                ],
+            ], 200),
         ]);
 
         $response = $this->actingAs($user)
@@ -287,5 +396,126 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('data.timeline.0.event_type', 'TASK_STARTED')
             ->assertJsonPath('data.timeline.1.event_type', 'DECISION_MADE')
             ->assertJsonPath('data.timeline.1.reason_code', 'irrigation_not_required');
+    }
+
+    public function test_scheduler_task_timeline_falls_back_to_result_fields_when_root_fields_missing(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        SchedulerLog::create([
+            'task_name' => 'ae_scheduler_task_st-result-timeline',
+            'status' => 'failed',
+            'details' => [
+                'task_id' => 'st-result-timeline',
+                'zone_id' => $zone->id,
+                'task_type' => 'diagnostics',
+                'status' => 'failed',
+                'correlation_id' => 'sch:z'.$zone->id.':diagnostics:result',
+            ],
+        ]);
+
+        $payloadColumn = Schema::hasColumn('zone_events', 'payload_json') ? 'payload_json' : 'details';
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zone->id,
+            'type' => 'TASK_FINISHED',
+            $payloadColumn => json_encode([
+                'event_id' => 'evt-result-1',
+                'event_seq' => 1,
+                'event_type' => 'TASK_FINISHED',
+                'task_id' => 'st-result-timeline',
+                'correlation_id' => 'sch:z'.$zone->id.':diagnostics:result',
+                'task_type' => 'diagnostics',
+                'result' => [
+                    'action_required' => true,
+                    'decision' => 'execute',
+                    'reason_code' => 'execution_exception',
+                    'reason' => 'Исключение во время исполнения',
+                    'error_code' => 'execution_exception',
+                ],
+            ]),
+            'created_at' => now()->subSeconds(3),
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/scheduler/task/st-result-timeline' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => 'st-result-timeline',
+                    'zone_id' => $zone->id,
+                    'task_type' => 'diagnostics',
+                    'status' => 'failed',
+                    'correlation_id' => 'sch:z'.$zone->id.':diagnostics:result',
+                    'error_code' => 'execution_exception',
+                    'result' => [
+                        'action_required' => true,
+                        'decision' => 'execute',
+                        'reason_code' => 'execution_exception',
+                        'reason' => 'Исключение во время исполнения',
+                        'error_code' => 'execution_exception',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks/st-result-timeline");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonCount(1, 'data.timeline')
+            ->assertJsonPath('data.timeline.0.event_type', 'TASK_FINISHED')
+            ->assertJsonPath('data.timeline.0.action_required', true)
+            ->assertJsonPath('data.timeline.0.decision', 'execute')
+            ->assertJsonPath('data.timeline.0.reason_code', 'execution_exception')
+            ->assertJsonPath('data.timeline.0.error_code', 'execution_exception');
+    }
+
+    public function test_scheduler_task_show_includes_command_effect_confirmation_fields(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+
+        Http::fake([
+            'http://automation-engine:9405/scheduler/task/st-done-1' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => 'st-done-1',
+                    'zone_id' => $zone->id,
+                    'task_type' => 'irrigation',
+                    'status' => 'completed',
+                    'created_at' => now()->subMinute()->toIso8601String(),
+                    'updated_at' => now()->toIso8601String(),
+                    'scheduled_for' => now()->subMinute()->toIso8601String(),
+                    'due_at' => now()->addSeconds(30)->toIso8601String(),
+                    'expires_at' => now()->addMinutes(2)->toIso8601String(),
+                    'correlation_id' => 'sch:z'.$zone->id.':irrigation:done',
+                    'result' => [
+                        'success' => true,
+                        'command_submitted' => true,
+                        'command_effect_confirmed' => true,
+                        'commands_total' => 1,
+                        'commands_effect_confirmed' => 1,
+                        'commands_failed' => 0,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks/st-done-1");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.command_submitted', true)
+            ->assertJsonPath('data.command_effect_confirmed', true)
+            ->assertJsonPath('data.commands_total', 1)
+            ->assertJsonPath('data.commands_effect_confirmed', 1)
+            ->assertJsonPath('data.commands_failed', 0);
     }
 }

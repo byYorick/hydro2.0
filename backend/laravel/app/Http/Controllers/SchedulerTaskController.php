@@ -23,14 +23,14 @@ class SchedulerTaskController extends Controller
         'DECISION_MADE',
         'COMMAND_DISPATCHED',
         'COMMAND_FAILED',
+        'COMMAND_EFFECT_NOT_CONFIRMED',
         'TASK_FINISHED',
         'SCHEDULE_TASK_ACCEPTED',
         'SCHEDULE_TASK_COMPLETED',
         'SCHEDULE_TASK_FAILED',
         'SCHEDULE_TASK_EXECUTION_STARTED',
         'SCHEDULE_TASK_EXECUTION_FINISHED',
-        'SCHEDULE_TASK_FALLBACK_EVENT_ONLY',
-        'SCHEDULE_DIAGNOSTICS_REQUESTED',
+        'DIAGNOSTICS_SERVICE_UNAVAILABLE',
         'SELF_TASK_ENQUEUED',
         'SELF_TASK_DISPATCHED',
         'SELF_TASK_DISPATCH_FAILED',
@@ -38,6 +38,7 @@ class SchedulerTaskController extends Controller
         'CYCLE_START_INITIATED',
         'NODES_AVAILABILITY_CHECKED',
         'TANK_LEVEL_CHECKED',
+        'TANK_LEVEL_STALE',
         'TANK_REFILL_STARTED',
         'TANK_REFILL_COMPLETED',
         'TANK_REFILL_TIMEOUT',
@@ -118,19 +119,19 @@ class SchedulerTaskController extends Controller
             ]);
         }
 
-        $dbTask = $this->loadTaskFromSchedulerLogs($taskId, $zone->id);
-        if ($dbTask !== null) {
-            return response()->json([
-                'status' => 'ok',
-                'data' => $dbTask,
-            ]);
-        }
-
         if ($automationError instanceof ConnectionException || $automationError instanceof RequestException) {
             return response()->json([
                 'status' => 'error',
                 'code' => 'UPSTREAM_UNAVAILABLE',
-                'message' => 'Automation-engine недоступен, и локальный снимок задачи не найден.',
+                'message' => 'Automation-engine недоступен.',
+            ], 503);
+        }
+
+        if ($automationError !== null) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UPSTREAM_ERROR',
+                'message' => 'Ошибка при получении статуса из automation-engine.',
             ], 503);
         }
 
@@ -168,40 +169,21 @@ class SchedulerTaskController extends Controller
         $response->throw();
 
         $payload = $response->json();
-        if (! is_array($payload) || ($payload['status'] ?? null) !== 'ok') {
-            return null;
+        if (! is_array($payload)) {
+            throw new \RuntimeException('automation_engine_invalid_payload');
+        }
+        if (($payload['status'] ?? null) !== 'ok') {
+            $code = is_string($payload['code'] ?? null) ? $payload['code'] : 'unknown';
+            $message = is_string($payload['message'] ?? null) ? $payload['message'] : 'no_message';
+            throw new \RuntimeException("automation_engine_non_ok_status: {$code}: {$message}");
         }
 
         $data = $payload['data'] ?? null;
-
-        return is_array($data) ? $data : null;
-    }
-
-    private function loadTaskFromSchedulerLogs(string $taskId, int $zoneId): ?array
-    {
-        $rows = SchedulerLog::query()
-            ->where('task_name', 'ae_scheduler_task_'.$taskId)
-            ->whereRaw("jsonb_exists(details, 'zone_id') AND (details->>'zone_id') ~ '^[0-9]+$' AND (details->>'zone_id')::int = ?", [$zoneId])
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get(['id', 'task_name', 'status', 'details', 'created_at']);
-
-        if ($rows->isEmpty()) {
-            return null;
+        if (! is_array($data)) {
+            throw new \RuntimeException('automation_engine_missing_data');
         }
 
-        $latest = $rows->first();
-        $details = $this->normalizeDetails($latest->details);
-        $payload = $this->normalizeTaskPayload($details, $taskId, 'scheduler_logs');
-        $payload['status'] = (string) ($details['status'] ?? $latest->status ?? 'unknown');
-        $payload['lifecycle'] = $this->buildLifecycle($taskId, $zoneId, $rows);
-        $payload['timeline'] = $this->buildTaskTimeline(
-            $zoneId,
-            (string) ($payload['task_id'] ?? $taskId),
-            is_string($payload['correlation_id'] ?? null) ? $payload['correlation_id'] : null
-        );
-
-        return $payload;
+        return $data;
     }
 
     /**
@@ -219,7 +201,18 @@ class SchedulerTaskController extends Controller
                 ->orderBy('id')
                 ->get(['id', 'status', 'details', 'created_at']);
         } else {
-            $rows = $rows->sortBy('created_at')->values();
+            $rows = $rows
+                ->sort(static function (SchedulerLog $left, SchedulerLog $right): int {
+                    $leftAt = (string) ($left->created_at?->toIso8601String() ?? '');
+                    $rightAt = (string) ($right->created_at?->toIso8601String() ?? '');
+                    $createdAtCompare = strcmp($leftAt, $rightAt);
+                    if ($createdAtCompare !== 0) {
+                        return $createdAtCompare;
+                    }
+
+                    return (int) ($left->id ?? 0) <=> (int) ($right->id ?? 0);
+                })
+                ->values();
         }
 
         return $rows->map(function (SchedulerLog $row): array {
@@ -258,14 +251,15 @@ class SchedulerTaskController extends Controller
                 ];
             }
 
+            $rowId = (int) ($row->id ?? 0);
             $bucket[$taskId]['lifecycle'][] = [
                 'status' => (string) ($details['status'] ?? $row->status ?? 'unknown'),
                 'at' => $row->created_at?->toIso8601String(),
                 'error' => $details['error'] ?? null,
                 'source' => 'scheduler_logs',
+                '_row_id' => $rowId,
             ];
 
-            $rowId = (int) ($row->id ?? 0);
             $isNewerTimestamp = $row->created_at && $bucket[$taskId]['updated_at'] && $row->created_at->gt($bucket[$taskId]['updated_at']);
             $isSameTimestampButNewerId = $row->created_at
                 && $bucket[$taskId]['updated_at']
@@ -281,7 +275,19 @@ class SchedulerTaskController extends Controller
 
         $items = collect($bucket)
             ->map(function (array $entry): array {
-                usort($entry['lifecycle'], static fn (array $a, array $b): int => strcmp((string) ($a['at'] ?? ''), (string) ($b['at'] ?? '')));
+                usort($entry['lifecycle'], static function (array $a, array $b): int {
+                    $timestampCompare = strcmp((string) ($a['at'] ?? ''), (string) ($b['at'] ?? ''));
+                    if ($timestampCompare !== 0) {
+                        return $timestampCompare;
+                    }
+
+                    return (int) ($a['_row_id'] ?? 0) <=> (int) ($b['_row_id'] ?? 0);
+                });
+                $entry['lifecycle'] = array_map(static function (array $item): array {
+                    unset($item['_row_id']);
+
+                    return $item;
+                }, $entry['lifecycle']);
 
                 $payload = $entry['payload'];
                 $payload['lifecycle'] = $entry['lifecycle'];
@@ -347,6 +353,7 @@ class SchedulerTaskController extends Controller
 
         return $rows->map(function ($row) use ($normalizedTaskId, $normalizedCorrelationId): array {
             $details = $this->normalizeDetails($row->details ?? null);
+            $result = is_array($details['result'] ?? null) ? $details['result'] : [];
             $eventType = is_string($details['event_type'] ?? null) && $details['event_type'] !== ''
                 ? $details['event_type']
                 : (string) ($row->type ?? 'unknown');
@@ -358,6 +365,39 @@ class SchedulerTaskController extends Controller
 
             $eventIdRaw = $details['event_id'] ?? $details['ws_event_id'] ?? $row->id;
             $actionRequired = $this->normalizeOptionalBool($details['action_required'] ?? null);
+            if ($actionRequired === null) {
+                $actionRequired = $this->normalizeOptionalBool($result['action_required'] ?? null);
+            }
+
+            $decision = is_string($details['decision'] ?? null) ? $details['decision'] : null;
+            if ($decision === null && is_string($result['decision'] ?? null)) {
+                $decision = $result['decision'];
+            }
+
+            $reasonCode = is_string($details['reason_code'] ?? null) ? $details['reason_code'] : null;
+            if ($reasonCode === null && is_string($result['reason_code'] ?? null)) {
+                $reasonCode = $result['reason_code'];
+            }
+
+            $reason = is_string($details['reason'] ?? null) ? $details['reason'] : null;
+            if ($reason === null && is_string($result['reason'] ?? null)) {
+                $reason = $result['reason'];
+            }
+
+            $errorCode = is_string($details['error_code'] ?? null) ? $details['error_code'] : null;
+            if ($errorCode === null && is_string($result['error_code'] ?? null)) {
+                $errorCode = $result['error_code'];
+            }
+
+            $commandSubmitted = $this->normalizeOptionalBool($details['command_submitted'] ?? null);
+            if ($commandSubmitted === null) {
+                $commandSubmitted = $this->normalizeOptionalBool($result['command_submitted'] ?? null);
+            }
+
+            $commandEffectConfirmed = $this->normalizeOptionalBool($details['command_effect_confirmed'] ?? null);
+            if ($commandEffectConfirmed === null) {
+                $commandEffectConfirmed = $this->normalizeOptionalBool($result['command_effect_confirmed'] ?? null);
+            }
 
             return [
                 'event_id' => (string) $eventIdRaw,
@@ -369,14 +409,17 @@ class SchedulerTaskController extends Controller
                 'correlation_id' => is_string($details['correlation_id'] ?? null) ? $details['correlation_id'] : ($normalizedCorrelationId !== '' ? $normalizedCorrelationId : null),
                 'task_type' => is_string($details['task_type'] ?? null) ? $details['task_type'] : null,
                 'action_required' => $actionRequired,
-                'decision' => is_string($details['decision'] ?? null) ? $details['decision'] : null,
-                'reason_code' => is_string($details['reason_code'] ?? null) ? $details['reason_code'] : null,
-                'reason' => is_string($details['reason'] ?? null) ? $details['reason'] : null,
+                'decision' => $decision,
+                'reason_code' => $reasonCode,
+                'reason' => $reason,
                 'node_uid' => is_string($details['node_uid'] ?? null) ? $details['node_uid'] : null,
                 'channel' => is_string($details['channel'] ?? null) ? $details['channel'] : null,
                 'cmd' => is_string($details['cmd'] ?? null) ? $details['cmd'] : null,
                 'status' => is_string($details['status'] ?? null) ? $details['status'] : null,
-                'error_code' => is_string($details['error_code'] ?? null) ? $details['error_code'] : null,
+                'error_code' => $errorCode,
+                'command_submitted' => $commandSubmitted,
+                'command_effect_confirmed' => $commandEffectConfirmed,
+                'terminal_status' => is_string($details['terminal_status'] ?? null) ? $details['terminal_status'] : null,
                 'details' => $details,
                 'source' => 'zone_events',
             ];
@@ -410,6 +453,37 @@ class SchedulerTaskController extends Controller
             $reason = $result['reason'];
         }
 
+        $commandSubmitted = $this->normalizeOptionalBool($raw['command_submitted'] ?? null);
+        if ($commandSubmitted === null) {
+            $commandSubmitted = $this->normalizeOptionalBool($result['command_submitted'] ?? null);
+        }
+
+        $commandEffectConfirmed = $this->normalizeOptionalBool($raw['command_effect_confirmed'] ?? null);
+        if ($commandEffectConfirmed === null) {
+            $commandEffectConfirmed = $this->normalizeOptionalBool($result['command_effect_confirmed'] ?? null);
+        }
+
+        $commandsTotal = null;
+        if (isset($raw['commands_total']) && is_numeric($raw['commands_total'])) {
+            $commandsTotal = (int) $raw['commands_total'];
+        } elseif (isset($result['commands_total']) && is_numeric($result['commands_total'])) {
+            $commandsTotal = (int) $result['commands_total'];
+        }
+
+        $commandsEffectConfirmed = null;
+        if (isset($raw['commands_effect_confirmed']) && is_numeric($raw['commands_effect_confirmed'])) {
+            $commandsEffectConfirmed = (int) $raw['commands_effect_confirmed'];
+        } elseif (isset($result['commands_effect_confirmed']) && is_numeric($result['commands_effect_confirmed'])) {
+            $commandsEffectConfirmed = (int) $result['commands_effect_confirmed'];
+        }
+
+        $commandsFailed = null;
+        if (isset($raw['commands_failed']) && is_numeric($raw['commands_failed'])) {
+            $commandsFailed = (int) $raw['commands_failed'];
+        } elseif (isset($result['commands_failed']) && is_numeric($result['commands_failed'])) {
+            $commandsFailed = (int) $result['commands_failed'];
+        }
+
         return [
             'task_id' => (string) ($raw['task_id'] ?? $taskId),
             'zone_id' => isset($raw['zone_id']) ? (int) $raw['zone_id'] : null,
@@ -418,12 +492,19 @@ class SchedulerTaskController extends Controller
             'created_at' => $raw['created_at'] ?? null,
             'updated_at' => $raw['updated_at'] ?? null,
             'scheduled_for' => $raw['scheduled_for'] ?? null,
+            'due_at' => $raw['due_at'] ?? null,
+            'expires_at' => $raw['expires_at'] ?? null,
             'correlation_id' => $raw['correlation_id'] ?? null,
             'result' => $result,
             'action_required' => $actionRequired,
             'decision' => $decision,
             'reason_code' => $reasonCode,
             'reason' => $reason,
+            'command_submitted' => $commandSubmitted,
+            'command_effect_confirmed' => $commandEffectConfirmed,
+            'commands_total' => $commandsTotal,
+            'commands_effect_confirmed' => $commandsEffectConfirmed,
+            'commands_failed' => $commandsFailed,
             'error' => is_string($raw['error'] ?? null) ? $raw['error'] : null,
             'error_code' => is_string($raw['error_code'] ?? null) ? $raw['error_code'] : null,
             'source' => $source,

@@ -67,9 +67,8 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <input
-            v-model="harvestModal.batchLabel"
+            v-model="harvestBatchLabel"
             class="input-field mt-1 w-full"
             placeholder="Например: Batch-042"
           />
@@ -91,9 +90,8 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <textarea
-            v-model="abortModal.notes"
+            v-model="abortNotes"
             class="input-field mt-1 w-full h-20 resize-none"
             placeholder="Короткое описание причины"
           ></textarea>
@@ -115,29 +113,26 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <input
-            v-model="changeRecipeModal.recipeRevisionId"
+            v-model="changeRecipeRevisionId"
             class="input-field mt-1 w-full"
             placeholder="Например: 42"
           />
         </div>
         <div class="flex flex-wrap gap-2">
-          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.applyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.applyMode = 'now'"
+            :class="changeRecipeApplyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeApplyMode = 'now'"
           >
             Применить сейчас
           </button>
-          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.applyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.applyMode = 'next_phase'"
+            :class="changeRecipeApplyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeApplyMode = 'next_phase'"
           >
             Со следующей фазы
           </button>
@@ -148,6 +143,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { CommandType, Device } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
@@ -208,9 +204,9 @@ interface Props {
   pumpCalibrationSaveSeq: number
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'close-action'): void
   (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
   (e: 'close-pump-calibration'): void
@@ -227,5 +223,37 @@ defineEmits<{
   (e: 'confirm-abort'): void
   (e: 'close-change-recipe'): void
   (e: 'confirm-change-recipe'): void
+  (e: 'update-harvest-batch-label', value: string): void
+  (e: 'update-abort-notes', value: string): void
+  (e: 'update-change-recipe-revision-id', value: string): void
+  (e: 'update-change-recipe-apply-mode', value: 'now' | 'next_phase'): void
 }>()
+
+const harvestBatchLabel = computed({
+  get: () => props.harvestModal.batchLabel,
+  set: (value: string) => {
+    emit('update-harvest-batch-label', value)
+  },
+})
+
+const abortNotes = computed({
+  get: () => props.abortModal.notes,
+  set: (value: string) => {
+    emit('update-abort-notes', value)
+  },
+})
+
+const changeRecipeRevisionId = computed({
+  get: () => props.changeRecipeModal.recipeRevisionId,
+  set: (value: string) => {
+    emit('update-change-recipe-revision-id', value)
+  },
+})
+
+const changeRecipeApplyMode = computed({
+  get: () => props.changeRecipeModal.applyMode,
+  set: (value: 'now' | 'next_phase') => {
+    emit('update-change-recipe-apply-mode', value)
+  },
+})
 </script>

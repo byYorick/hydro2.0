@@ -18,7 +18,6 @@ class SchedulerTaskMapping:
     default_params: Dict[str, Any] = field(default_factory=dict)
     default_duration_sec: Optional[float] = None
     duration_target_paths: Tuple[Tuple[str, str], ...] = ()
-    fallback_mode: str = "none"  # none|zone_service|event_only
 
 
 _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
@@ -44,7 +43,6 @@ _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
         state_key="state",
         default_state=True,
         default_params={"state": True},
-        fallback_mode="zone_service",
     ),
     "solution_change": SchedulerTaskMapping(
         task_type="solution_change",
@@ -63,7 +61,6 @@ _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
     ),
     "diagnostics": SchedulerTaskMapping(
         task_type="diagnostics",
-        fallback_mode="zone_service",
     ),
 }
 
@@ -96,7 +93,6 @@ def get_task_mapping(task_type: str, config_payload: Optional[Dict[str, Any]] = 
     - state_key / default_state
     - params (default params)
     - duration_sec
-    - fallback_mode
     """
     normalized_type = str(task_type or "").strip().lower()
     base = _DEFAULT_MAPPING.get(normalized_type)
@@ -129,5 +125,4 @@ def get_task_mapping(task_type: str, config_payload: Optional[Dict[str, Any]] = 
         default_params=merged_params,
         default_duration_sec=duration_value,
         duration_target_paths=base.duration_target_paths,
-        fallback_mode=str(execution.get("fallback_mode")).strip() if execution.get("fallback_mode") else base.fallback_mode,
     )
