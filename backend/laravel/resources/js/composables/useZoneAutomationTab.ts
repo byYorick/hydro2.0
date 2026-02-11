@@ -330,6 +330,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const schedulerTaskSearch = ref('')
   const schedulerTaskPreset = ref<SchedulerTaskPreset>('all')
   const schedulerTasksUpdatedAt = ref<string | null>(null)
+  const pendingTargetsSyncForZoneChange = ref(false)
   let schedulerTasksPollTimer: ReturnType<typeof setTimeout> | null = null
   let schedulerTaskListRequestVersion = 0
   let schedulerTaskLookupRequestVersion = 0
@@ -874,20 +875,23 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   watch(lightingForm, saveProfileToStorage, { deep: true })
   watch(lastAppliedAt, saveProfileToStorage)
 
-  function hydrateAutomationProfileFromCurrentZone(): void {
+  function hydrateAutomationProfileFromCurrentZone(options?: { includeTargets?: boolean }): void {
+    const includeTargets = options?.includeTargets ?? true
     isHydratingProfile.value = true
     try {
       resetFormsToRecommended({ climateForm, waterForm, lightingForm })
       lastAppliedAt.value = null
       loadProfileFromStorage()
-      applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
+      if (includeTargets) {
+        applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
+      }
     } finally {
       isHydratingProfile.value = false
     }
   }
 
   onMounted(() => {
-    hydrateAutomationProfileFromCurrentZone()
+    hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
     void fetchRecentSchedulerTasks()
     if (import.meta.env.MODE !== 'test') {
       void pollSchedulerTasksCycle()
@@ -907,6 +911,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   watch(
     () => props.zoneId,
     () => {
+      pendingTargetsSyncForZoneChange.value = true
       schedulerTaskListRequestVersion += 1
       schedulerTaskLookupRequestVersion += 1
       schedulerTaskIdInput.value = ''
@@ -916,7 +921,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       schedulerTasksUpdatedAt.value = null
       schedulerTaskListLoading.value = false
       schedulerTaskLookupLoading.value = false
-      hydrateAutomationProfileFromCurrentZone()
+      hydrateAutomationProfileFromCurrentZone({ includeTargets: false })
       void fetchRecentSchedulerTasks()
       scheduleSchedulerTasksPoll()
     }
@@ -926,6 +931,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     () => props.targets,
     (targets) => {
       applyAutomationFromRecipe(targets, { climateForm, waterForm, lightingForm })
+      pendingTargetsSyncForZoneChange.value = false
     },
     { deep: true }
   )

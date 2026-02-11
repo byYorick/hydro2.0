@@ -601,6 +601,41 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.climateForm.dayTemp).toBe(31)
   })
 
+  it('не применяет targets предыдущей зоны при смене zoneId до обновления props', async () => {
+    window.localStorage.setItem(
+      'zone:2:automation-profile:v2',
+      JSON.stringify({
+        climate: { dayTemp: 19 },
+      })
+    )
+
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 1,
+        targets: {
+          extensions: {
+            subsystems: {
+              climate: {
+                targets: {
+                  temperature: { day: 30 },
+                },
+              },
+            },
+          },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+    const vm = wrapper.vm as any
+    expect(vm.climateForm.dayTemp).toBe(30)
+
+    await wrapper.setProps({ zoneId: 2 })
+    await flushPromises()
+
+    expect(vm.climateForm.dayTemp).toBe(19)
+  })
+
   it('очищает список scheduler-задач сразу при смене зоны', async () => {
     const deferred = <T>() => {
       let resolve!: (value: T) => void
