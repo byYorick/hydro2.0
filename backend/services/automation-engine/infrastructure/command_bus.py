@@ -72,6 +72,7 @@ class CommandBus:
         self.audit = command_audit or CommandAudit()
         self.http_timeout = http_timeout
         self.api_circuit_breaker = api_circuit_breaker
+        self._zone_gh_uid_cache: Dict[int, str] = {}
         if enforce_node_zone_assignment is None:
             raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "0")).strip().lower()
             self.enforce_node_zone_assignment = raw_guard in _TRUE_VALUES
@@ -200,6 +201,51 @@ class CommandBus:
             return False
 
         return True
+
+    async def _resolve_greenhouse_uid_for_zone(self, zone_id: int) -> str:
+        """
+        Определяет canonical greenhouse_uid для зоны.
+        Использует fallback на self.gh_uid, если БД временно недоступна.
+        """
+        cached = self._zone_gh_uid_cache.get(zone_id)
+        if cached:
+            return cached
+
+        fallback_gh_uid = self.gh_uid
+        try:
+            rows = await fetch(
+                """
+                SELECT g.uid AS gh_uid
+                FROM zones z
+                JOIN greenhouses g ON g.id = z.greenhouse_id
+                WHERE z.id = $1
+                LIMIT 1
+                """,
+                zone_id,
+            )
+            if rows:
+                resolved = str(rows[0].get("gh_uid") or "").strip()
+                if resolved:
+                    self._zone_gh_uid_cache[zone_id] = resolved
+                    if fallback_gh_uid and fallback_gh_uid != resolved:
+                        logger.warning(
+                            "Zone %s: overridden greenhouse_uid from %s to %s for command publish",
+                            zone_id,
+                            fallback_gh_uid,
+                            resolved,
+                        )
+                    return resolved
+        except Exception as exc:
+            logger.warning(
+                "Zone %s: failed to resolve greenhouse_uid from DB, fallback to configured value: %s",
+                zone_id,
+                exc,
+            )
+
+        if fallback_gh_uid:
+            return fallback_gh_uid
+
+        raise RuntimeError(f"Unable to resolve greenhouse_uid for zone_id={zone_id}")
     
     async def start(self):
         """Инициализировать долгоживущий HTTP клиент."""
@@ -364,9 +410,10 @@ class CommandBus:
                 trace_id = cmd_id
             
             # Формируем запрос к history-logger
+            effective_gh_uid = await self._resolve_greenhouse_uid_for_zone(zone_id)
             payload = {
                 "cmd": cmd,
-                "greenhouse_uid": self.gh_uid,
+                "greenhouse_uid": effective_gh_uid,
                 "zone_id": zone_id,
                 "node_uid": node_uid,
                 "channel": channel,

@@ -48,6 +48,34 @@ async def test_publish_command_success():
 
 
 @pytest.mark.asyncio
+async def test_publish_command_uses_zone_greenhouse_uid_when_available():
+    """Command payload must use canonical greenhouse uid resolved from zone_id."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"gh_uid": "gh-zone-42"}])), \
+         patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-fallback",
+            history_logger_url="http://history-logger:9300",
+            history_logger_token="test-token",
+        )
+        result = await command_bus.publish_command(42, "nd-irrig-42", "default", "run_pump", {"duration_ms": 1000})
+
+        assert result is True
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["greenhouse_uid"] == "gh-zone-42"
+
+
+@pytest.mark.asyncio
 async def test_publish_command_http_error():
     """Test command publication with HTTP error."""
     with patch("httpx.AsyncClient") as mock_client_class:

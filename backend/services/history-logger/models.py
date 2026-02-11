@@ -55,6 +55,12 @@ class CommandRequest(BaseModel):
     """Request model for publishing commands."""
 
     cmd: Optional[str] = Field(None, max_length=64, description="Command name")
+    legacy_type: Optional[str] = Field(
+        None,
+        alias="type",
+        max_length=64,
+        description="Legacy command alias (deprecated, rejected)",
+    )
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
     source: Optional[str] = Field(None, max_length=64, description="Command source (automation/api/device)")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")

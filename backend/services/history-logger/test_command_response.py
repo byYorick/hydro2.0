@@ -119,3 +119,24 @@ async def test_handle_command_response_unknown_status():
         mock_fetch.assert_not_called()
         mock_send.assert_not_called()
         mock_record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_no_effect_records_warning_level():
+    """NO_EFFECT должен логироваться как warning для синхронизации с automation-engine."""
+    from mqtt_handlers import handle_command_response
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps({"cmd_id": "cmd-4", "status": "NO_EFFECT"}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_record.assert_awaited_once()
+        assert mock_record.await_args.kwargs["status"] == "no_effect"
+        assert mock_record.await_args.kwargs["level"] == "warning"

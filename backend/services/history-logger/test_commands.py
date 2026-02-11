@@ -78,6 +78,54 @@ def mock_command_routes_db():
 
 
 @pytest.mark.asyncio
+async def test_ensure_command_for_publish_handles_unique_violation_race():
+    """Concurrent insert race by cmd_id must not end as 503 error."""
+    import asyncpg
+    from command_routes import _ensure_command_for_publish
+
+    calls = {"commands_fetch": 0}
+
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from commands where cmd_id = $1" in normalized:
+            if calls["commands_fetch"] == 0:
+                calls["commands_fetch"] += 1
+                return []
+            return [{
+                "status": "SENT",
+                "source": "automation",
+                "zone_id": 1,
+                "node_id": 1,
+                "channel": "default",
+                "cmd": "run_pump",
+            }]
+        return []
+
+    async def _execute(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "insert into commands" in normalized:
+            raise asyncpg.UniqueViolationError("duplicate key value violates unique constraint")
+        return "OK"
+
+    with patch("command_routes.fetch", new=AsyncMock(side_effect=_fetch)), \
+         patch("command_routes.execute", new=AsyncMock(side_effect=_execute)):
+        response = await _ensure_command_for_publish(
+            cmd_id="cmd-race-1",
+            zone_id=1,
+            node_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd_name="run_pump",
+            params={"duration_ms": 1000},
+            command_source="automation",
+        )
+
+    assert response is not None
+    assert response["status"] == "ok"
+    assert response["data"]["command_id"] == "cmd-race-1"
+
+
+@pytest.mark.asyncio
 async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /commands endpoint."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
@@ -157,7 +205,7 @@ async def test_publish_command_rejects_pending_assignment(client, auth_headers, 
 
 @pytest.mark.asyncio
 async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_client):
-    """Test command publication with legacy 'type' field rejected."""
+    """Test command publication rejects legacy 'type' even when 'cmd' is present."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
          patch("command_routes.get_settings") as mock_settings:
         
@@ -165,6 +213,7 @@ async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_clien
         mock_settings.return_value = Mock(mqtt_zone_format="id")
         
         payload = {
+            "cmd": "run_pump",
             "type": "run_pump",  # Legacy format
             "greenhouse_uid": "gh-1",
             "zone_id": 1,
@@ -176,7 +225,7 @@ async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_clien
         response = client.post("/commands", json=payload, headers=auth_headers)
 
         assert response.status_code == 400
-        assert "cmd" in response.json()["detail"]
+        assert "Legacy field 'type'" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -286,6 +335,31 @@ async def test_publish_zone_command_missing_fields(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_publish_zone_command_rejects_legacy_type(client, auth_headers, mock_mqtt_client):
+    """Zone command endpoint must reject legacy 'type' alias."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+        
+        payload = {
+            "cmd": "run_pump",
+            "type": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "params": {"duration_ms": 60000}
+        }
+        
+        response = client.post("/zones/1/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 400
+        assert "Legacy field 'type'" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
 async def test_publish_node_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /nodes/{node_uid}/commands endpoint."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
@@ -322,6 +396,31 @@ async def test_publish_node_command_missing_fields(client, auth_headers):
     response = client.post("/nodes/nd-irrig-1/commands", json=payload, headers=auth_headers)
     assert response.status_code == 400
     assert "zone_id" in response.json()["detail"] or "channel" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_publish_node_command_rejects_legacy_type(client, auth_headers, mock_mqtt_client):
+    """Node command endpoint must reject legacy 'type' alias."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings:
+        
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+        
+        payload = {
+            "cmd": "run_pump",
+            "type": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "channel": "default",
+            "params": {"duration_ms": 60000}
+        }
+        
+        response = client.post("/nodes/nd-irrig-1/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 400
+        assert "Legacy field 'type'" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio
@@ -496,3 +595,87 @@ async def test_publish_command_zone_uid_format(client, auth_headers, mock_mqtt_c
         assert response.status_code == 200
         # Проверяем, что zone_uid был получен из БД
         mock_get_uid.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_publish_command_fails_closed_on_db_error_before_publish(
+    client, auth_headers, mock_mqtt_client
+):
+    """Команда не должна публиковаться в MQTT, если БД недоступна при проверке cmd_id."""
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes where uid = $1" in normalized:
+            return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+        if "from commands where cmd_id = $1" in normalized:
+            raise Exception("db unavailable")
+        return []
+
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings, \
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+        mock_fetch.side_effect = _fetch_side_effect
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "params": {"duration_ms": 60000},
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 503
+        assert "Unable to persist command" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_cmd_id_collision(
+    client, auth_headers, mock_mqtt_client
+):
+    """Команда с тем же cmd_id, но другим target должна быть отклонена."""
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes where uid = $1" in normalized:
+            return [{"id": 1, "zone_id": 1, "pending_zone_id": None}]
+        if "from commands where cmd_id = $1" in normalized:
+            return [
+                {
+                    "status": "QUEUED",
+                    "source": "automation",
+                    "zone_id": 2,
+                    "node_id": 77,
+                    "channel": "default",
+                    "cmd": "run_pump",
+                }
+            ]
+        return []
+
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings, \
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+        mock_fetch.side_effect = _fetch_side_effect
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "cmd_id": "collision-cmd-id-1",
+            "params": {"duration_ms": 60000},
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 409
+        assert "already belongs to another command" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called

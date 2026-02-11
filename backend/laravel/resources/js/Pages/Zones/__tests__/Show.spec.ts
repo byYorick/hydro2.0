@@ -728,6 +728,37 @@ describe('Zones/Show.vue', () => {
     expect(fetchHistoryMock).toHaveBeenCalled()
   })
 
+  it('не перезаписывает графики устаревшим ответом при быстрых переключениях диапазона', async () => {
+    const wrapper = mount(ZonesShow)
+    expect(wrapper.exists()).toBe(true)
+
+    await new Promise(resolve => setTimeout(resolve, 150))
+
+    fetchHistoryMock.mockReset()
+    fetchHistoryMock.mockImplementation((_zoneId: number, metric: 'PH' | 'EC', params: { from?: string }) => {
+      const isAllRangeRequest = !params?.from
+      const delayMs = isAllRangeRequest ? 60 : 10
+      const value = isAllRangeRequest
+        ? (metric === 'PH' ? 900 : 901)
+        : (metric === 'PH' ? 100 : 101)
+
+      return new Promise(resolve => {
+        setTimeout(() => {
+          resolve([{ ts: '2025-01-27T10:00:00Z', value }])
+        }, delayMs)
+      })
+    })
+
+    const vm = wrapper.vm as any
+    const slowRequest = vm.onChartTimeRangeChange('ALL')
+    const fastRequest = vm.onChartTimeRangeChange('1H')
+    await Promise.all([slowRequest, fastRequest])
+
+    expect(vm.chartTimeRange).toBe('1H')
+    expect(vm.chartDataPh[0]?.value).toBe(100)
+    expect(vm.chartDataEc[0]?.value).toBe(101)
+  })
+
   it('обрабатывает ошибки загрузки графиков', async () => {
     fetchHistoryMock.mockRejectedValueOnce(new Error('Network error'))
     

@@ -146,9 +146,7 @@ async def log_requests(request: Request, call_next):
 
     auth_header = request.headers.get("Authorization", "")
     if auth_header:
-        logger.debug(
-            "[HTTP_REQUEST] Authorization header present: %s...", auth_header[:20]
-        )
+        logger.debug("[HTTP_REQUEST] Authorization header present")
     else:
         logger.debug("[HTTP_REQUEST] No Authorization header")
 

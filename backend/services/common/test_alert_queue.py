@@ -3,7 +3,13 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from common.alert_queue import AlertQueue, retry_worker, send_alert_to_laravel
+from common.alert_queue import (
+    AlertQueue,
+    _PENDING_ALERTS_DLQ_REQUIRED_COLUMNS,
+    _PENDING_ALERTS_REQUIRED_COLUMNS,
+    retry_worker,
+    send_alert_to_laravel,
+)
 
 
 class _AcquireCtx:
@@ -39,6 +45,21 @@ class _ConnStub:
     async def execute(self, query, *args):
         self.executed.append((query, args))
         return "INSERT 0 1"
+
+
+class _SchemaConnStub:
+    def __init__(self, columns_by_table):
+        self.columns_by_table = columns_by_table
+
+    async def fetch(self, query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from information_schema.columns" in normalized:
+            table_name = args[0] if args else None
+            return [
+                {"column_name": column}
+                for column in self.columns_by_table.get(table_name, [])
+            ]
+        return []
 
 
 class _ResponseStub:
@@ -153,3 +174,79 @@ async def test_retry_worker_passes_enqueue_on_failure_false():
     mock_send.assert_awaited_once()
     assert mock_send.await_args.kwargs["enqueue_on_failure"] is False
     queue.mark_retry.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_worker_stops_quickly_when_idle_and_shutdown_set():
+    shutdown_event = asyncio.Event()
+    queue = AsyncMock()
+    queue.get_pending = AsyncMock(return_value=[])
+
+    async def _trigger_shutdown():
+        await asyncio.sleep(0.05)
+        shutdown_event.set()
+
+    stopper = asyncio.create_task(_trigger_shutdown())
+    try:
+        with patch("common.alert_queue.get_alert_queue", new=AsyncMock(return_value=queue)):
+            await asyncio.wait_for(
+                retry_worker(interval=5.0, shutdown_event=shutdown_event),
+                timeout=0.5,
+            )
+    finally:
+        await stopper
+
+
+@pytest.mark.asyncio
+async def test_ensure_table_validates_schema_from_laravel_migrations():
+    queue = AlertQueue()
+    schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+
+    with patch("common.alert_queue.get_pool", new=AsyncMock(return_value=_PoolStub(schema_conn))):
+        await queue.ensure_table()
+
+    assert queue._initialized is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_table_fails_when_required_columns_missing():
+    queue = AlertQueue()
+    schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS - {"next_retry_at"}),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+
+    with patch("common.alert_queue.get_pool", new=AsyncMock(return_value=_PoolStub(schema_conn))):
+        with pytest.raises(RuntimeError, match="pending_alerts"):
+            await queue.ensure_table()
+
+    assert queue._schema_error is not None
+
+
+@pytest.mark.asyncio
+async def test_ensure_table_retries_after_transient_pool_error():
+    queue = AlertQueue()
+    schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+
+    with patch(
+        "common.alert_queue.get_pool",
+        new=AsyncMock(side_effect=[RuntimeError("db temporarily unavailable"), _PoolStub(schema_conn)]),
+    ):
+        with pytest.raises(RuntimeError, match="temporary infrastructure error"):
+            await queue.ensure_table()
+        await queue.ensure_table()
+
+    assert queue._schema_error is None
+    assert queue._initialized is True

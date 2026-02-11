@@ -34,21 +34,25 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 **Публичные эндпоинты** (не требуют аутентификации):
 - `GET /api/system/health` - проверка здоровья сервиса
-- `GET /api/system/config/full` - полная конфигурация (для Python сервисов)
 - `POST /api/python/ingest/telemetry` - инжест телеметрии (token-based)
 - `POST /api/python/commands/ack` - подтверждение команд (token-based)
 - `POST /api/alerts/webhook` - webhook от Alertmanager
 
+**Service-token / служебные эндпоинты**:
+- `GET /api/system/config/full` - полная конфигурация (middleware `verify.python.service`: Sanctum или service token)
+
 **Защищенные эндпоинты** (требуют `auth:sanctum`):
 - Все эндпоинты в разделах 3-7, 9-12 требуют аутентификации через Laravel Sanctum
 - Раздел 2 (Auth): `POST /api/auth/logout` и `GET /api/auth/me` требуют аутентификации
-- Раздел 8 (System): полностью публичный (для Python сервисов)
+- Раздел 8 (System): `GET /api/system/health` публичный, `GET /api/system/config/full` защищен `verify.python.service`
 - Токен передается в заголовке: `Authorization: Bearer <token>`
 - Токен получается через `POST /api/auth/login`
 
 **Роли и права доступа**:
 - `viewer` - только чтение данных
 - `operator` - чтение + управление зонами, подтверждение алертов
+- `agronomist` - управление grow-cycle и ревизиями рецептов
+- `engineer` - инженерные операции и сервисные логи
 - `admin` - полный доступ, включая управление пользователями
 
 Стандартный формат ответа:
@@ -113,7 +117,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 3. Grow Cycles API (НОВОЕ после рефакторинга)
 
-**Аутентификация:** `GET /api/zones/{zone}/grow-cycle` требует `auth:sanctum`; mutating-endpoint-ы grow-cycle требуют роль `operator`, `admin`, `agronomist` или `engineer`.
+**Аутентификация:** `GET /api/zones/{zone}/grow-cycle` требует `auth:sanctum`; mutating-endpoint-ы grow-cycle требуют роль `agronomist` (дополнительно к route-level middleware).
 
 **Центр API для управления циклами выращивания.**
 
@@ -197,26 +201,34 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`.
 
-### 4.1. GET /api/recipes/{recipe}/revisions
-
-- **Описание:** Список ревизий рецепта
-
-### 4.2. POST /api/recipes/{recipe}/revisions
+### 4.1. POST /api/recipes/{recipe}/revisions
 
 - **Описание:** Создать новую ревизию из существующей
 - **Тело:** `{"from_revision_id": 456, "description": "Optimized for summer conditions"}`
 
-### 4.3. PATCH /api/recipe-revisions/{id}
+### 4.2. PATCH /api/recipe-revisions/{id}
 
 - **Описание:** Редактировать DRAFT ревизию
 
-### 4.4. POST /api/recipe-revisions/{id}/publish
+### 4.3. POST /api/recipe-revisions/{id}/publish
 
 - **Описание:** Опубликовать DRAFT ревизию
 
-### 4.5. GET /api/recipe-revisions/{id}
+### 4.4. GET /api/recipe-revisions/{id}
 
 - **Описание:** Получить ревизию с фазами
+
+### 4.5. POST /api/recipe-revisions/{id}/phases
+
+- **Описание:** Добавить фазу в ревизию рецепта
+
+### 4.6. PATCH /api/recipe-revision-phases/{id}
+
+- **Описание:** Обновить фазу ревизии рецепта
+
+### 4.7. DELETE /api/recipe-revision-phases/{id}
+
+- **Описание:** Удалить фазу ревизии рецепта
 
 ---
 
@@ -314,7 +326,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.2. POST /api/greenhouses
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin` или `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание теплицы.
 
 ### 3.3. GET /api/greenhouses/{id}
@@ -324,7 +336,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.3.1. PATCH /api/greenhouses/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin` или `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление теплицы.
 
 ### 3.3.2. DELETE /api/greenhouses/{id}
@@ -373,17 +385,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.6. POST /api/zones
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание зоны.
 
 ### 3.7. PATCH /api/zones/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление параметров зоны (название, тип, лимиты и т.п.).
 
 ### 3.7.1. DELETE /api/zones/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Удаление зоны (если нет активных зависимостей).
 
 ### 3.8. GET /api/nodes
@@ -401,17 +413,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.1. POST /api/nodes
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Регистрация нового узла ESP32.
 
 ### 3.9.2. PATCH /api/nodes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление метаданных узла (name, zone_id).
 
 ### 3.9.3. DELETE /api/nodes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Удаление узла.
 
 ### 3.9.4. GET /api/nodes/{id}/config
@@ -434,7 +446,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.5. POST /api/nodes/{id}/config/publish
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Публикация конфигурации узла через MQTT **отключена**.
 - Узлы отправляют конфиг самостоятельно (config_report), сервер хранит и использует его.
 
@@ -448,7 +460,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.6. POST /api/nodes/{id}/swap
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Замена узла новым узлом с миграцией данных.
 
 Тело запроса:
@@ -582,7 +594,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 4.2. POST /api/recipes
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание рецепта и базового набора фаз.
 
 ### 4.3. GET /api/recipes/{id}
@@ -592,7 +604,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 4.4. PATCH /api/recipes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление рецепта (описание, культура и т.п.).
 
 ### 4.4.1. DELETE /api/recipes/{id}
@@ -600,39 +612,59 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
 - Удаление рецепта.
 
-### 4.5. POST /api/recipes/{id}/phases
+### 4.5. POST /api/recipes/{recipe}/revisions
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Добавление фазы к рецепту.
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Создание новой DRAFT-ревизии рецепта.
 
-### 4.6. PATCH /api/recipe-phases/{id}
+### 4.6. PATCH /api/recipe-revisions/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Обновление параметров фазы (цели pH, EC, продолжительность и т.п.).
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Обновление DRAFT-ревизии.
 
-### 4.6.1. DELETE /api/recipe-phases/{id}
+### 4.6.1. POST /api/recipe-revisions/{id}/publish
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
-- Удаление фазы рецепта.
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Публикация DRAFT-ревизии.
+
+### 4.6.2. GET /api/recipe-revisions/{id}
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- Получение ревизии рецепта с фазами.
+
+### 4.6.3. POST /api/recipe-revisions/{id}/phases
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Добавление фазы ревизии рецепта.
+
+### 4.6.4. PATCH /api/recipe-revision-phases/{id}
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Обновление фазы ревизии.
+
+### 4.6.5. DELETE /api/recipe-revision-phases/{id}
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Удаление фазы ревизии.
 
 ### 4.7. POST /api/zones/{zone}/grow-cycles
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
 - Создание нового grow cycle для зоны.
 
 ### 4.8. POST /api/grow-cycles/{growCycle}/set-phase
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
 - Ручной переход фазы grow cycle.
 
 ### 4.9. POST /api/grow-cycles/{growCycle}/pause
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
 - Приостановка grow cycle.
 
 ### 4.10. POST /api/grow-cycles/{growCycle}/resume
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
 - Возобновление grow cycle.
 
 ### 4.11. GET /api/zones/{id}/cycles
@@ -793,7 +825,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 8.1. GET /api/system/config/full
 
-- **Аутентификация:** Публичный эндпоинт (для Python сервисов)
+- **Аутентификация:** `verify.python.service` (Sanctum или service token)
 - Полная конфигурация теплиц/зон/узлов/каналов для Python/AI.
 
 ### 8.2. GET /api/system/health
@@ -912,7 +944,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 12.1. POST /api/simulations/zone/{zone}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Запуск симуляции Digital Twin для зоны.
   - `full_simulation` (bool, optional) — выполнить полный цикл с созданием сущностей и отчетом.
 

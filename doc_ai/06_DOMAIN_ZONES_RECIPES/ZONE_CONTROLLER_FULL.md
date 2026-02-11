@@ -254,14 +254,14 @@ ALARM_EXIT
 
 # 11. API для контроллеров
 
-## 11.1. POST /api/zones/{id}/pause 
-Приостанавливает ВСЕ контроллеры зоны.
+## 11.1. POST /api/grow-cycles/{growCycle}/pause 
+Приостанавливает активный grow-cycle зоны.
 
-## 11.2. POST /api/zones/{id}/resume 
-Возобновляет работу контроллеров.
+## 11.2. POST /api/grow-cycles/{growCycle}/resume 
+Возобновляет активный grow-cycle.
 
-## 11.3. POST /api/zones/{id}/next_phase 
-Сигнал для смены фазы рецепта.
+## 11.3. POST /api/grow-cycles/{growCycle}/advance-phase 
+Сигнал для перехода на следующую фазу рецепта.
 
 ---
 

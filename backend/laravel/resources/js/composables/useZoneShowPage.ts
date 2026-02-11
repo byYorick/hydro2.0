@@ -164,9 +164,11 @@ export function useZoneShowPage() {
       return typeof id === "string" ? Number.parseInt(id, 10) : id;
     }
 
-    const pathMatch = window.location.pathname.match(/\/zones\/(\d+)/);
-    if (pathMatch && pathMatch[1]) {
-      return Number.parseInt(pathMatch[1], 10);
+    if (typeof window !== "undefined") {
+      const pathMatch = window.location.pathname.match(/\/zones\/(\d+)/);
+      if (pathMatch && pathMatch[1]) {
+        return Number.parseInt(pathMatch[1], 10);
+      }
     }
 
     return undefined;
@@ -500,6 +502,7 @@ export function useZoneShowPage() {
   const chartTimeRange = ref<TelemetryRange>("24H");
   const chartDataPh = ref<Array<{ ts: number; value: number }>>([]);
   const chartDataEc = ref<Array<{ ts: number; value: number }>>([]);
+  let chartDataRequestVersion = 0;
 
   const telemetryRangeKey = computed(() => {
     return zoneId.value ? `zone:${zoneId.value}:telemetryRange` : null;
@@ -519,7 +522,8 @@ export function useZoneShowPage() {
   };
 
   const loadChartData = async (metric: "PH" | "EC", timeRange: TelemetryRange): Promise<Array<{ ts: number; value: number }>> => {
-    if (!zoneId.value) {
+    const requestZoneId = zoneId.value;
+    if (!requestZoneId) {
       return [];
     }
 
@@ -548,11 +552,21 @@ export function useZoneShowPage() {
       if (from) {
         params.from = from.toISOString();
       }
-      return await fetchHistory(zoneId.value, metric, params);
+      return await fetchHistory(requestZoneId, metric, params);
     } catch (err) {
       logger.error(`Failed to load ${metric} history:`, err);
       return [];
     }
+  };
+
+  const refreshChartData = async (timeRange: TelemetryRange): Promise<void> => {
+    const requestVersion = ++chartDataRequestVersion;
+    const [phData, ecData] = await Promise.all([loadChartData("PH", timeRange), loadChartData("EC", timeRange)]);
+    if (requestVersion !== chartDataRequestVersion) {
+      return;
+    }
+    chartDataPh.value = phData;
+    chartDataEc.value = ecData;
   };
 
   const onChartTimeRangeChange = async (newRange: TelemetryRange): Promise<void> => {
@@ -561,8 +575,7 @@ export function useZoneShowPage() {
     }
 
     chartTimeRange.value = newRange;
-    chartDataPh.value = await loadChartData("PH", newRange);
-    chartDataEc.value = await loadChartData("EC", newRange);
+    await refreshChartData(newRange);
   };
 
   watch(chartTimeRange, (value) => {
@@ -578,7 +591,25 @@ export function useZoneShowPage() {
     window.localStorage.setItem(key, value);
   });
 
+  watch(zoneId, (newZoneId, previousZoneId) => {
+    if (newZoneId === previousZoneId) {
+      return;
+    }
+
+    chartDataRequestVersion += 1;
+    chartDataPh.value = [];
+    chartDataEc.value = [];
+
+    if (!newZoneId) {
+      return;
+    }
+
+    void refreshChartData(chartTimeRange.value);
+  });
+
   let unsubscribeZoneCommands: (() => void) | null = null;
+  let stopGrowCycleUpdatedChannel: (() => void) | null = null;
+  let growCycleUpdatedChannelName: string | null = null;
   let propsReloadTimer: ReturnType<typeof setTimeout> | null = null;
   const RELOAD_PROPS_DEBOUNCE_MS = 350;
   const defaultZoneReloadProps = [
@@ -610,11 +641,56 @@ export function useZoneShowPage() {
     }, RELOAD_PROPS_DEBOUNCE_MS);
   };
 
-  onUnmounted(() => {
+  const cleanupZoneRealtimeSubscriptions = (): void => {
     if (unsubscribeZoneCommands) {
       unsubscribeZoneCommands();
       unsubscribeZoneCommands = null;
     }
+
+    if (stopGrowCycleUpdatedChannel) {
+      stopGrowCycleUpdatedChannel();
+      stopGrowCycleUpdatedChannel = null;
+    }
+
+    if (growCycleUpdatedChannelName && typeof window !== "undefined" && window.Echo?.leave) {
+      window.Echo.leave(growCycleUpdatedChannelName);
+      growCycleUpdatedChannelName = null;
+    }
+  };
+
+  const subscribeZoneRealtime = (targetZoneId: number): void => {
+    cleanupZoneRealtimeSubscriptions();
+
+    unsubscribeZoneCommands = subscribeToZoneCommands(targetZoneId, (commandEvent) => {
+      updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message);
+      const finalStatuses = ["DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"];
+      if (finalStatuses.includes(commandEvent.status)) {
+        reloadZoneAfterCommand(targetZoneId, ["zone", "cycles", "active_grow_cycle", "active_cycle"]);
+        reloadZonePageProps();
+      }
+    });
+
+    const echo = typeof window !== "undefined" ? window.Echo : null;
+    if (!echo) {
+      return;
+    }
+
+    const channelName = `hydro.zones.${targetZoneId}`;
+    const channel = echo.private(channelName);
+    growCycleUpdatedChannelName = channelName;
+    channel.listen(".App\\Events\\GrowCycleUpdated", (event: any) => {
+      logger.info("[Zones/Show] GrowCycleUpdated event received", event);
+      reloadZone(targetZoneId, ["zone", "active_grow_cycle", "active_cycle"]);
+      reloadZonePageProps();
+    });
+
+    stopGrowCycleUpdatedChannel = () => {
+      channel.stopListening(".App\\Events\\GrowCycleUpdated");
+    };
+  };
+
+  onUnmounted(() => {
+    cleanupZoneRealtimeSubscriptions();
     if (propsReloadTimer) {
       clearTimeout(propsReloadTimer);
       propsReloadTimer = null;
@@ -660,39 +736,10 @@ export function useZoneShowPage() {
       chartTimeRange.value = storedRange;
     }
 
-    chartDataPh.value = await loadChartData("PH", chartTimeRange.value);
-    chartDataEc.value = await loadChartData("EC", chartTimeRange.value);
+    await refreshChartData(chartTimeRange.value);
 
     if (zoneId.value) {
-      unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
-        updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message);
-        const finalStatuses = ["DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"];
-        if (finalStatuses.includes(commandEvent.status) && zoneId.value) {
-          reloadZoneAfterCommand(zoneId.value, ["zone", "cycles", "active_grow_cycle", "active_cycle"]);
-          reloadZonePageProps();
-        }
-      });
-
-      const echo = window.Echo;
-      if (echo) {
-        const currentZoneId = zoneId.value;
-        const channel = echo.private(`hydro.zones.${currentZoneId}`);
-        channel.listen(".App\\Events\\GrowCycleUpdated", (event: any) => {
-          logger.info("[Zones/Show] GrowCycleUpdated event received", event);
-          if (currentZoneId) {
-            reloadZone(currentZoneId, ["zone", "active_grow_cycle", "active_cycle"]);
-            reloadZonePageProps();
-          }
-        });
-
-        const originalUnsubscribe = unsubscribeZoneCommands;
-        unsubscribeZoneCommands = () => {
-          if (originalUnsubscribe) {
-            originalUnsubscribe();
-          }
-          channel.stopListening(".App\\Events\\GrowCycleUpdated");
-        };
-      }
+      subscribeZoneRealtime(zoneId.value);
     }
 
     const { useStoreEvents } = await import("@/composables/useStoreEvents");
@@ -722,6 +769,19 @@ export function useZoneShowPage() {
       reloadZone(zoneId.value, ["zone", "active_grow_cycle", "active_cycle"]);
       reloadZonePageProps();
     });
+  });
+
+  watch(zoneId, (newZoneId, oldZoneId) => {
+    if (newZoneId === oldZoneId) {
+      return;
+    }
+
+    if (!newZoneId) {
+      cleanupZoneRealtimeSubscriptions();
+      return;
+    }
+
+    subscribeZoneRealtime(newZoneId);
   });
 
   const onRunCycle = async (): Promise<void> => {

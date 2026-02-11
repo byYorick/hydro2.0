@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+import asyncpg
 from fastapi import APIRouter, Body, HTTPException, Request
 
 from auth import _auth_ingest
@@ -36,6 +37,19 @@ from models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_TERMINAL_COMMAND_STATUSES = {"ACK", "DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+_REPUBLISH_ALLOWED_STATUSES = {"QUEUED", "SEND_FAILED"}
+
+
+def _validate_command_request_contract(req: CommandRequest) -> None:
+    if "legacy_type" in req.model_fields_set:
+        raise HTTPException(
+            status_code=400,
+            detail="Legacy field 'type' is not supported, use 'cmd'",
+        )
+    if not req.get_command_name():
+        raise HTTPException(status_code=400, detail="'cmd' is required")
 
 
 def _apply_trace_id(trace_id: Optional[str]) -> None:
@@ -187,6 +201,201 @@ async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
         )
 
     return int(node["id"])
+
+
+def _normalize_command_status(status: Any) -> str:
+    return str(status or "").strip().upper()
+
+
+async def _ensure_command_for_publish(
+    *,
+    cmd_id: str,
+    zone_id: int,
+    node_id: int,
+    node_uid: str,
+    channel: str,
+    cmd_name: str,
+    params: Optional[dict],
+    command_source: str,
+    _retry_on_conflict: bool = True,
+) -> Optional[dict]:
+    """Гарантирует fail-closed подготовку команды в БД перед MQTT publish."""
+    try:
+        existing_rows = await fetch(
+            "SELECT status, source, zone_id, node_id, channel, cmd FROM commands WHERE cmd_id = $1",
+            cmd_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "[COMMAND_PUBLISH] Failed to fetch command before publish: cmd_id=%s zone_id=%s node_uid=%s channel=%s error=%s",
+            cmd_id,
+            zone_id,
+            node_uid,
+            channel,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to persist command, try again later",
+        ) from exc
+
+    if existing_rows:
+        existing = existing_rows[0]
+        if not existing.get("source") and command_source:
+            try:
+                await execute(
+                    "UPDATE commands SET source = $1 WHERE cmd_id = $2",
+                    command_source,
+                    cmd_id,
+                )
+            except Exception:
+                logger.warning(
+                    "[COMMAND_PUBLISH] Failed to backfill source for command %s",
+                    cmd_id,
+                )
+
+        collisions: list[str] = []
+        existing_zone_id = existing.get("zone_id")
+        if existing_zone_id is not None:
+            try:
+                if int(existing_zone_id) != int(zone_id):
+                    collisions.append(f"zone_id={existing_zone_id}")
+            except (TypeError, ValueError):
+                collisions.append(f"zone_id={existing_zone_id}")
+
+        existing_node_id = existing.get("node_id")
+        if existing_node_id is not None:
+            try:
+                if int(existing_node_id) != int(node_id):
+                    collisions.append(f"node_id={existing_node_id}")
+            except (TypeError, ValueError):
+                collisions.append(f"node_id={existing_node_id}")
+
+        existing_channel = existing.get("channel")
+        if existing_channel and str(existing_channel) != str(channel):
+            collisions.append(f"channel={existing_channel}")
+
+        existing_cmd = existing.get("cmd")
+        if (
+            existing_cmd
+            and str(existing_cmd).strip().lower() != "unknown"
+            and str(existing_cmd) != str(cmd_name)
+        ):
+            collisions.append(f"cmd={existing_cmd}")
+
+        if collisions:
+            collision_text = ", ".join(collisions)
+            logger.warning(
+                "[IDEMPOTENCY] cmd_id collision detected: cmd_id=%s requested=(zone_id=%s,node_uid=%s,channel=%s,cmd=%s) existing=(%s)",
+                cmd_id,
+                zone_id,
+                node_uid,
+                channel,
+                cmd_name,
+                collision_text,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"Command ID '{cmd_id}' already belongs to another command ({collision_text})",
+            )
+
+        cmd_status = _normalize_command_status(existing.get("status"))
+        if cmd_status in _TERMINAL_COMMAND_STATUSES:
+            logger.info(
+                "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
+                cmd_id,
+                cmd_status.lower(),
+            )
+            return {
+                "status": "ok",
+                "data": {
+                    "command_id": cmd_id,
+                    "message": f"Command already in terminal status: {cmd_status.lower()}",
+                    "skipped": True,
+                },
+            }
+
+        if cmd_status not in _REPUBLISH_ALLOWED_STATUSES:
+            logger.warning(
+                "Command %s already exists with status %s, cannot republish. Skipping.",
+                cmd_id,
+                cmd_status,
+            )
+            return {
+                "status": "ok",
+                "data": {
+                    "command_id": cmd_id,
+                    "zone_id": zone_id,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "note": f"Command already exists with status {cmd_status}",
+                },
+            }
+
+        return None
+
+    try:
+        await execute(
+            """
+            INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
+            """,
+            zone_id,
+            node_id,
+            channel,
+            cmd_name,
+            params or {},
+            command_source,
+            cmd_id,
+        )
+        logger.info("Command %s created in DB with status QUEUED", cmd_id)
+    except asyncpg.UniqueViolationError as exc:
+        if _retry_on_conflict:
+            logger.info(
+                "[IDEMPOTENCY] Concurrent command insert detected for cmd_id=%s, re-checking existing row",
+                cmd_id,
+            )
+            return await _ensure_command_for_publish(
+                cmd_id=cmd_id,
+                zone_id=zone_id,
+                node_id=node_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd_name=cmd_name,
+                params=params,
+                command_source=command_source,
+                _retry_on_conflict=False,
+            )
+        logger.error(
+            "[COMMAND_PUBLISH] Unique cmd_id conflict persisted after retry: cmd_id=%s zone_id=%s node_uid=%s channel=%s error=%s",
+            cmd_id,
+            zone_id,
+            node_uid,
+            channel,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=f"Command ID '{cmd_id}' already exists",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "[COMMAND_PUBLISH] Failed to ensure command in DB: cmd_id=%s zone_id=%s node_uid=%s channel=%s error=%s",
+            cmd_id,
+            zone_id,
+            node_uid,
+            channel,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to persist command, try again later",
+        ) from exc
+
+    return None
 
 
 @router.post("/nodes/{node_uid}/config")
@@ -352,8 +561,7 @@ async def publish_zone_command(
             status_code=400, detail="greenhouse_uid, node_uid and channel are required"
         )
 
-    if not req.get_command_name():
-        raise HTTPException(status_code=400, detail="'cmd' is required")
+    _validate_command_request_contract(req)
 
     node_id = await _require_node_assigned_to_zone(req.node_uid, zone_id)
 
@@ -379,82 +587,18 @@ async def publish_zone_command(
 
     mqtt = await get_mqtt_client()
 
-    try:
-        existing_cmd = await fetch(
-            "SELECT status, source FROM commands WHERE cmd_id = $1", cmd_id
-        )
-        if existing_cmd:
-            cmd_status = existing_cmd[0].get("status", "").lower()
-            if not existing_cmd[0].get("source") and command_source:
-                try:
-                    await execute(
-                        "UPDATE commands SET source = $1 WHERE cmd_id = $2",
-                        command_source,
-                        cmd_id,
-                    )
-                except Exception:
-                    logger.warning(
-                        f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
-                    )
-            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
-                logger.info(
-                    "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
-                    cmd_id,
-                    cmd_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "message": f"Command already in terminal status: {cmd_status}",
-                        "skipped": True,
-                    },
-                }
-
-        if not existing_cmd:
-            await execute(
-                """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                """,
-                zone_id,
-                node_id,
-                req.channel,
-                req.get_command_name(),
-                req.params,
-                command_source,
-                cmd_id,
-            )
-            logger.info(f"Command {cmd_id} created in DB with status QUEUED")
-        else:
-            current_status = existing_cmd[0]["status"]
-            if current_status not in ("QUEUED", "SEND_FAILED"):
-                logger.warning(
-                    "Command %s already exists with status %s, cannot republish. Skipping.",
-                    cmd_id,
-                    current_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "zone_id": zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "note": f"Command already exists with status {current_status}",
-                    },
-                }
-    except Exception as e:
-        logger.error(
-            f"Failed to ensure command in DB: {e}",
-            exc_info=True,
-            extra={
-                "zone_id": zone_id,
-                "node_uid": req.node_uid,
-                "channel": req.channel,
-                "cmd_id": cmd_id,
-            },
-        )
+    skip_response = await _ensure_command_for_publish(
+        cmd_id=cmd_id,
+        zone_id=zone_id,
+        node_id=node_id,
+        node_uid=req.node_uid,
+        channel=req.channel,
+        cmd_name=req.get_command_name(),
+        params=req.params,
+        command_source=command_source,
+    )
+    if skip_response:
+        return skip_response
 
     max_retries = 3
     retry_delays = [0.5, 1.0, 2.0]
@@ -586,8 +730,7 @@ async def publish_node_command(
             status_code=400, detail="greenhouse_uid, zone_id and channel are required"
         )
 
-    if not req.cmd:
-        raise HTTPException(status_code=400, detail="'cmd' is required")
+    _validate_command_request_contract(req)
 
     node_id = await _require_node_assigned_to_zone(node_uid, req.zone_id)
 
@@ -613,82 +756,18 @@ async def publish_node_command(
 
     mqtt = await get_mqtt_client()
 
-    try:
-        existing_cmd = await fetch(
-            "SELECT status, source FROM commands WHERE cmd_id = $1", cmd_id
-        )
-        if existing_cmd:
-            cmd_status = existing_cmd[0].get("status", "").lower()
-            if not existing_cmd[0].get("source") and command_source:
-                try:
-                    await execute(
-                        "UPDATE commands SET source = $1 WHERE cmd_id = $2",
-                        command_source,
-                        cmd_id,
-                    )
-                except Exception:
-                    logger.warning(
-                        f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
-                    )
-            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
-                logger.info(
-                    "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
-                    cmd_id,
-                    cmd_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "message": f"Command already in terminal status: {cmd_status}",
-                        "skipped": True,
-                    },
-                }
-
-        if not existing_cmd:
-            await execute(
-                """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                """,
-                req.zone_id,
-                node_id,
-                req.channel,
-                req.get_command_name(),
-                req.params,
-                command_source,
-                cmd_id,
-            )
-            logger.info(f"Command {cmd_id} created in DB with status QUEUED")
-        else:
-            current_status = existing_cmd[0]["status"]
-            if current_status not in ("QUEUED", "SEND_FAILED"):
-                logger.warning(
-                    "Command %s already exists with status %s, cannot republish. Skipping.",
-                    cmd_id,
-                    current_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "zone_id": req.zone_id,
-                        "node_uid": node_uid,
-                        "channel": req.channel,
-                        "note": f"Command already exists with status {current_status}",
-                    },
-                }
-    except Exception as e:
-        logger.error(
-            f"Failed to ensure command in DB: {e}",
-            exc_info=True,
-            extra={
-                "zone_id": req.zone_id,
-                "node_uid": node_uid,
-                "channel": req.channel,
-                "cmd_id": cmd_id,
-            },
-        )
+    skip_response = await _ensure_command_for_publish(
+        cmd_id=cmd_id,
+        zone_id=req.zone_id,
+        node_id=node_id,
+        node_uid=node_uid,
+        channel=req.channel,
+        cmd_name=req.get_command_name(),
+        params=req.params,
+        command_source=command_source,
+    )
+    if skip_response:
+        return skip_response
 
     max_retries = 3
     retry_delays = [0.5, 1.0, 2.0]
@@ -812,8 +891,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     _auth_ingest(request)
     _apply_trace_id(req.trace_id)
 
-    if not req.cmd:
-        raise HTTPException(status_code=400, detail="'cmd' is required")
+    _validate_command_request_contract(req)
 
     if not (req.greenhouse_uid and req.zone_id and req.node_uid and req.channel):
         raise HTTPException(
@@ -862,81 +940,18 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         extra=log_context,
     )
 
-    try:
-        existing_cmd = await fetch(
-            """
-            SELECT status, source FROM commands WHERE cmd_id = $1
-            """,
-            cmd_id,
-        )
-
-        if existing_cmd:
-            cmd_status = existing_cmd[0].get("status", "").lower()
-            if not existing_cmd[0].get("source") and command_source:
-                try:
-                    await execute(
-                        "UPDATE commands SET source = $1 WHERE cmd_id = $2",
-                        command_source,
-                        cmd_id,
-                    )
-                except Exception:
-                    logger.warning(
-                        f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}"
-                    )
-            if cmd_status in ("ack", "done", "no_effect", "error", "invalid", "busy", "timeout"):
-                logger.info(
-                    "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
-                    cmd_id,
-                    cmd_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "message": f"Command already in terminal status: {cmd_status}",
-                        "skipped": True,
-                    },
-                }
-
-        if not existing_cmd:
-            await execute(
-                """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
-                """,
-                req.zone_id,
-                node_id,
-                req.channel,
-                req.get_command_name(),
-                params_without_cmd_id,
-                command_source,
-                cmd_id,
-            )
-            logger.info(f"Command {cmd_id} created in DB with status QUEUED")
-        else:
-            current_status = existing_cmd[0]["status"]
-            if current_status not in ("QUEUED", "SEND_FAILED"):
-                logger.warning(
-                    "Command %s already exists with status %s, cannot republish. Skipping.",
-                    cmd_id,
-                    current_status,
-                )
-                return {
-                    "status": "ok",
-                    "data": {
-                        "command_id": cmd_id,
-                        "zone_id": req.zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "note": f"Command already exists with status {current_status}",
-                    },
-                }
-    except Exception as e:
-        logger.error(
-            f"Failed to ensure command in DB: {e}",
-            exc_info=True,
-            extra=log_context,
-        )
+    skip_response = await _ensure_command_for_publish(
+        cmd_id=cmd_id,
+        zone_id=req.zone_id,
+        node_id=node_id,
+        node_uid=req.node_uid,
+        channel=req.channel,
+        cmd_name=req.get_command_name(),
+        params=params_without_cmd_id,
+        command_source=command_source,
+    )
+    if skip_response:
+        return skip_response
 
     mqtt = await get_mqtt_client()
     max_retries = 3

@@ -22,6 +22,42 @@ logger = logging.getLogger(__name__)
 
 _ALERT_QUEUE_META_KEY = "__hydro_alert_meta__"
 _QUEUE_META_FIELDS = ("node_uid", "hardware_id", "severity", "ts_device")
+_PENDING_ALERTS_REQUIRED_COLUMNS = {
+    "id",
+    "zone_id",
+    "source",
+    "code",
+    "type",
+    "status",
+    "details",
+    "attempts",
+    "max_attempts",
+    "next_retry_at",
+    "last_error",
+    "moved_to_dlq_at",
+    "created_at",
+    "updated_at",
+}
+_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS = {
+    "id",
+    "zone_id",
+    "source",
+    "code",
+    "type",
+    "status",
+    "details",
+    "attempts",
+    "max_attempts",
+    "last_error",
+    "failed_at",
+    "moved_to_dlq_at",
+    "original_id",
+    "created_at",
+}
+
+
+class _SchemaValidationError(RuntimeError):
+    """Ошибка несовместимости runtime-кода и Laravel-схемы очереди."""
 
 
 def _pack_queue_details(
@@ -83,159 +119,72 @@ class AlertQueue:
     
     def __init__(self):
         self._initialized = False
+        self._schema_error: Optional[str] = None
+
+    async def _load_columns(self, conn: asyncpg.Connection, table_name: str) -> set[str]:
+        rows = await conn.fetch(
+            """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = $1
+            """,
+            table_name,
+        )
+        return {str(row["column_name"]) for row in rows}
+
+    async def _validate_table_schema(
+        self, conn: asyncpg.Connection, table_name: str, required_columns: set[str]
+    ) -> None:
+        actual_columns = await self._load_columns(conn, table_name)
+        if not actual_columns:
+            raise _SchemaValidationError(
+                f"Missing required table '{table_name}'. "
+                "Run Laravel migrations before starting history-logger."
+            )
+
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise _SchemaValidationError(
+                f"Table '{table_name}' is missing required columns: {', '.join(missing_columns)}. "
+                "Run Laravel migrations before starting history-logger."
+            )
     
     async def ensure_table(self):
-        """Создаёт таблицу для очереди, если её нет."""
+        """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
+        if self._schema_error:
+            raise RuntimeError(self._schema_error)
         
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_alerts (
-                    id BIGSERIAL PRIMARY KEY,
-                    zone_id INTEGER,
-                    source VARCHAR(16) NOT NULL CHECK (source IN ('biz', 'infra', 'node')),
-                    code VARCHAR(64) NOT NULL,
-                    type VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED')),
-                    details JSONB,
-                    attempts INTEGER DEFAULT 0,
-                    max_attempts INTEGER DEFAULT 10,
-                    next_retry_at TIMESTAMP WITH TIME ZONE,
-                    last_error TEXT,
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await self._validate_table_schema(
+                    conn, "pending_alerts", _PENDING_ALERTS_REQUIRED_COLUMNS
                 )
-            """)
-            
-            # Добавляем новые колонки, если они еще не существуют (для миграции существующих таблиц)
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 10
-                """)
-            except Exception:
-                pass  # Колонка уже существует
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts 
-                    ADD COLUMN IF NOT EXISTS last_error TEXT
-                """)
-            except Exception:
-                pass
+                await self._validate_table_schema(
+                    conn, "pending_alerts_dlq", _PENDING_ALERTS_DLQ_REQUIRED_COLUMNS
+                )
+        except _SchemaValidationError as exc:
+            self._schema_error = str(exc)
+            logger.critical(
+                "[ALERT_QUEUE_SCHEMA_INVALID] %s",
+                self._schema_error,
+                exc_info=True,
+            )
+            raise RuntimeError(self._schema_error) from exc
+        except Exception as exc:
+            logger.error(
+                "[ALERT_QUEUE_SCHEMA_CHECK_FAILED] %s",
+                exc,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                "Failed to validate alert queue schema due to temporary infrastructure error"
+            ) from exc
 
-            # Обновляем check-constraint source для поддержки node-алертов.
-            try:
-                await conn.execute(
-                    "ALTER TABLE pending_alerts DROP CONSTRAINT IF EXISTS pending_alerts_source_check"
-                )
-                await conn.execute(
-                    """
-                    ALTER TABLE pending_alerts
-                    ADD CONSTRAINT pending_alerts_source_check
-                    CHECK (source IN ('biz', 'infra', 'node'))
-                    """
-                )
-            except Exception:
-                # В старых схемах имя constraint может отличаться; не прерываем startup.
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE
-                """)
-            except Exception:
-                pass
-
-            try:
-                # Проверяем, существует ли колонка
-                column_exists = await conn.fetchval("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'pending_alerts'
-                        AND column_name = 'next_retry_at'
-                        AND table_schema = 'public'
-                    )
-                """)
-                if not column_exists:
-                    await conn.execute("""
-                        ALTER TABLE pending_alerts
-                        ADD COLUMN next_retry_at TIMESTAMP WITH TIME ZONE
-                    """)
-            except Exception:
-                pass
-            
-            # Индекс для быстрого поиска записей для ретрая
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_alerts_retry 
-                ON pending_alerts(next_retry_at) 
-                WHERE next_retry_at IS NOT NULL
-            """)
-            
-            # Индекс для zone_id
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_alerts_zone_id 
-                ON pending_alerts(zone_id)
-            """)
-            
-            # Таблица DLQ для pending_alerts
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_alerts_dlq (
-                    id BIGSERIAL PRIMARY KEY,
-                    zone_id INTEGER,
-                    source VARCHAR(16) NOT NULL,
-                    code VARCHAR(64) NOT NULL,
-                    type VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    details JSONB,
-                    attempts INTEGER NOT NULL,
-                    max_attempts INTEGER,
-                    last_error TEXT,
-                    failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    original_id BIGINT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """)
-            
-            # Добавляем новые колонки в DLQ, если они еще не существуют
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts_dlq 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER
-                """)
-            except Exception:
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts_dlq 
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                """)
-            except Exception:
-                pass
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_zone_id 
-                ON pending_alerts_dlq(zone_id)
-            """)
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_failed_at 
-                ON pending_alerts_dlq(failed_at)
-            """)
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_code 
-                ON pending_alerts_dlq(code)
-            """)
-        
         self._initialized = True
-        logger.info("Alert queue table initialized")
+        logger.info("Alert queue schema validated (Laravel migrations)")
     
     async def enqueue(
         self,
@@ -804,6 +753,15 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
     """
     logger.info("Starting alert retry worker")
     queue = await get_alert_queue()
+
+    async def _sleep_with_shutdown(timeout: float) -> None:
+        if shutdown_event is None:
+            await asyncio.sleep(timeout)
+            return
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
     
     while True:
         # Проверяем shutdown event, если передан
@@ -818,7 +776,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                 # Проверяем shutdown перед sleep
                 if shutdown_event and shutdown_event.is_set():
                     break
-                await asyncio.sleep(interval)
+                await _sleep_with_shutdown(interval)
                 continue
             
             logger.info(f"[RETRY_WORKER] Processing {len(pending)} pending alerts")
@@ -909,12 +867,13 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
             # Небольшая задержка перед следующей итерацией
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(1.0)
+            pause_sec = max(0.01, min(interval, 1.0))
+            await _sleep_with_shutdown(pause_sec)
             
         except Exception as e:
             logger.error(f"[RETRY_WORKER] Unexpected error in alert retry worker: {e}", exc_info=True)
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(interval)
+            await _sleep_with_shutdown(interval)
     
     logger.info("Alert retry worker stopped")

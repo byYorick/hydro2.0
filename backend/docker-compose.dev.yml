@@ -436,6 +436,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
@@ -460,6 +462,8 @@ services:
     depends_on:
       mqtt:
         condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "9100:9100"
     restart: unless-stopped
@@ -480,6 +484,8 @@ services:
       - PYTHONPATH=/app
     depends_on:
       db:
+        condition: service_healthy
+      laravel:
         condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics

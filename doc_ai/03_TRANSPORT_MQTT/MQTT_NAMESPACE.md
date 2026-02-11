@@ -17,10 +17,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 1. Базовый формат топиков
 
-Общий паттерн:
+Общий паттерн для сообщений уровня канала (channel-level):
 
 ```text
 hydro/{gh}/{zone}/{node}/{channel}/{message_type}
+```
+
+Для сообщений уровня узла (node-level, без канала) используется паттерн:
+
+```text
+hydro/{gh}/{zone}/{node}/{message_type}
 ```
 
 Где:
@@ -28,7 +34,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `{gh}` — UID теплицы (`greenhouses.uid`),
 - `{zone}` — UID зоны (`zones.uid`),
 - `{node}` — UID узла (`nodes.uid`),
-- `{channel}` — ключ канала (`channels.key`),
+- `{channel}` — ключ канала (`channels.key`), используется только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 
  `telemetry`, `command`, `status`, `event`, `config` и т.п.
 
@@ -36,7 +42,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ---
 
-## 2. Типы сообщений по каналам
+## 2. Типы сообщений
 
 ### 2.1. telemetry
 
@@ -90,18 +96,19 @@ Payload (пример):
 Получатель: **Python-сервис**
 
 ```text
-hydro/{gh}/{zone}/{node}/{channel}/status
+hydro/{gh}/{zone}/{node}/status
 ```
 
 Payload (пример):
 
 ```json
 {
- "request_id": "cmd-2025-01-01-12-00-00-001",
- "status": "OK",
- "ts": 1737355601123
+ "status": "ONLINE",
+ "ts": 1710001555
 }
 ```
+
+> `status` является node-level сообщением и публикуется без сегмента `{channel}`.
 
 ### 2.4. event
 
@@ -178,7 +185,9 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ## 6. Правила для ИИ-агентов
 
-1. Не менять базовый паттерн `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`.
+1. Не менять базовые паттерны:
+ - channel-level: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`;
+ - node-level: `hydro/{gh}/{zone}/{node}/{message_type}`.
 2. Любые новые темы должны быть расширением, а не заменой.
 3. Все изменения должны быть:
 

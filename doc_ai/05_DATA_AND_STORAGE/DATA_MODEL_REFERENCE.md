@@ -527,7 +527,7 @@ node_id FK
 channel VARCHAR
 cmd VARCHAR
 params JSONB
-status VARCHAR (pending/sent/ack/failed)
+status VARCHAR (QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED)
 cmd_id VARCHAR UNIQUE
 created_at
 sent_at
@@ -804,7 +804,7 @@ id PK
 name
 email UNIQUE
 password
-role VARCHAR (admin/operator/viewer/automation_bot)
+role VARCHAR (admin/operator/viewer/agronomist/engineer)
 preferences JSONB NULL -- пользовательские UI-настройки
 created_at
 updated_at

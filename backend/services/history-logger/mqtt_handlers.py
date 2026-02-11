@@ -468,8 +468,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         logged_uptime = None
         if uptime is not None:
             try:
-                uptime_ms = float(uptime)
-                logged_uptime = int(uptime_ms / 1000.0)
+                logged_uptime = int(float(uptime))
             except (ValueError, TypeError):
                 logged_uptime = uptime
 
@@ -591,8 +590,8 @@ async def monitor_offline_nodes() -> None:
                 UPDATE nodes
                 SET status='offline', updated_at=NOW()
                 WHERE status='online'
-                  AND last_seen_at IS NOT NULL
-                  AND last_seen_at < NOW() - ($1 * interval '1 second')
+                  AND COALESCE(last_seen_at, last_heartbeat_at, updated_at, created_at)
+                      < NOW() - ($1 * interval '1 second')
                 """,
                 timeout_sec,
             )
@@ -1299,8 +1298,10 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             )
             event_status = status_value.lower()
             level = "info"
-            if event_status in ("error", "failed", "timeout"):
+            if event_status in ("error", "failed", "timeout", "send_failed"):
                 level = "error"
+            elif event_status in ("invalid", "busy", "no_effect"):
+                level = "warning"
 
             await record_simulation_event(
                 zone_id,

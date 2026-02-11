@@ -987,15 +987,151 @@ class FullServiceTestSeeder extends Seeder
             }
         }
 
-        // Scheduler Logs
+        // Scheduler Logs (Protocol 2.0 task lifecycle contract)
+        $taskTypes = ['irrigation', 'lighting', 'ventilation', 'solution_change', 'mist', 'diagnostics'];
+        $statusWeights = [
+            'accepted' => 14,
+            'running' => 18,
+            'completed' => 36,
+            'failed' => 12,
+            'rejected' => 7,
+            'expired' => 5,
+            'timeout' => 5,
+            'not_found' => 3,
+        ];
+
         for ($i = 0; $i < 8; $i++) {
+            $createdAt = now()->subHours(rand(0, 24));
+            $zone = $zones[array_rand($zones)];
+            $taskType = $taskTypes[array_rand($taskTypes)];
+            $status = $this->pickWeightedSchedulerStatus($statusWeights);
+            $taskId = 'st-'.$zone->id.'-'.Str::lower(Str::random(10));
+            $correlationId = "sch:z{$zone->id}:{$taskType}:".Str::lower(Str::random(12));
+            $scheduledFor = $createdAt->copy()->subMinutes(rand(1, 30));
+            $dueAt = $scheduledFor->copy()->addSeconds(rand(20, 90));
+            $expiresAt = $dueAt->copy()->addMinutes(rand(2, 10));
+
+            $details = [
+                'task_id' => $taskId,
+                'zone_id' => $zone->id,
+                'task_type' => $taskType,
+                'status' => $status,
+                'correlation_id' => $correlationId,
+                'scheduled_for' => $scheduledFor->toIso8601String(),
+                'due_at' => $dueAt->toIso8601String(),
+                'expires_at' => $expiresAt->toIso8601String(),
+                'contract_version' => 'scheduler_task_v2',
+                'message' => 'Scheduler log entry '.($i + 1),
+            ];
+
+            if (! in_array($status, ['accepted', 'running'], true)) {
+                $details['result'] = $this->buildSchedulerResult($status);
+            }
+
             DB::table('scheduler_logs')->insert([
-                'task_name' => ['recipe_phase', 'irrigation', 'dosing', 'light_control'][rand(0, 3)],
-                'status' => ['success', 'failed'][rand(0, 1)],
-                'details' => json_encode(['message' => 'Scheduler log entry '.($i + 1)]),
-                'created_at' => now()->subHours(rand(0, 24)),
+                'task_name' => $taskType,
+                'status' => $status,
+                'details' => json_encode($details),
+                'created_at' => $createdAt,
             ]);
         }
+    }
+
+    private function pickWeightedSchedulerStatus(array $weights): string
+    {
+        $random = rand(1, array_sum($weights));
+        $acc = 0;
+        foreach ($weights as $status => $weight) {
+            $acc += $weight;
+            if ($random <= $acc) {
+                return $status;
+            }
+        }
+
+        return 'failed';
+    }
+
+    private function buildSchedulerResult(string $status): array
+    {
+        return match ($status) {
+            'completed' => [
+                'action_required' => true,
+                'decision' => 'execute',
+                'reason_code' => 'required_nodes_checked',
+                'error_code' => null,
+                'command_submitted' => true,
+                'command_effect_confirmed' => true,
+                'commands_total' => 1,
+                'commands_effect_confirmed' => 1,
+                'commands_failed' => 0,
+            ],
+            'failed' => [
+                'action_required' => true,
+                'decision' => 'execute',
+                'reason_code' => 'command_effect_not_confirmed',
+                'error_code' => 'command_effect_not_confirmed',
+                'command_submitted' => true,
+                'command_effect_confirmed' => false,
+                'commands_total' => 1,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 1,
+            ],
+            'rejected' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_due_deadline_exceeded',
+                'error_code' => 'task_due_deadline_exceeded',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'expired' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_expired',
+                'error_code' => 'task_expired',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'timeout' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_status_timeout',
+                'error_code' => 'task_status_timeout',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'not_found' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_status_not_found',
+                'error_code' => 'task_status_not_found',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            default => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_execution_failed',
+                'error_code' => 'task_execution_failed',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+        };
     }
 
     private function printStatistics(): void
