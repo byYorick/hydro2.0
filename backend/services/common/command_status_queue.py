@@ -175,10 +175,6 @@ def normalize_status(raw_status: str) -> Optional[CommandStatus]:
     if raw_upper == "ACK":
         return CommandStatus.ACK
 
-    # ACCEPTED - совместимость с форматом узла
-    if raw_upper == "ACCEPTED":
-        return CommandStatus.ACK
-    
     # DONE - команда успешно выполнена
     if raw_upper == "DONE":
         return CommandStatus.DONE

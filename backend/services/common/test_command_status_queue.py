@@ -12,6 +12,7 @@ from common.command_status_queue import (
     _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS,
     _PENDING_STATUS_UPDATES_REQUIRED_COLUMNS,
     _decode_details_payload,
+    normalize_status,
     retry_worker,
     send_status_to_laravel,
 )
@@ -72,6 +73,10 @@ def test_decode_details_payload_accepts_dict_and_json_string():
 def test_decode_details_payload_handles_invalid_string():
     decoded = _decode_details_payload("{bad-json")
     assert decoded == {"raw_details": "{bad-json"}
+
+
+def test_normalize_status_rejects_legacy_accepted_alias():
+    assert normalize_status("ACCEPTED") is None
 
 
 @pytest.mark.asyncio
