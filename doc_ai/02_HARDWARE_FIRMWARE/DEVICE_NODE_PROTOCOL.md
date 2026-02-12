@@ -153,7 +153,7 @@ hydro/gh/zone/node/channel/command_response
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
-- `details` (string) — детали выполнения команды
+- `details` (string|object) — детали выполнения команды (текст или структурированный объект)
 
 Узел обязан отправить command_response в течение 5 секунд после выполнения.
 

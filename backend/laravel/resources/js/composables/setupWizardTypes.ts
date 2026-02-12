@@ -81,6 +81,9 @@ export interface Node {
   uid?: string
   name?: string
   type?: string
+  zone_id?: number | null
+  pending_zone_id?: number | null
+  lifecycle_state?: string | null
   channels?: Array<{
     channel?: string
     type?: string

@@ -140,3 +140,66 @@ async def test_handle_command_response_no_effect_records_warning_level():
         mock_record.assert_awaited_once()
         assert mock_record.await_args.kwargs["status"] == "no_effect"
         assert mock_record.await_args.kwargs["level"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_string_details_normalized():
+    """String details should be converted to object and forwarded."""
+    from mqtt_handlers import handle_command_response
+    from common.command_status_queue import CommandStatus
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps(
+        {"cmd_id": "cmd-5", "status": "ERROR", "details": "Pump jammed"}
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_send.assert_awaited_once()
+        call_args = mock_send.call_args[0]
+        assert call_args[0] == "cmd-5"
+        assert call_args[1] == CommandStatus.ERROR
+        details = call_args[2]
+        assert details["message"] == "Pump jammed"
+        assert details["raw_status"] == "ERROR"
+        assert details["node_uid"] == "nd-irrig-1"
+        assert details["channel"] == "pump1"
+        assert details["gh_uid"] == "gh-1"
+        mock_record.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_missing_details_keeps_metadata():
+    """Missing details should still produce metadata-only payload."""
+    from mqtt_handlers import handle_command_response
+    from common.command_status_queue import CommandStatus
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps({"cmd_id": "cmd-6", "status": "ACK"}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_send.assert_awaited_once()
+        call_args = mock_send.call_args[0]
+        assert call_args[0] == "cmd-6"
+        assert call_args[1] == CommandStatus.ACK
+        details = call_args[2]
+        assert details["raw_status"] == "ACK"
+        assert details["node_uid"] == "nd-irrig-1"
+        assert details["channel"] == "pump1"
+        assert details["gh_uid"] == "gh-1"
+        assert "message" not in details
+        assert "raw_details" not in details
+        mock_record.assert_awaited_once()

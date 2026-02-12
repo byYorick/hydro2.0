@@ -487,15 +487,23 @@ esp_err_t node_utils_request_time(void) {
     cJSON_AddNumberToObject(request, "uptime", (double)(esp_timer_get_time() / 1000000));
     
     char *json_str = cJSON_PrintUnformatted(request);
-    if (json_str) {
-        ESP_LOGI(TAG, "Requesting time from server");
-        esp_err_t err = mqtt_manager_publish_raw("hydro/time/request", json_str, 1, 0);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to publish time request: %s", esp_err_to_name(err));
-        }
-        free(json_str);
+    if (!json_str) {
+        cJSON_Delete(request);
+        ESP_LOGE(TAG, "Failed to serialize time request JSON");
+        return ESP_ERR_NO_MEM;
     }
-    
+
+    ESP_LOGI(TAG, "Requesting time from server");
+    esp_err_t err = mqtt_manager_publish_raw("hydro/time/request", json_str, 1, 0);
+    if (err != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "Failed to publish time request: err=0x%x (%s)",
+            (unsigned)err,
+            esp_err_to_name(err)
+        );
+    }
+    free(json_str);
     cJSON_Delete(request);
-    return ESP_OK;
+    return err;
 }

@@ -75,6 +75,7 @@ export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions)
     canConfigure: options.canConfigure,
     showToast: options.showToast,
     generatedGreenhouseUid: options.generatedGreenhouseUid,
+    availableNodes: options.availableNodes,
     availablePlants: options.availablePlants,
     selectedGreenhouseId: options.selectedGreenhouseId,
     selectedZoneId: options.selectedZoneId,

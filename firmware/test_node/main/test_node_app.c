@@ -169,6 +169,7 @@ static int64_t s_start_time_seconds = 0;
 static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
+static bool s_wildcard_subscriptions_ready = false;
 
 static virtual_state_t s_virtual_state = {
     .flow_rate = 0.0f,
@@ -498,6 +499,26 @@ static esp_err_t publish_json_payload(const char *topic, cJSON *json, int qos, i
     return err;
 }
 
+static esp_err_t publish_json_payload_preallocated(
+    const char *topic,
+    cJSON *json,
+    int qos,
+    int retain,
+    char *payload_buf,
+    size_t payload_buf_size
+) {
+    if (!topic || !json || !payload_buf || payload_buf_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    payload_buf[0] = '\0';
+    if (!cJSON_PrintPreallocated(json, payload_buf, (int)payload_buf_size, false)) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    return mqtt_manager_publish_raw(topic, payload_buf, qos, retain);
+}
+
 static esp_err_t build_topic(char *buffer, size_t buffer_size, const char *node_uid, const char *channel, const char *message_type) {
     int len;
     char gh_uid[64];
@@ -573,6 +594,10 @@ static void publish_heartbeat_for_node(const char *node_uid) {
     int64_t current_time = get_timestamp_seconds();
     int64_t uptime_seconds = s_start_time_seconds > 0 ? (current_time - s_start_time_seconds) : 0;
 
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+
     if (build_topic(topic, sizeof(topic), node_uid, NULL, "heartbeat") != ESP_OK) {
         ESP_LOGE(TAG, "Failed to build heartbeat topic for %s", node_uid);
         return;
@@ -598,6 +623,10 @@ static void publish_heartbeat_for_node(const char *node_uid) {
 static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value) {
     char topic[192];
     cJSON *json;
+
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
 
     if (build_topic(topic, sizeof(topic), node_uid, channel, "telemetry") != ESP_OK) {
         ESP_LOGE(TAG, "Failed to build telemetry topic for %s/%s", node_uid, channel);
@@ -627,6 +656,7 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
 
 static void publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
+    char payload_buf[1536];
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
     bool node_preconfig_mode = false;
@@ -703,16 +733,43 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         cJSON_AddItemToObject(json, "wifi", wifi);
     }
 
-    publish_err = publish_json_payload(topic, json, 1, 0);
-    if (publish_err != ESP_OK) {
-        ui_logf(node->node_uid, "cfg_report err=%s", esp_err_to_name(publish_err));
-        ESP_LOGW(
-            TAG,
-            "config_report publish failed: node=%s channels=%u err=%s",
-            node->node_uid,
-            (unsigned)node->channels_count,
-            esp_err_to_name(publish_err)
+    publish_err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        publish_err = publish_json_payload_preallocated(
+            topic,
+            json,
+            1,
+            0,
+            payload_buf,
+            sizeof(payload_buf)
         );
+        if (publish_err == ESP_OK) {
+            break;
+        }
+        if (!mqtt_manager_is_connected()) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+    if (publish_err != ESP_OK) {
+        if (mqtt_manager_is_connected()) {
+            ui_logf(node->node_uid, "cfg_report err=%s", esp_err_to_name(publish_err));
+            ESP_LOGW(
+                TAG,
+                "config_report publish failed: node=%s channels=%u err=%s",
+                node->node_uid,
+                (unsigned)node->channels_count,
+                esp_err_to_name(publish_err)
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "config_report skipped due to disconnect: node=%s channels=%u err=%s",
+                node->node_uid,
+                (unsigned)node->channels_count,
+                esp_err_to_name(publish_err)
+            );
+        }
     } else {
         test_node_ui_set_node_zone(node->node_uid, zone_uid);
         ui_logf(node->node_uid, "cfg_report ch=%u", (unsigned)node->channels_count);
@@ -794,6 +851,7 @@ static const char *resolve_node_hello_name(const virtual_node_t *node) {
 }
 
 static void publish_node_hello_for_node(const virtual_node_t *node) {
+    char payload_buf[1024];
     cJSON *hello;
     cJSON *capabilities;
     cJSON *provisioning_meta;
@@ -831,9 +889,44 @@ static void publish_node_hello_for_node(const virtual_node_t *node) {
         cJSON_AddItemToObject(hello, "provisioning_meta", provisioning_meta);
     }
 
-    if (publish_json_payload("hydro/node_hello", hello, 1, 0) != ESP_OK) {
-        ui_logf(node->node_uid, "node_hello publish FAIL");
-        ESP_LOGW(TAG, "Failed to publish node_hello for %s", node->node_uid);
+    esp_err_t publish_err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        publish_err = publish_json_payload_preallocated(
+            "hydro/node_hello",
+            hello,
+            1,
+            0,
+            payload_buf,
+            sizeof(payload_buf)
+        );
+        if (publish_err == ESP_OK) {
+            break;
+        }
+        if (!mqtt_manager_is_connected()) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+
+    if (publish_err != ESP_OK) {
+        if (mqtt_manager_is_connected()) {
+            ui_logf(node->node_uid, "node_hello publish FAIL");
+            ESP_LOGW(
+                TAG,
+                "Failed to publish node_hello for %s: err=0x%x (%s)",
+                node->node_uid,
+                (unsigned)publish_err,
+                esp_err_to_name(publish_err)
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "node_hello skipped due to disconnect for %s: err=0x%x (%s)",
+                node->node_uid,
+                (unsigned)publish_err,
+                esp_err_to_name(publish_err)
+            );
+        }
     } else {
         ui_logf(node->node_uid, "node_hello sent");
         ESP_LOGI(TAG, "node_hello published for virtual node: %s", node->node_uid);
@@ -1577,9 +1670,17 @@ static void task_publish_telemetry(void *pv_parameters) {
         char wifi_text[33] = "X";
 
         vTaskDelayUntil(&last_wake_time, interval);
-        publish_virtual_telemetry_batch();
         wifi_connected = wifi_manager_is_connected();
         mqtt_connected = mqtt_manager_is_connected();
+
+        if (mqtt_connected) {
+            publish_virtual_telemetry_batch();
+        } else {
+            // В offline режиме продолжаем обновлять виртуальное состояние,
+            // но не шлём telemetry в MQTT, чтобы не засорять лог ошибками publish.
+            apply_passive_drift();
+            s_telemetry_tick++;
+        }
 
         if (wifi_connected) {
             wifi_ap_record_t ap_info = {0};
@@ -1604,8 +1705,19 @@ static void task_publish_telemetry(void *pv_parameters) {
             last_mqtt_connected = mqtt_connected;
         }
 
+        if (mqtt_connected && !s_wildcard_subscriptions_ready) {
+            esp_err_t cmd_sub_err = mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1);
+            esp_err_t cfg_sub_err = mqtt_manager_subscribe_raw(CONFIG_WILDCARD_TOPIC, 1);
+            if (cmd_sub_err == ESP_OK && cfg_sub_err == ESP_OK) {
+                s_wildcard_subscriptions_ready = true;
+            }
+        }
+
         if (mqtt_connected) {
             for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
+                if (!mqtt_manager_is_connected()) {
+                    break;
+                }
                 publish_heartbeat_for_node(VIRTUAL_NODES[index].node_uid);
             }
 
@@ -1646,6 +1758,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     (void)user_ctx;
 
     if (!connected) {
+        s_wildcard_subscriptions_ready = false;
         test_node_ui_set_mqtt_status(false, "X");
         ui_logf(NULL, "mqtt disconnected");
         for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
@@ -1660,17 +1773,20 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     ui_logf(NULL, "mqtt connected");
     test_node_ui_show_step("MQTT connected: subscribing");
 
-    if (mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to subscribe command wildcard topic: %s", COMMAND_WILDCARD_TOPIC);
-    }
-    if (mqtt_manager_subscribe_raw(CONFIG_WILDCARD_TOPIC, 1) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to subscribe config wildcard topic: %s", CONFIG_WILDCARD_TOPIC);
+    if (!mqtt_manager_is_connected()) {
+        ESP_LOGW(TAG, "MQTT callback(connected=true) ignored: manager is already disconnected");
+        return;
     }
 
     for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
         bool node_preconfig_mode = false;
         char node_gh_uid[64] = {0};
         char node_zone_uid[64] = {0};
+
+        if (!mqtt_manager_is_connected()) {
+            ESP_LOGW(TAG, "MQTT disconnected during virtual node sync, stopping batch");
+            break;
+        }
 
         if (get_node_namespace(
             VIRTUAL_NODES[index].node_uid,
@@ -1689,7 +1805,9 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
         publish_status_for_node(VIRTUAL_NODES[index].node_uid, "ONLINE");
     }
 
-    publish_all_config_reports("mqtt_connected");
+    if (mqtt_manager_is_connected()) {
+        publish_all_config_reports("mqtt_connected");
+    }
     test_node_ui_show_step("MQTT connected: virtual nodes ONLINE");
 
     ESP_LOGI(

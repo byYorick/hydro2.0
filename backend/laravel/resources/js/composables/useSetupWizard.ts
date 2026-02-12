@@ -350,6 +350,24 @@ export function useSetupWizard() {
     return new Date(value).toLocaleString('ru-RU')
   }
 
+  async function createGreenhouseAndSelectMode(): Promise<void> {
+    const previousGreenhouseId = selectedGreenhouseId.value
+    await dataFlows.createGreenhouse()
+
+    if (selectedGreenhouseId.value && selectedGreenhouseId.value !== previousGreenhouseId) {
+      greenhouseMode.value = 'select'
+    }
+  }
+
+  async function createZoneAndSelectMode(): Promise<void> {
+    const previousZoneId = selectedZoneId.value
+    await dataFlows.createZone()
+
+    if (selectedZoneId.value && selectedZoneId.value !== previousZoneId) {
+      zoneMode.value = 'select'
+    }
+  }
+
   return {
     role,
     canConfigure,
@@ -398,9 +416,9 @@ export function useSetupWizard() {
     generatedGreenhouseUid,
     generatedZoneUid,
     addRecipePhase: recipeAutomationFlows.addRecipePhase,
-    createGreenhouse: dataFlows.createGreenhouse,
+    createGreenhouse: createGreenhouseAndSelectMode,
     selectGreenhouse: dataFlows.selectGreenhouse,
-    createZone: dataFlows.createZone,
+    createZone: createZoneAndSelectMode,
     selectZone: dataFlows.selectZone,
     createPlant: dataFlows.createPlant,
     selectPlant: dataFlows.selectPlant,

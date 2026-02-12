@@ -3,6 +3,7 @@ import type { ToastVariant } from '@/composables/useToast'
 import type {
   Greenhouse,
   GreenhouseFormState,
+  Node,
   Plant,
   PlantFormState,
   SetupWizardLoadingState,
@@ -25,6 +26,7 @@ interface SetupWizardEntityCommandsOptions {
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
   generatedGreenhouseUid: ComputedRef<string>
+  availableNodes: Ref<Node[]>
   availablePlants: Ref<Plant[]>
   selectedGreenhouseId: Ref<number | null>
   selectedZoneId: Ref<number | null>
@@ -71,6 +73,7 @@ export function createSetupWizardEntityCommands(
     loading: options.loading,
     canConfigure: options.canConfigure,
     showToast: options.showToast,
+    availableNodes: options.availableNodes,
     availablePlants: options.availablePlants,
     selectedPlantId: options.selectedPlantId,
     selectedZone: options.selectedZone,

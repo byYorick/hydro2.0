@@ -96,6 +96,7 @@
           <Button
             size="sm"
             variant="secondary"
+            data-test="toggle-greenhouse-create"
             :disabled="!canConfigure"
             @click="greenhouseMode = 'create'"
           >
@@ -194,6 +195,7 @@
           <Button
             size="sm"
             variant="secondary"
+            data-test="toggle-zone-create"
             :disabled="!canConfigure || !stepGreenhouseDone"
             @click="zoneMode = 'create'"
           >
@@ -314,83 +316,149 @@
         </div>
 
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Полив (обязательно)</label>
-            <select
-              v-model.number="deviceAssignments.irrigation"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || irrigationNodes.length === 0"
-            >
-              <option :value="null">Выберите узел полива</option>
-              <option v-for="node in irrigationNodes" :key="`irrigation-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.irrigation"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || irrigationNodes.length === 0"
+              >
+                <option :value="null">Выберите узел полива</option>
+                <option v-for="node in irrigationNodes" :key="`irrigation-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('irrigation')"
+                @click="attachNodeByRole('irrigation')"
+              >
+                {{ attachButtonLabel('irrigation') }}
+              </Button>
+            </div>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Коррекция pH (обязательно)</label>
-            <select
-              v-model.number="deviceAssignments.ph_correction"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || phCorrectionNodes.length === 0"
-            >
-              <option :value="null">Выберите узел коррекции pH</option>
-              <option v-for="node in phCorrectionNodes" :key="`ph-correction-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.ph_correction"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || phCorrectionNodes.length === 0"
+              >
+                <option :value="null">Выберите узел коррекции pH</option>
+                <option v-for="node in phCorrectionNodes" :key="`ph-correction-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('ph_correction')"
+                @click="attachNodeByRole('ph_correction')"
+              >
+                {{ attachButtonLabel('ph_correction') }}
+              </Button>
+            </div>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Коррекция EC (обязательно)</label>
-            <select
-              v-model.number="deviceAssignments.ec_correction"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || ecCorrectionNodes.length === 0"
-            >
-              <option :value="null">Выберите узел коррекции EC</option>
-              <option v-for="node in ecCorrectionNodes" :key="`ec-correction-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.ec_correction"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || ecCorrectionNodes.length === 0"
+              >
+                <option :value="null">Выберите узел коррекции EC</option>
+                <option v-for="node in ecCorrectionNodes" :key="`ec-correction-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('ec_correction')"
+                @click="attachNodeByRole('ec_correction')"
+              >
+                {{ attachButtonLabel('ec_correction') }}
+              </Button>
+            </div>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Накопительный узел (обязательно)</label>
-            <select
-              v-model.number="deviceAssignments.accumulation"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || accumulationNodes.length === 0"
-            >
-              <option :value="null">Выберите накопительный узел</option>
-              <option v-for="node in accumulationNodes" :key="`accumulation-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.accumulation"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || accumulationNodes.length === 0"
+              >
+                <option :value="null">Выберите накопительный узел</option>
+                <option v-for="node in accumulationNodes" :key="`accumulation-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('accumulation')"
+                @click="attachNodeByRole('accumulation')"
+              >
+                {{ attachButtonLabel('accumulation') }}
+              </Button>
+            </div>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Климат (опционально)</label>
-            <select
-              v-model.number="deviceAssignments.climate"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || climateNodes.length === 0"
-            >
-              <option :value="null">Не выбирать</option>
-              <option v-for="node in climateNodes" :key="`climate-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.climate"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || climateNodes.length === 0"
+              >
+                <option :value="null">Не выбирать</option>
+                <option v-for="node in climateNodes" :key="`climate-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('climate')"
+                @click="attachNodeByRole('climate')"
+              >
+                {{ attachButtonLabel('climate') }}
+              </Button>
+            </div>
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Свет (опционально)</label>
-            <select
-              v-model.number="deviceAssignments.light"
-              class="input-select"
-              :disabled="!canConfigure || !stepZoneDone || lightNodes.length === 0"
-            >
-              <option :value="null">Не выбирать</option>
-              <option v-for="node in lightNodes" :key="`light-${node.id}`" :value="node.id">
-                {{ node.name || node.uid || `Node #${node.id}` }}
-              </option>
-            </select>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.light"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || lightNodes.length === 0"
+              >
+                <option :value="null">Не выбирать</option>
+                <option v-for="node in lightNodes" :key="`light-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('light')"
+                @click="attachNodeByRole('light')"
+              >
+                {{ attachButtonLabel('light') }}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -597,6 +665,7 @@ const {
 
 const showPlantCreateWizard = ref<boolean>(false)
 type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'accumulation' | 'climate' | 'light'
+const attachingRole = ref<DeviceRole | null>(null)
 
 const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
   irrigation: null,
@@ -764,5 +833,39 @@ async function attachConfiguredNodes(): Promise<void> {
 
   selectedNodeIds.value = selectedNodeIdsByRoles.value
   await attachNodesToZone({ ...deviceAssignments })
+}
+
+function canAttachRole(role: DeviceRole): boolean {
+  return canConfigure.value
+    && stepZoneDone.value
+    && typeof deviceAssignments[role] === 'number'
+    && !loading.stepDevices
+}
+
+function attachButtonLabel(role: DeviceRole): string {
+  if (loading.stepDevices && attachingRole.value === role) {
+    return 'Привязка...'
+  }
+
+  return 'Привязать'
+}
+
+async function attachNodeByRole(role: DeviceRole): Promise<void> {
+  if (!canAttachRole(role)) {
+    return
+  }
+
+  const nodeId = deviceAssignments[role]
+  if (typeof nodeId !== 'number') {
+    return
+  }
+
+  attachingRole.value = role
+  try {
+    selectedNodeIds.value = [nodeId]
+    await attachNodesToZone()
+  } finally {
+    attachingRole.value = null
+  }
 }
 </script>

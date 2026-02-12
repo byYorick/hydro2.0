@@ -99,10 +99,19 @@ describe('Setup/Wizard.vue', () => {
       },
     })
 
-    apiPatchMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-      },
+    apiPatchMock.mockImplementation((url: string) => {
+      const nodeId = Number(url.split('/').pop())
+      return Promise.resolve({
+        data: {
+          status: 'ok',
+          data: {
+            id: Number.isFinite(nodeId) ? nodeId : 0,
+            zone_id: 20,
+            pending_zone_id: null,
+            lifecycle_state: 'ASSIGNED_TO_ZONE',
+          },
+        },
+      })
     })
   })
 
@@ -138,9 +147,9 @@ describe('Setup/Wizard.vue', () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
     expect(createToggle).toBeTruthy()
-    await createToggle?.trigger('click')
+    await createToggle.trigger('click')
 
     const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
     expect(greenhouseNameInput.exists()).toBe(true)
@@ -151,6 +160,8 @@ describe('Setup/Wizard.vue', () => {
     await createButton?.trigger('click')
 
     await flushPromises()
+
+    expect(wrapper.find('input[placeholder="Название теплицы"]').exists()).toBe(false)
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/greenhouses',
@@ -212,8 +223,8 @@ describe('Setup/Wizard.vue', () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
-    await createToggle?.trigger('click')
+    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
+    await createToggle.trigger('click')
 
     const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
     await greenhouseNameInput.setValue('Main GH')
@@ -222,9 +233,9 @@ describe('Setup/Wizard.vue', () => {
     await createGreenhouseButton?.trigger('click')
     await flushPromises()
 
-    const openZoneCreateButton = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
+    const openZoneCreateButton = wrapper.find('[data-test="toggle-zone-create"]')
     expect(openZoneCreateButton).toBeTruthy()
-    await openZoneCreateButton?.trigger('click')
+    await openZoneCreateButton.trigger('click')
     await flushPromises()
 
     const zoneNameInput = wrapper.find('input[placeholder="Название зоны"]')
@@ -235,6 +246,8 @@ describe('Setup/Wizard.vue', () => {
     expect(createZoneButton).toBeTruthy()
     await createZoneButton?.trigger('click')
     await flushPromises()
+
+    expect(wrapper.find('input[placeholder="Название зоны"]').exists()).toBe(false)
 
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
     expect(plantSelect).toBeTruthy()
@@ -306,13 +319,13 @@ describe('Setup/Wizard.vue', () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.findAll('button').find((btn) => btn.text() === 'Создать')
-    await createToggle?.trigger('click')
+    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
+    await createToggle.trigger('click')
     await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
     await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await wrapper.find('[data-test="toggle-zone-create"]').trigger('click')
     await flushPromises()
     await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
     await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
@@ -416,12 +429,12 @@ describe('Setup/Wizard.vue', () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await wrapper.find('[data-test="toggle-greenhouse-create"]').trigger('click')
     await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
     await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
     await flushPromises()
 
-    await wrapper.findAll('button').find((btn) => btn.text() === 'Создать')?.trigger('click')
+    await wrapper.find('[data-test="toggle-zone-create"]').trigger('click')
     await flushPromises()
     await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
     await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')

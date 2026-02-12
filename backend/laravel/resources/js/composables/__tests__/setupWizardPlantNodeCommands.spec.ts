@@ -56,6 +56,7 @@ describe('setupWizardPlantNodeCommands.selectPlant', () => {
       loading: createLoadingState(),
       canConfigure: computed(() => false),
       showToast,
+      availableNodes: ref([]),
       availablePlants: ref([{ id: 1, name: 'Tomato' }]),
       selectedPlantId: ref(1),
       selectedZone: ref(null),
@@ -91,6 +92,7 @@ describe('setupWizardPlantNodeCommands.selectPlant', () => {
       loading: createLoadingState(),
       canConfigure: computed(() => true),
       showToast,
+      availableNodes: ref([]),
       availablePlants: ref([{ id: 1, name: 'Tomato' }]),
       selectedPlantId: ref(null),
       selectedZone: ref(null),
@@ -127,6 +129,7 @@ describe('setupWizardPlantNodeCommands.selectPlant', () => {
       loading: createLoadingState(),
       canConfigure: computed(() => true),
       showToast,
+      availableNodes: ref([]),
       availablePlants: ref([{ id: 1, name: 'Tomato' }]),
       selectedPlantId: ref(2),
       selectedZone: ref(null),
@@ -163,6 +166,7 @@ describe('setupWizardPlantNodeCommands.selectPlant', () => {
       loading: createLoadingState(),
       canConfigure: computed(() => true),
       showToast,
+      availableNodes: ref([]),
       availablePlants: ref([{ id: 1, name: 'Tomato' }]),
       selectedPlantId: ref(1),
       selectedZone: ref(null),
@@ -184,5 +188,83 @@ describe('setupWizardPlantNodeCommands.selectPlant', () => {
 
     expect(selectedPlant.value?.id).toBe(1)
     expect(showToast).toHaveBeenCalledWith('Растение выбрано', 'success', expect.any(Number))
+  })
+})
+
+describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
+  it('считает привязку завершенной только после подтверждения ноды и применяет биндинги', async () => {
+    const showToast = vi.fn()
+    const apiPost = vi.fn()
+      .mockResolvedValueOnce({ data: { status: 'ok', data: { validated: true } } })
+      .mockResolvedValueOnce({ data: { status: 'ok', data: { applied: true } } })
+    const apiPatch = vi.fn()
+      .mockResolvedValue({
+        data: {
+          status: 'ok',
+          data: { id: 101, zone_id: null, pending_zone_id: 20 },
+        },
+      })
+    const apiGet = vi.fn().mockResolvedValue({
+      data: {
+        status: 'ok',
+        data: [],
+      },
+    })
+    const loadAvailableNodes = vi.fn().mockResolvedValue(undefined)
+    const attachedNodesCount = ref(0)
+    const selectedNodeIds = ref<number[]>([101])
+
+    const commands = createSetupWizardPlantNodeCommands({
+      api: {
+        get: apiGet,
+        post: apiPost,
+        patch: apiPatch,
+      },
+      loading: createLoadingState(),
+      canConfigure: computed(() => true),
+      showToast,
+      availableNodes: ref([{ id: 101, uid: 'nd-test-101' }]),
+      availablePlants: ref([]),
+      selectedPlantId: ref(null),
+      selectedZone: ref({ id: 20, name: 'Zone A', greenhouse_id: 10 }),
+      selectedPlant: ref(null),
+      selectedNodeIds,
+      attachedNodesCount,
+      plantForm: {
+        name: '',
+        species: '',
+        variety: '',
+      },
+      loaders: {
+        loadPlants: vi.fn(),
+        loadAvailableNodes,
+      },
+    })
+
+    await commands.attachNodesToZone({
+      irrigation: 101,
+      ph_correction: null,
+      ec_correction: null,
+      accumulation: null,
+      climate: null,
+      light: null,
+    })
+
+    expect(apiPost).toHaveBeenCalledWith(
+      '/setup-wizard/validate-devices',
+      expect.objectContaining({
+        zone_id: 20,
+        selected_node_ids: [101],
+      })
+    )
+    expect(apiPost).toHaveBeenCalledWith(
+      '/setup-wizard/apply-device-bindings',
+      expect.objectContaining({
+        zone_id: 20,
+      })
+    )
+    expect(apiGet).toHaveBeenCalledWith('/nodes', { params: { unassigned: true } })
+    expect(attachedNodesCount.value).toBe(1)
+    expect(loadAvailableNodes).toHaveBeenCalled()
   })
 })

@@ -118,6 +118,17 @@ def _apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optiona
         set_trace_id_from_payload(payload_data, fallback_generate=False)
 
 
+def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
+    if raw_details is None:
+        return {}
+    if isinstance(raw_details, dict):
+        return dict(raw_details)
+    if isinstance(raw_details, str):
+        message = raw_details.strip()
+        return {"message": message} if message else {}
+    return {"raw_details": raw_details}
+
+
 async def handle_node_hello(topic: str, payload: bytes) -> None:
     """
     Обработчик node_hello сообщений от узлов ESP32.
@@ -1258,7 +1269,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
 
-        details = dict(data.get("details") or {})
+        details = _normalize_command_response_details(data.get("details"))
         if "error_code" in data and data.get("error_code") is not None:
             details["error_code"] = data.get("error_code")
         if "error_message" in data and data.get("error_message") is not None:

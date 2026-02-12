@@ -121,6 +121,21 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 }
 ```
 
+`details` может быть как строкой, так и объектом с деталями выполнения:
+
+```json
+{
+  "cmd_id": "cmd-12346",
+  "status": "DONE",
+  "details": {
+    "virtual": true,
+    "channel": "ph_sensor",
+    "note": "probe_complete"
+  },
+  "ts": 1704067201123
+}
+```
+
 ### Heartbeat
 
 ```json

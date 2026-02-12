@@ -83,6 +83,7 @@ static const char *TAG = "test_node_ui";
 #define UI_NODE_UID_MAX 48
 #define UI_ZONE_UID_MAX 24
 #define UI_SHORT_NAME_MAX 8
+#define UI_NODE_TELEMETRY_MAX 20
 #define UI_MAX_NODES 8
 #define UI_LOG_LINES_MAX 320
 #define UI_LOG_LINE_MAX 88
@@ -135,6 +136,7 @@ typedef struct {
     char node_uid[UI_NODE_UID_MAX];
     char short_name[UI_SHORT_NAME_MAX];
     char zone_uid[UI_ZONE_UID_MAX];
+    char last_telemetry[UI_NODE_TELEMETRY_MAX];
 } ui_node_view_t;
 
 static esp_lcd_panel_io_handle_t s_panel_io = NULL;
@@ -364,6 +366,7 @@ static int ui_ensure_node_index(const char *node_uid) {
             snprintf(s_nodes[i].node_uid, sizeof(s_nodes[i].node_uid), "%s", node_uid ? node_uid : "unknown");
             ui_make_short_name(s_nodes[i].node_uid, s_nodes[i].short_name, sizeof(s_nodes[i].short_name));
             snprintf(s_nodes[i].zone_uid, sizeof(s_nodes[i].zone_uid), "--");
+            snprintf(s_nodes[i].last_telemetry, sizeof(s_nodes[i].last_telemetry), "--");
             return (int)i;
         }
     }
@@ -508,6 +511,7 @@ static void ui_refresh_nodes_label(void) {
         char lwt_mark = '.';
         char state_mark;
         char zone_short[11];
+        const char *telemetry_short = NULL;
 
         if (!s_nodes[i].in_use) {
             continue;
@@ -521,6 +525,7 @@ static void ui_refresh_nodes_label(void) {
         }
 
         state_mark = s_nodes[i].online ? '+' : '-';
+        telemetry_short = s_nodes[i].last_telemetry[0] ? s_nodes[i].last_telemetry : "--";
         snprintf(
             zone_short,
             sizeof(zone_short),
@@ -532,8 +537,9 @@ static void ui_refresh_nodes_label(void) {
         snprintf(
             s_nodes_row_text_buf[row],
             sizeof(s_nodes_row_text_buf[row]),
-            "%s %-10s %c%c%c",
+            "%s %-12.12s %-9.9s %c%c%c",
             s_nodes[i].short_name,
+            telemetry_short,
             zone_short,
             hb_mark,
             lwt_mark,
@@ -658,11 +664,6 @@ static bool ui_log_should_display(const char *message) {
     if (!message || message[0] == '\0') {
         return false;
     }
-
-    if (strncmp(message, "tel ", 4) == 0) {
-        return true;
-    }
-
     return ui_log_is_command_line(message);
 }
 
@@ -774,6 +775,63 @@ static void ui_trim_number_text(char *num_text) {
     }
 }
 
+static bool ui_update_node_telemetry_from_log(const char *node_uid, const char *message) {
+    const char *payload;
+    const char *slash;
+    const char *eq;
+    char channel[32];
+    char channel_short[12];
+    char value[20];
+    size_t channel_len;
+    size_t value_len;
+    int idx;
+
+    if (!node_uid || node_uid[0] == '\0' || !message || strncmp(message, "tel ", 4) != 0) {
+        return false;
+    }
+
+    payload = message + 4;
+    slash = strchr(payload, '/');
+    eq = strchr(payload, '=');
+    if (!slash || !eq || eq <= slash) {
+        return false;
+    }
+
+    channel_len = (size_t)(slash - payload);
+    if (channel_len >= sizeof(channel)) {
+        channel_len = sizeof(channel) - 1;
+    }
+    memcpy(channel, payload, channel_len);
+    channel[channel_len] = '\0';
+
+    value_len = strlen(eq + 1);
+    if (value_len >= sizeof(value)) {
+        value_len = sizeof(value) - 1;
+    }
+    memcpy(value, eq + 1, value_len);
+    value[value_len] = '\0';
+
+    ui_compact_channel_name(channel, channel_short, sizeof(channel_short));
+    ui_trim_number_text(value);
+
+    idx = ui_ensure_node_index(node_uid);
+    if (idx < 0) {
+        return false;
+    }
+
+    snprintf(
+        s_nodes[idx].last_telemetry,
+        sizeof(s_nodes[idx].last_telemetry),
+        "%.*s=%.*s",
+        7,
+        channel_short,
+        11,
+        value[0] ? value : "?"
+    );
+    ui_refresh_nodes_label();
+    return true;
+}
+
 static void ui_compact_log_message(const char *message, char *out, size_t out_size) {
     char work[UI_TEXT_MAX + 8];
     char ch[12];
@@ -851,6 +909,10 @@ static void ui_append_log_line(const char *node_uid, const char *message) {
     char line[UI_LOG_LINE_MAX];
     char compact_msg[UI_TEXT_MAX];
     const char *prefix = "SYS";
+
+    if (ui_update_node_telemetry_from_log(node_uid, message)) {
+        return;
+    }
 
     if (!ui_log_should_display(message)) {
         return;

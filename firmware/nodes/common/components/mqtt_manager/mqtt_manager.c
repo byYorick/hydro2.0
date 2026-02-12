@@ -21,6 +21,7 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -62,6 +63,11 @@ static bool s_is_connected = false;
 static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
 static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
+static TaskHandle_t s_reconnect_task_handle = NULL;
+static bool s_reconnect_task_running = false;
+static bool s_reconnect_requested = false;
+static bool s_reconnect_in_progress = false;
+static bool s_auto_recover_enabled = false;
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -73,11 +79,23 @@ static void *s_connection_user_ctx = NULL;
 
 // Mutex для защиты s_node_info и статических буферов от гонок данных
 static SemaphoreHandle_t s_node_info_mutex = NULL;
+static const uint32_t MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT = 5;
+static const uint32_t MQTT_RECONNECT_WAIT_RESULT_MS = 5000;
+static const uint32_t MQTT_RECONNECT_ATTEMPT_DELAY_MS = 1200;
+static const uint32_t MQTT_RECONNECT_CYCLE_DELAY_MS = 5000;
+static const uint32_t MQTT_RECONNECT_TASK_STACK_SIZE = 4096;
+static const UBaseType_t MQTT_RECONNECT_TASK_PRIORITY = 5;
 
 // Forward declarations
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
                                int32_t event_id, void *event_data);
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain);
+static esp_err_t mqtt_manager_create_client(void);
+static esp_err_t mqtt_manager_restart_client(void);
+static esp_err_t mqtt_manager_start_reconnect_task(void);
+static void mqtt_manager_stop_reconnect_task(void);
+static bool mqtt_manager_wait_for_connection(TickType_t timeout_ticks);
+static void mqtt_reconnect_task(void *arg);
 
 /**
  * @brief Построение MQTT топика
@@ -129,6 +147,259 @@ static esp_err_t build_topic(char *topic_buf, size_t buf_size, const char *type,
     }
 
     return ESP_OK;
+}
+
+static esp_err_t mqtt_manager_create_client(void) {
+    if (s_mqtt_client != NULL) {
+        ESP_LOGE(TAG, "MQTT client already created");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_config.host || s_config.host[0] == '\0' || s_config.port == 0) {
+        ESP_LOGE(TAG, "MQTT config is incomplete");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_node_info.node_uid || s_node_info.node_uid[0] == '\0') {
+        ESP_LOGE(TAG, "Node UID is not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
+    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u",
+                           protocol, s_config.host, s_config.port);
+    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
+        ESP_LOGE(TAG, "MQTT URI is too long");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const char *client_id = s_config.client_id;
+    if (!client_id || client_id[0] == '\0') {
+        client_id = s_node_info.node_uid;
+    }
+
+    static char lwt_topic_static[192];
+    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to build LWT topic");
+        return ESP_FAIL;
+    }
+
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = s_mqtt_uri,
+        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
+        .session.disable_clean_session = 0,
+        .network.reconnect_timeout_ms = 10000,
+        .network.timeout_ms = 10000,
+        .network.disable_auto_reconnect = true,
+        .session.last_will.topic = lwt_topic_static,
+        .session.last_will.msg = "offline",
+        .session.last_will.qos = 1,
+        .session.last_will.retain = 1,
+    };
+
+    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
+
+    if (s_config.username && s_config.username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_config.username;
+        if (s_config.password && s_config.password[0] != '\0') {
+            mqtt_cfg.credentials.authentication.password = s_config.password;
+        }
+    }
+
+    mqtt_cfg.credentials.client_id = client_id;
+    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (s_mqtt_client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT client");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_mqtt_client_register_event(
+        s_mqtt_client,
+        ESP_EVENT_ANY_ID,
+        mqtt_event_handler,
+        NULL
+    );
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
+        esp_mqtt_client_destroy(s_mqtt_client);
+        s_mqtt_client = NULL;
+        return err;
+    }
+
+    return ESP_OK;
+}
+
+static bool mqtt_manager_wait_for_connection(TickType_t timeout_ticks) {
+    TickType_t started = xTaskGetTickCount();
+
+    while ((xTaskGetTickCount() - started) < timeout_ticks) {
+        if (s_is_connected) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    return s_is_connected;
+}
+
+static esp_err_t mqtt_manager_restart_client(void) {
+    esp_err_t err;
+
+    s_is_connected = false;
+    s_was_connected = false;
+
+    if (s_mqtt_client != NULL) {
+        err = esp_mqtt_client_stop(s_mqtt_client);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "MQTT stop before recreate returned: %s", esp_err_to_name(err));
+        }
+        esp_mqtt_client_destroy(s_mqtt_client);
+        s_mqtt_client = NULL;
+    }
+
+    err = mqtt_manager_create_client();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = esp_mqtt_client_start(s_mqtt_client);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start recreated MQTT client: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Recreated MQTT client and requested new connection");
+    return ESP_OK;
+}
+
+static void mqtt_reconnect_task(void *arg) {
+    (void)arg;
+
+    while (s_reconnect_task_running) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        if (!s_reconnect_task_running) {
+            break;
+        }
+        if (!s_auto_recover_enabled || s_is_connected || !s_reconnect_requested) {
+            continue;
+        }
+        if (s_reconnect_in_progress) {
+            continue;
+        }
+
+        s_reconnect_in_progress = true;
+        s_reconnect_requested = false;
+        bool recovered = false;
+
+        for (uint32_t attempt = 1; attempt <= MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT; attempt++) {
+            if (!s_reconnect_task_running || !s_auto_recover_enabled) {
+                break;
+            }
+            if (s_is_connected) {
+                recovered = true;
+                break;
+            }
+            if (s_mqtt_client == NULL) {
+                ESP_LOGW(TAG, "MQTT client is NULL during reconnect attempt %u", attempt);
+                break;
+            }
+
+            ESP_LOGW(
+                TAG,
+                "Reconnect attempt %u/%u on existing MQTT client",
+                (unsigned)attempt,
+                (unsigned)MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT
+            );
+            esp_err_t err = esp_mqtt_client_reconnect(s_mqtt_client);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "esp_mqtt_client_reconnect failed: %s", esp_err_to_name(err));
+            }
+
+            if (mqtt_manager_wait_for_connection(pdMS_TO_TICKS(MQTT_RECONNECT_WAIT_RESULT_MS))) {
+                recovered = true;
+                break;
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_ATTEMPT_DELAY_MS));
+        }
+
+        if (!recovered && !s_is_connected && s_auto_recover_enabled) {
+            ESP_LOGW(
+                TAG,
+                "Reconnect on old client failed after %u attempts, recreating MQTT client",
+                (unsigned)MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT
+            );
+            esp_err_t restart_err = mqtt_manager_restart_client();
+            if (restart_err == ESP_OK) {
+                recovered = mqtt_manager_wait_for_connection(pdMS_TO_TICKS(MQTT_RECONNECT_WAIT_RESULT_MS));
+            } else {
+                ESP_LOGE(TAG, "MQTT recreate failed: %s", esp_err_to_name(restart_err));
+            }
+        }
+
+        s_reconnect_in_progress = false;
+
+        if (!recovered && !s_is_connected && s_auto_recover_enabled && s_reconnect_task_running) {
+            ESP_LOGW(TAG, "MQTT recovery cycle failed, scheduling retry");
+            s_reconnect_requested = true;
+            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_CYCLE_DELAY_MS));
+            if (s_reconnect_task_running) {
+                xTaskNotifyGive(s_reconnect_task_handle);
+            }
+        }
+    }
+
+    s_reconnect_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+static esp_err_t mqtt_manager_start_reconnect_task(void) {
+    if (s_reconnect_task_handle != NULL) {
+        return ESP_OK;
+    }
+
+    s_reconnect_task_running = true;
+    s_reconnect_requested = false;
+    s_reconnect_in_progress = false;
+
+    BaseType_t task_ok = xTaskCreate(
+        mqtt_reconnect_task,
+        "mqtt_reconnect",
+        MQTT_RECONNECT_TASK_STACK_SIZE,
+        NULL,
+        MQTT_RECONNECT_TASK_PRIORITY,
+        &s_reconnect_task_handle
+    );
+    if (task_ok != pdPASS) {
+        s_reconnect_task_running = false;
+        s_reconnect_task_handle = NULL;
+        ESP_LOGE(TAG, "Failed to create MQTT reconnect task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
+}
+
+static void mqtt_manager_stop_reconnect_task(void) {
+    if (s_reconnect_task_handle == NULL) {
+        return;
+    }
+
+    TaskHandle_t reconnect_task = s_reconnect_task_handle;
+    s_reconnect_task_running = false;
+    s_reconnect_requested = false;
+    s_reconnect_in_progress = false;
+    xTaskNotifyGive(reconnect_task);
+
+    for (uint32_t i = 0; i < 40 && s_reconnect_task_handle != NULL; i++) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (s_reconnect_task_handle != NULL) {
+        vTaskDelete(s_reconnect_task_handle);
+        s_reconnect_task_handle = NULL;
+    }
 }
 
 esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node_info_t *node_info) {
@@ -240,75 +511,18 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
     s_config.keepalive = config->keepalive;
     s_config.use_tls = config->use_tls;
 
-    // Формируем URI
-    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
-    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u", 
-                          protocol, s_config.host, s_config.port);
-    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
-        ESP_LOGE(TAG, "MQTT URI is too long");
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    // Определяем client_id
-    const char *client_id = s_config.client_id;
-    if (!client_id || client_id[0] == '\0') {
-        client_id = s_node_info.node_uid;  // Используем уже скопированное значение
-    }
-
-    // Настройка LWT (Last Will and Testament) - нужно статическое хранилище
-    static char lwt_topic_static[192];
-    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to build LWT topic");
-        return ESP_FAIL;
-    }
-
-    // Конфигурация MQTT клиента
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = s_mqtt_uri,
-        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
-        .session.disable_clean_session = 0,
-        .network.reconnect_timeout_ms = 10000,
-        .network.timeout_ms = 10000,
-        .session.last_will.topic = lwt_topic_static,
-        .session.last_will.msg = "offline",
-        .session.last_will.qos = 1,
-        .session.last_will.retain = 1,
-    };
-
-    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
-
-    // Аутентификация (если указана)
-    if (s_config.username && s_config.username[0] != '\0') {
-        mqtt_cfg.credentials.username = s_config.username;
-        if (s_config.password && s_config.password[0] != '\0') {
-            mqtt_cfg.credentials.authentication.password = s_config.password;
-        }
-    }
-
-    // Client ID
-    mqtt_cfg.credentials.client_id = client_id;
-
-    // Инициализация клиента
-    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    if (s_mqtt_client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize MQTT client");
-        return ESP_FAIL;
-    }
-
-    // Регистрация обработчика событий
-    esp_err_t err = esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID,
-                                                   mqtt_event_handler, NULL);
+    esp_err_t err = mqtt_manager_create_client();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = mqtt_manager_start_reconnect_task();
+    if (err != ESP_OK) {
         esp_mqtt_client_destroy(s_mqtt_client);
         s_mqtt_client = NULL;
         return err;
     }
 
-    // КРИТИЧНО: Убираем логирование сразу после регистрации обработчика для предотвращения паники
-    // Проблема возникает при вызове ESP_LOGI - возможно из-за повреждения стека или heap
-    // Логирование будет выполнено позже, когда система стабилизируется
-    // ESP_LOGI(TAG, "MQTT manager initialized successfully");
     return ESP_OK;
 }
 
@@ -319,8 +533,12 @@ esp_err_t mqtt_manager_start(void) {
     }
 
     ESP_LOGI(TAG, "Starting MQTT manager...");
+    s_auto_recover_enabled = true;
+    s_reconnect_requested = false;
+    s_reconnect_in_progress = false;
     esp_err_t err = esp_mqtt_client_start(s_mqtt_client);
     if (err != ESP_OK) {
+        s_auto_recover_enabled = false;
         ESP_LOGE(TAG, "Failed to start MQTT manager: %s", esp_err_to_name(err));
         return err;
     }
@@ -334,10 +552,16 @@ esp_err_t mqtt_manager_stop(void) {
     }
 
     ESP_LOGI(TAG, "Stopping MQTT manager...");
+    s_auto_recover_enabled = false;
+    s_reconnect_requested = false;
+    s_reconnect_in_progress = false;
     return esp_mqtt_client_stop(s_mqtt_client);
 }
 
 esp_err_t mqtt_manager_deinit(void) {
+    s_auto_recover_enabled = false;
+    mqtt_manager_stop_reconnect_task();
+
     if (s_mqtt_client) {
         esp_mqtt_client_stop(s_mqtt_client);
         esp_mqtt_client_destroy(s_mqtt_client);
@@ -349,6 +573,8 @@ esp_err_t mqtt_manager_deinit(void) {
     s_is_connected = false;
     s_was_connected = false;
     s_reconnect_count = 0;
+    s_reconnect_requested = false;
+    s_reconnect_in_progress = false;
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -546,7 +772,18 @@ esp_err_t mqtt_manager_reconnect(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "Reconnecting to MQTT broker...");
+    if (s_is_connected) {
+        return ESP_OK;
+    }
+
+    s_reconnect_requested = true;
+    if (s_reconnect_task_handle != NULL) {
+        xTaskNotifyGive(s_reconnect_task_handle);
+        ESP_LOGI(TAG, "MQTT reconnect requested via reconnect task");
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "Reconnect task is not running, fallback to direct reconnect");
     return esp_mqtt_client_reconnect(s_mqtt_client);
 }
 
@@ -797,8 +1034,22 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             
             // Запрос времени у сервера для синхронизации часов устройства
             // Это обеспечивает единую временную линию между устройствами и бэкендом
-            node_utils_request_time();
-            ESP_LOGI(TAG, "Requested time synchronization from server");
+            esp_err_t time_req_err = node_utils_request_time();
+            if (time_req_err == ESP_OK) {
+                ESP_LOGI(TAG, "Requested time synchronization from server");
+            } else {
+                ESP_LOGW(
+                    TAG,
+                    "Time synchronization request skipped/failed: err=0x%x (%s)",
+                    (unsigned)time_req_err,
+                    esp_err_to_name(time_req_err)
+                );
+            }
+
+            if (!s_is_connected) {
+                ESP_LOGW(TAG, "MQTT disconnected before connection callback, skip connected callback");
+                break;
+            }
 
             // Вызов callback подключения
             if (s_connection_cb) {
@@ -813,6 +1064,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT disconnected from broker");
             s_is_connected = false;
+
+            if (s_auto_recover_enabled && s_reconnect_task_handle != NULL) {
+                s_reconnect_requested = true;
+                xTaskNotifyGive(s_reconnect_task_handle);
+            }
 
             // Вызов callback отключения
             if (s_connection_cb) {
