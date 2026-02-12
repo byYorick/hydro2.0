@@ -66,6 +66,33 @@ async def test_execute_irrigation_success():
 
 
 @pytest.mark.asyncio
+async def test_execute_irrigation_success_with_uppercase_node_type_in_db():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "lower(trim(coalesce(n.type, ''))) = any($2::text[])" in normalized:
+            assert args[1] == ["irrig", "irrigation"]
+            return [{"uid": "nd-irrig-uc-1", "type": "IRRIGATION", "channel": "pump_a"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"config": {"duration_sec": 5}},
+            task_context={"task_id": "st-1-uc", "correlation_id": "corr-1-uc"},
+        )
+
+    assert result["success"] is True
+    assert result["commands_total"] == 1
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_lighting_off():
     command_bus = _build_command_bus_mock()
 

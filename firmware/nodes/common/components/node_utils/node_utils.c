@@ -93,6 +93,10 @@ esp_err_t node_utils_init_wifi_config(
     
     wifi_config->ssid = wifi_ssid;
     wifi_config->password = wifi_password;
+    wifi_config->timeout_sec = (wifi_cfg.timeout_sec > 0) ? wifi_cfg.timeout_sec : 30;
+    wifi_config->auto_reconnect = wifi_cfg.auto_reconnect;
+    // 0 = безлимитные попытки переподключения для устойчивой работы нод.
+    wifi_config->max_reconnect_attempts = 0;
     
     ESP_LOGI(TAG, "WiFi config loaded: %s", wifi_cfg.ssid);
     return ESP_OK;

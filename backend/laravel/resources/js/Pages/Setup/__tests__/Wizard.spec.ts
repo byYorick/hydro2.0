@@ -7,6 +7,8 @@ const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn())
 const apiPatchMock = vi.hoisted(() => vi.fn())
 const routerVisitMock = vi.hoisted(() => vi.fn())
+const canAssignToZoneMock = vi.hoisted(() => vi.fn())
+const getStateLabelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -75,6 +77,19 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
+vi.mock('@/composables/useNodeLifecycle', () => ({
+  useNodeLifecycle: () => ({
+    canAssignToZone: canAssignToZoneMock,
+    getStateLabel: getStateLabelMock,
+  }),
+}))
+
+vi.mock('@/composables/useErrorHandler', () => ({
+  useErrorHandler: () => ({
+    handleError: vi.fn(),
+  }),
+}))
+
 import Wizard from '../Wizard.vue'
 
 describe('Setup/Wizard.vue', () => {
@@ -84,6 +99,11 @@ describe('Setup/Wizard.vue', () => {
     apiPostMock.mockReset()
     apiPatchMock.mockReset()
     routerVisitMock.mockReset()
+    canAssignToZoneMock.mockReset()
+    getStateLabelMock.mockReset()
+
+    canAssignToZoneMock.mockResolvedValue(true)
+    getStateLabelMock.mockReturnValue('Зарегистрирован')
 
     apiGetMock.mockResolvedValue({
       data: {
@@ -420,10 +440,19 @@ describe('Setup/Wizard.vue', () => {
         },
       })
 
-    apiPatchMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-      },
+    apiPatchMock.mockImplementation((url: string) => {
+      const nodeId = Number(url.split('/').pop())
+      return Promise.resolve({
+        data: {
+          status: 'ok',
+          data: {
+            id: Number.isFinite(nodeId) ? nodeId : 0,
+            zone_id: 20,
+            pending_zone_id: null,
+            lifecycle_state: 'ASSIGNED_TO_ZONE',
+          },
+        },
+      })
     })
 
     const wrapper = mount(Wizard)

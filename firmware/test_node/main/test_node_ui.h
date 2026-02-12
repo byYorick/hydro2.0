@@ -13,6 +13,13 @@
 extern "C" {
 #endif
 
+typedef enum {
+    TEST_NODE_UI_SETTINGS_ACTION_RESET_ZONES = 0,
+    TEST_NODE_UI_SETTINGS_ACTION_FACTORY_RESET = 1,
+} test_node_ui_settings_action_t;
+
+typedef void (*test_node_ui_settings_action_cb_t)(test_node_ui_settings_action_t action, void *user_ctx);
+
 /**
  * @brief Инициализация локального UI.
  *
@@ -106,6 +113,14 @@ void test_node_ui_set_mode(const char *mode);
  * @param pin PIN код
  */
 void test_node_ui_set_setup_info(const char *ssid, const char *password_text, const char *pin);
+
+/**
+ * @brief Регистрация callback действий меню настроек.
+ *
+ * @param cb Callback (может быть NULL для отключения)
+ * @param user_ctx Пользовательский контекст
+ */
+void test_node_ui_register_settings_action_cb(test_node_ui_settings_action_cb_t cb, void *user_ctx);
 
 #ifdef __cplusplus
 }

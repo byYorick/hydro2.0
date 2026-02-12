@@ -53,6 +53,7 @@ export type SetupWizardDataFlowActions = SetupWizardDataLoaderActions & {
   createPlant: () => Promise<void>
   selectPlant: () => void
   attachNodesToZone: (assignments?: SetupWizardDeviceAssignments | null) => Promise<void>
+  isNodeAttachedToCurrentZone: (nodeId: number) => boolean
 }
 
 export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions): SetupWizardDataFlowActions {

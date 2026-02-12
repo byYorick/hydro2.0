@@ -1093,6 +1093,86 @@ esp_err_t config_storage_get_last_temperature(float *temperature) {
     return ESP_OK;
 }
 
+esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_uid) {
+    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    cJSON *config = NULL;
+    cJSON *gh_item = NULL;
+    cJSON *zone_item = NULL;
+    char *patched = NULL;
+    esp_err_t err;
+
+    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    err = config_storage_get_json(config_json, sizeof(config_json));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Namespace reset skipped: config not available (%s)", esp_err_to_name(err));
+        return err;
+    }
+
+    config = cJSON_Parse(config_json);
+    if (!config) {
+        ESP_LOGE(TAG, "Namespace reset failed: invalid JSON in config buffer");
+        return ESP_FAIL;
+    }
+
+    gh_item = cJSON_GetObjectItem(config, "gh_uid");
+    if (gh_item) {
+        cJSON_DeleteItemFromObject(config, "gh_uid");
+    }
+    cJSON_AddStringToObject(config, "gh_uid", gh_uid);
+
+    zone_item = cJSON_GetObjectItem(config, "zone_uid");
+    if (zone_item) {
+        cJSON_DeleteItemFromObject(config, "zone_uid");
+    }
+    cJSON_AddStringToObject(config, "zone_uid", zone_uid);
+
+    patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+    if (!patched) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_save(patched, strlen(patched));
+    free(patched);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Namespace reset applied: gh_uid=%s zone_uid=%s", gh_uid, zone_uid);
+    } else {
+        ESP_LOGE(TAG, "Namespace reset failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+esp_err_t config_storage_factory_reset(void) {
+    esp_err_t err;
+
+    if (s_nvs_handle == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    err = nvs_erase_all(s_nvs_handle);
+    if (err == ESP_OK) {
+        err = nvs_commit(s_nvs_handle);
+    }
+
+    if (err == ESP_OK) {
+        s_config_loaded = false;
+        memset(s_config_json, 0, sizeof(s_config_json));
+        ESP_LOGW(TAG, "Factory reset completed: all config removed from NVS namespace '%s'", NVS_NAMESPACE);
+    } else {
+        ESP_LOGE(TAG, "Factory reset failed: %s", esp_err_to_name(err));
+    }
+
+    config_storage_unlock();
+    return err;
+}
+
 void config_storage_deinit(void) {
     if (s_nvs_handle != 0) {
         nvs_close(s_nvs_handle);

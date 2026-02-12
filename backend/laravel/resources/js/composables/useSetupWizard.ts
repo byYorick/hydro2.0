@@ -425,6 +425,7 @@ export function useSetupWizard() {
     createRecipe: recipeAutomationFlows.createRecipe,
     selectRecipe: recipeAutomationFlows.selectRecipe,
     attachNodesToZone: dataFlows.attachNodesToZone,
+    isNodeAttachedToCurrentZone: dataFlows.isNodeAttachedToCurrentZone,
     refreshAvailableNodes: dataFlows.loadAvailableNodes,
     applyAutomation: recipeAutomationFlows.applyAutomation,
     openCycleWizard: recipeAutomationFlows.openCycleWizard,

@@ -465,3 +465,53 @@ async def test_process_telemetry_batch_resolves_node_unassigned_alert_on_recover
     assert mock_resolved.await_args.kwargs["code"] == "infra_telemetry_node_unassigned"
     assert mock_resolved.await_args.kwargs["zone_id"] == 1
     assert mock_resolved.await_args.kwargs["node_uid"] == "nd-ph-1"
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_skips_immediate_node_unassigned_recovery():
+    """Recovery alert should wait for grace interval after recent unassigned sample."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._zone_greenhouse_cache.clear()
+    tp._anomaly_resolved_last_sent.clear()
+    tp._node_unassigned_last_seen.clear()
+    tp._cache_last_update = time.time()
+
+    original_grace = tp._node_unassigned_recovery_grace_sec
+    tp._node_unassigned_recovery_grace_sec = 5.0
+
+    try:
+        tp._zone_cache[("zn-1", None)] = 1
+        tp._node_cache[("nd-ph-1", None)] = (1, 1)
+        tp._zone_greenhouse_cache[1] = 1
+        tp._node_unassigned_last_seen[(1, "nd-ph-1")] = time.time()
+
+        samples = [
+            TelemetrySampleModel(
+                node_uid="nd-ph-1",
+                zone_uid="zn-1",
+                gh_uid="gh-1",
+                metric_type="PH",
+                value=6.2,
+                channel="ph_sensor",
+                ts=utcnow(),
+            )
+        ]
+
+        with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("telemetry_processing.execute", new_callable=AsyncMock), \
+             patch("telemetry_processing.send_infra_resolved_alert", new_callable=AsyncMock) as mock_resolved, \
+             patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "ph_sensor"): 101}):
+            mock_fetch.return_value = []
+            mock_resolved.return_value = True
+
+            await process_telemetry_batch(samples)
+
+        assert mock_resolved.await_count == 0
+    finally:
+        tp._node_unassigned_recovery_grace_sec = original_grace

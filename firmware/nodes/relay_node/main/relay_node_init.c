@@ -210,7 +210,7 @@ esp_err_t relay_node_init_components(void) {
     // Регистрация Wi-Fi callback и подключение
     wifi_manager_register_connection_cb(relay_node_wifi_connection_cb, NULL);
     
-    wifi_manager_config_t wifi_config;
+    wifi_manager_config_t wifi_config = {0};
     static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
     static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
     

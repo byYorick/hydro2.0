@@ -38,8 +38,8 @@ static const char *TAG = "test_node_multi";
 #define COMMAND_QUEUE_LENGTH 32
 #define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
 #define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
-#define TASK_STACK_TELEMETRY 4096
-#define TASK_STACK_TELEMETRY_FALLBACK 3584
+#define TASK_STACK_TELEMETRY 6144
+#define TASK_STACK_TELEMETRY_FALLBACK 5632
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 
@@ -170,6 +170,7 @@ static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
 static bool s_wildcard_subscriptions_ready = false;
+static bool s_factory_reset_pending = false;
 
 static virtual_state_t s_virtual_state = {
     .flow_rate = 0.0f,
@@ -459,6 +460,7 @@ static float clamp_float(float value, float min_value, float max_value) {
 }
 
 static void publish_all_config_reports(const char *reason);
+static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 
 static const virtual_node_t *find_virtual_node(const char *node_uid) {
     size_t index = 0;
@@ -656,7 +658,7 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
 
 static void publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
-    char payload_buf[1536];
+    char *payload_buf = NULL;
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
     bool node_preconfig_mode = false;
@@ -733,6 +735,13 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         cJSON_AddItemToObject(json, "wifi", wifi);
     }
 
+    payload_buf = malloc(1536);
+    if (!payload_buf) {
+        ESP_LOGE(TAG, "Out of memory for config_report payload buffer");
+        cJSON_Delete(json);
+        return;
+    }
+
     publish_err = ESP_FAIL;
     for (int attempt = 0; attempt < 3; attempt++) {
         publish_err = publish_json_payload_preallocated(
@@ -741,7 +750,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
             1,
             0,
             payload_buf,
-            sizeof(payload_buf)
+            1536
         );
         if (publish_err == ESP_OK) {
             break;
@@ -781,6 +790,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         );
     }
 
+    free(payload_buf);
     cJSON_Delete(json);
 }
 
@@ -1975,6 +1985,78 @@ static esp_err_t start_worker_task(
     return ESP_OK;
 }
 
+static void factory_reset_reboot_task(void *pv_params) {
+    (void)pv_params;
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    esp_restart();
+}
+
+static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx) {
+    (void)user_ctx;
+
+    if (action == TEST_NODE_UI_SETTINGS_ACTION_RESET_ZONES) {
+        size_t index;
+        esp_err_t save_err = config_storage_reset_namespace(DEFAULT_GH_UID, DEFAULT_ZONE_UID);
+
+        for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+            (void)update_node_namespace(
+                VIRTUAL_NODES[index].node_uid,
+                DEFAULT_GH_UID,
+                DEFAULT_ZONE_UID,
+                "ui_settings_reset_zones"
+            );
+        }
+        ui_sync_all_virtual_nodes(false);
+
+        if (mqtt_manager_is_connected()) {
+            publish_all_config_reports("ui_settings_reset_zones");
+        }
+
+        if (save_err == ESP_OK) {
+            ui_logf(NULL, "settings: zones reset to %s/%s", DEFAULT_GH_UID, DEFAULT_ZONE_UID);
+        } else {
+            ui_logf(
+                NULL,
+                "settings: zones runtime reset, config save err=%s",
+                esp_err_to_name(save_err)
+            );
+        }
+        return;
+    }
+
+    if (action == TEST_NODE_UI_SETTINGS_ACTION_FACTORY_RESET) {
+        esp_err_t reset_err = config_storage_factory_reset();
+        if (reset_err != ESP_OK) {
+            ui_logf(NULL, "settings: factory reset failed (%s)", esp_err_to_name(reset_err));
+            return;
+        }
+        if (!s_factory_reset_pending) {
+            s_factory_reset_pending = true;
+            ui_logf(NULL, "settings: factory reset OK, rebooting...");
+            test_node_ui_set_mode("RESET");
+            if (xTaskCreate(factory_reset_reboot_task, "factory_reset_reboot", 3072, NULL, 7, NULL) != pdPASS) {
+                s_factory_reset_pending = false;
+                ui_logf(NULL, "settings: reboot task create failed");
+            }
+        }
+    }
+}
+
+static void cleanup_init_runtime_resources(void) {
+    if (s_command_queue) {
+        vQueueDelete(s_command_queue);
+        s_command_queue = NULL;
+    }
+    if (s_topic_mutex) {
+        vSemaphoreDelete(s_topic_mutex);
+        s_topic_mutex = NULL;
+    }
+
+    s_wildcard_subscriptions_ready = false;
+    (void)mqtt_manager_deinit();
+    wifi_manager_deinit();
+}
+
 esp_err_t test_node_app_init(void) {
     esp_err_t err;
     char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
@@ -1990,6 +2072,7 @@ esp_err_t test_node_app_init(void) {
     mqtt_node_info_t mqtt_node_info = {0};
 
     s_start_time_seconds = get_timestamp_seconds();
+    s_factory_reset_pending = false;
     test_node_ui_set_mode("BOOT");
     test_node_ui_set_wifi_status(false, "X");
     test_node_ui_set_mqtt_status(false, "X");
@@ -2024,6 +2107,7 @@ esp_err_t test_node_app_init(void) {
     }
     test_node_ui_show_step("App init: wifi_manager_init OK");
     wifi_manager_register_connection_cb(wifi_connected_callback, NULL);
+    test_node_ui_register_settings_action_cb(handle_ui_settings_action, NULL);
 
     test_node_ui_show_step("App init: load WiFi config");
     err = node_utils_init_wifi_config(&wifi_config, wifi_ssid, wifi_password);
@@ -2079,6 +2163,7 @@ esp_err_t test_node_app_init(void) {
     if (!s_topic_mutex) {
         ESP_LOGE(TAG, "Failed to create topic mutex");
         test_node_ui_show_step("App init: topic mutex FAILED");
+        cleanup_init_runtime_resources();
         return ESP_ERR_NO_MEM;
     }
     test_node_ui_show_step("App init: topic mutex OK");
@@ -2090,6 +2175,7 @@ esp_err_t test_node_app_init(void) {
     if (!s_command_queue) {
         ESP_LOGE(TAG, "Failed to create command queue");
         test_node_ui_show_step("App init: command queue FAILED");
+        cleanup_init_runtime_resources();
         return ESP_ERR_NO_MEM;
     }
     test_node_ui_show_step("App init: command queue OK");
@@ -2099,6 +2185,7 @@ esp_err_t test_node_app_init(void) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt_manager_init failed: %s", esp_err_to_name(err));
         test_node_ui_show_step("App init: mqtt_manager_init FAILED");
+        cleanup_init_runtime_resources();
         return err;
     }
     test_node_ui_show_step("App init: mqtt_manager_init OK");
@@ -2111,6 +2198,7 @@ esp_err_t test_node_app_init(void) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "mqtt_manager_start failed: %s", esp_err_to_name(err));
         test_node_ui_show_step("App init: mqtt_manager_start FAILED");
+        cleanup_init_runtime_resources();
         return err;
     }
     test_node_ui_show_step("App init: MQTT service started");
@@ -2126,6 +2214,7 @@ esp_err_t test_node_app_init(void) {
         true
     );
     if (err != ESP_OK) {
+        cleanup_init_runtime_resources();
         return err;
     }
     err = start_worker_task(
@@ -2137,6 +2226,7 @@ esp_err_t test_node_app_init(void) {
         true
     );
     if (err != ESP_OK) {
+        cleanup_init_runtime_resources();
         return err;
     }
     // task_ui_state_sync перенесён в telemetry_task (экономия heap под OOM).

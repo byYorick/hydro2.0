@@ -318,17 +318,21 @@ class SchedulerTaskExecutor:
         await create_zone_event(zone_id, event_type, event_payload)
 
     async def _get_zone_nodes(self, zone_id: int, node_types: Sequence[str]) -> List[Dict[str, Any]]:
+        normalized_types = [str(item).strip().lower() for item in node_types if str(item).strip()]
+        if not normalized_types:
+            return []
+
         rows = await fetch(
             """
             SELECT n.uid, n.type, COALESCE(nc.channel, 'default') AS channel
             FROM nodes n
             LEFT JOIN node_channels nc ON nc.node_id = n.id
             WHERE n.zone_id = $1
-              AND n.status = 'online'
-              AND n.type = ANY($2::text[])
+              AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
+              AND LOWER(TRIM(COALESCE(n.type, ''))) = ANY($2::text[])
             """,
             zone_id,
-            list(node_types),
+            normalized_types,
         )
         result: List[Dict[str, Any]] = []
         for row in rows:
@@ -764,7 +768,7 @@ class SchedulerTaskExecutor:
                 COUNT(*)::int AS online_count
             FROM nodes n
             WHERE n.zone_id = $1
-              AND n.status = 'online'
+              AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
               AND LOWER(COALESCE(n.type, '')) = ANY($2::text[])
             GROUP BY LOWER(COALESCE(n.type, ''))
             """,
@@ -884,7 +888,7 @@ class SchedulerTaskExecutor:
             FROM nodes n
             LEFT JOIN node_channels nc ON nc.node_id = n.id
             WHERE n.zone_id = $1
-              AND n.status = 'online'
+              AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
               AND (
                   LOWER(COALESCE(n.type, '')) = ANY($2::text[])
                   OR LOWER(COALESCE(nc.channel, '')) = ANY($3::text[])

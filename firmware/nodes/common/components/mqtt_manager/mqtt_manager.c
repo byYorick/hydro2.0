@@ -16,12 +16,10 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 #include "node_utils.h"
-#include "esp_timer.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -63,11 +61,6 @@ static bool s_is_connected = false;
 static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
 static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
-static TaskHandle_t s_reconnect_task_handle = NULL;
-static bool s_reconnect_task_running = false;
-static bool s_reconnect_requested = false;
-static bool s_reconnect_in_progress = false;
-static bool s_auto_recover_enabled = false;
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -79,23 +72,12 @@ static void *s_connection_user_ctx = NULL;
 
 // Mutex для защиты s_node_info и статических буферов от гонок данных
 static SemaphoreHandle_t s_node_info_mutex = NULL;
-static const uint32_t MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT = 5;
-static const uint32_t MQTT_RECONNECT_WAIT_RESULT_MS = 5000;
-static const uint32_t MQTT_RECONNECT_ATTEMPT_DELAY_MS = 1200;
-static const uint32_t MQTT_RECONNECT_CYCLE_DELAY_MS = 5000;
-static const uint32_t MQTT_RECONNECT_TASK_STACK_SIZE = 4096;
-static const UBaseType_t MQTT_RECONNECT_TASK_PRIORITY = 5;
 
 // Forward declarations
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
                                int32_t event_id, void *event_data);
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain);
 static esp_err_t mqtt_manager_create_client(void);
-static esp_err_t mqtt_manager_restart_client(void);
-static esp_err_t mqtt_manager_start_reconnect_task(void);
-static void mqtt_manager_stop_reconnect_task(void);
-static bool mqtt_manager_wait_for_connection(TickType_t timeout_ticks);
-static void mqtt_reconnect_task(void *arg);
 
 /**
  * @brief Построение MQTT топика
@@ -174,8 +156,20 @@ static esp_err_t mqtt_manager_create_client(void) {
     }
 
     const char *client_id = s_config.client_id;
+    static char client_id_fallback[32] = {0};
     if (!client_id || client_id[0] == '\0') {
-        client_id = s_node_info.node_uid;
+        uint8_t mac[6] = {0};
+        if (esp_efuse_mac_get_default(mac) == ESP_OK) {
+            snprintf(
+                client_id_fallback,
+                sizeof(client_id_fallback),
+                "esp32-%02x%02x%02x%02x%02x%02x",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            );
+            client_id = client_id_fallback;
+        } else {
+            client_id = s_node_info.node_uid;
+        }
     }
 
     static char lwt_topic_static[192];
@@ -186,11 +180,11 @@ static esp_err_t mqtt_manager_create_client(void) {
 
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = s_mqtt_uri,
-        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
+        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 60,
         .session.disable_clean_session = 0,
-        .network.reconnect_timeout_ms = 10000,
-        .network.timeout_ms = 10000,
-        .network.disable_auto_reconnect = true,
+        .network.reconnect_timeout_ms = 5000,
+        .network.timeout_ms = 30000,
+        .network.disable_auto_reconnect = false,
         .session.last_will.topic = lwt_topic_static,
         .session.last_will.msg = "offline",
         .session.last_will.qos = 1,
@@ -227,179 +221,6 @@ static esp_err_t mqtt_manager_create_client(void) {
     }
 
     return ESP_OK;
-}
-
-static bool mqtt_manager_wait_for_connection(TickType_t timeout_ticks) {
-    TickType_t started = xTaskGetTickCount();
-
-    while ((xTaskGetTickCount() - started) < timeout_ticks) {
-        if (s_is_connected) {
-            return true;
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-
-    return s_is_connected;
-}
-
-static esp_err_t mqtt_manager_restart_client(void) {
-    esp_err_t err;
-
-    s_is_connected = false;
-    s_was_connected = false;
-
-    if (s_mqtt_client != NULL) {
-        err = esp_mqtt_client_stop(s_mqtt_client);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "MQTT stop before recreate returned: %s", esp_err_to_name(err));
-        }
-        esp_mqtt_client_destroy(s_mqtt_client);
-        s_mqtt_client = NULL;
-    }
-
-    err = mqtt_manager_create_client();
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = esp_mqtt_client_start(s_mqtt_client);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start recreated MQTT client: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    ESP_LOGI(TAG, "Recreated MQTT client and requested new connection");
-    return ESP_OK;
-}
-
-static void mqtt_reconnect_task(void *arg) {
-    (void)arg;
-
-    while (s_reconnect_task_running) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        if (!s_reconnect_task_running) {
-            break;
-        }
-        if (!s_auto_recover_enabled || s_is_connected || !s_reconnect_requested) {
-            continue;
-        }
-        if (s_reconnect_in_progress) {
-            continue;
-        }
-
-        s_reconnect_in_progress = true;
-        s_reconnect_requested = false;
-        bool recovered = false;
-
-        for (uint32_t attempt = 1; attempt <= MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT; attempt++) {
-            if (!s_reconnect_task_running || !s_auto_recover_enabled) {
-                break;
-            }
-            if (s_is_connected) {
-                recovered = true;
-                break;
-            }
-            if (s_mqtt_client == NULL) {
-                ESP_LOGW(TAG, "MQTT client is NULL during reconnect attempt %u", attempt);
-                break;
-            }
-
-            ESP_LOGW(
-                TAG,
-                "Reconnect attempt %u/%u on existing MQTT client",
-                (unsigned)attempt,
-                (unsigned)MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT
-            );
-            esp_err_t err = esp_mqtt_client_reconnect(s_mqtt_client);
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "esp_mqtt_client_reconnect failed: %s", esp_err_to_name(err));
-            }
-
-            if (mqtt_manager_wait_for_connection(pdMS_TO_TICKS(MQTT_RECONNECT_WAIT_RESULT_MS))) {
-                recovered = true;
-                break;
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_ATTEMPT_DELAY_MS));
-        }
-
-        if (!recovered && !s_is_connected && s_auto_recover_enabled) {
-            ESP_LOGW(
-                TAG,
-                "Reconnect on old client failed after %u attempts, recreating MQTT client",
-                (unsigned)MQTT_RECONNECT_ATTEMPTS_ON_OLD_CLIENT
-            );
-            esp_err_t restart_err = mqtt_manager_restart_client();
-            if (restart_err == ESP_OK) {
-                recovered = mqtt_manager_wait_for_connection(pdMS_TO_TICKS(MQTT_RECONNECT_WAIT_RESULT_MS));
-            } else {
-                ESP_LOGE(TAG, "MQTT recreate failed: %s", esp_err_to_name(restart_err));
-            }
-        }
-
-        s_reconnect_in_progress = false;
-
-        if (!recovered && !s_is_connected && s_auto_recover_enabled && s_reconnect_task_running) {
-            ESP_LOGW(TAG, "MQTT recovery cycle failed, scheduling retry");
-            s_reconnect_requested = true;
-            vTaskDelay(pdMS_TO_TICKS(MQTT_RECONNECT_CYCLE_DELAY_MS));
-            if (s_reconnect_task_running) {
-                xTaskNotifyGive(s_reconnect_task_handle);
-            }
-        }
-    }
-
-    s_reconnect_task_handle = NULL;
-    vTaskDelete(NULL);
-}
-
-static esp_err_t mqtt_manager_start_reconnect_task(void) {
-    if (s_reconnect_task_handle != NULL) {
-        return ESP_OK;
-    }
-
-    s_reconnect_task_running = true;
-    s_reconnect_requested = false;
-    s_reconnect_in_progress = false;
-
-    BaseType_t task_ok = xTaskCreate(
-        mqtt_reconnect_task,
-        "mqtt_reconnect",
-        MQTT_RECONNECT_TASK_STACK_SIZE,
-        NULL,
-        MQTT_RECONNECT_TASK_PRIORITY,
-        &s_reconnect_task_handle
-    );
-    if (task_ok != pdPASS) {
-        s_reconnect_task_running = false;
-        s_reconnect_task_handle = NULL;
-        ESP_LOGE(TAG, "Failed to create MQTT reconnect task");
-        return ESP_ERR_NO_MEM;
-    }
-
-    return ESP_OK;
-}
-
-static void mqtt_manager_stop_reconnect_task(void) {
-    if (s_reconnect_task_handle == NULL) {
-        return;
-    }
-
-    TaskHandle_t reconnect_task = s_reconnect_task_handle;
-    s_reconnect_task_running = false;
-    s_reconnect_requested = false;
-    s_reconnect_in_progress = false;
-    xTaskNotifyGive(reconnect_task);
-
-    for (uint32_t i = 0; i < 40 && s_reconnect_task_handle != NULL; i++) {
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-
-    if (s_reconnect_task_handle != NULL) {
-        vTaskDelete(s_reconnect_task_handle);
-        s_reconnect_task_handle = NULL;
-    }
 }
 
 esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node_info_t *node_info) {
@@ -516,13 +337,6 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
         return err;
     }
 
-    err = mqtt_manager_start_reconnect_task();
-    if (err != ESP_OK) {
-        esp_mqtt_client_destroy(s_mqtt_client);
-        s_mqtt_client = NULL;
-        return err;
-    }
-
     return ESP_OK;
 }
 
@@ -533,12 +347,8 @@ esp_err_t mqtt_manager_start(void) {
     }
 
     ESP_LOGI(TAG, "Starting MQTT manager...");
-    s_auto_recover_enabled = true;
-    s_reconnect_requested = false;
-    s_reconnect_in_progress = false;
     esp_err_t err = esp_mqtt_client_start(s_mqtt_client);
     if (err != ESP_OK) {
-        s_auto_recover_enabled = false;
         ESP_LOGE(TAG, "Failed to start MQTT manager: %s", esp_err_to_name(err));
         return err;
     }
@@ -552,29 +362,32 @@ esp_err_t mqtt_manager_stop(void) {
     }
 
     ESP_LOGI(TAG, "Stopping MQTT manager...");
-    s_auto_recover_enabled = false;
-    s_reconnect_requested = false;
-    s_reconnect_in_progress = false;
     return esp_mqtt_client_stop(s_mqtt_client);
 }
 
 esp_err_t mqtt_manager_deinit(void) {
-    s_auto_recover_enabled = false;
-    mqtt_manager_stop_reconnect_task();
-
     if (s_mqtt_client) {
         esp_mqtt_client_stop(s_mqtt_client);
         esp_mqtt_client_destroy(s_mqtt_client);
         s_mqtt_client = NULL;
     }
+    if (s_node_info_mutex) {
+        vSemaphoreDelete(s_node_info_mutex);
+        s_node_info_mutex = NULL;
+    }
 
     memset(&s_config, 0, sizeof(s_config));
     memset(&s_node_info, 0, sizeof(s_node_info));
+    memset(s_mqtt_uri, 0, sizeof(s_mqtt_uri));
     s_is_connected = false;
     s_was_connected = false;
     s_reconnect_count = 0;
-    s_reconnect_requested = false;
-    s_reconnect_in_progress = false;
+    s_config_cb = NULL;
+    s_command_cb = NULL;
+    s_connection_cb = NULL;
+    s_config_user_ctx = NULL;
+    s_command_user_ctx = NULL;
+    s_connection_user_ctx = NULL;
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -776,14 +589,7 @@ esp_err_t mqtt_manager_reconnect(void) {
         return ESP_OK;
     }
 
-    s_reconnect_requested = true;
-    if (s_reconnect_task_handle != NULL) {
-        xTaskNotifyGive(s_reconnect_task_handle);
-        ESP_LOGI(TAG, "MQTT reconnect requested via reconnect task");
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG, "Reconnect task is not running, fallback to direct reconnect");
+    ESP_LOGI(TAG, "Manual reconnect requested");
     return esp_mqtt_client_reconnect(s_mqtt_client);
 }
 
@@ -1064,11 +870,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT disconnected from broker");
             s_is_connected = false;
-
-            if (s_auto_recover_enabled && s_reconnect_task_handle != NULL) {
-                s_reconnect_requested = true;
-                xTaskNotifyGive(s_reconnect_task_handle);
-            }
 
             // Вызов callback отключения
             if (s_connection_cb) {

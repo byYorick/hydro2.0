@@ -657,6 +657,7 @@ const {
   selectZone,
   selectPlant,
   attachNodesToZone,
+  isNodeAttachedToCurrentZone,
   refreshAvailableNodes,
   applyAutomation,
   openCycleWizard,
@@ -675,6 +676,15 @@ const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
   climate: null,
   light: null,
 })
+
+function resetDeviceAssignments(): void {
+  deviceAssignments.irrigation = null
+  deviceAssignments.ph_correction = null
+  deviceAssignments.ec_correction = null
+  deviceAssignments.accumulation = null
+  deviceAssignments.climate = null
+  deviceAssignments.light = null
+}
 
 function nodeChannels(node: Node): string[] {
   const channels = Array.isArray(node.channels) ? node.channels : []
@@ -729,16 +739,40 @@ const accumulationNodes = computed<Node[]>(() => nodesByRole('accumulation'))
 const climateNodes = computed<Node[]>(() => nodesByRole('climate'))
 const lightNodes = computed<Node[]>(() => nodesByRole('light'))
 
+function shouldResetRoleAssignment(nodeId: number | null, availableIds: Set<number>): boolean {
+  if (typeof nodeId !== 'number') {
+    return false
+  }
+
+  if (availableIds.has(nodeId)) {
+    return false
+  }
+
+  return !isNodeAttachedToCurrentZone(nodeId)
+}
+
+watch(
+  () => selectedZone.value?.id ?? null,
+  (currentZoneId, previousZoneId) => {
+    if (currentZoneId === previousZoneId) {
+      return
+    }
+
+    resetDeviceAssignments()
+    attachingRole.value = null
+  }
+)
+
 watch(
   availableNodes,
   (nodes) => {
     const ids = new Set(nodes.map((node) => node.id))
-    if (deviceAssignments.irrigation && !ids.has(deviceAssignments.irrigation)) deviceAssignments.irrigation = null
-    if (deviceAssignments.ph_correction && !ids.has(deviceAssignments.ph_correction)) deviceAssignments.ph_correction = null
-    if (deviceAssignments.ec_correction && !ids.has(deviceAssignments.ec_correction)) deviceAssignments.ec_correction = null
-    if (deviceAssignments.accumulation && !ids.has(deviceAssignments.accumulation)) deviceAssignments.accumulation = null
-    if (deviceAssignments.climate && !ids.has(deviceAssignments.climate)) deviceAssignments.climate = null
-    if (deviceAssignments.light && !ids.has(deviceAssignments.light)) deviceAssignments.light = null
+    if (shouldResetRoleAssignment(deviceAssignments.irrigation, ids)) deviceAssignments.irrigation = null
+    if (shouldResetRoleAssignment(deviceAssignments.ph_correction, ids)) deviceAssignments.ph_correction = null
+    if (shouldResetRoleAssignment(deviceAssignments.ec_correction, ids)) deviceAssignments.ec_correction = null
+    if (shouldResetRoleAssignment(deviceAssignments.accumulation, ids)) deviceAssignments.accumulation = null
+    if (shouldResetRoleAssignment(deviceAssignments.climate, ids)) deviceAssignments.climate = null
+    if (shouldResetRoleAssignment(deviceAssignments.light, ids)) deviceAssignments.light = null
   },
   { immediate: true }
 )
@@ -836,13 +870,20 @@ async function attachConfiguredNodes(): Promise<void> {
 }
 
 function canAttachRole(role: DeviceRole): boolean {
+  const nodeId = deviceAssignments[role]
   return canConfigure.value
     && stepZoneDone.value
-    && typeof deviceAssignments[role] === 'number'
+    && typeof nodeId === 'number'
+    && !isNodeAttachedToCurrentZone(nodeId)
     && !loading.stepDevices
 }
 
 function attachButtonLabel(role: DeviceRole): string {
+  const nodeId = deviceAssignments[role]
+  if (typeof nodeId === 'number' && isNodeAttachedToCurrentZone(nodeId)) {
+    return 'Привязано'
+  }
+
   if (loading.stepDevices && attachingRole.value === role) {
     return 'Привязка...'
   }
@@ -863,7 +904,10 @@ async function attachNodeByRole(role: DeviceRole): Promise<void> {
   attachingRole.value = role
   try {
     selectedNodeIds.value = [nodeId]
-    await attachNodesToZone()
+    const assignmentsPayload = missingRequiredDevices.value.length === 0
+      ? { ...deviceAssignments }
+      : null
+    await attachNodesToZone(assignmentsPayload)
   } finally {
     attachingRole.value = null
   }

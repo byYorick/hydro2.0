@@ -44,6 +44,8 @@ _PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "
 _PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
 _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
+_BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
+_BINDING_COMPLETION_LOCKS_GUARD = asyncio.Lock()
 
 
 def _prune_pending_config_reports_locked(now_ts: float) -> None:
@@ -109,6 +111,15 @@ async def _process_pending_config_report_after_registration(hardware_id: str) ->
             e,
             exc_info=True,
         )
+
+
+async def _get_binding_completion_lock(node_id: int) -> asyncio.Lock:
+    async with _BINDING_COMPLETION_LOCKS_GUARD:
+        lock = _BINDING_COMPLETION_LOCKS.get(node_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _BINDING_COMPLETION_LOCKS[node_id] = lock
+        return lock
 
 
 def _apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None) -> None:
@@ -958,94 +969,113 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
 async def _complete_binding_after_config_report(
     node: Dict[str, Any], node_uid: str
 ) -> None:
-    lifecycle_state = node.get("lifecycle_state")
-    zone_id = node.get("zone_id")
-    pending_zone_id = node.get("pending_zone_id")
-    target_zone_id = zone_id or pending_zone_id
-
-    if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
-        return
-
-    zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
-    if not zone_check:
-        logger.warning(
-            "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
-            target_zone_id,
-            node_uid,
-        )
-        return
-
-    s = get_settings()
-    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
-    ingest_token = (
-        s.history_logger_api_token
-        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
-        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
-    )
-
-    if not laravel_url:
-        logger.error(
-            "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
-        )
-        return
-
-    headers = inject_trace_id_header(
-        {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-    )
-    if ingest_token:
-        headers["Authorization"] = f"Bearer {ingest_token}"
-
     node_id = node.get("id")
+    if not node_id:
+        return
 
-    try:
-        if pending_zone_id and not zone_id:
+    lock = await _get_binding_completion_lock(int(node_id))
+    async with lock:
+        current_rows = await fetch(
+            """
+            SELECT lifecycle_state, zone_id, pending_zone_id
+            FROM nodes
+            WHERE id = $1
+            """,
+            node_id,
+        )
+        if not current_rows:
+            return
+
+        current_state = current_rows[0]
+        lifecycle_state = current_state.get("lifecycle_state")
+        zone_id = current_state.get("zone_id")
+        pending_zone_id = current_state.get("pending_zone_id")
+        target_zone_id = zone_id or pending_zone_id
+
+        if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
+            return
+
+        zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
+        if not zone_check:
+            logger.warning(
+                "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
+                target_zone_id,
+                node_uid,
+            )
+            return
+
+        s = get_settings()
+        laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
+        ingest_token = (
+            s.history_logger_api_token
+            if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
+            else (
+                s.ingest_token
+                if hasattr(s, "ingest_token") and s.ingest_token
+                else None
+            )
+        )
+
+        if not laravel_url:
+            logger.error(
+                "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
+            )
+            return
+
+        headers = inject_trace_id_header(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        if ingest_token:
+            headers["Authorization"] = f"Bearer {ingest_token}"
+
+        try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                update_response = await client.patch(
-                    f"{laravel_url}/api/nodes/{node_id}/service-update",
+                if pending_zone_id and not zone_id:
+                    update_response = await client.patch(
+                        f"{laravel_url}/api/nodes/{node_id}/service-update",
+                        headers=headers,
+                        json={
+                            "zone_id": pending_zone_id,
+                            "pending_zone_id": None,
+                        },
+                    )
+                    if update_response.status_code != 200:
+                        logger.warning(
+                            "[CONFIG_REPORT] Failed to update zone_id for node %s (id=%s): %s %s",
+                            node_uid,
+                            node_id,
+                            update_response.status_code,
+                            update_response.text,
+                        )
+                        return
+
+                transition_response = await client.post(
+                    f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
                     headers=headers,
                     json={
-                        "zone_id": pending_zone_id,
-                        "pending_zone_id": None,
+                        "target_state": "ASSIGNED_TO_ZONE",
+                        "reason": "Config report received from node",
                     },
                 )
-                if update_response.status_code != 200:
+
+                if transition_response.status_code != 200:
                     logger.warning(
-                        "[CONFIG_REPORT] Failed to update zone_id for node %s (id=%s): %s %s",
+                        "[CONFIG_REPORT] Failed to transition node %s (id=%s) to ASSIGNED_TO_ZONE: %s %s",
                         node_uid,
                         node_id,
-                        update_response.status_code,
-                        update_response.text,
+                        transition_response.status_code,
+                        transition_response.text,
                     )
-                    return
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            transition_response = await client.post(
-                f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
-                headers=headers,
-                json={
-                    "target_state": "ASSIGNED_TO_ZONE",
-                    "reason": "Config report received from node",
-                },
+        except Exception as e:
+            logger.error(
+                "[CONFIG_REPORT] Error while completing binding for node %s: %s",
+                node_uid,
+                e,
+                exc_info=True,
             )
-
-            if transition_response.status_code != 200:
-                logger.warning(
-                    "[CONFIG_REPORT] Failed to transition node %s (id=%s) to ASSIGNED_TO_ZONE: %s %s",
-                    node_uid,
-                    node_id,
-                    transition_response.status_code,
-                    transition_response.text,
-                )
-    except Exception as e:
-        logger.error(
-            "[CONFIG_REPORT] Error while completing binding for node %s: %s",
-            node_uid,
-            e,
-            exc_info=True,
-        )
 
 
 async def sync_node_channels_from_payload(

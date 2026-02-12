@@ -65,6 +65,10 @@ _anomaly_resolved_last_sent: dict[str, float] = {}
 _anomaly_resolved_throttle_sec = float(
     os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300")
 )
+_node_unassigned_last_seen: dict[tuple[int, str], float] = {}
+_node_unassigned_recovery_grace_sec = float(
+    os.getenv("TELEMETRY_NODE_UNASSIGNED_RECOVERY_GRACE_SEC", "5")
+)
 
 # Backoff состояние для telemetry broadcast
 _broadcast_error_count = 0
@@ -1161,6 +1165,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
     node_unassigned_recovery_candidates: dict[
         tuple[int, str], TelemetrySampleModel
     ] = {}
+    node_unassigned_detected_in_batch: set[tuple[int, str]] = set()
     zone_ids_for_greenhouse: set[int] = set()
 
     for sample in samples:
@@ -1229,6 +1234,10 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             continue
 
         if node_zone_id is None:
+            if sample.node_uid:
+                key = (zone_id, sample.node_uid)
+                node_unassigned_detected_in_batch.add(key)
+                _node_unassigned_last_seen[key] = time.time()
             logger.warning(
                 "Skipping sample: node is not assigned to any zone",
                 extra={
@@ -1324,7 +1333,21 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
     if not resolved_samples:
         return
 
-    for (zone_id, _), recovery_sample in node_unassigned_recovery_candidates.items():
+    for (
+        zone_id,
+        node_uid,
+    ), recovery_sample in node_unassigned_recovery_candidates.items():
+        recovery_key = (zone_id, node_uid)
+        if recovery_key in node_unassigned_detected_in_batch:
+            continue
+
+        if _node_unassigned_recovery_grace_sec > 0:
+            last_unassigned_seen_at = _node_unassigned_last_seen.get(recovery_key)
+            if last_unassigned_seen_at and (
+                time.time() - last_unassigned_seen_at
+            ) < _node_unassigned_recovery_grace_sec:
+                continue
+
         await _emit_telemetry_anomaly_resolved_alert(
             code="infra_telemetry_node_unassigned",
             message="Telemetry processing recovered: node is assigned to zone",
@@ -1335,6 +1358,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             channel=recovery_sample.channel,
             metric_type=recovery_sample.metric_type,
         )
+        _node_unassigned_last_seen.pop(recovery_key, None)
 
     missing_zone_ids = [
         zone_id

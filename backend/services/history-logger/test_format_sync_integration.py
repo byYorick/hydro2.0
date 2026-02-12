@@ -246,6 +246,66 @@ class TestConfigReportFormatSync:
             mock_complete.assert_called_once()
             mock_processed.inc.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_complete_binding_skips_duplicate_transition_after_first_success(self):
+        """Повторный config_report не должен повторно выполнять service-update и lifecycle transition."""
+        from mqtt_handlers import (
+            _BINDING_COMPLETION_LOCKS,
+            _complete_binding_after_config_report,
+        )
+
+        _BINDING_COMPLETION_LOCKS.clear()
+
+        node_snapshot = {
+            "id": 7,
+            "uid": "nd-ph-esp32aa-1",
+            "lifecycle_state": "REGISTERED_BACKEND",
+            "zone_id": None,
+            "pending_zone_id": 1,
+        }
+
+        update_response = MagicMock(status_code=200, text="OK")
+        transition_response = MagicMock(status_code=200, text="OK")
+        http_client = AsyncMock()
+        http_client.patch = AsyncMock(return_value=update_response)
+        http_client.post = AsyncMock(return_value=transition_response)
+
+        client_ctx = AsyncMock()
+        client_ctx.__aenter__.return_value = http_client
+        client_ctx.__aexit__.return_value = False
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.get_settings') as mock_settings, \
+             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
+
+            mock_fetch.side_effect = [
+                [
+                    {
+                        "lifecycle_state": "REGISTERED_BACKEND",
+                        "zone_id": None,
+                        "pending_zone_id": 1,
+                    }
+                ],
+                [{"id": 1}],
+                [
+                    {
+                        "lifecycle_state": "ASSIGNED_TO_ZONE",
+                        "zone_id": 1,
+                        "pending_zone_id": None,
+                    }
+                ],
+            ]
+
+            mock_settings.return_value.laravel_api_url = "http://laravel"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = None
+
+            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
+            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
+
+        assert http_client.patch.await_count == 1
+        assert http_client.post.await_count == 1
+
 
 class TestHeartbeatFormatSync:
     """Тесты синхронизации формата heartbeat."""
