@@ -402,6 +402,71 @@ async def test_execute_cycle_start_dispatches_refill_and_enqueues_check():
 
 
 @pytest.mark.asyncio
+async def test_execute_cycle_start_clamps_next_check_to_refill_timeout():
+    command_bus = _build_command_bus_mock()
+    fresh_sample_ts = datetime.utcnow()
+    refill_timeout_at = datetime.utcnow() + timedelta(seconds=20)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [
+                {"node_type": "irrig", "online_count": 1},
+                {"node_type": "climate", "online_count": 1},
+                {"node_type": "light", "online_count": 1},
+            ]
+        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
+            return [
+                {
+                    "sensor_id": 18,
+                    "sensor_label": "Clean tank",
+                    "level": 0.45,
+                    "sample_ts": fresh_sample_ts,
+                }
+            ]
+        if "lower(coalesce(nc.channel, '')) = any($3::text[])" in normalized:
+            return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "fill_valve"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue, \
+         patch("scheduler_task_executor.send_infra_alert", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-clamped",
+            "scheduled_for": refill_timeout_at.isoformat(),
+            "expires_at": refill_timeout_at.isoformat(),
+            "correlation_id": "ae:self:28:diagnostics:enq-clamped",
+            "status": "pending",
+            "zone_id": 28,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "cycle_start",
+                "refill_timeout_at": refill_timeout_at.isoformat(),
+                "config": {
+                    "execution": {
+                        "required_node_types": ["irrig", "climate", "light"],
+                        "refill": {"duration_sec": 15},
+                    }
+                },
+            },
+            task_context={"task_id": "st-cycle-clamped", "correlation_id": "corr-cycle-clamped"},
+        )
+
+    assert result["success"] is True
+    mock_enqueue.assert_awaited_once()
+    enqueue_kwargs = mock_enqueue.await_args.kwargs
+    assert enqueue_kwargs["scheduled_for"] == refill_timeout_at.isoformat()
+    assert enqueue_kwargs["expires_at"] == refill_timeout_at.isoformat()
+
+
+@pytest.mark.asyncio
 async def test_execute_refill_check_timeout_emits_alert_and_fails():
     command_bus = _build_command_bus_mock()
     timeout_at = datetime.utcnow() - timedelta(seconds=5)

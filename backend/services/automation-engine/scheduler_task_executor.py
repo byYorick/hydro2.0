@@ -1342,6 +1342,10 @@ class SchedulerTaskExecutor:
             next_attempt=next_attempt,
         )
         next_check_at = now + timedelta(seconds=REFILL_CHECK_DELAY_SEC)
+        # Не ставим self-task позже refill_timeout_at: иначе scheduler получает
+        # enqueue, который гарантированно "expired before dispatch".
+        if next_check_at > refill_timeout_at:
+            next_check_at = refill_timeout_at
         try:
             enqueue_result = await enqueue_internal_scheduler_task(
                 zone_id=zone_id,

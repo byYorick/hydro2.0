@@ -6,8 +6,8 @@ import { generateUid } from '@/utils/transliterate'
 import { createSetupWizardDataFlows } from './setupWizardDataFlows'
 import { createSetupWizardRecipeAutomationFlows } from './setupWizardRecipeAutomationFlows'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { syncSystemToTankLayout } from './zoneAutomationFormLogic'
 import type {
-  AutomationFormState,
   Greenhouse,
   GreenhouseFormState,
   GreenhouseType,
@@ -22,6 +22,11 @@ import type {
   Zone,
   ZoneFormState,
 } from './setupWizardTypes'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from './zoneAutomationTypes'
 
 export type { Mode, SystemType, Greenhouse, GreenhouseType, Zone, Plant, Recipe, Node, RecipePhaseForm } from './setupWizardTypes'
 
@@ -112,22 +117,66 @@ export function useSetupWizard() {
     ],
   })
 
-  const automationForm = reactive<AutomationFormState>({
-    systemType: 'drip' as SystemType,
-    manageClimate: true,
-    manageLighting: true,
-    targetPh: 5.8,
-    targetEc: 1.6,
+  const automationClimateForm = reactive<ClimateFormState>({
+    enabled: true,
     dayTemp: 23,
+    nightTemp: 20,
     dayHumidity: 62,
+    nightHumidity: 70,
+    intervalMinutes: 5,
+    dayStart: '07:00',
+    nightStart: '19:00',
     ventMinPercent: 15,
     ventMaxPercent: 85,
-    luxDay: 18000,
+    useExternalTelemetry: true,
+    outsideTempMin: 4,
+    outsideTempMax: 34,
+    outsideHumidityMax: 90,
+    manualOverrideEnabled: true,
+    overrideMinutes: 30,
+  })
+
+  const automationWaterForm = reactive<WaterFormState>({
+    systemType: 'drip',
+    tanksCount: 2,
+    cleanTankFillL: 300,
+    nutrientTankTargetL: 280,
+    irrigationBatchL: 20,
     intervalMinutes: 30,
     durationSeconds: 120,
-    cleanTankFillL: 300,
-    nutrientTankFillL: 280,
+    fillTemperatureC: 20,
+    fillWindowStart: '05:00',
+    fillWindowEnd: '07:00',
+    targetPh: 5.8,
+    targetEc: 1.6,
+    valveSwitching: true,
+    correctionDuringIrrigation: true,
+    enableDrainControl: false,
     drainTargetPercent: 20,
+    diagnosticsEnabled: true,
+    diagnosticsIntervalMinutes: 15,
+    cycleStartWorkflowEnabled: true,
+    cleanTankFullThreshold: 0.95,
+    refillDurationSeconds: 30,
+    refillTimeoutSeconds: 600,
+    refillRequiredNodeTypes: 'irrig,climate,light',
+    refillPreferredChannel: 'fill_valve',
+    solutionChangeEnabled: false,
+    solutionChangeIntervalMinutes: 180,
+    solutionChangeDurationSeconds: 120,
+    manualIrrigationSeconds: 90,
+  })
+
+  const automationLightingForm = reactive<LightingFormState>({
+    enabled: true,
+    luxDay: 18000,
+    luxNight: 0,
+    hoursOn: 16,
+    intervalMinutes: 30,
+    scheduleStart: '06:00',
+    scheduleEnd: '22:00',
+    manualIntensity: 75,
+    manualDurationHours: 4,
   })
 
   const automationAppliedAt = ref<string | null>(null)
@@ -190,7 +239,7 @@ export function useSetupWizard() {
   ])
 
   const waterTopologyLabel = computed(() => {
-    if (automationForm.systemType === 'drip') {
+    if (automationWaterForm.systemType === 'drip') {
       return '2 бака: чистая вода + готовый раствор'
     }
 
@@ -241,7 +290,9 @@ export function useSetupWizard() {
     selectedPlantId,
     selectedRecipeId,
     selectedRecipe,
-    automationForm,
+    climateForm: automationClimateForm,
+    waterForm: automationWaterForm,
+    lightingForm: automationLightingForm,
     selectedZone,
     selectedZoneActiveCycleStatus,
     selectedZoneHasActiveCycle,
@@ -318,12 +369,13 @@ export function useSetupWizard() {
   })
 
   watch(
-    () => automationForm.systemType,
+    () => automationWaterForm.systemType,
     (type) => {
+      syncSystemToTankLayout(automationWaterForm, type)
       if (type === 'drip') {
-        automationForm.drainTargetPercent = 0
-      } else if (automationForm.drainTargetPercent <= 0) {
-        automationForm.drainTargetPercent = 20
+        automationWaterForm.drainTargetPercent = 0
+      } else if (automationWaterForm.drainTargetPercent <= 0) {
+        automationWaterForm.drainTargetPercent = 20
       }
     }
   )
@@ -396,7 +448,9 @@ export function useSetupWizard() {
     zoneForm,
     plantForm,
     recipeForm,
-    automationForm,
+    automationClimateForm,
+    automationWaterForm,
+    automationLightingForm,
     automationAppliedAt,
     stepGreenhouseDone,
     stepZoneDone,

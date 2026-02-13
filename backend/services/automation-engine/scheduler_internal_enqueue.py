@@ -54,6 +54,8 @@ async def enqueue_internal_scheduler_task(
     expires_at_dt = parse_iso_datetime(expires_at)
     if expires_at_dt and expires_at_dt <= now:
         raise ValueError("expires_at_is_in_the_past")
+    if expires_at_dt and expires_at_dt < scheduled_for_dt:
+        raise ValueError("expires_at_before_scheduled_for")
 
     enqueue_id = f"enq-{uuid4().hex}"
     effective_correlation_id = correlation_id or f"ae:self:{zone_id}:{normalized_task_type}:{enqueue_id}"
@@ -96,4 +98,3 @@ async def enqueue_internal_scheduler_task(
         "task_name": task_name,
         "details": details,
     }
-

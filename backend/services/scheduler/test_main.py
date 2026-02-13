@@ -1478,7 +1478,7 @@ async def test_process_internal_enqueued_tasks_marks_expired_entry():
         "task_type": "diagnostics",
         "payload": {},
         "scheduled_for": (now_dt - timedelta(minutes=2)).isoformat(),
-        "expires_at": (now_dt - timedelta(seconds=1)).isoformat(),
+        "expires_at": (now_dt - timedelta(minutes=2)).isoformat(),
     }
 
     with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
@@ -1493,6 +1493,45 @@ async def test_process_internal_enqueued_tasks_marks_expired_entry():
     assert mock_mark.await_args.args[0] == "ae_internal_enqueue_enq-expired"
     assert mock_mark.await_args.args[1] == "expired"
     assert mock_event.await_args.args[1] == "SELF_TASK_EXPIRED"
+
+
+@pytest.mark.asyncio
+async def test_process_internal_enqueued_tasks_dispatches_within_expire_grace():
+    now_dt = datetime(2025, 1, 1, 8, 0, 0)
+    pending_entry = {
+        "enqueue_id": "enq-grace",
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "payload": {"workflow": "refill_check"},
+        "scheduled_for": (now_dt - timedelta(seconds=5)).isoformat(),
+        "expires_at": (now_dt - timedelta(seconds=1)).isoformat(),
+        "correlation_id": "ae:self:28:diagnostics:enq-grace",
+    }
+
+    with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
+         patch("main.execute_scheduled_task", new_callable=AsyncMock) as mock_execute, \
+         patch("main._mark_internal_enqueue_status", new_callable=AsyncMock) as mock_mark, \
+         patch("main.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_load.return_value = [pending_entry]
+        mock_execute.return_value = True
+        _ACTIVE_SCHEDULE_TASKS["internal_enqueue:enq-grace"] = "st-internal-grace-1"
+
+        await process_internal_enqueued_tasks(now_dt)
+
+    mock_execute.assert_awaited_once()
+    assert mock_execute.await_args.kwargs["schedule_key"] == "internal_enqueue:enq-grace"
+    mock_diag.assert_not_awaited()
+    mock_mark.assert_awaited_with(
+        "ae_internal_enqueue_enq-grace",
+        "dispatched",
+        {
+            **pending_entry,
+            "task_id": "st-internal-grace-1",
+            "scheduled_for": (now_dt - timedelta(seconds=5)).isoformat(),
+        },
+    )
+    assert mock_event.await_args.args[1] == "SELF_TASK_DISPATCHED"
 
 
 @pytest.mark.asyncio

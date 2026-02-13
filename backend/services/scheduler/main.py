@@ -145,6 +145,15 @@ _ACTIVE_SCHEDULE_TASKS: Dict[str, str] = {}
 _WINDOW_LAST_STATE: Dict[str, bool] = {}
 _INTERNAL_ENQUEUE_TASK_NAME_PREFIX = "ae_internal_enqueue_"
 _INTERNAL_ENQUEUE_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_SCAN_LIMIT", "500")))
+_INTERNAL_ENQUEUE_EXPIRE_GRACE_SEC = max(
+    0.0,
+    float(
+        os.getenv(
+            "SCHEDULER_INTERNAL_ENQUEUE_EXPIRE_GRACE_SEC",
+            str(max(1.0, SCHEDULER_DISPATCH_INTERVAL_SEC)),
+        )
+    ),
+)
 _ACTIVE_TASK_RECOVERY_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_ACTIVE_TASK_RECOVERY_SCAN_LIMIT", "1000")))
 
 # Анти-спам для сервисных логов/алертов
@@ -969,32 +978,37 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
         expires_at_raw = item.get("expires_at")
         expires_at_dt = _parse_iso_datetime_utc(str(expires_at_raw)) if expires_at_raw else None
         if expires_at_dt and now_dt > expires_at_dt:
-            await _emit_scheduler_diagnostic(
-                reason="internal_enqueue_expired_before_dispatch",
-                message=f"Scheduler отметил internal enqueue как expired до dispatch (enqueue_id={enqueue_id})",
-                level="warning",
-                zone_id=zone_id,
-                details={
-                    "enqueue_id": enqueue_id,
-                    "task_type": task_type,
-                    "scheduled_for": scheduled_for,
-                    "expires_at": expires_at_dt.isoformat(),
-                },
-                alert_code="infra_scheduler_internal_enqueue_expired",
-                error_type="expired_before_dispatch",
-            )
-            await _mark_internal_enqueue_status(task_name, "expired", {**item, "error": "expired_before_dispatch"})
-            await create_zone_event(
-                zone_id,
-                "SELF_TASK_EXPIRED",
-                {
-                    "enqueue_id": enqueue_id,
-                    "task_type": task_type,
-                    "scheduled_for": scheduled_for,
-                    "expires_at": expires_at_dt.isoformat(),
-                },
-            )
-            continue
+            expired_by_sec = max(0.0, (now_dt - expires_at_dt).total_seconds())
+            if expired_by_sec > _INTERNAL_ENQUEUE_EXPIRE_GRACE_SEC:
+                await _emit_scheduler_diagnostic(
+                    reason="internal_enqueue_expired_before_dispatch",
+                    message=f"Scheduler отметил internal enqueue как expired до dispatch (enqueue_id={enqueue_id})",
+                    level="warning",
+                    zone_id=zone_id,
+                    details={
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "scheduled_for": scheduled_for,
+                        "expires_at": expires_at_dt.isoformat(),
+                        "expired_by_sec": expired_by_sec,
+                        "expire_grace_sec": _INTERNAL_ENQUEUE_EXPIRE_GRACE_SEC,
+                    },
+                    alert_code="infra_scheduler_internal_enqueue_expired",
+                    error_type="expired_before_dispatch",
+                )
+                await _mark_internal_enqueue_status(task_name, "expired", {**item, "error": "expired_before_dispatch"})
+                await create_zone_event(
+                    zone_id,
+                    "SELF_TASK_EXPIRED",
+                    {
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "scheduled_for": scheduled_for,
+                        "expires_at": expires_at_dt.isoformat(),
+                        "expired_by_sec": expired_by_sec,
+                    },
+                )
+                continue
 
         schedule = {
             "type": task_type,

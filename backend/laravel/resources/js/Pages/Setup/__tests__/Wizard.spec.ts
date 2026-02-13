@@ -30,6 +30,14 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
+vi.mock('@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue', () => ({
+  default: {
+    name: 'ZoneAutomationEditWizard',
+    props: ['open'],
+    template: '<div v-if="open" data-test="automation-configurator-stub">automation-configurator</div>',
+  },
+}))
+
 vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
   usePage: () => ({
@@ -146,6 +154,16 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('4. Устройства')
     expect(wrapper.text()).toContain('5. Логика автоматики')
     expect(wrapper.text()).toContain('6. Запуск и контроль')
+  })
+
+  it('открывает конфигуратор логики в шаге автоматики', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="automation-configurator-stub"]').exists()).toBe(false)
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Открыть конфигуратор'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="automation-configurator-stub"]').exists()).toBe(true)
   })
 
   it('показывает режим только для просмотра для оператора', async () => {

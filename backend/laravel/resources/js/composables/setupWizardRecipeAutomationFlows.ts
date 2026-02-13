@@ -5,8 +5,8 @@ import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
 import type {
-  AutomationFormState,
   Plant,
   Recipe,
   RecipePhase,
@@ -14,6 +14,11 @@ import type {
   SetupWizardLoadingState,
   Zone,
 } from './setupWizardTypes'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from './zoneAutomationTypes'
 import {
   addRecipePhase as appendRecipePhase,
   createRecipeForPlant,
@@ -35,7 +40,9 @@ interface SetupWizardRecipeAutomationFlowsOptions {
   selectedPlantId: Ref<number | null>
   selectedRecipeId: Ref<number | null>
   selectedRecipe: Ref<Recipe | null>
-  automationForm: AutomationFormState
+  climateForm: ClimateFormState
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
   selectedZone: Ref<Zone | null>
   selectedZoneActiveCycleStatus: ComputedRef<string | null>
   selectedZoneHasActiveCycle: ComputedRef<boolean>
@@ -51,7 +58,7 @@ function toNumberOrNull(value: unknown): number | null {
   return null
 }
 
-function resolveSystemTypeFromPhase(phase: RecipePhase | undefined, current: AutomationFormState['systemType']): AutomationFormState['systemType'] {
+function resolveSystemTypeFromPhase(phase: RecipePhase | undefined, current: WaterFormState['systemType']): WaterFormState['systemType'] {
   const rawMode = phase?.irrigation_mode?.toString().toUpperCase() ?? ''
   if (rawMode === 'SUBSTRATE') {
     return 'substrate_trays'
@@ -71,78 +78,6 @@ function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
   return [...recipe.phases].sort((a, b) => a.phase_index - b.phase_index)[0] ?? null
 }
 
-function buildGrowthCycleConfigPayload(automationForm: AutomationFormState) {
-  const tanksCount = automationForm.systemType === 'drip' ? 2 : 3
-
-  return {
-    mode: 'adjust' as const,
-    subsystems: {
-      ph: {
-        enabled: true,
-        targets: {
-          min: Number((automationForm.targetPh - 0.2).toFixed(2)),
-          max: Number((automationForm.targetPh + 0.2).toFixed(2)),
-          target: Number(automationForm.targetPh.toFixed(2)),
-        },
-      },
-      ec: {
-        enabled: true,
-        targets: {
-          min: Number((automationForm.targetEc - 0.2).toFixed(2)),
-          max: Number((automationForm.targetEc + 0.2).toFixed(2)),
-          target: Number(automationForm.targetEc.toFixed(2)),
-        },
-      },
-      irrigation: {
-        enabled: true,
-        targets: {
-          interval_minutes: automationForm.intervalMinutes,
-          duration_seconds: automationForm.durationSeconds,
-          system_type: automationForm.systemType,
-          tanks_count: tanksCount,
-          clean_tank_fill_l: automationForm.cleanTankFillL,
-          nutrient_tank_target_l: automationForm.nutrientTankFillL,
-          fill_strategy: 'volume',
-          correction_strategy: 'feedback_target',
-          drain_control: {
-            enabled: tanksCount === 3,
-            target_percent: tanksCount === 3 ? automationForm.drainTargetPercent : 0,
-          },
-          correction_node: {
-            target_ph: Number(automationForm.targetPh.toFixed(2)),
-            target_ec: Number(automationForm.targetEc.toFixed(2)),
-            sensors_location: 'correction_node',
-          },
-        },
-      },
-      climate: {
-        enabled: automationForm.manageClimate,
-        targets: {
-          temperature: automationForm.dayTemp,
-          humidity: automationForm.dayHumidity,
-          vent_control: {
-            min_open_percent: automationForm.ventMinPercent,
-            max_open_percent: automationForm.ventMaxPercent,
-          },
-          external_guard: {
-            enabled: true,
-          },
-        },
-      },
-      lighting: {
-        enabled: automationForm.manageLighting,
-        targets: {
-          lux_target_day: automationForm.luxDay,
-          future_metrics: {
-            ppfd: null,
-            dli: null,
-          },
-        },
-      },
-    },
-  }
-}
-
 export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecipeAutomationFlowsOptions) {
   const {
     api,
@@ -155,7 +90,9 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     selectedPlantId,
     selectedRecipeId,
     selectedRecipe,
-    automationForm,
+    climateForm,
+    waterForm,
+    lightingForm,
     selectedZone,
     selectedZoneActiveCycleStatus,
     selectedZoneHasActiveCycle,
@@ -174,7 +111,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       return
     }
 
-    const systemType = resolveSystemTypeFromPhase(phase, automationForm.systemType)
+    const systemType = resolveSystemTypeFromPhase(phase, waterForm.systemType)
     const phTarget = toNumberOrNull(phase.ph_target)
     const ecTarget = toNumberOrNull(phase.ec_target)
     const tempAirTarget = toNumberOrNull(phase.extensions?.day_night?.temperature?.day ?? phase.temp_air_target)
@@ -183,27 +120,28 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     const irrigationIntervalSec = toNumberOrNull(phase.irrigation_interval_sec)
     const irrigationDurationSec = toNumberOrNull(phase.irrigation_duration_sec)
 
-    automationForm.systemType = systemType
+    waterForm.systemType = systemType
     if (phTarget !== null) {
-      automationForm.targetPh = Number(phTarget.toFixed(2))
+      waterForm.targetPh = Number(phTarget.toFixed(2))
     }
     if (ecTarget !== null) {
-      automationForm.targetEc = Number(ecTarget.toFixed(2))
+      waterForm.targetEc = Number(ecTarget.toFixed(2))
     }
     if (tempAirTarget !== null) {
-      automationForm.dayTemp = Number(tempAirTarget.toFixed(1))
+      climateForm.dayTemp = Number(tempAirTarget.toFixed(1))
     }
     if (humidityTarget !== null) {
-      automationForm.dayHumidity = Math.round(humidityTarget)
+      climateForm.dayHumidity = Math.round(humidityTarget)
     }
     if (photoperiod !== null) {
-      automationForm.luxDay = Math.max(4000, photoperiod * 1000)
+      lightingForm.luxDay = Math.max(4000, photoperiod * 1000)
+      lightingForm.hoursOn = Math.min(24, Math.max(0, Number(photoperiod.toFixed(1))))
     }
     if (irrigationIntervalSec !== null && irrigationIntervalSec > 0) {
-      automationForm.intervalMinutes = Math.max(1, Math.round(irrigationIntervalSec / 60))
+      waterForm.intervalMinutes = Math.max(1, Math.round(irrigationIntervalSec / 60))
     }
     if (irrigationDurationSec !== null && irrigationDurationSec > 0) {
-      automationForm.durationSeconds = Math.round(irrigationDurationSec)
+      waterForm.durationSeconds = Math.round(irrigationDurationSec)
     }
   }
 
@@ -297,16 +235,19 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       }
     }
 
-    syncAutomationFromRecipe(selectedRecipe.value)
-
-    if (automationForm.ventMinPercent > automationForm.ventMaxPercent) {
-      showToast('Минимальное открытие форточки не может быть больше максимального', 'error', TOAST_TIMEOUT.NORMAL)
+    const validationError = validateForms({ climateForm, waterForm })
+    if (validationError) {
+      showToast(validationError, 'error', TOAST_TIMEOUT.NORMAL)
       return
     }
 
     loading.stepAutomation = true
     try {
-      const payload = buildGrowthCycleConfigPayload(automationForm)
+      const payload = buildGrowthCycleConfigPayload({
+        climateForm,
+        waterForm,
+        lightingForm,
+      })
       await api.post(`/zones/${selectedZone.value.id}/automation-logic-profile`, {
         mode: 'setup',
         activate: true,

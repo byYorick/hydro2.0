@@ -333,6 +333,24 @@ def test_scheduler_internal_enqueue_creates_pending_entry(client):
     assert mock_zone_event.await_args.args[1] == "SELF_TASK_ENQUEUED"
 
 
+def test_scheduler_internal_enqueue_rejects_expiry_before_schedule(client):
+    tz_msk = timezone(timedelta(hours=3))
+    scheduled_for = (datetime.now(tz_msk) + timedelta(minutes=5)).replace(microsecond=0)
+    expires_at = scheduled_for - timedelta(seconds=10)
+
+    response = client.post("/scheduler/internal/enqueue", json={
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"workflow": "refill_check"},
+        "scheduled_for": scheduled_for.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "source": "automation-engine",
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "expires_at_before_scheduled_for"
+
+
 @pytest.mark.asyncio
 async def test_scheduler_task_success(client, mock_command_bus):
     """Task endpoint should return accepted and expose status."""

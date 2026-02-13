@@ -497,23 +497,23 @@
 
         <div class="grid gap-3 md:grid-cols-3">
           <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
-            <div class="text-xs text-[color:var(--text-muted)]">Система (из рецепта)</div>
+            <div class="text-xs text-[color:var(--text-muted)]">Система</div>
             <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationSystemLabel }}</div>
           </div>
           <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
-            <div class="text-xs text-[color:var(--text-muted)]">pH target (из рецепта)</div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationForm.targetPh.toFixed(2) }}</div>
+            <div class="text-xs text-[color:var(--text-muted)]">pH target</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationWaterForm.targetPh.toFixed(2) }}</div>
           </div>
           <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
-            <div class="text-xs text-[color:var(--text-muted)]">EC target (из рецепта)</div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationForm.targetEc.toFixed(2) }}</div>
+            <div class="text-xs text-[color:var(--text-muted)]">EC target</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationWaterForm.targetEc.toFixed(2) }}</div>
           </div>
         </div>
 
         <div class="grid gap-3 md:grid-cols-2">
           <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
             <input
-              v-model="automationForm.manageClimate"
+              v-model="automationClimateForm.enabled"
               type="checkbox"
               :disabled="!canConfigure"
             />
@@ -521,7 +521,7 @@
           </label>
           <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
             <input
-              v-model="automationForm.manageLighting"
+              v-model="automationLightingForm.enabled"
               type="checkbox"
               :disabled="!canConfigure"
             />
@@ -533,14 +533,25 @@
           Топология воды: {{ waterTopologyLabel }}
         </div>
         <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)] space-y-2">
-          <div class="font-semibold text-[color:var(--text-primary)]">Логика автоматики (полностью из рецепта):</div>
-          <div>1. Выбирается культура, для неё автоматически назначается рецепт и активная фаза.</div>
-          <div>2. Из фазы берутся тип системы, pH/EC, интервалы и длительность полива.</div>
-          <div>3. Водный узел работает по схеме: набор чистой воды → подготовка раствора через узел коррекции pH/EC → полив по target с обратной связью.</div>
-          <div>4. При 3-баках включается контроль дренажа, при 2-баках работает схема без дренажного бака.</div>
-          <div>5. Климат и освещение управляются по целям фазы и переключателям управления.</div>
-          <div>6. Форточки управляются по внутренней/внешней телеметрии и ограничениям открытия.</div>
-          <div>7. При публикации нового рецепта параметры шага автоматики обновляются автоматически.</div>
+          <div class="font-semibold text-[color:var(--text-primary)]">Конфигуратор логики:</div>
+          <div>1. Кнопка "Открыть конфигуратор" запускает тот же мастер логики, что и на вкладке автоматизации зоны.</div>
+          <div>2. Настраиваются интервалы и поведение: полив, климат, досветка, диагностика, смена раствора.</div>
+          <div>3. Параметры накопления воды и подготовки рабочего раствора сохраняются в profile `setup`.</div>
+          <div>4. По "Применить логику автоматики" профиль сохраняется в БД и отправляется `GROWTH_CYCLE_CONFIG` (`profile_mode=setup`).</div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canConfigure || loading.stepAutomation"
+            @click="openAutomationConfigurator"
+          >
+            Открыть конфигуратор
+          </Button>
+          <span class="text-xs text-[color:var(--text-muted)]">
+            Климат: {{ automationClimateForm.intervalMinutes }} мин · Полив: {{ automationWaterForm.intervalMinutes }} мин / {{ automationWaterForm.durationSeconds }} сек · Диагностика: {{ automationWaterForm.diagnosticsIntervalMinutes }} мин
+          </span>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -594,6 +605,17 @@
       </section>
     </div>
 
+    <ZoneAutomationEditWizard
+      :open="showAutomationConfigurator"
+      :climate-form="automationClimateForm"
+      :water-form="automationWaterForm"
+      :lighting-form="automationLightingForm"
+      :is-applying="loading.stepAutomation"
+      :is-system-type-locked="false"
+      @close="showAutomationConfigurator = false"
+      @apply="onApplyAutomationConfigurator"
+    />
+
     <PlantCreateModal
       :show="showPlantCreateWizard"
       @close="handlePlantCreateClose"
@@ -609,8 +631,14 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
+import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import type { Node, SetupWizardDeviceAssignments } from '@/composables/setupWizardTypes'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from '@/composables/zoneAutomationTypes'
 
 const {
   canConfigure,
@@ -633,7 +661,9 @@ const {
   attachedNodesCount,
   greenhouseForm,
   zoneForm,
-  automationForm,
+  automationClimateForm,
+  automationWaterForm,
+  automationLightingForm,
   automationAppliedAt,
   stepGreenhouseDone,
   stepZoneDone,
@@ -665,6 +695,7 @@ const {
 } = useSetupWizard()
 
 const showPlantCreateWizard = ref<boolean>(false)
+const showAutomationConfigurator = ref<boolean>(false)
 type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'accumulation' | 'climate' | 'light'
 const attachingRole = ref<DeviceRole | null>(null)
 
@@ -812,18 +843,38 @@ const canAttachRequiredNodes = computed<boolean>(() => {
 })
 
 const automationSystemLabel = computed<string>(() => {
-  if (automationForm.systemType === 'drip') {
+  if (automationWaterForm.systemType === 'drip') {
     return 'Капельный полив (drip)'
   }
-  if (automationForm.systemType === 'substrate_trays') {
+  if (automationWaterForm.systemType === 'substrate_trays') {
     return 'Лотки/субстрат (substrate trays)'
   }
-  if (automationForm.systemType === 'nft') {
+  if (automationWaterForm.systemType === 'nft') {
     return 'NFT (рециркуляция)'
   }
 
-  return automationForm.systemType
+  return automationWaterForm.systemType
 })
+
+interface AutomationConfiguratorApplyPayload {
+  climateForm: ClimateFormState
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
+}
+
+function openAutomationConfigurator(): void {
+  if (!canConfigure.value) {
+    return
+  }
+  showAutomationConfigurator.value = true
+}
+
+function onApplyAutomationConfigurator(payload: AutomationConfiguratorApplyPayload): void {
+  Object.assign(automationClimateForm, payload.climateForm)
+  Object.assign(automationWaterForm, payload.waterForm)
+  Object.assign(automationLightingForm, payload.lightingForm)
+  showAutomationConfigurator.value = false
+}
 
 function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
   showPlantCreateWizard.value = false
