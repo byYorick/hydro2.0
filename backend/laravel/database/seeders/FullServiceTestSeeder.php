@@ -1056,7 +1056,7 @@ class FullServiceTestSeeder extends Seeder
         return match ($status) {
             'completed' => [
                 'action_required' => true,
-                'decision' => 'execute',
+                'decision' => 'run',
                 'reason_code' => 'required_nodes_checked',
                 'error_code' => null,
                 'command_submitted' => true,
@@ -1067,7 +1067,7 @@ class FullServiceTestSeeder extends Seeder
             ],
             'failed' => [
                 'action_required' => true,
-                'decision' => 'execute',
+                'decision' => 'fail',
                 'reason_code' => 'command_effect_not_confirmed',
                 'error_code' => 'command_effect_not_confirmed',
                 'command_submitted' => true,

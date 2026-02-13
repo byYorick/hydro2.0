@@ -430,7 +430,7 @@ class SchedulerTaskControllerTest extends TestCase
                 'task_type' => 'diagnostics',
                 'result' => [
                     'action_required' => true,
-                    'decision' => 'execute',
+                    'decision' => 'fail',
                     'reason_code' => 'execution_exception',
                     'reason' => 'Исключение во время исполнения',
                     'error_code' => 'execution_exception',
@@ -451,7 +451,7 @@ class SchedulerTaskControllerTest extends TestCase
                     'error_code' => 'execution_exception',
                     'result' => [
                         'action_required' => true,
-                        'decision' => 'execute',
+                        'decision' => 'fail',
                         'reason_code' => 'execution_exception',
                         'reason' => 'Исключение во время исполнения',
                         'error_code' => 'execution_exception',
@@ -469,7 +469,7 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonCount(1, 'data.timeline')
             ->assertJsonPath('data.timeline.0.event_type', 'TASK_FINISHED')
             ->assertJsonPath('data.timeline.0.action_required', true)
-            ->assertJsonPath('data.timeline.0.decision', 'execute')
+            ->assertJsonPath('data.timeline.0.decision', 'fail')
             ->assertJsonPath('data.timeline.0.reason_code', 'execution_exception')
             ->assertJsonPath('data.timeline.0.error_code', 'execution_exception');
     }

@@ -257,7 +257,7 @@ Breaking-change: обратная совместимость для старых
 
 - `laravel + ui`:
   - отображение lifecycle и timeline событий задачи;
-  - отображение причины skip/execute.
+  - отображение причины skip/run/retry/fail.
 
 ---
 
@@ -365,9 +365,11 @@ Container-level chaos:
 2. `automation-engine` принимает задачу (`accepted`).
 3. `automation-engine` переводит в `running`.
 4. Decision layer:
-   - `execute` если действие действительно нужно;
-   - `skip` если действие не требуется.
-5. При `execute` отправляются device-level команды через `CommandBus`.
+   - `run` если действие действительно нужно;
+   - `skip` если действие не требуется;
+   - `retry` если требуются повторные попытки;
+   - `fail` если выполнение завершено ошибкой.
+5. При `run` отправляются device-level команды через `CommandBus`.
 6. Возврат terminal-результата в `completed|failed|rejected|expired`.
 
 ## 7.2 Обязательный сценарий старта цикла (automation-engine)
@@ -415,6 +417,20 @@ Container-level chaos:
 - если бак неполный и timeout не истек: отправка refill-команды + `SELF_TASK_ENQUEUED`
 - если timeout истек: `failed + error_code=cycle_start_refill_timeout` + infra alert `infra_tank_refill_timeout`
 
+Для топологии `two_tank_drip_substrate_trays` (актуальный runtime):
+- `payload.targets.diagnostics.execution.workflow` поддерживает:
+  - `startup`
+  - `clean_fill_check`
+  - `solution_fill_check`
+  - `prepare_recirculation`
+  - `prepare_recirculation_check`
+  - `irrigation_recovery`
+  - `irrigation_recovery_check`
+- при `task_type=irrigation` и неуспешной online-коррекции выполняется автоматический переход:
+  - `reason_code=online_correction_failed`
+  - запуск `irrigation_recovery` с `reason_code=tank_to_tank_correction_started`
+  - публикация события `IRRIGATION_ONLINE_CORRECTION_FAILED`.
+
 Нормализованные коды outcome (актуально):
 - reason:
   - `task_due_deadline_exceeded`
@@ -435,6 +451,24 @@ Container-level chaos:
   - `cycle_start_refill_timeout`
   - `cycle_start_refill_command_failed`
   - `cycle_start_self_task_enqueue_failed`
+  - `online_correction_failed`
+  - `tank_to_tank_correction_started`
+  - `clean_fill_started`
+  - `clean_fill_in_progress`
+  - `clean_fill_completed`
+  - `clean_fill_timeout`
+  - `clean_fill_retry_started`
+  - `solution_fill_started`
+  - `solution_fill_in_progress`
+  - `solution_fill_completed`
+  - `solution_fill_timeout`
+  - `prepare_recirculation_started`
+  - `prepare_targets_reached`
+  - `prepare_targets_not_reached`
+  - `irrigation_recovery_started`
+  - `irrigation_recovery_recovered`
+  - `irrigation_recovery_failed`
+  - `irrigation_recovery_degraded`
   - `diagnostics_service_unavailable`
 - error:
   - `task_due_deadline_exceeded`
@@ -460,6 +494,15 @@ Container-level chaos:
   - `cycle_start_refill_node_not_found`
   - `cycle_start_refill_command_failed`
   - `cycle_start_self_task_enqueue_failed`
+  - `clean_tank_not_filled_timeout`
+  - `solution_tank_not_filled_timeout`
+  - `two_tank_level_unavailable`
+  - `two_tank_level_stale`
+  - `two_tank_command_failed`
+  - `two_tank_enqueue_failed`
+  - `two_tank_channel_not_found`
+  - `prepare_npk_ph_target_not_reached`
+  - `irrigation_recovery_attempts_exceeded`
   - `diagnostics_service_unavailable`
 
 ---
@@ -503,6 +546,7 @@ Container-level chaos:
   - `TANK_REFILL_COMPLETED`
   - `TANK_REFILL_TIMEOUT`
   - `SELF_TASK_ENQUEUED`
+  - `IRRIGATION_ONLINE_CORRECTION_FAILED`
 
 ## 8.4 Порядок сортировки timeline (фиксировано, R0)
 
@@ -521,7 +565,7 @@ Container-level chaos:
 | Startup handshake | реализован (`/scheduler/bootstrap`, `/scheduler/bootstrap/heartbeat`) + readiness-gate (`CommandBus+DB+lease-store`) + chaos-проверки lease/restart recovery | chaos suite подключен в отдельный CI stage `scheduler-chaos` | P1 |
 | Single-leader scheduler | реализован feature-flag путь (`pg advisory lock`, follower safe-mode, reconnect backoff) + unit/service-level/process-level/container-level chaos failover | выполнять regression прогоны chaos-suite в CI | P1 |
 | Idempotency | реализован (`correlation_id` required + payload mismatch) | расширить observability dedupe hit-rate | P1 |
-| Decision layer | реализован (structured result + skip/execute + normalized failure fallback) | UI labels/локализация reason_code | P2 |
+| Decision layer | реализован (structured result + run/skip/retry/fail + normalized failure fallback) | UI labels/локализация reason_code | P2 |
 | error_code | реализован в snapshot/API + унифицирован для API-level failure веток | поддерживать словарь при новых workflow | P3 |
 | Event timeline | реализован базовый timeline + tank/refill events + SLA-render в ZoneAutomationTab + browser e2e UI-сценарий | расширить операторские пресеты при добавлении новых workflow | P2 |
 | Self-task enqueue | реализован (`/scheduler/internal/enqueue` + scheduler scan/dispatched) + anti-silent diagnostics | расширить сценарии ретраев/backoff | P2 |
@@ -548,7 +592,7 @@ Container-level chaos:
 ## 11.1 Unit
 
 Покрыть:
-- decision layer (`execute/skip`);
+- decision layer (`run/skip/retry/fail`);
 - idempotency (`duplicate` / `payload_mismatch`);
 - генерацию structured result;
 - event builder (`event_seq`, обязательные поля);

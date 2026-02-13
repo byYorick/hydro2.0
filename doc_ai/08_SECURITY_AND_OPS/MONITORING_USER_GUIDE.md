@@ -200,6 +200,7 @@ Dashboards должны автоматически импортироватьс�
 - **HistoryLoggerDroppingMessages** - потеря сообщений
 - **HistoryLoggerDatabaseErrors** - ошибки БД
 - **HistoryLoggerNoProcessing** - сервис не обрабатывает данные
+- **HistoryLoggerUnknownNodeEventsSpike** - рост неизвестных `node event` (проверьте `event_code` в прошивке/контракте)
 
 #### Automation Engine:
 - **AutomationEngineLoopErrors** - ошибки в цикле

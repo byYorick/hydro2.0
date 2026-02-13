@@ -370,7 +370,7 @@ Breaking-change: обратная совместимость с legacy/deprecate
 
 1. Unit:
    - deadline/idempotency/lease проверки API;
-   - decision-layer ветки (`execute/skip/stale/timeout`).
+   - decision-layer ветки (`run/skip/retry/fail` + transport `timeout/not_found`).
 2. Integration:
    - scheduler <-> automation-engine lifecycle;
    - internal enqueue + recovery после рестарта.

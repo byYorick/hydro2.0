@@ -1,0 +1,8 @@
+{
+  "metric_type": "WATER_LEVEL_SWITCH",
+  "value": 1,
+  "ts": 1737979200,
+  "channel": "level_clean_max",
+  "node_id": "nd-irrig-1",
+  "stable": true
+}

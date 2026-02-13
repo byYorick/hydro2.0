@@ -567,7 +567,7 @@ async def test_execute_scheduler_task_command_bus_unavailable_sets_structured_fa
         assert stored["status"] == "failed"
         assert stored["error_code"] == "command_bus_unavailable"
         assert stored["result"]["reason_code"] == "command_bus_unavailable"
-        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["decision"] == "fail"
         assert stored["result"]["action_required"] is True
     finally:
         set_command_bus(old_command_bus, old_gh_uid)
@@ -591,7 +591,7 @@ async def test_execute_scheduler_task_exception_sets_structured_failure(mock_com
         assert stored["status"] == "failed"
         assert stored["error_code"] == "execution_exception"
         assert stored["result"]["reason_code"] == "execution_exception"
-        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["decision"] == "fail"
         assert stored["result"]["action_required"] is True
         assert stored["result"]["exception_type"] == "RuntimeError"
         mock_alert.assert_awaited_once()
@@ -619,7 +619,7 @@ async def test_execute_scheduler_task_normalizes_failed_result_without_codes(moc
         assert stored["status"] == "failed"
         assert stored["error_code"] == "task_execution_failed"
         assert stored["result"]["reason_code"] == "task_execution_failed"
-        assert stored["result"]["decision"] == "execute"
+        assert stored["result"]["decision"] == "fail"
         assert stored["result"]["action_required"] is True
         assert stored["result"]["mode"] == "custom_failed_mode"
     finally:
@@ -649,6 +649,100 @@ async def test_execute_scheduler_task_updates_command_effect_confirm_rate_metric
 
         assert api._command_effect_totals["irrigation"] == 2
         assert api._command_effect_confirmed_totals["irrigation"] == 1
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_irrigation_two_tank_failure_transitions_to_recovery(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        call_state = {"attempt": 0}
+
+        async def _closed_loop_side_effect(**kwargs):
+            call_state["attempt"] += 1
+            command = kwargs.get("command") if isinstance(kwargs.get("command"), dict) else {}
+            channel = str(command.get("channel") or "")
+            if call_state["attempt"] == 1 and channel == "default":
+                return {
+                    "command_submitted": True,
+                    "command_effect_confirmed": False,
+                    "terminal_status": "NO_EFFECT",
+                    "cmd_id": "cmd-irrig-fail-api-1",
+                    "error_code": "NO_EFFECT",
+                    "error": "terminal_no_effect",
+                }
+            return {
+                "command_submitted": True,
+                "command_effect_confirmed": True,
+                "terminal_status": "DONE",
+                "cmd_id": f"cmd-recovery-api-{call_state['attempt']}",
+                "error_code": None,
+                "error": None,
+            }
+
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        mock_command_bus.publish_controller_command_closed_loop = AsyncMock(side_effect=_closed_loop_side_effect)
+        set_command_bus(mock_command_bus, "gh-1")
+
+        req = api.SchedulerTaskRequest(
+            **scheduler_task_payload(
+                task_type="irrigation",
+                correlation_id="sch:z1:irrigation:two-tank-recovery",
+                payload={
+                    "targets": {
+                        "ph": {"target": 5.8},
+                        "ec": {"target": 1.6},
+                        "diagnostics": {
+                            "execution": {
+                                "topology": "two_tank_drip_substrate_trays",
+                                "startup": {"required_node_types": ["irrig"]},
+                                "irrigation_recovery": {"max_continue_attempts": 5, "timeout_sec": 600},
+                            }
+                        },
+                    }
+                },
+            )
+        )
+        task, _ = await api._create_scheduler_task(req)
+
+        async def _fetch_side_effect(query, *args):
+            normalized = " ".join(str(query).split()).lower()
+            if "from nodes n left join node_channels nc on nc.node_id = n.id" in normalized:
+                return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "default"}]
+            if "join node_channels nc on nc.node_id = n.id" in normalized and "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+                channel = args[1]
+                if channel in {"valve_irrigation", "valve_solution_supply", "valve_solution_fill", "pump_main"}:
+                    return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": channel}]
+            return []
+
+        with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+             patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+            mock_fetch.side_effect = _fetch_side_effect
+            mock_enqueue.return_value = {
+                "enqueue_id": "enq-api-recovery-1",
+                "scheduled_for": "2026-02-13T11:01:00",
+                "expires_at": "2026-02-13T11:21:00",
+                "correlation_id": "ae:self:1:diagnostics:enq-api-recovery-1",
+                "status": "pending",
+                "zone_id": 1,
+                "task_type": "diagnostics",
+            }
+
+            await api._execute_scheduler_task(task["task_id"], req, None)
+
+        stored = api._scheduler_tasks[task["task_id"]]
+        assert stored["status"] == "completed"
+        assert stored["task_type"] == "irrigation"
+        assert stored["result"]["mode"] == "two_tank_irrigation_recovery_in_progress"
+        assert stored["result"]["workflow"] == "irrigation_recovery"
+        assert stored["result"]["source_reason_code"] == "online_correction_failed"
+        assert stored["result"]["transition_reason_code"] == "tank_to_tank_correction_started"
+        assert stored["result"]["online_correction_error_code"] == "command_no_effect"
+        assert stored["result"]["next_check"]["enqueue_id"] == "enq-api-recovery-1"
+        assert mock_command_bus.publish_controller_command_closed_loop.await_count == 5
     finally:
         set_command_bus(old_command_bus, old_gh_uid)
 

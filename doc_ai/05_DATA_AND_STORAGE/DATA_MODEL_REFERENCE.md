@@ -176,7 +176,7 @@ greenhouse_id FK
 zone_id FK NULL
 node_id FK NULL
 scope ENUM(inside|outside)
-type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|...)
+type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|WATER_LEVEL_SWITCH|SOIL_MOISTURE|SOIL_TEMP|WIND_SPEED|OUTSIDE_TEMP|...)
 label VARCHAR
 unit VARCHAR NULL
 specs JSONB NULL
@@ -341,6 +341,17 @@ updated_at TIMESTAMP
 UNIQUE: (recipe_revision_id, phase_index)
 INDEX: recipe_revision_phase_idx (recipe_revision_id)
 ```
+
+Правила валидации для топологии `2 бака`:
+- область применения: только при активной runtime-топологии
+  `zone_automation_logic_profiles.subsystems.solution_prepare.topology = "two_tank_drip_substrate_trays"`.
+- для фаз со статусом ревизии `PUBLISHED` обязательны поля:
+  - `nutrient_npk_ratio_pct`
+  - `nutrient_calcium_ratio_pct`
+  - `nutrient_magnesium_ratio_pct`
+  - `nutrient_micro_ratio_pct`
+- сумма долей компонентов должна быть `100%` (допуск только на округление).
+- отсутствие любой доли или некорректная сумма блокируют запуск startup/prepare workflow.
 
 ## 5.4. recipe_revision_phase_steps (шаги внутри фаз)
 ```
@@ -663,6 +674,43 @@ UNIQUE (zone_id, mode)
 zone_automation_logic_profiles_zone_id_is_active_index
 ```
 
+Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
+
+```json
+{
+  "solution_prepare": {
+    "enabled": true,
+    "topology": "two_tank_drip_substrate_trays",
+    "startup": {
+      "clean_fill_timeout_sec": 1200,
+      "solution_fill_timeout_sec": 1800,
+      "level_poll_interval_sec": 60,
+      "clean_fill_retry_cycles": 1,
+      "prepare_recirculation_timeout_sec": 1200
+    },
+    "dosing_rules": {
+      "prepare_allowed_components": ["npk"],
+      "prepare_ph_correction": true
+    }
+  },
+  "irrigation": {
+    "enabled": true,
+    "recovery": {
+      "max_continue_attempts": 5,
+      "degraded_tolerance": {
+        "ec_pct": 20,
+        "ph_pct": 10
+      }
+    },
+    "dosing_rules": {
+      "irrigation_allowed_components": ["calcium", "magnesium", "micro"],
+      "irrigation_forbid_components": ["npk"],
+      "irrigation_ph_correction": true
+    }
+  }
+}
+```
+
 ---
 
 # 7. Таблицы тревог (Alerts)
@@ -707,7 +755,7 @@ alerts_hardware_id_idx
 ```
 id PK
 zone_id FK
-type VARCHAR
+type VARCHAR(255)
 entity_type VARCHAR NULL
 entity_id TEXT NULL
 server_ts BIGINT NULL
@@ -727,6 +775,8 @@ zone_events_zone_id_id_idx
 Примечание:
 - Основной payload хранится в `payload_json`.
 - `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
+- Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event`) поле `type` получает нормализованный `event_code`;
+  при длине >255 значение детерминированно усекается до 255 символов.
 
 ---
 
@@ -819,7 +869,7 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 
 Обязательные ключи terminal outcome (`completed|failed|rejected|expired`):
 - `result.action_required: bool`
-- `result.decision: \"execute\"|\"skip\"`
+- `result.decision: \"run\"|\"skip\"|\"retry\"|\"fail\"`
 - `result.reason_code: string`
 - `result.error_code: string|null`
 - `result.command_submitted: bool|null`
@@ -1049,13 +1099,30 @@ channel_binding 1—1 node_channel
 
 Нормализация runtime-полей в scheduler/automation контракт:
 
-- `subsystems.irrigation.targets.interval_minutes` -> `targets.irrigation.interval_sec`
-- `subsystems.irrigation.targets.duration_seconds` -> `targets.irrigation.duration_sec`
-- `subsystems.climate.targets.interval_sec` -> `targets.ventilation.interval_sec`
-- `subsystems.lighting.targets.interval_sec` -> `targets.lighting.interval_sec`
-- `subsystems.solution_change.targets.interval_sec` -> `targets.solution_change.interval_sec`
-- `subsystems.solution_change.targets.duration_sec` -> `targets.solution_change.duration_sec`
-- `subsystems.diagnostics.targets.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
+- `subsystems.irrigation.execution.interval_minutes` -> `targets.irrigation.interval_sec`
+- `subsystems.irrigation.execution.duration_seconds` -> `targets.irrigation.duration_sec`
+- `subsystems.irrigation.execution.system_type` -> `targets.irrigation.system_type`
+- `subsystems.irrigation.execution.*` -> `targets.irrigation.execution.*`
+- `subsystems.climate.execution.interval_sec` -> `targets.ventilation.interval_sec`
+- `subsystems.climate.execution.*` -> `targets.ventilation.execution.*`
+- `subsystems.lighting.execution.interval_sec` -> `targets.lighting.interval_sec`
+- `subsystems.lighting.execution.*` -> `targets.lighting.execution.*`
+- `subsystems.solution_change.execution.interval_sec` -> `targets.solution_change.interval_sec`
+- `subsystems.solution_change.execution.duration_sec` -> `targets.solution_change.duration_sec`
+- `subsystems.solution_change.execution.*` -> `targets.solution_change.execution.*`
+- `subsystems.diagnostics.execution.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
+- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
+- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
+- `subsystems.solution_prepare.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
+- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
+- `subsystems.solution_prepare.topology` -> `targets.diagnostics.execution.topology`
+- `subsystems.irrigation.recovery.max_continue_attempts` -> `targets.irrigation.execution.max_continue_attempts`
+- `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` -> `targets.irrigation.execution.degraded_tolerance.ec_pct`
+- `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`
+
+Совместимость rollout:
+- legacy `subsystems.*.targets` временно принимается backend-слоем и нормализуется в `execution`;
+- канонический формат для новых payload/документации: `subsystems.*.execution`.
 
 Политика enable/disable подсистем:
 
@@ -1064,6 +1131,9 @@ channel_binding 1—1 node_channel
 
 Runtime-снимок подсистем также отражается в `targets.extensions.subsystems` для UI/диагностики.
 Метаданные источника runtime отражаются в `targets.extensions.automation_logic` (`source`, `mode`, `updated_at`).
+
+Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
+обязаны фиксироваться в `zone_events` и lifecycle-снимках `scheduler_logs`.
 
 **Устаревший подход (до рефакторинга):**
 - ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`

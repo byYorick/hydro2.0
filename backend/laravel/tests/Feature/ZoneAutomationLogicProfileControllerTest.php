@@ -31,7 +31,7 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertJsonPath('data.active_mode', 'setup')
             ->assertJsonPath('data.profiles.setup.mode', 'setup')
             ->assertJsonPath('data.profiles.setup.is_active', true)
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.targets.system_type', 'nft');
+            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.system_type', 'nft');
 
         $this->assertDatabaseHas('zone_automation_logic_profiles', [
             'zone_id' => $zone->id,
@@ -46,7 +46,7 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
         $showResponse->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.active_mode', 'setup')
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.targets.interval_minutes', 20);
+            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.interval_minutes', 20);
     }
 
     public function test_it_switches_active_profile_between_modes(): void
@@ -61,7 +61,7 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
         ])->assertOk();
 
         $workingSubsystems = $this->validSubsystemsPayload();
-        $workingSubsystems['irrigation']['targets']['interval_minutes'] = 30;
+        $workingSubsystems['irrigation']['execution']['interval_minutes'] = 30;
 
         $this->actingAs($user)->postJson("/api/zones/{$zone->id}/automation-logic-profile", [
             'mode' => 'working',
@@ -114,28 +114,61 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_it_normalizes_legacy_targets_to_execution_and_drops_targets_from_storage(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create(['role' => 'agronomist']);
+
+        $payload = [
+            'mode' => 'setup',
+            'activate' => true,
+            'subsystems' => [
+                'ph' => [
+                    'enabled' => true,
+                    'targets' => [
+                        'target' => 5.8,
+                    ],
+                ],
+                'ec' => [
+                    'enabled' => true,
+                    'targets' => [
+                        'target' => 1.6,
+                    ],
+                ],
+                'irrigation' => [
+                    'enabled' => true,
+                    'targets' => [
+                        'interval_minutes' => 20,
+                        'duration_seconds' => 30,
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->postJson("/api/zones/{$zone->id}/automation-logic-profile", $payload);
+
+        $response->assertOk()
+            ->assertJsonMissingPath('data.profiles.setup.subsystems.ph.targets')
+            ->assertJsonMissingPath('data.profiles.setup.subsystems.ec.targets')
+            ->assertJsonMissingPath('data.profiles.setup.subsystems.irrigation.targets')
+            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.interval_minutes', 20);
+    }
+
     private function validSubsystemsPayload(): array
     {
         return [
             'ph' => [
                 'enabled' => true,
-                'targets' => [
-                    'target' => 5.8,
-                    'min' => 5.6,
-                    'max' => 6.0,
-                ],
+                'execution' => [],
             ],
             'ec' => [
                 'enabled' => true,
-                'targets' => [
-                    'target' => 1.6,
-                    'min' => 1.4,
-                    'max' => 1.8,
-                ],
+                'execution' => [],
             ],
             'irrigation' => [
                 'enabled' => true,
-                'targets' => [
+                'execution' => [
                     'interval_minutes' => 20,
                     'duration_seconds' => 30,
                     'system_type' => 'nft',

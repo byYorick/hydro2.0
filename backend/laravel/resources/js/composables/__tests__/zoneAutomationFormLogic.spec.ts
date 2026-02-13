@@ -238,32 +238,54 @@ describe('zoneAutomationFormLogic', () => {
     forms.lightingForm.hoursOn = 25
 
     const payload = buildGrowthCycleConfigPayload(forms) as any
-    const targets = payload.subsystems.irrigation.targets
+    const targets = payload.subsystems.irrigation.execution
 
-    expect(payload.subsystems.ph.targets.target).toBe(9)
-    expect(payload.subsystems.ec.targets.target).toBe(0.1)
+    expect(payload.subsystems.ph.targets).toBeUndefined()
+    expect(payload.subsystems.ec.targets).toBeUndefined()
     expect(targets.interval_minutes).toBe(5)
     expect(targets.interval_sec).toBe(300)
     expect(targets.duration_seconds).toBe(3600)
     expect(targets.duration_sec).toBe(3600)
     expect(targets.drain_control.enabled).toBe(false)
     expect(targets.drain_control.target_percent).toBeNull()
-    expect(payload.subsystems.climate.targets.vent_control.min_open_percent).toBe(0)
-    expect(payload.subsystems.climate.targets.vent_control.max_open_percent).toBe(100)
-    expect(payload.subsystems.climate.targets.interval_sec).toBe(300)
-    expect(payload.subsystems.lighting.targets.interval_sec).toBe(1800)
-    expect(payload.subsystems.diagnostics.targets.execution.workflow).toBe('cycle_start')
-    expect(payload.subsystems.solution_change.targets.duration_sec).toBe(120)
-    expect(payload.subsystems.lighting.targets.photoperiod.hours_on).toBe(24)
+    expect(payload.subsystems.climate.execution.vent_control.min_open_percent).toBe(0)
+    expect(payload.subsystems.climate.execution.vent_control.max_open_percent).toBe(100)
+    expect(payload.subsystems.climate.execution.interval_sec).toBe(300)
+    expect(payload.subsystems.lighting.execution.interval_sec).toBe(1800)
+    expect(payload.subsystems.diagnostics.execution.workflow).toBe('startup')
+    expect(payload.subsystems.diagnostics.execution.topology).toBe('two_tank_drip_substrate_trays')
+    expect(payload.subsystems.diagnostics.execution.startup.clean_fill_timeout_sec).toBe(600)
+    expect(payload.subsystems.diagnostics.execution.startup.solution_fill_timeout_sec).toBe(900)
+    expect(payload.subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec).toBe(600)
+    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts).toBe(5)
+    expect(payload.subsystems.diagnostics.execution.irrigation_recovery.degraded_tolerance.ec_pct).toBe(20)
+    expect(payload.subsystems.diagnostics.execution.two_tank_commands.clean_fill_start[0].channel).toBe(
+      'valve_clean_fill'
+    )
+    expect(payload.subsystems.diagnostics.execution.two_tank_commands.prepare_recirculation_start[0].channel).toBe(
+      'valve_solution_supply'
+    )
+    expect(payload.subsystems.solution_change.execution.duration_sec).toBe(120)
+    expect(payload.subsystems.lighting.execution.photoperiod.hours_on).toBe(24)
   })
 
   it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {
     const forms = createForms()
 
     const payload = buildGrowthCycleConfigPayload(forms, { includeSystemType: false }) as any
-    const targets = payload.subsystems.irrigation.targets
+    const targets = payload.subsystems.irrigation.execution
 
     expect(targets.system_type).toBeUndefined()
+  })
+
+  it('buildGrowthCycleConfigPayload маркирует 3-баковую топологию отдельным runtime-id', () => {
+    const forms = createForms()
+    forms.waterForm.tanksCount = 3
+    forms.waterForm.systemType = 'nft'
+
+    const payload = buildGrowthCycleConfigPayload(forms) as any
+    expect(payload.subsystems.diagnostics.execution.workflow).toBe('cycle_start')
+    expect(payload.subsystems.diagnostics.execution.topology).toBe('three_tank_drip_substrate_trays')
   })
 
   it('validateForms возвращает сообщение для некорректных значений', () => {

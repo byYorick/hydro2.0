@@ -541,8 +541,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   function schedulerTaskDecisionLabel(decision: string | null | undefined): string {
     const normalized = String(decision ?? '').toLowerCase()
-    if (normalized === 'execute') return 'Выполнить'
+    if (normalized === 'run' || normalized === 'execute') return 'Выполнить'
     if (normalized === 'skip') return 'Пропустить'
+    if (normalized === 'retry') return 'Повторить'
+    if (normalized === 'fail') return 'Завершить с ошибкой'
     return decision ? String(decision) : '-'
   }
 
@@ -569,6 +571,26 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       cycle_start_refill_timeout: 'Таймаут наполнения бака',
       cycle_start_refill_command_failed: 'Ошибка отправки команды наполнения бака',
       cycle_start_self_task_enqueue_failed: 'Не удалось запланировать отложенную проверку',
+      online_correction_failed: 'Online-коррекция в поливе не достигла целевых параметров',
+      tank_to_tank_correction_started: 'Запущена баковая коррекция (tank-to-tank)',
+      clean_fill_started: 'Запущено наполнение бака чистой воды',
+      clean_fill_in_progress: 'Наполнение бака чистой воды продолжается',
+      clean_fill_completed: 'Наполнение бака чистой воды завершено',
+      clean_fill_timeout: 'Таймаут наполнения бака чистой воды',
+      clean_fill_retry_started: 'Запущен повторный цикл наполнения бака чистой воды',
+      solution_fill_started: 'Запущено наполнение бака рабочего раствора',
+      solution_fill_in_progress: 'Наполнение бака рабочего раствора продолжается',
+      solution_fill_completed: 'Наполнение бака рабочего раствора завершено',
+      solution_fill_timeout: 'Таймаут наполнения бака рабочего раствора',
+      prepare_recirculation_started: 'Запущена рециркуляция подготовки раствора',
+      prepare_targets_reached: 'Подготовка раствора достигла целевых EC/pH',
+      prepare_targets_not_reached: 'Подготовка раствора не достигла цели до таймаута',
+      wind_blocked: 'Вентиляция заблокирована: превышен порог скорости ветра',
+      outside_temp_blocked: 'Вентиляция заблокирована: наружная температура ниже порога',
+      irrigation_recovery_started: 'Запущен recovery-контур полива',
+      irrigation_recovery_recovered: 'Recovery-контур полива достиг цели',
+      irrigation_recovery_failed: 'Recovery-контур полива завершился неуспешно',
+      irrigation_recovery_degraded: 'Recovery-контур завершён в degraded tolerance',
       lighting_already_in_target_state: 'Свет уже в целевом состоянии',
     }
     if (reasonMap[normalized]) return `${reasonMap[normalized]} (${normalized})`
@@ -602,6 +624,15 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       cycle_start_refill_node_not_found: 'Не найден узел для наполнения бака',
       cycle_start_refill_command_failed: 'Команда наполнения бака не отправлена',
       cycle_start_self_task_enqueue_failed: 'Не удалось запланировать self-task',
+      clean_tank_not_filled_timeout: 'Таймаут наполнения бака чистой воды',
+      solution_tank_not_filled_timeout: 'Таймаут наполнения бака рабочего раствора',
+      two_tank_level_unavailable: 'Нет данных датчиков уровня для 2-баковой схемы',
+      two_tank_level_stale: 'Телеметрия датчиков уровня для 2-баковой схемы устарела',
+      two_tank_command_failed: 'Не удалось отправить команды для 2-баковой схемы',
+      two_tank_enqueue_failed: 'Не удалось запланировать self-task для 2-баковой схемы',
+      two_tank_channel_not_found: 'Не найден канал для команды 2-баковой схемы',
+      prepare_npk_ph_target_not_reached: 'Подготовка раствора (NPK + pH) не достигла цели',
+      irrigation_recovery_attempts_exceeded: 'Превышено число попыток recovery-контурa полива',
       command_bus_unavailable: 'CommandBus недоступен',
       execution_exception: 'Исключение во время выполнения задачи',
       task_execution_failed: 'Задача завершилась с ошибкой',

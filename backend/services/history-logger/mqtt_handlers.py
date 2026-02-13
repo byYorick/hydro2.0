@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import logging
 import os
+import re
 import uuid
 from collections import OrderedDict
 from typing import Any, Dict, Optional
@@ -9,7 +11,7 @@ import httpx
 
 import state
 from common.command_status_queue import normalize_status, send_status_to_laravel
-from common.db import execute, fetch, upsert_unassigned_node_error
+from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
@@ -29,6 +31,9 @@ from metrics import (
     NODE_HELLO_ERRORS,
     NODE_HELLO_RECEIVED,
     NODE_HELLO_REGISTERED,
+    NODE_EVENT_ERROR,
+    NODE_EVENT_RECEIVED,
+    NODE_EVENT_UNKNOWN,
     STATUS_RECEIVED,
 )
 from utils import (
@@ -43,6 +48,29 @@ logger = logging.getLogger(__name__)
 
 _PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
 _PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_ZONE_EVENT_TYPE_MAX_LEN = 255
+_ZONE_EVENT_TYPE_HASH_LEN = 10
+_NODE_EVENT_METRIC_FALLBACK = "OTHER"
+_NODE_EVENT_METRIC_ALLOWED_CODES = {
+    "NODE_EVENT",
+    "CLEAN_FILL_STARTED",
+    "CLEAN_FILL_COMPLETED",
+    "CLEAN_FILL_TIMEOUT",
+    "CLEAN_FILL_FAILED",
+    "SOLUTION_FILL_STARTED",
+    "SOLUTION_FILL_COMPLETED",
+    "SOLUTION_FILL_TIMEOUT",
+    "SOLUTION_FILL_FAILED",
+    "SOLUTION_PREP_STARTED",
+    "SOLUTION_PREP_COMPLETED",
+    "SOLUTION_PREP_FAILED",
+    "IRRIGATION_STARTED",
+    "IRRIGATION_COMPLETED",
+    "IRRIGATION_FAILED",
+    "IRRIGATION_RECOVERY_STARTED",
+    "IRRIGATION_RECOVERY_COMPLETED",
+    "IRRIGATION_RECOVERY_FAILED",
+}
 _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
 _BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
@@ -139,6 +167,70 @@ def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
         message = raw_details.strip()
         return {"message": message} if message else {}
     return {"raw_details": raw_details}
+
+
+def _normalize_node_event_type(raw_event_code: Any) -> str:
+    event_code = str(raw_event_code or "").strip().upper()
+    if not event_code:
+        return "NODE_EVENT"
+    normalized = re.sub(r"[^A-Z0-9]+", "_", event_code)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    normalized = normalized or "NODE_EVENT"
+    if len(normalized) <= _ZONE_EVENT_TYPE_MAX_LEN:
+        return normalized
+    hash_suffix = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[
+        :_ZONE_EVENT_TYPE_HASH_LEN
+    ].upper()
+    trimmed_len = _ZONE_EVENT_TYPE_MAX_LEN - _ZONE_EVENT_TYPE_HASH_LEN - 1
+    return f"{normalized[:trimmed_len]}_{hash_suffix}"
+
+
+def _metric_event_code_label(event_type: str) -> str:
+    if event_type in _NODE_EVENT_METRIC_ALLOWED_CODES:
+        return event_type
+    return _NODE_EVENT_METRIC_FALLBACK
+
+
+async def _resolve_zone_id_for_node_event(zone_uid: Optional[str], node_uid: Optional[str]) -> Optional[int]:
+    if zone_uid:
+        zone_uid_str = str(zone_uid).strip()
+        if zone_uid_str.startswith("zn-"):
+            try:
+                return int(zone_uid_str.split("-", 1)[1])
+            except (ValueError, IndexError):
+                pass
+        else:
+            try:
+                return int(zone_uid_str)
+            except ValueError:
+                pass
+
+        zone_rows = await fetch(
+            """
+            SELECT id
+            FROM zones
+            WHERE uid = $1
+            LIMIT 1
+            """,
+            zone_uid_str,
+        )
+        if zone_rows:
+            return zone_rows[0].get("id")
+
+    if node_uid:
+        node_rows = await fetch(
+            """
+            SELECT zone_id
+            FROM nodes
+            WHERE uid = $1
+            LIMIT 1
+            """,
+            node_uid,
+        )
+        if node_rows:
+            return node_rows[0].get("zone_id")
+
+    return None
 
 
 async def handle_node_hello(topic: str, payload: bytes) -> None:
@@ -850,6 +942,77 @@ async def handle_error(topic: str, payload: bytes) -> None:
             await error_handler.handle_error(node_uid, data)
 
         ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
+    finally:
+        clear_trace_id()
+
+
+async def handle_node_event(topic: str, payload: bytes) -> None:
+    """
+    Обработчик channel-level event сообщений от узлов ESP32.
+    Пример топика: hydro/{gh}/{zone}/{node}/{channel}/event
+    """
+    try:
+        logger.info("[NODE_EVENT] ===== START processing node event =====")
+        logger.info("[NODE_EVENT] Topic: %s, payload length: %s", topic, len(payload))
+
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning("[NODE_EVENT] Invalid JSON in event from topic %s", topic)
+            NODE_EVENT_ERROR.labels(reason="invalid_json").inc()
+            return
+
+        _apply_trace_context(data, fallback_keys=("trace_id", "event_id", "cmd_id"))
+
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        node_uid = _extract_node_uid(topic)
+        channel = _extract_channel_from_topic(topic)
+
+        event_code_raw = data.get("event_code") or data.get("event") or data.get("type") or "node_event"
+        event_code = str(event_code_raw).strip()
+        if not event_code:
+            event_code = "node_event"
+        event_type = _normalize_node_event_type(event_code)
+
+        zone_id = await _resolve_zone_id_for_node_event(zone_uid, node_uid)
+        if not zone_id:
+            logger.warning(
+                "[NODE_EVENT] Could not resolve zone_id for event, skipping: gh_uid=%s zone_uid=%s node_uid=%s channel=%s event_code=%s",
+                gh_uid,
+                zone_uid,
+                node_uid,
+                channel,
+                event_code,
+            )
+            NODE_EVENT_ERROR.labels(reason="zone_not_resolved").inc()
+            return
+
+        details = {
+            "source": "node_event",
+            "topic": topic,
+            "gh_uid": gh_uid,
+            "zone_uid": zone_uid,
+            "node_uid": node_uid,
+            "channel": channel,
+            "event_code": event_code,
+            "payload": data,
+        }
+        await create_zone_event(zone_id, event_type, details)
+        metric_event_code = _metric_event_code_label(event_type)
+        NODE_EVENT_RECEIVED.labels(event_code=metric_event_code).inc()
+        if metric_event_code == _NODE_EVENT_METRIC_FALLBACK:
+            NODE_EVENT_UNKNOWN.inc()
+
+        logger.info(
+            "[NODE_EVENT] Stored zone event: zone_id=%s node_uid=%s channel=%s event_type=%s",
+            zone_id,
+            node_uid,
+            channel,
+            event_type,
+        )
+    except Exception:
+        NODE_EVENT_ERROR.labels(reason="handler_exception").inc()
+        logger.exception("[NODE_EVENT] Unexpected error while handling event topic %s", topic)
     finally:
         clear_trace_id()
 

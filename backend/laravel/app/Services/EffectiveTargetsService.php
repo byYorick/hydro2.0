@@ -633,16 +633,20 @@ class EffectiveTargetsService
     protected function mergeSolutionSubsystem(array $targets, array $subsystems): array
     {
         $solutionSubsystem = null;
+        $solutionKey = null;
         $solutionEnabled = null;
         foreach (['solution_change', 'solution'] as $candidate) {
             if (isset($subsystems[$candidate]) && is_array($subsystems[$candidate])) {
                 $solutionSubsystem = $subsystems[$candidate];
+                $solutionKey = $candidate;
                 $solutionEnabled = $this->toBool($solutionSubsystem['enabled'] ?? null);
                 break;
             }
         }
 
-        $solutionTargets = is_array($solutionSubsystem['targets'] ?? null) ? $solutionSubsystem['targets'] : null;
+        $solutionTargets = is_string($solutionKey)
+            ? $this->extractSubsystemTargets($subsystems, $solutionKey)
+            : null;
         if ($solutionEnabled === null && !is_array($solutionTargets)) {
             return $targets;
         }
@@ -697,7 +701,16 @@ class EffectiveTargetsService
     protected function extractSubsystemTargets(array $subsystems, string $subsystem): ?array
     {
         $raw = $subsystems[$subsystem]['targets'] ?? null;
-        return is_array($raw) ? $raw : null;
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        $execution = $subsystems[$subsystem]['execution'] ?? null;
+        if (!is_array($execution)) {
+            return null;
+        }
+
+        return array_merge($execution, ['execution' => $execution]);
     }
 
     protected function extractSubsystemEnabled(array $subsystems, string $subsystem): ?bool

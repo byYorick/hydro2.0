@@ -27,7 +27,9 @@ class ZoneAutomationLogicProfileService
      */
     public function upsertProfile(Zone $zone, string $mode, array $subsystems, bool $activate, ?int $userId): ZoneAutomationLogicProfile
     {
-        return DB::transaction(function () use ($zone, $mode, $subsystems, $activate, $userId): ZoneAutomationLogicProfile {
+        $normalizedSubsystems = $this->normalizeSubsystemsForStorage($subsystems);
+
+        return DB::transaction(function () use ($zone, $mode, $normalizedSubsystems, $activate, $userId): ZoneAutomationLogicProfile {
             if ($activate) {
                 ZoneAutomationLogicProfile::query()
                     ->where('zone_id', $zone->id)
@@ -45,7 +47,7 @@ class ZoneAutomationLogicProfileService
                 $profile->created_by = $userId;
             }
 
-            $profile->subsystems = $subsystems;
+            $profile->subsystems = $normalizedSubsystems;
             $profile->is_active = $activate || (bool) $profile->is_active;
             $profile->updated_by = $userId;
             $profile->save();
@@ -118,5 +120,55 @@ class ZoneAutomationLogicProfileService
         }
 
         return $result;
+    }
+
+    protected function normalizeSubsystemsForStorage(array $subsystems): array
+    {
+        $normalized = [];
+
+        foreach ($subsystems as $name => $subsystem) {
+            if (!is_string($name) || !is_array($subsystem) || array_is_list($subsystem)) {
+                continue;
+            }
+
+            $entry = [];
+            if (array_key_exists('enabled', $subsystem)) {
+                $entry['enabled'] = (bool) $subsystem['enabled'];
+            }
+
+            $execution = [];
+            if (isset($subsystem['execution']) && is_array($subsystem['execution'])) {
+                $execution = $subsystem['execution'];
+            }
+
+            $legacyTargets = is_array($subsystem['targets'] ?? null) ? $subsystem['targets'] : [];
+            if (!empty($legacyTargets)) {
+                $execution = array_replace_recursive($this->extractLegacyExecutionPatch($name, $legacyTargets), $execution);
+            }
+
+            if (!empty($execution)) {
+                $entry['execution'] = $execution;
+            }
+
+            if (!empty($entry)) {
+                $normalized[$name] = $entry;
+            }
+        }
+
+        return $normalized;
+    }
+
+    protected function extractLegacyExecutionPatch(string $subsystemName, array $legacyTargets): array
+    {
+        $nestedExecution = is_array($legacyTargets['execution'] ?? null) ? $legacyTargets['execution'] : [];
+
+        if (in_array($subsystemName, ['ph', 'ec'], true)) {
+            return $nestedExecution;
+        }
+
+        $flatPatch = $legacyTargets;
+        unset($flatPatch['execution']);
+
+        return array_replace_recursive($flatPatch, $nestedExecution);
     }
 }

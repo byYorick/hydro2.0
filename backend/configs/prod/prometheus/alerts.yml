@@ -113,6 +113,15 @@ groups:
           summary: "History Logger is not processing telemetry"
           description: "No telemetry messages processed in the last 5 minutes. Service may be stuck."
 
+      - alert: HistoryLoggerUnknownNodeEventsSpike
+        expr: rate(node_event_unknown_total[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger receives too many unknown node events"
+          description: "Unknown node event rate is {{ $value }} events/sec for 10m. Check node firmware event_code contract."
+
   - name: automation_engine_alerts
     interval: 30s
     rules:

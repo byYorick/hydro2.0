@@ -19,7 +19,7 @@
       "type": "string",
       "description": "Тип события (telemetry_updated, command_status, alert_created, alert_updated, zone_updated, node_config_updated, etc.)",
       "minLength": 1,
-      "maxLength": 100
+      "maxLength": 255
     },
     "entity_type": {
       "anyOf": [
@@ -64,4 +64,3 @@
   },
   "additionalProperties": false
 }
-

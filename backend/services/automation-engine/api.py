@@ -320,7 +320,7 @@ def _build_execution_terminal_result(
     reason: str,
     mode: str,
     action_required: bool = True,
-    decision: str = "execute",
+    decision: str = "fail",
     reason_code: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -350,7 +350,15 @@ def _normalize_failed_execution_result(result: Dict[str, Any]) -> Dict[str, Any]
 
     decision = normalized.get("decision")
     if not isinstance(decision, str) or not decision.strip():
-        decision = "execute"
+        decision = "fail"
+    else:
+        decision = decision.strip().lower()
+        if decision == "execute":
+            decision = "run"
+        if decision == "run":
+            decision = "fail"
+        elif decision not in {"skip", "retry", "fail"}:
+            decision = "fail"
 
     reason_code = normalized.get("reason_code")
     if not isinstance(reason_code, str) or not reason_code.strip():
@@ -676,7 +684,7 @@ async def _recover_inflight_scheduler_tasks() -> Dict[str, int]:
             reason="Automation-engine перезапущен: in-flight задача финализирована recovery-политикой",
             mode="startup_recovery_finalize",
             action_required=True,
-            decision="execute",
+            decision="fail",
             reason_code="task_recovered_after_restart",
         )
 

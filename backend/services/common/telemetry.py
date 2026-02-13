@@ -33,6 +33,9 @@ def _normalize_metric_type(metric_type: str) -> str:
 
 def _infer_sensor_type(metric_type: str) -> str:
     normalized = _normalize_metric_type(metric_type)
+    # Дискретные датчики уровня храним в типе сенсора WATER_LEVEL.
+    if normalized == "WATER_LEVEL_SWITCH":
+        return "WATER_LEVEL"
     valid_types = {
         "PH",
         "EC",
@@ -44,8 +47,10 @@ def _infer_sensor_type(metric_type: str) -> str:
         "FLOW_RATE",
         "PUMP_CURRENT",
         "SOIL_MOISTURE",
+        "SOIL_TEMP",
         "PRESSURE",
         "WIND_SPEED",
+        "OUTSIDE_TEMP",
         "WIND_DIRECTION",
         "OTHER",
     }

@@ -326,23 +326,15 @@ class EffectiveTargetsServiceTest extends TestCase
             'subsystems' => [
                 'ph' => [
                     'enabled' => true,
-                    'targets' => [
-                        'target' => 5.9,
-                        'min' => 5.7,
-                        'max' => 6.1,
-                    ],
+                    'execution' => [],
                 ],
                 'ec' => [
                     'enabled' => true,
-                    'targets' => [
-                        'target' => 1.7,
-                        'min' => 1.5,
-                        'max' => 1.9,
-                    ],
+                    'execution' => [],
                 ],
                 'irrigation' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'interval_minutes' => 20,
                         'duration_seconds' => 45,
                         'system_type' => 'nft',
@@ -350,7 +342,7 @@ class EffectiveTargetsServiceTest extends TestCase
                 ],
                 'lighting' => [
                     'enabled' => false,
-                    'targets' => [
+                    'execution' => [
                         'photoperiod' => ['hours_on' => 10],
                         'schedule' => [['start' => '08:00', 'end' => '18:00']],
                         'interval_minutes' => 120,
@@ -358,7 +350,7 @@ class EffectiveTargetsServiceTest extends TestCase
                 ],
                 'climate' => [
                     'enabled' => false,
-                    'targets' => [
+                    'execution' => [
                         'temperature' => ['day' => 24],
                         'humidity' => ['day' => 64],
                         'interval_minutes' => 15,
@@ -366,7 +358,7 @@ class EffectiveTargetsServiceTest extends TestCase
                 ],
                 'diagnostics' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'interval_minutes' => 30,
                         'workflow' => 'cycle_start',
                         'required_node_types' => ['irrig', 'climate'],
@@ -380,7 +372,7 @@ class EffectiveTargetsServiceTest extends TestCase
                 ],
                 'solution_change' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'interval_minutes' => 180,
                         'duration_seconds' => 120,
                     ],
@@ -407,8 +399,8 @@ class EffectiveTargetsServiceTest extends TestCase
 
         $result = $this->service->getEffectiveTargets($cycle->id);
 
-        $this->assertSame(5.9, $result['targets']['ph']['target']);
-        $this->assertSame(1.7, $result['targets']['ec']['target']);
+        $this->assertSame(6.0, $result['targets']['ph']['target']);
+        $this->assertSame(1.6, $result['targets']['ec']['target']);
 
         $this->assertSame(1200, $result['targets']['irrigation']['interval_sec']);
         $this->assertSame(45, $result['targets']['irrigation']['duration_sec']);
@@ -436,7 +428,7 @@ class EffectiveTargetsServiceTest extends TestCase
 
         $this->assertSame(
             20,
-            data_get($result, 'targets.extensions.subsystems.irrigation.targets.interval_minutes')
+            data_get($result, 'targets.extensions.subsystems.irrigation.execution.interval_minutes')
         );
     }
 

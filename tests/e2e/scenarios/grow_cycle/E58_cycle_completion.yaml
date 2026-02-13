@@ -70,12 +70,17 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: cycle_response
 
   - step: set_cycle_id
     type: set
     cycle_id: ${cycle_response.data.id}
+
+  - step: start_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/start
+    payload: {}
 
   - step: harvest_cycle
     type: api_post

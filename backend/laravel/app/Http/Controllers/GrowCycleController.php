@@ -399,16 +399,19 @@ class GrowCycleController extends Controller
             'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
         ]);
 
-        $zone->loadMissing('nodes.channels');
-        $readiness = $this->checkZoneReadiness($zone);
-        $readinessErrors = $this->buildZoneReadinessErrors($readiness);
-        if (! empty($readinessErrors)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Zone is not ready for cycle start',
-                'readiness_errors' => $readinessErrors,
-                'readiness' => $readiness,
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        $startImmediately = (bool) ($data['start_immediately'] ?? false);
+        if ($startImmediately) {
+            $zone->loadMissing('nodes.channels');
+            $readiness = $this->checkZoneReadiness($zone);
+            $readinessErrors = $this->buildZoneReadinessErrors($readiness);
+            if (! empty($readinessErrors)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Zone is not ready for cycle start',
+                    'readiness_errors' => $readinessErrors,
+                    'readiness' => $readiness,
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
         }
 
         try {

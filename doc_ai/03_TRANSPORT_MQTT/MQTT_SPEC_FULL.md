@@ -80,7 +80,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`, `FLOW_RATE`, `PUMP_CURRENT`
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
 
@@ -98,6 +98,31 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - Backend сохраняет TelemetrySample
 - Backend обновляет last_value в Redis
 - Backend может триггерить Alerts
+
+## 3.4. Telemetry для дискретных датчиков уровня (2-бака)
+
+Для каналов:
+- `level_clean_min`
+- `level_clean_max`
+- `level_solution_min`
+- `level_solution_max`
+
+узел публикует стандартную telemetry с `value` в формате `0|1`:
+
+```json
+{
+  "metric_type": "WATER_LEVEL_SWITCH",
+  "value": 1,
+  "ts": 1710001234
+}
+```
+
+Семантика:
+- `1` — датчик сработал;
+- `0` — датчик не сработал.
+
+Решение по контракту:
+- `WATER_LEVEL_SWITCH` является каноническим `metric_type` для дискретных датчиков уровня (`0|1`).
 
 ---
 
@@ -498,6 +523,65 @@ Backend никогда не остаётся "в неизвестности": п
 
 Таким образом, backend всегда знает не только то, что команда на включение насоса была отправлена,
 но и то, что **реле реально замкнулось и насос потребляет ток** в ожидаемых пределах.
+
+## 8.6. Особые правила для авто-наполнения баков (2-бака)
+
+Для каналов `valve_clean_fill` и `valve_solution_fill`:
+
+1. Нода обязана локально остановить наполнение по датчику `*_max`:
+   - `level_clean_max` для чистого бака;
+   - `level_solution_max` для бака раствора.
+2. При авто-остановке нода обязана отправить `command_response`:
+
+```json
+{
+  "cmd_id": "cmd-701",
+  "status": "DONE",
+  "ts": 1710003399123,
+  "details": {
+    "result": "auto_stopped",
+    "reason_code": "level_max_reached",
+    "tank": "clean"
+  }
+}
+```
+
+3. Дополнительно нода публикует событие (канал `storage_state`):
+
+Топик:
+```text
+hydro/{gh}/{zone}/{node}/storage_state/event
+```
+
+Payload:
+```json
+{
+  "event_code": "clean_fill_completed",
+  "ts": 1710003399,
+  "state": {
+    "level_clean_min": 1,
+    "level_clean_max": 1,
+    "level_solution_min": 0,
+    "level_solution_max": 0
+  }
+}
+```
+
+Нормализация в backend (`history-logger`):
+- `event_code` (или fallback-поля `event`/`type`) преобразуется в `zone_events.type`;
+- преобразование: `UPPERCASE` + все не `[A-Z0-9]` символы заменяются на `_` + схлопывание повторов `_`;
+- пример: `clean fill-completed/v2` -> `CLEAN_FILL_COMPLETED_V2`;
+- если код пустой, используется `NODE_EVENT`.
+- для `zone_events.type` действует лимит 255 символов: если нормализованный код длиннее, он усечётся
+  детерминированно и получит suffix `_{SHA1_10}` (первые 10 hex-символов SHA1).
+
+Метрика приёма событий (`node_event_received_total{event_code=...}`):
+- в label попадают только whitelisted коды событий двухбакового контура;
+- все остальные коды агрегируются в `event_code="OTHER"` для контроля кардинальности Prometheus.
+
+Назначение:
+- automation-engine использует это событие как fast-path подтверждение;
+- scheduler/automation сохраняют периодический poll как резервный канал контроля.
 
 ---
 # 9. Дополнительные системные топики

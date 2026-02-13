@@ -286,6 +286,21 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `default_state` (bool): значение по умолчанию, если `state_key` не задан.
 - `params` (object): дефолтные параметры команды.
 - `duration_sec` (number): дефолтная длительность; нормализуется в `duration_ms` на стороне automation-engine.
+- для `targets.diagnostics.execution` дополнительно допускаются startup-поля `2 бака`:
+  - `workflow`: `startup|clean_fill_check|solution_fill_check|prepare_recirculation|prepare_recirculation_check|irrigation_recovery|irrigation_recovery_check`
+  - `level_poll_interval_sec`
+  - `clean_fill_timeout_sec`
+  - `solution_fill_timeout_sec`
+  - `prepare_recirculation_timeout_sec`
+  - `irrigation_recovery.max_continue_attempts`
+  - `irrigation_recovery.timeout_sec`
+  - `target_ec_prepare_npk` (optional override для этапа prepare)
+  - `nutrient_npk_ratio_pct` (optional override доли NPK, если не брать из `targets.nutrition.components.npk.ratio_pct`)
+
+Правило расчёта prepare EC:
+- `EC_prepare_npk = EC_target_total * nutrient_npk_ratio_pct / 100`
+- если `target_ec_prepare_npk` передан явно, используется он;
+- если доля NPK отсутствует, применяется безопасный fallback `nutrient_npk_ratio_pct=100` (поведение как у общего `EC target`).
 
 Если `execution` отсутствует, используется встроенный mapping automation-engine.
 
@@ -305,6 +320,17 @@ Runtime-обновления из фронтового конфигуратор�
 - `params.mode` = `adjust|start`
 - `params.profile_mode` = `setup|working`
 - `params.subsystems` в команде не передаётся (инжектится сервером из `zone_automation_logic_profiles`)
+
+Команда ручного override (операторский режим, `2 бака`):
+- endpoint: `POST /api/zones/{zone}/commands`
+- `type`: `GROWTH_CYCLE_CONFIG`
+- `params.mode`: `adjust`
+- `params.manual_action`:
+  - `fill_clean_tank`
+  - `prepare_solution`
+  - `recirculate_solution`
+  - `resume_irrigation`
+- backend обязан логировать `manual_action` в `zone_events`/`scheduler_logs`.
 
 ### 5.2. POST /api/internal/realtime/telemetry-batch
 
@@ -396,6 +422,10 @@ Runtime-обновления из фронтового конфигуратор�
   - `lifecycle[]` (снимки `scheduler_logs`);
   - `timeline[]` (детальные task-события из `zone_events`);
   - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`.
+- Для 2-бакового recovery перехода (`irrigation -> tank-to-tank`) в `result.*` используются:
+  - `source_reason_code=online_correction_failed`
+  - `transition_reason_code=tank_to_tank_correction_started`
+  - `online_correction_error_code` (код исходной неуспешной online-коррекции).
 
 ### 3.5.3. GET /api/zones/{id}/automation-logic-profile
 
@@ -418,6 +448,27 @@ Runtime-обновления из фронтового конфигуратор�
   - `subsystems: object` (обязательны `ph/ec/irrigation`, enabled=true)
   - `activate: bool` (optional, default=true)
 - **Эффект:** при `activate=true` профиль переводится в активный runtime-режим для `effective_targets`.
+
+Минимальные поля `subsystems` для `2 бака`:
+- `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
+- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` (default `1200`)
+- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` (default `1800`)
+- `subsystems.solution_prepare.startup.level_poll_interval_sec` (default `60`)
+- `subsystems.solution_prepare.startup.clean_fill_retry_cycles` (default `1`)
+- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` (default `1200`)
+- `subsystems.irrigation.recovery.max_continue_attempts` (default `5`)
+- `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` (default `20`)
+- `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` (default `10`)
+- `subsystems.solution_prepare.dosing_rules.prepare_allowed_components = [\"npk\"]`
+- `subsystems.irrigation.dosing_rules.irrigation_allowed_components = [\"calcium\", \"magnesium\", \"micro\"]`
+- `subsystems.irrigation.dosing_rules.irrigation_forbid_components = [\"npk\"]`
+
+Ограничение:
+- recipe-targets (`ph/ec/...`) не сохраняются в logic-profile.
+
+Условная обязательность:
+- при `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
+  обязательны оба блока: `subsystems.solution_prepare` и `subsystems.irrigation`.
 
 ### 3.6. POST /api/zones
 

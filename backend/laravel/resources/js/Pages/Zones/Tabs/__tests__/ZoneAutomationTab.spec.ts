@@ -107,7 +107,7 @@ describe('ZoneAutomationTab.vue', () => {
               due_at: '2026-02-10T08:02:00Z',
               expires_at: '2026-02-10T08:05:00Z',
               correlation_id: null,
-              decision: 'execute',
+              decision: 'run',
               reason_code: 'tank_refill_started',
               error_code: null,
               command_submitted: true,
@@ -368,7 +368,12 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.schedulerTaskStatusLabel('expired')).toBe('Просрочена')
     expect(vm.schedulerTaskEventLabel('SCHEDULE_TASK_EXECUTION_STARTED')).toContain('execution started')
     expect(vm.schedulerTaskReasonLabel('task_expired')).toContain('expires_at')
+    expect(vm.schedulerTaskReasonLabel('online_correction_failed')).toContain('Online-коррекция')
+    expect(vm.schedulerTaskReasonLabel('tank_to_tank_correction_started')).toContain('баковая коррекция')
+    expect(vm.schedulerTaskReasonLabel('irrigation_recovery_started')).toContain('recovery-контур')
     expect(vm.schedulerTaskErrorLabel('task_due_deadline_exceeded')).toContain('due_at')
+    expect(vm.schedulerTaskErrorLabel('prepare_npk_ph_target_not_reached')).toContain('NPK + pH')
+    expect(vm.schedulerTaskErrorLabel('irrigation_recovery_attempts_exceeded')).toContain('Превышено число попыток')
     expect(vm.formatDateTime('2026-02-10T08:00:00')).toBe(vm.formatDateTime('2026-02-10T08:00:00Z'))
 
     const noCommandsMeta = vm.schedulerTaskDoneMeta({

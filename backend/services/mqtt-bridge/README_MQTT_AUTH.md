@@ -20,7 +20,7 @@ MQTT брокер настроен с обязательной аутентиф�
 - **Назначение:** Automation Engine сервис
 - **Пароль:** Настраивается через `MQTT_AUTOMATION_ENGINE_PASS`
 - **Доступ:**
-  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/+/command_response`
+  - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`
   - Чтение/Запись: `hydro/+/+/events/#`
   - Публикация команд удалена — команды через history-logger REST API
 
@@ -31,7 +31,7 @@ MQTT брокер настроен с обязательной аутентиф�
   - Чтение: `hydro/+/+/+/+/telemetry`, `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`,
     `hydro/+/+/+/lwt`, `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`,
     `hydro/+/+/+/config_report`, `hydro/+/+/+/node_hello`,
-    `hydro/+/+/+/+/command_response`, `hydro/node_hello`, `hydro/time/request`
+    `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`, `hydro/node_hello`, `hydro/time/request`
   - Запись: `hydro/+/+/+/+/command`, `hydro/+/+/events/#`
 
 ### 4. scheduler
@@ -54,7 +54,7 @@ MQTT брокер настроен с обязательной аутентиф�
   - Запись: `hydro/node_hello`, `hydro/+/+/+/node_hello`
   - Запись: `hydro/+/+/+/status`, `hydro/+/+/+/heartbeat`, `hydro/+/+/+/lwt`,
     `hydro/+/+/+/diagnostics`, `hydro/+/+/+/error`, `hydro/+/+/+/config_report`,
-    `hydro/+/+/+/+/command_response`
+    `hydro/+/+/+/+/command_response`, `hydro/+/+/+/+/event`
   - Чтение: `hydro/+/+/+/config`, `hydro/+/+/+/+/command`
 
 ## Генерация паролей
@@ -132,6 +132,7 @@ topic read hydro/+/+/+/error
 topic read hydro/+/+/+/config_report
 topic read hydro/+/+/+/node_hello
 topic read hydro/+/+/+/+/command_response
+topic read hydro/+/+/+/+/event
 topic read hydro/node_hello
 topic read hydro/time/request
 topic write hydro/+/+/+/+/command

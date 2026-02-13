@@ -209,6 +209,30 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_allows_creating_planned_cycle_when_zone_is_not_ready(): void
+    {
+        $zoneWithoutNodes = Zone::factory()->create();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$zoneWithoutNodes->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => false,
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.status', GrowCycleStatus::PLANNED->value);
+
+        $this->assertDatabaseHas('grow_cycles', [
+            'zone_id' => $zoneWithoutNodes->id,
+            'recipe_revision_id' => $this->revision->id,
+            'plant_id' => $this->plant->id,
+            'status' => GrowCycleStatus::PLANNED->value,
+        ]);
+    }
+
+    #[Test]
     public function it_blocks_cycle_start_when_ec_control_is_enabled_but_ec_pumps_are_missing(): void
     {
         $ecZone = Zone::factory()->create([

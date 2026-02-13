@@ -242,7 +242,7 @@ test.describe('Zone Detail', () => {
               due_at: nowIso,
               expires_at: nowIso,
               action_required: true,
-              decision: 'execute',
+              decision: 'run',
               reason_code: 'irrigation_required',
               command_submitted: true,
               command_effect_confirmed: true,

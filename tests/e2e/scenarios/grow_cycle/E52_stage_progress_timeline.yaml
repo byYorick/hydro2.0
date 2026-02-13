@@ -80,8 +80,13 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: cycle_response
+
+  - step: start_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_response.data.id}/start
+    payload: {}
 
   # Получаем текущее состояние grow cycle
   - step: get_grow_cycle

@@ -66,6 +66,7 @@ Payload (пример):
 ```
 
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
+> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`.
 
 ### 2.2. command
 
@@ -125,6 +126,12 @@ hydro/{gh}/{zone}/{node}/{channel}/event
 - `ACTUATOR_FAULT`, `PUMP_OVERCURRENT`;
 - `PH_DRIFT_TOO_HIGH`, `EC_OUT_OF_RANGE`.
 
+Для канала `storage_state` (контур `2 бака`) payload события должен включать `event_code`.
+На стороне backend (`history-logger`) `event_code` нормализуется в `zone_events.type`:
+- `UPPERCASE`, замена не `[A-Z0-9]` на `_`, схлопывание повторов `_`;
+- если после нормализации длина >255, тип усекётся детерминированно с suffix `_{SHA1_10}`;
+- пустой код заменяется на `NODE_EVENT`.
+
 ---
 
 ## 3. Системный namespace
@@ -155,6 +162,12 @@ hydro/system/{subtopic}
 - `ec_main`;
 - `temp_air`, `temp_water`;
 - `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`;
+- `pump_main`;
+- `level_clean_min`, `level_clean_max`, `level_solution_min`, `level_solution_max`;
+- `valve_clean_fill`, `valve_clean_supply`, `valve_solution_fill`, `valve_solution_supply`, `valve_irrigation`;
+- `soil_moisture`, `soil_temp`;
+- `wind_speed`, `outside_temp`;
+- `storage_state` (service/event channel для 2-бакового контура);
 - `fan_in`, `fan_out`;
 - `light_main`.
 

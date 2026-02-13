@@ -144,15 +144,25 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const extensions = asRecord(targets.extensions)
   const subsystems = asRecord(extensions?.subsystems)
   const irrigationSubsystem = asRecord(subsystems?.irrigation)
+  const irrigationExecution = asRecord(irrigationSubsystem?.execution)
   const irrigationTargets = asRecord(irrigationSubsystem?.targets)
+  const irrigationBehavior = irrigationExecution ?? irrigationTargets
   const climateSubsystem = asRecord(subsystems?.climate)
+  const climateExecution = asRecord(climateSubsystem?.execution)
   const climateTargets = asRecord(climateSubsystem?.targets)
+  const climateBehavior = climateExecution ?? climateTargets
   const lightingSubsystem = asRecord(subsystems?.lighting)
+  const lightingExecution = asRecord(lightingSubsystem?.execution)
   const lightingTargets = asRecord(lightingSubsystem?.targets)
+  const lightingBehavior = lightingExecution ?? lightingTargets
   const diagnosticsSubsystem = asRecord(subsystems?.diagnostics)
+  const diagnosticsExecution = asRecord(diagnosticsSubsystem?.execution)
   const diagnosticsTargets = asRecord(diagnosticsSubsystem?.targets)
+  const diagnosticsBehavior = diagnosticsExecution ?? diagnosticsTargets
   const solutionSubsystem = asRecord(subsystems?.solution_change ?? subsystems?.solution)
+  const solutionExecution = asRecord(solutionSubsystem?.execution)
   const solutionTargets = asRecord(solutionSubsystem?.targets)
+  const solutionBehavior = solutionExecution ?? solutionTargets
 
   const phTarget = asRecord(targets.ph)
   const phMin = readNumber(phTarget?.min)
@@ -172,6 +182,8 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
 
   const irrigation = asRecord(targets.irrigation)
   const intervalSec = readNumber(
+    irrigationBehavior?.interval_sec,
+    irrigationBehavior?.interval_seconds,
     irrigationTargets?.interval_sec,
     irrigationTargets?.interval_seconds,
     irrigation?.interval_sec,
@@ -182,6 +194,8 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
 
   const durationSec = readNumber(
+    irrigationBehavior?.duration_sec,
+    irrigationBehavior?.duration_seconds,
     irrigationTargets?.duration_sec,
     irrigationTargets?.duration_seconds,
     irrigation?.duration_sec,
@@ -191,13 +205,13 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.durationSeconds = clamp(Math.round(durationSec), 1, 3600)
   }
 
-  const systemType = asIrrigationSystem(readString(irrigationTargets?.system_type))
+  const systemType = asIrrigationSystem(readString(irrigationBehavior?.system_type, irrigationTargets?.system_type))
   if (systemType) {
     waterForm.systemType = systemType
     syncSystemToTankLayout(waterForm, systemType)
   }
 
-  const tanksCount = readNumber(irrigationTargets?.tanks_count)
+  const tanksCount = readNumber(irrigationBehavior?.tanks_count, irrigationTargets?.tanks_count)
   if (tanksCount === 2 || tanksCount === 3) {
     waterForm.tanksCount = tanksCount
     if (tanksCount === 2) {
@@ -205,27 +219,27 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     }
   }
 
-  const cleanTankFill = readNumber(irrigationTargets?.clean_tank_fill_l)
+  const cleanTankFill = readNumber(irrigationBehavior?.clean_tank_fill_l, irrigationTargets?.clean_tank_fill_l)
   if (cleanTankFill !== null) {
     waterForm.cleanTankFillL = clamp(Math.round(cleanTankFill), 10, 5000)
   }
 
-  const nutrientTankTarget = readNumber(irrigationTargets?.nutrient_tank_target_l)
+  const nutrientTankTarget = readNumber(irrigationBehavior?.nutrient_tank_target_l, irrigationTargets?.nutrient_tank_target_l)
   if (nutrientTankTarget !== null) {
     waterForm.nutrientTankTargetL = clamp(Math.round(nutrientTankTarget), 10, 5000)
   }
 
-  const irrigationBatch = readNumber(irrigationTargets?.irrigation_batch_l)
+  const irrigationBatch = readNumber(irrigationBehavior?.irrigation_batch_l, irrigationTargets?.irrigation_batch_l)
   if (irrigationBatch !== null) {
     waterForm.irrigationBatchL = clamp(Math.round(irrigationBatch), 1, 500)
   }
 
-  const fillTemperature = readNumber(irrigationTargets?.fill_temperature_c)
+  const fillTemperature = readNumber(irrigationBehavior?.fill_temperature_c, irrigationTargets?.fill_temperature_c)
   if (fillTemperature !== null) {
     waterForm.fillTemperatureC = clamp(fillTemperature, 5, 35)
   }
 
-  const irrigationSchedule = asArray(irrigationTargets?.schedule)
+  const irrigationSchedule = asArray(irrigationBehavior?.schedule) ?? asArray(irrigationTargets?.schedule)
   const firstIrrigationWindow = asRecord(irrigationSchedule?.[0])
   const fillStart = toTimeHHmm(firstIrrigationWindow?.start)
   const fillEnd = toTimeHHmm(firstIrrigationWindow?.end)
@@ -236,7 +250,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.fillWindowEnd = fillEnd
   }
 
-  const correctionNode = asRecord(irrigationTargets?.correction_node)
+  const correctionNode = asRecord(irrigationBehavior?.correction_node) ?? asRecord(irrigationTargets?.correction_node)
   const correctionPh = readNumber(correctionNode?.target_ph)
   const correctionEc = readNumber(correctionNode?.target_ec)
   if (correctionPh !== null) {
@@ -246,16 +260,19 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.targetEc = clamp(correctionEc, 0.1, 10)
   }
 
-  const valveSwitching = readBoolean(irrigationTargets?.valve_switching_enabled)
+  const valveSwitching = readBoolean(irrigationBehavior?.valve_switching_enabled, irrigationTargets?.valve_switching_enabled)
   if (valveSwitching !== null) {
     waterForm.valveSwitching = valveSwitching
   }
-  const correctionDuringIrrigation = readBoolean(irrigationTargets?.correction_during_irrigation)
+  const correctionDuringIrrigation = readBoolean(
+    irrigationBehavior?.correction_during_irrigation,
+    irrigationTargets?.correction_during_irrigation
+  )
   if (correctionDuringIrrigation !== null) {
     waterForm.correctionDuringIrrigation = correctionDuringIrrigation
   }
 
-  const drainControl = asRecord(irrigationTargets?.drain_control)
+  const drainControl = asRecord(irrigationBehavior?.drain_control) ?? asRecord(irrigationTargets?.drain_control)
   const drainEnabled = readBoolean(drainControl?.enabled)
   const drainTarget = readNumber(drainControl?.target_percent)
   if (drainEnabled !== null) {
@@ -272,8 +289,8 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     climateForm.enabled = climateEnabled
   }
 
-  const temperature = asRecord(climateTargets?.temperature)
-  const humidity = asRecord(climateTargets?.humidity)
+  const temperature = asRecord(climateBehavior?.temperature) ?? asRecord(climateTargets?.temperature)
+  const humidity = asRecord(climateBehavior?.humidity) ?? asRecord(climateTargets?.humidity)
   const dayTemp = readNumber(temperature?.day, climateRequest?.temp_air_target)
   const nightTemp = readNumber(temperature?.night, temperature?.day, climateRequest?.temp_air_target)
   const dayHumidity = readNumber(humidity?.day, climateRequest?.humidity_target)
@@ -291,12 +308,12 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     climateForm.nightHumidity = clamp(nightHumidity, 30, 90)
   }
 
-  const climateIntervalSec = readNumber(climateTargets?.interval_sec, ventilation?.interval_sec)
+  const climateIntervalSec = readNumber(climateBehavior?.interval_sec, climateTargets?.interval_sec, ventilation?.interval_sec)
   if (climateIntervalSec !== null) {
     climateForm.intervalMinutes = clamp(Math.round(climateIntervalSec / 60), 1, 1440)
   }
 
-  const ventControl = asRecord(climateTargets?.vent_control)
+  const ventControl = asRecord(climateBehavior?.vent_control) ?? asRecord(climateTargets?.vent_control)
   const ventMinPercent = readNumber(ventControl?.min_open_percent)
   const ventMaxPercent = readNumber(ventControl?.max_open_percent)
   if (ventMinPercent !== null) {
@@ -306,7 +323,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     climateForm.ventMaxPercent = clamp(Math.round(ventMaxPercent), 0, 100)
   }
 
-  const externalGuard = asRecord(climateTargets?.external_guard)
+  const externalGuard = asRecord(climateBehavior?.external_guard) ?? asRecord(climateTargets?.external_guard)
   const externalEnabled = readBoolean(externalGuard?.enabled)
   if (externalEnabled !== null) {
     climateForm.useExternalTelemetry = externalEnabled
@@ -324,7 +341,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     climateForm.outsideHumidityMax = clamp(outsideHumidityMax, 20, 100)
   }
 
-  const climateSchedule = asArray(climateTargets?.schedule)
+  const climateSchedule = asArray(climateBehavior?.schedule) ?? asArray(climateTargets?.schedule)
   const daySlot = asRecord(climateSchedule?.find((item) => asRecord(item)?.profile === 'day'))
   const nightSlot = asRecord(climateSchedule?.find((item) => asRecord(item)?.profile === 'night'))
   const dayStart = toTimeHHmm(daySlot?.start)
@@ -336,7 +353,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     climateForm.nightStart = nightStart
   }
 
-  const manualOverride = asRecord(climateTargets?.manual_override)
+  const manualOverride = asRecord(climateBehavior?.manual_override) ?? asRecord(climateTargets?.manual_override)
   const manualOverrideEnabled = readBoolean(manualOverride?.enabled)
   const overrideMinutes = readNumber(manualOverride?.timeout_minutes)
   if (manualOverrideEnabled !== null) {
@@ -352,12 +369,12 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     lightingForm.enabled = lightingEnabled
   }
 
-  const lightingIntervalSec = readNumber(lightingTargets?.interval_sec, lighting?.interval_sec)
+  const lightingIntervalSec = readNumber(lightingBehavior?.interval_sec, lightingTargets?.interval_sec, lighting?.interval_sec)
   if (lightingIntervalSec !== null) {
     lightingForm.intervalMinutes = clamp(Math.round(lightingIntervalSec / 60), 1, 1440)
   }
 
-  const lux = asRecord(lightingTargets?.lux)
+  const lux = asRecord(lightingBehavior?.lux) ?? asRecord(lightingTargets?.lux)
   const luxDay = readNumber(lux?.day)
   const luxNight = readNumber(lux?.night)
   if (luxDay !== null) {
@@ -367,13 +384,13 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     lightingForm.luxNight = clamp(Math.round(luxNight), 0, 120000)
   }
 
-  const photoperiod = asRecord(lightingTargets?.photoperiod)
+  const photoperiod = asRecord(lightingBehavior?.photoperiod) ?? asRecord(lightingTargets?.photoperiod)
   const hoursOn = readNumber(photoperiod?.hours_on, lighting?.photoperiod_hours, (targets as Dictionary).light_hours)
   if (hoursOn !== null) {
     lightingForm.hoursOn = clamp(hoursOn, 0, 24)
   }
 
-  const lightingSchedule = asArray(lightingTargets?.schedule)
+  const lightingSchedule = asArray(lightingBehavior?.schedule) ?? asArray(lightingTargets?.schedule)
   const firstLightingWindow = asRecord(lightingSchedule?.[0])
   const scheduleStart = toTimeHHmm(firstLightingWindow?.start ?? lighting?.start_time)
   const scheduleEnd = toTimeHHmm(firstLightingWindow?.end)
@@ -390,15 +407,20 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.diagnosticsEnabled = diagnosticsEnabled
   }
 
-  const diagnosticsIntervalSec = readNumber(diagnosticsTargets?.interval_sec, diagnostics?.interval_sec)
+  const diagnosticsIntervalSec = readNumber(
+    diagnosticsBehavior?.interval_sec,
+    diagnosticsTargets?.interval_sec,
+    diagnostics?.interval_sec
+  )
   if (diagnosticsIntervalSec !== null) {
     waterForm.diagnosticsIntervalMinutes = clamp(Math.round(diagnosticsIntervalSec / 60), 1, 1440)
   }
 
-  const diagnosticsExecution = asRecord(diagnosticsTargets?.execution)
+  const diagnosticsExecutionResolved = asRecord(diagnosticsBehavior?.execution) ?? diagnosticsBehavior
   const diagnosticsWorkflow = readString(
+    diagnosticsBehavior?.workflow,
     diagnosticsTargets?.workflow,
-    diagnosticsExecution?.workflow,
+    diagnosticsExecutionResolved?.workflow,
     asRecord(diagnostics?.execution)?.workflow
   )
   if (diagnosticsWorkflow) {
@@ -406,40 +428,46 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
 
   const cleanTankThreshold = readNumber(
+    diagnosticsBehavior?.clean_tank_full_threshold,
     diagnosticsTargets?.clean_tank_full_threshold,
-    diagnosticsExecution?.clean_tank_full_threshold
+    diagnosticsExecutionResolved?.clean_tank_full_threshold
   )
   if (cleanTankThreshold !== null) {
     waterForm.cleanTankFullThreshold = clamp(cleanTankThreshold, 0.05, 1)
   }
 
   const refillDurationSec = readNumber(
+    diagnosticsBehavior?.refill_duration_sec,
     diagnosticsTargets?.refill_duration_sec,
-    diagnosticsExecution?.refill_duration_sec,
-    asRecord(diagnosticsExecution?.refill)?.duration_sec
+    diagnosticsExecutionResolved?.refill_duration_sec,
+    asRecord(diagnosticsExecutionResolved?.refill)?.duration_sec
   )
   if (refillDurationSec !== null) {
     waterForm.refillDurationSeconds = clamp(Math.round(refillDurationSec), 1, 3600)
   }
 
   const refillTimeoutSec = readNumber(
+    diagnosticsBehavior?.refill_timeout_sec,
     diagnosticsTargets?.refill_timeout_sec,
-    diagnosticsExecution?.refill_timeout_sec,
-    asRecord(diagnosticsExecution?.refill)?.timeout_sec
+    diagnosticsExecutionResolved?.refill_timeout_sec,
+    asRecord(diagnosticsExecutionResolved?.refill)?.timeout_sec
   )
   if (refillTimeoutSec !== null) {
     waterForm.refillTimeoutSeconds = clamp(Math.round(refillTimeoutSec), 30, 86400)
   }
 
   const refillRequiredNodeTypes = readStringList(
+    diagnosticsBehavior?.required_node_types,
     diagnosticsTargets?.required_node_types,
-    diagnosticsExecution?.required_node_types
+    diagnosticsExecutionResolved?.required_node_types
   )
   if (refillRequiredNodeTypes && refillRequiredNodeTypes.length > 0) {
     waterForm.refillRequiredNodeTypes = refillRequiredNodeTypes.join(',')
   }
 
-  const refillConfig = asRecord(diagnosticsTargets?.refill) ?? asRecord(diagnosticsExecution?.refill)
+  const refillConfig = asRecord(diagnosticsBehavior?.refill)
+    ?? asRecord(diagnosticsTargets?.refill)
+    ?? asRecord(diagnosticsExecutionResolved?.refill)
   const refillChannel = readString(refillConfig?.channel)
   if (refillChannel !== null) {
     waterForm.refillPreferredChannel = refillChannel
@@ -451,12 +479,12 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.solutionChangeEnabled = solutionEnabled
   }
 
-  const solutionIntervalSec = readNumber(solutionTargets?.interval_sec, solutionChange?.interval_sec)
+  const solutionIntervalSec = readNumber(solutionBehavior?.interval_sec, solutionTargets?.interval_sec, solutionChange?.interval_sec)
   if (solutionIntervalSec !== null) {
     waterForm.solutionChangeIntervalMinutes = clamp(Math.round(solutionIntervalSec / 60), 1, 1440)
   }
 
-  const solutionDurationSec = readNumber(solutionTargets?.duration_sec, solutionChange?.duration_sec)
+  const solutionDurationSec = readNumber(solutionBehavior?.duration_sec, solutionTargets?.duration_sec, solutionChange?.duration_sec)
   if (solutionDurationSec !== null) {
     waterForm.solutionChangeDurationSeconds = clamp(Math.round(solutionDurationSec), 1, 86400)
   }

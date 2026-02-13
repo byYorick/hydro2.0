@@ -149,7 +149,7 @@ const detailsByTaskId: Record<string, SchedulerTaskStatus> = {
   'st-refill': {
     ...listItems[1],
     action_required: true,
-    decision: 'execute',
+    decision: 'run',
     reason_code: 'tank_refill_started',
     reason: 'Запущено наполнение бака и запланирована отложенная проверка',
     error: null,
@@ -177,7 +177,7 @@ const detailsByTaskId: Record<string, SchedulerTaskStatus> = {
   'st-timeout': {
     ...listItems[2],
     action_required: true,
-    decision: 'execute',
+    decision: 'fail',
     reason_code: 'cycle_start_refill_timeout',
     reason: 'Бак чистой воды не заполнился до таймаута',
     error: 'cycle_start_refill_timeout',

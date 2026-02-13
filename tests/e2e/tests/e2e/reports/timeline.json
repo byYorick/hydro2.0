@@ -1,37 +1,50 @@
 {
-  "test_suite": "E74_node_zone_mismatch_guard",
-  "generated_at": "2026-02-10T07:31:50.671169",
+  "test_suite": "E71_db_flaky",
+  "generated_at": "2026-02-13T13:19:32.001277",
   "test_cases": [
     {
-      "name": "set_test_context",
+      "name": "set_test_uids",
       "status": "passed",
-      "duration": 1.8596649169921875e-05,
+      "duration": 2.0742416381835938e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_context",
+          "name": "set_test_uids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.832095"
+      "timestamp": "2026-02-13T13:19:16.735197"
     },
     {
-      "name": "get_zone_row",
+      "name": "fetch_node_id",
       "status": "passed",
-      "duration": 0.002449512481689453,
+      "duration": 0.010767459869384766,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zone_row",
+          "name": "fetch_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.834594"
+      "timestamp": "2026-02-13T13:19:16.746131"
+    },
+    {
+      "name": "get_zones",
+      "status": "passed",
+      "duration": 0.08655428886413574,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zones",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-13T13:19:16.832898"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 3.0994415283203125e-06,
+      "duration": 5.0067901611328125e-06,
       "error_message": null,
       "steps": [
         {
@@ -39,203 +52,109 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.834646"
+      "timestamp": "2026-02-13T13:19:16.833034"
     },
     {
-      "name": "get_node_row",
+      "name": "pause_postgres",
       "status": "passed",
-      "duration": 0.0006151199340820312,
+      "duration": 0.06668782234191895,
       "error_message": null,
       "steps": [
         {
-          "name": "get_node_row",
+          "name": "pause_postgres",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.835293"
+      "timestamp": "2026-02-13T13:19:16.899773"
     },
     {
-      "name": "set_node_id",
+      "name": "wait_during_pause",
       "status": "passed",
-      "duration": 2.384185791015625e-06,
+      "duration": 5.005177974700928,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id",
+          "name": "wait_during_pause",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.835319"
+      "timestamp": "2026-02-13T13:19:21.905010"
     },
     {
-      "name": "baseline_mismatch_alert_counter",
+      "name": "publish_error_during_db_pause",
       "status": "passed",
-      "duration": 0.0019693374633789062,
+      "duration": 0.0005025863647460938,
       "error_message": null,
       "steps": [
         {
-          "name": "baseline_mismatch_alert_counter",
+          "name": "publish_error_during_db_pause",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.837317"
+      "timestamp": "2026-02-13T13:19:21.906076"
     },
     {
-      "name": "mismatch_window_start_ts",
+      "name": "unpause_postgres",
       "status": "passed",
-      "duration": 0.00020265579223632812,
+      "duration": 0.046035051345825195,
       "error_message": null,
       "steps": [
         {
-          "name": "mismatch_window_start_ts",
+          "name": "unpause_postgres",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.837541"
+      "timestamp": "2026-02-13T13:19:21.952476"
     },
     {
-      "name": "create_mismatch_zone",
+      "name": "wait_after_recovery",
       "status": "passed",
-      "duration": 0.0016155242919921875,
+      "duration": 10.009671211242676,
       "error_message": null,
       "steps": [
         {
-          "name": "create_mismatch_zone",
+          "name": "wait_after_recovery",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.839210"
+      "timestamp": "2026-02-13T13:19:31.962214"
     },
     {
-      "name": "set_mismatch_zone_id",
+      "name": "system_still_responding",
       "status": "passed",
-      "duration": 2.384185791015625e-06,
+      "duration": 0.002035379409790039,
       "error_message": null,
       "steps": [
         {
-          "name": "set_mismatch_zone_id",
+          "name": "system_still_responding",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.839239"
+      "timestamp": "2026-02-13T13:19:31.964274"
     },
     {
-      "name": "move_node_to_mismatch_zone",
+      "name": "data_queued_and_processed",
       "status": "passed",
-      "duration": 0.0014290809631347656,
+      "duration": 0.0030078887939453125,
       "error_message": null,
       "steps": [
         {
-          "name": "move_node_to_mismatch_zone",
+          "name": "data_queued_and_processed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-10T07:31:42.840699"
-    },
-    {
-      "name": "publish_mismatch_command",
-      "status": "passed",
-      "duration": 0.1137702465057373,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_mismatch_command",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:42.954535"
-    },
-    {
-      "name": "wait_for_mismatch_zone_event",
-      "status": "passed",
-      "duration": 0.01339101791381836,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_mismatch_zone_event",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:42.968018"
-    },
-    {
-      "name": "wait_for_mismatch_infra_alert",
-      "status": "passed",
-      "duration": 7.656580924987793,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_mismatch_infra_alert",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:50.624693"
-    },
-    {
-      "name": "command_publish_blocked",
-      "status": "passed",
-      "duration": 2.1219253540039062e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "command_publish_blocked",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:50.624736"
-    },
-    {
-      "name": "mismatch_zone_event_created",
-      "status": "passed",
-      "duration": 0.0018641948699951172,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "mismatch_zone_event_created",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:50.626606"
-    },
-    {
-      "name": "mismatch_infra_alert_upserted",
-      "status": "passed",
-      "duration": 0.0006699562072753906,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "mismatch_infra_alert_upserted",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:50.627285"
-    },
-    {
-      "name": "no_command_persisted_for_mismatch_request",
-      "status": "passed",
-      "duration": 0.014402389526367188,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "no_command_persisted_for_mismatch_request",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-10T07:31:50.641698"
+      "timestamp": "2026-02-13T13:19:31.967300"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E74_node_zone_mismatch_guard": {
+    "E71_db_flaky": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 23,
-        "zone_uid": "zn-test-1",
-        "node_id": 23,
-        "node_uid": "nd-ph-esp32una",
-        "mismatch_zone_id": 90
+        "zone_id": 5,
+        "node_id": 25
       }
     }
   }

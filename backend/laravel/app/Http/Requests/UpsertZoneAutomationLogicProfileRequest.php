@@ -49,9 +49,20 @@ class UpsertZoneAutomationLogicProfileRequest extends FormRequest
                 if (($subsystem['enabled'] ?? null) !== true) {
                     $validator->errors()->add("subsystems.{$requiredSubsystem}.enabled", 'Required subsystem must be enabled=true.');
                 }
+            }
 
-                if (!isset($subsystem['targets']) || !is_array($subsystem['targets'])) {
-                    $validator->errors()->add("subsystems.{$requiredSubsystem}.targets", 'Required subsystem must provide targets object.');
+            foreach ($subsystems as $name => $subsystem) {
+                if (!is_array($subsystem)) {
+                    $validator->errors()->add("subsystems.{$name}", "The {$name} subsystem must be an object.");
+                    continue;
+                }
+
+                if (array_is_list($subsystem)) {
+                    $validator->errors()->add("subsystems.{$name}", "The {$name} subsystem must be an object.");
+                }
+
+                if (isset($subsystem['execution']) && !is_array($subsystem['execution'])) {
+                    $validator->errors()->add("subsystems.{$name}.execution", 'The execution field must be an object.');
                 }
             }
         });

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
@@ -81,6 +82,15 @@ ERR_CYCLE_REFILL_TIMEOUT = "cycle_start_refill_timeout"
 ERR_CYCLE_REFILL_NODE_NOT_FOUND = "cycle_start_refill_node_not_found"
 ERR_CYCLE_REFILL_COMMAND_FAILED = "cycle_start_refill_command_failed"
 ERR_CYCLE_SELF_TASK_ENQUEUE_FAILED = "cycle_start_self_task_enqueue_failed"
+ERR_CLEAN_TANK_NOT_FILLED_TIMEOUT = "clean_tank_not_filled_timeout"
+ERR_SOLUTION_TANK_NOT_FILLED_TIMEOUT = "solution_tank_not_filled_timeout"
+ERR_TWO_TANK_LEVEL_UNAVAILABLE = "two_tank_level_unavailable"
+ERR_TWO_TANK_LEVEL_STALE = "two_tank_level_stale"
+ERR_TWO_TANK_COMMAND_FAILED = "two_tank_command_failed"
+ERR_TWO_TANK_ENQUEUE_FAILED = "two_tank_enqueue_failed"
+ERR_TWO_TANK_CHANNEL_NOT_FOUND = "two_tank_channel_not_found"
+ERR_PREPARE_NPK_PH_TARGET_NOT_REACHED = "prepare_npk_ph_target_not_reached"
+ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED = "irrigation_recovery_attempts_exceeded"
 ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
 
 REASON_REQUIRED_NODES_CHECKED = "required_nodes_checked"
@@ -96,7 +106,29 @@ REASON_CYCLE_TANK_LEVEL_STALE = "cycle_start_tank_level_stale"
 REASON_CYCLE_REFILL_TIMEOUT = "cycle_start_refill_timeout"
 REASON_CYCLE_REFILL_COMMAND_FAILED = "cycle_start_refill_command_failed"
 REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED = "cycle_start_self_task_enqueue_failed"
+REASON_CLEAN_FILL_STARTED = "clean_fill_started"
+REASON_CLEAN_FILL_COMPLETED = "clean_fill_completed"
+REASON_CLEAN_FILL_IN_PROGRESS = "clean_fill_in_progress"
+REASON_CLEAN_FILL_TIMEOUT = "clean_fill_timeout"
+REASON_CLEAN_FILL_RETRY_STARTED = "clean_fill_retry_started"
+REASON_SOLUTION_FILL_STARTED = "solution_fill_started"
+REASON_SOLUTION_FILL_COMPLETED = "solution_fill_completed"
+REASON_SOLUTION_FILL_IN_PROGRESS = "solution_fill_in_progress"
+REASON_SOLUTION_FILL_TIMEOUT = "solution_fill_timeout"
+REASON_PREPARE_RECIRCULATION_STARTED = "prepare_recirculation_started"
+REASON_PREPARE_TARGETS_REACHED = "prepare_targets_reached"
+REASON_PREPARE_TARGETS_NOT_REACHED = "prepare_targets_not_reached"
+REASON_IRRIGATION_RECOVERY_STARTED = "irrigation_recovery_started"
+REASON_IRRIGATION_RECOVERY_RECOVERED = "irrigation_recovery_recovered"
+REASON_IRRIGATION_RECOVERY_FAILED = "irrigation_recovery_failed"
+REASON_IRRIGATION_RECOVERY_DEGRADED = "irrigation_recovery_degraded"
+REASON_ONLINE_CORRECTION_FAILED = "online_correction_failed"
+REASON_TANK_TO_TANK_CORRECTION_STARTED = "tank_to_tank_correction_started"
+REASON_SENSOR_STALE_DETECTED = "sensor_stale_detected"
+REASON_SENSOR_LEVEL_UNAVAILABLE = "sensor_level_unavailable"
 REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
+REASON_WIND_BLOCKED = "wind_blocked"
+REASON_OUTSIDE_TEMP_BLOCKED = "outside_temp_blocked"
 
 
 @dataclass(frozen=True)
@@ -163,6 +195,12 @@ class SchedulerTaskExecutor:
         )
 
         decision = self._decide_action(task_type=task_type, payload=payload)
+        if task_type == "ventilation":
+            decision = await self._apply_ventilation_climate_guards(
+                zone_id=zone_id,
+                payload=payload,
+                decision=decision,
+            )
         await self._emit_task_event(
             zone_id=zone_id,
             task_type=task_type,
@@ -188,6 +226,20 @@ class SchedulerTaskExecutor:
                 "reason_code": decision.reason_code,
                 "reason": decision.reason,
             }
+        elif task_type == "diagnostics" and self._is_two_tank_startup_workflow(payload):
+            result = await self._execute_two_tank_startup_workflow(
+                zone_id=zone_id,
+                payload=payload,
+                context=context,
+                decision=decision,
+            )
+        elif task_type == "diagnostics" and self._is_three_tank_startup_workflow(payload):
+            result = await self._execute_three_tank_startup_workflow(
+                zone_id=zone_id,
+                payload=payload,
+                context=context,
+                decision=decision,
+            )
         elif task_type == "diagnostics" and self._is_cycle_start_workflow(payload):
             result = await self._execute_cycle_start_workflow(
                 zone_id=zone_id,
@@ -210,6 +262,15 @@ class SchedulerTaskExecutor:
                 context=context,
                 decision=decision,
             )
+            if task_type == "irrigation":
+                recovery_result = await self._try_start_two_tank_irrigation_recovery_from_irrigation_failure(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    result=result,
+                )
+                if recovery_result is not None:
+                    result = recovery_result
 
         result.setdefault("action_required", decision.action_required)
         result.setdefault("decision", decision.decision)
@@ -258,7 +319,7 @@ class SchedulerTaskExecutor:
         if execution.get("force_execute") is True:
             return DecisionOutcome(
                 action_required=True,
-                decision="execute",
+                decision="run",
                 reason_code=f"{task_type}_required",
                 reason="Принудительное выполнение по force_execute",
             )
@@ -268,7 +329,7 @@ class SchedulerTaskExecutor:
             if explicit_action_required:
                 return DecisionOutcome(
                     action_required=True,
-                    decision="execute",
+                    decision="run",
                     reason_code=f"{task_type}_required",
                     reason="Явно запрошено выполнение action_required=true",
                 )
@@ -292,7 +353,7 @@ class SchedulerTaskExecutor:
 
         return DecisionOutcome(
             action_required=True,
-            decision="execute",
+            decision="run",
             reason_code=f"{task_type}_required",
             reason="Требуется выполнить задачу по расписанию",
         )
@@ -665,6 +726,908 @@ class SchedulerTaskExecutor:
         return workflow in {"cycle_start", "refill_check"}
 
     @staticmethod
+    def _extract_topology(payload: Dict[str, Any]) -> str:
+        execution = SchedulerTaskExecutor._extract_execution_config(payload)
+        targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+        diagnostics_targets = targets.get("diagnostics") if isinstance(targets.get("diagnostics"), dict) else {}
+        diagnostics_execution = (
+            diagnostics_targets.get("execution")
+            if isinstance(diagnostics_targets.get("execution"), dict)
+            else {}
+        )
+        raw = (
+            payload.get("topology")
+            or execution.get("topology")
+            or diagnostics_execution.get("topology")
+            or (
+                execution.get("solution_prepare", {}).get("topology")
+                if isinstance(execution.get("solution_prepare"), dict)
+                else None
+            )
+            or ""
+        )
+        return str(raw).strip().lower()
+
+    def _normalize_two_tank_workflow(self, payload: Dict[str, Any]) -> str:
+        workflow = self._extract_workflow(payload)
+        if workflow == "cycle_start":
+            return "startup"
+        if workflow == "refill_check":
+            return "clean_fill_check"
+        return workflow
+
+    def _is_two_tank_startup_workflow(self, payload: Dict[str, Any]) -> bool:
+        topology = self._extract_topology(payload)
+        workflow = self._normalize_two_tank_workflow(payload)
+        if topology != "two_tank_drip_substrate_trays":
+            return False
+        return workflow in {
+            "startup",
+            "clean_fill_check",
+            "solution_fill_check",
+            "prepare_recirculation",
+            "prepare_recirculation_check",
+            "irrigation_recovery",
+            "irrigation_recovery_check",
+        }
+
+    def _is_three_tank_startup_workflow(self, payload: Dict[str, Any]) -> bool:
+        topology = self._extract_topology(payload)
+        if topology not in {
+            "three_tank_drip_substrate_trays",
+            "three_tank_substrate_trays",
+            "three_tank",
+        }:
+            return False
+        workflow = self._extract_workflow(payload)
+        return workflow in {"startup", "cycle_start", "refill_check"}
+
+    @staticmethod
+    def _to_optional_float(raw: Any) -> Optional[float]:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(value):
+            return None
+        return value
+
+    async def _apply_ventilation_climate_guards(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> DecisionOutcome:
+        if not decision.action_required:
+            return decision
+
+        config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+        execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+        limits = execution.get("limits") if isinstance(execution.get("limits"), dict) else {}
+        external_guard = execution.get("external_guard") if isinstance(execution.get("external_guard"), dict) else {}
+
+        strong_wind_mps = self._to_optional_float(
+            execution.get("strong_wind_mps")
+            or limits.get("strong_wind_mps")
+            or external_guard.get("strong_wind_mps")
+            or external_guard.get("wind_max")
+        )
+        low_outside_temp_c = self._to_optional_float(
+            execution.get("low_outside_temp_c")
+            or execution.get("low_outside_temperature_c")
+            or limits.get("low_outside_temp_c")
+            or limits.get("low_outside_temperature_c")
+            or external_guard.get("low_outside_temp_c")
+            or external_guard.get("temp_min")
+        )
+
+        if strong_wind_mps is not None:
+            wind = await self._read_latest_metric(zone_id=zone_id, sensor_type="WIND_SPEED")
+            wind_value = self._to_optional_float(wind.get("value"))
+            if (
+                wind.get("has_value")
+                and not wind.get("is_stale")
+                and wind_value is not None
+                and wind_value >= strong_wind_mps
+            ):
+                return DecisionOutcome(
+                    action_required=False,
+                    decision="skip",
+                    reason_code=REASON_WIND_BLOCKED,
+                    reason=(
+                        f"Вентиляция заблокирована: скорость ветра {wind_value:.2f} м/с "
+                        f"выше порога {strong_wind_mps:.2f} м/с"
+                    ),
+                )
+
+        if low_outside_temp_c is not None:
+            outside = await self._read_latest_metric(zone_id=zone_id, sensor_type="OUTSIDE_TEMP")
+            outside_temp = self._to_optional_float(outside.get("value"))
+            if (
+                outside.get("has_value")
+                and not outside.get("is_stale")
+                and outside_temp is not None
+                and outside_temp <= low_outside_temp_c
+            ):
+                return DecisionOutcome(
+                    action_required=False,
+                    decision="skip",
+                    reason_code=REASON_OUTSIDE_TEMP_BLOCKED,
+                    reason=(
+                        f"Вентиляция заблокирована: наружная температура {outside_temp:.2f}°C "
+                        f"ниже порога {low_outside_temp_c:.2f}°C"
+                    ),
+                )
+
+        return decision
+
+    @staticmethod
+    def _resolve_int(raw: Any, default: int, minimum: int) -> int:
+        try:
+            value = int(raw) if raw is not None else default
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, value)
+
+    @staticmethod
+    def _resolve_float(raw: Any, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(raw) if raw is not None else default
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, min(maximum, value))
+
+    @staticmethod
+    def _normalize_labels(raw: Any, default: Sequence[str]) -> List[str]:
+        if isinstance(raw, str):
+            labels = [item.strip().lower() for item in raw.split(",") if item.strip()]
+            return labels or [str(item).strip().lower() for item in default if str(item).strip()]
+        if isinstance(raw, Sequence):
+            labels = [str(item).strip().lower() for item in raw if str(item).strip()]
+            return labels or [str(item).strip().lower() for item in default if str(item).strip()]
+        return [str(item).strip().lower() for item in default if str(item).strip()]
+
+    @staticmethod
+    def _merge_dict_recursive(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+        merged: Dict[str, Any] = dict(base)
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = SchedulerTaskExecutor._merge_dict_recursive(
+                    merged.get(key) if isinstance(merged.get(key), dict) else {},
+                    value,
+                )
+            else:
+                merged[key] = value
+        return merged
+
+    def _build_two_tank_runtime_payload(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+        execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+        targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+        diagnostics_targets = targets.get("diagnostics") if isinstance(targets.get("diagnostics"), dict) else {}
+        diagnostics_execution = (
+            diagnostics_targets.get("execution")
+            if isinstance(diagnostics_targets.get("execution"), dict)
+            else {}
+        )
+        merged_execution = self._merge_dict_recursive(diagnostics_execution, execution)
+        topology = str(merged_execution.get("topology") or "").strip().lower()
+        if topology != "two_tank_drip_substrate_trays":
+            return None
+        runtime_payload = dict(payload)
+        runtime_config = dict(config)
+        runtime_config["execution"] = merged_execution
+        runtime_payload["config"] = runtime_config
+        return runtime_payload
+
+    async def _try_start_two_tank_irrigation_recovery_from_irrigation_failure(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if bool(result.get("success")):
+            return None
+        failure_error_code = str(result.get("error_code") or "").strip().lower()
+        if failure_error_code not in {
+            ERR_COMMAND_TIMEOUT,
+            ERR_COMMAND_ERROR,
+            ERR_COMMAND_INVALID,
+            ERR_COMMAND_BUSY,
+            ERR_COMMAND_NO_EFFECT,
+            ERR_COMMAND_EFFECT_NOT_CONFIRMED,
+            ERR_COMMAND_TRACKER_UNAVAILABLE,
+        }:
+            return None
+
+        runtime_payload = self._build_two_tank_runtime_payload(payload)
+        if runtime_payload is None:
+            return None
+        runtime_cfg = self._resolve_two_tank_runtime_config(runtime_payload)
+
+        await self._emit_task_event(
+            zone_id=zone_id,
+            task_type="irrigation",
+            context=context,
+            event_type="IRRIGATION_ONLINE_CORRECTION_FAILED",
+            payload={
+                "reason_code": REASON_ONLINE_CORRECTION_FAILED,
+                "error_code": failure_error_code,
+                "workflow": "irrigation_recovery",
+                "previous_result": result,
+            },
+        )
+
+        recovery_result = await self._start_two_tank_irrigation_recovery(
+            zone_id=zone_id,
+            payload={**runtime_payload, "workflow": "irrigation_recovery", "irrigation_recovery_attempt": 1},
+            context=context,
+            runtime_cfg=runtime_cfg,
+            attempt=1,
+        )
+        recovery_result["task_type"] = "irrigation"
+        recovery_result["source_reason_code"] = REASON_ONLINE_CORRECTION_FAILED
+        recovery_result["transition_reason_code"] = REASON_TANK_TO_TANK_CORRECTION_STARTED
+        recovery_result["online_correction_error_code"] = failure_error_code
+        recovery_result["online_correction_result"] = result
+        return recovery_result
+
+    def _default_two_tank_command_plan(self, plan_name: str) -> List[Dict[str, Any]]:
+        defaults: Dict[str, List[Dict[str, Any]]] = {
+            "clean_fill_start": [
+                {"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}},
+            ],
+            "clean_fill_stop": [
+                {"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": False}},
+            ],
+            "solution_fill_start": [
+                {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+            ],
+            "solution_fill_stop": [
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_clean_supply", "cmd": "set_relay", "params": {"state": False}},
+            ],
+            "prepare_recirculation_start": [
+                {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+            ],
+            "prepare_recirculation_stop": [
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+            ],
+            "irrigation_recovery_start": [
+                {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": True}},
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+            ],
+            "irrigation_recovery_stop": [
+                {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
+                {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+            ],
+        }
+        return [dict(item) for item in defaults.get(plan_name, [])]
+
+    def _normalize_command_plan(
+        self,
+        raw: Any,
+        *,
+        default_plan: Sequence[Dict[str, Any]],
+        default_node_types: Sequence[str],
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(raw, Sequence):
+            raw = default_plan
+        normalized: List[Dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            channel = str(item.get("channel") or "").strip().lower()
+            if not channel:
+                continue
+            cmd = str(item.get("cmd") or "set_relay").strip() or "set_relay"
+            params = item.get("params") if isinstance(item.get("params"), dict) else {}
+            node_types = self._normalize_node_type_list(item.get("node_types"), default_node_types)
+            normalized.append(
+                {
+                    "channel": channel,
+                    "cmd": cmd,
+                    "params": dict(params),
+                    "node_types": node_types,
+                }
+            )
+        return normalized
+
+    def _resolve_two_tank_runtime_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        execution = self._extract_execution_config(payload)
+        startup = execution.get("startup") if isinstance(execution.get("startup"), dict) else {}
+        required_node_types = self._normalize_node_type_list(
+            startup.get("required_node_types"),
+            ("irrig",),
+        )
+
+        commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), dict) else {}
+        clean_fill_start_default = self._default_two_tank_command_plan("clean_fill_start")
+        clean_fill_stop_default = self._default_two_tank_command_plan("clean_fill_stop")
+        solution_fill_start_default = self._default_two_tank_command_plan("solution_fill_start")
+        solution_fill_stop_default = self._default_two_tank_command_plan("solution_fill_stop")
+        prepare_recirculation_start_default = self._default_two_tank_command_plan("prepare_recirculation_start")
+        prepare_recirculation_stop_default = self._default_two_tank_command_plan("prepare_recirculation_stop")
+        irrigation_recovery_start_default = self._default_two_tank_command_plan("irrigation_recovery_start")
+        irrigation_recovery_stop_default = self._default_two_tank_command_plan("irrigation_recovery_stop")
+
+        clean_fill_start = self._normalize_command_plan(
+            commands_cfg.get("clean_fill_start"),
+            default_plan=clean_fill_start_default,
+            default_node_types=required_node_types,
+        )
+        clean_fill_stop = self._normalize_command_plan(
+            commands_cfg.get("clean_fill_stop"),
+            default_plan=clean_fill_stop_default,
+            default_node_types=required_node_types,
+        )
+        solution_fill_start = self._normalize_command_plan(
+            commands_cfg.get("solution_fill_start"),
+            default_plan=solution_fill_start_default,
+            default_node_types=required_node_types,
+        )
+        solution_fill_stop = self._normalize_command_plan(
+            commands_cfg.get("solution_fill_stop"),
+            default_plan=solution_fill_stop_default,
+            default_node_types=required_node_types,
+        )
+        prepare_recirculation_start = self._normalize_command_plan(
+            commands_cfg.get("prepare_recirculation_start"),
+            default_plan=prepare_recirculation_start_default,
+            default_node_types=required_node_types,
+        )
+        prepare_recirculation_stop = self._normalize_command_plan(
+            commands_cfg.get("prepare_recirculation_stop"),
+            default_plan=prepare_recirculation_stop_default,
+            default_node_types=required_node_types,
+        )
+        irrigation_recovery_start = self._normalize_command_plan(
+            commands_cfg.get("irrigation_recovery_start"),
+            default_plan=irrigation_recovery_start_default,
+            default_node_types=required_node_types,
+        )
+        irrigation_recovery_stop = self._normalize_command_plan(
+            commands_cfg.get("irrigation_recovery_stop"),
+            default_plan=irrigation_recovery_stop_default,
+            default_node_types=required_node_types,
+        )
+
+        recovery_cfg = execution.get("irrigation_recovery") if isinstance(execution.get("irrigation_recovery"), dict) else {}
+        degraded_cfg = recovery_cfg.get("degraded_tolerance") if isinstance(recovery_cfg.get("degraded_tolerance"), dict) else {}
+        prepare_tolerance_cfg = execution.get("prepare_tolerance") if isinstance(execution.get("prepare_tolerance"), dict) else {}
+        recovery_tolerance_cfg = recovery_cfg.get("target_tolerance") if isinstance(recovery_cfg.get("target_tolerance"), dict) else {}
+        fallback_prepare_tolerance_cfg = execution.get("prepare_target_tolerance") if isinstance(execution.get("prepare_target_tolerance"), dict) else {}
+
+        targets_payload = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+        ph_payload = targets_payload.get("ph") if isinstance(targets_payload.get("ph"), dict) else {}
+        ec_payload = targets_payload.get("ec") if isinstance(targets_payload.get("ec"), dict) else {}
+        nutrition_payload = (
+            targets_payload.get("nutrition")
+            if isinstance(targets_payload.get("nutrition"), dict)
+            else {}
+        )
+        nutrition_components = (
+            nutrition_payload.get("components")
+            if isinstance(nutrition_payload.get("components"), dict)
+            else {}
+        )
+        nutrition_npk = (
+            nutrition_components.get("npk")
+            if isinstance(nutrition_components.get("npk"), dict)
+            else {}
+        )
+        target_ph_raw = execution.get("target_ph")
+        if target_ph_raw is None:
+            target_ph_raw = ph_payload.get("target")
+        target_ec_raw = execution.get("target_ec")
+        if target_ec_raw is None:
+            target_ec_raw = ec_payload.get("target")
+        target_ph = self._resolve_float(target_ph_raw, 5.8, 0.1, 14.0)
+        target_ec = self._resolve_float(target_ec_raw, 1.6, 0.0, 20.0)
+        npk_ratio_raw = execution.get("nutrient_npk_ratio_pct")
+        if npk_ratio_raw is None:
+            npk_ratio_raw = execution.get("npk_ratio_pct")
+        if npk_ratio_raw is None:
+            npk_ratio_raw = startup.get("nutrient_npk_ratio_pct")
+        if npk_ratio_raw is None:
+            npk_ratio_raw = nutrition_npk.get("ratio_pct")
+        nutrient_npk_ratio_pct = self._resolve_float(npk_ratio_raw, 100.0, 0.0, 100.0)
+        target_ec_prepare_raw = execution.get("target_ec_prepare_npk")
+        if target_ec_prepare_raw is None:
+            target_ec_prepare_raw = startup.get("target_ec_prepare_npk")
+        if target_ec_prepare_raw is None:
+            target_ec_prepare_raw = target_ec * (nutrient_npk_ratio_pct / 100.0)
+        target_ec_prepare = self._resolve_float(target_ec_prepare_raw, target_ec, 0.0, 20.0)
+
+        return {
+            "required_node_types": required_node_types,
+            "clean_fill_timeout_sec": self._resolve_int(
+                startup.get("clean_fill_timeout_sec"),
+                1200,
+                30,
+            ),
+            "solution_fill_timeout_sec": self._resolve_int(
+                startup.get("solution_fill_timeout_sec"),
+                1800,
+                30,
+            ),
+            "poll_interval_sec": self._resolve_int(
+                startup.get("level_poll_interval_sec"),
+                REFILL_CHECK_DELAY_SEC,
+                10,
+            ),
+            "clean_fill_retry_cycles": self._resolve_int(
+                startup.get("clean_fill_retry_cycles"),
+                1,
+                0,
+            ),
+            "prepare_recirculation_timeout_sec": self._resolve_int(
+                startup.get("prepare_recirculation_timeout_sec"),
+                1200,
+                30,
+            ),
+            "irrigation_recovery_timeout_sec": self._resolve_int(
+                recovery_cfg.get("timeout_sec"),
+                600,
+                30,
+            ),
+            "irrigation_recovery_max_attempts": self._resolve_int(
+                recovery_cfg.get("max_continue_attempts"),
+                5,
+                1,
+            ),
+            "level_switch_on_threshold": self._resolve_float(
+                startup.get("level_switch_on_threshold"),
+                0.5,
+                0.0,
+                1.0,
+            ),
+            "clean_max_labels": self._normalize_labels(
+                startup.get("clean_max_sensor_labels"),
+                ("level_clean_max", "clean_max"),
+            ),
+            "solution_max_labels": self._normalize_labels(
+                startup.get("solution_max_sensor_labels"),
+                ("level_solution_max", "solution_max"),
+            ),
+            "target_ph": target_ph,
+            "target_ec": target_ec,
+            "target_ec_prepare": target_ec_prepare,
+            "nutrient_npk_ratio_pct": nutrient_npk_ratio_pct,
+            "prepare_tolerance": {
+                "ec_pct": self._resolve_float(
+                    prepare_tolerance_cfg.get("ec_pct", fallback_prepare_tolerance_cfg.get("ec_pct")),
+                    25.0,
+                    0.1,
+                    100.0,
+                ),
+                "ph_pct": self._resolve_float(
+                    prepare_tolerance_cfg.get("ph_pct", fallback_prepare_tolerance_cfg.get("ph_pct")),
+                    15.0,
+                    0.1,
+                    100.0,
+                ),
+            },
+            "recovery_tolerance": {
+                "ec_pct": self._resolve_float(
+                    recovery_tolerance_cfg.get("ec_pct"),
+                    10.0,
+                    0.1,
+                    100.0,
+                ),
+                "ph_pct": self._resolve_float(
+                    recovery_tolerance_cfg.get("ph_pct"),
+                    5.0,
+                    0.1,
+                    100.0,
+                ),
+            },
+            "degraded_tolerance": {
+                "ec_pct": self._resolve_float(
+                    degraded_cfg.get("ec_pct"),
+                    20.0,
+                    0.1,
+                    100.0,
+                ),
+                "ph_pct": self._resolve_float(
+                    degraded_cfg.get("ph_pct"),
+                    10.0,
+                    0.1,
+                    100.0,
+                ),
+            },
+            "commands": {
+                "clean_fill_start": clean_fill_start,
+                "clean_fill_stop": clean_fill_stop,
+                "solution_fill_start": solution_fill_start,
+                "solution_fill_stop": solution_fill_stop,
+                "prepare_recirculation_start": prepare_recirculation_start,
+                "prepare_recirculation_stop": prepare_recirculation_stop,
+                "irrigation_recovery_start": irrigation_recovery_start,
+                "irrigation_recovery_stop": irrigation_recovery_stop,
+            },
+        }
+
+    async def _read_level_switch(
+        self,
+        *,
+        zone_id: int,
+        sensor_labels: Sequence[str],
+        threshold: float,
+    ) -> Dict[str, Any]:
+        labels = [str(item).strip().lower() for item in sensor_labels if str(item).strip()]
+        if not labels:
+            return {
+                "sensor_id": None,
+                "sensor_label": None,
+                "level": None,
+                "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
+                "has_level": False,
+                "is_triggered": False,
+            }
+
+        rows = await fetch(
+            """
+            SELECT
+                s.id AS sensor_id,
+                s.label AS sensor_label,
+                tl.last_value AS level,
+                COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+            FROM sensors s
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            WHERE s.zone_id = $1
+              AND s.type = 'WATER_LEVEL'
+              AND s.is_active = TRUE
+              AND LOWER(TRIM(COALESCE(s.label, ''))) = ANY($2::text[])
+            ORDER BY
+                COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST,
+                s.id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            labels,
+        )
+
+        if not rows:
+            return {
+                "sensor_id": None,
+                "sensor_label": None,
+                "level": None,
+                "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
+                "has_level": False,
+                "is_triggered": False,
+            }
+
+        row = rows[0]
+        raw_level = row.get("level")
+        try:
+            level = float(raw_level) if raw_level is not None else None
+        except (TypeError, ValueError):
+            level = None
+
+        sample_ts_raw = row.get("sample_ts")
+        if isinstance(sample_ts_raw, datetime):
+            sample_dt = sample_ts_raw
+        elif isinstance(sample_ts_raw, str):
+            sample_dt = parse_iso_datetime(sample_ts_raw)
+        else:
+            sample_dt = None
+
+        if isinstance(sample_dt, datetime) and sample_dt.tzinfo is not None:
+            sample_dt = sample_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        sample_ts = sample_dt.isoformat() if isinstance(sample_dt, datetime) else None
+        sample_age_sec = max(0.0, (datetime.utcnow() - sample_dt).total_seconds()) if sample_dt else None
+        has_level = level is not None
+        is_stale = bool(has_level and (sample_dt is None or (sample_age_sec or 0.0) > TELEMETRY_FRESHNESS_MAX_AGE_SEC))
+        return {
+            "sensor_id": row.get("sensor_id"),
+            "sensor_label": row.get("sensor_label"),
+            "level": level,
+            "sample_ts": sample_ts,
+            "sample_age_sec": sample_age_sec,
+            "is_stale": is_stale,
+            "has_level": has_level,
+            "is_triggered": bool(has_level and level >= threshold),
+        }
+
+    async def _read_latest_metric(self, *, zone_id: int, sensor_type: str) -> Dict[str, Any]:
+        rows = await fetch(
+            """
+            SELECT
+                s.id AS sensor_id,
+                s.label AS sensor_label,
+                tl.last_value AS value,
+                COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+            FROM sensors s
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            WHERE s.zone_id = $1
+              AND s.type = $2
+              AND s.is_active = TRUE
+            ORDER BY
+                COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST,
+                s.id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            sensor_type,
+        )
+        if not rows:
+            return {
+                "sensor_id": None,
+                "sensor_label": None,
+                "value": None,
+                "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
+                "has_value": False,
+            }
+
+        row = rows[0]
+        raw_value = row.get("value")
+        try:
+            value = float(raw_value) if raw_value is not None else None
+        except (TypeError, ValueError):
+            value = None
+
+        sample_ts_raw = row.get("sample_ts")
+        if isinstance(sample_ts_raw, datetime):
+            sample_dt = sample_ts_raw
+        elif isinstance(sample_ts_raw, str):
+            sample_dt = parse_iso_datetime(sample_ts_raw)
+        else:
+            sample_dt = None
+        if isinstance(sample_dt, datetime) and sample_dt.tzinfo is not None:
+            sample_dt = sample_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        sample_ts = sample_dt.isoformat() if isinstance(sample_dt, datetime) else None
+        sample_age_sec = max(0.0, (datetime.utcnow() - sample_dt).total_seconds()) if sample_dt else None
+        has_value = value is not None
+        is_stale = bool(has_value and (sample_dt is None or (sample_age_sec or 0.0) > TELEMETRY_FRESHNESS_MAX_AGE_SEC))
+        return {
+            "sensor_id": row.get("sensor_id"),
+            "sensor_label": row.get("sensor_label"),
+            "value": value,
+            "sample_ts": sample_ts,
+            "sample_age_sec": sample_age_sec,
+            "is_stale": is_stale,
+            "has_value": has_value,
+        }
+
+    def _is_value_within_pct(self, *, value: float, target: float, tolerance_pct: float) -> bool:
+        if target <= 0:
+            return abs(value - target) <= max(0.1, tolerance_pct / 100.0)
+        tolerance_abs = abs(target) * (tolerance_pct / 100.0)
+        return abs(value - target) <= tolerance_abs
+
+    async def _evaluate_ph_ec_targets(
+        self,
+        *,
+        zone_id: int,
+        target_ph: float,
+        target_ec: float,
+        tolerance: Dict[str, float],
+    ) -> Dict[str, Any]:
+        ph_sample = await self._read_latest_metric(zone_id=zone_id, sensor_type="PH")
+        ec_sample = await self._read_latest_metric(zone_id=zone_id, sensor_type="EC")
+
+        if not ph_sample["has_value"] or not ec_sample["has_value"]:
+            return {
+                "has_data": False,
+                "is_stale": bool(ph_sample["is_stale"] or ec_sample["is_stale"]),
+                "targets_reached": False,
+                "ph": ph_sample,
+                "ec": ec_sample,
+            }
+        if TELEMETRY_FRESHNESS_ENFORCE and (ph_sample["is_stale"] or ec_sample["is_stale"]):
+            return {
+                "has_data": True,
+                "is_stale": True,
+                "targets_reached": False,
+                "ph": ph_sample,
+                "ec": ec_sample,
+            }
+
+        ph_ok = self._is_value_within_pct(
+            value=float(ph_sample["value"]),
+            target=target_ph,
+            tolerance_pct=float(tolerance.get("ph_pct", 5.0)),
+        )
+        ec_ok = self._is_value_within_pct(
+            value=float(ec_sample["value"]),
+            target=target_ec,
+            tolerance_pct=float(tolerance.get("ec_pct", 10.0)),
+        )
+        return {
+            "has_data": True,
+            "is_stale": False,
+            "targets_reached": bool(ph_ok and ec_ok),
+            "ph_ok": ph_ok,
+            "ec_ok": ec_ok,
+            "ph": ph_sample,
+            "ec": ec_sample,
+            "target_ph": target_ph,
+            "target_ec": target_ec,
+            "tolerance": tolerance,
+        }
+
+    async def _find_zone_event_since(
+        self,
+        *,
+        zone_id: int,
+        event_types: Sequence[str],
+        since: Optional[datetime],
+    ) -> Optional[Dict[str, Any]]:
+        normalized_types = [str(item).strip().upper() for item in event_types if str(item).strip()]
+        if not normalized_types or since is None:
+            return None
+
+        rows = await fetch(
+            """
+            SELECT id, type, created_at, details
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = ANY($2::text[])
+              AND created_at >= $3
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            normalized_types,
+            since,
+        )
+        if not rows:
+            return None
+        return dict(rows[0])
+
+    async def _resolve_online_node_for_channel(
+        self,
+        *,
+        zone_id: int,
+        channel: str,
+        node_types: Sequence[str],
+    ) -> Optional[Dict[str, Any]]:
+        normalized_channel = str(channel or "").strip().lower()
+        if not normalized_channel:
+            return None
+        normalized_node_types = [str(item).strip().lower() for item in node_types if str(item).strip()]
+        if not normalized_node_types:
+            return None
+        rows = await fetch(
+            """
+            SELECT
+                n.uid AS node_uid,
+                LOWER(COALESCE(n.type, '')) AS node_type,
+                LOWER(COALESCE(nc.channel, 'default')) AS channel
+            FROM nodes n
+            JOIN node_channels nc ON nc.node_id = n.id
+            WHERE n.zone_id = $1
+              AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
+              AND LOWER(COALESCE(nc.channel, 'default')) = $2
+              AND LOWER(COALESCE(n.type, '')) = ANY($3::text[])
+            ORDER BY n.id ASC, nc.id ASC
+            LIMIT 1
+            """,
+            zone_id,
+            normalized_channel,
+            normalized_node_types,
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        node_uid = str(row.get("node_uid") or "").strip()
+        if not node_uid:
+            return None
+        return {
+            "node_uid": node_uid,
+            "type": str(row.get("node_type") or "").strip().lower(),
+            "channel": str(row.get("channel") or normalized_channel).strip().lower() or normalized_channel,
+        }
+
+    async def _dispatch_two_tank_command_plan(
+        self,
+        *,
+        zone_id: int,
+        command_plan: Sequence[Dict[str, Any]],
+        context: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> Dict[str, Any]:
+        if not command_plan:
+            return {
+                "success": True,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "commands_submitted": 0,
+                "commands_effect_confirmed": 0,
+                "command_statuses": [],
+            }
+
+        combined_statuses: List[Dict[str, Any]] = []
+        commands_total = 0
+        commands_failed = 0
+        commands_submitted = 0
+        commands_effect_confirmed = 0
+        first_error_code: Optional[str] = None
+        first_error: Optional[str] = None
+
+        for entry in command_plan:
+            channel = str(entry.get("channel") or "").strip().lower()
+            cmd = str(entry.get("cmd") or "set_relay").strip() or "set_relay"
+            params = entry.get("params") if isinstance(entry.get("params"), dict) else {}
+            node_types = entry.get("node_types") if isinstance(entry.get("node_types"), Sequence) else ()
+            node = await self._resolve_online_node_for_channel(
+                zone_id=zone_id,
+                channel=channel,
+                node_types=[str(item) for item in node_types],
+            )
+            if not node:
+                commands_total += 1
+                commands_failed += 1
+                if first_error_code is None:
+                    first_error_code = ERR_TWO_TANK_CHANNEL_NOT_FOUND
+                    first_error = f"channel_not_found:{channel}"
+                combined_statuses.append(
+                    {
+                        "node_uid": None,
+                        "channel": channel,
+                        "cmd": cmd,
+                        "command_submitted": False,
+                        "command_effect_confirmed": False,
+                        "terminal_status": "CHANNEL_NOT_FOUND",
+                        "error_code": ERR_TWO_TANK_CHANNEL_NOT_FOUND,
+                    }
+                )
+                continue
+
+            step_result = await self._publish_batch(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                nodes=[node],
+                cmd=cmd,
+                params=params,
+                context=context,
+                decision=decision,
+            )
+            commands_total += int(step_result.get("commands_total") or 0)
+            commands_failed += int(step_result.get("commands_failed") or 0)
+            commands_submitted += int(step_result.get("commands_submitted") or 0)
+            commands_effect_confirmed += int(step_result.get("commands_effect_confirmed") or 0)
+            combined_statuses.extend(step_result.get("command_statuses") or [])
+            if not step_result.get("success") and first_error_code is None:
+                first_error_code = str(step_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED)
+                first_error = str(step_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED)
+
+        result = {
+            "success": commands_total > 0 and commands_failed == 0 and commands_effect_confirmed == commands_total,
+            "commands_total": commands_total,
+            "commands_failed": commands_failed,
+            "commands_submitted": commands_submitted,
+            "commands_effect_confirmed": commands_effect_confirmed,
+            "command_statuses": combined_statuses,
+        }
+        if not result["success"]:
+            result["error_code"] = first_error_code or ERR_TWO_TANK_COMMAND_FAILED
+            result["error"] = first_error or ERR_TWO_TANK_COMMAND_FAILED
+        return result
+
+    @staticmethod
     def _normalize_text_list(raw: Any, default: Sequence[str]) -> List[str]:
         if isinstance(raw, str):
             values = [item.strip().lower() for item in raw.split(",") if item.strip()]
@@ -988,6 +1951,1281 @@ class SchedulerTaskExecutor:
             details=details,
         )
 
+    def _build_two_tank_check_payload(
+        self,
+        *,
+        payload: Dict[str, Any],
+        workflow: str,
+        phase_started_at: datetime,
+        phase_timeout_at: datetime,
+        phase_cycle: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        next_payload = dict(payload)
+        next_payload["workflow"] = workflow
+        if workflow == "clean_fill_check":
+            next_payload["clean_fill_started_at"] = phase_started_at.isoformat()
+            next_payload["clean_fill_timeout_at"] = phase_timeout_at.isoformat()
+            if phase_cycle is not None:
+                next_payload["clean_fill_cycle"] = max(1, int(phase_cycle))
+        elif workflow == "solution_fill_check":
+            next_payload["solution_fill_started_at"] = phase_started_at.isoformat()
+            next_payload["solution_fill_timeout_at"] = phase_timeout_at.isoformat()
+        elif workflow == "prepare_recirculation_check":
+            next_payload["prepare_recirculation_started_at"] = phase_started_at.isoformat()
+            next_payload["prepare_recirculation_timeout_at"] = phase_timeout_at.isoformat()
+        elif workflow == "irrigation_recovery_check":
+            next_payload["irrigation_recovery_started_at"] = phase_started_at.isoformat()
+            next_payload["irrigation_recovery_timeout_at"] = phase_timeout_at.isoformat()
+            if phase_cycle is not None:
+                next_payload["irrigation_recovery_attempt"] = max(1, int(phase_cycle))
+        return next_payload
+
+    async def _enqueue_two_tank_check(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        workflow: str,
+        phase_started_at: datetime,
+        phase_timeout_at: datetime,
+        poll_interval_sec: int,
+        phase_cycle: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        next_payload = self._build_two_tank_check_payload(
+            payload=payload,
+            workflow=workflow,
+            phase_started_at=phase_started_at,
+            phase_timeout_at=phase_timeout_at,
+            phase_cycle=phase_cycle,
+        )
+        next_check_at = datetime.utcnow() + timedelta(seconds=poll_interval_sec)
+        if next_check_at > phase_timeout_at:
+            next_check_at = phase_timeout_at
+        return await enqueue_internal_scheduler_task(
+            zone_id=zone_id,
+            task_type="diagnostics",
+            payload=next_payload,
+            scheduled_for=next_check_at.isoformat(),
+            expires_at=phase_timeout_at.isoformat(),
+            source="automation-engine:two-tank-startup",
+        )
+
+    async def _start_two_tank_clean_fill(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        runtime_cfg: Dict[str, Any],
+        cycle: int,
+    ) -> Dict[str, Any]:
+        plan_result = await self._dispatch_two_tank_command_plan(
+            zone_id=zone_id,
+            command_plan=runtime_cfg["commands"]["clean_fill_start"],
+            context=context,
+            decision=DecisionOutcome(
+                action_required=True,
+                decision="run",
+                reason_code=REASON_CLEAN_FILL_STARTED,
+                reason="Запуск наполнения бака чистой воды",
+            ),
+        )
+        if not plan_result.get("success"):
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_clean_fill_command_failed",
+                "workflow": "startup",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 1),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                "reason": "Не удалось отправить команду наполнения бака чистой воды",
+                "error": str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                "error_code": str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+            }
+
+        phase_started_at = datetime.utcnow()
+        phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["clean_fill_timeout_sec"])
+        try:
+            enqueue_result = await self._enqueue_two_tank_check(
+                zone_id=zone_id,
+                payload=payload,
+                workflow="clean_fill_check",
+                phase_started_at=phase_started_at,
+                phase_timeout_at=phase_timeout_at,
+                poll_interval_sec=runtime_cfg["poll_interval_sec"],
+                phase_cycle=cycle,
+            )
+        except ValueError as exc:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_clean_fill_enqueue_failed",
+                "workflow": "startup",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 0),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                "reason": "Команда наполнения отправлена, но self-task не поставлен",
+                "error": str(exc),
+                "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+            }
+
+        await self._emit_task_event(
+            zone_id=zone_id,
+            task_type="diagnostics",
+            context=context,
+            event_type="CLEAN_FILL_STARTED",
+            payload={
+                "clean_fill_cycle": cycle,
+                "clean_fill_started_at": phase_started_at.isoformat(),
+                "clean_fill_timeout_at": phase_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+                "reason_code": REASON_CLEAN_FILL_STARTED,
+            },
+        )
+
+        return {
+            "success": True,
+            "task_type": "diagnostics",
+            "mode": "two_tank_clean_fill_in_progress",
+            "workflow": "startup",
+            "commands_total": plan_result.get("commands_total", 0),
+            "commands_failed": plan_result.get("commands_failed", 0),
+            "command_statuses": plan_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": REASON_CLEAN_FILL_STARTED,
+            "reason": "Запущено наполнение бака чистой воды",
+            "clean_fill_cycle": cycle,
+            "clean_fill_started_at": phase_started_at.isoformat(),
+            "clean_fill_timeout_at": phase_timeout_at.isoformat(),
+            "next_check": enqueue_result,
+        }
+
+    async def _start_two_tank_solution_fill(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        runtime_cfg: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        plan_result = await self._dispatch_two_tank_command_plan(
+            zone_id=zone_id,
+            command_plan=runtime_cfg["commands"]["solution_fill_start"],
+            context=context,
+            decision=DecisionOutcome(
+                action_required=True,
+                decision="run",
+                reason_code=REASON_SOLUTION_FILL_STARTED,
+                reason="Запуск наполнения бака рабочего раствора",
+            ),
+        )
+        if not plan_result.get("success"):
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_solution_fill_command_failed",
+                "workflow": "startup",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 1),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                "reason": "Не удалось отправить команды наполнения бака раствора",
+                "error": str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                "error_code": str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+            }
+
+        phase_started_at = datetime.utcnow()
+        phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["solution_fill_timeout_sec"])
+        try:
+            enqueue_result = await self._enqueue_two_tank_check(
+                zone_id=zone_id,
+                payload=payload,
+                workflow="solution_fill_check",
+                phase_started_at=phase_started_at,
+                phase_timeout_at=phase_timeout_at,
+                poll_interval_sec=runtime_cfg["poll_interval_sec"],
+            )
+        except ValueError as exc:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_solution_fill_enqueue_failed",
+                "workflow": "startup",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 0),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                "reason": "Команды наполнения раствора отправлены, но self-task не поставлен",
+                "error": str(exc),
+                "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+            }
+
+        await self._emit_task_event(
+            zone_id=zone_id,
+            task_type="diagnostics",
+            context=context,
+            event_type="SOLUTION_FILL_STARTED",
+            payload={
+                "solution_fill_started_at": phase_started_at.isoformat(),
+                "solution_fill_timeout_at": phase_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+                "reason_code": REASON_SOLUTION_FILL_STARTED,
+            },
+        )
+
+        return {
+            "success": True,
+            "task_type": "diagnostics",
+            "mode": "two_tank_solution_fill_in_progress",
+            "workflow": "startup",
+            "commands_total": plan_result.get("commands_total", 0),
+            "commands_failed": plan_result.get("commands_failed", 0),
+            "command_statuses": plan_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": REASON_SOLUTION_FILL_STARTED,
+            "reason": "Запущено наполнение бака рабочего раствора",
+            "solution_fill_started_at": phase_started_at.isoformat(),
+            "solution_fill_timeout_at": phase_timeout_at.isoformat(),
+            "next_check": enqueue_result,
+        }
+
+    async def _start_two_tank_prepare_recirculation(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        runtime_cfg: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        plan_result = await self._dispatch_two_tank_command_plan(
+            zone_id=zone_id,
+            command_plan=runtime_cfg["commands"]["prepare_recirculation_start"],
+            context=context,
+            decision=DecisionOutcome(
+                action_required=True,
+                decision="run",
+                reason_code=REASON_PREPARE_RECIRCULATION_STARTED,
+                reason="Запуск рециркуляции для подготовки раствора",
+            ),
+        )
+        if not plan_result.get("success"):
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_prepare_recirculation_command_failed",
+                "workflow": "prepare_recirculation",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 1),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                "reason": "Не удалось отправить команды prepare recirculation",
+                "error": str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                "error_code": str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+            }
+
+        phase_started_at = datetime.utcnow()
+        phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["prepare_recirculation_timeout_sec"])
+        try:
+            enqueue_result = await self._enqueue_two_tank_check(
+                zone_id=zone_id,
+                payload=payload,
+                workflow="prepare_recirculation_check",
+                phase_started_at=phase_started_at,
+                phase_timeout_at=phase_timeout_at,
+                poll_interval_sec=runtime_cfg["poll_interval_sec"],
+            )
+        except ValueError as exc:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_prepare_recirculation_enqueue_failed",
+                "workflow": "prepare_recirculation",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 0),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                "reason": "Команды prepare recirculation отправлены, но self-task не поставлен",
+                "error": str(exc),
+                "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+            }
+
+        return {
+            "success": True,
+            "task_type": "diagnostics",
+            "mode": "two_tank_prepare_recirculation_in_progress",
+            "workflow": "prepare_recirculation",
+            "commands_total": plan_result.get("commands_total", 0),
+            "commands_failed": plan_result.get("commands_failed", 0),
+            "command_statuses": plan_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": REASON_PREPARE_RECIRCULATION_STARTED,
+            "reason": "Запущена рециркуляция подготовки раствора",
+            "prepare_recirculation_started_at": phase_started_at.isoformat(),
+            "prepare_recirculation_timeout_at": phase_timeout_at.isoformat(),
+            "next_check": enqueue_result,
+        }
+
+    async def _start_two_tank_irrigation_recovery(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        runtime_cfg: Dict[str, Any],
+        attempt: int,
+    ) -> Dict[str, Any]:
+        plan_result = await self._dispatch_two_tank_command_plan(
+            zone_id=zone_id,
+            command_plan=runtime_cfg["commands"]["irrigation_recovery_start"],
+            context=context,
+            decision=DecisionOutcome(
+                action_required=True,
+                decision="run",
+                reason_code=REASON_IRRIGATION_RECOVERY_STARTED,
+                reason="Запуск рециркуляции recovery для полива",
+            ),
+        )
+        if not plan_result.get("success"):
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_irrigation_recovery_command_failed",
+                "workflow": "irrigation_recovery",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 1),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_IRRIGATION_RECOVERY_FAILED,
+                "reason": "Не удалось отправить команды irrigation recovery",
+                "error": str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                "error_code": str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+            }
+
+        phase_started_at = datetime.utcnow()
+        phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["irrigation_recovery_timeout_sec"])
+        try:
+            enqueue_result = await self._enqueue_two_tank_check(
+                zone_id=zone_id,
+                payload={**payload, "irrigation_recovery_attempt": attempt},
+                workflow="irrigation_recovery_check",
+                phase_started_at=phase_started_at,
+                phase_timeout_at=phase_timeout_at,
+                poll_interval_sec=runtime_cfg["poll_interval_sec"],
+            )
+        except ValueError as exc:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_irrigation_recovery_enqueue_failed",
+                "workflow": "irrigation_recovery",
+                "commands_total": plan_result.get("commands_total", 0),
+                "commands_failed": plan_result.get("commands_failed", 0),
+                "command_statuses": plan_result.get("command_statuses", []),
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                "reason": "Команды irrigation recovery отправлены, но self-task не поставлен",
+                "error": str(exc),
+                "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+            }
+
+        return {
+            "success": True,
+            "task_type": "diagnostics",
+            "mode": "two_tank_irrigation_recovery_in_progress",
+            "workflow": "irrigation_recovery",
+            "commands_total": plan_result.get("commands_total", 0),
+            "commands_failed": plan_result.get("commands_failed", 0),
+            "command_statuses": plan_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": REASON_IRRIGATION_RECOVERY_STARTED,
+            "reason": "Запущен recovery-контур полива",
+            "irrigation_recovery_attempt": attempt,
+            "irrigation_recovery_started_at": phase_started_at.isoformat(),
+            "irrigation_recovery_timeout_at": phase_timeout_at.isoformat(),
+            "next_check": enqueue_result,
+        }
+
+    async def _execute_two_tank_startup_workflow(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> Dict[str, Any]:
+        runtime_cfg = self._resolve_two_tank_runtime_config(payload)
+        workflow = self._normalize_two_tank_workflow(payload)
+
+        await self._emit_task_event(
+            zone_id=zone_id,
+            task_type="diagnostics",
+            context=context,
+            event_type="TWO_TANK_STARTUP_INITIATED",
+            payload={
+                "workflow": workflow,
+                "topology": self._extract_topology(payload),
+                "action_required": decision.action_required,
+                "decision": decision.decision,
+                "reason_code": decision.reason_code,
+            },
+        )
+
+        nodes_state = await self._check_required_nodes_online(zone_id, runtime_cfg["required_node_types"])
+        if nodes_state["missing_types"]:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "two_tank_required_nodes_missing",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CYCLE_BLOCKED_NODES_UNAVAILABLE,
+                "reason": "Нет online-нод, необходимых для startup 2-бакового контура",
+                "error": ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
+                "error_code": ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
+                "missing_node_types": nodes_state["missing_types"],
+            }
+
+        if workflow == "startup":
+            clean_level = await self._read_level_switch(
+                zone_id=zone_id,
+                sensor_labels=runtime_cfg["clean_max_labels"],
+                threshold=runtime_cfg["level_switch_on_threshold"],
+            )
+            await self._emit_task_event(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                context=context,
+                event_type="TANK_LEVEL_CHECKED",
+                payload={
+                    "tank": "clean",
+                    "sensor_id": clean_level["sensor_id"],
+                    "sensor_label": clean_level["sensor_label"],
+                    "level": clean_level["level"],
+                    "is_triggered": clean_level["is_triggered"],
+                    "sample_ts": clean_level["sample_ts"],
+                    "sample_age_sec": clean_level["sample_age_sec"],
+                    "is_stale": clean_level["is_stale"],
+                    "reason_code": REASON_TANK_LEVEL_CHECKED,
+                },
+            )
+            if not clean_level["has_level"]:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_clean_level_unavailable",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_SENSOR_LEVEL_UNAVAILABLE,
+                    "reason": "Нет данных датчика верхнего уровня чистого бака",
+                    "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                    "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                }
+            if TELEMETRY_FRESHNESS_ENFORCE and clean_level["is_stale"]:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_clean_level_stale",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_SENSOR_STALE_DETECTED,
+                    "reason": "Телеметрия датчика верхнего уровня чистого бака устарела",
+                    "error": ERR_TWO_TANK_LEVEL_STALE,
+                    "error_code": ERR_TWO_TANK_LEVEL_STALE,
+                }
+
+            if clean_level["is_triggered"]:
+                return await self._start_two_tank_solution_fill(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    runtime_cfg=runtime_cfg,
+                )
+
+            return await self._start_two_tank_clean_fill(
+                zone_id=zone_id,
+                payload=payload,
+                context=context,
+                runtime_cfg=runtime_cfg,
+                cycle=1,
+            )
+
+        if workflow == "clean_fill_check":
+            now = datetime.utcnow()
+            clean_started_at = parse_iso_datetime(str(payload.get("clean_fill_started_at") or "")) or now
+            clean_timeout_at = parse_iso_datetime(str(payload.get("clean_fill_timeout_at") or ""))
+            if clean_timeout_at is None:
+                clean_timeout_at = clean_started_at + timedelta(seconds=runtime_cfg["clean_fill_timeout_sec"])
+            clean_cycle = self._resolve_int(payload.get("clean_fill_cycle"), 1, 1)
+
+            clean_event = await self._find_zone_event_since(
+                zone_id=zone_id,
+                event_types=("CLEAN_FILL_COMPLETED",),
+                since=clean_started_at,
+            )
+            clean_triggered = bool(clean_event)
+            clean_level: Dict[str, Any] = {
+                "sensor_id": None,
+                "sensor_label": None,
+                "level": None,
+                "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
+                "has_level": False,
+                "is_triggered": False,
+            }
+            if not clean_triggered:
+                clean_level = await self._read_level_switch(
+                    zone_id=zone_id,
+                    sensor_labels=runtime_cfg["clean_max_labels"],
+                    threshold=runtime_cfg["level_switch_on_threshold"],
+                )
+                clean_triggered = bool(clean_level["is_triggered"])
+                if not clean_level["has_level"]:
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_clean_level_unavailable",
+                        "workflow": workflow,
+                        "commands_total": 0,
+                        "commands_failed": 0,
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_SENSOR_LEVEL_UNAVAILABLE,
+                        "reason": "Нет данных датчика верхнего уровня чистого бака",
+                        "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                        "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                    }
+                if TELEMETRY_FRESHNESS_ENFORCE and clean_level["is_stale"]:
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_clean_level_stale",
+                        "workflow": workflow,
+                        "commands_total": 0,
+                        "commands_failed": 0,
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_SENSOR_STALE_DETECTED,
+                        "reason": "Телеметрия датчика верхнего уровня чистого бака устарела",
+                        "error": ERR_TWO_TANK_LEVEL_STALE,
+                        "error_code": ERR_TWO_TANK_LEVEL_STALE,
+                    }
+
+            if clean_triggered:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["clean_fill_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_CLEAN_FILL_COMPLETED,
+                        reason="Остановка наполнения чистого бака",
+                    ),
+                )
+                if not stop_result.get("success"):
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_clean_fill_stop_failed",
+                        "workflow": workflow,
+                        "commands_total": stop_result.get("commands_total", 0),
+                        "commands_failed": stop_result.get("commands_failed", 1),
+                        "command_statuses": stop_result.get("command_statuses", []),
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                        "reason": "Не удалось остановить наполнение чистого бака",
+                        "error": str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                        "error_code": str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                    }
+
+                await self._emit_task_event(
+                    zone_id=zone_id,
+                    task_type="diagnostics",
+                    context=context,
+                    event_type="CLEAN_FILL_COMPLETED",
+                    payload={
+                        "source": "event" if clean_event else "sensor",
+                        "clean_fill_cycle": clean_cycle,
+                        "reason_code": REASON_CLEAN_FILL_COMPLETED,
+                    },
+                )
+                return await self._start_two_tank_solution_fill(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    runtime_cfg=runtime_cfg,
+                )
+
+            if now >= clean_timeout_at:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["clean_fill_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_CLEAN_FILL_TIMEOUT,
+                        reason="Остановка наполнения чистого бака по таймауту",
+                    ),
+                )
+                if clean_cycle <= runtime_cfg["clean_fill_retry_cycles"]:
+                    await self._emit_task_event(
+                        zone_id=zone_id,
+                        task_type="diagnostics",
+                        context=context,
+                        event_type="CLEAN_FILL_RETRY_STARTED",
+                        payload={
+                            "clean_fill_cycle": clean_cycle + 1,
+                            "reason_code": REASON_CLEAN_FILL_RETRY_STARTED,
+                        },
+                    )
+                    return await self._start_two_tank_clean_fill(
+                        zone_id=zone_id,
+                        payload=payload,
+                        context=context,
+                        runtime_cfg=runtime_cfg,
+                        cycle=clean_cycle + 1,
+                    )
+
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_clean_fill_timeout",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_CLEAN_FILL_TIMEOUT,
+                    "reason": "Таймаут наполнения чистого бака",
+                    "error": ERR_CLEAN_TANK_NOT_FILLED_TIMEOUT,
+                    "error_code": ERR_CLEAN_TANK_NOT_FILLED_TIMEOUT,
+                }
+
+            try:
+                enqueue_result = await self._enqueue_two_tank_check(
+                    zone_id=zone_id,
+                    payload=payload,
+                    workflow="clean_fill_check",
+                    phase_started_at=clean_started_at,
+                    phase_timeout_at=clean_timeout_at,
+                    poll_interval_sec=runtime_cfg["poll_interval_sec"],
+                    phase_cycle=clean_cycle,
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_clean_fill_enqueue_failed",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                    "reason": "Не удалось запланировать следующую проверку наполнения чистого бака",
+                    "error": str(exc),
+                    "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                }
+
+            return {
+                "success": True,
+                "task_type": "diagnostics",
+                "mode": "two_tank_clean_fill_in_progress",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_CLEAN_FILL_IN_PROGRESS,
+                "reason": "Наполнение чистого бака продолжается",
+                "clean_fill_cycle": clean_cycle,
+                "clean_fill_started_at": clean_started_at.isoformat(),
+                "clean_fill_timeout_at": clean_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+            }
+
+        if workflow == "solution_fill_check":
+            now = datetime.utcnow()
+            solution_started_at = parse_iso_datetime(str(payload.get("solution_fill_started_at") or "")) or now
+            solution_timeout_at = parse_iso_datetime(str(payload.get("solution_fill_timeout_at") or ""))
+            if solution_timeout_at is None:
+                solution_timeout_at = solution_started_at + timedelta(seconds=runtime_cfg["solution_fill_timeout_sec"])
+
+            solution_event = await self._find_zone_event_since(
+                zone_id=zone_id,
+                event_types=("SOLUTION_FILL_COMPLETED",),
+                since=solution_started_at,
+            )
+            solution_triggered = bool(solution_event)
+            solution_level: Dict[str, Any] = {
+                "sensor_id": None,
+                "sensor_label": None,
+                "level": None,
+                "sample_ts": None,
+                "sample_age_sec": None,
+                "is_stale": False,
+                "has_level": False,
+                "is_triggered": False,
+            }
+            if not solution_triggered:
+                solution_level = await self._read_level_switch(
+                    zone_id=zone_id,
+                    sensor_labels=runtime_cfg["solution_max_labels"],
+                    threshold=runtime_cfg["level_switch_on_threshold"],
+                )
+                solution_triggered = bool(solution_level["is_triggered"])
+                if not solution_level["has_level"]:
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_solution_level_unavailable",
+                        "workflow": workflow,
+                        "commands_total": 0,
+                        "commands_failed": 0,
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_SENSOR_LEVEL_UNAVAILABLE,
+                        "reason": "Нет данных датчика верхнего уровня бака раствора",
+                        "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                        "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                    }
+                if TELEMETRY_FRESHNESS_ENFORCE and solution_level["is_stale"]:
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_solution_level_stale",
+                        "workflow": workflow,
+                        "commands_total": 0,
+                        "commands_failed": 0,
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_SENSOR_STALE_DETECTED,
+                        "reason": "Телеметрия датчика верхнего уровня бака раствора устарела",
+                        "error": ERR_TWO_TANK_LEVEL_STALE,
+                        "error_code": ERR_TWO_TANK_LEVEL_STALE,
+                    }
+
+            if solution_triggered:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["solution_fill_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_SOLUTION_FILL_COMPLETED,
+                        reason="Остановка наполнения бака рабочего раствора",
+                    ),
+                )
+                if not stop_result.get("success"):
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_solution_fill_stop_failed",
+                        "workflow": workflow,
+                        "commands_total": stop_result.get("commands_total", 0),
+                        "commands_failed": stop_result.get("commands_failed", 1),
+                        "command_statuses": stop_result.get("command_statuses", []),
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                        "reason": "Не удалось остановить наполнение бака раствора",
+                        "error": str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                        "error_code": str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                    }
+                prepare_targets_state = await self._evaluate_ph_ec_targets(
+                    zone_id=zone_id,
+                    target_ph=float(runtime_cfg["target_ph"]),
+                    target_ec=float(runtime_cfg["target_ec_prepare"]),
+                    tolerance=runtime_cfg["prepare_tolerance"],
+                )
+                if not prepare_targets_state["targets_reached"]:
+                    return await self._start_two_tank_prepare_recirculation(
+                        zone_id=zone_id,
+                        payload=payload,
+                        context=context,
+                        runtime_cfg=runtime_cfg,
+                    )
+                return {
+                    "success": True,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_startup_completed",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": False,
+                    "decision": "skip",
+                    "reason_code": REASON_SOLUTION_FILL_COMPLETED,
+                    "reason": "Бак рабочего раствора заполнен, startup завершен",
+                    "targets_state": prepare_targets_state,
+                }
+
+            if now >= solution_timeout_at:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["solution_fill_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_SOLUTION_FILL_TIMEOUT,
+                        reason="Остановка наполнения бака раствора по таймауту",
+                    ),
+                )
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_solution_fill_timeout",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_SOLUTION_FILL_TIMEOUT,
+                    "reason": "Таймаут наполнения бака рабочего раствора",
+                    "error": ERR_SOLUTION_TANK_NOT_FILLED_TIMEOUT,
+                    "error_code": ERR_SOLUTION_TANK_NOT_FILLED_TIMEOUT,
+                }
+
+            try:
+                enqueue_result = await self._enqueue_two_tank_check(
+                    zone_id=zone_id,
+                    payload=payload,
+                    workflow="solution_fill_check",
+                    phase_started_at=solution_started_at,
+                    phase_timeout_at=solution_timeout_at,
+                    poll_interval_sec=runtime_cfg["poll_interval_sec"],
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_solution_fill_enqueue_failed",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                    "reason": "Не удалось запланировать следующую проверку бака раствора",
+                    "error": str(exc),
+                    "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                }
+
+            return {
+                "success": True,
+                "task_type": "diagnostics",
+                "mode": "two_tank_solution_fill_in_progress",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_SOLUTION_FILL_IN_PROGRESS,
+                "reason": "Наполнение бака рабочего раствора продолжается",
+                "solution_fill_started_at": solution_started_at.isoformat(),
+                "solution_fill_timeout_at": solution_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+            }
+
+        if workflow == "prepare_recirculation":
+            return await self._start_two_tank_prepare_recirculation(
+                zone_id=zone_id,
+                payload=payload,
+                context=context,
+                runtime_cfg=runtime_cfg,
+            )
+
+        if workflow == "prepare_recirculation_check":
+            now = datetime.utcnow()
+            phase_started_at = parse_iso_datetime(str(payload.get("prepare_recirculation_started_at") or "")) or now
+            phase_timeout_at = parse_iso_datetime(str(payload.get("prepare_recirculation_timeout_at") or ""))
+            if phase_timeout_at is None:
+                phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["prepare_recirculation_timeout_sec"])
+
+            prepare_event = await self._find_zone_event_since(
+                zone_id=zone_id,
+                event_types=("PREPARE_TARGETS_REACHED",),
+                since=phase_started_at,
+            )
+            targets_state = await self._evaluate_ph_ec_targets(
+                zone_id=zone_id,
+                target_ph=float(runtime_cfg["target_ph"]),
+                target_ec=float(runtime_cfg["target_ec_prepare"]),
+                tolerance=runtime_cfg["prepare_tolerance"],
+            )
+            if prepare_event or targets_state["targets_reached"]:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["prepare_recirculation_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_PREPARE_TARGETS_REACHED,
+                        reason="Остановка рециркуляции подготовки по достижению целей",
+                    ),
+                )
+                if not stop_result.get("success"):
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_prepare_recirculation_stop_failed",
+                        "workflow": workflow,
+                        "commands_total": stop_result.get("commands_total", 0),
+                        "commands_failed": stop_result.get("commands_failed", 1),
+                        "command_statuses": stop_result.get("command_statuses", []),
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+                        "reason": "Не удалось остановить prepare recirculation",
+                        "error": str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                        "error_code": str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                    }
+                return {
+                    "success": True,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_prepare_recirculation_completed",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": False,
+                    "decision": "skip",
+                    "reason_code": REASON_PREPARE_TARGETS_REACHED,
+                    "reason": "Prepare recirculation достиг целевых EC/pH",
+                    "targets_state": targets_state,
+                }
+
+            if now >= phase_timeout_at:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["prepare_recirculation_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_PREPARE_TARGETS_NOT_REACHED,
+                        reason="Остановка prepare recirculation по таймауту",
+                    ),
+                )
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_prepare_recirculation_timeout",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_PREPARE_TARGETS_NOT_REACHED,
+                    "reason": "Prepare recirculation не достиг целевых EC/pH до таймаута",
+                    "error": ERR_PREPARE_NPK_PH_TARGET_NOT_REACHED,
+                    "error_code": ERR_PREPARE_NPK_PH_TARGET_NOT_REACHED,
+                    "targets_state": targets_state,
+                }
+
+            try:
+                enqueue_result = await self._enqueue_two_tank_check(
+                    zone_id=zone_id,
+                    payload=payload,
+                    workflow="prepare_recirculation_check",
+                    phase_started_at=phase_started_at,
+                    phase_timeout_at=phase_timeout_at,
+                    poll_interval_sec=runtime_cfg["poll_interval_sec"],
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_prepare_recirculation_enqueue_failed",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                    "reason": "Не удалось запланировать следующую проверку prepare recirculation",
+                    "error": str(exc),
+                    "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                }
+
+            return {
+                "success": True,
+                "task_type": "diagnostics",
+                "mode": "two_tank_prepare_recirculation_in_progress",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_PREPARE_RECIRCULATION_STARTED,
+                "reason": "Prepare recirculation продолжается",
+                "prepare_recirculation_started_at": phase_started_at.isoformat(),
+                "prepare_recirculation_timeout_at": phase_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+                "targets_state": targets_state,
+            }
+
+        if workflow == "irrigation_recovery":
+            attempt = self._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
+            return await self._start_two_tank_irrigation_recovery(
+                zone_id=zone_id,
+                payload=payload,
+                context=context,
+                runtime_cfg=runtime_cfg,
+                attempt=attempt,
+            )
+
+        if workflow == "irrigation_recovery_check":
+            now = datetime.utcnow()
+            attempt = self._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
+            phase_started_at = parse_iso_datetime(str(payload.get("irrigation_recovery_started_at") or "")) or now
+            phase_timeout_at = parse_iso_datetime(str(payload.get("irrigation_recovery_timeout_at") or ""))
+            if phase_timeout_at is None:
+                phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["irrigation_recovery_timeout_sec"])
+
+            recovery_state = await self._evaluate_ph_ec_targets(
+                zone_id=zone_id,
+                target_ph=float(runtime_cfg["target_ph"]),
+                target_ec=float(runtime_cfg["target_ec"]),
+                tolerance=runtime_cfg["recovery_tolerance"],
+            )
+            if recovery_state["targets_reached"]:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["irrigation_recovery_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_IRRIGATION_RECOVERY_RECOVERED,
+                        reason="Остановка irrigation recovery по достижению цели",
+                    ),
+                )
+                if not stop_result.get("success"):
+                    return {
+                        "success": False,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_irrigation_recovery_stop_failed",
+                        "workflow": workflow,
+                        "commands_total": stop_result.get("commands_total", 0),
+                        "commands_failed": stop_result.get("commands_failed", 1),
+                        "command_statuses": stop_result.get("command_statuses", []),
+                        "action_required": True,
+                        "decision": "run",
+                        "reason_code": REASON_IRRIGATION_RECOVERY_FAILED,
+                        "reason": "Не удалось остановить irrigation recovery",
+                        "error": str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                        "error_code": str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                    }
+                return {
+                    "success": True,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_irrigation_recovery_completed",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": False,
+                    "decision": "skip",
+                    "reason_code": REASON_IRRIGATION_RECOVERY_RECOVERED,
+                    "reason": "Irrigation recovery успешно завершен",
+                    "irrigation_recovery_attempt": attempt,
+                    "targets_state": recovery_state,
+                }
+
+            if now >= phase_timeout_at:
+                stop_result = await self._dispatch_two_tank_command_plan(
+                    zone_id=zone_id,
+                    command_plan=runtime_cfg["commands"]["irrigation_recovery_stop"],
+                    context=context,
+                    decision=DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code=REASON_IRRIGATION_RECOVERY_FAILED,
+                        reason="Остановка irrigation recovery по таймауту попытки",
+                    ),
+                )
+                degraded_state = await self._evaluate_ph_ec_targets(
+                    zone_id=zone_id,
+                    target_ph=float(runtime_cfg["target_ph"]),
+                    target_ec=float(runtime_cfg["target_ec"]),
+                    tolerance=runtime_cfg["degraded_tolerance"],
+                )
+                if degraded_state["targets_reached"]:
+                    return {
+                        "success": True,
+                        "task_type": "diagnostics",
+                        "mode": "two_tank_irrigation_recovery_degraded",
+                        "workflow": workflow,
+                        "commands_total": stop_result.get("commands_total", 0),
+                        "commands_failed": stop_result.get("commands_failed", 0),
+                        "command_statuses": stop_result.get("command_statuses", []),
+                        "action_required": False,
+                        "decision": "skip",
+                        "reason_code": REASON_IRRIGATION_RECOVERY_DEGRADED,
+                        "reason": "Irrigation recovery завершен в degraded tolerance",
+                        "irrigation_recovery_attempt": attempt,
+                        "targets_state": degraded_state,
+                    }
+
+                if attempt < runtime_cfg["irrigation_recovery_max_attempts"]:
+                    return await self._start_two_tank_irrigation_recovery(
+                        zone_id=zone_id,
+                        payload={**payload, "irrigation_recovery_attempt": attempt + 1},
+                        context=context,
+                        runtime_cfg=runtime_cfg,
+                        attempt=attempt + 1,
+                    )
+
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_irrigation_recovery_failed",
+                    "workflow": workflow,
+                    "commands_total": stop_result.get("commands_total", 0),
+                    "commands_failed": stop_result.get("commands_failed", 0),
+                    "command_statuses": stop_result.get("command_statuses", []),
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_IRRIGATION_RECOVERY_FAILED,
+                    "reason": "Превышено число попыток irrigation recovery",
+                    "error": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
+                    "error_code": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
+                    "irrigation_recovery_attempt": attempt,
+                    "targets_state": recovery_state,
+                }
+
+            try:
+                enqueue_result = await self._enqueue_two_tank_check(
+                    zone_id=zone_id,
+                    payload={**payload, "irrigation_recovery_attempt": attempt},
+                    workflow="irrigation_recovery_check",
+                    phase_started_at=phase_started_at,
+                    phase_timeout_at=phase_timeout_at,
+                    poll_interval_sec=runtime_cfg["poll_interval_sec"],
+                    phase_cycle=attempt,
+                )
+            except ValueError as exc:
+                return {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "two_tank_irrigation_recovery_enqueue_failed",
+                    "workflow": workflow,
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": True,
+                    "decision": "run",
+                    "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                    "reason": "Не удалось запланировать следующую проверку irrigation recovery",
+                    "error": str(exc),
+                    "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                }
+
+            return {
+                "success": True,
+                "task_type": "diagnostics",
+                "mode": "two_tank_irrigation_recovery_in_progress",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "run",
+                "reason_code": REASON_IRRIGATION_RECOVERY_STARTED,
+                "reason": "Irrigation recovery продолжается",
+                "irrigation_recovery_attempt": attempt,
+                "irrigation_recovery_started_at": phase_started_at.isoformat(),
+                "irrigation_recovery_timeout_at": phase_timeout_at.isoformat(),
+                "next_check": enqueue_result,
+                "targets_state": recovery_state,
+            }
+
+        return {
+            "success": False,
+            "task_type": "diagnostics",
+            "mode": "two_tank_unknown_workflow",
+            "workflow": workflow,
+            "commands_total": 0,
+            "commands_failed": 0,
+            "action_required": True,
+            "decision": "run",
+            "reason_code": "unsupported_workflow",
+            "reason": f"Неподдерживаемый workflow для топологии two_tank: {workflow}",
+            "error": "unsupported_workflow",
+            "error_code": "unsupported_workflow",
+        }
+
+    async def _execute_three_tank_startup_workflow(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> Dict[str, Any]:
+        workflow = self._extract_workflow(payload)
+        fallback_workflow = "refill_check" if workflow == "refill_check" else "cycle_start"
+        payload_for_cycle_start = dict(payload)
+        payload_for_cycle_start["workflow"] = fallback_workflow
+
+        result = await self._execute_cycle_start_workflow(
+            zone_id=zone_id,
+            payload=payload_for_cycle_start,
+            context=context,
+            decision=decision,
+        )
+        mode_map = {
+            "cycle_start": "three_tank_startup",
+            "cycle_start_ready": "three_tank_startup_ready",
+            "cycle_start_refill_timeout": "three_tank_startup_refill_timeout",
+            "cycle_start_refill_started_without_check": "three_tank_startup_refill_started_without_check",
+            "cycle_start_refill_in_progress": "three_tank_startup_refill_in_progress",
+        }
+        raw_mode = str(result.get("mode") or "")
+        if raw_mode in mode_map:
+            result["mode"] = mode_map[raw_mode]
+        result["topology"] = self._extract_topology(payload) or "three_tank_drip_substrate_trays"
+        result["workflow"] = workflow
+        return result
+
     async def _execute_cycle_start_workflow(
         self,
         *,
@@ -1056,7 +3294,7 @@ class SchedulerTaskExecutor:
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_BLOCKED_NODES_UNAVAILABLE,
                 "reason": "Не хватает обязательных online-нод для старта цикла",
                 "error": error,
@@ -1104,7 +3342,7 @@ class SchedulerTaskExecutor:
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_TANK_LEVEL_UNAVAILABLE,
                 "reason": "Нет данных уровня бака чистой воды",
                 "error": error,
@@ -1126,7 +3364,7 @@ class SchedulerTaskExecutor:
                     "sample_age_sec": tank_level["sample_age_sec"],
                     "max_age_sec": TELEMETRY_FRESHNESS_MAX_AGE_SEC,
                     "action_required": True,
-                    "decision": "execute",
+                    "decision": "run",
                     "reason_code": REASON_CYCLE_TANK_LEVEL_STALE,
                     "error_code": error,
                 },
@@ -1153,7 +3391,7 @@ class SchedulerTaskExecutor:
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_TANK_LEVEL_STALE,
                 "reason": "Телеметрия уровня бака устарела, выполнение запрещено fail-safe политикой",
                 "error": error,
@@ -1207,7 +3445,7 @@ class SchedulerTaskExecutor:
                     "refill_timeout_at": refill_timeout_at.isoformat(),
                     "refill_attempt": refill_attempt,
                     "action_required": True,
-                    "decision": "execute",
+                    "decision": "run",
                     "reason_code": REASON_CYCLE_REFILL_TIMEOUT,
                     "error_code": ERR_CYCLE_REFILL_TIMEOUT,
                 },
@@ -1234,7 +3472,7 @@ class SchedulerTaskExecutor:
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_REFILL_TIMEOUT,
                 "reason": "Бак чистой воды не заполнился до таймаута",
                 "error": ERR_CYCLE_REFILL_TIMEOUT,
@@ -1263,7 +3501,7 @@ class SchedulerTaskExecutor:
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
                 "reason": "Не найден online-узел для команды наполнения бака",
                 "error": error,
@@ -1272,7 +3510,7 @@ class SchedulerTaskExecutor:
 
         refill_decision = DecisionOutcome(
             action_required=True,
-            decision="execute",
+            decision="run",
             reason_code=REASON_TANK_REFILL_REQUIRED,
             reason="Бак чистой воды неполный, требуется наполнение",
         )
@@ -1308,7 +3546,7 @@ class SchedulerTaskExecutor:
                 "commands_total": publish_result.get("commands_total", 0),
                 "commands_failed": publish_result.get("commands_failed", 1),
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
                 "reason": "Команда наполнения бака не получила подтверждение DONE",
                 "error": str(publish_result.get("error") or ERR_CYCLE_REFILL_COMMAND_FAILED),
@@ -1329,7 +3567,7 @@ class SchedulerTaskExecutor:
                 "refill_timeout_at": refill_timeout_at.isoformat(),
                 "refill_attempt": refill_attempt + 1,
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_TANK_REFILL_STARTED,
             },
         )
@@ -1377,7 +3615,7 @@ class SchedulerTaskExecutor:
                 "commands_total": publish_result.get("commands_total", 1),
                 "commands_failed": publish_result.get("commands_failed", 0),
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
                 "reason": "Команда refill отправлена, но не удалось запланировать проверку",
                 "error": error,
@@ -1397,7 +3635,7 @@ class SchedulerTaskExecutor:
                 "expires_at": enqueue_result["expires_at"],
                 "correlation_id": enqueue_result["correlation_id"],
                 "action_required": True,
-                "decision": "execute",
+                "decision": "run",
                 "reason_code": REASON_TANK_REFILL_IN_PROGRESS,
             },
         )
@@ -1410,7 +3648,7 @@ class SchedulerTaskExecutor:
             "commands_total": publish_result.get("commands_total", 1),
             "commands_failed": publish_result.get("commands_failed", 0),
             "action_required": True,
-            "decision": "execute",
+            "decision": "run",
             "reason_code": REASON_TANK_REFILL_STARTED if workflow == "cycle_start" else REASON_TANK_REFILL_IN_PROGRESS,
             "reason": "Запущено наполнение бака и запланирована отложенная проверка",
             "tank_level": tank_level["level"],

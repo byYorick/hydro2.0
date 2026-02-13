@@ -36,8 +36,9 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 3. **Heartbeat** (node → backend)
 4. **Command** (backend → node)
 5. **Command Response** (node → backend)
-6. **NodeConfig** (backend → node)
-7. **Config Response** (node → backend)
+6. **Event** (node → backend)
+7. **NodeConfig** (backend → node)
+8. **Config Response** (node → backend)
 
 ---
 
@@ -75,6 +76,7 @@ hydro/{gh}/{zone}/{node}/config_report
 hydro/{gh}/{zone}/{node}/{channel}/telemetry
 hydro/{gh}/{zone}/{node}/{channel}/command
 hydro/{gh}/{zone}/{node}/{channel}/command_response
+hydro/{gh}/{zone}/{node}/{channel}/event
 ```
 
 ---
@@ -180,7 +182,7 @@ Backend подписывается на топик `hydro/+/+/+/config_report` �
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY` и т.д.
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP` и др.
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах
 
@@ -326,6 +328,10 @@ Backend → Node
  - выполнить действие,
  - отправить command_response.
 
+Дополнительное требование для 2-бакового контура:
+- для `valve_clean_fill` и `valve_solution_fill` узел обязан локально завершать наполнение по датчику `*_max`
+  и отправлять подтверждение в backend без ожидания внешней stop-команды.
+
 ## 10.3. HMAC проверка команд
 
 **Формат подписи:**
@@ -402,6 +408,65 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
  "ts": 1710012930123
 }
 ```
+
+## 11.4. Подтверждение авто-остановки наполнения (2-бака)
+
+При достижении верхнего уровня бака (`level_clean_max` или `level_solution_max`) нода обязана:
+
+1. Локально закрыть соответствующий клапан наполнения.
+2. Отправить `command_response` для активной команды:
+
+```json
+{
+  "cmd_id": "cmd-701",
+  "status": "DONE",
+  "ts": 1710012930123,
+  "details": {
+    "result": "auto_stopped",
+    "reason_code": "level_max_reached",
+    "tank": "clean"
+  }
+}
+```
+
+3. Опубликовать событие состояния:
+
+Топик:
+```text
+hydro/{gh}/{zone}/{node}/storage_state/event
+```
+
+Payload:
+```json
+{
+  "event_code": "clean_fill_completed",
+  "ts": 1710012930,
+  "state": {
+    "level_clean_min": 1,
+    "level_clean_max": 1,
+    "level_solution_min": 0,
+    "level_solution_max": 0
+  }
+}
+```
+
+Нормализация `event_code` в backend:
+- источник: `event_code` (fallback: `event`, `type`);
+- целевое поле: `zone_events.type`;
+- правило: `UPPERCASE` + замена неалфанумерических символов на `_` + схлопывание повторяющихся `_`;
+- если код пустой, используется `NODE_EVENT`.
+- лимит `zone_events.type` = 255 символов; при превышении код усечётся детерминированно с suffix
+  `_{SHA1_10}` (первые 10 hex-символов SHA1 от нормализованного кода).
+
+Ограничение кардинальности метрик backend:
+- `history-logger` инкрементирует `node_event_received_total{event_code=...}` только для
+  разрешённого набора кодов;
+- неизвестные/кастомные коды агрегируются в `event_code="OTHER"`.
+
+Backend обязан:
+- принимать оба канала подтверждения (response + event);
+- сохранять событие в `zone_events`;
+- использовать poll как fallback-контроль при потере event.
 
 ---
 

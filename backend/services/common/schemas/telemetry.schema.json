@@ -7,7 +7,7 @@
   "properties": {
     "metric_type": {
       "type": "string",
-      "description": "Тип метрики (PH, EC, TEMPERATURE, HUMIDITY, WATER_LEVEL, FLOW_RATE, LIGHT_INTENSITY, etc.)",
+      "description": "Тип метрики (PH, EC, TEMPERATURE, HUMIDITY, WATER_LEVEL, WATER_LEVEL_SWITCH, FLOW_RATE, LIGHT_INTENSITY, etc.)",
       "minLength": 1,
       "maxLength": 50
     },

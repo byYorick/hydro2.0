@@ -24,6 +24,7 @@ from mqtt_handlers import (
     handle_error,
     handle_heartbeat,
     handle_lwt,
+    handle_node_event,
     handle_node_hello,
     handle_status,
     handle_time_request,
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
     await mqtt.subscribe("hydro/+/+/+/config_report", handle_config_report)
     await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
+    await mqtt.subscribe("hydro/+/+/+/+/event", handle_node_event)
     await mqtt.subscribe("hydro/time/request", handle_time_request)
 
     logger.info("History Logger service started")
@@ -87,7 +89,7 @@ async def lifespan(app: FastAPI):
         "hydro/+/+/+/status, hydro/+/+/+/lwt, hydro/+/+/+/diagnostics, "
         "hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, "
         "hydro/+/+/+/config_report, "
-        "hydro/+/+/+/+/command_response"
+        "hydro/+/+/+/+/command_response, hydro/+/+/+/+/event"
     )
 
     yield
