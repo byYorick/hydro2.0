@@ -125,6 +125,17 @@ class Zone extends Model
         return $this->hasMany(GrowCycle::class);
     }
 
+    public function automationLogicProfiles(): HasMany
+    {
+        return $this->hasMany(ZoneAutomationLogicProfile::class);
+    }
+
+    public function activeAutomationLogicProfile(): HasOne
+    {
+        return $this->hasOne(ZoneAutomationLogicProfile::class)
+            ->where('is_active', true);
+    }
+
 
     /**
      * Проверка валидности инфраструктуры зоны (новая модель)

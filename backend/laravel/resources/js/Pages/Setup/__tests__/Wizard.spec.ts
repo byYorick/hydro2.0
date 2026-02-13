@@ -280,9 +280,23 @@ describe('Setup/Wizard.vue', () => {
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/zones/20/automation-logic-profile',
+      expect.objectContaining({
+        mode: 'setup',
+        activate: true,
+        subsystems: expect.any(Object),
+      }),
+      undefined
+    )
+
+    expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/commands',
       expect.objectContaining({
         type: 'GROWTH_CYCLE_CONFIG',
+        params: expect.objectContaining({
+          mode: 'adjust',
+          profile_mode: 'setup',
+        }),
       }),
       undefined
     )
@@ -365,13 +379,24 @@ describe('Setup/Wizard.vue', () => {
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/zones/20/automation-logic-profile',
+      expect.objectContaining({
+        mode: 'setup',
+        activate: true,
+        subsystems: expect.objectContaining({
+          climate: expect.objectContaining({ enabled: false }),
+          lighting: expect.objectContaining({ enabled: false }),
+        }),
+      }),
+      undefined
+    )
+
+    expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/commands',
       expect.objectContaining({
         params: expect.objectContaining({
-          subsystems: expect.objectContaining({
-            climate: expect.objectContaining({ enabled: false }),
-            lighting: expect.objectContaining({ enabled: false }),
-          }),
+          mode: 'adjust',
+          profile_mode: 'setup',
         }),
       }),
       undefined
@@ -408,10 +433,10 @@ describe('Setup/Wizard.vue', () => {
           data: {
             status: 'ok',
             data: [
-              { id: 101, uid: 'nd-test-irrig-1', type: 'pump_node', channels: [{ channel: 'pump_irrigation' }] },
-              { id: 102, uid: 'nd-test-ph-1', type: 'ph_node', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
-              { id: 104, uid: 'nd-test-ec-1', type: 'ec_node', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
-              { id: 103, uid: 'nd-test-tank-1', type: 'water_sensor_node', channels: [{ channel: 'water_level' }, { channel: 'pump_in' }] },
+              { id: 101, uid: 'nd-test-irrig-1', type: 'irrig', channels: [{ channel: 'pump_irrigation' }] },
+              { id: 102, uid: 'nd-test-ph-1', type: 'ph', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
+              { id: 104, uid: 'nd-test-ec-1', type: 'ec', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
+              { id: 103, uid: 'nd-test-tank-1', type: 'water_sensor', channels: [{ channel: 'water_level' }, { channel: 'pump_in' }] },
             ],
           },
         })

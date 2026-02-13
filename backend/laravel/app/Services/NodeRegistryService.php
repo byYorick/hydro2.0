@@ -59,9 +59,8 @@ class NodeRegistryService
                 $node->name = $attributes['name'];
             }
             
-            if (isset($attributes['type'])) {
-                $node->type = $attributes['type'];
-            }
+            $incomingType = $attributes['type'] ?? $node->type;
+            $node->type = $this->normalizeNodeType((string) $incomingType);
             
             // Обновляем hardware_id, если указан
             if (isset($attributes['hardware_id'])) {
@@ -140,7 +139,7 @@ class NodeRegistryService
                     ->first();
 
                 if (!$node) {
-                    $nodeType = $helloData['node_type'] ?? 'unknown';
+                    $nodeType = $this->normalizeNodeType((string) ($helloData['node_type'] ?? 'unknown'));
                     $uid = $useRequestedNodeUid
                         ? $requestedNodeUid
                         : $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
@@ -308,6 +307,10 @@ class NodeRegistryService
      */
     private function updateNodeAttributes(DeviceNode $node, array $helloData): void
     {
+        if (array_key_exists('node_type', $helloData)) {
+            $node->type = $this->normalizeNodeType((string) ($helloData['node_type'] ?? 'unknown'));
+        }
+
         if (isset($helloData['fw_version'])) {
             $node->fw_version = $helloData['fw_version'];
         }
@@ -320,6 +323,31 @@ class NodeRegistryService
         if (isset($provisioningMeta['node_name'])) {
             $node->name = $provisioningMeta['node_name'];
         }
+    }
+
+    /**
+     * Нормализовать node_type в каноничный backend-тип (strict, без legacy alias).
+     */
+    private function normalizeNodeType(?string $nodeType): string
+    {
+        $normalized = strtolower(trim((string) $nodeType));
+        if ($normalized === '') {
+            return 'unknown';
+        }
+
+        $allowed = [
+            'ph',
+            'ec',
+            'climate',
+            'irrig',
+            'light',
+            'relay',
+            'water_sensor',
+            'recirculation',
+            'unknown',
+        ];
+
+        return in_array($normalized, $allowed, true) ? $normalized : 'unknown';
     }
 
     /**
@@ -386,10 +414,16 @@ class NodeRegistryService
             $typePrefix = 'ec';
         } elseif ($nodeType === 'climate') {
             $typePrefix = 'clim';
-        } elseif (in_array($nodeType, ['irrig', 'pump'])) {
+        } elseif ($nodeType === 'irrig') {
             $typePrefix = 'irr';
         } elseif ($nodeType === 'light') {
             $typePrefix = 'light';
+        } elseif ($nodeType === 'relay') {
+            $typePrefix = 'relay';
+        } elseif ($nodeType === 'water_sensor') {
+            $typePrefix = 'water';
+        } elseif ($nodeType === 'recirculation') {
+            $typePrefix = 'recirc';
         }
         
         $uid = "nd-{$typePrefix}-{$shortId}";
@@ -479,7 +513,13 @@ class NodeRegistryService
                     // Используем infra_node_error как базовый код, добавляем error_code если есть
                     $alertCode = 'infra_node_error';
                     if ($error->error_code) {
-                        $alertCode = 'infra_node_error_' . str_replace('-', '_', $error->error_code);
+                        $normalizedErrorCode = strtolower(trim((string) $error->error_code));
+                        $normalizedErrorCode = str_replace('-', '_', $normalizedErrorCode);
+                        $normalizedErrorCode = preg_replace('/[^a-z0-9_]/', '_', $normalizedErrorCode) ?? $normalizedErrorCode;
+
+                        if ($normalizedErrorCode !== '') {
+                            $alertCode = 'infra_node_error_' . $normalizedErrorCode;
+                        }
                     }
                     
                     // Преобразуем даты из строк в ISO8601 формат если нужно

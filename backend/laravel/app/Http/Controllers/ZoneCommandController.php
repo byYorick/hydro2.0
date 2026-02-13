@@ -9,6 +9,7 @@ use App\Models\ZoneEvent;
 use App\Models\GrowCycle;
 use App\Enums\GrowCycleStatus;
 use App\Services\PythonBridgeService;
+use App\Services\ZoneAutomationLogicProfileService;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -19,6 +20,11 @@ use Illuminate\Support\Arr;
 
 class ZoneCommandController extends Controller
 {
+    public function __construct(
+        private readonly ZoneAutomationLogicProfileService $automationLogicProfiles,
+    ) {
+    }
+
     /**
      * Отправка команды для зоны в Python-сервис + логирование в историю зоны.
      */
@@ -36,6 +42,10 @@ class ZoneCommandController extends Controller
         } elseif (is_array($data['params']) && array_is_list($data['params'])) {
             // Convert indexed array to empty object
             $data['params'] = [];
+        }
+
+        if (($data['type'] ?? '') === 'GROWTH_CYCLE_CONFIG') {
+            $data = $this->enrichGrowthCycleConfigPayload($zone, $data);
         }
 
         // Бизнес-правило: в зоне может быть только один активный цикл выращивания
@@ -89,8 +99,16 @@ class ZoneCommandController extends Controller
             if ($activeCycle) {
                 $requestedSystemType = Arr::get($data, 'params.subsystems.irrigation.targets.system_type');
                 if (is_string($requestedSystemType) && $requestedSystemType !== '') {
-                    $currentSystemType = Arr::get($activeCycle->settings ?? [], 'subsystems.irrigation.targets.system_type');
-                    if (!is_string($currentSystemType) || $currentSystemType !== $requestedSystemType) {
+                    $currentSystemType = Arr::get($activeCycle->settings ?? [], 'irrigation.system_type');
+                    if (!is_string($currentSystemType) || trim($currentSystemType) === '') {
+                        return response()->json([
+                            'status' => 'error',
+                            'code' => 'CYCLE_IRRIGATION_NOT_INITIALIZED',
+                            'message' => 'Тип системы цикла не инициализирован. Создайте цикл через мастер запуска с параметрами irrigation.',
+                        ], 422);
+                    }
+
+                    if ($currentSystemType !== $requestedSystemType) {
                         return response()->json([
                             'status' => 'error',
                             'code' => 'SYSTEM_TYPE_LOCKED',
@@ -218,6 +236,30 @@ class ZoneCommandController extends Controller
             ->first();
     }
 
+    private function enrichGrowthCycleConfigPayload(Zone $zone, array $data): array
+    {
+        $params = is_array($data['params'] ?? null) ? $data['params'] : [];
+        $profileMode = $params['profile_mode'] ?? null;
+        if (!is_string($profileMode) || trim($profileMode) === '') {
+            throw new \InvalidArgumentException('GROWTH_CYCLE_CONFIG requires params.profile_mode.');
+        }
+
+        $profile = $this->automationLogicProfiles->resolveProfileByMode($zone->id, $profileMode);
+        if (!$profile) {
+            throw new \InvalidArgumentException("Automation logic profile '{$profileMode}' not found for zone {$zone->id}.");
+        }
+
+        $subsystems = is_array($profile->subsystems) ? $profile->subsystems : [];
+        if (empty($subsystems)) {
+            throw new \InvalidArgumentException("Automation logic profile '{$profileMode}' has empty subsystems.");
+        }
+
+        $params['subsystems'] = $subsystems;
+        $data['params'] = $params;
+
+        return $data;
+    }
+
     /**
      * Логирование команды в историю зоны через ZoneEvent.
      *
@@ -244,9 +286,6 @@ class ZoneCommandController extends Controller
 
             $subsystems = $params['subsystems'] ?? null;
 
-            // Управление моделью GrowCycle (legacy ZoneCycle заменен)
-            // Примечание: создание циклов теперь должно происходить через GrowCycleController::store()
-            // Этот код оставлен для обратной совместимости с командами, но рекомендуется использовать API
             if ($mode === 'start') {
                 // Проверяем, нет ли уже активного цикла
                 $hasActiveCycle = GrowCycle::query()
@@ -262,18 +301,6 @@ class ZoneCommandController extends Controller
                         'subsystems' => $subsystems,
                     ]);
                 }
-            } elseif ($mode === 'adjust') {
-                // Обновляем текущий активный цикл (если есть)
-                $activeCycle = $this->findActiveCycle($zone);
-
-                if ($activeCycle && $subsystems) {
-                    // Обновляем settings цикла с subsystems
-                    $settings = $activeCycle->settings ?? [];
-                    $settings['subsystems'] = $subsystems;
-                    $activeCycle->update([
-                        'settings' => $settings,
-                    ]);
-                }
             }
 
             ZoneEvent::create([
@@ -283,6 +310,7 @@ class ZoneCommandController extends Controller
                     'command_type' => $type,
                     'command_id' => $commandId,
                     'mode' => $mode,
+                    'profile_mode' => $params['profile_mode'] ?? null,
                     'subsystems' => $subsystems,
                     'source' => 'web',
                     'user_id' => $userId,

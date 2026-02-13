@@ -371,6 +371,42 @@ class TestNodeHelloFormatSync:
             # Проверяем, что был вызван Laravel API
             assert mock_post.called
 
+    @pytest.mark.asyncio
+    async def test_handle_node_hello_normalizes_non_canonical_node_type_to_unknown(self):
+        """Тест strict-нормализации node_type перед отправкой в Laravel."""
+        from mqtt_handlers import handle_node_hello
+
+        topic = "hydro/node_hello"
+        payload = json.dumps(
+            {
+                "message_type": "node_hello",
+                "hardware_id": "esp32-legacy-node-type",
+                "node_type": "pump_node",
+                "fw_version": "v5.1.0",
+            }
+        ).encode("utf-8")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.text = "OK"
+        mock_response.json.return_value = {"data": {"uid": "nd-unknown-1"}}
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post, \
+             patch("mqtt_handlers.get_settings") as mock_settings, \
+             patch("mqtt_handlers.NODE_HELLO_RECEIVED"), \
+             patch("mqtt_handlers.NODE_HELLO_REGISTERED"), \
+             patch("mqtt_handlers._process_pending_config_report_after_registration", new_callable=AsyncMock):
+            mock_post.return_value = mock_response
+            mock_settings.return_value.laravel_api_url = "http://localhost/api"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = "test-token"
+            mock_settings.return_value.laravel_api_timeout_sec = 5
+
+            await handle_node_hello(topic, payload)
+
+        sent_payload = mock_post.await_args.kwargs["json"]
+        assert sent_payload["node_type"] == "unknown"
+
 
 class TestTopicFormatSync:
     """Тесты синхронизации формата топиков."""

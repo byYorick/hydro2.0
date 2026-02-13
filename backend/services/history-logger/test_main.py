@@ -468,6 +468,48 @@ async def test_process_telemetry_batch_resolves_node_unassigned_alert_on_recover
 
 
 @pytest.mark.asyncio
+async def test_process_telemetry_batch_falls_back_to_uid_lookup_for_unassigned_node_with_gh_uid():
+    """If node cache is cold, resolver must fallback to UID-only lookup and emit node_unassigned."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._cache_last_update = time.time()
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-cold-cache-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="PH",
+            value=6.3,
+            channel="ph_sensor",
+            ts=utcnow(),
+        )
+    ]
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock), \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.side_effect = [
+            [],
+            [{"id": 101, "uid": "nd-cold-cache-1", "zone_id": None}],
+        ]
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
+    assert "infra_telemetry_node_unassigned" in emitted_codes
+    assert "infra_telemetry_node_not_found" not in emitted_codes
+
+
+@pytest.mark.asyncio
 async def test_process_telemetry_batch_skips_immediate_node_unassigned_recovery():
     """Recovery alert should wait for grace interval after recent unassigned sample."""
     import telemetry_processing as tp

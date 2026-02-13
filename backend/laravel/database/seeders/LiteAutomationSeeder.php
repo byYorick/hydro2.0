@@ -293,7 +293,7 @@ class LiteAutomationSeeder extends Seeder
                 ],
             ],
             'water' => [
-                'type' => 'water',
+                'type' => 'water_sensor',
                 'name' => 'Water Tanks Node',
                 'sensor_channels' => [
                     ['channel' => 'water_level', 'metric' => 'WATER_LEVEL', 'unit' => '%'],

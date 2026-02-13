@@ -26,7 +26,7 @@ class CommandsTest extends TestCase
         \App\Models\NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'ph_pump',
-            'type' => 'pump',
+            'type' => 'ACTUATOR',
         ]);
         
         $user = User::factory()->create(['role' => 'operator']);

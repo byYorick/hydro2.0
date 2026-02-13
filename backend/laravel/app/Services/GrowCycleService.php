@@ -58,15 +58,12 @@ class GrowCycleService
 
             $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
             if (!empty($irrigation)) {
-                $settings['subsystems']['irrigation'] = [
-                    'enabled' => true,
-                    'targets' => [
-                        'system_type' => $irrigation['system_type'] ?? 'drip',
-                        'interval_minutes' => (int) ($irrigation['interval_minutes'] ?? 30),
-                        'duration_seconds' => (int) ($irrigation['duration_seconds'] ?? 120),
-                        'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),
-                        'nutrient_tank_target_l' => (int) ($irrigation['nutrient_tank_target_l'] ?? 280),
-                    ],
+                $settings['irrigation'] = [
+                    'system_type' => $irrigation['system_type'] ?? 'drip',
+                    'interval_minutes' => (int) ($irrigation['interval_minutes'] ?? 30),
+                    'duration_seconds' => (int) ($irrigation['duration_seconds'] ?? 120),
+                    'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),
+                    'nutrient_tank_target_l' => (int) ($irrigation['nutrient_tank_target_l'] ?? 280),
                 ];
             }
 

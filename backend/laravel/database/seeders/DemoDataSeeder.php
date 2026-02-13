@@ -64,7 +64,7 @@ class DemoDataSeeder extends Seeder
             [
                 'zone_id' => $zone1->id,
                 'name' => 'pH Sensor Node',
-                'type' => 'sensor',
+                'type' => 'ph',
                 'fw_version' => '1.2.3',
                 'last_seen_at' => Carbon::now()->subMinutes(2),
                 'status' => 'online',
@@ -97,7 +97,7 @@ class DemoDataSeeder extends Seeder
             [
                 'zone_id' => $zone1->id,
                 'name' => 'EC Sensor Node',
-                'type' => 'sensor',
+                'type' => 'ec',
                 'fw_version' => '1.1.5',
                 'last_seen_at' => Carbon::now()->subMinutes(1),
                 'status' => 'online',
@@ -121,7 +121,7 @@ class DemoDataSeeder extends Seeder
             [
                 'zone_id' => $zone2->id,
                 'name' => 'Temperature Sensor',
-                'type' => 'sensor',
+                'type' => 'climate',
                 'fw_version' => '1.0.8',
                 'last_seen_at' => Carbon::now()->subHours(1),
                 'status' => 'offline',
@@ -145,7 +145,7 @@ class DemoDataSeeder extends Seeder
             [
                 'zone_id' => $zone3->id,
                 'name' => 'Combo Sensor Node',
-                'type' => 'sensor',
+                'type' => 'climate',
                 'fw_version' => '2.0.1',
                 'last_seen_at' => Carbon::now()->subMinutes(5),
                 'status' => 'online',

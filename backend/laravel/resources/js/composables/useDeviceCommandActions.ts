@@ -131,21 +131,21 @@ export function useDeviceCommandActions({
     const type = (channelType || '').toLowerCase()
     const isSensor = type === 'sensor'
 
-    if (nodeType.includes('ph')) {
+    if (nodeType === 'ph') {
       if (isSensor && name.includes('ph_sensor')) return 'Тест pH сенсора'
       if (isSensor && (name.includes('solution_temp') || name.includes('temp'))) return 'Тест температуры раствора'
       if (name.includes('acid') || name.includes('up')) return 'PH UP тест'
       if (name.includes('base') || name.includes('down')) return 'PH DOWN тест'
     }
 
-    if (nodeType.includes('ec')) {
+    if (nodeType === 'ec') {
       if (name.includes('nutrient_a') || name.includes('pump_a')) return 'Тест насоса A'
       if (name.includes('nutrient_b') || name.includes('pump_b')) return 'Тест насоса B'
       if (name.includes('nutrient_c') || name.includes('pump_c')) return 'Тест насоса C'
       if (name.includes('nutrient')) return 'Тест насоса питательного раствора'
     }
 
-    if (nodeType.includes('pump')) {
+    if (nodeType === 'irrig') {
       if (name.includes('main') || name.includes('primary')) return 'Тест главного насоса'
       if (name.includes('backup') || name.includes('reserve')) return 'Тест резервного насоса'
       if (name.includes('transfer') || name.includes('перекач')) return 'Тест перекачивающего насоса'

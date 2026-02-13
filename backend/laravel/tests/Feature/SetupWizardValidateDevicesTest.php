@@ -22,7 +22,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $irrigationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-irrig-1',
-            'type' => 'pump_node',
+            'type' => 'irrig',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -33,7 +33,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $phCorrectionNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-ph-1',
-            'type' => 'ph_node',
+            'type' => 'ph',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -44,7 +44,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $ecCorrectionNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-ec-1',
-            'type' => 'ec_node',
+            'type' => 'ec',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -55,7 +55,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $accumulationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor_node',
+            'type' => 'water_sensor',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -99,7 +99,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $irrigationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-irrig-1',
-            'type' => 'pump_node',
+            'type' => 'irrig',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -110,7 +110,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $accumulationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor_node',
+            'type' => 'water_sensor',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -121,7 +121,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $ecCorrectionNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-ec-1',
-            'type' => 'ec_node',
+            'type' => 'ec',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -132,7 +132,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $wrongPhNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-light-1',
-            'type' => 'lighting_node',
+            'type' => 'light',
             'zone_id' => null,
         ]);
         NodeChannel::query()->create([
@@ -169,7 +169,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $irrigationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-irrig-1',
-            'type' => 'pump_node',
+            'type' => 'irrig',
             'zone_id' => null,
         ]);
         $irrigationChannel = NodeChannel::query()->create([
@@ -180,7 +180,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $phCorrectionNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-ph-1',
-            'type' => 'ph_node',
+            'type' => 'ph',
             'zone_id' => null,
         ]);
         $phAcidChannel = NodeChannel::query()->create([
@@ -196,7 +196,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $ecCorrectionNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-ec-1',
-            'type' => 'ec_node',
+            'type' => 'ec',
             'zone_id' => null,
         ]);
         $ecAChannel = NodeChannel::query()->create([
@@ -222,7 +222,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $accumulationNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor_node',
+            'type' => 'water_sensor',
             'zone_id' => null,
         ]);
         $drainChannel = NodeChannel::query()->create([
@@ -233,7 +233,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $climateNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-climate-1',
-            'type' => 'climate_node',
+            'type' => 'climate',
             'zone_id' => null,
         ]);
         $ventChannel = NodeChannel::query()->create([
@@ -249,7 +249,7 @@ class SetupWizardValidateDevicesTest extends TestCase
 
         $lightNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-light-1',
-            'type' => 'lighting_node',
+            'type' => 'light',
             'zone_id' => null,
         ]);
         $lightChannel = NodeChannel::query()->create([

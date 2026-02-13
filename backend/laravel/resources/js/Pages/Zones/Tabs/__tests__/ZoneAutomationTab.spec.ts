@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
 const apiGetMock = vi.hoisted(() => vi.fn())
+const apiPostMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
@@ -55,6 +56,7 @@ vi.mock('@/composables/useCommands', () => ({
 vi.mock('@/composables/useApi', () => ({
   useApi: () => ({
     get: apiGetMock,
+    post: apiPostMock,
   }),
 }))
 
@@ -72,6 +74,23 @@ describe('ZoneAutomationTab.vue', () => {
     window.localStorage.clear()
     roleState.role = 'agronomist'
     apiGetMock.mockReset()
+    apiPostMock.mockReset()
+    apiPostMock.mockResolvedValue({
+      data: {
+        status: 'ok',
+        data: {
+          active_mode: 'working',
+          profiles: {
+            working: {
+              mode: 'working',
+              is_active: true,
+              subsystems: {},
+              updated_at: '2026-02-10T08:00:00Z',
+            },
+          },
+        },
+      },
+    })
     apiGetMock.mockImplementation((url: string) => {
       if (url.includes('/scheduler-tasks/')) {
         return Promise.resolve({
@@ -406,7 +425,7 @@ describe('ZoneAutomationTab.vue', () => {
 
   it('санитизирует поврежденный профиль из localStorage', async () => {
     window.localStorage.setItem(
-      'zone:42:automation-profile:v2',
+      'zone:42:automation-profile:v3',
       JSON.stringify({
         climate: { dayTemp: 'oops', dayStart: '99:99', ventMinPercent: -500 },
         water: { targetPh: 'broken', targetEc: null, intervalMinutes: 'abc', fillWindowStart: '31:99' },
@@ -569,13 +588,13 @@ describe('ZoneAutomationTab.vue', () => {
 
   it('перезагружает persisted-профиль при смене zoneId', async () => {
     window.localStorage.setItem(
-      'zone:1:automation-profile:v2',
+      'zone:1:automation-profile:v3',
       JSON.stringify({
         climate: { dayTemp: 24 },
       })
     )
     window.localStorage.setItem(
-      'zone:2:automation-profile:v2',
+      'zone:2:automation-profile:v3',
       JSON.stringify({
         climate: { dayTemp: 31 },
       })
@@ -603,7 +622,7 @@ describe('ZoneAutomationTab.vue', () => {
 
   it('не применяет targets предыдущей зоны при смене zoneId до обновления props', async () => {
     window.localStorage.setItem(
-      'zone:2:automation-profile:v2',
+      'zone:2:automation-profile:v3',
       JSON.stringify({
         climate: { dayTemp: 19 },
       })

@@ -234,7 +234,7 @@ async def test_get_active_schedules_builds_abstract_tasks():
                 "zone_id": 28,
                 "targets": {
                     "irrigation": {"interval_sec": 1200, "duration_sec": 20},
-                    "lighting": {"photoperiod_hours": 18, "start_time": "06:00"},
+                    "lighting": {"photoperiod_hours": 18, "start_time": "06:00", "interval_sec": 1800},
                     "ventilation": {"interval_sec": 900},
                     "mist": {"times": ["08:00", "12:00"]},
                     "diagnostics": {"interval_sec": 1800},
@@ -251,6 +251,8 @@ async def test_get_active_schedules_builds_abstract_tasks():
     assert "ventilation" in types_seen
     assert "mist" in types_seen
     assert "diagnostics" in types_seen
+    lighting_entries = [entry for entry in schedules if entry.get("type") == "lighting"]
+    assert any(entry.get("interval_sec") == 1800 for entry in lighting_entries)
 
 
 @pytest.mark.asyncio

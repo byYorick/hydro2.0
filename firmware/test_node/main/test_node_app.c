@@ -148,12 +148,12 @@ static const channel_def_t LIGHT_CHANNELS[] = {
 };
 
 static const virtual_node_t VIRTUAL_NODES[] = {
-    {.node_uid = "nd-test-irrig-1", .node_type = "pump_node", .channels = IRRIGATION_CHANNELS, .channels_count = sizeof(IRRIGATION_CHANNELS) / sizeof(IRRIGATION_CHANNELS[0])},
-    {.node_uid = "nd-test-ph-1", .node_type = "ph_node", .channels = PH_CORRECTION_CHANNELS, .channels_count = sizeof(PH_CORRECTION_CHANNELS) / sizeof(PH_CORRECTION_CHANNELS[0])},
-    {.node_uid = "nd-test-ec-1", .node_type = "ec_node", .channels = EC_CORRECTION_CHANNELS, .channels_count = sizeof(EC_CORRECTION_CHANNELS) / sizeof(EC_CORRECTION_CHANNELS[0])},
-    {.node_uid = "nd-test-tank-1", .node_type = "water_sensor_node", .channels = ACCUMULATION_CHANNELS, .channels_count = sizeof(ACCUMULATION_CHANNELS) / sizeof(ACCUMULATION_CHANNELS[0])},
-    {.node_uid = "nd-test-climate-1", .node_type = "climate_node", .channels = CLIMATE_CHANNELS, .channels_count = sizeof(CLIMATE_CHANNELS) / sizeof(CLIMATE_CHANNELS[0])},
-    {.node_uid = "nd-test-light-1", .node_type = "lighting_node", .channels = LIGHT_CHANNELS, .channels_count = sizeof(LIGHT_CHANNELS) / sizeof(LIGHT_CHANNELS[0])},
+    {.node_uid = "nd-test-irrig-1", .node_type = "irrig", .channels = IRRIGATION_CHANNELS, .channels_count = sizeof(IRRIGATION_CHANNELS) / sizeof(IRRIGATION_CHANNELS[0])},
+    {.node_uid = "nd-test-ph-1", .node_type = "ph", .channels = PH_CORRECTION_CHANNELS, .channels_count = sizeof(PH_CORRECTION_CHANNELS) / sizeof(PH_CORRECTION_CHANNELS[0])},
+    {.node_uid = "nd-test-ec-1", .node_type = "ec", .channels = EC_CORRECTION_CHANNELS, .channels_count = sizeof(EC_CORRECTION_CHANNELS) / sizeof(EC_CORRECTION_CHANNELS[0])},
+    {.node_uid = "nd-test-tank-1", .node_type = "water_sensor", .channels = ACCUMULATION_CHANNELS, .channels_count = sizeof(ACCUMULATION_CHANNELS) / sizeof(ACCUMULATION_CHANNELS[0])},
+    {.node_uid = "nd-test-climate-1", .node_type = "climate", .channels = CLIMATE_CHANNELS, .channels_count = sizeof(CLIMATE_CHANNELS) / sizeof(CLIMATE_CHANNELS[0])},
+    {.node_uid = "nd-test-light-1", .node_type = "light", .channels = LIGHT_CHANNELS, .channels_count = sizeof(LIGHT_CHANNELS) / sizeof(LIGHT_CHANNELS[0])},
 };
 
 #define VIRTUAL_NODE_COUNT (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0]))
@@ -810,27 +810,10 @@ static void publish_all_config_reports(const char *reason) {
 }
 
 static const char *resolve_node_hello_type(const virtual_node_t *node) {
-    if (!node || !node->node_uid) {
+    if (!node || !node->node_type || node->node_type[0] == '\0') {
         return "unknown";
     }
-
-    if (strstr(node->node_uid, "-ph-") != NULL) {
-        return "ph";
-    }
-    if (strstr(node->node_uid, "-ec-") != NULL) {
-        return "ec";
-    }
-    if (strstr(node->node_uid, "-climate-") != NULL) {
-        return "climate";
-    }
-    if (strstr(node->node_uid, "-light-") != NULL) {
-        return "light";
-    }
-    if (strstr(node->node_uid, "-irrig-") != NULL || strstr(node->node_uid, "-tank-") != NULL) {
-        return "pump";
-    }
-
-    return "unknown";
+    return node->node_type;
 }
 
 static const char *resolve_node_hello_name(const virtual_node_t *node) {

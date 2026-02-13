@@ -3,7 +3,19 @@ import type { Zone } from './Zone'
 /**
  * Тип устройства
  */
-export type DeviceType = 'sensor' | 'actuator' | 'controller' | 'ph' | 'ec' | 'pump' | 'climate'
+export type DeviceType =
+  | 'sensor'
+  | 'actuator'
+  | 'controller'
+  | 'ph'
+  | 'ec'
+  | 'climate'
+  | 'irrig'
+  | 'light'
+  | 'relay'
+  | 'water_sensor'
+  | 'recirculation'
+  | 'unknown'
 
 /**
  * Статус устройства

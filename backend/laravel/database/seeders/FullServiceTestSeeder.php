@@ -220,11 +220,11 @@ class FullServiceTestSeeder extends Seeder
 
         $nodes = [];
         $nodeTypes = [
-            ['type' => 'sensor', 'uid' => 'nd-ph-001', 'name' => 'pH Sensor 1', 'channels' => ['ph']],
-            ['type' => 'sensor', 'uid' => 'nd-ec-001', 'name' => 'EC Sensor 1', 'channels' => ['ec']],
-            ['type' => 'sensor', 'uid' => 'nd-temp-001', 'name' => 'Temperature Sensor 1', 'channels' => ['temperature', 'humidity']],
-            ['type' => 'actuator', 'uid' => 'nd-pump-001', 'name' => 'Pump 1', 'channels' => ['pump1', 'pump2']],
-            ['type' => 'controller', 'uid' => 'nd-combo-001', 'name' => 'Combo Controller', 'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light']],
+            ['type' => 'ph', 'uid' => 'nd-ph-001', 'name' => 'pH Sensor 1', 'channels' => ['ph']],
+            ['type' => 'ec', 'uid' => 'nd-ec-001', 'name' => 'EC Sensor 1', 'channels' => ['ec']],
+            ['type' => 'climate', 'uid' => 'nd-temp-001', 'name' => 'Temperature Sensor 1', 'channels' => ['temperature', 'humidity']],
+            ['type' => 'irrig', 'uid' => 'nd-pump-001', 'name' => 'Pump 1', 'channels' => ['pump1', 'pump2']],
+            ['type' => 'relay', 'uid' => 'nd-combo-001', 'name' => 'Combo Controller', 'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light']],
         ];
 
         $statuses = ['online', 'online', 'offline', 'online', 'online'];

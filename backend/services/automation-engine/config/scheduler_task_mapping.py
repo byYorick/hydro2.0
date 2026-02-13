@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+from common.node_types import normalize_node_type
+
 
 @dataclass(frozen=True)
 class SchedulerTaskMapping:
@@ -23,14 +25,14 @@ class SchedulerTaskMapping:
 _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
     "irrigation": SchedulerTaskMapping(
         task_type="irrigation",
-        node_types=("irrig", "irrigation"),
+        node_types=("irrig",),
         cmd="run_pump",
         default_duration_sec=60.0,
         duration_target_paths=(("irrigation", "duration_sec"),),
     ),
     "lighting": SchedulerTaskMapping(
         task_type="lighting",
-        node_types=("light", "lighting"),
+        node_types=("light",),
         cmd_true="light_on",
         cmd_false="light_off",
         state_key="desired_state",
@@ -38,7 +40,7 @@ _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
     ),
     "ventilation": SchedulerTaskMapping(
         task_type="ventilation",
-        node_types=("climate", "climate_control", "ventilation"),
+        node_types=("climate",),
         cmd="set_relay",
         state_key="state",
         default_state=True,
@@ -46,14 +48,14 @@ _DEFAULT_MAPPING: Dict[str, SchedulerTaskMapping] = {
     ),
     "solution_change": SchedulerTaskMapping(
         task_type="solution_change",
-        node_types=("irrig", "irrigation"),
+        node_types=("irrig",),
         cmd="run_pump",
         default_duration_sec=180.0,
         duration_target_paths=(("solution_change", "duration_sec"),),
     ),
     "mist": SchedulerTaskMapping(
         task_type="mist",
-        node_types=("mist", "fog", "fogger", "climate", "climate_control"),
+        node_types=("climate",),
         cmd="set_relay",
         state_key="state",
         default_state=True,
@@ -83,12 +85,35 @@ def _as_optional_bool(raw: Any) -> Optional[bool]:
     return bool(raw)
 
 
+def _as_canonical_node_types(raw: Any, *, default: Tuple[str, ...]) -> Tuple[str, ...]:
+    values = _as_tuple(raw, default=default)
+    canonical: list[str] = []
+    for value in values:
+        normalized = normalize_node_type(value)
+        if normalized == "unknown":
+            continue
+        if normalized not in canonical:
+            canonical.append(normalized)
+
+    if canonical:
+        return tuple(canonical)
+
+    fallback: list[str] = []
+    for value in default:
+        normalized = normalize_node_type(value)
+        if normalized == "unknown":
+            continue
+        if normalized not in fallback:
+            fallback.append(normalized)
+    return tuple(fallback)
+
+
 def get_task_mapping(task_type: str, config_payload: Optional[Dict[str, Any]] = None) -> SchedulerTaskMapping:
     """
     Получить mapping задачи.
 
     Поддерживает override из `payload.config.execution`:
-    - node_types
+    - node_types (только канонические типы узлов)
     - cmd / cmd_true / cmd_false
     - state_key / default_state
     - params (default params)
@@ -114,7 +139,7 @@ def get_task_mapping(task_type: str, config_payload: Optional[Dict[str, Any]] = 
 
     return SchedulerTaskMapping(
         task_type=base.task_type,
-        node_types=_as_tuple(execution.get("node_types"), default=base.node_types),
+        node_types=_as_canonical_node_types(execution.get("node_types"), default=base.node_types),
         cmd=str(execution.get("cmd")).strip() if execution.get("cmd") else base.cmd,
         cmd_true=str(execution.get("cmd_true")).strip() if execution.get("cmd_true") else base.cmd_true,
         cmd_false=str(execution.get("cmd_false")).strip() if execution.get("cmd_false") else base.cmd_false,

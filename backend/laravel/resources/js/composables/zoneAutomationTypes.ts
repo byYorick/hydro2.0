@@ -6,6 +6,7 @@ export interface ClimateFormState {
   nightTemp: number
   dayHumidity: number
   nightHumidity: number
+  intervalMinutes: number
   dayStart: string
   nightStart: string
   ventMinPercent: number
@@ -35,6 +36,17 @@ export interface WaterFormState {
   correctionDuringIrrigation: boolean
   enableDrainControl: boolean
   drainTargetPercent: number
+  diagnosticsEnabled: boolean
+  diagnosticsIntervalMinutes: number
+  cycleStartWorkflowEnabled: boolean
+  cleanTankFullThreshold: number
+  refillDurationSeconds: number
+  refillTimeoutSeconds: number
+  refillRequiredNodeTypes: string
+  refillPreferredChannel: string
+  solutionChangeEnabled: boolean
+  solutionChangeIntervalMinutes: number
+  solutionChangeDurationSeconds: number
   manualIrrigationSeconds: number
 }
 
@@ -43,6 +55,7 @@ export interface LightingFormState {
   luxDay: number
   luxNight: number
   hoursOn: number
+  intervalMinutes: number
   scheduleStart: string
   scheduleEnd: string
   manualIntensity: number

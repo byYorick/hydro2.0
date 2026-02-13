@@ -261,7 +261,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ```json
 {
   "execution": {
-    "node_types": ["irrigation", "irrig"],
+    "node_types": ["irrig"],
     "cmd": "run_pump",
     "cmd_true": "light_on",
     "cmd_false": "light_off",
@@ -277,6 +277,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Правила:
 - `node_types` (array<string>): типы нод для выполнения.
+- `node_types` должны содержать только канонические значения `nodes.type`:
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Legacy-алиасы (`irrigation`, `pump_node`, `climate_node`, `lighting_node` и т.п.) не допускаются.
 - `cmd` (string): основная команда для task.
 - `cmd_true`/`cmd_false` (string): команды для state-based task (например свет).
 - `state_key` (string): имя поля в payload для выбора ветки `cmd_true/cmd_false`.
@@ -291,6 +294,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `<task>.interval_sec` — интервальное расписание.
 - `<task>.times` — массив времён `HH:MM`.
 - `<task>_schedule` — альтернативный ключ расписания (строка, массив или объект с `times`).
+
+Runtime-обновления из фронтового конфигуратора сохраняются в
+`zone_automation_logic_profiles` через API `/api/zones/{zone}/automation-logic-profile`
+и затем нормализуются в `effective_targets.targets` по тем же правилам
+(`interval_minutes -> interval_sec`, `duration_seconds -> duration_sec`, `subsystems.diagnostics -> targets.diagnostics.execution`).
+
+Команда применения runtime-профиля:
+- `POST /api/zones/{zone}/commands` с `type=GROWTH_CYCLE_CONFIG`
+- `params.mode` = `adjust|start`
+- `params.profile_mode` = `setup|working`
+- `params.subsystems` в команде не передаётся (инжектится сервером из `zone_automation_logic_profiles`)
 
 ### 5.2. POST /api/internal/realtime/telemetry-batch
 
@@ -382,6 +396,28 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   - `lifecycle[]` (снимки `scheduler_logs`);
   - `timeline[]` (детальные task-события из `zone_events`);
   - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`.
+
+### 3.5.3. GET /api/zones/{id}/automation-logic-profile
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает сохранённые профили логики автоматики для зоны (`setup`/`working`) и активный режим.
+- **Ответ (`data`):**
+  - `active_mode: \"setup\"|\"working\"|null`
+  - `profiles.setup|profiles.working`:
+    - `mode`
+    - `is_active`
+    - `subsystems` (runtime-конфиг подсистем)
+    - `updated_at`
+
+### 3.5.4. POST /api/zones/{id}/automation-logic-profile
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Описание:** Upsert профиля логики автоматики зоны.
+- **Тело:**
+  - `mode: \"setup\"|\"working\"`
+  - `subsystems: object` (обязательны `ph/ec/irrigation`, enabled=true)
+  - `activate: bool` (optional, default=true)
+- **Эффект:** при `activate=true` профиль переводится в активный runtime-режим для `effective_targets`.
 
 ### 3.6. POST /api/zones
 

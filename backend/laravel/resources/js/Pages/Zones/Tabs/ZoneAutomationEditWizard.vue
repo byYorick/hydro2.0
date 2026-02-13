@@ -76,6 +76,16 @@
           />
         </label>
         <label class="text-xs text-[color:var(--text-muted)]">
+          Интервал климата (мин)
+          <input
+            v-model.number="draftClimateForm.intervalMinutes"
+            type="number"
+            min="1"
+            max="1440"
+            class="input-field mt-1 w-full"
+          />
+        </label>
+        <label class="text-xs text-[color:var(--text-muted)]">
           Min форточек (%)
           <input
             v-model.number="draftClimateForm.ventMinPercent"
@@ -167,6 +177,115 @@
               :disabled="isSystemTypeLocked || draftWaterForm.systemType === 'drip'"
             />
           </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Диагностика
+            <select
+              v-model="draftWaterForm.diagnosticsEnabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включена</option>
+              <option :value="false">Выключена</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал диагностики (мин)
+            <input
+              v-model.number="draftWaterForm.diagnosticsIntervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Workflow запуска
+            <select
+              v-model="draftWaterForm.cycleStartWorkflowEnabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">cycle_start</option>
+              <option :value="false">diagnostics</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Порог полного бака (0..1)
+            <input
+              v-model.number="draftWaterForm.cleanTankFullThreshold"
+              type="number"
+              min="0.05"
+              max="1"
+              step="0.01"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Refill длительность (сек)
+            <input
+              v-model.number="draftWaterForm.refillDurationSeconds"
+              type="number"
+              min="1"
+              max="3600"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Refill timeout (сек)
+            <input
+              v-model.number="draftWaterForm.refillTimeoutSeconds"
+              type="number"
+              min="30"
+              max="86400"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+            Refill обязательные типы нод (CSV)
+            <input
+              v-model="draftWaterForm.refillRequiredNodeTypes"
+              type="text"
+              class="input-field mt-1 w-full"
+              placeholder="irrig,climate,light"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Refill канал
+            <input
+              v-model="draftWaterForm.refillPreferredChannel"
+              type="text"
+              class="input-field mt-1 w-full"
+              placeholder="fill_valve"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Смена раствора
+            <select
+              v-model="draftWaterForm.solutionChangeEnabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включена</option>
+              <option :value="false">Выключена</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал смены (мин)
+            <input
+              v-model.number="draftWaterForm.solutionChangeIntervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Длительность смены (сек)
+            <input
+              v-model.number="draftWaterForm.solutionChangeDurationSeconds"
+              type="number"
+              min="1"
+              max="86400"
+              class="input-field mt-1 w-full"
+            />
+          </label>
         </div>
         <p
           v-if="isSystemTypeLocked"
@@ -218,6 +337,16 @@
             min="0"
             max="24"
             step="0.5"
+            class="input-field mt-1 w-full"
+          />
+        </label>
+        <label class="text-xs text-[color:var(--text-muted)]">
+          Интервал досветки (мин)
+          <input
+            v-model.number="draftLightingForm.intervalMinutes"
+            type="number"
+            min="1"
+            max="1440"
             class="input-field mt-1 w-full"
           />
         </label>

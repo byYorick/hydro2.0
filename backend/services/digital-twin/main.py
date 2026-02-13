@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from common.env import get_settings
 from common.db import fetch, execute
+from common.node_types import normalize_node_type as normalize_canonical_node_type
 from common.schemas import SimulationRequest, SimulationScenario
 from common.service_logs import send_service_log
 from common.infra_alerts import send_infra_exception_alert
@@ -523,13 +524,7 @@ async def _node_sim_request(path: str, payload: Dict[str, Any]) -> None:
 
 
 def _normalize_node_type(value: Optional[str]) -> str:
-    if not value:
-        return "unknown"
-    normalized = value.lower()
-    if normalized == "irrigation":
-        return "irrig"
-    allowed = {"ph", "ec", "climate", "pump", "irrig", "light", "unknown"}
-    return normalized if normalized in allowed else "unknown"
+    return normalize_canonical_node_type(value)
 
 
 async def _load_node_configs(zone_id: int) -> Tuple[str, str, List[Dict[str, Any]]]:

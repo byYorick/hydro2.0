@@ -67,7 +67,7 @@ class ExtendedNodesChannelsSeeder extends Seeder
             [
                 'uid' => 'nd-zone-'.$zone->id,
                 'name' => "Контроллер - {$zone->name}",
-                'type' => 'controller',
+                'type' => 'irrig',
                 'status' => $status,
                 'lifecycle_state' => $lifecycleState,
                 'fw_version' => $this->generateFirmwareVersion(),
@@ -153,7 +153,7 @@ class ExtendedNodesChannelsSeeder extends Seeder
                 ],
                 [
                     'name' => "Непривязанный узел #{$i}",
-                    'type' => ['sensor', 'actuator', 'controller'][rand(0, 2)],
+                    'type' => ['ph', 'ec', 'climate', 'irrig', 'light', 'relay', 'water_sensor', 'recirculation', 'unknown'][rand(0, 8)],
                     'status' => 'offline',
                     'lifecycle_state' => $unassignedStates[rand(0, count($unassignedStates) - 1)],
                     'fw_version' => $this->generateFirmwareVersion(),

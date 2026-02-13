@@ -706,26 +706,26 @@ function matchesRole(node: Node, role: DeviceRole): boolean {
   const type = nodeType(node)
 
   if (role === 'irrigation') {
-    return type.includes('irrig') || type.includes('pump') || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
+    return type === 'irrig' || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
   }
 
   if (role === 'ph_correction') {
-    return type.includes('ph') || hasAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
+    return type === 'ph' || hasAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
   }
 
   if (role === 'ec_correction') {
-    return type.includes('ec') || hasAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
+    return type === 'ec' || hasAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
   }
 
   if (role === 'accumulation') {
-    return type.includes('water') || type.includes('tank') || hasAnyChannel(node, ['water_level', 'pump_in', 'drain', 'drain_main'])
+    return type === 'water_sensor' || type === 'recirculation' || hasAnyChannel(node, ['water_level', 'pump_in', 'drain', 'drain_main'])
   }
 
   if (role === 'climate') {
-    return type.includes('climate') || hasAnyChannel(node, ['temp_air', 'air_temp_c', 'air_rh', 'humidity_air', 'co2_ppm', 'fan_air', 'heater_air', 'vent_drive'])
+    return type === 'climate' || hasAnyChannel(node, ['temp_air', 'air_temp_c', 'air_rh', 'humidity_air', 'co2_ppm', 'fan_air', 'heater_air', 'vent_drive'])
   }
 
-  return type.includes('light') || hasAnyChannel(node, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main'])
+  return type === 'light' || hasAnyChannel(node, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main'])
 }
 
 function nodesByRole(role: DeviceRole): Node[] {

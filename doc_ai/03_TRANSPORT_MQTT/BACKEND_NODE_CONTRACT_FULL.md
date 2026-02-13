@@ -459,6 +459,9 @@ Backend обязан:
 
 - Если backend повышает version → узлы должны уметь игнорировать неизвестные поля.
 - Если узлы повышают version → backend валидирует node_type/hw_version.
+- `node_type` в payload-ах (`node_hello`, registration, config-report metadata) допускает только канонические
+  значения: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Legacy-алиасы `node_type` (`pump_node`, `irrigation`, `climate_node`, `lighting_node` и т.п.) не поддерживаются.
 
 ---
 

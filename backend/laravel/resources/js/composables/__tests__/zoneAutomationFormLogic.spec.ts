@@ -16,6 +16,7 @@ function createForms(): ZoneAutomationForms {
       nightTemp: 19,
       dayHumidity: 60,
       nightHumidity: 66,
+      intervalMinutes: 5,
       dayStart: '07:00',
       nightStart: '19:00',
       ventMinPercent: 10,
@@ -44,6 +45,17 @@ function createForms(): ZoneAutomationForms {
       correctionDuringIrrigation: true,
       enableDrainControl: false,
       drainTargetPercent: 20,
+      diagnosticsEnabled: true,
+      diagnosticsIntervalMinutes: 15,
+      cycleStartWorkflowEnabled: true,
+      cleanTankFullThreshold: 0.95,
+      refillDurationSeconds: 30,
+      refillTimeoutSeconds: 600,
+      refillRequiredNodeTypes: 'irrig,climate,light',
+      refillPreferredChannel: 'fill_valve',
+      solutionChangeEnabled: false,
+      solutionChangeIntervalMinutes: 180,
+      solutionChangeDurationSeconds: 120,
       manualIrrigationSeconds: 90,
     },
     lightingForm: {
@@ -51,6 +63,7 @@ function createForms(): ZoneAutomationForms {
       luxDay: 18000,
       luxNight: 0,
       hoursOn: 16,
+      intervalMinutes: 30,
       scheduleStart: '06:00',
       scheduleEnd: '22:00',
       manualIntensity: 75,
@@ -113,6 +126,7 @@ describe('zoneAutomationFormLogic', () => {
           climate: {
             enabled: true,
             targets: {
+              interval_sec: 600,
               temperature: { day: 26, night: 21 },
               humidity: { day: 65, night: 72 },
               vent_control: { min_open_percent: 18, max_open_percent: 88 },
@@ -135,6 +149,7 @@ describe('zoneAutomationFormLogic', () => {
           lighting: {
             enabled: true,
             targets: {
+              interval_sec: 5400,
               lux: {
                 day: 20000,
                 night: 100,
@@ -143,6 +158,25 @@ describe('zoneAutomationFormLogic', () => {
                 hours_on: 17,
               },
               schedule: [{ start: '06:30:00', end: '23:00:00' }],
+            },
+          },
+          diagnostics: {
+            enabled: false,
+            targets: {
+              interval_sec: 1800,
+              workflow: 'cycle_start',
+              clean_tank_full_threshold: 0.91,
+              refill_duration_sec: 40,
+              refill_timeout_sec: 700,
+              required_node_types: ['irrig', 'climate'],
+              refill: { channel: 'fill_valve' },
+            },
+          },
+          solution_change: {
+            enabled: true,
+            targets: {
+              interval_sec: 14400,
+              duration_sec: 210,
             },
           },
         },
@@ -164,6 +198,7 @@ describe('zoneAutomationFormLogic', () => {
 
     expect(forms.climateForm.dayTemp).toBe(26)
     expect(forms.climateForm.nightTemp).toBe(21)
+    expect(forms.climateForm.intervalMinutes).toBe(10)
     expect(forms.climateForm.dayStart).toBe('08:00')
     expect(forms.climateForm.nightStart).toBe('20:30')
     expect(forms.climateForm.overrideMinutes).toBe(45)
@@ -171,8 +206,21 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.lightingForm.luxDay).toBe(20000)
     expect(forms.lightingForm.luxNight).toBe(100)
     expect(forms.lightingForm.hoursOn).toBe(17)
+    expect(forms.lightingForm.intervalMinutes).toBe(90)
     expect(forms.lightingForm.scheduleStart).toBe('06:30')
     expect(forms.lightingForm.scheduleEnd).toBe('23:00')
+
+    expect(forms.waterForm.diagnosticsEnabled).toBe(false)
+    expect(forms.waterForm.diagnosticsIntervalMinutes).toBe(30)
+    expect(forms.waterForm.cycleStartWorkflowEnabled).toBe(true)
+    expect(forms.waterForm.cleanTankFullThreshold).toBe(0.91)
+    expect(forms.waterForm.refillDurationSeconds).toBe(40)
+    expect(forms.waterForm.refillTimeoutSeconds).toBe(700)
+    expect(forms.waterForm.refillRequiredNodeTypes).toBe('irrig,climate')
+    expect(forms.waterForm.refillPreferredChannel).toBe('fill_valve')
+    expect(forms.waterForm.solutionChangeEnabled).toBe(true)
+    expect(forms.waterForm.solutionChangeIntervalMinutes).toBe(240)
+    expect(forms.waterForm.solutionChangeDurationSeconds).toBe(210)
   })
 
   it('buildGrowthCycleConfigPayload нормализует значения и выключает drain для 2 баков', () => {
@@ -195,11 +243,17 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.ph.targets.target).toBe(9)
     expect(payload.subsystems.ec.targets.target).toBe(0.1)
     expect(targets.interval_minutes).toBe(5)
+    expect(targets.interval_sec).toBe(300)
     expect(targets.duration_seconds).toBe(3600)
+    expect(targets.duration_sec).toBe(3600)
     expect(targets.drain_control.enabled).toBe(false)
     expect(targets.drain_control.target_percent).toBeNull()
     expect(payload.subsystems.climate.targets.vent_control.min_open_percent).toBe(0)
     expect(payload.subsystems.climate.targets.vent_control.max_open_percent).toBe(100)
+    expect(payload.subsystems.climate.targets.interval_sec).toBe(300)
+    expect(payload.subsystems.lighting.targets.interval_sec).toBe(1800)
+    expect(payload.subsystems.diagnostics.targets.execution.workflow).toBe('cycle_start')
+    expect(payload.subsystems.solution_change.targets.duration_sec).toBe(120)
     expect(payload.subsystems.lighting.targets.photoperiod.hours_on).toBe(24)
   })
 

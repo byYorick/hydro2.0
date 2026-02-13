@@ -606,21 +606,27 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
         lighting = targets.get("lighting", {}) if isinstance(targets.get("lighting"), dict) else {}
         photoperiod_hours = lighting.get("photoperiod_hours")
         start_time_str = lighting.get("start_time")
+        lighting_interval_sec = _safe_positive_int(
+            lighting.get("interval_sec")
+            or lighting.get("every_sec")
+            or lighting.get("interval")
+        )
 
         if photoperiod_hours and start_time_str:
             start_t = _parse_time_spec(str(start_time_str))
             if start_t:
                 end_time_dt = datetime.combine(datetime.today(), start_t) + timedelta(hours=float(photoperiod_hours))
-                schedules.append(
-                    {
-                        "zone_id": zone_id,
-                        "type": "lighting",
-                        "start_time": start_t,
-                        "end_time": end_time_dt.time(),
-                        "targets": targets,
-                        "config": lighting,
-                    }
-                )
+                schedule_item = {
+                    "zone_id": zone_id,
+                    "type": "lighting",
+                    "start_time": start_t,
+                    "end_time": end_time_dt.time(),
+                    "targets": targets,
+                    "config": lighting,
+                }
+                if lighting_interval_sec > 0:
+                    schedule_item["interval_sec"] = lighting_interval_sec
+                schedules.append(schedule_item)
         else:
             lighting_schedule = targets.get("lighting_schedule")
             if isinstance(lighting_schedule, str) and "-" in lighting_schedule:
@@ -628,16 +634,17 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
                 start_t = _parse_time_spec(parts[0].strip())
                 end_t = _parse_time_spec(parts[1].strip())
                 if start_t and end_t:
-                    schedules.append(
-                        {
-                            "zone_id": zone_id,
-                            "type": "lighting",
-                            "start_time": start_t,
-                            "end_time": end_t,
-                            "targets": targets,
-                            "config": lighting,
-                        }
-                    )
+                    schedule_item = {
+                        "zone_id": zone_id,
+                        "type": "lighting",
+                        "start_time": start_t,
+                        "end_time": end_t,
+                        "targets": targets,
+                        "config": lighting,
+                    }
+                    if lighting_interval_sec > 0:
+                        schedule_item["interval_sec"] = lighting_interval_sec
+                    schedules.append(schedule_item)
             else:
                 schedules.extend(
                     _build_generic_task_schedules(

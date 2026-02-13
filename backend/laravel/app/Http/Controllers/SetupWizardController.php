@@ -423,34 +423,32 @@ class SetupWizardController extends Controller
             ->all();
 
         if ($role === 'irrigation') {
-            return str_contains($type, 'irrig')
-                || str_contains($type, 'pump')
+            return $type === 'irrig'
                 || $this->hasAnyChannel($channels, ['pump_irrigation', 'valve_irrigation', 'main_pump']);
         }
 
         if ($role === 'ph_correction') {
-            return str_contains($type, 'ph')
+            return $type === 'ph'
                 || $this->hasAnyChannel($channels, ['ph_sensor', 'pump_acid', 'pump_base']);
         }
 
         if ($role === 'ec_correction') {
-            return str_contains($type, 'ec')
+            return $type === 'ec'
                 || $this->hasAnyChannel($channels, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d']);
         }
 
         if ($role === 'accumulation') {
-            return str_contains($type, 'water')
-                || str_contains($type, 'tank')
+            return in_array($type, ['water_sensor', 'recirculation'], true)
                 || $this->hasAnyChannel($channels, ['water_level', 'pump_in', 'drain', 'drain_main']);
         }
 
         if ($role === 'climate') {
-            return str_contains($type, 'climate')
+            return $type === 'climate'
                 || $this->hasAnyChannel($channels, ['temp_air', 'air_temp_c', 'air_rh', 'humidity_air', 'co2_ppm', 'fan_air', 'heater_air', 'vent_drive']);
         }
 
         if ($role === 'light') {
-            return str_contains($type, 'light')
+            return $type === 'light'
                 || $this->hasAnyChannel($channels, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main']);
         }
 

@@ -65,6 +65,32 @@ function readString(...values: unknown[]): string | null {
   return null
 }
 
+function readStringList(...values: unknown[]): string[] | null {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const items = value
+        .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '').trim()))
+        .filter((item) => item.length > 0)
+      if (items.length > 0) {
+        return items
+      }
+      continue
+    }
+
+    if (typeof value === 'string' && value.trim() !== '') {
+      const items = value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+      if (items.length > 0) {
+        return items
+      }
+    }
+  }
+
+  return null
+}
+
 function toTimeHHmm(value: unknown): string | null {
   const raw = readString(value)
   if (!raw) {
@@ -123,6 +149,10 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const climateTargets = asRecord(climateSubsystem?.targets)
   const lightingSubsystem = asRecord(subsystems?.lighting)
   const lightingTargets = asRecord(lightingSubsystem?.targets)
+  const diagnosticsSubsystem = asRecord(subsystems?.diagnostics)
+  const diagnosticsTargets = asRecord(diagnosticsSubsystem?.targets)
+  const solutionSubsystem = asRecord(subsystems?.solution_change ?? subsystems?.solution)
+  const solutionTargets = asRecord(solutionSubsystem?.targets)
 
   const phTarget = asRecord(targets.ph)
   const phMin = readNumber(phTarget?.min)
@@ -236,6 +266,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
 
   const climateRequest = asRecord(targets.climate_request)
+  const ventilation = asRecord(targets.ventilation)
   const climateEnabled = readBoolean(climateSubsystem?.enabled)
   if (climateEnabled !== null) {
     climateForm.enabled = climateEnabled
@@ -258,6 +289,11 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
   if (nightHumidity !== null) {
     climateForm.nightHumidity = clamp(nightHumidity, 30, 90)
+  }
+
+  const climateIntervalSec = readNumber(climateTargets?.interval_sec, ventilation?.interval_sec)
+  if (climateIntervalSec !== null) {
+    climateForm.intervalMinutes = clamp(Math.round(climateIntervalSec / 60), 1, 1440)
   }
 
   const ventControl = asRecord(climateTargets?.vent_control)
@@ -316,6 +352,11 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     lightingForm.enabled = lightingEnabled
   }
 
+  const lightingIntervalSec = readNumber(lightingTargets?.interval_sec, lighting?.interval_sec)
+  if (lightingIntervalSec !== null) {
+    lightingForm.intervalMinutes = clamp(Math.round(lightingIntervalSec / 60), 1, 1440)
+  }
+
   const lux = asRecord(lightingTargets?.lux)
   const luxDay = readNumber(lux?.day)
   const luxNight = readNumber(lux?.night)
@@ -341,5 +382,82 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
   if (scheduleEnd) {
     lightingForm.scheduleEnd = scheduleEnd
+  }
+
+  const diagnostics = asRecord(targets.diagnostics)
+  const diagnosticsEnabled = readBoolean(diagnosticsSubsystem?.enabled)
+  if (diagnosticsEnabled !== null) {
+    waterForm.diagnosticsEnabled = diagnosticsEnabled
+  }
+
+  const diagnosticsIntervalSec = readNumber(diagnosticsTargets?.interval_sec, diagnostics?.interval_sec)
+  if (diagnosticsIntervalSec !== null) {
+    waterForm.diagnosticsIntervalMinutes = clamp(Math.round(diagnosticsIntervalSec / 60), 1, 1440)
+  }
+
+  const diagnosticsExecution = asRecord(diagnosticsTargets?.execution)
+  const diagnosticsWorkflow = readString(
+    diagnosticsTargets?.workflow,
+    diagnosticsExecution?.workflow,
+    asRecord(diagnostics?.execution)?.workflow
+  )
+  if (diagnosticsWorkflow) {
+    waterForm.cycleStartWorkflowEnabled = diagnosticsWorkflow === 'cycle_start' || diagnosticsWorkflow === 'refill_check'
+  }
+
+  const cleanTankThreshold = readNumber(
+    diagnosticsTargets?.clean_tank_full_threshold,
+    diagnosticsExecution?.clean_tank_full_threshold
+  )
+  if (cleanTankThreshold !== null) {
+    waterForm.cleanTankFullThreshold = clamp(cleanTankThreshold, 0.05, 1)
+  }
+
+  const refillDurationSec = readNumber(
+    diagnosticsTargets?.refill_duration_sec,
+    diagnosticsExecution?.refill_duration_sec,
+    asRecord(diagnosticsExecution?.refill)?.duration_sec
+  )
+  if (refillDurationSec !== null) {
+    waterForm.refillDurationSeconds = clamp(Math.round(refillDurationSec), 1, 3600)
+  }
+
+  const refillTimeoutSec = readNumber(
+    diagnosticsTargets?.refill_timeout_sec,
+    diagnosticsExecution?.refill_timeout_sec,
+    asRecord(diagnosticsExecution?.refill)?.timeout_sec
+  )
+  if (refillTimeoutSec !== null) {
+    waterForm.refillTimeoutSeconds = clamp(Math.round(refillTimeoutSec), 30, 86400)
+  }
+
+  const refillRequiredNodeTypes = readStringList(
+    diagnosticsTargets?.required_node_types,
+    diagnosticsExecution?.required_node_types
+  )
+  if (refillRequiredNodeTypes && refillRequiredNodeTypes.length > 0) {
+    waterForm.refillRequiredNodeTypes = refillRequiredNodeTypes.join(',')
+  }
+
+  const refillConfig = asRecord(diagnosticsTargets?.refill) ?? asRecord(diagnosticsExecution?.refill)
+  const refillChannel = readString(refillConfig?.channel)
+  if (refillChannel !== null) {
+    waterForm.refillPreferredChannel = refillChannel
+  }
+
+  const solutionChange = asRecord(targets.solution_change)
+  const solutionEnabled = readBoolean(solutionSubsystem?.enabled)
+  if (solutionEnabled !== null) {
+    waterForm.solutionChangeEnabled = solutionEnabled
+  }
+
+  const solutionIntervalSec = readNumber(solutionTargets?.interval_sec, solutionChange?.interval_sec)
+  if (solutionIntervalSec !== null) {
+    waterForm.solutionChangeIntervalMinutes = clamp(Math.round(solutionIntervalSec / 60), 1, 1440)
+  }
+
+  const solutionDurationSec = readNumber(solutionTargets?.duration_sec, solutionChange?.duration_sec)
+  if (solutionDurationSec !== null) {
+    waterForm.solutionChangeDurationSeconds = clamp(Math.round(solutionDurationSec), 1, 86400)
   }
 }

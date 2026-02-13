@@ -94,7 +94,7 @@ id BIGSERIAL PK
 zone_id BIGINT FK → zones
 uid VARCHAR(64) UNIQUE -- внешний строковый ID узла, совпадает с сегментом {node} в MQTT
 name VARCHAR
-type VARCHAR (ph, ec, climate, irrig, light)
+type VARCHAR (ph, ec, climate, irrig, light, relay, water_sensor, recirculation, unknown)
 fw_version VARCHAR
 last_seen_at TIMESTAMP
 status VARCHAR (online/offline)
@@ -123,6 +123,25 @@ nodes_status_idx (status) -- уже существует
  - используется в MQTT как сегмент `{node}`;
  - передаётся в конфигурации узла (NodeConfig) и команды;
  - применяется Backend/AI как основной внешний ключ при адресации узла.
+
+### 3.1.1. Каноническая схема `nodes.type` (strict)
+
+Допустимые значения:
+- `ph`
+- `ec`
+- `climate`
+- `irrig`
+- `light`
+- `relay`
+- `water_sensor`
+- `recirculation`
+- `unknown`
+
+Ограничения:
+- В БД действует `CHECK`-ограничение `nodes_type_canonical_check`.
+- `nodes.type` не допускает `NULL` (используется default/fallback `unknown`).
+- Legacy-алиасы (`pump_node`, `irrigation`, `lighting_node`, `climate_node`, и т.п.) не допускаются.
+- Для нераспознанных значений используется `unknown`.
 
 ## 3.2. node_channels
 
@@ -624,6 +643,26 @@ updated_at TIMESTAMP
 PK (zone_id)
 ```
 
+## 6.6. zone_automation_logic_profiles
+
+```
+id PK
+zone_id FK → zones
+mode VARCHAR(16) -- setup|working
+subsystems JSONB -- runtime-конфиг подсистем
+is_active BOOLEAN DEFAULT false
+created_by FK → users NULL
+updated_by FK → users NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+UNIQUE (zone_id, mode)
+```
+
+Индексы:
+```
+zone_automation_logic_profiles_zone_id_is_active_index
+```
+
 ---
 
 # 7. Таблицы тревог (Alerts)
@@ -968,7 +1007,7 @@ channel_binding 1—1 node_channel
       "interval_sec": 3600,
       "duration_sec": 300,
       "execution": {
-        "node_types": ["irrigation", "irrig"],
+        "node_types": ["irrig"],
         "cmd": "run_pump",
         "params": {"duration_sec": 300},
         "fallback_mode": "none"
@@ -985,7 +1024,7 @@ channel_binding 1—1 node_channel
 в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.
 
 Поля:
-- `node_types: string[]`
+- `node_types: string[]` (только канонические типы `nodes.type`)
 - `cmd: string`
 - `cmd_true: string`
 - `cmd_false: string`
@@ -994,6 +1033,37 @@ channel_binding 1—1 node_channel
 - `params: object`
 - `duration_sec: number`
 - `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"`
+
+### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> effective targets)
+
+Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
+
+При формировании `effective_targets.targets` применяется приоритет:
+
+`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
+
+Применение runtime-профиля в pipeline:
+- фронтенд сохраняет профиль через `POST /api/zones/{zone}/automation-logic-profile`
+- затем отправляет `GROWTH_CYCLE_CONFIG` только с `params.profile_mode`
+- Laravel резолвит `subsystems` по `profile_mode` и инжектит их в команду перед отправкой в Python слой
+
+Нормализация runtime-полей в scheduler/automation контракт:
+
+- `subsystems.irrigation.targets.interval_minutes` -> `targets.irrigation.interval_sec`
+- `subsystems.irrigation.targets.duration_seconds` -> `targets.irrigation.duration_sec`
+- `subsystems.climate.targets.interval_sec` -> `targets.ventilation.interval_sec`
+- `subsystems.lighting.targets.interval_sec` -> `targets.lighting.interval_sec`
+- `subsystems.solution_change.targets.interval_sec` -> `targets.solution_change.interval_sec`
+- `subsystems.solution_change.targets.duration_sec` -> `targets.solution_change.duration_sec`
+- `subsystems.diagnostics.targets.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
+
+Политика enable/disable подсистем:
+
+- при `enabled=false` выставляется `targets.<task>.execution.force_skip=true`
+- при `enabled=true` выставляется `targets.<task>.execution.force_skip=false`
+
+Runtime-снимок подсистем также отражается в `targets.extensions.subsystems` для UI/диагностики.
+Метаданные источника runtime отражаются в `targets.extensions.automation_logic` (`source`, `mode`, `updated_at`).
 
 **Устаревший подход (до рефакторинга):**
 - ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`

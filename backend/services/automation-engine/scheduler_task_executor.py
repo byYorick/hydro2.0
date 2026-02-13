@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from common.db import create_zone_event, fetch
 from common.infra_alerts import send_infra_alert
+from common.node_types import normalize_node_type
 from config.scheduler_task_mapping import SchedulerTaskMapping, get_task_mapping
 from infrastructure.command_bus import CommandBus
 from scheduler_internal_enqueue import enqueue_internal_scheduler_task, parse_iso_datetime
@@ -46,7 +47,10 @@ def _env_bool(name: str, default: bool) -> bool:
 
 CYCLE_START_REQUIRED_NODE_TYPES = tuple(
     item.strip()
-    for item in os.getenv("AE_CYCLE_START_REQUIRED_NODE_TYPES", "irrig,irrigation,climate,light,lighting").split(",")
+    for item in os.getenv(
+        "AE_CYCLE_START_REQUIRED_NODE_TYPES",
+        "irrig,climate,light",
+    ).split(",")
     if item.strip()
 )
 CLEAN_TANK_FULL_THRESHOLD = max(0.0, min(1.0, _env_float("AE_CLEAN_TANK_FULL_THRESHOLD", 0.95)))
@@ -670,10 +674,33 @@ class SchedulerTaskExecutor:
             return values or [str(item).strip().lower() for item in default if str(item).strip()]
         return [str(item).strip().lower() for item in default if str(item).strip()]
 
+    @staticmethod
+    def _normalize_node_type_list(raw: Any, default: Sequence[str]) -> List[str]:
+        raw_values = SchedulerTaskExecutor._normalize_text_list(raw, default)
+        canonical: List[str] = []
+        for value in raw_values:
+            normalized = normalize_node_type(value)
+            if normalized == "unknown":
+                continue
+            if normalized not in canonical:
+                canonical.append(normalized)
+
+        if canonical:
+            return canonical
+
+        fallback: List[str] = []
+        for value in default:
+            normalized = normalize_node_type(str(value))
+            if normalized == "unknown":
+                continue
+            if normalized not in fallback:
+                fallback.append(normalized)
+        return fallback
+
     def _resolve_required_node_types(self, payload: Dict[str, Any]) -> List[str]:
         execution = self._extract_execution_config(payload)
         override = execution.get("required_node_types")
-        return self._normalize_text_list(override, CYCLE_START_REQUIRED_NODE_TYPES)
+        return self._normalize_node_type_list(override, CYCLE_START_REQUIRED_NODE_TYPES)
 
     def _resolve_clean_tank_threshold(self, payload: Dict[str, Any]) -> float:
         execution = self._extract_execution_config(payload)
@@ -873,7 +900,7 @@ class SchedulerTaskExecutor:
     async def _resolve_refill_command(self, zone_id: int, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         refill_cfg = self._extract_refill_config(payload)
         requested_channel = str(refill_cfg.get("channel") or "").strip().lower()
-        node_types = self._normalize_text_list(refill_cfg.get("node_types"), ("irrig", "irrigation"))
+        node_types = self._normalize_node_type_list(refill_cfg.get("node_types"), ("irrig",))
         preferred_channels = self._normalize_text_list(
             refill_cfg.get("preferred_channels"),
             ("fill_valve", "water_control", "main_pump", "default"),

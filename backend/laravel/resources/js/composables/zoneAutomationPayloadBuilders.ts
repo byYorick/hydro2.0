@@ -28,6 +28,10 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
     return 'Для контроля дренажа задайте целевой процент больше 0.'
   }
 
+  if (waterForm.cleanTankFullThreshold <= 0 || waterForm.cleanTankFullThreshold > 1) {
+    return 'Порог полного бака должен быть в диапазоне (0;1].'
+  }
+
   return null
 }
 
@@ -44,6 +48,34 @@ export function buildGrowthCycleConfigPayload(
   const phMax = round(clamp(phTarget + 0.2, 4, 9), 2)
   const ecMin = round(clamp(ecTarget - 0.2, 0.1, 10), 2)
   const ecMax = round(clamp(ecTarget + 0.2, 0.1, 10), 2)
+
+  const irrigationIntervalMinutes = clamp(Math.round(waterForm.intervalMinutes), 5, 1440)
+  const irrigationDurationSeconds = clamp(Math.round(waterForm.durationSeconds), 1, 3600)
+  const climateIntervalSec = clamp(Math.round(climateForm.intervalMinutes * 60), 60, 86400)
+  const lightingIntervalSec = clamp(Math.round(lightingForm.intervalMinutes * 60), 60, 86400)
+  const diagnosticsIntervalSec = clamp(Math.round(waterForm.diagnosticsIntervalMinutes * 60), 60, 86400)
+  const solutionChangeIntervalSec = clamp(Math.round(waterForm.solutionChangeIntervalMinutes * 60), 60, 86400)
+  const solutionChangeDurationSec = clamp(Math.round(waterForm.solutionChangeDurationSeconds), 1, 86400)
+  const cleanTankFullThreshold = round(clamp(waterForm.cleanTankFullThreshold, 0.05, 1), 3)
+
+  const requiredNodeTypes = waterForm.refillRequiredNodeTypes
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+  const refillPreferredChannel = waterForm.refillPreferredChannel.trim()
+
+  const diagnosticsExecution: Record<string, unknown> = {
+    workflow: waterForm.cycleStartWorkflowEnabled ? 'cycle_start' : 'diagnostics',
+    clean_tank_full_threshold: cleanTankFullThreshold,
+    required_node_types: requiredNodeTypes,
+    refill_duration_sec: clamp(Math.round(waterForm.refillDurationSeconds), 1, 3600),
+    refill_timeout_sec: clamp(Math.round(waterForm.refillTimeoutSeconds), 30, 86400),
+    refill: {
+      duration_sec: clamp(Math.round(waterForm.refillDurationSeconds), 1, 3600),
+      timeout_sec: clamp(Math.round(waterForm.refillTimeoutSeconds), 30, 86400),
+      ...(refillPreferredChannel ? { channel: refillPreferredChannel } : {}),
+    },
+  }
 
   return {
     mode: 'adjust',
@@ -67,8 +99,10 @@ export function buildGrowthCycleConfigPayload(
       irrigation: {
         enabled: true,
         targets: {
-          interval_minutes: clamp(Math.round(waterForm.intervalMinutes), 5, 1440),
-          duration_seconds: clamp(Math.round(waterForm.durationSeconds), 1, 3600),
+          interval_minutes: irrigationIntervalMinutes,
+          interval_sec: irrigationIntervalMinutes * 60,
+          duration_seconds: irrigationDurationSeconds,
+          duration_sec: irrigationDurationSeconds,
           ...(includeSystemType ? { system_type: waterForm.systemType } : {}),
           tanks_count: waterForm.tanksCount,
           fill_strategy: 'volume',
@@ -100,6 +134,7 @@ export function buildGrowthCycleConfigPayload(
       climate: {
         enabled: climateForm.enabled,
         targets: {
+          interval_sec: climateIntervalSec,
           temperature: {
             day: clamp(climateForm.dayTemp, 10, 35),
             night: clamp(climateForm.nightTemp, 10, 35),
@@ -140,6 +175,7 @@ export function buildGrowthCycleConfigPayload(
       lighting: {
         enabled: lightingForm.enabled,
         targets: {
+          interval_sec: lightingIntervalSec,
           lux: {
             day: clamp(Math.round(lightingForm.luxDay), 0, 120000),
             night: clamp(Math.round(lightingForm.luxNight), 0, 120000),
@@ -161,6 +197,33 @@ export function buildGrowthCycleConfigPayload(
           },
         },
       },
+      diagnostics: {
+        enabled: waterForm.diagnosticsEnabled,
+        targets: {
+          interval_sec: diagnosticsIntervalSec,
+          workflow: waterForm.cycleStartWorkflowEnabled ? 'cycle_start' : 'diagnostics',
+          clean_tank_full_threshold: cleanTankFullThreshold,
+          required_node_types: requiredNodeTypes,
+          refill_duration_sec: clamp(Math.round(waterForm.refillDurationSeconds), 1, 3600),
+          refill_timeout_sec: clamp(Math.round(waterForm.refillTimeoutSeconds), 30, 86400),
+          refill: {
+            duration_sec: clamp(Math.round(waterForm.refillDurationSeconds), 1, 3600),
+            timeout_sec: clamp(Math.round(waterForm.refillTimeoutSeconds), 30, 86400),
+            ...(refillPreferredChannel ? { channel: refillPreferredChannel } : {}),
+          },
+          execution: diagnosticsExecution,
+        },
+      },
+      solution_change: {
+        enabled: waterForm.solutionChangeEnabled,
+        targets: {
+          interval_sec: solutionChangeIntervalSec,
+          duration_sec: solutionChangeDurationSec,
+          execution: {
+            duration_sec: solutionChangeDurationSec,
+          },
+        },
+      },
     },
   }
 }
@@ -173,6 +236,7 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   climateForm.nightTemp = 20
   climateForm.dayHumidity = 62
   climateForm.nightHumidity = 70
+  climateForm.intervalMinutes = 5
   climateForm.dayStart = '07:00'
   climateForm.nightStart = '19:00'
   climateForm.ventMinPercent = 15
@@ -199,12 +263,24 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.correctionDuringIrrigation = true
   waterForm.enableDrainControl = false
   waterForm.drainTargetPercent = 20
+  waterForm.diagnosticsEnabled = true
+  waterForm.diagnosticsIntervalMinutes = 15
+  waterForm.cycleStartWorkflowEnabled = true
+  waterForm.cleanTankFullThreshold = 0.95
+  waterForm.refillDurationSeconds = 30
+  waterForm.refillTimeoutSeconds = 600
+  waterForm.refillRequiredNodeTypes = 'irrig,climate,light'
+  waterForm.refillPreferredChannel = 'fill_valve'
+  waterForm.solutionChangeEnabled = false
+  waterForm.solutionChangeIntervalMinutes = 180
+  waterForm.solutionChangeDurationSeconds = 120
   waterForm.manualIrrigationSeconds = 90
 
   lightingForm.enabled = true
   lightingForm.luxDay = 18000
   lightingForm.luxNight = 0
   lightingForm.hoursOn = 16
+  lightingForm.intervalMinutes = 30
   lightingForm.scheduleStart = '06:00'
   lightingForm.scheduleEnd = '22:00'
   lightingForm.manualIntensity = 75

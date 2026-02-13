@@ -594,11 +594,15 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "sensor",
+  "type": "ph",
   "fw_version": "2.0.1",
   "hardware_revision": "rev2"
 }
 ```
+
+> `type` для узла принимает только канонические значения `nodes.type`:
+> `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+> Значения `sensor/actuator/controller` относятся только к `node_channels.type` в составе NodeConfig.
 
 #### Response (201 Created)
 
@@ -609,7 +613,7 @@ POST /api/nodes/register
     "id": 1,
     "uid": "node-001",
     "zone_id": null,
-    "type": "sensor",
+    "type": "ph",
     "status": "offline",
     "lifecycle_state": "registered_backend",
     "created_at": "2025-11-21T10:25:00.000000Z"
@@ -644,7 +648,7 @@ PATCH /api/nodes/{node_id}
     "uid": "node-001",
     "zone_id": 1,
     "name": "pH/EC Sensor Zone A",
-    "type": "sensor",
+    "type": "ph",
     "status": "online",
     "lifecycle_state": "provisioned",
     "updated_at": "2025-11-21T10:30:00.000000Z"
@@ -671,7 +675,7 @@ GET /api/nodes?unassigned=true
         "id": 1,
         "uid": "node-001",
         "zone_id": null,
-        "type": "sensor",
+        "type": "ph",
         "status": "online",
         "channels": []
       }
@@ -1141,7 +1145,7 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "sensor",
+  "type": "ph",
   "fw_version": "2.0.1"
 }
 

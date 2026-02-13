@@ -42,13 +42,15 @@
           <article class="ui-kpi-card">
             <div class="ui-kpi-label">Форточки</div>
             <div class="ui-kpi-value !text-lg">{{ climateForm.ventMinPercent }}-{{ climateForm.ventMaxPercent }}%</div>
-            <div class="ui-kpi-hint">Диапазон открытия</div>
+            <div class="ui-kpi-hint">Диапазон открытия · каждые {{ climateForm.intervalMinutes }} мин</div>
           </article>
 
           <article class="ui-kpi-card">
             <div class="ui-kpi-label">Водный узел</div>
             <div class="ui-kpi-value !text-lg">{{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}</div>
-            <div class="ui-kpi-hint">{{ waterTopologyLabel }}</div>
+            <div class="ui-kpi-hint">
+              {{ waterTopologyLabel }} · diag {{ waterForm.diagnosticsIntervalMinutes }} мин
+            </div>
           </article>
 
           <article class="ui-kpi-card">
@@ -60,7 +62,9 @@
           <article class="ui-kpi-card">
             <div class="ui-kpi-label">Досветка</div>
             <div class="ui-kpi-value !text-lg">{{ lightingForm.luxDay }} lux</div>
-            <div class="ui-kpi-hint">{{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }}</div>
+            <div class="ui-kpi-hint">
+              {{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }} · {{ lightingForm.intervalMinutes }} мин
+            </div>
           </article>
         </div>
       </section>
@@ -80,6 +84,10 @@
             <div>
               <dt class="text-[color:var(--text-dim)]">Профиль</dt>
               <dd class="text-[color:var(--text-primary)]">{{ climateForm.enabled ? 'Автоклимат включен' : 'Автоклимат выключен' }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Интервал</dt>
+              <dd class="text-[color:var(--text-primary)]">{{ climateForm.intervalMinutes }} мин</dd>
             </div>
             <div>
               <dt class="text-[color:var(--text-dim)]">Внешний guard</dt>
@@ -106,6 +114,18 @@
             <div>
               <dt class="text-[color:var(--text-dim)]">Коррекция</dt>
               <dd class="text-[color:var(--text-primary)]">pH {{ waterForm.targetPh.toFixed(1) }} · EC {{ waterForm.targetEc.toFixed(1) }}</dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Диагностика</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ waterForm.diagnosticsEnabled ? 'вкл' : 'выкл' }} · {{ waterForm.diagnosticsIntervalMinutes }} мин
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[color:var(--text-dim)]">Смена раствора</dt>
+              <dd class="text-[color:var(--text-primary)]">
+                {{ waterForm.solutionChangeEnabled ? 'вкл' : 'выкл' }} · {{ waterForm.solutionChangeIntervalMinutes }} мин / {{ waterForm.solutionChangeDurationSeconds }} сек
+              </dd>
             </div>
           </dl>
           <p
@@ -171,7 +191,7 @@
           <div>
             <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Применение профиля автоматики</h3>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Команда отправляется как `GROWTH_CYCLE_CONFIG` (`mode=adjust`).
+              Профиль сначала сохраняется в БД, затем отправляется `GROWTH_CYCLE_CONFIG` (`mode=adjust`, `profile_mode`).
             </p>
           </div>
           <div class="text-xs text-[color:var(--text-muted)]">
@@ -180,18 +200,37 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-3 items-end">
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Режим профиля
+            <select
+              v-model="automationLogicMode"
+              class="input-select mt-1 w-full"
+              :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
+            >
+              <option value="setup">setup</option>
+              <option value="working">working</option>
+            </select>
+          </label>
+          <div class="text-xs text-[color:var(--text-muted)]">
+            <span v-if="isSyncingAutomationLogicProfile">Синхронизация профиля с бэкендом...</span>
+            <span v-else-if="lastAutomationLogicSyncAt">Профиль в БД обновлён: {{ formatDateTime(lastAutomationLogicSyncAt) }}</span>
+            <span v-else>Профиль в БД ещё не синхронизирован</span>
+          </div>
+        </div>
+
         <div class="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            :disabled="!canConfigureAutomation || isApplyingProfile"
+            :disabled="!canConfigureAutomation || isApplyingProfile || isSyncingAutomationLogicProfile"
             @click="applyAutomationProfile"
           >
-            {{ isApplyingProfile ? 'Отправка профиля...' : 'Применить профиль автоматики' }}
+            {{ isApplyingProfile ? 'Отправка профиля...' : (isSyncingAutomationLogicProfile ? 'Сохранение профиля...' : 'Применить профиль автоматики') }}
           </Button>
           <Button
             size="sm"
             variant="secondary"
-            :disabled="isApplyingProfile"
+            :disabled="isApplyingProfile || isSyncingAutomationLogicProfile"
             @click="resetToRecommended"
           >
             Восстановить рекомендуемые значения
@@ -505,7 +544,10 @@ const {
   lightingForm,
   quickActions,
   isApplyingProfile,
+  isSyncingAutomationLogicProfile,
   lastAppliedAt,
+  automationLogicMode,
+  lastAutomationLogicSyncAt,
   predictionTargets,
   telemetryLabel,
   waterTopologyLabel,

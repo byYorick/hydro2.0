@@ -13,6 +13,7 @@ from common.db import execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
+from common.node_types import normalize_node_type
 from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id, inject_trace_id_header, set_trace_id_from_payload
 from common.utils.time import utcnow
@@ -207,10 +208,26 @@ async def handle_node_hello(topic: str, payload: bytes) -> None:
             return
 
         try:
+            raw_node_type = data.get("node_type")
+            normalized_node_type = normalize_node_type(
+                str(raw_node_type) if raw_node_type is not None else None
+            )
+            if (
+                raw_node_type is not None
+                and str(raw_node_type).strip()
+                and normalized_node_type == "unknown"
+                and str(raw_node_type).strip().lower() != "unknown"
+            ):
+                logger.warning(
+                    "[NODE_HELLO] Non-canonical node_type received, normalized to unknown: hardware_id=%s node_type=%s",
+                    hardware_id,
+                    raw_node_type,
+                )
+
             api_data = {
                 "message_type": "node_hello",
                 "hardware_id": data.get("hardware_id"),
-                "node_type": data.get("node_type"),
+                "node_type": normalized_node_type,
                 "fw_version": data.get("fw_version"),
                 "hardware_revision": data.get("hardware_revision"),
                 "capabilities": data.get("capabilities"),

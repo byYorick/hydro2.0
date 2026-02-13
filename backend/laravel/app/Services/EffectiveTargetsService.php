@@ -11,6 +11,11 @@ use Illuminate\Support\Collection;
 
 class EffectiveTargetsService
 {
+    public function __construct(
+        private readonly ZoneAutomationLogicProfileService $automationLogicProfiles,
+    ) {
+    }
+
     /**
      * Получить эффективные целевые параметры для цикла выращивания
      * 
@@ -48,6 +53,11 @@ class EffectiveTargetsService
         
         // Сливаем перекрытия с базовыми параметрами
         $effectiveTargets = $this->mergeOverrides($phaseTargets, $overrides);
+
+        // Накладываем runtime-настройки автоматики из активного profile-mode зоны.
+        $runtimeProfile = $this->resolveRuntimeProfileForCycle($cycle);
+        $effectiveTargets = $this->mergeCycleSettings($effectiveTargets, $runtimeProfile['subsystems'] ?? null);
+        $effectiveTargets = $this->appendRuntimeProfileMeta($effectiveTargets, $runtimeProfile);
         
         // Вычисляем due_at для фазы
         $phaseDueAt = $this->calculatePhaseDueAt($cycle, $phase);
@@ -288,6 +298,531 @@ class EffectiveTargetsService
         }
 
         return $effective;
+    }
+
+    protected function resolveRuntimeProfileForCycle(GrowCycle $cycle): ?array
+    {
+        $profile = $this->automationLogicProfiles->resolveActiveProfileForZone($cycle->zone_id);
+        if ($profile && is_array($profile->subsystems) && !empty($profile->subsystems)) {
+            return [
+                'source' => 'zone_automation_logic_profile',
+                'mode' => $profile->mode,
+                'updated_at' => $profile->updated_at?->toIso8601String(),
+                'subsystems' => $profile->subsystems,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Наложить runtime-настройки подсистем на effective targets.
+     * Приоритет: phase -> overrides -> runtime settings.
+     */
+    protected function mergeCycleSettings(array $targets, mixed $subsystems): array
+    {
+        if (!is_array($subsystems) || empty($subsystems)) {
+            return $targets;
+        }
+
+        $targets = $this->mergePhSubsystem($targets, $subsystems);
+        $targets = $this->mergeEcSubsystem($targets, $subsystems);
+        $targets = $this->mergeIrrigationSubsystem($targets, $subsystems);
+        $targets = $this->mergeLightingSubsystem($targets, $subsystems);
+        $targets = $this->mergeClimateSubsystem($targets, $subsystems);
+        $targets = $this->mergeDiagnosticsSubsystem($targets, $subsystems);
+        $targets = $this->mergeSolutionSubsystem($targets, $subsystems);
+        $targets = $this->appendSubsystemsToExtensions($targets, $subsystems);
+
+        return $targets;
+    }
+
+    protected function appendRuntimeProfileMeta(array $targets, ?array $runtimeProfile): array
+    {
+        if (!is_array($runtimeProfile) || empty($runtimeProfile)) {
+            return $targets;
+        }
+
+        $extensions = is_array($targets['extensions'] ?? null) ? $targets['extensions'] : [];
+        $extensions['automation_logic'] = [
+            'source' => $runtimeProfile['source'] ?? null,
+            'mode' => $runtimeProfile['mode'] ?? null,
+            'updated_at' => $runtimeProfile['updated_at'] ?? null,
+        ];
+        $targets['extensions'] = $extensions;
+
+        return $targets;
+    }
+
+    protected function mergePhSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'ph');
+        $phTargets = $this->extractSubsystemTargets($subsystems, 'ph');
+        if ($enabled !== true || !is_array($phTargets)) {
+            return $targets;
+        }
+
+        $ph = is_array($targets['ph'] ?? null) ? $targets['ph'] : [];
+        $targetValue = $this->toFloat($phTargets['target'] ?? null);
+        $minValue = $this->toFloat($phTargets['min'] ?? null);
+        $maxValue = $this->toFloat($phTargets['max'] ?? null);
+
+        if ($targetValue !== null) {
+            $ph['target'] = $targetValue;
+        }
+        if ($minValue !== null) {
+            $ph['min'] = $minValue;
+        }
+        if ($maxValue !== null) {
+            $ph['max'] = $maxValue;
+        }
+
+        if (!empty($ph)) {
+            $targets['ph'] = $ph;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeEcSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'ec');
+        $ecTargets = $this->extractSubsystemTargets($subsystems, 'ec');
+        if ($enabled !== true || !is_array($ecTargets)) {
+            return $targets;
+        }
+
+        $ec = is_array($targets['ec'] ?? null) ? $targets['ec'] : [];
+        $targetValue = $this->toFloat($ecTargets['target'] ?? null);
+        $minValue = $this->toFloat($ecTargets['min'] ?? null);
+        $maxValue = $this->toFloat($ecTargets['max'] ?? null);
+
+        if ($targetValue !== null) {
+            $ec['target'] = $targetValue;
+        }
+        if ($minValue !== null) {
+            $ec['min'] = $minValue;
+        }
+        if ($maxValue !== null) {
+            $ec['max'] = $maxValue;
+        }
+
+        if (!empty($ec)) {
+            $targets['ec'] = $ec;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeIrrigationSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'irrigation');
+        $irrigationTargets = $this->extractSubsystemTargets($subsystems, 'irrigation');
+        if ($enabled === null && !is_array($irrigationTargets)) {
+            return $targets;
+        }
+
+        $irrigation = is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : [];
+
+        if (is_array($irrigationTargets)) {
+            $intervalSec = $this->resolveIntervalSeconds($irrigationTargets);
+            if ($intervalSec !== null) {
+                $irrigation['interval_sec'] = $intervalSec;
+            }
+
+            $durationSec = $this->resolveDurationSeconds($irrigationTargets);
+            if ($durationSec !== null) {
+                $irrigation['duration_sec'] = $durationSec;
+            }
+
+            if (isset($irrigationTargets['system_type']) && is_string($irrigationTargets['system_type'])) {
+                $systemType = trim((string) $irrigationTargets['system_type']);
+                if ($systemType !== '') {
+                    $irrigation['system_type'] = $systemType;
+                }
+            }
+
+            if (isset($irrigationTargets['execution']) && is_array($irrigationTargets['execution'])) {
+                $irrigation = $this->mergeTaskExecution($irrigation, $irrigationTargets['execution']);
+            }
+        }
+
+        if ($enabled === false) {
+            $irrigation = $this->mergeTaskExecution($irrigation, ['force_skip' => true]);
+        } elseif ($enabled === true) {
+            $irrigation = $this->mergeTaskExecution($irrigation, ['force_skip' => false]);
+        }
+
+        if (!empty($irrigation)) {
+            $targets['irrigation'] = $irrigation;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeLightingSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'lighting');
+        $lightingTargets = $this->extractSubsystemTargets($subsystems, 'lighting');
+        if ($enabled === null && !is_array($lightingTargets)) {
+            return $targets;
+        }
+
+        $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
+
+        if (is_array($lightingTargets)) {
+            $photoperiodHours = $this->toFloat($lightingTargets['photoperiod_hours'] ?? null);
+            if ($photoperiodHours === null && is_array($lightingTargets['photoperiod'] ?? null)) {
+                $photoperiodHours = $this->toFloat($lightingTargets['photoperiod']['hours_on'] ?? null);
+            }
+            if ($photoperiodHours !== null) {
+                $lighting['photoperiod_hours'] = $photoperiodHours;
+            }
+
+            $startTime = $this->resolveScheduleStartTime($lightingTargets['schedule'] ?? null);
+            if ($startTime === null) {
+                $startTime = $this->normalizeTimeString($lightingTargets['start_time'] ?? null);
+            }
+            if ($startTime !== null) {
+                $lighting['start_time'] = $startTime;
+            }
+
+            $intervalSec = $this->resolveIntervalSeconds($lightingTargets);
+            if ($intervalSec !== null) {
+                $lighting['interval_sec'] = $intervalSec;
+            }
+
+            if (isset($lightingTargets['execution']) && is_array($lightingTargets['execution'])) {
+                $lighting = $this->mergeTaskExecution($lighting, $lightingTargets['execution']);
+            }
+        }
+
+        if ($enabled === false) {
+            $lighting = $this->mergeTaskExecution($lighting, ['force_skip' => true]);
+        } elseif ($enabled === true) {
+            $lighting = $this->mergeTaskExecution($lighting, ['force_skip' => false]);
+        }
+
+        if (!empty($lighting)) {
+            $targets['lighting'] = $lighting;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeClimateSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'climate');
+        $climateTargets = $this->extractSubsystemTargets($subsystems, 'climate');
+        if ($enabled === null && !is_array($climateTargets)) {
+            return $targets;
+        }
+
+        if (is_array($climateTargets)) {
+            $climateRequest = is_array($targets['climate_request'] ?? null) ? $targets['climate_request'] : [];
+
+            $dayTemp = $this->toFloat($climateTargets['temperature']['day'] ?? null);
+            if ($dayTemp !== null) {
+                $climateRequest['temp_air_target'] = $dayTemp;
+            }
+
+            $dayHumidity = $this->toFloat($climateTargets['humidity']['day'] ?? null);
+            if ($dayHumidity !== null) {
+                $climateRequest['humidity_target'] = $dayHumidity;
+            }
+
+            if (!empty($climateRequest)) {
+                $targets['climate_request'] = $climateRequest;
+            }
+        }
+
+        // Scheduler использует task_type=ventilation для периодического контроля климата.
+        $ventilation = is_array($targets['ventilation'] ?? null) ? $targets['ventilation'] : [];
+        if (is_array($climateTargets)) {
+            $intervalSec = $this->resolveIntervalSeconds($climateTargets);
+            if ($intervalSec !== null) {
+                $ventilation['interval_sec'] = $intervalSec;
+            }
+            if (isset($climateTargets['execution']) && is_array($climateTargets['execution'])) {
+                $ventilation = $this->mergeTaskExecution($ventilation, $climateTargets['execution']);
+            }
+        }
+
+        if ($enabled === false) {
+            $ventilation = $this->mergeTaskExecution($ventilation, ['force_skip' => true]);
+        } elseif ($enabled === true) {
+            $ventilation = $this->mergeTaskExecution($ventilation, ['force_skip' => false]);
+        }
+
+        if (!empty($ventilation)) {
+            $targets['ventilation'] = $ventilation;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeDiagnosticsSubsystem(array $targets, array $subsystems): array
+    {
+        $enabled = $this->extractSubsystemEnabled($subsystems, 'diagnostics');
+        $diagnosticsTargets = $this->extractSubsystemTargets($subsystems, 'diagnostics');
+        if ($enabled === null && !is_array($diagnosticsTargets)) {
+            return $targets;
+        }
+
+        $diagnostics = is_array($targets['diagnostics'] ?? null) ? $targets['diagnostics'] : [];
+
+        if (is_array($diagnosticsTargets)) {
+            $intervalSec = $this->resolveIntervalSeconds($diagnosticsTargets);
+            if ($intervalSec !== null) {
+                $diagnostics['interval_sec'] = $intervalSec;
+            }
+
+            $executionPatch = [];
+            if (isset($diagnosticsTargets['execution']) && is_array($diagnosticsTargets['execution'])) {
+                $executionPatch = $diagnosticsTargets['execution'];
+            }
+
+            if (isset($diagnosticsTargets['workflow']) && is_string($diagnosticsTargets['workflow'])) {
+                $workflow = trim((string) $diagnosticsTargets['workflow']);
+                if ($workflow !== '') {
+                    $executionPatch['workflow'] = $workflow;
+                }
+            }
+
+            if (isset($diagnosticsTargets['required_node_types']) && is_array($diagnosticsTargets['required_node_types'])) {
+                $executionPatch['required_node_types'] = array_values($diagnosticsTargets['required_node_types']);
+            }
+
+            $cleanTankThreshold = $this->toFloat($diagnosticsTargets['clean_tank_full_threshold'] ?? null);
+            if ($cleanTankThreshold !== null) {
+                $executionPatch['clean_tank_full_threshold'] = $cleanTankThreshold;
+            }
+
+            $refillDurationSec = $this->toPositiveInt($diagnosticsTargets['refill_duration_sec'] ?? null);
+            if ($refillDurationSec !== null) {
+                $executionPatch['refill_duration_sec'] = $refillDurationSec;
+            }
+
+            $refillTimeoutSec = $this->toPositiveInt($diagnosticsTargets['refill_timeout_sec'] ?? null);
+            if ($refillTimeoutSec !== null) {
+                $executionPatch['refill_timeout_sec'] = $refillTimeoutSec;
+            }
+
+            if (isset($diagnosticsTargets['refill']) && is_array($diagnosticsTargets['refill'])) {
+                $executionPatch['refill'] = $diagnosticsTargets['refill'];
+            }
+
+            if (!empty($executionPatch)) {
+                $diagnostics = $this->mergeTaskExecution($diagnostics, $executionPatch);
+            }
+        }
+
+        if ($enabled === false) {
+            $diagnostics = $this->mergeTaskExecution($diagnostics, ['force_skip' => true]);
+        } elseif ($enabled === true) {
+            $diagnostics = $this->mergeTaskExecution($diagnostics, ['force_skip' => false]);
+        }
+
+        if (!empty($diagnostics)) {
+            $targets['diagnostics'] = $diagnostics;
+        }
+
+        return $targets;
+    }
+
+    protected function mergeSolutionSubsystem(array $targets, array $subsystems): array
+    {
+        $solutionSubsystem = null;
+        $solutionEnabled = null;
+        foreach (['solution_change', 'solution'] as $candidate) {
+            if (isset($subsystems[$candidate]) && is_array($subsystems[$candidate])) {
+                $solutionSubsystem = $subsystems[$candidate];
+                $solutionEnabled = $this->toBool($solutionSubsystem['enabled'] ?? null);
+                break;
+            }
+        }
+
+        $solutionTargets = is_array($solutionSubsystem['targets'] ?? null) ? $solutionSubsystem['targets'] : null;
+        if ($solutionEnabled === null && !is_array($solutionTargets)) {
+            return $targets;
+        }
+
+        $solution = is_array($targets['solution_change'] ?? null) ? $targets['solution_change'] : [];
+        if (is_array($solutionTargets)) {
+            $intervalSec = $this->resolveIntervalSeconds($solutionTargets);
+            if ($intervalSec !== null) {
+                $solution['interval_sec'] = $intervalSec;
+            }
+
+            $durationSec = $this->resolveDurationSeconds($solutionTargets);
+            if ($durationSec !== null) {
+                $solution['duration_sec'] = $durationSec;
+            }
+
+            if (isset($solutionTargets['execution']) && is_array($solutionTargets['execution'])) {
+                $solution = $this->mergeTaskExecution($solution, $solutionTargets['execution']);
+            }
+        }
+
+        if ($solutionEnabled === false) {
+            $solution = $this->mergeTaskExecution($solution, ['force_skip' => true]);
+        } elseif ($solutionEnabled === true) {
+            $solution = $this->mergeTaskExecution($solution, ['force_skip' => false]);
+        }
+
+        if (!empty($solution)) {
+            $targets['solution_change'] = $solution;
+        }
+
+        return $targets;
+    }
+
+    protected function appendSubsystemsToExtensions(array $targets, array $subsystems): array
+    {
+        $extensions = is_array($targets['extensions'] ?? null) ? $targets['extensions'] : [];
+        $existingSubsystems = is_array($extensions['subsystems'] ?? null) ? $extensions['subsystems'] : [];
+        $extensions['subsystems'] = $this->mergeRecursive($existingSubsystems, $subsystems);
+        $targets['extensions'] = $extensions;
+
+        return $targets;
+    }
+
+    protected function mergeTaskExecution(array $taskConfig, array $executionPatch): array
+    {
+        $existingExecution = is_array($taskConfig['execution'] ?? null) ? $taskConfig['execution'] : [];
+        $taskConfig['execution'] = $this->mergeRecursive($existingExecution, $executionPatch);
+        return $taskConfig;
+    }
+
+    protected function extractSubsystemTargets(array $subsystems, string $subsystem): ?array
+    {
+        $raw = $subsystems[$subsystem]['targets'] ?? null;
+        return is_array($raw) ? $raw : null;
+    }
+
+    protected function extractSubsystemEnabled(array $subsystems, string $subsystem): ?bool
+    {
+        if (!isset($subsystems[$subsystem]) || !is_array($subsystems[$subsystem])) {
+            return null;
+        }
+        return $this->toBool($subsystems[$subsystem]['enabled'] ?? null);
+    }
+
+    protected function resolveIntervalSeconds(array $payload): ?int
+    {
+        $intervalSec = $this->toPositiveInt($payload['interval_sec'] ?? $payload['every_sec'] ?? null);
+        if ($intervalSec !== null) {
+            return $intervalSec;
+        }
+
+        $intervalMinutes = $this->toPositiveInt($payload['interval_minutes'] ?? null);
+        if ($intervalMinutes !== null) {
+            return $intervalMinutes * 60;
+        }
+
+        return null;
+    }
+
+    protected function resolveDurationSeconds(array $payload): ?int
+    {
+        $durationSec = $this->toPositiveInt($payload['duration_sec'] ?? null);
+        if ($durationSec !== null) {
+            return $durationSec;
+        }
+
+        $durationSeconds = $this->toPositiveInt($payload['duration_seconds'] ?? null);
+        if ($durationSeconds !== null) {
+            return $durationSeconds;
+        }
+
+        return null;
+    }
+
+    protected function resolveScheduleStartTime(mixed $rawSchedule): ?string
+    {
+        if (!is_array($rawSchedule) || empty($rawSchedule)) {
+            return null;
+        }
+
+        $first = $rawSchedule[0] ?? null;
+        if (!is_array($first)) {
+            return null;
+        }
+
+        return $this->normalizeTimeString($first['start'] ?? null);
+    }
+
+    protected function normalizeTimeString(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $trimmed) !== 1) {
+            return null;
+        }
+
+        return $trimmed;
+    }
+
+    protected function toPositiveInt(mixed $value): ?int
+    {
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        $result = (int) round((float) $value);
+        return $result > 0 ? $result : null;
+    }
+
+    protected function toFloat(mixed $value): ?float
+    {
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    protected function toBool(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return ((int) $value) === 1;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return null;
+    }
+
+    protected function mergeRecursive(array $base, array $patch): array
+    {
+        foreach ($patch as $key => $value) {
+            if (is_array($value) && is_array($base[$key] ?? null)) {
+                $base[$key] = $this->mergeRecursive($base[$key], $value);
+            } else {
+                $base[$key] = $value;
+            }
+        }
+
+        return $base;
     }
 
     /**

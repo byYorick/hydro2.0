@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\GrowCycle;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneAutomationLogicProfile;
 use App\Services\PythonBridgeService;
 use Mockery\MockInterface;
 use Tests\RefreshDatabase;
@@ -21,11 +22,31 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             'zone_id' => $zone->id,
             'greenhouse_id' => $zone->greenhouse_id,
             'settings' => [
-                'subsystems' => [
-                    'irrigation' => [
-                        'targets' => [
-                            'system_type' => 'drip',
-                        ],
+                'irrigation' => [
+                    'system_type' => 'drip',
+                ],
+            ],
+        ]);
+
+        ZoneAutomationLogicProfile::query()->create([
+            'zone_id' => $zone->id,
+            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+            'is_active' => true,
+            'subsystems' => [
+                'ph' => [
+                    'enabled' => true,
+                    'targets' => ['target' => 5.8],
+                ],
+                'ec' => [
+                    'enabled' => true,
+                    'targets' => ['target' => 1.6],
+                ],
+                'irrigation' => [
+                    'enabled' => true,
+                    'targets' => [
+                        'interval_minutes' => 20,
+                        'duration_seconds' => 30,
+                        'system_type' => 'nft',
                     ],
                 ],
             ],
@@ -34,7 +55,7 @@ class ZoneCommandSystemTypeLockTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('test')->plainTextToken;
 
-        $payload = $this->buildAdjustPayload('nft');
+        $payload = $this->buildAdjustPayload('working');
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
@@ -54,11 +75,31 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             'zone_id' => $zone->id,
             'greenhouse_id' => $zone->greenhouse_id,
             'settings' => [
-                'subsystems' => [
-                    'irrigation' => [
-                        'targets' => [
-                            'system_type' => 'drip',
-                        ],
+                'irrigation' => [
+                    'system_type' => 'drip',
+                ],
+            ],
+        ]);
+
+        ZoneAutomationLogicProfile::query()->create([
+            'zone_id' => $zone->id,
+            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+            'is_active' => true,
+            'subsystems' => [
+                'ph' => [
+                    'enabled' => true,
+                    'targets' => ['target' => 5.8],
+                ],
+                'ec' => [
+                    'enabled' => true,
+                    'targets' => ['target' => 1.6],
+                ],
+                'irrigation' => [
+                    'enabled' => true,
+                    'targets' => [
+                        'interval_minutes' => 20,
+                        'duration_seconds' => 30,
+                        'system_type' => 'drip',
                     ],
                 ],
             ],
@@ -71,7 +112,7 @@ class ZoneCommandSystemTypeLockTest extends TestCase
         $user = User::factory()->create(['role' => 'agronomist']);
         $token = $user->createToken('test')->plainTextToken;
 
-        $payload = $this->buildAdjustPayload('drip');
+        $payload = $this->buildAdjustPayload('working');
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
@@ -82,30 +123,13 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             ->assertJsonPath('data.command_id', 'cmd-123');
     }
 
-    private function buildAdjustPayload(string $systemType): array
+    private function buildAdjustPayload(string $profileMode): array
     {
         return [
             'type' => 'GROWTH_CYCLE_CONFIG',
             'params' => [
                 'mode' => 'adjust',
-                'subsystems' => [
-                    'ph' => [
-                        'enabled' => true,
-                        'targets' => ['target' => 5.8],
-                    ],
-                    'ec' => [
-                        'enabled' => true,
-                        'targets' => ['target' => 1.6],
-                    ],
-                    'irrigation' => [
-                        'enabled' => true,
-                        'targets' => [
-                            'interval_minutes' => 20,
-                            'duration_seconds' => 30,
-                            'system_type' => $systemType,
-                        ],
-                    ],
-                ],
+                'profile_mode' => $profileMode,
             ],
         ];
     }

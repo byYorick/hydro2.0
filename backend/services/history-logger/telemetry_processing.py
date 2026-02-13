@@ -84,7 +84,11 @@ def _is_sensor_fk_error(error: Exception) -> bool:
     return (
         "telemetry_last_sensor_id_foreign" in message
         or "telemetry_samples_sensor_id_foreign" in message
+        or "sensors_greenhouse_id_foreign" in message
+        or "sensors_zone_id_foreign" in message
+        or "sensors_node_id_foreign" in message
         or ("foreign key" in message and "sensors" in message and "sensor_id" in message)
+        or ('foreign key' in message and 'table "sensors"' in message)
     )
 
 
@@ -1116,6 +1120,41 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     node_uid_to_info[key] = (node_id, zone_id)
                     _node_cache[key] = (node_id, zone_id)
 
+                unresolved_nodes_with_gh = [
+                    (node_uid, gh_uid)
+                    for node_uid, gh_uid in nodes_with_gh
+                    if (node_uid, gh_uid) not in node_uid_to_info
+                ]
+                if unresolved_nodes_with_gh:
+                    fallback_node_uids = sorted(
+                        {node_uid for node_uid, _ in unresolved_nodes_with_gh}
+                    )
+                    fallback_rows = await fetch(
+                        """
+                        SELECT id, uid, zone_id
+                        FROM nodes
+                        WHERE uid = ANY($1)
+                        """,
+                        fallback_node_uids,
+                    )
+
+                    for node in fallback_rows:
+                        node_uid = node.get("uid")
+                        node_id = node.get("id")
+                        if not node_uid or node_id is None:
+                            continue
+                        zone_id = node.get("zone_id")
+                        key = (node_uid, None)
+                        node_uid_to_info[key] = (node_id, zone_id)
+                        _node_cache[key] = (node_id, zone_id)
+
+                    for node_uid, gh_uid in unresolved_nodes_with_gh:
+                        fallback_key = (node_uid, None)
+                        fallback_info = node_uid_to_info.get(fallback_key)
+                        if fallback_info is not None:
+                            node_uid_to_info[(node_uid, gh_uid)] = fallback_info
+                            _node_cache[(node_uid, gh_uid)] = fallback_info
+
             if nodes_without_gh:
                 node_uids = [n for n, _ in nodes_without_gh]
                 node_rows = await fetch(
@@ -1472,7 +1511,21 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         updated_at = EXCLUDED.updated_at
                     RETURNING id, zone_id, node_id, type, label
                 """
-                created_rows = await fetch(query, *params_list)
+                try:
+                    created_rows = await fetch(query, *params_list)
+                except Exception as e:
+                    if _is_sensor_fk_error(e):
+                        logger.warning(
+                            "Sensor FK violation detected during sensor upsert, clearing caches",
+                            extra={"error": str(e)},
+                        )
+                        _sensor_cache.clear()
+                        _zone_cache.clear()
+                        _node_cache.clear()
+                        _zone_greenhouse_cache.clear()
+                        _cache_last_update = 0.0
+                        return
+                    raise
                 for row in created_rows:
                     zone_id = row.get("zone_id")
                     sensor_type = row.get("type")

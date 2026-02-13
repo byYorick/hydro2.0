@@ -34,9 +34,9 @@ async def test_execute_irrigation_success():
     command_bus = _build_command_bus_mock()
 
     with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock) as mock_event:
+        patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock) as mock_event:
         mock_fetch.return_value = [
-            {"uid": "nd-irrig-1", "type": "irrigation", "channel": "pump_a"},
+            {"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_a"},
         ]
         executor = SchedulerTaskExecutor(command_bus=command_bus)
         result = await executor.execute(
@@ -72,8 +72,8 @@ async def test_execute_irrigation_success_with_uppercase_node_type_in_db():
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
         if "from nodes n" in normalized and "lower(trim(coalesce(n.type, ''))) = any($2::text[])" in normalized:
-            assert args[1] == ["irrig", "irrigation"]
-            return [{"uid": "nd-irrig-uc-1", "type": "IRRIGATION", "channel": "pump_a"}]
+            assert args[1] == ["irrig"]
+            return [{"uid": "nd-irrig-uc-1", "type": "IRRIG", "channel": "pump_a"}]
         return []
 
     with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
@@ -90,6 +90,35 @@ async def test_execute_irrigation_success_with_uppercase_node_type_in_db():
     assert result["success"] is True
     assert result["commands_total"] == 1
     command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_fails_with_legacy_pump_node_type_in_db():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "lower(trim(coalesce(n.type, ''))) = any($2::text[])" in normalized:
+            assert args[1] == ["irrig"]
+            return []
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"config": {"duration_sec": 3}},
+            task_context={"task_id": "st-1-pump", "correlation_id": "corr-1-pump"},
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "no_online_nodes"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+    mock_alert.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -180,9 +209,9 @@ async def test_execute_irrigation_mapping_override():
     command_bus = _build_command_bus_mock()
 
     with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
         mock_fetch.return_value = [
-            {"uid": "nd-custom-1", "type": "irrigation", "channel": "default"},
+            {"uid": "nd-custom-1", "type": "irrig", "channel": "default"},
         ]
         executor = SchedulerTaskExecutor(command_bus=command_bus)
         result = await executor.execute(
@@ -240,7 +269,7 @@ async def test_execute_irrigation_command_failure_sets_error_code():
 
     with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock) as mock_event:
-        mock_fetch.return_value = [{"uid": "nd-irrig-1", "type": "irrigation", "channel": "default"}]
+        mock_fetch.return_value = [{"uid": "nd-irrig-1", "type": "irrig", "channel": "default"}]
         executor = SchedulerTaskExecutor(command_bus=command_bus)
         result = await executor.execute(zone_id=1, task_type="irrigation", payload={})
 
@@ -451,7 +480,7 @@ async def test_execute_irrigation_closed_loop_no_effect_fails():
 
     with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
-        mock_fetch.return_value = [{"uid": "nd-irrig-1", "type": "irrigation", "channel": "default"}]
+        mock_fetch.return_value = [{"uid": "nd-irrig-1", "type": "irrig", "channel": "default"}]
         executor = SchedulerTaskExecutor(command_bus=command_bus)
         result = await executor.execute(zone_id=1, task_type="irrigation", payload={})
 

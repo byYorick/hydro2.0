@@ -17,7 +17,7 @@ class NodeConfigServiceTest extends TestCase
             'config' => [
                 'node_id' => 'nd-ph-1',
                 'version' => 3,
-                'type' => 'ph_node',
+                'type' => 'ph',
                 'wifi' => [
                     'ssid' => 'HydroFarm',
                     'pass' => 'super-secret',
@@ -60,7 +60,7 @@ class NodeConfigServiceTest extends TestCase
             'config' => [
                 'node_id' => 'nd-ph-1',
                 'version' => 3,
-                'type' => 'ph_node',
+                'type' => 'ph',
                 'wifi' => [
                     'ssid' => 'HydroFarm',
                     'pass' => 'super-secret',

@@ -45,7 +45,7 @@ class InternalApiController extends Controller
      *         "irrigation": {
      *           "...": "...",
      *           "execution": {
-     *             "node_types": ["irrigation", "irrig"],
+     *             "node_types": ["irrig"],
      *             "cmd": "run_pump",
      *             "params": {"duration_sec": 120},
      *             "fallback_mode": "none"

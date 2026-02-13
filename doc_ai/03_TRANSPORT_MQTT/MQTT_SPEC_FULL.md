@@ -533,6 +533,8 @@ hydro/{gh}/{zone}/{node}/node_hello
 - QoS = 1
 - Retain = false
 - Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего нода отправляет `config_report`.
+- `node_type` передаётся только в канонической схеме: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Legacy-алиасы `node_type` не поддерживаются.
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API; автопривязка по token отключена)
 

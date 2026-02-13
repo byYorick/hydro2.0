@@ -96,6 +96,23 @@ interface SchedulerTaskResponse {
   data?: SchedulerTaskStatus
 }
 
+type AutomationLogicMode = 'setup' | 'working'
+
+interface AutomationLogicProfileEntry {
+  mode: string
+  is_active: boolean
+  subsystems?: Record<string, unknown>
+  updated_at?: string | null
+}
+
+interface AutomationLogicProfilesResponse {
+  status: string
+  data?: {
+    active_mode?: string | null
+    profiles?: Record<string, AutomationLogicProfileEntry>
+  }
+}
+
 type SchedulerTaskSlaVariant = 'success' | 'warning' | 'danger' | 'info' | 'secondary'
 
 interface SchedulerTaskSlaMeta {
@@ -111,6 +128,43 @@ interface SchedulerTaskDoneMeta {
 }
 
 type SchedulerTaskPreset = 'all' | 'failed' | 'deadline' | 'done_confirmed' | 'done_unconfirmed'
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function normalizeAutomationLogicMode(value: unknown, fallback: AutomationLogicMode = 'working'): AutomationLogicMode {
+  return value === 'setup' ? 'setup' : (value === 'working' ? 'working' : fallback)
+}
+
+function toAutomationLogicProfileEntry(value: unknown): AutomationLogicProfileEntry | null {
+  const record = asRecord(value)
+  if (!record) {
+    return null
+  }
+
+  const mode = typeof record.mode === 'string' ? record.mode : null
+  const isActive = typeof record.is_active === 'boolean' ? record.is_active : null
+  if (!mode || isActive === null) {
+    return null
+  }
+
+  const subsystems = asRecord(record.subsystems ?? null) ?? undefined
+  let updatedAt: string | null = null
+  if (typeof record.updated_at === 'string') {
+    updatedAt = record.updated_at
+  }
+
+  return {
+    mode,
+    is_active: isActive,
+    subsystems,
+    updated_at: updatedAt,
+  }
+}
 
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number') {
@@ -182,6 +236,7 @@ function sanitizeClimateForm(raw: Partial<ClimateFormState> | undefined, fallbac
     nightTemp: clamp(toNumber(raw?.nightTemp, fallback.nightTemp), 10, 35),
     dayHumidity: clamp(toNumber(raw?.dayHumidity, fallback.dayHumidity), 30, 90),
     nightHumidity: clamp(toNumber(raw?.nightHumidity, fallback.nightHumidity), 30, 90),
+    intervalMinutes: clamp(toRoundedNumber(raw?.intervalMinutes, fallback.intervalMinutes), 1, 1440),
     dayStart: toTimeHHmm(raw?.dayStart, fallback.dayStart),
     nightStart: toTimeHHmm(raw?.nightStart, fallback.nightStart),
     ventMinPercent: clamp(toRoundedNumber(raw?.ventMinPercent, fallback.ventMinPercent), 0, 100),
@@ -217,6 +272,33 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     correctionDuringIrrigation: toBoolean(raw?.correctionDuringIrrigation, fallback.correctionDuringIrrigation),
     enableDrainControl: toBoolean(raw?.enableDrainControl, fallback.enableDrainControl),
     drainTargetPercent: clamp(toRoundedNumber(raw?.drainTargetPercent, fallback.drainTargetPercent), 0, 100),
+    diagnosticsEnabled: toBoolean(raw?.diagnosticsEnabled, fallback.diagnosticsEnabled),
+    diagnosticsIntervalMinutes: clamp(
+      toRoundedNumber(raw?.diagnosticsIntervalMinutes, fallback.diagnosticsIntervalMinutes),
+      1,
+      1440
+    ),
+    cycleStartWorkflowEnabled: toBoolean(raw?.cycleStartWorkflowEnabled, fallback.cycleStartWorkflowEnabled),
+    cleanTankFullThreshold: clamp(toNumber(raw?.cleanTankFullThreshold, fallback.cleanTankFullThreshold), 0.05, 1),
+    refillDurationSeconds: clamp(toRoundedNumber(raw?.refillDurationSeconds, fallback.refillDurationSeconds), 1, 3600),
+    refillTimeoutSeconds: clamp(toRoundedNumber(raw?.refillTimeoutSeconds, fallback.refillTimeoutSeconds), 30, 86400),
+    refillRequiredNodeTypes:
+      typeof raw?.refillRequiredNodeTypes === 'string' && raw.refillRequiredNodeTypes.trim() !== ''
+        ? raw.refillRequiredNodeTypes.trim()
+        : fallback.refillRequiredNodeTypes,
+    refillPreferredChannel:
+      typeof raw?.refillPreferredChannel === 'string' ? raw.refillPreferredChannel.trim() : fallback.refillPreferredChannel,
+    solutionChangeEnabled: toBoolean(raw?.solutionChangeEnabled, fallback.solutionChangeEnabled),
+    solutionChangeIntervalMinutes: clamp(
+      toRoundedNumber(raw?.solutionChangeIntervalMinutes, fallback.solutionChangeIntervalMinutes),
+      1,
+      1440
+    ),
+    solutionChangeDurationSeconds: clamp(
+      toRoundedNumber(raw?.solutionChangeDurationSeconds, fallback.solutionChangeDurationSeconds),
+      1,
+      86400
+    ),
     manualIrrigationSeconds: clamp(
       toRoundedNumber(raw?.manualIrrigationSeconds, fallback.manualIrrigationSeconds),
       1,
@@ -238,6 +320,7 @@ function sanitizeLightingForm(raw: Partial<LightingFormState> | undefined, fallb
     luxDay: clamp(toRoundedNumber(raw?.luxDay, fallback.luxDay), 0, 120000),
     luxNight: clamp(toRoundedNumber(raw?.luxNight, fallback.luxNight), 0, 120000),
     hoursOn: clamp(toNumber(raw?.hoursOn, fallback.hoursOn), 0, 24),
+    intervalMinutes: clamp(toRoundedNumber(raw?.intervalMinutes, fallback.intervalMinutes), 1, 1440),
     scheduleStart: toTimeHHmm(raw?.scheduleStart, fallback.scheduleStart),
     scheduleEnd: toTimeHHmm(raw?.scheduleEnd, fallback.scheduleEnd),
     manualIntensity: clamp(toRoundedNumber(raw?.manualIntensity, fallback.manualIntensity), 0, 100),
@@ -249,7 +332,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const page = usePage<{ auth?: { user?: { role?: string } } }>()
   const { showToast } = useToast()
   const { sendZoneCommand } = useCommands(showToast)
-  const { get } = useApi(showToast)
+  const { get, post } = useApi(showToast)
 
   const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
   const canConfigureAutomation = computed(() => role.value === 'agronomist' || role.value === 'admin')
@@ -267,6 +350,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     nightTemp: 20,
     dayHumidity: 62,
     nightHumidity: 70,
+    intervalMinutes: 5,
     dayStart: '07:00',
     nightStart: '19:00',
     ventMinPercent: 15,
@@ -296,6 +380,17 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     correctionDuringIrrigation: true,
     enableDrainControl: false,
     drainTargetPercent: 20,
+    diagnosticsEnabled: true,
+    diagnosticsIntervalMinutes: 15,
+    cycleStartWorkflowEnabled: true,
+    cleanTankFullThreshold: 0.95,
+    refillDurationSeconds: 30,
+    refillTimeoutSeconds: 600,
+    refillRequiredNodeTypes: 'irrig,climate,light',
+    refillPreferredChannel: 'fill_valve',
+    solutionChangeEnabled: false,
+    solutionChangeIntervalMinutes: 180,
+    solutionChangeDurationSeconds: 120,
     manualIrrigationSeconds: 90,
   })
 
@@ -304,6 +399,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     luxDay: 18000,
     luxNight: 0,
     hoursOn: 16,
+    intervalMinutes: 30,
     scheduleStart: '06:00',
     scheduleEnd: '22:00',
     manualIntensity: 75,
@@ -320,7 +416,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   const isApplyingProfile = ref(false)
   const isHydratingProfile = ref(false)
+  const isSyncingAutomationLogicProfile = ref(false)
   const lastAppliedAt = ref<string | null>(null)
+  const automationLogicMode = ref<AutomationLogicMode>('working')
+  const lastAutomationLogicSyncAt = ref<string | null>(null)
   const schedulerTaskIdInput = ref('')
   const schedulerTaskLookupLoading = ref(false)
   const schedulerTaskListLoading = ref(false)
@@ -380,7 +479,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   })
 
   const profileStorageKey = computed(() => {
-    return props.zoneId ? `zone:${props.zoneId}:automation-profile:v2` : null
+    return props.zoneId ? `zone:${props.zoneId}:automation-profile:v3` : null
   })
 
   function normalizeTaskId(rawValue?: string): string {
@@ -833,6 +932,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       climate: { ...climateForm },
       water: { ...waterForm },
       lighting: { ...lightingForm },
+      automationLogicMode: automationLogicMode.value,
+      lastAutomationLogicSyncAt: lastAutomationLogicSyncAt.value,
       lastAppliedAt: lastAppliedAt.value,
     }
 
@@ -850,6 +951,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
         climate?: Partial<ClimateFormState>
         water?: Partial<WaterFormState>
         lighting?: Partial<LightingFormState>
+        automationLogicMode?: string
+        lastAutomationLogicSyncAt?: string | null
         lastAppliedAt?: string | null
       }
 
@@ -862,36 +965,133 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       if (parsed.lighting) {
         Object.assign(lightingForm, sanitizeLightingForm(parsed.lighting, lightingForm))
       }
+      automationLogicMode.value = normalizeAutomationLogicMode(parsed.automationLogicMode, automationLogicMode.value)
 
       const parsedLastAppliedAt = parseIsoDate(parsed.lastAppliedAt ?? null)
       lastAppliedAt.value = parsedLastAppliedAt ? parsedLastAppliedAt.toISOString() : null
+      const parsedSyncedAt = parseIsoDate(parsed.lastAutomationLogicSyncAt ?? null)
+      lastAutomationLogicSyncAt.value = parsedSyncedAt ? parsedSyncedAt.toISOString() : null
     } catch (error) {
       logger.warn('[ZoneAutomationTab] Failed to parse stored automation profile', { error })
+    }
+  }
+
+  function resolveAutomationProfileEntry(data: AutomationLogicProfilesResponse['data']): AutomationLogicProfileEntry | null {
+    const profiles = asRecord(data?.profiles ?? null)
+    if (!profiles) {
+      return null
+    }
+
+    const activeMode = normalizeAutomationLogicMode(data?.active_mode, automationLogicMode.value)
+    automationLogicMode.value = activeMode
+    const activeEntry = toAutomationLogicProfileEntry(profiles[activeMode])
+    if (activeEntry) {
+      return activeEntry
+    }
+
+    const workingEntry = toAutomationLogicProfileEntry(profiles.working)
+    if (workingEntry) {
+      automationLogicMode.value = 'working'
+      return workingEntry
+    }
+
+    const setupEntry = toAutomationLogicProfileEntry(profiles.setup)
+    if (setupEntry) {
+      automationLogicMode.value = 'setup'
+      return setupEntry
+    }
+
+    return null
+  }
+
+  function applyServerProfileToForms(data: AutomationLogicProfilesResponse['data']): void {
+    const selectedEntry = resolveAutomationProfileEntry(data)
+    if (!selectedEntry) {
+      return
+    }
+
+    const subsystems = asRecord(selectedEntry.subsystems ?? null)
+    if (!subsystems) {
+      return
+    }
+
+    applyAutomationFromRecipe(
+      {
+        extensions: {
+          subsystems,
+        },
+      },
+      { climateForm, waterForm, lightingForm }
+    )
+
+    const syncedAt = parseIsoDate(selectedEntry.updated_at ?? null)
+    lastAutomationLogicSyncAt.value = syncedAt ? syncedAt.toISOString() : null
+  }
+
+  async function fetchAutomationLogicProfileFromServer(): Promise<void> {
+    if (!props.zoneId) return
+
+    try {
+      const response = await get<AutomationLogicProfilesResponse>(`/api/zones/${props.zoneId}/automation-logic-profile`)
+      applyServerProfileToForms(response.data?.data)
+    } catch (error) {
+      logger.warn('[ZoneAutomationTab] Failed to fetch automation logic profile', { error, zoneId: props.zoneId })
+    }
+  }
+
+  async function persistAutomationLogicProfile(subsystems: Record<string, unknown>): Promise<boolean> {
+    if (!props.zoneId) {
+      return false
+    }
+
+    isSyncingAutomationLogicProfile.value = true
+    try {
+      const response = await post<AutomationLogicProfilesResponse>(`/api/zones/${props.zoneId}/automation-logic-profile`, {
+        mode: automationLogicMode.value,
+        activate: true,
+        subsystems,
+      })
+      applyServerProfileToForms(response.data?.data)
+      return true
+    } catch (error) {
+      logger.error('[ZoneAutomationTab] Failed to persist automation logic profile', {
+        error,
+        zoneId: props.zoneId,
+        mode: automationLogicMode.value,
+      })
+      return false
+    } finally {
+      isSyncingAutomationLogicProfile.value = false
     }
   }
 
   watch(climateForm, saveProfileToStorage, { deep: true })
   watch(waterForm, saveProfileToStorage, { deep: true })
   watch(lightingForm, saveProfileToStorage, { deep: true })
+  watch(automationLogicMode, saveProfileToStorage)
+  watch(lastAutomationLogicSyncAt, saveProfileToStorage)
   watch(lastAppliedAt, saveProfileToStorage)
 
-  function hydrateAutomationProfileFromCurrentZone(options?: { includeTargets?: boolean }): void {
+  async function hydrateAutomationProfileFromCurrentZone(options?: { includeTargets?: boolean }): Promise<void> {
     const includeTargets = options?.includeTargets ?? true
     isHydratingProfile.value = true
     try {
       resetFormsToRecommended({ climateForm, waterForm, lightingForm })
       lastAppliedAt.value = null
+      lastAutomationLogicSyncAt.value = null
+      automationLogicMode.value = 'working'
       loadProfileFromStorage()
       if (includeTargets) {
         applyAutomationFromRecipe(props.targets, { climateForm, waterForm, lightingForm })
       }
+      await fetchAutomationLogicProfileFromServer()
     } finally {
       isHydratingProfile.value = false
     }
   }
 
   onMounted(() => {
-    hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
+    void hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
     void fetchRecentSchedulerTasks()
     if (import.meta.env.MODE !== 'test') {
       void pollSchedulerTasksCycle()
@@ -921,7 +1121,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       schedulerTasksUpdatedAt.value = null
       schedulerTaskListLoading.value = false
       schedulerTaskLookupLoading.value = false
-      hydrateAutomationProfileFromCurrentZone({ includeTargets: false })
+      void hydrateAutomationProfileFromCurrentZone({ includeTargets: false })
       void fetchRecentSchedulerTasks()
       scheduleSchedulerTasksPoll()
     }
@@ -1032,7 +1232,23 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
         { climateForm, waterForm, lightingForm },
         { includeSystemType: !isSystemTypeLocked.value }
       )
-      await sendZoneCommand(props.zoneId, 'GROWTH_CYCLE_CONFIG', payload)
+      const payloadRecord = asRecord(payload)
+      const subsystems = asRecord(payloadRecord?.subsystems ?? null)
+      if (!subsystems) {
+        showToast('Невозможно собрать subsystems из профиля автоматики.', 'error')
+        return false
+      }
+
+      const persisted = await persistAutomationLogicProfile(subsystems)
+      if (!persisted) {
+        showToast('Не удалось сохранить профиль логики автоматики в бэкенд.', 'error')
+        return false
+      }
+
+      await sendZoneCommand(props.zoneId, 'GROWTH_CYCLE_CONFIG', {
+        mode: 'adjust',
+        profile_mode: automationLogicMode.value,
+      })
       lastAppliedAt.value = new Date().toISOString()
       showToast('Профиль автоматики отправлен в scheduler.', 'success')
       return true
@@ -1179,7 +1395,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     lightingForm,
     quickActions,
     isApplyingProfile,
+    isSyncingAutomationLogicProfile,
     lastAppliedAt,
+    automationLogicMode,
+    lastAutomationLogicSyncAt,
     predictionTargets,
     telemetryLabel,
     waterTopologyLabel,

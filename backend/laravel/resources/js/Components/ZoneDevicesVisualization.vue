@@ -332,7 +332,7 @@ function getDeviceIcon(type: string | undefined): string {
     sensor: '📊',
     actuator: '🔧',
     controller: '🎛️',
-    pump: '💧',
+    irrig: '💧',
     climate: '🌡️',
   }
   return icons[type || 'sensor'] || '📱'
@@ -345,7 +345,7 @@ function translateDeviceType(type: string | undefined): string {
     sensor: 'Сенсор',
     actuator: 'Актуатор',
     controller: 'Контроллер',
-    pump: 'Насос',
+    irrig: 'Насос',
     climate: 'Климат',
   }
   return types[type || 'sensor'] || 'Устройство'

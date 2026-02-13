@@ -23,12 +23,12 @@ class TelemetryPayloadModel(BaseModel):
     stable: Optional[bool] = Field(
         None, description="Stability flag for sensor readings (from firmware)"
     )
-    tds: Optional[Union[int, float]] = Field(None, description="TDS value (from ec_node)")
+    tds: Optional[Union[int, float]] = Field(None, description="TDS value (from node type ec)")
     error_code: Optional[Union[int, str]] = Field(None, description="Error code (from firmware)")
     temperature: Optional[float] = Field(None, description="Temperature value (from firmware)")
     state: Optional[str] = Field(None, max_length=50, description="State (from firmware)")
     event: Optional[str] = Field(None, max_length=100, description="Event (from firmware)")
-    health: Optional[dict] = Field(None, description="Health metrics (from pump_node)")
+    health: Optional[dict] = Field(None, description="Health metrics (from node type irrig)")
     zone_uid: Optional[str] = Field(None, max_length=100, description="Zone UID (fallback from payload)")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID (numeric)")
     node_uid: Optional[str] = Field(None, max_length=100, description="Node UID (fallback from payload)")

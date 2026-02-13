@@ -1043,13 +1043,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
             $activeCycle = null;
             if ($activeCycleModel) {
+                $logicProfiles = app(\App\Services\ZoneAutomationLogicProfileService::class)->getProfilesPayload($zone);
+                $activeLogicMode = $logicProfiles['active_mode'] ?? null;
+                $activeLogicProfile = is_string($activeLogicMode)
+                    ? ($logicProfiles['profiles'][$activeLogicMode] ?? null)
+                    : null;
+
                 $activeCycle = [
                     'id' => $activeCycleModel->id,
                     'type' => $activeCycleModel->type ?? 'GROWTH_CYCLE',
                     'status' => $activeCycleModel->status ?? 'active',
                     'started_at' => $activeCycleModel->started_at?->toIso8601String(),
                     'ends_at' => $activeCycleModel->ends_at?->toIso8601String(),
-                    'subsystems' => $activeCycleModel->subsystems ?? [],
+                    'automation_logic_mode' => $activeLogicMode,
+                    'subsystems' => is_array($activeLogicProfile['subsystems'] ?? null) ? $activeLogicProfile['subsystems'] : [],
                 ];
             }
 

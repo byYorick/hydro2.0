@@ -146,12 +146,48 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertEmpty($readiness['warnings']);
     }
 
+    public function test_check_zone_readiness_accepts_greenhouse_level_bindings(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding(
+            $zone,
+            $node,
+            'pump_main',
+            'main_pump',
+            'Основная помпа',
+            ownerType: 'greenhouse'
+        );
+        $this->createActuatorBinding(
+            $zone,
+            $node,
+            'drain_main',
+            'drain',
+            'Дренаж',
+            ownerType: 'greenhouse'
+        );
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertTrue($readiness['ready']);
+        $this->assertEmpty($readiness['missing_bindings']);
+        $this->assertTrue($readiness['checks']['main_pump']);
+        $this->assertTrue($readiness['checks']['drain']);
+        $this->assertTrue($readiness['checks']['online_nodes']);
+    }
+
     private function createActuatorBinding(
         Zone $zone,
         DeviceNode $node,
         string $channel,
         string $role,
-        string $label
+        string $label,
+        string $ownerType = 'zone'
     ): void
     {
         $nodeChannel = NodeChannel::create([
@@ -165,8 +201,8 @@ class ZoneReadinessServiceTest extends TestCase
 
         $instance = InfrastructureInstance::query()->firstOrCreate(
             [
-                'owner_type' => 'zone',
-                'owner_id' => $zone->id,
+                'owner_type' => $ownerType,
+                'owner_id' => $ownerType === 'greenhouse' ? $zone->greenhouse_id : $zone->id,
                 'label' => $label,
             ],
             [

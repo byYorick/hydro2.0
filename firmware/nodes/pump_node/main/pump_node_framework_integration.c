@@ -492,7 +492,7 @@ esp_err_t pump_node_framework_init_integration(void) {
     
     // Конфигурация node_framework
     node_framework_config_t config = {
-        .node_type = "pump",
+        .node_type = "irrig",
         .default_node_id = PUMP_NODE_DEFAULT_NODE_ID,
         .default_gh_uid = PUMP_NODE_DEFAULT_GH_UID,
         .default_zone_uid = PUMP_NODE_DEFAULT_ZONE_UID,

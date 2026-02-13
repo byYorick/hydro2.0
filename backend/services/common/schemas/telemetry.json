@@ -53,7 +53,7 @@
         {"type": "integer"},
         {"type": "number"}
       ],
-      "description": "TDS значение (от ec_node)"
+      "description": "TDS значение (от узла типа ec)"
     },
     "error_code": {
       "anyOf": [
@@ -79,7 +79,7 @@
     },
     "health": {
       "type": "object",
-      "description": "Метрики здоровья (от pump_node)",
+      "description": "Метрики здоровья (от узла типа irrig)",
       "additionalProperties": true
     },
     "zone_uid": {

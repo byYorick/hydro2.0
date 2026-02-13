@@ -105,6 +105,7 @@ class NodeRegistryServiceTest extends TestCase
         $node = $this->service->registerNode('nd-ph-1', null, []);
 
         $this->assertTrue($node->validated);
+        $this->assertEquals('unknown', $node->type);
     }
 
     public function test_register_node_sets_first_seen_at_on_first_registration(): void
@@ -112,6 +113,43 @@ class NodeRegistryServiceTest extends TestCase
         $node = $this->service->registerNode('nd-ph-1', null, []);
 
         $this->assertNotNull($node->first_seen_at);
+    }
+
+    public function test_register_node_sets_unknown_for_legacy_type_alias(): void
+    {
+        $node = $this->service->registerNode(
+            'nd-irrig-legacy',
+            null,
+            [
+                'type' => 'pump_node',
+            ]
+        );
+
+        $this->assertEquals('unknown', $node->type);
+    }
+
+    public function test_register_node_from_hello_sets_unknown_for_legacy_alias(): void
+    {
+        $node = $this->service->registerNodeFromHello([
+            'hardware_id' => 'esp32-test-irrig-001',
+            'node_type' => 'PUMP_NODE',
+            'fw_version' => '1.0.0',
+        ]);
+
+        $this->assertNotNull($node->id);
+        $this->assertEquals('unknown', $node->type);
+    }
+
+    public function test_register_node_from_hello_normalizes_canonical_node_type_case(): void
+    {
+        $node = $this->service->registerNodeFromHello([
+            'hardware_id' => 'esp32-test-irrig-002',
+            'node_type' => 'IRRIG',
+            'fw_version' => '1.0.0',
+        ]);
+
+        $this->assertNotNull($node->id);
+        $this->assertEquals('irrig', $node->type);
     }
 
     public function test_register_node_preserves_first_seen_at_on_update(): void
@@ -129,4 +167,3 @@ class NodeRegistryServiceTest extends TestCase
         );
     }
 }
-

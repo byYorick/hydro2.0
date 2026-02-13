@@ -144,7 +144,7 @@ class SyncNodeChannels extends Command
             'climate' => ['temperature', 'humidity', 'co2', 'lighting', 'ventilation'],
             'ph' => ['ph_sensor'],
             'ec' => ['ec_sensor'],
-            'pump', 'irrig' => ['pump_A', 'pump_B', 'pump_C', 'pump_D'],
+            'irrig' => ['pump_A', 'pump_B', 'pump_C', 'pump_D'],
             default => [],
         };
     }

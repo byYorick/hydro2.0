@@ -270,8 +270,15 @@ class ZoneReadinessService
         $existingBindings = ChannelBinding::query()
             ->whereIn('role', $requiredBindings)
             ->whereHas('infrastructureInstance', function ($query) use ($zone) {
-                $query->where('owner_type', 'zone')
-                    ->where('owner_id', $zone->id);
+                $query->where(function ($ownerQuery) use ($zone) {
+                    $ownerQuery->where(function ($zoneOwner) use ($zone) {
+                        $zoneOwner->where('owner_type', 'zone')
+                            ->where('owner_id', $zone->id);
+                    })->orWhere(function ($greenhouseOwner) use ($zone) {
+                        $greenhouseOwner->where('owner_type', 'greenhouse')
+                            ->where('owner_id', $zone->greenhouse_id);
+                    });
+                });
             })
             ->pluck('role')
             ->unique()
@@ -306,8 +313,15 @@ class ZoneReadinessService
             ->join('node_channels', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
             ->join('nodes', 'node_channels.node_id', '=', 'nodes.id')
             ->join('infrastructure_instances', 'channel_bindings.infrastructure_instance_id', '=', 'infrastructure_instances.id')
-            ->where('infrastructure_instances.owner_type', 'zone')
-            ->where('infrastructure_instances.owner_id', $zone->id)
+            ->where(function ($query) use ($zone) {
+                $query->where(function ($zoneOwner) use ($zone) {
+                    $zoneOwner->where('infrastructure_instances.owner_type', 'zone')
+                        ->where('infrastructure_instances.owner_id', $zone->id);
+                })->orWhere(function ($greenhouseOwner) use ($zone) {
+                    $greenhouseOwner->where('infrastructure_instances.owner_type', 'greenhouse')
+                        ->where('infrastructure_instances.owner_id', $zone->greenhouse_id);
+                });
+            })
             ->select('nodes.id', 'nodes.uid', 'nodes.name', 'nodes.status')
             ->distinct()
             ->get();

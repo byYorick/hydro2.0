@@ -3,6 +3,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 import time
 
+from common.node_types import CANONICAL_NODE_TYPES, normalize_node_type
+
 
 class TelemetryPayload(BaseModel):
     node_id: str
@@ -154,12 +156,14 @@ class NodeConfigModel(BaseModel):
     @classmethod
     def validate_node_type(cls, v):
         """Валидация типа узла."""
-        if v:
-            allowed_types = ['ph', 'ec', 'climate', 'pump', 'irrig', 'light', 'unknown']
-            if v not in allowed_types:
-                # Предупреждение, но не блокируем (для расширяемости)
-                pass
-        return v
+        if v is None:
+            return v
+
+        normalized = normalize_node_type(v)
+        if normalized == "unknown" and str(v).strip().lower() != "unknown":
+            allowed_types = ", ".join(sorted(CANONICAL_NODE_TYPES))
+            raise ValueError(f"type must be one of canonical node types: {allowed_types}")
+        return normalized
 
 
 class SimulationScenario(BaseModel):

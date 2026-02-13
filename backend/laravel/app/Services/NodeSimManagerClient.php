@@ -98,7 +98,7 @@ class NodeSimManagerClient
     private function normalizeNodeType(?string $nodeType): string
     {
         $normalized = strtolower((string) $nodeType);
-        $allowed = ['ph', 'ec', 'climate', 'pump', 'irrig', 'light', 'unknown'];
+        $allowed = ['ph', 'ec', 'climate', 'irrig', 'light', 'relay', 'water_sensor', 'recirculation', 'unknown'];
 
         if (! in_array($normalized, $allowed, true)) {
             return 'unknown';

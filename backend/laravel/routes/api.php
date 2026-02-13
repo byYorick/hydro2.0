@@ -33,6 +33,7 @@ use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
+use App\Http\Controllers\ZoneAutomationLogicProfileController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use Illuminate\Http\Request;
@@ -128,6 +129,7 @@ Route::middleware([
     Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
+    Route::get('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'show']);
     Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
     Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
     Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive'])
@@ -191,6 +193,7 @@ Route::middleware([
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
+        Route::post('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'upsert']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);

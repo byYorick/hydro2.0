@@ -81,9 +81,15 @@ class SystemControllerTest extends TestCase
                 ],
             ]);
         
-        $data = $response->json('data.greenhouses');
-        $this->assertCount(1, $data);
-        $this->assertEquals($greenhouse->id, $data[0]['id']);
+        $greenhouses = $response->json('data.greenhouses');
+        $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
+        $this->assertNotNull($targetGreenhouse);
+
+        $targetZone = collect($targetGreenhouse['zones'] ?? [])->firstWhere('id', $zone->id);
+        $this->assertNotNull($targetZone);
+
+        $targetNode = collect($targetZone['nodes'] ?? [])->firstWhere('id', $node->id);
+        $this->assertNotNull($targetNode);
     }
 
     public function test_system_config_full_includes_all_relations(): void
@@ -100,15 +106,16 @@ class SystemControllerTest extends TestCase
         $response->assertOk();
         
         $greenhouses = $response->json('data.greenhouses');
-        $this->assertNotEmpty($greenhouses);
-        
-        $firstGreenhouse = $greenhouses[0];
-        $this->assertArrayHasKey('zones', $firstGreenhouse);
-        $this->assertNotEmpty($firstGreenhouse['zones']);
-        
-        $firstZone = $firstGreenhouse['zones'][0];
-        $this->assertArrayHasKey('nodes', $firstZone);
-        $this->assertNotEmpty($firstZone['nodes']);
+        $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
+        $this->assertNotNull($targetGreenhouse);
+
+        $targetZone = collect($targetGreenhouse['zones'] ?? [])->firstWhere('id', $zone->id);
+        $this->assertNotNull($targetZone);
+        $this->assertArrayHasKey('nodes', $targetZone);
+        $this->assertNotEmpty($targetZone['nodes']);
+
+        $targetNode = collect($targetZone['nodes'])->firstWhere('id', $node->id);
+        $this->assertNotNull($targetNode);
     }
 
     public function test_system_config_full_filters_zones_by_user_access(): void
@@ -159,12 +166,16 @@ class SystemControllerTest extends TestCase
         $response->assertOk();
         
         $greenhouses = $response->json('data.greenhouses');
-        $firstGreenhouse = $greenhouses[0];
-        $firstZone = $firstGreenhouse['zones'][0];
-        $firstNode = $firstZone['nodes'][0];
+        $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
+        $this->assertNotNull($targetGreenhouse);
+
+        $targetZone = collect($targetGreenhouse['zones'] ?? [])->firstWhere('id', $zone->id);
+        $this->assertNotNull($targetZone);
+
+        $firstNode = collect($targetZone['nodes'] ?? [])->firstWhere('id', $node->id);
+        $this->assertNotNull($firstNode);
         
         // Проверяем, что config не включен в ответ (защита от утечки креденшалов)
         $this->assertArrayNotHasKey('config', $firstNode);
     }
 }
-

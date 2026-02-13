@@ -90,7 +90,7 @@ import Pagination from '@/Components/Pagination.vue'
 
 const props = defineProps({
   channels: { type: Array, default: () => [] }, // [{channel,type,metric,unit}]
-  nodeType: { type: String, default: '' }, // Тип ноды: ph_node, ec_node, pump_node
+  nodeType: { type: String, default: '' }, // Тип ноды: ph, ec, irrig, climate, light...
   testingChannels: { type: Set, default: () => new Set() }, // Множество каналов, которые сейчас тестируются
 })
 
@@ -137,7 +137,7 @@ function isPumpOrValve(channel) {
   if (!channel) return false
   const name = ((channel.channel || channel.name || '') + '').toLowerCase()
   const type = ((channel.type || '') + '').toLowerCase()
-  return name.includes('pump') || name.includes('насос') || name.includes('valve') || name.includes('клапан') || type === 'actuator' || type === 'ACTUATOR'
+  return name.includes('pump') || name.includes('насос') || name.includes('valve') || name.includes('клапан') || type === 'actuator'
 }
 
 // Получение названия кнопки теста в зависимости от типа ноды и канала
@@ -147,21 +147,21 @@ function getTestButtonLabel(channelName, channelType) {
   const nodeType = ((props.nodeType || '') + '').toLowerCase()
   
   // PH нода
-  if (nodeType.includes('ph')) {
+  if (nodeType === 'ph') {
     if (name.includes('acid') || name.includes('up')) return 'PH UP тест'
     if (name.includes('base') || name.includes('down')) return 'PH DOWN тест'
   }
   
   // EC нода
-  if (nodeType.includes('ec')) {
+  if (nodeType === 'ec') {
     if (name.includes('nutrient_a') || name.includes('pump_a')) return 'Тест насоса A'
     if (name.includes('nutrient_b') || name.includes('pump_b')) return 'Тест насоса B'
     if (name.includes('nutrient_c') || name.includes('pump_c')) return 'Тест насоса C'
     if (name.includes('nutrient')) return 'Тест насоса'
   }
   
-  // Pump нода
-  if (nodeType.includes('pump')) {
+  // Irrig нода
+  if (nodeType === 'irrig') {
     if (name.includes('main') || name.includes('primary') || name.includes('главн')) return 'Тест главного насоса'
     if (name.includes('backup') || name.includes('reserve') || name.includes('резерв')) return 'Тест резервного насоса'
     if (name.includes('transfer') || name.includes('перекач')) return 'Тест перекачивающего насоса'

@@ -306,9 +306,19 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
 
     loading.stepAutomation = true
     try {
+      const payload = buildGrowthCycleConfigPayload(automationForm)
+      await api.post(`/zones/${selectedZone.value.id}/automation-logic-profile`, {
+        mode: 'setup',
+        activate: true,
+        subsystems: payload.subsystems,
+      })
+
       await api.post(`/zones/${selectedZone.value.id}/commands`, {
         type: 'GROWTH_CYCLE_CONFIG',
-        params: buildGrowthCycleConfigPayload(automationForm),
+        params: {
+          mode: 'adjust',
+          profile_mode: 'setup',
+        },
       })
 
       automationAppliedAt.value = new Date().toISOString()

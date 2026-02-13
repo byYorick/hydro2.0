@@ -180,11 +180,11 @@ class GrowCycleControllerTest extends TestCase
             ->first();
 
         $this->assertNotNull($cycle);
-        $this->assertSame('nft', data_get($cycle->settings, 'subsystems.irrigation.targets.system_type'));
-        $this->assertSame(20, data_get($cycle->settings, 'subsystems.irrigation.targets.interval_minutes'));
-        $this->assertSame(20, data_get($cycle->settings, 'subsystems.irrigation.targets.duration_seconds'));
-        $this->assertSame(300, data_get($cycle->settings, 'subsystems.irrigation.targets.clean_tank_fill_l'));
-        $this->assertSame(280, data_get($cycle->settings, 'subsystems.irrigation.targets.nutrient_tank_target_l'));
+        $this->assertSame('nft', data_get($cycle->settings, 'irrigation.system_type'));
+        $this->assertSame(20, data_get($cycle->settings, 'irrigation.interval_minutes'));
+        $this->assertSame(20, data_get($cycle->settings, 'irrigation.duration_seconds'));
+        $this->assertSame(300, data_get($cycle->settings, 'irrigation.clean_tank_fill_l'));
+        $this->assertSame(280, data_get($cycle->settings, 'irrigation.nutrient_tank_target_l'));
     }
 
     #[Test]
