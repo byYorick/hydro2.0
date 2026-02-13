@@ -99,6 +99,19 @@ CREATE TABLE recipe_revision_phases (
        "targets": {
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+         "nutrition": {
+           "program_code": "MASTERBLEND_3PART_V1",
+           "mode": "ratio_ec_pid",
+           "solution_volume_l": 100.0,
+           "dose_delay_sec": 12,
+           "ec_stop_tolerance": 0.07,
+           "components": {
+             "npk": {"ratio_pct": 46.0, "product_id": 1, "manufacturer": "Masterblend"},
+             "calcium": {"ratio_pct": 34.0, "product_id": 2, "manufacturer": "Yara"},
+             "magnesium": {"ratio_pct": 17.0, "product_id": 3, "manufacturer": "TerraTarsa"},
+             "micro": {"ratio_pct": 3.0, "product_id": 4, "manufacturer": "Haifa"}
+           }
+         },
          "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600}
        }
      }
@@ -151,6 +164,19 @@ CREATE TABLE recipe_revision_phases (
        "targets": {
          "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
          "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+         "nutrition": {
+           "program_code": "MASTERBLEND_3PART_V1",
+           "mode": "delta_ec_by_k",
+           "solution_volume_l": 100.0,
+           "dose_delay_sec": 12,
+           "ec_stop_tolerance": 0.07,
+           "components": {
+             "npk": {"ratio_pct": 44.0, "dose_ml_per_l": 1.8, "k_ms_per_ml_l": 0.80, "product_id": 1, "manufacturer": "Masterblend"},
+             "calcium": {"ratio_pct": 36.0, "dose_ml_per_l": 1.2, "k_ms_per_ml_l": 0.65, "product_id": 2, "manufacturer": "Yara"},
+             "magnesium": {"ratio_pct": 17.0, "dose_ml_per_l": 0.5, "k_ms_per_ml_l": 0.35, "product_id": 3, "manufacturer": "TerraTarsa"},
+             "micro": {"ratio_pct": 3.0, "dose_ml_per_l": 0.2, "k_ms_per_ml_l": 0.15, "product_id": 4, "manufacturer": "Haifa"}
+           }
+         },
          "irrigation": {
            "mode": "SUBSTRATE",
            "interval_sec": 3600,
@@ -171,6 +197,16 @@ CREATE TABLE recipe_revision_phases (
    ```
 
 3. **Контроллеры используют структурированные данные** для принятия решений
+
+Поддерживаемые режимы `targets.nutrition.mode`:
+- `ratio_ec_pid` — базовый PID по EC с распределением доз по `ratio_pct`;
+- `delta_ec_by_k` — расчёт доз по `ΔEC`, `ratio_pct`, `k_ms_per_ml_l` и `solution_volume_l`;
+- `dose_ml_l_only` — дозирование по фиксированным `dose_ml_per_l`.
+
+Строгое правило схемы питания:
+- используются 4 компонента (`npk`, `calcium`, `magnesium`, `micro`);
+- API фаз требует заполнения всех 4 `*_ratio_pct`;
+- fallback на legacy 3-компонентную схему не поддерживается.
 
 ---
 

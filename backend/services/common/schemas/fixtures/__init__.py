@@ -88,6 +88,16 @@ FIXTURE_COMMAND_SET_RELAY = create_command_fixture(
     params={"state": True}
 )
 
+FIXTURE_COMMAND_TEST_SENSOR = create_command_fixture(
+    cmd="test_sensor",
+    params={}
+)
+
+FIXTURE_COMMAND_RESTART = create_command_fixture(
+    cmd="restart",
+    params={}
+)
+
 FIXTURE_RESPONSE_ACK = create_command_response_fixture(
     cmd_id="cmd-abc123",
     status="ACK"
@@ -124,6 +134,8 @@ def get_all_command_fixtures() -> Dict[str, Dict[str, Any]]:
         "dose": FIXTURE_COMMAND_DOSE,
         "run_pump": FIXTURE_COMMAND_RUN_PUMP,
         "set_relay": FIXTURE_COMMAND_SET_RELAY,
+        "test_sensor": FIXTURE_COMMAND_TEST_SENSOR,
+        "restart": FIXTURE_COMMAND_RESTART,
     }
 
 

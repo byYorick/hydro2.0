@@ -94,7 +94,7 @@ id BIGSERIAL PK
 zone_id BIGINT FK → zones
 uid VARCHAR(64) UNIQUE -- внешний строковый ID узла, совпадает с сегментом {node} в MQTT
 name VARCHAR
-type VARCHAR (ph, ec, climate, irrig, light)
+type VARCHAR (ph, ec, climate, irrig, light, relay, water_sensor, recirculation, unknown)
 fw_version VARCHAR
 last_seen_at TIMESTAMP
 status VARCHAR (online/offline)
@@ -124,6 +124,25 @@ nodes_status_idx (status) -- уже существует
  - передаётся в конфигурации узла (NodeConfig) и команды;
  - применяется Backend/AI как основной внешний ключ при адресации узла.
 
+### 3.1.1. Каноническая схема `nodes.type` (strict)
+
+Допустимые значения:
+- `ph`
+- `ec`
+- `climate`
+- `irrig`
+- `light`
+- `relay`
+- `water_sensor`
+- `recirculation`
+- `unknown`
+
+Ограничения:
+- В БД действует `CHECK`-ограничение `nodes_type_canonical_check`.
+- `nodes.type` не допускает `NULL` (используется default/fallback `unknown`).
+- Legacy-алиасы (`pump_node`, `irrigation`, `lighting_node`, `climate_node`, и т.п.) не допускаются.
+- Для нераспознанных значений используется `unknown`.
+
 ## 3.2. node_channels
 
 ```
@@ -138,6 +157,13 @@ created_at
 updated_at
 ```
 
+Практика для актуаторов-дозаторов:
+- калибровка насоса хранится в `node_channels.config.pump_calibration`:
+  `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`,
+  `k_ms_per_ml_l`, `test_volume_l`, `ec_before_ms`, `ec_after_ms`, `delta_ec_ms`, `temperature_c`.
+- `component` для EC-питания поддерживает: `npk`, `calcium`, `magnesium`, `micro` (для pH — `acid`/`base`).
+- Для новой логики питания не используется legacy 3-компонентная схема: актуальна только 4-компонентная модель.
+
 ---
 
 # 4. Таблицы телеметрии
@@ -150,7 +176,7 @@ greenhouse_id FK
 zone_id FK NULL
 node_id FK NULL
 scope ENUM(inside|outside)
-type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|...)
+type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|WATER_LEVEL_SWITCH|SOIL_MOISTURE|SOIL_TEMP|WIND_SPEED|OUTSIDE_TEMP|...)
 label VARCHAR
 unit VARCHAR NULL
 specs JSONB NULL
@@ -237,6 +263,23 @@ UNIQUE: (recipe_id, revision_number)
 INDEX: (recipe_id, status)
 ```
 
+## 5.2.1. nutrient_products (справочник продуктов питания)
+```
+id BIGSERIAL PK
+manufacturer VARCHAR(128)
+name VARCHAR(191)
+component VARCHAR(16) -- npk|calcium|magnesium|micro
+composition VARCHAR(128) NULL
+recommended_stage VARCHAR(64) NULL
+notes TEXT NULL
+metadata JSONB NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (manufacturer, name, component)
+INDEX: nutrient_products_component_idx (component)
+```
+
 ## 5.3. recipe_revision_phases (шаблоны фаз)
 ```
 id BIGSERIAL PK
@@ -252,6 +295,23 @@ ph_max DECIMAL(4,2) NULL
 ec_target DECIMAL(5,2) NULL
 ec_min DECIMAL(5,2) NULL
 ec_max DECIMAL(5,2) NULL
+nutrient_program_code VARCHAR(64) NULL
+nutrient_npk_ratio_pct DECIMAL(5,2) NULL
+nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_magnesium_ratio_pct DECIMAL(5,2) NULL
+nutrient_micro_ratio_pct DECIMAL(5,2) NULL
+nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
+nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_magnesium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
+nutrient_npk_product_id BIGINT FK → nutrient_products NULL
+nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_magnesium_product_id BIGINT FK → nutrient_products NULL
+nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
+nutrient_solution_volume_l DECIMAL(8,2) NULL
+nutrient_dose_delay_sec INT NULL
+nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
@@ -281,6 +341,17 @@ updated_at TIMESTAMP
 UNIQUE: (recipe_revision_id, phase_index)
 INDEX: recipe_revision_phase_idx (recipe_revision_id)
 ```
+
+Правила валидации для топологии `2 бака`:
+- область применения: только при активной runtime-топологии
+  `zone_automation_logic_profiles.subsystems.solution_prepare.topology = "two_tank_drip_substrate_trays"`.
+- для фаз со статусом ревизии `PUBLISHED` обязательны поля:
+  - `nutrient_npk_ratio_pct`
+  - `nutrient_calcium_ratio_pct`
+  - `nutrient_magnesium_ratio_pct`
+  - `nutrient_micro_ratio_pct`
+- сумма долей компонентов должна быть `100%` (допуск только на округление).
+- отсутствие любой доли или некорректная сумма блокируют запуск startup/prepare workflow.
 
 ## 5.4. recipe_revision_phase_steps (шаги внутри фаз)
 ```
@@ -358,6 +429,23 @@ ph_max DECIMAL(4,2) NULL
 ec_target DECIMAL(5,2) NULL
 ec_min DECIMAL(5,2) NULL
 ec_max DECIMAL(5,2) NULL
+nutrient_program_code VARCHAR(64) NULL
+nutrient_npk_ratio_pct DECIMAL(5,2) NULL
+nutrient_calcium_ratio_pct DECIMAL(5,2) NULL
+nutrient_magnesium_ratio_pct DECIMAL(5,2) NULL
+nutrient_micro_ratio_pct DECIMAL(5,2) NULL
+nutrient_npk_dose_ml_l DECIMAL(8,3) NULL
+nutrient_calcium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_magnesium_dose_ml_l DECIMAL(8,3) NULL
+nutrient_micro_dose_ml_l DECIMAL(8,3) NULL
+nutrient_npk_product_id BIGINT FK → nutrient_products NULL
+nutrient_calcium_product_id BIGINT FK → nutrient_products NULL
+nutrient_magnesium_product_id BIGINT FK → nutrient_products NULL
+nutrient_micro_product_id BIGINT FK → nutrient_products NULL
+nutrient_mode VARCHAR(32) NULL -- ratio_ec_pid|delta_ec_by_k|dose_ml_l_only
+nutrient_solution_volume_l DECIMAL(8,2) NULL
+nutrient_dose_delay_sec INT NULL
+nutrient_ec_stop_tolerance DECIMAL(5,3) NULL
 irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
 irrigation_interval_sec INT NULL
 irrigation_duration_sec INT NULL
@@ -469,7 +557,7 @@ node_id FK
 channel VARCHAR
 cmd VARCHAR
 params JSONB
-status VARCHAR (pending/sent/ack/failed)
+status VARCHAR (QUEUED/SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED)
 cmd_id VARCHAR UNIQUE
 created_at
 sent_at
@@ -566,6 +654,63 @@ updated_at TIMESTAMP
 PK (zone_id)
 ```
 
+## 6.6. zone_automation_logic_profiles
+
+```
+id PK
+zone_id FK → zones
+mode VARCHAR(16) -- setup|working
+subsystems JSONB -- runtime-конфиг подсистем
+is_active BOOLEAN DEFAULT false
+created_by FK → users NULL
+updated_by FK → users NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+UNIQUE (zone_id, mode)
+```
+
+Индексы:
+```
+zone_automation_logic_profiles_zone_id_is_active_index
+```
+
+Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
+
+```json
+{
+  "solution_prepare": {
+    "enabled": true,
+    "topology": "two_tank_drip_substrate_trays",
+    "startup": {
+      "clean_fill_timeout_sec": 1200,
+      "solution_fill_timeout_sec": 1800,
+      "level_poll_interval_sec": 60,
+      "clean_fill_retry_cycles": 1,
+      "prepare_recirculation_timeout_sec": 1200
+    },
+    "dosing_rules": {
+      "prepare_allowed_components": ["npk"],
+      "prepare_ph_correction": true
+    }
+  },
+  "irrigation": {
+    "enabled": true,
+    "recovery": {
+      "max_continue_attempts": 5,
+      "degraded_tolerance": {
+        "ec_pct": 20,
+        "ph_pct": 10
+      }
+    },
+    "dosing_rules": {
+      "irrigation_allowed_components": ["calcium", "magnesium", "micro"],
+      "irrigation_forbid_components": ["npk"],
+      "irrigation_ph_correction": true
+    }
+  }
+}
+```
+
 ---
 
 # 7. Таблицы тревог (Alerts)
@@ -574,10 +719,19 @@ PK (zone_id)
 
 ```
 id PK
-zone_id FK
+zone_id FK → zones NULL
+source VARCHAR (biz/infra/node)
+code VARCHAR
 type VARCHAR
 details JSONB
 status VARCHAR (ACTIVE/RESOLVED)
+category VARCHAR (agronomy/infrastructure/operations/node/config/safety/other)
+severity VARCHAR (info/warning/error/critical)
+node_uid VARCHAR NULL
+hardware_id VARCHAR NULL
+error_count INTEGER DEFAULT 1
+first_seen_at TIMESTAMP NULL
+last_seen_at TIMESTAMP NULL
 created_at
 resolved_at
 ```
@@ -585,6 +739,11 @@ resolved_at
 Индексы:
 ```
 alerts_zone_status_idx
+alerts_source_code_status_idx
+alerts_zone_status_severity_idx
+alerts_zone_status_category_idx
+alerts_node_uid_idx
+alerts_hardware_id_idx
 ```
 
 ---
@@ -596,10 +755,28 @@ alerts_zone_status_idx
 ```
 id PK
 zone_id FK
-type VARCHAR
-details JSONB
+type VARCHAR(255)
+entity_type VARCHAR NULL
+entity_id TEXT NULL
+server_ts BIGINT NULL
+payload_json JSONB NULL
+details JSONB -- generated column над payload_json (для обратной читаемости запросов)
 created_at
 ```
+
+Индексы:
+```
+zone_events_zone_id_created_at_idx
+zone_events_type_idx
+zone_events_zone_entity_idx
+zone_events_zone_id_id_idx
+```
+
+Примечание:
+- Основной payload хранится в `payload_json`.
+- `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
+- Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event`) поле `type` получает нормализованный `event_code`;
+  при длине >255 значение детерминированно усекается до 255 символов.
 
 ---
 
@@ -655,6 +832,58 @@ simulation_reports_status_index (status)
 
 ---
 
+## 8.4. scheduler_logs
+
+```
+id PK
+task_name VARCHAR
+status VARCHAR
+details JSONB NULL
+created_at TIMESTAMP
+```
+
+Назначение:
+- lifecycle/snapshot записи scheduler и automation-engine;
+- хранение статусов task-level исполнения (`accepted/running/completed/failed` и служебные статусы scheduler).
+
+Индексы:
+```
+scheduler_logs_task_created_idx
+scheduler_logs_status_idx
+scheduler_logs_created_at_idx
+scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id'
+scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
+```
+
+### 8.4.1. Контракт `scheduler_logs.details` (Protocol 2.0)
+
+Обязательные ключи task snapshot:
+- `task_id: string`
+- `zone_id: int`
+- `task_type: string`
+- `status: string`
+- `correlation_id: string`
+- `scheduled_for: ISO8601|null`
+- `due_at: ISO8601`
+- `expires_at: ISO8601`
+
+Обязательные ключи terminal outcome (`completed|failed|rejected|expired`):
+- `result.action_required: bool`
+- `result.decision: \"run\"|\"skip\"|\"retry\"|\"fail\"`
+- `result.reason_code: string`
+- `result.error_code: string|null`
+- `result.command_submitted: bool|null`
+- `result.command_effect_confirmed: bool|null`
+- `result.commands_total: int|null`
+- `result.commands_effect_confirmed: int|null`
+- `result.commands_failed: int|null`
+
+Owner-модель статусов:
+- business (automation-engine): `accepted|running|completed|failed|rejected|expired`;
+- transport (scheduler reconcile): `timeout|not_found` (не являются business outcome decision-layer).
+
+---
+
 # 9. Пользователи и роли
 
 ## 9.1. users
@@ -664,10 +893,47 @@ id PK
 name
 email UNIQUE
 password
-role VARCHAR (admin/operator/viewer/automation_bot)
+role VARCHAR (admin/operator/viewer/agronomist/engineer)
+preferences JSONB NULL -- пользовательские UI-настройки
 created_at
 updated_at
 ```
+
+## 9.2. user_greenhouses
+
+```
+id PK
+user_id BIGINT FK → users CASCADE
+greenhouse_id BIGINT FK → greenhouses CASCADE
+created_at
+updated_at
+
+UNIQUE(user_id, greenhouse_id)
+INDEX(greenhouse_id, user_id)
+```
+
+Назначение:
+
+- Явная привязка пользователя к теплицам.
+- Используется в `ACCESS_CONTROL_MODE=enforce` и `shadow`.
+
+## 9.3. user_zones
+
+```
+id PK
+user_id BIGINT FK → users CASCADE
+zone_id BIGINT FK → zones CASCADE
+created_at
+updated_at
+
+UNIQUE(user_id, zone_id)
+INDEX(zone_id, user_id)
+```
+
+Назначение:
+
+- Точечная привязка пользователя к зонам.
+- В strict-доступе объединяется с `user_greenhouses` (доступ через зону или через ее теплицу).
 
 ---
 
@@ -691,6 +957,8 @@ created_at
 **Основная доменная модель:**
 ```
 greenhouse 1—N zones
+users N—N greenhouses (user_greenhouses)
+users N—N zones (user_zones)
 zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
 grow_cycle 1—1 recipe_revision (зафиксированная версия)
 recipe 1—N recipe_revisions
@@ -714,6 +982,7 @@ sensor 1—N telemetry_samples
 sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
+zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
 zone 1—N commands
 zone 1—N zone_simulations
 zone_simulation 1—N simulation_events
@@ -783,11 +1052,88 @@ channel_binding 1—1 node_channel
   "targets": {
     "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
     "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
-    "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600, "duration_sec": 300}
+    "irrigation": {
+      "mode": "SUBSTRATE",
+      "interval_sec": 3600,
+      "duration_sec": 300,
+      "execution": {
+        "node_types": ["irrig"],
+        "cmd": "run_pump",
+        "params": {"duration_sec": 300},
+        "fallback_mode": "none"
+      }
+    }
     // ... остальные цели
   }
 }
 ```
+
+### 13.1. Контракт `targets.*.execution` для scheduler-task
+
+Для task-level исполнения scheduler/automation-engine поддерживаются execution-конфиги
+в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.
+
+Поля:
+- `node_types: string[]` (только канонические типы `nodes.type`)
+- `cmd: string`
+- `cmd_true: string`
+- `cmd_false: string`
+- `state_key: string`
+- `default_state: bool`
+- `params: object`
+- `duration_sec: number`
+- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"`
+
+### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> effective targets)
+
+Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
+
+При формировании `effective_targets.targets` применяется приоритет:
+
+`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
+
+Применение runtime-профиля в pipeline:
+- фронтенд сохраняет профиль через `POST /api/zones/{zone}/automation-logic-profile`
+- затем отправляет `GROWTH_CYCLE_CONFIG` только с `params.profile_mode`
+- Laravel резолвит `subsystems` по `profile_mode` и инжектит их в команду перед отправкой в Python слой
+
+Нормализация runtime-полей в scheduler/automation контракт:
+
+- `subsystems.irrigation.execution.interval_minutes` -> `targets.irrigation.interval_sec`
+- `subsystems.irrigation.execution.duration_seconds` -> `targets.irrigation.duration_sec`
+- `subsystems.irrigation.execution.system_type` -> `targets.irrigation.system_type`
+- `subsystems.irrigation.execution.*` -> `targets.irrigation.execution.*`
+- `subsystems.climate.execution.interval_sec` -> `targets.ventilation.interval_sec`
+- `subsystems.climate.execution.*` -> `targets.ventilation.execution.*`
+- `subsystems.lighting.execution.interval_sec` -> `targets.lighting.interval_sec`
+- `subsystems.lighting.execution.*` -> `targets.lighting.execution.*`
+- `subsystems.solution_change.execution.interval_sec` -> `targets.solution_change.interval_sec`
+- `subsystems.solution_change.execution.duration_sec` -> `targets.solution_change.duration_sec`
+- `subsystems.solution_change.execution.*` -> `targets.solution_change.execution.*`
+- `subsystems.diagnostics.execution.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
+- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
+- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
+- `subsystems.solution_prepare.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
+- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
+- `subsystems.solution_prepare.topology` -> `targets.diagnostics.execution.topology`
+- `subsystems.irrigation.recovery.max_continue_attempts` -> `targets.irrigation.execution.max_continue_attempts`
+- `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` -> `targets.irrigation.execution.degraded_tolerance.ec_pct`
+- `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`
+
+Совместимость rollout:
+- legacy `subsystems.*.targets` временно принимается backend-слоем и нормализуется в `execution`;
+- канонический формат для новых payload/документации: `subsystems.*.execution`.
+
+Политика enable/disable подсистем:
+
+- при `enabled=false` выставляется `targets.<task>.execution.force_skip=true`
+- при `enabled=true` выставляется `targets.<task>.execution.force_skip=false`
+
+Runtime-снимок подсистем также отражается в `targets.extensions.subsystems` для UI/диагностики.
+Метаданные источника runtime отражаются в `targets.extensions.automation_logic` (`source`, `mode`, `updated_at`).
+
+Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
+обязаны фиксироваться в `zone_events` и lifecycle-снимках `scheduler_logs`.
 
 **Устаревший подход (до рефакторинга):**
 - ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`

@@ -8,14 +8,18 @@ description: |
   - Запуск grow-cycle должен работать с warning
 
 actions:
-  - step: get_zones
-    type: api_get
-    endpoint: /api/zones
-    save: zones_response
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row.0.id}
 
   # Проверяем статус узлов (некоторые могут быть offline)
   - step: check_nodes_status

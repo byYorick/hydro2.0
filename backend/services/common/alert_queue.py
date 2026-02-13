@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+import asyncpg
 from .utils.time import utcnow
 
 from .db import get_pool
@@ -19,149 +20,171 @@ from .http_client_pool import make_request, calculate_backoff_with_jitter
 
 logger = logging.getLogger(__name__)
 
+_ALERT_QUEUE_META_KEY = "__hydro_alert_meta__"
+_QUEUE_META_FIELDS = ("node_uid", "hardware_id", "severity", "ts_device")
+_PENDING_ALERTS_REQUIRED_COLUMNS = {
+    "id",
+    "zone_id",
+    "source",
+    "code",
+    "type",
+    "status",
+    "details",
+    "attempts",
+    "max_attempts",
+    "next_retry_at",
+    "last_error",
+    "moved_to_dlq_at",
+    "created_at",
+    "updated_at",
+}
+_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS = {
+    "id",
+    "zone_id",
+    "source",
+    "code",
+    "type",
+    "status",
+    "details",
+    "attempts",
+    "max_attempts",
+    "last_error",
+    "failed_at",
+    "moved_to_dlq_at",
+    "original_id",
+    "created_at",
+}
+
+
+class _SchemaValidationError(RuntimeError):
+    """Ошибка несовместимости runtime-кода и Laravel-схемы очереди."""
+
+
+def _pack_queue_details(
+    details: Optional[Dict[str, Any]],
+    node_uid: Optional[str] = None,
+    hardware_id: Optional[str] = None,
+    severity: Optional[str] = None,
+    ts_device: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Упаковать details с техническими метаданными для сохранения в очереди.
+    Метаданные нужны только для ретрая и не должны уходить в финальный payload как есть.
+    """
+    payload: Dict[str, Any] = dict(details) if isinstance(details, dict) else {}
+    meta: Dict[str, Any] = {}
+
+    if node_uid:
+        meta["node_uid"] = node_uid
+    if hardware_id:
+        meta["hardware_id"] = hardware_id
+    if severity:
+        meta["severity"] = severity
+    if ts_device:
+        meta["ts_device"] = ts_device
+
+    if meta:
+        payload[_ALERT_QUEUE_META_KEY] = meta
+
+    return payload or None
+
+
+def _unpack_queue_details(details: Optional[Dict[str, Any]]) -> tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Распаковать details из очереди:
+    - вернуть details без технических ключей
+    - вернуть метаданные доставки (node_uid/hardware_id/severity/ts_device)
+    """
+    if not isinstance(details, dict):
+        return details, {}
+
+    details_copy = dict(details)
+    meta = details_copy.pop(_ALERT_QUEUE_META_KEY, None)
+    meta_out: Dict[str, Any] = {}
+    if isinstance(meta, dict):
+        meta_out.update(meta)
+
+    # Backward compatibility для старых записей очереди
+    for key in _QUEUE_META_FIELDS:
+        if key not in meta_out and key in details_copy:
+            value = details_copy.get(key)
+            if value is not None:
+                meta_out[key] = value
+
+    return details_copy or None, meta_out
+
 
 class AlertQueue:
     """Персистентная очередь для алертов."""
     
     def __init__(self):
         self._initialized = False
+        self._schema_error: Optional[str] = None
+
+    async def _load_columns(self, conn: asyncpg.Connection, table_name: str) -> set[str]:
+        rows = await conn.fetch(
+            """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = $1
+            """,
+            table_name,
+        )
+        return {str(row["column_name"]) for row in rows}
+
+    async def _validate_table_schema(
+        self, conn: asyncpg.Connection, table_name: str, required_columns: set[str]
+    ) -> None:
+        actual_columns = await self._load_columns(conn, table_name)
+        if not actual_columns:
+            raise _SchemaValidationError(
+                f"Missing required table '{table_name}'. "
+                "Run Laravel migrations before starting history-logger."
+            )
+
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise _SchemaValidationError(
+                f"Table '{table_name}' is missing required columns: {', '.join(missing_columns)}. "
+                "Run Laravel migrations before starting history-logger."
+            )
     
     async def ensure_table(self):
-        """Создаёт таблицу для очереди, если её нет."""
+        """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
+        if self._schema_error:
+            raise RuntimeError(self._schema_error)
         
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_alerts (
-                    id BIGSERIAL PRIMARY KEY,
-                    zone_id INTEGER,
-                    source VARCHAR(16) NOT NULL CHECK (source IN ('biz', 'infra')),
-                    code VARCHAR(64) NOT NULL,
-                    type VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED')),
-                    details JSONB,
-                    attempts INTEGER DEFAULT 0,
-                    max_attempts INTEGER DEFAULT 10,
-                    next_retry_at TIMESTAMP WITH TIME ZONE,
-                    last_error TEXT,
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await self._validate_table_schema(
+                    conn, "pending_alerts", _PENDING_ALERTS_REQUIRED_COLUMNS
                 )
-            """)
-            
-            # Добавляем новые колонки, если они еще не существуют (для миграции существующих таблиц)
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 10
-                """)
-            except Exception:
-                pass  # Колонка уже существует
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts 
-                    ADD COLUMN IF NOT EXISTS last_error TEXT
-                """)
-            except Exception:
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE
-                """)
-            except Exception:
-                pass
+                await self._validate_table_schema(
+                    conn, "pending_alerts_dlq", _PENDING_ALERTS_DLQ_REQUIRED_COLUMNS
+                )
+        except _SchemaValidationError as exc:
+            self._schema_error = str(exc)
+            logger.critical(
+                "[ALERT_QUEUE_SCHEMA_INVALID] %s",
+                self._schema_error,
+                exc_info=True,
+            )
+            raise RuntimeError(self._schema_error) from exc
+        except Exception as exc:
+            logger.error(
+                "[ALERT_QUEUE_SCHEMA_CHECK_FAILED] %s",
+                exc,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                "Failed to validate alert queue schema due to temporary infrastructure error"
+            ) from exc
 
-            try:
-                # Проверяем, существует ли колонка
-                column_exists = await conn.fetchval("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'pending_alerts'
-                        AND column_name = 'next_retry_at'
-                        AND table_schema = 'public'
-                    )
-                """)
-                if not column_exists:
-                    await conn.execute("""
-                        ALTER TABLE pending_alerts
-                        ADD COLUMN next_retry_at TIMESTAMP WITH TIME ZONE
-                    """)
-            except Exception:
-                pass
-            
-            # Индекс для быстрого поиска записей для ретрая
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_alerts_retry 
-                ON pending_alerts(next_retry_at) 
-                WHERE next_retry_at IS NOT NULL
-            """)
-            
-            # Индекс для zone_id
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_alerts_zone_id 
-                ON pending_alerts(zone_id)
-            """)
-            
-            # Таблица DLQ для pending_alerts
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_alerts_dlq (
-                    id BIGSERIAL PRIMARY KEY,
-                    zone_id INTEGER,
-                    source VARCHAR(16) NOT NULL,
-                    code VARCHAR(64) NOT NULL,
-                    type VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    details JSONB,
-                    attempts INTEGER NOT NULL,
-                    max_attempts INTEGER,
-                    last_error TEXT,
-                    failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    original_id BIGINT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """)
-            
-            # Добавляем новые колонки в DLQ, если они еще не существуют
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts_dlq 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER
-                """)
-            except Exception:
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_alerts_dlq 
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                """)
-            except Exception:
-                pass
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_zone_id 
-                ON pending_alerts_dlq(zone_id)
-            """)
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_failed_at 
-                ON pending_alerts_dlq(failed_at)
-            """)
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_code 
-                ON pending_alerts_dlq(code)
-            """)
-        
         self._initialized = True
-        logger.info("Alert queue table initialized")
+        logger.info("Alert queue schema validated (Laravel migrations)")
     
     async def enqueue(
         self,
@@ -170,7 +193,11 @@ class AlertQueue:
         code: str,
         type: str,
         status: str,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        node_uid: Optional[str] = None,
+        hardware_id: Optional[str] = None,
+        severity: Optional[str] = None,
+        ts_device: Optional[str] = None,
     ) -> bool:
         """
         Добавляет алерт в очередь.
@@ -191,12 +218,67 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = details if details else None
+                safe_zone_id = zone_id
+                details_payload = dict(details) if isinstance(details, dict) else details
+
+                # Fail-safe: если зоны уже нет, сохраняем алерт как unassigned (zone_id=NULL),
+                # чтобы не ловить FK-ошибку и не терять сам алерт.
+                if zone_id is not None:
+                    zone_exists = await conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM zones WHERE id = $1)",
+                        zone_id,
+                    )
+                    if not zone_exists:
+                        safe_zone_id = None
+                        if not isinstance(details_payload, dict):
+                            details_payload = {}
+                        details_payload.setdefault("requested_zone_id", zone_id)
+                        details_payload.setdefault("zone_validation", "zone_not_found")
+                        logger.warning(
+                            "Alert queue: zone_id=%s not found, enqueue as unassigned alert",
+                            zone_id,
+                            extra={"zone_id": zone_id, "code": code, "source": source},
+                        )
+
+                details_json = _pack_queue_details(
+                    details=details_payload,
+                    node_uid=node_uid,
+                    hardware_id=hardware_id,
+                    severity=severity,
+                    ts_device=ts_device,
+                )
                 await conn.execute("""
                     INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
                     VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
-                """, zone_id, source, code, type, status, details_json)
+                """, safe_zone_id, source, code, type, status, details_json)
                 return True
+            except asyncpg.ForeignKeyViolationError as e:
+                # Возможен race-condition: зона удалена после проверки выше.
+                # Переписываем запись как unassigned.
+                if zone_id is not None:
+                    details_payload = dict(details) if isinstance(details, dict) else {}
+                    details_payload.setdefault("requested_zone_id", zone_id)
+                    details_payload.setdefault("zone_validation", "zone_deleted_race")
+                    details_json = _pack_queue_details(
+                        details=details_payload,
+                        node_uid=node_uid,
+                        hardware_id=hardware_id,
+                        severity=severity,
+                        ts_device=ts_device,
+                    )
+                    await conn.execute("""
+                        INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
+                        VALUES (NULL, $1, $2, $3, $4, $5, 0, NOW())
+                    """, source, code, type, status, details_json)
+                    logger.warning(
+                        "Alert queue: FK race for zone_id=%s, enqueued as unassigned alert: %s",
+                        zone_id,
+                        e,
+                        extra={"zone_id": zone_id, "code": code, "source": source},
+                    )
+                    return True
+                logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
+                return False
             except Exception as e:
                 logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
                 return False
@@ -518,7 +600,8 @@ async def send_alert_to_laravel(
     node_uid: Optional[str] = None,
     hardware_id: Optional[str] = None,
     severity: Optional[str] = None,
-    ts_device: Optional[str] = None
+    ts_device: Optional[str] = None,
+    enqueue_on_failure: bool = True,
 ) -> bool:
     """
     Отправляет алерт в Laravel API.
@@ -536,6 +619,8 @@ async def send_alert_to_laravel(
         hardware_id: Hardware ID узла (опционально)
         severity: Уровень серьезности (опционально)
         ts_device: Временная метка устройства (опционально)
+        enqueue_on_failure: Добавлять запись в очередь при ошибке доставки.
+            Для retry_worker должно быть False, чтобы не дублировать запись.
         
     Returns:
         True если успешно отправлено, False если сохранено в очередь
@@ -545,9 +630,21 @@ async def send_alert_to_laravel(
     
     if not laravel_url:
         logger.error("[ALERT_DELIVERY] Laravel API URL not configured")
-        # Сохраняем в очередь для ретрая после настройки
-        queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
+        if enqueue_on_failure:
+            # Сохраняем в очередь для ретрая после настройки
+            queue = await get_alert_queue()
+            await queue.enqueue(
+                zone_id,
+                source,
+                code,
+                type,
+                status,
+                details,
+                node_uid=node_uid,
+                hardware_id=hardware_id,
+                severity=severity,
+                ts_device=ts_device,
+            )
         return False
     
     ingest_token = (
@@ -602,9 +699,21 @@ async def send_alert_to_laravel(
                 f"[ALERT_DELIVERY] Laravel responded with {resp.status_code}: "
                 f"{resp.text[:200]}"
             )
-            # Сохраняем в очередь для ретрая
-            queue = await get_alert_queue()
-            await queue.enqueue(zone_id, source, code, type, status, details)
+            if enqueue_on_failure:
+                # Сохраняем в очередь для ретрая
+                queue = await get_alert_queue()
+                await queue.enqueue(
+                    zone_id,
+                    source,
+                    code,
+                    type,
+                    status,
+                    details,
+                    node_uid=node_uid,
+                    hardware_id=hardware_id,
+                    severity=severity,
+                    ts_device=ts_device,
+                )
             return False
             
     except Exception as e:
@@ -613,17 +722,21 @@ async def send_alert_to_laravel(
         logger.warning(
             f"[ALERT_DELIVERY] Error sending alert to Laravel: {e}"
         )
-        # Сохраняем в очередь для ретрая
-        queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
-        return False
-        logger.error(
-            f"[ALERT_DELIVERY] Unexpected error sending alert to Laravel: {e}",
-            exc_info=True
-        )
-        # Сохраняем в очередь для ретрая
-        queue = await get_alert_queue()
-        await queue.enqueue(zone_id, source, code, type, status, details)
+        if enqueue_on_failure:
+            # Сохраняем в очередь для ретрая
+            queue = await get_alert_queue()
+            await queue.enqueue(
+                zone_id,
+                source,
+                code,
+                type,
+                status,
+                details,
+                node_uid=node_uid,
+                hardware_id=hardware_id,
+                severity=severity,
+                ts_device=ts_device,
+            )
         return False
 
 
@@ -640,6 +753,15 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
     """
     logger.info("Starting alert retry worker")
     queue = await get_alert_queue()
+
+    async def _sleep_with_shutdown(timeout: float) -> None:
+        if shutdown_event is None:
+            await asyncio.sleep(timeout)
+            return
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
     
     while True:
         # Проверяем shutdown event, если передан
@@ -654,7 +776,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                 # Проверяем shutdown перед sleep
                 if shutdown_event and shutdown_event.is_set():
                     break
-                await asyncio.sleep(interval)
+                await _sleep_with_shutdown(interval)
                 continue
             
             logger.info(f"[RETRY_WORKER] Processing {len(pending)} pending alerts")
@@ -666,11 +788,12 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     break
                 
                 try:
-                    # Извлекаем дополнительные поля из details, если они есть
-                    node_uid = details.get("node_uid") if details else None
-                    hardware_id = details.get("hardware_id") if details else None
-                    severity = details.get("severity") or details.get("level") if details else None
-                    ts_device = details.get("ts_device") or details.get("ts") if details else None
+                    # Извлекаем дополнительные поля для доставки (без утечки служебных ключей в payload)
+                    clean_details, meta = _unpack_queue_details(details)
+                    node_uid = meta.get("node_uid")
+                    hardware_id = meta.get("hardware_id")
+                    severity = meta.get("severity")
+                    ts_device = meta.get("ts_device")
                     
                     # Пытаемся отправить
                     success = await send_alert_to_laravel(
@@ -679,11 +802,12 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         code=code,
                         type=type,
                         status=status,
-                        details=details,
+                        details=clean_details,
                         node_uid=node_uid,
                         hardware_id=hardware_id,
                         severity=severity,
-                        ts_device=ts_device
+                        ts_device=ts_device,
+                        enqueue_on_failure=False,
                     )
                     
                     if success:
@@ -743,12 +867,13 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
             # Небольшая задержка перед следующей итерацией
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(1.0)
+            pause_sec = max(0.01, min(interval, 1.0))
+            await _sleep_with_shutdown(pause_sec)
             
         except Exception as e:
             logger.error(f"[RETRY_WORKER] Unexpected error in alert retry worker: {e}", exc_info=True)
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(interval)
+            await _sleep_with_shutdown(interval)
     
     logger.info("Alert retry worker stopped")

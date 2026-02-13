@@ -94,6 +94,7 @@ import { usePageProps } from '@/composables/usePageProps'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Greenhouse, Zone } from '@/types'
 
 interface PageProps {
@@ -131,8 +132,10 @@ onMounted(async () => {
     const data = extractData<Greenhouse[]>(response.data) || []
     greenhouses.value = Array.isArray(data) ? data : []
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
     logger.error('[Admin/Zones] Failed to load greenhouses:', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить теплицы: ${extractHumanErrorMessage(err, 'Ошибка загрузки')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   }
 })
 
@@ -152,8 +155,10 @@ async function onCreate(): Promise<void> {
     form.description = ''
     form.greenhouse_id = null
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
     logger.error('[Admin/Zones] Failed to create zone:', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось создать зону: ${extractHumanErrorMessage(err, 'Ошибка создания')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   }
 }
 </script>

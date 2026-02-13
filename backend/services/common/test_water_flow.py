@@ -20,6 +20,7 @@ from common.water_flow import (
     execute_fill_mode,
     execute_drain_mode,
     calibrate_flow,
+    calibrate_pump,
     WATER_LEVEL_LOW_THRESHOLD,
     MIN_FLOW_THRESHOLD,
 )
@@ -642,3 +643,164 @@ async def test_calibrate_flow_insufficient_data():
 
         with pytest.raises(ValueError, match="Insufficient flow data"):
             await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1", pump_duration_sec=10)
+
+
+@pytest.mark.asyncio
+async def test_calibrate_pump_success():
+    channel_info = {
+        "channel_id": 21,
+        "channel": "pump_a",
+        "config": {},
+        "node_id": 11,
+        "node_uid": "nd-ec-a",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_fetch.return_value = [channel_info]
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
+        mock_httpx_client.return_value = mock_http_client
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=21,
+            duration_sec=30,
+            actual_ml=27.0,
+            component="npk",
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["status"] == "calibrated"
+        assert result["ml_per_sec"] == pytest.approx(0.9, abs=0.000001)
+        assert mock_send.called
+
+
+@pytest.mark.asyncio
+async def test_calibrate_pump_calculates_k_from_ec_profile():
+    channel_info = {
+        "channel_id": 24,
+        "channel": "pump_c",
+        "config": {},
+        "node_id": 14,
+        "node_uid": "nd-ec-c",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_fetch.return_value = [channel_info]
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-4"}
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
+        mock_httpx_client.return_value = mock_http_client
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=24,
+            duration_sec=20,
+            actual_ml=10.0,
+            component="magnesium",
+            test_volume_l=10.0,
+            ec_before_ms=0.10,
+            ec_after_ms=0.35,
+            temperature_c=21.5,
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["component"] == "magnesium"
+        assert result["k_ms_per_ml_l"] == pytest.approx(0.25, abs=0.000001)
+
+
+@pytest.mark.asyncio
+async def test_calibrate_pump_run_only_waits_for_actual_ml():
+    channel_info = {
+        "channel_id": 22,
+        "channel": "pump_b",
+        "config": {},
+        "node_id": 12,
+        "node_uid": "nd-ec-b",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_fetch.return_value = [channel_info]
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-2"}
+        mock_httpx_client.return_value = AsyncMock()
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=22,
+            duration_sec=20,
+            actual_ml=None,
+            component="calcium",
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["status"] == "awaiting_actual_ml"
+
+
+@pytest.mark.asyncio
+async def test_calibrate_pump_accepts_ph_component_alias():
+    channel_info = {
+        "channel_id": 23,
+        "channel": "pump_acid",
+        "config": {},
+        "node_id": 13,
+        "node_uid": "nd-ph-1",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_fetch.return_value = [channel_info]
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-3"}
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
+        mock_httpx_client.return_value = mock_http_client
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=23,
+            duration_sec=20,
+            actual_ml=8.0,
+            component="ph-down",
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["component"] == "ph_down"
+        assert result["ml_per_sec"] == pytest.approx(0.4, abs=0.000001)

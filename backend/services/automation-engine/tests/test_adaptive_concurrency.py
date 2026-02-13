@@ -128,8 +128,10 @@ async def test_zone_processing_errors_metric():
         {"id": 1, "name": "Zone 1"},
     ]
     
-    # Мокаем ZONE_PROCESSING_ERRORS
-    with patch('main.ZONE_PROCESSING_ERRORS') as mock_errors:
+    # Мокаем метрики и внешние сайд-эффекты, чтобы тест был детерминированным
+    with patch('main.ZONE_PROCESSING_ERRORS') as mock_errors, \
+         patch('main.send_infra_exception_alert', new_callable=AsyncMock), \
+         patch('error_handler.handle_zone_error'):
         results = await process_zones_parallel(
             zones, zone_service, max_concurrent=5
         )

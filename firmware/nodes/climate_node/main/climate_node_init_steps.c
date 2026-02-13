@@ -23,11 +23,71 @@
 #include "mqtt_manager.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "climate_node_init_steps";
+
+static void climate_node_patch_config_task(void *pvParameters);
+
+static bool climate_node_has_channel_name(const cJSON *channels, const char *name) {
+    if (!channels || !name || !cJSON_IsArray(channels)) {
+        return false;
+    }
+
+    const int count = cJSON_GetArraySize(channels);
+    for (int i = 0; i < count; i++) {
+        const cJSON *entry = cJSON_GetArrayItem(channels, i);
+        if (!entry || !cJSON_IsObject(entry)) {
+            continue;
+        }
+        const cJSON *entry_name = cJSON_GetObjectItem(entry, "name");
+        if (cJSON_IsString(entry_name) && entry_name->valuestring &&
+            strcmp(entry_name->valuestring, name) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool climate_node_add_sensor_channel(
+    cJSON *channels,
+    const char *name,
+    const char *metric,
+    int poll_interval_ms,
+    const char *unit,
+    int precision
+) {
+    if (!channels || !cJSON_IsArray(channels) || !name || !metric) {
+        return false;
+    }
+
+    cJSON *entry = cJSON_CreateObject();
+    if (!entry) {
+        return false;
+    }
+
+    cJSON_AddStringToObject(entry, "name", name);
+    cJSON_AddStringToObject(entry, "channel", name);
+    cJSON_AddStringToObject(entry, "type", "SENSOR");
+    cJSON_AddStringToObject(entry, "metric", metric);
+    cJSON_AddNumberToObject(entry, "poll_interval_ms", poll_interval_ms);
+    if (unit && unit[0] != '\0') {
+        cJSON_AddStringToObject(entry, "unit", unit);
+    }
+    cJSON_AddNumberToObject(entry, "precision", precision);
+
+    if (!cJSON_AddItemToArray(channels, entry)) {
+        cJSON_Delete(entry);
+        return false;
+    }
+
+    return true;
+}
 
 esp_err_t climate_node_init_step_config_storage(climate_node_init_context_t *ctx, 
                                                 climate_node_init_step_result_t *result) {
@@ -58,8 +118,94 @@ esp_err_t climate_node_init_step_config_storage(climate_node_init_context_t *ctx
         result->err = ESP_OK;
         result->component_initialized = true;
     }
+
+    if (xTaskCreate(climate_node_patch_config_task, "climate_cfg_patch", 8192, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to start config patch task");
+    }
     
     return ESP_OK;
+}
+
+static void climate_node_patch_config_task(void *pvParameters) {
+    (void)pvParameters;
+
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    cJSON *config = cJSON_Parse(config_json);
+    if (!config) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    bool changed = false;
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels == NULL || !cJSON_IsArray(channels)) {
+        if (channels) {
+            cJSON_DeleteItemFromObject(config, "channels");
+        }
+        channels = cJSON_CreateArray();
+        if (!channels) {
+            cJSON_Delete(config);
+            vTaskDelete(NULL);
+            return;
+        }
+        cJSON_AddItemToObject(config, "channels", channels);
+        changed = true;
+    }
+
+    if (!climate_node_has_channel_name(channels, "temperature")) {
+        if (!climate_node_add_sensor_channel(channels, "temperature", "TEMPERATURE", 5000, "°C", 1)) {
+            cJSON_Delete(config);
+            vTaskDelete(NULL);
+            return;
+        }
+        changed = true;
+    }
+
+    if (!climate_node_has_channel_name(channels, "humidity")) {
+        if (!climate_node_add_sensor_channel(channels, "humidity", "HUMIDITY", 5000, "%", 1)) {
+            cJSON_Delete(config);
+            vTaskDelete(NULL);
+            return;
+        }
+        changed = true;
+    }
+
+    if (!climate_node_has_channel_name(channels, "co2")) {
+        if (!climate_node_add_sensor_channel(channels, "co2", "CO2", 10000, "ppm", 0)) {
+            cJSON_Delete(config);
+            vTaskDelete(NULL);
+            return;
+        }
+        changed = true;
+    }
+
+    if (!changed) {
+        cJSON_Delete(config);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    char *patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+    if (!patched) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    esp_err_t patch_err = config_storage_save(patched, strlen(patched));
+    free(patched);
+    if (patch_err == ESP_OK) {
+        ESP_LOGI(TAG, "Config patched with climate sensor channels");
+    } else if (patch_err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to patch config: %s", esp_err_to_name(patch_err));
+    }
+
+    vTaskDelete(NULL);
 }
 
 esp_err_t climate_node_init_step_wifi(climate_node_init_context_t *ctx,

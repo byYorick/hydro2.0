@@ -158,6 +158,12 @@ const errors = computed(() => {
         const assetLabels: Record<string, string> = {
           main_pump: 'Основная помпа',
           drain: 'Дренаж',
+          ph_acid_pump: 'Насос pH кислоты',
+          ph_base_pump: 'Насос pH щёлочи',
+          ec_npk_pump: 'Насос EC NPK',
+          ec_calcium_pump: 'Насос EC Calcium',
+          ec_magnesium_pump: 'Насос EC Magnesium',
+          ec_micro_pump: 'Насос EC Micro',
           tank_clean: 'Бак чистой воды',
           tank_nutrient: 'Бак раствора',
         }
@@ -196,6 +202,12 @@ const checks = computed((): ReadinessCheck[] => {
       const assetLabels: Record<string, string> = {
         main_pump: 'Основная помпа',
         drain: 'Дренаж',
+        ph_acid_pump: 'Насос pH кислоты',
+        ph_base_pump: 'Насос pH щёлочи',
+        ec_npk_pump: 'Насос EC NPK',
+        ec_calcium_pump: 'Насос EC Calcium',
+        ec_magnesium_pump: 'Насос EC Magnesium',
+        ec_micro_pump: 'Насос EC Micro',
         tank_clean: 'Бак чистой воды',
         tank_nutrient: 'Бак раствора',
       }
@@ -211,7 +223,7 @@ const checks = computed((): ReadinessCheck[] => {
   // Проверка нод
   if (props.readiness.nodes) {
     checksList.push({
-      key: 'nodes_online',
+      key: 'online_nodes',
       label: 'Онлайн ноды',
       passed: props.readiness.nodes.online > 0,
       message: props.readiness.nodes.online > 0
@@ -226,10 +238,16 @@ const checks = computed((): ReadinessCheck[] => {
       const checkLabels: Record<string, string> = {
         main_pump: 'Основная помпа привязана',
         drain: 'Дренаж привязан',
+        ph_acid_pump: 'Насос pH кислоты привязан',
+        ph_base_pump: 'Насос pH щёлочи привязан',
+        ec_npk_pump: 'Насос EC NPK привязан',
+        ec_calcium_pump: 'Насос EC Calcium привязан',
+        ec_magnesium_pump: 'Насос EC Magnesium привязан',
+        ec_micro_pump: 'Насос EC Micro привязан',
         online_nodes: 'Есть онлайн ноды',
       }
       
-      if (!checksList.find(c => c.key === key)) {
+      if (!checksList.find(c => c.key === key || c.key === `asset_${key}`)) {
         checksList.push({
           key,
           label: checkLabels[key] || key,

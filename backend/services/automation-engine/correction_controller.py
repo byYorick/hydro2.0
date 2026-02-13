@@ -2,13 +2,13 @@
 Correction Controller - универсальный контроллер для корректировки pH и EC.
 Устраняет дублирование кода между pH и EC корректировкой.
 """
-from typing import Optional, Dict, Any
-from utils.adaptive_pid import AdaptivePid
+import asyncio
+from typing import Optional, Dict, Any, List
 from enum import Enum
 from datetime import datetime, timedelta, timezone
 import time
 import logging
-from common.db import create_zone_event, create_ai_log
+from common.db import create_zone_event, create_ai_log, fetch
 from common.utils.time import utcnow
 from correction_cooldown import should_apply_correction, record_correction
 from config.settings import get_settings
@@ -16,8 +16,9 @@ from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneC
 from services.pid_config_service import get_config, invalidate_cache
 from services.pid_state_manager import PidStateManager
 from common.alerts import create_alert, AlertSource, AlertCode
+from common.infra_alerts import send_infra_alert
 from decision_context import DecisionContext
-from services.targets_accessor import get_ph_target, get_ec_target
+from services.targets_accessor import get_ph_target, get_ec_target, get_nutrition_components
 
 logger = logging.getLogger(__name__)
 
@@ -239,17 +240,18 @@ class CorrectionController:
         if not water_level_ok:
             return None
         
+        correction_type = self._determine_correction_type(diff)
+
         # Находим actuator для корректировки
         actuator = self._select_actuator(
-            correction_type=self._determine_correction_type(diff),
+            correction_type=correction_type,
             actuators=actuators,
             nodes=nodes
         )
         if not actuator:
             return None
         
-        # Определяем тип корректировки и количество
-        correction_type = self._determine_correction_type(diff)
+        # Определяем количество дозирования
         dt_seconds = self._get_dt_seconds(zone_id)
         amount = pid.compute(current_val, dt_seconds)
 
@@ -302,6 +304,30 @@ class CorrectionController:
             return None
         
         payload = self._build_correction_command(actuator, correction_type, amount)
+        batch_commands: List[Dict[str, Any]] = []
+        if self.correction_type == CorrectionType.EC and correction_type == "add_nutrients":
+            batch_commands = self._build_ec_component_batch(
+                targets=targets,
+                actuators=actuators,
+                total_ml=amount,
+                current_ec=current_val,
+                target_ec=target_val,
+            )
+            if not batch_commands:
+                logger.warning(
+                    "Zone %s: Unable to build EC component batch; skipping dosing",
+                    zone_id,
+                    extra={"zone_id": zone_id},
+                )
+                await create_zone_event(
+                    zone_id,
+                    "EC_CORRECTION_SKIPPED",
+                    {
+                        "reason": "ec_component_batch_unavailable",
+                        "available_roles": sorted(list((actuators or {}).keys())),
+                    },
+                )
+                return None
 
         # Формируем команду
         command = {
@@ -326,7 +352,25 @@ class CorrectionController:
             'target_value': target_val,
             'reason': reason
         }
-        
+        nutrition_control = self._extract_nutrition_control(targets)
+        if nutrition_control:
+            command['nutrition_control'] = nutrition_control
+
+        if batch_commands:
+            command['batch_commands'] = batch_commands
+            command['event_details']['component_dosing'] = [
+                {
+                    'component': item.get('component'),
+                    'binding_role': item.get('role'),
+                    'ml': item.get('ml'),
+                    'ratio_pct': item.get('ratio_pct'),
+                    'mode': item.get('mode'),
+                    'k_ms_per_ml_l': item.get('k_ms_per_ml_l'),
+                    'channel': item.get('channel'),
+                }
+                for item in batch_commands
+            ]
+
         return command
     
     async def apply_correction(
@@ -364,8 +408,91 @@ class CorrectionController:
             pid_prev_error=pid.prev_error if pid else None,
         )
         
-        # Отправляем команду через Command Bus с контекстом
-        await command_bus.publish_controller_command(zone_id, command, context)
+        # Отправляем одну или несколько команд через Command Bus с контекстом
+        batch_commands = command.get('batch_commands')
+        if isinstance(batch_commands, list) and batch_commands:
+            dose_delay_sec, ec_stop_tolerance = self._resolve_batch_dose_control(command)
+            batch_aborted = False
+            for idx, batch_cmd in enumerate(batch_commands):
+                published = await self._publish_controller_command_with_retry(
+                    zone_id=zone_id,
+                    command_bus=command_bus,
+                    controller_command=batch_cmd,
+                    context=context,
+                    correction_type=correction_type_str,
+                )
+                if not published:
+                    batch_aborted = True
+                    await create_zone_event(
+                        zone_id,
+                        'EC_COMPONENT_BATCH_ABORTED',
+                        {
+                            'failed_component': batch_cmd.get('component'),
+                            'failed_channel': batch_cmd.get('channel'),
+                            'failed_node_uid': batch_cmd.get('node_uid'),
+                            'remaining_components': len(batch_commands) - idx - 1,
+                            'reason': 'command_unconfirmed',
+                        }
+                    )
+                    break
+                is_last = idx >= len(batch_commands) - 1
+                if is_last or self.correction_type != CorrectionType.EC:
+                    continue
+
+                if dose_delay_sec > 0:
+                    await asyncio.sleep(dose_delay_sec)
+
+                ec_after = await self._get_latest_ec_value(zone_id)
+                if ec_after is None:
+                    continue
+
+                await create_zone_event(
+                    zone_id,
+                    'EC_COMPONENT_RECHECK',
+                    {
+                        'component': batch_cmd.get('component'),
+                        'ec_current': ec_after,
+                        'ec_target': target_val,
+                        'ec_stop_tolerance': ec_stop_tolerance,
+                    }
+                )
+
+                if ec_after >= (target_val - ec_stop_tolerance):
+                    await create_zone_event(
+                        zone_id,
+                        'EC_COMPONENT_BATCH_STOPPED',
+                        {
+                            'stopped_after_component': batch_cmd.get('component'),
+                            'ec_current': ec_after,
+                            'ec_target': target_val,
+                            'ec_stop_tolerance': ec_stop_tolerance,
+                            'remaining_components': len(batch_commands) - idx - 1,
+                        }
+                    )
+                    break
+            if batch_aborted:
+                return
+        else:
+            published = await self._publish_controller_command_with_retry(
+                zone_id=zone_id,
+                command_bus=command_bus,
+                controller_command=command,
+                context=context,
+                correction_type=correction_type_str,
+            )
+            if not published:
+                await create_zone_event(
+                    zone_id,
+                    'CORRECTION_ABORTED_COMMAND_FAILURE',
+                    {
+                        'correction_type': correction_type_str,
+                        'cmd': command.get('cmd'),
+                        'node_uid': command.get('node_uid'),
+                        'channel': command.get('channel'),
+                        'reason': 'command_unconfirmed',
+                    }
+                )
+                return
         
         # Записываем информацию о корректировке
         await record_correction(zone_id, correction_type_str, {
@@ -434,6 +561,119 @@ class CorrectionController:
                 'correction': correction_type
             }
         )
+
+    async def _publish_controller_command_with_retry(
+        self,
+        *,
+        zone_id: int,
+        command_bus,
+        controller_command: Dict[str, Any],
+        context: DecisionContext,
+        correction_type: str,
+    ) -> bool:
+        settings = get_settings()
+        max_attempts = max(1, int(settings.CORRECTION_COMMAND_MAX_ATTEMPTS))
+        timeout_sec = max(0.1, float(settings.CORRECTION_COMMAND_TIMEOUT_SEC))
+        retry_delay_sec = max(0.0, float(settings.CORRECTION_COMMAND_RETRY_DELAY_SEC))
+        tracker = getattr(command_bus, "tracker", None)
+
+        last_failure_reason = "unknown"
+        last_cmd_id: Optional[str] = None
+
+        for attempt in range(1, max_attempts + 1):
+            sent = await command_bus.publish_controller_command(zone_id, controller_command, context)
+            cmd_id = controller_command.get("cmd_id")
+            last_cmd_id = str(cmd_id) if cmd_id else None
+
+            if not sent:
+                last_failure_reason = "publish_failed"
+            elif tracker and cmd_id:
+                wait_result = await self._wait_command_done(
+                    tracker=tracker,
+                    cmd_id=str(cmd_id),
+                    timeout_sec=timeout_sec,
+                )
+                if wait_result is True:
+                    return True
+                if wait_result is None:
+                    last_failure_reason = f"ack_done_timeout_{timeout_sec}s"
+                    try:
+                        await tracker.confirm_command_status(
+                            str(cmd_id),
+                            "TIMEOUT",
+                            error=last_failure_reason,
+                        )
+                    except Exception as confirm_exc:
+                        logger.warning(
+                            "Zone %s: failed to mark correction timeout cmd_id=%s: %s",
+                            zone_id,
+                            cmd_id,
+                            confirm_exc,
+                            extra={"zone_id": zone_id},
+                        )
+                else:
+                    last_failure_reason = "command_failed_status"
+            else:
+                # Tracker отключен: подтверждение недоступно, считаем отправку успешной.
+                return True
+
+            await create_zone_event(
+                zone_id,
+                'CORRECTION_COMMAND_ATTEMPT_FAILED',
+                {
+                    'correction_type': correction_type,
+                    'attempt': attempt,
+                    'max_attempts': max_attempts,
+                    'cmd_id': last_cmd_id,
+                    'cmd': controller_command.get('cmd'),
+                    'node_uid': controller_command.get('node_uid'),
+                    'channel': controller_command.get('channel'),
+                    'component': controller_command.get('component'),
+                    'reason': last_failure_reason,
+                },
+            )
+
+            if attempt < max_attempts and retry_delay_sec > 0:
+                await asyncio.sleep(retry_delay_sec)
+
+        await send_infra_alert(
+            code='infra_correction_command_unconfirmed',
+            alert_type='Correction Command Unconfirmed',
+            message=f'Команда коррекции не подтверждена после {max_attempts} попыток',
+            severity='critical',
+            zone_id=zone_id,
+            service='automation-engine',
+            component='correction_controller',
+            node_uid=controller_command.get('node_uid'),
+            channel=controller_command.get('channel'),
+            cmd=controller_command.get('cmd'),
+            error_type='CommandUnconfirmed',
+            details={
+                'correction_type': correction_type,
+                'cmd_id': last_cmd_id,
+                'max_attempts': max_attempts,
+                'timeout_sec': timeout_sec,
+                'reason': last_failure_reason,
+                'component': controller_command.get('component'),
+            },
+        )
+
+        return False
+
+    async def _wait_command_done(self, *, tracker, cmd_id: str, timeout_sec: float) -> Optional[bool]:
+        try:
+            return await tracker.wait_for_command_done(
+                cmd_id=cmd_id,
+                timeout_sec=timeout_sec,
+                poll_interval_sec=min(1.0, max(0.25, timeout_sec / 10.0)),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed waiting correction command completion for cmd_id=%s: %s",
+                cmd_id,
+                exc,
+            )
+            return False
 
     async def _get_pid(self, zone_id: int, setpoint: float) -> AdaptivePid:
         """Получить/инициализировать PID для зоны с восстановлением состояния."""
@@ -533,14 +773,14 @@ class CorrectionController:
         actuators: Optional[Dict[str, Dict[str, Any]]],
         nodes: Optional[Dict[str, Dict[str, Any]]]
     ) -> Optional[Dict[str, Any]]:
-        """Выбрать actuator по роли (acid/base/nutrient) с fallback на legacy irrig node."""
+        """Выбрать actuator по роли."""
         role_order: list[str] = []
         if self.correction_type == CorrectionType.PH:
             role_order = ["ph_base_pump"] if correction_type == "add_base" else ["ph_acid_pump"]
         else:
             # EC: добавляем удобрения, dilute пока не поддерживаем отдельным actuator
             if correction_type == "add_nutrients":
-                role_order = ["ec_nutrient_pump"]
+                role_order = ["ec_npk_pump", "ec_calcium_pump", "ec_magnesium_pump", "ec_micro_pump"]
             else:
                 # Для dilute нет корректного actuator — пропускаем, чтобы не совершать неверное действие
                 return None
@@ -550,10 +790,263 @@ class CorrectionController:
                 if role in actuators:
                     return actuators[role]
 
-        if nodes:
-            return self._find_irrigation_node(nodes)
-
         return None
+
+    def _build_ec_component_batch(
+        self,
+        targets: Dict[str, Any],
+        actuators: Optional[Dict[str, Dict[str, Any]]],
+        total_ml: float,
+        current_ec: float,
+        target_ec: float,
+    ) -> List[Dict[str, Any]]:
+        if not actuators or total_ml <= 0:
+            return []
+
+        required_components = ["npk", "calcium", "magnesium", "micro"]
+        role_map = {
+            "npk": "ec_npk_pump",
+            "calcium": "ec_calcium_pump",
+            "magnesium": "ec_magnesium_pump",
+            "micro": "ec_micro_pump",
+        }
+        missing_roles = [
+            role_map[component]
+            for component in required_components
+            if role_map[component] not in actuators
+        ]
+        if missing_roles:
+            return []
+
+        component_actuators: Dict[str, Dict[str, Any]] = {
+            component: actuators[role_map[component]]
+            for component in required_components
+        }
+        actuator_identity_to_component: Dict[str, str] = {}
+        duplicate_actuator_bindings: List[Dict[str, str]] = []
+        for component in required_components:
+            actuator = component_actuators[component]
+            identity = self._build_actuator_identity(actuator)
+            previous_component = actuator_identity_to_component.get(identity)
+            if previous_component is None:
+                actuator_identity_to_component[identity] = component
+                continue
+            duplicate_actuator_bindings.append(
+                {
+                    "identity": identity,
+                    "component_a": previous_component,
+                    "component_b": component,
+                }
+            )
+        if duplicate_actuator_bindings:
+            logger.warning(
+                "EC component pumps must be unique per component; duplicate actuator bindings detected",
+                extra={"duplicates": duplicate_actuator_bindings},
+            )
+            return []
+
+        # Fail-closed: для EC дозирования требуется валидная калибровка производительности насоса.
+        ml_per_sec_by_component: Dict[str, float] = {}
+        for component in required_components:
+            actuator = component_actuators[component]
+            ml_per_sec_raw = actuator.get("ml_per_sec")
+            try:
+                ml_per_sec = float(ml_per_sec_raw)
+            except (TypeError, ValueError):
+                ml_per_sec = 0.0
+            if ml_per_sec <= 0:
+                logger.warning(
+                    "EC component batch skipped due to invalid pump calibration",
+                    extra={
+                        "component": component,
+                        "role": actuator.get("role"),
+                        "node_uid": actuator.get("node_uid"),
+                        "channel": actuator.get("channel"),
+                        "ml_per_sec": ml_per_sec_raw,
+                    },
+                )
+                return []
+            ml_per_sec_by_component[component] = ml_per_sec
+
+        nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
+        components_cfg = get_nutrition_components(targets)
+        if any(component not in components_cfg for component in required_components):
+            return []
+        components_order = required_components
+
+        ratios = self._resolve_ec_component_ratios(targets, components_order)
+        if not ratios:
+            return []
+
+        mode = self._resolve_nutrition_mode(nutrition)
+        solution_volume_l = self._resolve_solution_volume_l(nutrition)
+
+        k_values: Dict[str, Optional[float]] = {}
+        for component in components_order:
+            cfg_k = components_cfg.get(component, {}).get("k_ms_per_ml_l")
+            act_k = component_actuators[component].get("k_ms_per_ml_l")
+            try:
+                k_candidate = float(cfg_k if cfg_k is not None else act_k)
+            except (TypeError, ValueError):
+                k_candidate = None
+            if k_candidate is not None and k_candidate > 0:
+                k_values[component] = k_candidate
+            else:
+                k_values[component] = None
+
+        commands: List[Dict[str, Any]] = []
+        component_ml_map: Dict[str, float] = {}
+
+        if mode == "dose_ml_l_only":
+            if solution_volume_l is None or solution_volume_l <= 0:
+                return []
+            for component in components_order:
+                dose_ml_l = components_cfg.get(component, {}).get("dose_ml_per_l")
+                try:
+                    dose_value = float(dose_ml_l)
+                except (TypeError, ValueError):
+                    dose_value = 0.0
+                if dose_value <= 0:
+                    return []
+                component_ml_map[component] = round(dose_value * solution_volume_l, 3)
+
+        if mode == "delta_ec_by_k":
+            delta_ec = max(0.0, target_ec - current_ec)
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if delta_ec <= 0 or solution_volume_l is None or solution_volume_l <= 0 or not has_all_k:
+                return []
+            for component in components_order:
+                ratio_pct = float(ratios.get(component, 0.0))
+                k_value = float(k_values[component] or 0.0)
+                delta_ec_component = delta_ec * (ratio_pct / 100.0)
+                ml_per_l = delta_ec_component / k_value if k_value > 0 else 0.0
+                component_ml_map[component] = round(max(0.0, ml_per_l * solution_volume_l), 3)
+
+        if mode == "ratio_ec_pid":
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if has_all_k:
+                weighted = {
+                    component: float(ratios.get(component, 0.0)) / float(k_values[component] or 1.0)
+                    for component in components_order
+                }
+                weighted_sum = sum(weighted.values())
+                if weighted_sum <= 0:
+                    return []
+                for component in components_order:
+                    component_ml_map[component] = round(max(0.0, total_ml * (weighted[component] / weighted_sum)), 3)
+            else:
+                remaining_ml = float(total_ml)
+                for idx, component in enumerate(components_order):
+                    ratio_pct = float(ratios.get(component, 0.0))
+                    if idx == len(components_order) - 1:
+                        component_ml = max(0.0, round(remaining_ml, 3))
+                    else:
+                        component_ml = max(0.0, round((total_ml * ratio_pct) / 100.0, 3))
+                        remaining_ml -= component_ml
+                    component_ml_map[component] = component_ml
+
+        if not component_ml_map:
+            return []
+
+        for component in components_order:
+            ratio_pct = float(ratios.get(component, 0.0))
+            component_ml = max(0.0, float(component_ml_map.get(component, 0.0)))
+
+            if component_ml <= 0:
+                continue
+
+            actuator = component_actuators[component]
+            actuator_with_calibration = dict(actuator)
+            actuator_with_calibration["ml_per_sec"] = ml_per_sec_by_component[component]
+            payload = self._build_correction_command(actuator_with_calibration, "add_nutrients", component_ml)
+            payload["params"]["component"] = component
+            payload["params"]["ratio_pct"] = round(ratio_pct, 2)
+
+            commands.append(
+                {
+                    "node_uid": actuator["node_uid"],
+                    "channel": actuator["channel"],
+                    "cmd": payload["cmd"],
+                    "params": payload["params"],
+                    "component": component,
+                    "role": actuator.get("role"),
+                    "ml": component_ml,
+                    "ratio_pct": round(ratio_pct, 2),
+                    "mode": mode,
+                    "k_ms_per_ml_l": k_values.get(component),
+                }
+            )
+
+        return commands
+
+    def _build_actuator_identity(self, actuator: Dict[str, Any]) -> str:
+        node_channel_id = actuator.get("node_channel_id")
+        if node_channel_id is not None:
+            return f"node_channel:{node_channel_id}"
+
+        node_uid = actuator.get("node_uid")
+        channel = actuator.get("channel")
+        if node_uid is not None and channel is not None:
+            return f"node_uid:{node_uid}|channel:{channel}"
+
+        node_id = actuator.get("node_id")
+        if node_id is not None and channel is not None:
+            return f"node_id:{node_id}|channel:{channel}"
+
+        role = actuator.get("role")
+        if role is not None:
+            return f"role:{role}"
+
+        return "unknown"
+
+    def _resolve_ec_component_ratios(
+        self,
+        targets: Dict[str, Any],
+        available_components: List[str],
+    ) -> Dict[str, float]:
+        components = get_nutrition_components(targets)
+        if not components:
+            return {}
+
+        raw_ratios: Dict[str, float] = {}
+        for component in available_components:
+            ratio = components.get(component, {}).get("ratio_pct")
+            if ratio is None:
+                return {}
+            try:
+                ratio_value = float(ratio)
+            except (TypeError, ValueError):
+                return {}
+            if ratio_value < 0:
+                return {}
+            raw_ratios[component] = ratio_value
+
+        total = sum(raw_ratios.values())
+        if total <= 0:
+            return {}
+
+        normalized: Dict[str, float] = {}
+        for component in available_components:
+            normalized[component] = round((raw_ratios[component] / total) * 100.0, 2)
+        return normalized
+
+    def _resolve_nutrition_mode(self, nutrition: Dict[str, Any]) -> str:
+        mode = str(nutrition.get("mode", "")).strip().lower()
+        if mode in {"ratio_ec_pid", "delta_ec_by_k", "dose_ml_l_only"}:
+            return mode
+        return ""
+
+    def _resolve_solution_volume_l(self, nutrition: Dict[str, Any]) -> Optional[float]:
+        raw = nutrition.get("solution_volume_l")
+        if raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if value <= 0:
+            return None
+        return value
 
     def _build_correction_command(
         self,
@@ -585,12 +1078,101 @@ class CorrectionController:
 
         return {"cmd": cmd, "params": params}
 
-    def _find_irrigation_node(self, nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Legacy fallback: найти узел для полива/дозирования по типу irrig."""
-        for node_info in nodes.values():
-            if node_info.get("type") == "irrig":
-                return node_info
-        return None
+    def _extract_nutrition_control(self, targets: Dict[str, Any]) -> Dict[str, Any]:
+        nutrition = targets.get("nutrition")
+        if not isinstance(nutrition, dict):
+            return {}
+
+        result: Dict[str, Any] = {}
+        mode_raw = nutrition.get("mode")
+        if isinstance(mode_raw, str):
+            mode = mode_raw.strip().lower()
+            if mode in {"ratio_ec_pid", "delta_ec_by_k", "dose_ml_l_only"}:
+                result["mode"] = mode
+
+        solution_volume_raw = nutrition.get("solution_volume_l")
+        if solution_volume_raw is not None:
+            try:
+                solution_volume = float(solution_volume_raw)
+                if solution_volume > 0:
+                    result["solution_volume_l"] = solution_volume
+            except (TypeError, ValueError):
+                pass
+
+        delay_raw = nutrition.get("dose_delay_sec")
+        if delay_raw is not None:
+            try:
+                delay = float(delay_raw)
+                if delay >= 0:
+                    result["dose_delay_sec"] = delay
+            except (TypeError, ValueError):
+                pass
+
+        tolerance_raw = nutrition.get("ec_stop_tolerance")
+        if tolerance_raw is not None:
+            try:
+                tolerance = float(tolerance_raw)
+                if tolerance >= 0:
+                    result["ec_stop_tolerance"] = tolerance
+            except (TypeError, ValueError):
+                pass
+
+        return result
+
+    def _resolve_batch_dose_control(self, command: Dict[str, Any]) -> tuple[float, float]:
+        settings = get_settings()
+        control = command.get("nutrition_control")
+        if not isinstance(control, dict):
+            control = {}
+
+        delay_raw = control.get("dose_delay_sec", settings.EC_COMPONENT_DOSE_DELAY_SEC)
+        tolerance_raw = control.get("ec_stop_tolerance", settings.EC_COMPONENT_RECHECK_TOLERANCE)
+
+        try:
+            dose_delay_sec = max(0.0, float(delay_raw))
+        except (TypeError, ValueError):
+            dose_delay_sec = float(settings.EC_COMPONENT_DOSE_DELAY_SEC)
+
+        try:
+            ec_stop_tolerance = max(0.0, float(tolerance_raw))
+        except (TypeError, ValueError):
+            ec_stop_tolerance = float(settings.EC_COMPONENT_RECHECK_TOLERANCE)
+
+        return dose_delay_sec, ec_stop_tolerance
+
+    async def _get_latest_ec_value(self, zone_id: int) -> Optional[float]:
+        try:
+            rows = await fetch(
+                """
+                SELECT tl.last_value
+                FROM telemetry_last tl
+                JOIN sensors s ON s.id = tl.sensor_id
+                WHERE s.zone_id = $1
+                  AND s.type = 'EC'
+                ORDER BY tl.updated_at DESC
+                LIMIT 1
+                """,
+                zone_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Zone %s: failed to fetch EC after component dose: %s",
+                zone_id,
+                exc,
+                extra={"zone_id": zone_id},
+            )
+            return None
+
+        if not rows:
+            return None
+
+        value = rows[0].get("last_value")
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
     
     def _determine_correction_type(self, diff: float) -> str:
         """Определить тип корректировки на основе разницы."""

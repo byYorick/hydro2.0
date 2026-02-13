@@ -3,7 +3,6 @@
  */
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
-import type Echo from 'laravel-echo'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -90,12 +89,6 @@ if (import.meta.hot) {
   })
 }
 
-declare global {
-  interface Window {
-    Echo?: Echo<any>
-  }
-}
-
 interface StatusResponse {
   app?: string
   db?: string
@@ -154,7 +147,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
         '/api/system/health'
       )
 
-      const payload = extractData(response.data) || {}
+      const payload = extractData<StatusResponse>(response.data) || {}
 
       coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
       dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'

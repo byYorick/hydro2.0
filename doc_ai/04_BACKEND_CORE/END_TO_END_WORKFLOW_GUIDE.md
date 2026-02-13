@@ -16,7 +16,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. [Обзор workflow](#1-обзор-workflow)
 2. [Шаг 1: Создание теплицы (Greenhouse)](#2-шаг-1-создание-теплицы-greenhouse)
 3. [Шаг 2: Создание рецепта выращивания (Recipe)](#3-шаг-2-создание-рецепта-выращивания-recipe)
-4. [Шаг 3: Добавление фаз рецепта (Recipe Phases)](#4-шаг-3-добавление-фаз-рецепта-recipe-phases)
+4. [Шаг 3: Добавление фаз ревизии рецепта (Recipe Revision Phases)](#4-шаг-3-добавление-фаз-ревизии-рецепта-recipe-revision-phases)
 5. [Шаг 4: Создание зоны (Zone)](#5-шаг-4-создание-зоны-zone)
 6. [Шаг 5: Привязка рецепта к зоне](#6-шаг-5-привязка-рецепта-к-зоне)
 7. [Шаг 6: Регистрация и привязка узлов (Nodes)](#7-шаг-6-регистрация-и-привязка-узлов-nodes)
@@ -232,14 +232,16 @@ POST /api/recipes
 
 ---
 
-## 4. Шаг 3: Добавление фаз рецепта (Recipe Phases)
+## 4. Шаг 3: Добавление фаз ревизии рецепта (Recipe Revision Phases)
 
-Для каждого этапа роста нужно создать фазу рецепта.
+Для каждого этапа роста нужно создать фазу ревизии рецепта.
+Сначала создается DRAFT-ревизия рецепта через `POST /api/recipes/{recipe_id}/revisions`,
+после чего фазы добавляются в эту ревизию.
 
 ### API Endpoint
 
 ```
-POST /api/recipes/{recipe_id}/phases
+POST /api/recipe-revisions/{recipe_revision_id}/phases
 ```
 
 ### Request Payload для фазы "Vegetative"
@@ -592,11 +594,15 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "sensor",
+  "type": "ph",
   "fw_version": "2.0.1",
   "hardware_revision": "rev2"
 }
 ```
+
+> `type` для узла принимает только канонические значения `nodes.type`:
+> `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+> Значения `sensor/actuator/controller` относятся только к `node_channels.type` в составе NodeConfig.
 
 #### Response (201 Created)
 
@@ -607,7 +613,7 @@ POST /api/nodes/register
     "id": 1,
     "uid": "node-001",
     "zone_id": null,
-    "type": "sensor",
+    "type": "ph",
     "status": "offline",
     "lifecycle_state": "registered_backend",
     "created_at": "2025-11-21T10:25:00.000000Z"
@@ -642,7 +648,7 @@ PATCH /api/nodes/{node_id}
     "uid": "node-001",
     "zone_id": 1,
     "name": "pH/EC Sensor Zone A",
-    "type": "sensor",
+    "type": "ph",
     "status": "online",
     "lifecycle_state": "provisioned",
     "updated_at": "2025-11-21T10:30:00.000000Z"
@@ -669,7 +675,7 @@ GET /api/nodes?unassigned=true
         "id": 1,
         "uid": "node-001",
         "zone_id": null,
-        "type": "sensor",
+        "type": "ph",
         "status": "online",
         "channels": []
       }
@@ -1139,7 +1145,7 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "sensor",
+  "type": "ph",
   "fw_version": "2.0.1"
 }
 

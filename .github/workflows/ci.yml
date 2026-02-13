@@ -26,6 +26,8 @@ jobs:
         working-directory: backend/laravel
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -102,6 +104,8 @@ jobs:
           "
       - name: Install Node deps
         run: npm install
+      - name: File size guard
+        run: ./scripts/check-file-size-guard.sh
       - name: Build (Vite manifest)
         run: npm run build
       - name: PHP configs cache
@@ -186,8 +190,12 @@ jobs:
           cleanup() {
             echo "Cleaning up background processes..."
             # Kill specific processes by PID if they exist
-            [ -n "$MIGRATE_PID" ] && kill $MIGRATE_PID 2>/dev/null || true
-            [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
+            if [ -n "$MIGRATE_PID" ]; then
+              kill "$MIGRATE_PID" 2>/dev/null || true
+            fi
+            if [ -n "$SERVE_PID" ]; then
+              kill "$SERVE_PID" 2>/dev/null || true
+            fi
             # Fallback: kill any matching processes
             pkill -f "php artisan migrate" 2>/dev/null || true
             pkill -f "php artisan serve" 2>/dev/null || true
@@ -240,7 +248,11 @@ jobs:
           SERVE_PID=$!
           
           # Wait for migration to complete
-          wait $MIGRATE_PID || true
+          if ! wait "$MIGRATE_PID"; then
+            echo "ERROR: migrate:fresh failed"
+            exit 1
+          fi
+          MIGRATE_PID=""
           php artisan db:seed --class=AdminUserSeeder --force
           
           # Wait for server to be ready with health check
@@ -273,3 +285,60 @@ jobs:
           name: playwright-report
           path: backend/laravel/playwright-report
           retention-days: 7
+
+  scheduler-chaos:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Docker info
+        run: |
+          docker --version
+          docker compose version
+      - name: Run scheduler chaos scripts
+        run: |
+          mkdir -p test-results/scheduler-chaos
+          export CHAOS_LOG_DIR="test-results/scheduler-chaos"
+
+          set +e
+          failures=0
+
+          run_chaos() {
+            local script="$1"
+            echo "[ci][chaos] running ${script}"
+            bash "${script}"
+            local rc=$?
+            if [ "${rc}" -ne 0 ]; then
+              echo "[ci][chaos][FAIL] ${script} (exit=${rc})"
+              failures=1
+            else
+              echo "[ci][chaos][PASS] ${script}"
+            fi
+          }
+
+          run_chaos tests/e2e/scheduler/scheduler_leader_failover_chaos.sh
+          run_chaos tests/e2e/scheduler/scheduler_restart_recovery_chaos.sh
+          run_chaos tests/e2e/scheduler/automation_engine_restart_recovery_chaos.sh
+
+          exit "${failures}"
+      - name: Collect scheduler chaos logs
+        if: always()
+        run: |
+          mkdir -p test-results/scheduler-chaos
+          for c in backend-db-1 backend-redis-1 backend-mqtt-1 backend-laravel-1 backend-automation-engine-1 backend-scheduler-1; do
+            docker logs "${c}" > "test-results/scheduler-chaos/${c}.log" 2>&1 || true
+          done
+          docker compose -f backend/docker-compose.dev.yml ps > test-results/scheduler-chaos/compose-ps.log 2>&1 || true
+      - name: Upload scheduler chaos logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-chaos-logs
+          path: test-results/scheduler-chaos
+          retention-days: 7
+      - name: Cleanup scheduler chaos environment
+        if: always()
+        run: docker compose -f backend/docker-compose.dev.yml down -v || true

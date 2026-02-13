@@ -54,9 +54,9 @@ actions:
     type: database_query
     query: |
       INSERT INTO pending_alerts
-        (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, last_attempt_at, created_at, updated_at)
+        (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, next_retry_at, moved_to_dlq_at, created_at, updated_at)
       VALUES
-        (:zone_id, 'infra', :code, 'error', 'dlq', :details::jsonb, 3, 3, 'Simulated delivery failure', NOW(), NOW(), NOW())
+        (:zone_id, 'infra', :code, 'error', 'dlq', :details::jsonb, 3, 3, 'Simulated delivery failure', NULL, NOW(), NOW(), NOW())
       RETURNING id
     params:
       zone_id: ${zone_id}

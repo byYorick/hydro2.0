@@ -136,49 +136,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useCommands } from '@/composables/useCommands'
 import { useRole } from '@/composables/useRole'
-import { buildCommandItems, groupCommandItems, type CommandItem, type CommandHistoryItem, type CommandSearchResults, type CommandActionType, type CommandCycleType } from '@/commands/registry'
+import { type CommandActionType, type CommandCycleType, type CommandHistoryItem, type CommandItem } from '@/commands/registry'
+import { useCommandPaletteSearch } from '@/composables/useCommandPaletteSearch'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import type { CommandParams, CommandType } from '@/types'
-
-const page = usePage()
-
-// Debounce для предотвращения множественных вызовов router.visit
-const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
-const VISIT_DEBOUNCE_MS = 300
-
-/**
- * Безопасный переход с проверкой текущего URL и debounce
- */
-function safeVisit(url: string, options: { preserveUrl?: boolean } = {}): void {
-  const currentUrl = page.url || window.location.pathname
-  const targetUrl = url.startsWith('/') ? url : `/${url}`
-  
-  // Если уже на целевой странице, не делаем переход
-  if (currentUrl === targetUrl) {
-    return
-  }
-  
-  const key = targetUrl
-  
-  // Очищаем предыдущий таймер для этого URL
-  const existingTimer = visitTimers.get(key)
-  if (existingTimer) {
-    clearTimeout(existingTimer)
-  }
-  
-  // Устанавливаем новый таймер с debounce
-  visitTimers.set(key, setTimeout(() => {
-    visitTimers.delete(key)
-    router.visit(targetUrl, { preserveUrl: options.preserveUrl ?? true })
-  }, VISIT_DEBOUNCE_MS))
-}
 
 interface ConfirmModalState {
   open: boolean
@@ -187,61 +155,23 @@ interface ConfirmModalState {
   action: (() => void | Promise<void>) | null
 }
 
-const open = ref<boolean>(false)
-const q = ref<string>('')
-const selectedIndex = ref<number>(0)
-const inputRef = ref<HTMLInputElement | null>(null)
-const loading = ref<boolean>(false)
-
+const page = usePage()
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
 const { role } = useRole()
 
-// История команд (хранится в localStorage)
+const open = ref<boolean>(false)
+const inputRef = ref<HTMLInputElement | null>(null)
 const commandHistory = ref<CommandHistoryItem[]>([])
 const maxHistorySize = 10
+const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const VISIT_DEBOUNCE_MS = 300
 
-// Загрузка истории из localStorage
-function loadHistory() {
-  try {
-    const stored = localStorage.getItem('commandPaletteHistory')
-    if (stored) {
-      commandHistory.value = JSON.parse(stored).slice(0, maxHistorySize)
-    }
-  } catch (err) {
-    logger.error('[CommandPalette] Failed to load history:', err)
-  }
-}
-
-// Сохранение команды в историю
-function saveToHistory(item: CommandItem) {
-  if (item.type === 'nav' || item.type === 'action') {
-    const historyItem = {
-      label: item.label,
-      timestamp: Date.now(),
-      action: item.type
-    }
-    // Удаляем дубликаты
-    commandHistory.value = commandHistory.value.filter(h => h.label !== item.label)
-    // Добавляем в начало
-    commandHistory.value.unshift(historyItem)
-    // Ограничиваем размер
-    commandHistory.value = commandHistory.value.slice(0, maxHistorySize)
-    // Сохраняем в localStorage
-    try {
-      localStorage.setItem('commandPaletteHistory', JSON.stringify(commandHistory.value))
-    } catch (err) {
-      logger.error('[CommandPalette] Failed to save history:', err)
-    }
-  }
-}
-
-// Модальное окно подтверждения
 const confirmModal = ref<ConfirmModalState>({
   open: false,
   title: '',
   message: '',
-  action: null
+  action: null,
 })
 
 const actionModal = ref<{
@@ -256,239 +186,97 @@ const actionModal = ref<{
   defaultParams: {},
 })
 
-// Результаты поиска
-const searchResults = ref<CommandSearchResults>({
-  zones: [],
-  nodes: [],
-  recipes: []
-})
-
 const targetsCache = new Map<number, unknown>()
 const currentZoneId = computed(() => {
-  const props = page.props as Record<string, any>
-  return props.zone?.id ?? props.zoneId ?? null
+  const props = page.props as Record<string, unknown>
+  const zone = props.zone as { id?: number } | undefined
+  return zone?.id ?? (props.zoneId as number | null | undefined) ?? null
 })
 const currentPhaseTargets = computed(() => {
-  const props = page.props as Record<string, any>
-  return props.current_phase?.targets ?? null
+  const props = page.props as Record<string, unknown>
+  const currentPhase = props.current_phase as { targets?: unknown } | undefined
+  return currentPhase?.targets ?? null
 })
 const legacyTargets = computed(() => {
-  const props = page.props as Record<string, any>
+  const props = page.props as Record<string, unknown>
   return props.targets ?? null
 })
 
-// Интерфейс для сегмента текста
-interface TextSegment {
-  text: string
-  match: boolean
-}
-
-// Подсветка совпадений - возвращает массив сегментов вместо HTML
-function highlightMatch(text: string, query: string): TextSegment[] {
-  if (!query) {
-    return [{ text, match: false }]
-  }
-  
-  // Экранируем спецсимволы regex
-  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const regex = new RegExp(`(${escapedQuery})`, 'gi')
-  const segments: TextSegment[] = []
-  let lastIndex = 0
-  let match
-  
-  // Используем цикл для поиска всех совпадений
-  while ((match = regex.exec(text)) !== null) {
-    // Добавляем текст до совпадения
-    if (match.index > lastIndex) {
-      segments.push({
-        text: text.substring(lastIndex, match.index),
-        match: false
-      })
-    }
-    
-    // Добавляем совпадение
-    segments.push({
-      text: match[0],
-      match: true
-    })
-    
-    lastIndex = regex.lastIndex
-    
-    // Предотвращаем бесконечный цикл при пустых совпадениях
-    if (match[0].length === 0) {
-      regex.lastIndex++
-    }
-  }
-  
-  // Добавляем оставшийся текст
-  if (lastIndex < text.length) {
-    segments.push({
-      text: text.substring(lastIndex),
-      match: false
-    })
-  }
-  
-  // Если совпадений не найдено, возвращаем весь текст как один сегмент
-  if (segments.length === 0) {
-    return [{ text, match: false }]
-  }
-  
-  return segments
-}
-
-// Поиск через API
-async function searchAPI(query: string): Promise<void> {
-  if (!query || query.length < 2) {
-    searchResults.value = { zones: [], nodes: [], recipes: [] }
+function safeVisit(url: string, options: { preserveUrl?: boolean } = {}): void {
+  const currentUrl = page.url || window.location.pathname
+  const targetUrl = url.startsWith('/') ? url : `/${url}`
+  if (currentUrl === targetUrl) {
     return
   }
 
-  loading.value = true
-  try {
-    const [zonesRes, nodesRes, recipesRes] = await Promise.allSettled([
-      api.get('/api/zones', { params: { search: query } }),
-      api.get('/api/nodes', { params: { search: query } }),
-      api.get('/api/recipes', { params: { search: query } })
-    ])
+  const existingTimer = visitTimers.get(targetUrl)
+  if (existingTimer) {
+    clearTimeout(existingTimer)
+  }
 
-    searchResults.value = {
-      zones: zonesRes.status === 'fulfilled' ? (zonesRes.value.data?.data || zonesRes.value.data || []) : [],
-      nodes: nodesRes.status === 'fulfilled' ? (nodesRes.value.data?.data || nodesRes.value.data || []) : [],
-      recipes: recipesRes.status === 'fulfilled' ? (recipesRes.value.data?.data || recipesRes.value.data || []) : []
+  visitTimers.set(targetUrl, setTimeout(() => {
+    visitTimers.delete(targetUrl)
+    router.visit(targetUrl, { preserveUrl: options.preserveUrl ?? true })
+  }, VISIT_DEBOUNCE_MS))
+}
+
+function loadHistory(): void {
+  try {
+    const stored = localStorage.getItem('commandPaletteHistory')
+    if (stored) {
+      commandHistory.value = JSON.parse(stored).slice(0, maxHistorySize)
     }
   } catch (err) {
-    logger.error('[CommandPalette] Search error:', err)
-    searchResults.value = { zones: [], nodes: [], recipes: [] }
-  } finally {
-    loading.value = false
+    logger.error('[CommandPalette] Failed to load history:', err)
   }
 }
 
-// Debounce для поиска
-let searchTimeout: ReturnType<typeof setTimeout> | null = null
-watch(q, (newQuery: string) => {
-  selectedIndex.value = 0
-  if (searchTimeout) clearTimeout(searchTimeout)
-  searchTimeout = setTimeout(() => {
-    searchAPI(newQuery)
-  }, 300)
-})
-
-const commandItems = computed<CommandItem[]>(() => {
-  return buildCommandItems({
-    query: q.value,
-    role: role.value,
-    searchResults: searchResults.value,
-    history: commandHistory.value,
-    handlers: {
-      navigate: safeVisit,
-      zoneAction: executeZoneAction,
-      zoneCycle: executeZoneCycle,
-      openGrowCycleWizard: openGrowCycleWizardForZone,
-    },
-  })
-})
-
-// Формируем результаты с группировкой
-const groupedResults = computed(() => groupCommandItems(commandItems.value))
-
-// Вычисляем индекс элемента в плоском списке
-function getItemIndex(groupIndex: number, itemIndex: number): number {
-  let index = 0
-  for (let i = 0; i < groupIndex; i++) {
-    index += groupedResults.value[i].items.length
-  }
-  return index + itemIndex
-}
-
-// Получаем выбранный элемент
-const selectedItem = computed<CommandItem | null>(() => {
-  let currentIndex = 0
-  for (const group of groupedResults.value) {
-    if (selectedIndex.value >= currentIndex && selectedIndex.value < currentIndex + group.items.length) {
-      return group.items[selectedIndex.value - currentIndex]
-    }
-    currentIndex += group.items.length
-  }
-  return null
-})
-
-function runSelected(): void {
-  if (selectedItem.value) {
-    run(selectedItem.value)
-  }
-}
-
-// Общее количество элементов для навигации
-const totalItemsCount = computed(() => {
-  return groupedResults.value.reduce((sum, group) => sum + group.items.length, 0)
-})
-
-const run = (item: CommandItem | undefined): void => {
-  if (!item) return
-  
-  // Сохраняем в историю перед выполнением
-  saveToHistory(item)
-  
-  // Если действие требует подтверждения
-  if (item.requiresConfirm && item.actionFn) {
-    const actionNames: Record<string, string> = {
-      'pause': 'приостановить',
-      'irrigate': 'полить',
-      'ph-control': 'запустить коррекцию pH',
-      'ec-control': 'запустить коррекцию EC',
-      'climate': 'запустить управление климатом',
-      'lighting': 'запустить управление освещением',
-      'next-phase': 'перейти к следующей фазе',
-      'resume': 'возобновить',
-      'open-cycle-wizard': 'открыть мастер цикла'
-    }
-    const actionName = actionNames[item.actionType || ''] || 'выполнить это действие'
-    const zoneName = item.zoneName ? ` для зоны "${item.zoneName}"` : ''
-    confirmModal.value = {
-      open: true,
-      title: 'Подтверждение действия',
-      message: `Вы уверены, что хотите ${actionName}${zoneName}?`,
-      action: item.actionFn
-    }
+function saveToHistory(item: CommandItem): void {
+  if (item.type !== 'nav' && item.type !== 'action') {
     return
   }
-  
-  // Обычное действие
-  if (item.actionFn) {
-    item.actionFn()
-  } else {
-    item.action?.()
+  const historyItem = {
+    label: item.label,
+    timestamp: Date.now(),
+    action: item.type,
   }
-  close()
+  commandHistory.value = commandHistory.value.filter(h => h.label !== item.label)
+  commandHistory.value.unshift(historyItem)
+  commandHistory.value = commandHistory.value.slice(0, maxHistorySize)
+  try {
+    localStorage.setItem('commandPaletteHistory', JSON.stringify(commandHistory.value))
+  } catch (err) {
+    logger.error('[CommandPalette] Failed to save history:', err)
+  }
 }
 
-const normalizeTargets = (payload: unknown): Record<string, any> | null => {
+function normalizeTargets(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== 'object') return null
-  const raw = payload as Record<string, any>
+  const raw = payload as Record<string, unknown>
   if (raw.targets && typeof raw.targets === 'object') {
-    return raw.targets as Record<string, any>
+    return raw.targets as Record<string, unknown>
   }
   return raw
 }
 
-const resolveTargetValue = (target: any): number | null => {
+function resolveTargetValue(target: unknown): number | null {
   if (target === null || target === undefined) return null
   if (typeof target === 'number') return target
-  if (typeof target.target === 'number') return target.target
-  const min = typeof target.min === 'number' ? target.min : null
-  const max = typeof target.max === 'number' ? target.max : null
-  if (min !== null && max !== null) {
-    return (min + max) / 2
-  }
+  if (typeof target !== 'object') return null
+  const targetRecord = target as Record<string, unknown>
+  if (typeof targetRecord.target === 'number') return targetRecord.target
+  const min = typeof targetRecord.min === 'number' ? targetRecord.min : null
+  const max = typeof targetRecord.max === 'number' ? targetRecord.max : null
+  if (min !== null && max !== null) return (min + max) / 2
   return min ?? max
 }
 
-const resolveIrrigationDuration = (targets: Record<string, any> | null): number | null => {
+function resolveIrrigationDuration(targets: Record<string, unknown> | null): number | null {
   if (!targets) return null
+  const irrigation = targets.irrigation as Record<string, unknown> | undefined
   const candidates = [
-    targets.irrigation?.duration_sec,
-    targets.irrigation?.duration_seconds,
+    irrigation?.duration_sec,
+    irrigation?.duration_seconds,
     targets.irrigation_duration_sec,
     targets.irrigation_duration_seconds,
   ]
@@ -496,17 +284,18 @@ const resolveIrrigationDuration = (targets: Record<string, any> | null): number 
   return typeof match === 'number' ? match : null
 }
 
-const resolveCycleParams = async (zoneId: number, cycleType: CommandCycleType): Promise<CommandParams | null> => {
-  let targets: Record<string, any> | null = null
+async function resolveCycleParams(zoneId: number, cycleType: CommandCycleType): Promise<CommandParams | null> {
+  let targets: Record<string, unknown> | null = null
 
   if (currentZoneId.value === zoneId) {
     targets = normalizeTargets(currentPhaseTargets.value) || normalizeTargets(legacyTargets.value)
   } else if (targetsCache.has(zoneId)) {
-    targets = normalizeTargets(targetsCache.get(zoneId)) as Record<string, any> | null
+    targets = normalizeTargets(targetsCache.get(zoneId))
   } else {
     try {
       const response = await api.get(`/api/zones/${zoneId}/effective-targets`)
-      const payload = response?.data?.data ?? null
+      const responseData = response.data as { data?: unknown } | undefined
+      const payload = responseData?.data ?? null
       targets = normalizeTargets(payload)
       targetsCache.set(zoneId, targets)
     } catch (err) {
@@ -523,19 +312,21 @@ const resolveCycleParams = async (zoneId: number, cycleType: CommandCycleType): 
   }
 
   if (cycleType === 'PH_CONTROL') {
-    const phTarget = resolveTargetValue(targets.ph ?? { min: targets.ph_min, max: targets.ph_max })
+    const ph = targets.ph
+    const phTarget = resolveTargetValue(typeof ph === 'undefined' ? { min: targets.ph_min, max: targets.ph_max } : ph)
     return phTarget !== null ? { target_ph: phTarget } : null
   }
 
   if (cycleType === 'EC_CONTROL') {
-    const ecTarget = resolveTargetValue(targets.ec ?? { min: targets.ec_min, max: targets.ec_max })
+    const ec = targets.ec
+    const ecTarget = resolveTargetValue(typeof ec === 'undefined' ? { min: targets.ec_min, max: targets.ec_max } : ec)
     return ecTarget !== null ? { target_ec: ecTarget } : null
   }
 
   return null
 }
 
-const openActionModalForCycle = (zoneId: number, cycleType: CommandCycleType): void => {
+function openActionModalForCycle(zoneId: number, cycleType: CommandCycleType): void {
   const actionMap: Record<CommandCycleType, CommandType> = {
     IRRIGATION: 'FORCE_IRRIGATION',
     PH_CONTROL: 'FORCE_PH_CONTROL',
@@ -549,15 +340,17 @@ const openActionModalForCycle = (zoneId: number, cycleType: CommandCycleType): v
   }
 }
 
-const closeActionModal = (): void => {
+function closeActionModal(): void {
   actionModal.value.open = false
   actionModal.value.zoneId = null
   actionModal.value.defaultParams = {}
 }
 
-const onActionModalSubmit = async ({ actionType, params }: { actionType: CommandType; params: CommandParams }): Promise<void> => {
+async function onActionModalSubmit({
+  actionType,
+  params,
+}: { actionType: CommandType; params: CommandParams }): Promise<void> {
   if (!actionModal.value.zoneId) return
-
   try {
     await sendZoneCommand(actionModal.value.zoneId, actionType, params)
   } catch (err) {
@@ -570,7 +363,8 @@ const onActionModalSubmit = async ({ actionType, params }: { actionType: Command
 async function executeZoneAction(zoneId: number, action: CommandActionType, zoneName: string): Promise<void> {
   try {
     const cycleResponse = await api.get(`/api/zones/${zoneId}/grow-cycle`)
-    const growCycleId = cycleResponse.data?.data?.id
+    const responseData = cycleResponse.data as { data?: { id?: number } } | undefined
+    const growCycleId = responseData?.data?.id
 
     if (!growCycleId) {
       logger.warn(`[CommandPalette] No active grow cycle in zone "${zoneName}"`)
@@ -595,20 +389,15 @@ async function executeZoneAction(zoneId: number, action: CommandActionType, zone
   }
 }
 
-/**
- * Выполнить цикл в зоне
- * @deprecated После рефакторинга циклы управляются через GrowCycle API.
- * Эта функция оставлена для обратной совместимости с ручными командами.
- */
 async function executeZoneCycle(zoneId: number, cycleType: CommandCycleType, zoneName: string): Promise<void> {
   try {
     const commandType = `FORCE_${cycleType}` as CommandType
     const cycleNames: Record<string, string> = {
-      'IRRIGATION': 'Полив',
-      'PH_CONTROL': 'Коррекция pH',
-      'EC_CONTROL': 'Коррекция EC',
-      'CLIMATE': 'Управление климатом',
-      'LIGHTING': 'Управление освещением'
+      IRRIGATION: 'Полив',
+      PH_CONTROL: 'Коррекция pH',
+      EC_CONTROL: 'Коррекция EC',
+      CLIMATE: 'Управление климатом',
+      LIGHTING: 'Управление освещением',
     }
     const cycleName = cycleNames[cycleType] || cycleType
 
@@ -628,14 +417,78 @@ async function executeZoneCycle(zoneId: number, cycleType: CommandCycleType, zon
   }
 }
 
-/**
- * Применить рецепт к зоне с перекрестной инвалидацией кеша
- */
 function openGrowCycleWizardForZone(zoneId: number, recipeId: number, zoneName: string, recipeName: string): void {
   const query = `?start_cycle=1&recipe_id=${recipeId}`
   logger.info(`[CommandPalette] Open grow cycle wizard for zone "${zoneName}" (recipe: "${recipeName}")`)
   safeVisit(`/zones/${zoneId}${query}`)
   close()
+}
+
+const {
+  q,
+  selectedIndex,
+  loading,
+  searchResults,
+  commandItems,
+  groupedResults,
+  getItemIndex,
+  selectedItem,
+  totalItemsCount,
+  highlightMatch,
+} = useCommandPaletteSearch({
+  api,
+  role,
+  history: commandHistory,
+  handlers: {
+    navigate: safeVisit,
+    zoneAction: executeZoneAction,
+    zoneCycle: executeZoneCycle,
+    openGrowCycleWizard: openGrowCycleWizardForZone,
+  },
+})
+
+function run(item: CommandItem | undefined): void {
+  if (!item) return
+  saveToHistory(item)
+
+  if (item.requiresConfirm && item.actionFn) {
+    const actionNames: Record<string, string> = {
+      pause: 'приостановить',
+      irrigate: 'полить',
+      'ph-control': 'запустить коррекцию pH',
+      'ec-control': 'запустить коррекцию EC',
+      climate: 'запустить управление климатом',
+      lighting: 'запустить управление освещением',
+      'next-phase': 'перейти к следующей фазе',
+      resume: 'возобновить',
+      'open-cycle-wizard': 'открыть мастер цикла',
+    }
+    const actionName = actionNames[item.actionType || ''] || 'выполнить это действие'
+    const zoneName = item.zoneName ? ` для зоны "${item.zoneName}"` : ''
+    confirmModal.value = {
+      open: true,
+      title: 'Подтверждение действия',
+      message: `Вы уверены, что хотите ${actionName}${zoneName}?`,
+      action: item.actionFn,
+    }
+    return
+  }
+
+  if (item.actionFn) {
+    item.actionFn()
+  } else {
+    item.action?.()
+  }
+  close()
+}
+
+function runSelected(): void {
+  if (!commandItems.value.length) {
+    return
+  }
+  if (selectedItem.value) {
+    run(selectedItem.value)
+  }
 }
 
 function confirmAction(): void {
@@ -646,7 +499,7 @@ function confirmAction(): void {
   close()
 }
 
-const close = (): void => {
+function close(): void {
   open.value = false
   q.value = ''
   selectedIndex.value = 0
@@ -661,7 +514,7 @@ watch(open, (isOpen: boolean) => {
   }
 })
 
-const onKey = (e: KeyboardEvent): void => {
+function onKey(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     open.value = !open.value
@@ -676,7 +529,12 @@ onMounted(() => {
   loadHistory()
   window.addEventListener('keydown', onKey)
 })
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  visitTimers.forEach((timer) => clearTimeout(timer))
+  visitTimers.clear()
+})
 </script>
 
 <style scoped>

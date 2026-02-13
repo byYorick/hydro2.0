@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+      <section class="ui-hero p-5">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div class="text-xs text-[color:var(--text-dim)]">
@@ -29,47 +29,49 @@
           </Link>
         </div>
 
-        <div class="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
-            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+        <div class="ui-kpi-grid grid-cols-2 md:grid-cols-4 mt-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               pH
             </div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
               {{ formatValue(telemetry?.ph, 2) }}
             </div>
           </div>
-          <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
-            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               EC
             </div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
               {{ formatValue(telemetry?.ec, 2) }}
             </div>
           </div>
-          <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
-            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Температура
             </div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ formatValue(telemetry?.temperature, 1) }} °C
             </div>
           </div>
-          <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
-            <div class="text-[11px] uppercase tracking-wide text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Влажность
             </div>
-            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ formatValue(telemetry?.humidity, 0) }} %
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       <ZoneSimulationModal
         mode="page"
         :zone-id="zoneId"
         :default-recipe-id="defaultRecipeId"
         :initial-telemetry="telemetry"
+        :active-simulation-id="activeSimulationId"
+        :active-simulation-status="activeSimulationStatus"
       />
     </div>
   </AppLayout>
@@ -89,12 +91,17 @@ interface Props {
   zoneId: number
   zone: Zone
   telemetry?: ZoneTelemetry | null
+  // eslint-disable-next-line vue/prop-name-casing -- backend Inertia props are snake_case by contract
   active_grow_cycle?: any
+  // eslint-disable-next-line vue/prop-name-casing -- backend Inertia props are snake_case by contract
+  active_simulation?: { id: number; status: string } | null
 }
 
 const props = defineProps<Props>()
 
 const defaultRecipeId = computed(() => props.active_grow_cycle?.recipeRevision?.recipe_id ?? null)
+const activeSimulationId = computed(() => props.active_simulation?.id ?? null)
+const activeSimulationStatus = computed(() => props.active_simulation?.status ?? null)
 
 const statusVariant = computed<BadgeVariant>(() => {
   switch (props.zone.status) {

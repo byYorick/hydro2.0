@@ -1,30 +1,87 @@
 <template>
   <AppLayout>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold">
-        Рецепты
-      </h1>
-      <Button
-        size="sm"
-        variant="primary"
-        @click="openRecipeWizard"
-      >
-        <svg
-          class="w-4 h-4 mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+    <section class="ui-hero p-5 space-y-4 mb-4">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+            агрономия
+          </p>
+          <h1 class="text-2xl font-semibold tracking-tight mt-1 text-[color:var(--text-primary)]">
+            Рецепты
+          </h1>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Управление рецептами выращивания и фазами для автоматических циклов.
+          </p>
+        </div>
+        <Button
+          v-if="canConfigureRecipes"
+          size="sm"
+          variant="primary"
+          @click="openRecipeWizard"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        Новый цикл
-      </Button>
-    </div>
+          <svg
+            class="w-4 h-4 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+          Новый рецепт
+        </Button>
+      </div>
+      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+        <div class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Всего рецептов
+          </div>
+          <div class="ui-kpi-value">
+            {{ totalRecipes }}
+          </div>
+          <div class="ui-kpi-hint">
+            В базе конфигураций
+          </div>
+        </div>
+        <div class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Суммарно фаз
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            {{ totalPhases }}
+          </div>
+          <div class="ui-kpi-hint">
+            Во всех рецептах
+          </div>
+        </div>
+        <div class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            По фильтру
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-green)]">
+            {{ visibleRecipes }}
+          </div>
+          <div class="ui-kpi-hint">
+            Отображается в таблице
+          </div>
+        </div>
+        <div class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Среднее фаз
+          </div>
+          <div class="ui-kpi-value">
+            {{ averagePhasesPerRecipe }}
+          </div>
+          <div class="ui-kpi-hint">
+            На один рецепт
+          </div>
+        </div>
+      </div>
+    </section>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
         <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
@@ -123,8 +180,12 @@ import Pagination from '@/Components/Pagination.vue'
 import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
-const page = usePage<{ recipes?: Recipe[] }>()
+const page = usePage<{ recipes?: Recipe[]; auth?: { user?: { role?: string } } }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
+const canConfigureRecipes = computed(() => {
+  const role = page.props.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
 const query = ref<string>('')
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
@@ -147,6 +208,14 @@ const filtered = computed(() => {
   return all.value.filter(r => {
     return r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
   })
+})
+
+const totalRecipes = computed(() => all.value.length)
+const totalPhases = computed(() => all.value.reduce((sum, recipe) => sum + Number(recipe.phases_count || 0), 0))
+const visibleRecipes = computed(() => filtered.value.length)
+const averagePhasesPerRecipe = computed(() => {
+  if (totalRecipes.value === 0) return '0.0'
+  return (totalPhases.value / totalRecipes.value).toFixed(1)
 })
 
 function clampCurrentPage(total: number): number {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ZoneAutomationLogicProfile;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreZoneCommandRequest extends FormRequest
@@ -34,10 +35,11 @@ class StoreZoneCommandRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             $data = $this->all();
-            $params = $data['params'] ?? [];
+            $rawParams = $data['params'] ?? [];
+            $params = is_array($rawParams) ? $rawParams : [];
             
             // Ensure params is an associative array (object), not a list
-            if (isset($data['params']) && is_array($data['params']) && array_is_list($data['params'])) {
+            if (is_array($rawParams) && array_is_list($rawParams)) {
                 $validator->errors()->add('params', 'The params field must be an object, not a list.');
             }
 
@@ -49,29 +51,24 @@ class StoreZoneCommandRequest extends FormRequest
                     $validator->errors()->add('params.mode', 'The params.mode field is required and must be "start" or "adjust" for GROWTH_CYCLE_CONFIG.');
                 }
 
-                // Проверяем наличие subsystems
-                if (!isset($params['subsystems']) || !is_array($params['subsystems'])) {
-                    $validator->errors()->add('params.subsystems', 'The params.subsystems field is required and must be an object for GROWTH_CYCLE_CONFIG.');
-                } else {
-                    // Проверяем обязательные подсистемы
-                    $subsystems = $params['subsystems'];
-                    $requiredSubsystems = ['ph', 'ec', 'irrigation'];
-                    foreach ($requiredSubsystems as $subsystem) {
-                        if (!isset($subsystems[$subsystem]) || !is_array($subsystems[$subsystem])) {
-                            $validator->errors()->add("params.subsystems.{$subsystem}", "The params.subsystems.{$subsystem} field is required for GROWTH_CYCLE_CONFIG.");
-                        } elseif (!isset($subsystems[$subsystem]['enabled']) || $subsystems[$subsystem]['enabled'] !== true) {
-                            $validator->errors()->add("params.subsystems.{$subsystem}.enabled", "The params.subsystems.{$subsystem}.enabled must be true (required subsystem).");
-                        } elseif ($subsystems[$subsystem]['enabled'] && !isset($subsystems[$subsystem]['targets'])) {
-                            $validator->errors()->add("params.subsystems.{$subsystem}.targets", "The params.subsystems.{$subsystem}.targets field is required when enabled.");
-                        }
-                    }
+                $allowedModes = ZoneAutomationLogicProfile::allowedModes();
+                $profileMode = $params['profile_mode'] ?? null;
+                if (!is_string($profileMode) || !in_array($profileMode, $allowedModes, true)) {
+                    $validator->errors()->add(
+                        'params.profile_mode',
+                        'The params.profile_mode field is required and must be one of: '.implode(', ', $allowedModes).'.'
+                    );
+                }
+
+                if (array_key_exists('subsystems', $params)) {
+                    $validator->errors()->add(
+                        'params.subsystems',
+                        'The params.subsystems field is not allowed. Persist configuration via /api/zones/{zone}/automation-logic-profile.'
+                    );
                 }
             }
 
             $type = $data['type'] ?? '';
-            if (!is_array($params)) {
-                $params = [];
-            }
 
             if ($type === 'FORCE_IRRIGATION') {
                 $duration = $params['duration_sec'] ?? null;

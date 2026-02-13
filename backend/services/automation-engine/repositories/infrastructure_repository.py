@@ -52,7 +52,8 @@ class InfrastructureRepository:
                     n.id as node_id,
                     n.uid as node_uid,
                     nc.id as node_channel_id,
-                    nc.channel as channel
+                    nc.channel as channel,
+                    nc.config as channel_config
                 FROM infrastructure_instances ii
                 JOIN channel_bindings cb ON cb.infrastructure_instance_id = ii.id
                 JOIN node_channels nc ON nc.id = cb.node_channel_id
@@ -64,6 +65,7 @@ class InfrastructureRepository:
                         AND ii.owner_id = (SELECT greenhouse_id FROM zones WHERE id = $1)
                     )
                 )
+                AND n.zone_id = $1
                 AND n.status = 'online'
                 """,
                 zone_id,
@@ -77,6 +79,7 @@ class InfrastructureRepository:
         result: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             role = row["role"]
+            pump_calibration = self._extract_pump_calibration(row.get("channel_config"))
             if role not in result:
                 result[role] = {
                     "node_id": row["node_id"],
@@ -86,6 +89,9 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
+                    "ml_per_sec": pump_calibration.get("ml_per_sec"),
+                    "k_ms_per_ml_l": pump_calibration.get("k_ms_per_ml_l"),
+                    "pump_calibration": pump_calibration,
                 }
             else:
                 key = (zone_id, role)
@@ -126,7 +132,8 @@ class InfrastructureRepository:
                     n.id as node_id,
                     n.uid as node_uid,
                     nc.id as node_channel_id,
-                    nc.channel as channel
+                    nc.channel as channel,
+                    nc.config as channel_config
                 FROM infrastructure_instances ii
                 JOIN channel_bindings cb ON cb.infrastructure_instance_id = ii.id
                 JOIN node_channels nc ON nc.id = cb.node_channel_id
@@ -136,6 +143,7 @@ class InfrastructureRepository:
                     OR (ii.owner_type = 'greenhouse' AND ii.owner_id = z.greenhouse_id)
                 )
                 WHERE z.id = ANY($1::int[])
+                    AND n.zone_id = z.id
                     AND n.status = 'online'
                 """,
                 zone_ids,
@@ -150,6 +158,7 @@ class InfrastructureRepository:
         for row in rows:
             zone_id = row["zone_id"]
             role = row["role"]
+            pump_calibration = self._extract_pump_calibration(row.get("channel_config"))
             
             if zone_id not in result:
                 result[zone_id] = {}
@@ -163,6 +172,9 @@ class InfrastructureRepository:
                     "asset_id": row["asset_id"],
                     "asset_type": row["asset_type"],
                     "direction": row["direction"],
+                    "ml_per_sec": pump_calibration.get("ml_per_sec"),
+                    "k_ms_per_ml_l": pump_calibration.get("k_ms_per_ml_l"),
+                    "pump_calibration": pump_calibration,
                 }
             else:
                 key = (zone_id, role)
@@ -238,3 +250,27 @@ class InfrastructureRepository:
             }
             for row in rows
         ]
+
+    @staticmethod
+    def _extract_pump_calibration(channel_config: Any) -> Dict[str, Optional[float]]:
+        if not isinstance(channel_config, dict):
+            return {"ml_per_sec": None, "k_ms_per_ml_l": None}
+
+        calibration = channel_config.get("pump_calibration")
+        if not isinstance(calibration, dict):
+            return {"ml_per_sec": None, "k_ms_per_ml_l": None}
+
+        return {
+            "ml_per_sec": InfrastructureRepository._extract_positive_float(calibration.get("ml_per_sec")),
+            "k_ms_per_ml_l": InfrastructureRepository._extract_positive_float(calibration.get("k_ms_per_ml_l")),
+        }
+
+    @staticmethod
+    def _extract_positive_float(value: Any) -> Optional[float]:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed <= 0:
+            return None
+        return parsed

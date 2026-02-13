@@ -19,7 +19,16 @@ services:
       retries: 3
       start_period: 10s
   db:
-    image: timescale/timescaledb:latest-pg16
+    build:
+      context: ./services/db
+      dockerfile: Dockerfile
+    image: hydro-dev-db
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_cron
+      - -c
+      - cron.database_name=hydro_dev
     environment:
       POSTGRES_PASSWORD: hydro
       POSTGRES_USER: hydro
@@ -29,6 +38,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
+      - ./configs/dev/postgres/init:/docker-entrypoint-initdb.d:ro
     # WAL архивирование отключено в dev окружении для упрощения
     # В production используйте правильную команду архивирования
     healthcheck:
@@ -197,6 +207,8 @@ services:
         condition: service_healthy
       laravel:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9000:9000"
     healthcheck:
@@ -224,6 +236,7 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
+      - MQTT_ZONE_FORMAT=uid
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
@@ -231,6 +244,8 @@ services:
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - SIMULATION_TELEMETRY_EVENTS=1
+      - SIMULATION_TELEMETRY_EVENT_INTERVAL_SEC=10
     depends_on:
       mqtt:
         condition: service_healthy
@@ -270,7 +285,10 @@ services:
       - LARAVEL_API_URL=http://laravel
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - CONFIG_FETCH_MIN_INTERVAL_SECONDS=60
     depends_on:
       mqtt:
         condition: service_healthy
@@ -282,7 +300,7 @@ services:
       - "9401:9401"  # Prometheus metrics
       - "9405:9405"  # FastAPI REST API
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9405/health/live\", timeout=2).read()' || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -305,10 +323,17 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - LARAVEL_API_URL=http://laravel
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
     depends_on:
       mqtt:
         condition: service_healthy
       db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "9402:9402"
@@ -367,7 +392,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     logging:
-      driver: "none"
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -386,7 +414,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
     logging:
-      driver: "none"
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   digital-twin:
     build:
@@ -404,6 +435,8 @@ services:
       - PYTHONPATH=/app
     depends_on:
       db:
+        condition: service_healthy
+      laravel:
         condition: service_healthy
     ports:
       - "8003:8003"
@@ -429,6 +462,8 @@ services:
     depends_on:
       mqtt:
         condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "9100:9100"
     restart: unless-stopped
@@ -449,6 +484,8 @@ services:
       - PYTHONPATH=/app
     depends_on:
       db:
+        condition: service_healthy
+      laravel:
         condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics

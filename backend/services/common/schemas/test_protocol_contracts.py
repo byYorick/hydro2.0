@@ -386,7 +386,7 @@ class TestLaravelRequestValidation:
             cmd="dose",
             params={"ml": 1.2},
             node_uid="nd-ph-1",
-            channel="pump_nutrient"
+            channel="pump_a"
         )
         assert request.cmd == "dose"
         assert request.params == {"ml": 1.2}
@@ -405,7 +405,7 @@ class TestProtocolCompatibility:
         # Создаём команду
         cmd = Command.create(
             cmd="dose",
-            params={"ml": 1.2, "channel": "pump_nutrient"},
+            params={"ml": 1.2, "channel": "pump_a"},
             sig="deadbeef"
         )
         
@@ -564,3 +564,21 @@ class TestZoneEventsProtocol:
         
         with pytest.raises(AssertionError):
             validate_against_schema(payload, zone_events_schema)
+
+    def test_zone_events_type_length_boundaries(self, zone_events_schema):
+        """Тест границ длины поля type: 255 допускается, 256 отклоняется."""
+        import time
+        valid = {
+            "zone_id": 1,
+            "type": "C" * 255,
+            "server_ts": int(time.time() * 1000),
+        }
+        validate_against_schema(valid, zone_events_schema)
+
+        invalid = {
+            "zone_id": 1,
+            "type": "D" * 256,
+            "server_ts": int(time.time() * 1000),
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, zone_events_schema)

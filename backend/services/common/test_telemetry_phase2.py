@@ -81,6 +81,68 @@ async def test_process_telemetry_batch_normalizes_metric_type():
 
 
 @pytest.mark.asyncio
+async def test_process_telemetry_batch_maps_water_level_switch_to_water_level_sensor():
+    """WATER_LEVEL_SWITCH должен сохраняться как WATER_LEVEL тип сенсора."""
+    sample = TelemetrySampleModel(
+        node_uid="nd-level-1",
+        zone_id=1,
+        metric_type="WATER_LEVEL_SWITCH",
+        value=1.0
+    )
+
+    with patch("common.telemetry.fetch") as mock_fetch, \
+         patch("common.telemetry.execute") as mock_execute, \
+         patch("common.telemetry.upsert_telemetry_last") as mock_upsert:
+        mock_fetch.side_effect = [
+            [{"id": 10, "zone_id": 1, "validated": True}],
+            [{"id": 501}],
+        ]
+
+        await process_telemetry_batch([sample])
+
+        # Вторая выборка fetch - поиск sensor_id, аргумент sensor_type должен быть WATER_LEVEL.
+        sensor_lookup_call = mock_fetch.call_args_list[1]
+        assert sensor_lookup_call.args[4] == "WATER_LEVEL"
+        # При этом метрика в metadata сохраняется как WATER_LEVEL_SWITCH.
+        metadata = mock_execute.call_args[0][6]
+        assert metadata["metric_type"] == "WATER_LEVEL_SWITCH"
+        assert mock_upsert.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "metric_type,expected_sensor_type",
+    [
+        ("SOIL_TEMP", "SOIL_TEMP"),
+        ("OUTSIDE_TEMP", "OUTSIDE_TEMP"),
+    ],
+)
+async def test_process_telemetry_batch_supports_new_soil_weather_metric_types(metric_type, expected_sensor_type):
+    sample = TelemetrySampleModel(
+        node_uid="nd-env-1",
+        zone_id=1,
+        metric_type=metric_type,
+        value=12.3
+    )
+
+    with patch("common.telemetry.fetch") as mock_fetch, \
+         patch("common.telemetry.execute") as mock_execute, \
+         patch("common.telemetry.upsert_telemetry_last") as mock_upsert:
+        mock_fetch.side_effect = [
+            [{"id": 10, "zone_id": 1, "validated": True}],
+            [{"id": 601}],
+        ]
+
+        await process_telemetry_batch([sample])
+
+        sensor_lookup_call = mock_fetch.call_args_list[1]
+        assert sensor_lookup_call.args[4] == expected_sensor_type
+        metadata = mock_execute.call_args[0][6]
+        assert metadata["metric_type"] == metric_type
+        assert mock_upsert.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_process_telemetry_batch_validated_node():
     """Test that telemetry from validated node is processed."""
     sample = TelemetrySampleModel(

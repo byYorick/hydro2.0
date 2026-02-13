@@ -118,7 +118,7 @@ class DatabaseBackupCommand extends Command
         if ($this->option('compress')) {
             $this->info('Сжатие бэкапа...');
             $compressedPath = $backupPath.'.gz';
-            exec("gzip {$backupPath}", $compressOutput, $compressReturnCode);
+            exec('gzip '.escapeshellarg($backupPath), $compressOutput, $compressReturnCode);
 
             if ($compressReturnCode === 0 && file_exists($compressedPath)) {
                 // Устанавливаем строгие права на сжатый файл

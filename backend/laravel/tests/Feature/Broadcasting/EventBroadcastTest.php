@@ -36,7 +36,7 @@ class EventBroadcastTest extends TestCase
         $node->forceFill([
             'uid' => "nd-{$id}",
             'name' => 'Irrigation Controller',
-            'type' => 'irrigation',
+            'type' => 'irrig',
             'status' => 'online',
             'fw_version' => '1.0.0',
             'zone_id' => $zoneId,
@@ -124,7 +124,7 @@ class EventBroadcastTest extends TestCase
         $this->assertSame('private-commands.7', $event->broadcastOn()->name);
         $payload = $event->broadcastWith();
         $this->assertSame(501, $payload['commandId']);
-        $this->assertSame('QUEUED', $payload['status']);
+        $this->assertSame('queued', $payload['status']);
         $this->assertSame('Ожидание исполнения', $payload['message']);
         $this->assertNull($payload['error']);
         $this->assertSame(7, $payload['zoneId']);

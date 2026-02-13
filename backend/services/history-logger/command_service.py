@@ -28,25 +28,25 @@ def _create_command_payload(
     cmd_id = cmd_id or str(uuid.uuid4())
     if not cmd:
         raise ValueError("'cmd' is required")
-    if sig and ts is None:
-        raise ValueError("sig requires ts")
-
     payload = {"cmd": cmd, "cmd_id": cmd_id, "params": params or {}}
 
     secret = get_settings().node_default_secret
-    if ts is None and sig is None:
+    if ts is None:
         if secret:
             ts = int(time.time())
-    elif ts is not None and sig is None and not secret:
+        elif sig:
+            raise ValueError("sig requires node_default_secret")
+    elif not secret:
         raise ValueError("sig requires node_default_secret")
 
     if ts is not None:
         payload["ts"] = ts
-    if sig is None and secret:
+    if secret:
         payload_str = canonical_json_payload(payload)
-        sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
-    if sig:
-        payload["sig"] = sig
+        computed_sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
+        if sig and sig != computed_sig:
+            logger.warning("Overriding provided command signature with server-generated HMAC")
+        payload["sig"] = computed_sig
     return payload
 
 
@@ -171,4 +171,150 @@ async def publish_command_mqtt(
 
     except Exception as e:
         logger.error("Error publishing command for node %s: %s", node_uid, e, exc_info=True)
+        raise
+
+
+async def publish_config_mqtt(
+    mqtt_client: AsyncMqttClient,
+    gh_uid: str,
+    zone_id: int,
+    node_uid: str,
+    config_payload: Dict[str, Any],
+    zone_uid: Optional[str] = None,
+) -> None:
+    """
+    Публиковать NodeConfig в MQTT.
+    """
+    try:
+        if not mqtt_client.is_connected():
+            logger.warning("MQTT client not connected, attempting to reconnect...")
+            await mqtt_client.start()
+            if not mqtt_client.is_connected():
+                raise ConnectionError("MQTT client is not connected and reconnection failed")
+
+        s = get_settings()
+        zone_segment = f"zn-{zone_id}"
+        if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
+            zone_segment = zone_uid
+        elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
+            logger.warning(
+                "mqtt_zone_format=uid but zone_uid not provided, using zn-%s (may cause mismatch with node subscription)",
+                zone_id,
+            )
+
+        topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+        import json as json_lib
+        try:
+            has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
+            payload_size = len(json_lib.dumps(config_payload, separators=(",", ":")))
+            logger.info(
+                "[CONFIG_PUBLISH] node_uid=%s topic=%s temp=%s node_secret_present=%s payload_size=%s",
+                node_uid,
+                topic,
+                False,
+                has_secret,
+                payload_size,
+            )
+        except Exception as log_err:
+            logger.warning(
+                "[CONFIG_PUBLISH] Failed to compute payload diagnostics for node_uid=%s: %s",
+                node_uid,
+                log_err,
+            )
+        logger.info(
+            "[MQTT_PUBLISH] Publishing config to topic: %s, node_uid: %s, zone_id: %s, zone_segment: %s",
+            topic,
+            node_uid,
+            zone_id,
+            zone_segment,
+        )
+
+        base_client = mqtt_client._client
+        import json as json_lib
+
+        payload_json = json_lib.dumps(config_payload, separators=(",", ":"))
+        result = base_client._client.publish(topic, payload_json, qos=1, retain=False)
+        if result.rc != 0:
+            logger.error(
+                "[MQTT_PUBLISH] FAILED: MQTT publish failed with rc=%s for topic %s",
+                result.rc,
+                topic,
+            )
+            raise RuntimeError(
+                f"MQTT publish failed with rc={result.rc} for topic {topic}"
+            )
+        logger.info(
+            "[MQTT_PUBLISH] SUCCESS: Config published to %s, payload_size=%s",
+            topic,
+            len(payload_json),
+        )
+    except Exception as e:
+        logger.error("Error publishing config for node %s: %s", node_uid, e, exc_info=True)
+        raise
+
+
+async def publish_config_temp_mqtt(
+    mqtt_client: AsyncMqttClient,
+    hardware_id: str,
+    config_payload: Dict[str, Any],
+) -> None:
+    """
+    Публиковать NodeConfig в temp-топик (gh-temp/zn-temp) по hardware_id.
+    """
+    try:
+        if not mqtt_client.is_connected():
+            logger.warning("MQTT client not connected, attempting to reconnect...")
+            await mqtt_client.start()
+            if not mqtt_client.is_connected():
+                raise ConnectionError("MQTT client is not connected and reconnection failed")
+
+        topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
+        import json as json_lib
+        try:
+            has_secret = isinstance(config_payload.get("node_secret"), str) and bool(config_payload.get("node_secret"))
+            payload_size = len(json_lib.dumps(config_payload, separators=(",", ":")))
+            logger.info(
+                "[CONFIG_PUBLISH] node_uid=%s topic=%s temp=%s node_secret_present=%s payload_size=%s",
+                hardware_id,
+                topic,
+                True,
+                has_secret,
+                payload_size,
+            )
+        except Exception as log_err:
+            logger.warning(
+                "[CONFIG_PUBLISH] Failed to compute payload diagnostics for hardware_id=%s: %s",
+                hardware_id,
+                log_err,
+            )
+        logger.info(
+            "[MQTT_PUBLISH] Publishing temp config to topic: %s, hardware_id: %s",
+            topic,
+            hardware_id,
+        )
+
+        base_client = mqtt_client._client
+        payload_json = json_lib.dumps(config_payload, separators=(",", ":"))
+        result = base_client._client.publish(topic, payload_json, qos=1, retain=False)
+        if result.rc != 0:
+            logger.error(
+                "[MQTT_PUBLISH] FAILED: MQTT publish failed with rc=%s for topic %s",
+                result.rc,
+                topic,
+            )
+            raise RuntimeError(
+                f"MQTT publish failed with rc={result.rc} for topic {topic}"
+            )
+        logger.info(
+            "[MQTT_PUBLISH] SUCCESS: Temp config published to %s, payload_size=%s",
+            topic,
+            len(payload_json),
+        )
+    except Exception as e:
+        logger.error(
+            "Error publishing temp config for hardware_id %s: %s",
+            hardware_id,
+            e,
+            exc_info=True,
+        )
         raise

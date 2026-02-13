@@ -18,7 +18,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 1. **Telemetry Flow** — вверх (узлы → backend).
 2. **Command Flow** — вниз (backend → узлы).
-3. **Config Flow** — вниз (backend → узлы).
+3. **Config Flow** — вверх (узлы → backend, через `config_report`).
 4. **Status/LWT Flow** — вверх (узлы → backend).
 5. **Heartbeat Flow** — вверх (узлы → backend).
 6. **Events Flow** — backend → frontend.
@@ -144,7 +144,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 
 ---
 
-# 5. CONFIG FLOW (backend → узел)
+# 5. CONFIG FLOW (узлы → backend)
 
 ## 5.1. Назначение
 NodeConfig определяет:
@@ -154,6 +154,11 @@ NodeConfig определяет:
 - параметры Wi‑Fi/MQTT.
 
 Узел использует этот файл как источник настроек, конфиг хранится в прошивке/NVS.
+
+Важно по типам:
+- `node_type` на уровне узла передается отдельно (в `node_hello`) и использует только канонические значения
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- поле `channels[].type` в NodeConfig (`SENSOR`/`ACTUATOR`/`VIRTUAL`) — это тип канала, а не тип узла.
 
 ## 5.2. Шаги
 

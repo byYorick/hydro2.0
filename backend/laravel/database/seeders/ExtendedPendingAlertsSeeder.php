@@ -37,7 +37,7 @@ class ExtendedPendingAlertsSeeder extends Seeder
     private function seedPendingAlertsForZone(Zone $zone): int
     {
         $created = 0;
-        $alertCount = rand(0, 3);
+        $alertCount = rand(1, 3);
 
         $alertTypes = [
             ['type' => 'pH_HIGH', 'source' => 'biz', 'code' => 'PH_HIGH'],
@@ -46,8 +46,8 @@ class ExtendedPendingAlertsSeeder extends Seeder
             ['type' => 'WATER_LEVEL_LOW', 'source' => 'infra', 'code' => 'WATER_LOW'],
         ];
 
-        $statuses = ['pending', 'failed', 'dlq'];
-        $statusWeights = [70, 20, 10];
+        $alertStatuses = ['ACTIVE', 'RESOLVED'];
+        $statusWeights = [80, 20];
 
         for ($i = 0; $i < $alertCount; $i++) {
             $alertType = $alertTypes[rand(0, count($alertTypes) - 1)];
@@ -55,8 +55,8 @@ class ExtendedPendingAlertsSeeder extends Seeder
             // Выбираем статус по весам
             $rand = rand(1, 100);
             $cumulative = 0;
-            $status = 'pending';
-            foreach ($statuses as $index => $stat) {
+            $status = 'ACTIVE';
+            foreach ($alertStatuses as $index => $stat) {
                 $cumulative += $statusWeights[$index];
                 if ($rand <= $cumulative) {
                     $status = $stat;
@@ -64,12 +64,13 @@ class ExtendedPendingAlertsSeeder extends Seeder
                 }
             }
 
-            $attempts = match ($status) {
-                'pending' => rand(0, 2),
-                'failed' => rand(3, 5),
-                'dlq' => 3,
-                default => 0,
-            };
+            $attempts = $status === 'ACTIVE' ? rand(0, 4) : rand(0, 1);
+            $nextRetryAt = $status === 'ACTIVE'
+                ? now()->addMinutes(rand(1, 30))
+                : null;
+            $lastError = $attempts > 0
+                ? 'Ошибка отправки алерта в Laravel API'
+                : null;
 
             DB::table('pending_alerts')->insert([
                 'zone_id' => $zone->id,
@@ -81,10 +82,11 @@ class ExtendedPendingAlertsSeeder extends Seeder
                     'severity' => 'warning',
                 ]),
                 'attempts' => $attempts,
-                'max_attempts' => 3,
-                'last_attempt_at' => $attempts > 0 ? now()->subMinutes(rand(1, 60)) : null,
+                'max_attempts' => 10,
+                'next_retry_at' => $nextRetryAt,
+                'moved_to_dlq_at' => null,
                 'status' => $status,
-                'last_error' => $status === 'failed' ? 'Ошибка отправки алерта' : null,
+                'last_error' => $lastError,
                 'created_at' => now()->subHours(rand(0, 24)),
                 'updated_at' => now()->subHours(rand(0, 24)),
             ]);
@@ -95,4 +97,3 @@ class ExtendedPendingAlertsSeeder extends Seeder
         return $created;
     }
 }
-

@@ -34,7 +34,7 @@ class AlertServiceTest extends TestCase
 
         $this->assertInstanceOf(Alert::class, $alert);
         $this->assertEquals('ph_high', $alert->type);
-        $this->assertEquals('active', $alert->status);
+        $this->assertEquals('ACTIVE', $alert->status);
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
             'type' => 'ph_high',
@@ -64,5 +64,37 @@ class AlertServiceTest extends TestCase
 
         $this->service->acknowledge($alert);
     }
-}
 
+    public function test_resolve_by_code_resolves_active_alert(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'infra_test_resolve',
+            'status' => 'ACTIVE',
+            'details' => ['message' => 'initial'],
+        ]);
+
+        $result = $this->service->resolveByCode($zone->id, 'infra_test_resolve', [
+            'details' => ['reason' => 'recovered'],
+        ]);
+
+        $this->assertTrue($result['resolved']);
+        $this->assertNotNull($result['alert']);
+
+        $alert->refresh();
+        $this->assertEquals('RESOLVED', $alert->status);
+        $this->assertNotNull($alert->resolved_at);
+        $this->assertEquals('recovered', $alert->details['reason'] ?? null);
+    }
+
+    public function test_resolve_by_code_returns_false_when_no_active_alert(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        $result = $this->service->resolveByCode($zone->id, 'infra_missing');
+
+        $this->assertFalse($result['resolved']);
+        $this->assertNull($result['alert']);
+        $this->assertNull($result['event_id']);
+    }
+}

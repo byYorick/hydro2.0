@@ -71,12 +71,17 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: cycle_response
 
   - step: set_original_cycle_id
     type: set
     original_cycle_id: ${cycle_response.data.id}
+
+  - step: start_original_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${original_cycle_id}/start
+    payload: {}
 
   - step: harvest_cycle
     type: api_post
@@ -95,7 +100,7 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: new_cycle_response
 
   - step: wait_after_new_cycle
@@ -105,6 +110,11 @@ actions:
   - step: set_new_cycle_id
     type: set
     new_cycle_id: ${new_cycle_response.data.id}
+
+  - step: start_new_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${new_cycle_id}/start
+    payload: {}
 
 assertions:
   # Проверка 1: Новый цикл создан со статусом RUNNING

@@ -182,6 +182,7 @@ import LoadingState from '@/Components/LoadingState.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
+import { logger } from '@/utils/logger'
 import type { Zone, TelemetrySample } from '@/types'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
@@ -310,9 +311,7 @@ async function loadTelemetryData(): Promise<void> {
           }
           telemetryData.value.get(zoneId)?.set(metric.key, data)
         } catch (err) {
-          import('@/utils/logger').then(({ logger }) => {
-            logger.error(`[ZoneComparisonModal] Failed to load ${metric.key} for zone ${zoneId}:`, err)
-          })
+          logger.error(`[ZoneComparisonModal] Failed to load ${metric.key} for zone ${zoneId}:`, err)
         }
       })
     )

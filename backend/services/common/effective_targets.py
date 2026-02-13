@@ -90,6 +90,23 @@ class ClimateRequestTarget(BaseModel):
     _normalize_co2 = field_validator("co2_target", mode="before")(_empty_to_none)
 
 
+class NutritionComponentTarget(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    ratio_pct: Optional[float] = None
+    dose_ml_per_l: Optional[float] = None
+
+    _normalize_ratio = field_validator("ratio_pct", mode="before")(_empty_to_none)
+    _normalize_dose = field_validator("dose_ml_per_l", mode="before")(_empty_to_none)
+
+
+class NutritionTarget(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    program_code: Optional[str] = None
+    components: Optional[Dict[str, NutritionComponentTarget]] = None
+
+
 class EffectiveTargets(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -98,6 +115,7 @@ class EffectiveTargets(BaseModel):
     irrigation: Optional[IrrigationTarget] = None
     lighting: Optional[LightingTarget] = None
     climate_request: Optional[ClimateRequestTarget] = None
+    nutrition: Optional[NutritionTarget] = None
     mist: Optional[Dict[str, Any]] = None
     extensions: Optional[Dict[str, Any]] = None
 

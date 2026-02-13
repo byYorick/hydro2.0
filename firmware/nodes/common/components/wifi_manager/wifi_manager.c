@@ -19,6 +19,9 @@ static const char *TAG = "wifi_manager";
 // Event group для Wi-Fi событий
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+#define WIFI_CONNECT_TIMEOUT_MS_DEFAULT 30000U
+#define WIFI_AUTO_RECONNECT_DEFAULT true
+#define WIFI_MAX_RECONNECT_ATTEMPTS_DEFAULT 5U
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_connection_cb_t s_connection_cb = NULL;
@@ -26,8 +29,8 @@ static void *s_connection_user_ctx = NULL;
 static bool s_is_connected = false;
 static bool s_manual_disconnect = false;  // Флаг для ручного отключения
 static uint32_t s_reconnect_attempts = 0;  // Счетчик попыток переподключения
-static uint32_t s_max_reconnect_attempts = 5;  // Максимальное количество попыток перед установкой FAIL_BIT (дефолт)
-static bool s_auto_reconnect = true;  // Автоматическое переподключение (дефолт)
+static uint32_t s_max_reconnect_attempts = WIFI_MAX_RECONNECT_ATTEMPTS_DEFAULT;
+static bool s_auto_reconnect = WIFI_AUTO_RECONNECT_DEFAULT;
 
 // Handles для event handlers (нужны для удаления при deinit)
 static esp_event_handler_instance_t s_wifi_event_handler_instance = NULL;
@@ -81,14 +84,18 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 // Увеличиваем счетчик попыток
                 s_reconnect_attempts++;
                 
-                // Если превышен лимит попыток, устанавливаем FAIL_BIT
-                if (s_reconnect_attempts >= s_max_reconnect_attempts) {
+                // Если превышен лимит попыток, устанавливаем FAIL_BIT (0 = безлимит)
+                if (s_max_reconnect_attempts > 0 && s_reconnect_attempts >= s_max_reconnect_attempts) {
                     ESP_LOGE(TAG, "Max reconnect attempts reached (%d), setting FAIL_BIT", s_max_reconnect_attempts);
                     xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                     s_reconnect_attempts = 0;  // Сбрасываем счетчик
                 } else {
                     // Попытка переподключения
-                    ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/%d)", s_reconnect_attempts, s_max_reconnect_attempts);
+                    if (s_max_reconnect_attempts > 0) {
+                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/%d)", s_reconnect_attempts, s_max_reconnect_attempts);
+                    } else {
+                        ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/unlimited)", s_reconnect_attempts);
+                    }
                     esp_wifi_connect();
                 }
                 break;
@@ -192,6 +199,17 @@ esp_err_t wifi_manager_connect(const wifi_manager_config_t *config) {
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Применяем конфигурацию менеджера (0 в max_reconnect_attempts = безлимит)
+    uint32_t connect_timeout_ms = WIFI_CONNECT_TIMEOUT_MS_DEFAULT;
+    s_auto_reconnect = config->auto_reconnect;
+    s_max_reconnect_attempts = config->max_reconnect_attempts;
+    if (config->timeout_sec > 0) {
+        connect_timeout_ms = (uint32_t)config->timeout_sec * 1000U;
+    }
+    if (config->max_reconnect_attempts == 0) {
+        s_max_reconnect_attempts = 0;
+    }
+
     // Сбрасываем флаги и счетчики
     s_manual_disconnect = false;
     s_reconnect_attempts = 0;
@@ -209,6 +227,7 @@ esp_err_t wifi_manager_connect(const wifi_manager_config_t *config) {
     wifi_config.sta.pmf_cfg.required = false;
     
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     
     ESP_LOGI(TAG, "Connecting to Wi-Fi SSID: %s", config->ssid);
     esp_wifi_connect();
@@ -218,7 +237,7 @@ esp_err_t wifi_manager_connect(const wifi_manager_config_t *config) {
                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
                                           pdFALSE,
                                           pdFALSE,
-                                          pdMS_TO_TICKS(30000));
+                                          pdMS_TO_TICKS(connect_timeout_ms));
     
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Connected to Wi-Fi successfully");
@@ -308,9 +327,9 @@ void wifi_manager_deinit(void) {
     s_is_connected = false;
     s_manual_disconnect = false;
     s_reconnect_attempts = 0;
+    s_auto_reconnect = WIFI_AUTO_RECONNECT_DEFAULT;
+    s_max_reconnect_attempts = WIFI_MAX_RECONNECT_ATTEMPTS_DEFAULT;
 }
-
-
 
 
 

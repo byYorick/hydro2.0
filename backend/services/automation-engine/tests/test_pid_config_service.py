@@ -2,17 +2,11 @@
 Тесты для PidConfigService
 """
 import pytest
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
-from datetime import datetime
 from common.utils.time import utcnow
 
-# Добавляем родительскую директорию в путь для импортов
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from services.pid_config_service import get_config, invalidate_cache, _build_default_config
-from utils.adaptive_pid import AdaptivePidConfig, PidZone, PidZoneCoeffs
+from utils.adaptive_pid import PidZone
 from config.settings import AutomationSettings
 
 

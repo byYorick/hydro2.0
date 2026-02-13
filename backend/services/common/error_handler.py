@@ -19,6 +19,13 @@ from .alert_queue import send_alert_to_laravel
 logger = logging.getLogger(__name__)
 
 
+def _normalize_node_error_fragment(value: str, fallback: str) -> str:
+    raw = str(value or fallback).strip().lower()
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in raw)
+    normalized = "_".join(part for part in normalized.split("_") if part)
+    return normalized or fallback
+
+
 class NodeErrorHandler:
     """Обработчик ошибок от ESP32 нод."""
     
@@ -205,12 +212,16 @@ class NodeErrorHandler:
                 logger.info(f"[ERROR_HANDLER] Node {node_uid} has no zone_id (unassigned), creating alert with zone_id=null")
             
             # Структура alerts: zone_id, source, code, type, details, status
-            # source: 'biz' или 'infra' (для ошибок нод используем 'infra')
+            # source: 'node' для ошибок узлов
             # code: код ошибки (например, 'node_error_ph_sensor')
             # type: тип алерта (например, 'node_error')
             # details: JSON с деталями
-            
-            alert_code = f"node_error_{component}_{error_code}"
+
+            component_norm = _normalize_node_error_fragment(component, "unknown")
+            error_code_norm = _normalize_node_error_fragment(error_code, "unknown")
+            alert_code = f"node_error_{component_norm}_{error_code_norm}"
+            if len(alert_code) > 64:
+                alert_code = "node_error"
             alert_type = "node_error"
             
             # Создаем Alert через Laravel API (с автоматической очередью при ошибках)
@@ -218,6 +229,8 @@ class NodeErrorHandler:
                 "node_uid": node_uid,
                 "component": component,
                 "error_code": error_code,
+                "component_normalized": component_norm,
+                "error_code_normalized": error_code_norm,
                 "level": level,
                 "message": message,
                 "details": details or {}
@@ -237,7 +250,7 @@ class NodeErrorHandler:
             
             success = await send_alert_to_laravel(
                 zone_id=zone_id,
-                source="infra",  # Ошибки нод - это инфраструктурные ошибки
+                source="node",
                 code=alert_code,
                 type=alert_type,
                 status="ACTIVE",

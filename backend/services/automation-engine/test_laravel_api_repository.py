@@ -135,3 +135,42 @@ async def test_get_effective_targets_batch_retry_on_failure():
             result = await repo.get_effective_targets_batch([1])
             assert mock_request.call_count >= 1
             assert 1 in result
+
+
+@pytest.mark.asyncio
+async def test_get_effective_targets_batch_uses_cache():
+    """Test caching prevents repeated API calls within TTL."""
+    import os
+
+    mock_response = {
+        "status": "ok",
+        "data": {
+            "1": {
+                "cycle_id": 123,
+                "zone_id": 1,
+                "phase": {"id": 77, "code": "VEG"},
+                "targets": {"ph": {"target": 6.0}}
+            }
+        }
+    }
+
+    old_ttl = os.environ.get("EFFECTIVE_TARGETS_CACHE_TTL_SEC")
+    os.environ["EFFECTIVE_TARGETS_CACHE_TTL_SEC"] = "60"
+    try:
+        with patch("repositories.laravel_api_repository.get_settings", return_value=_mock_settings()):
+            repo = LaravelApiRepository()
+            mock_response_obj = Mock()
+            mock_response_obj.status_code = 200
+            mock_response_obj.json = Mock(return_value=mock_response)
+            mock_request = AsyncMock(return_value=mock_response_obj)
+            with patch("repositories.laravel_api_repository.make_request", new=mock_request):
+                result1 = await repo.get_effective_targets_batch([1])
+                result2 = await repo.get_effective_targets_batch([1])
+                assert 1 in result1
+                assert 1 in result2
+                assert mock_request.call_count == 1
+    finally:
+        if old_ttl is not None:
+            os.environ["EFFECTIVE_TARGETS_CACHE_TTL_SEC"] = old_ttl
+        else:
+            os.environ.pop("EFFECTIVE_TARGETS_CACHE_TTL_SEC", None)

@@ -209,6 +209,22 @@ resources/js/Pages/
 - цветовая кодировка типов событий
 - пагинация
 
+## 6.6. Automation Tab: Scheduler Task Lifecycle
+
+`Pages/Zones/Tabs/ZoneAutomationTab.vue`
+
+Обязательные UX-инварианты:
+- показывать lifecycle только в целевых статусах: `accepted`, `running`, `completed`, `failed`, `rejected`, `expired`;
+- отдельный блок SLA по `scheduled_for/due_at/expires_at`;
+- отдельный блок подтверждения исполнения команды по terminal статусу ноды `DONE`;
+- в результате задачи отображать поля `command_submitted`, `command_effect_confirmed`,
+  `commands_total`, `commands_effect_confirmed`, `commands_failed`;
+- timeline рендерится только из event-contract (`event_id/event_seq/event_type/...`) без legacy fallback событий.
+
+Фильтры оператора:
+- пресеты: `all`, `failed`, `deadline`, `done_confirmed`, `done_unconfirmed`;
+- поиск по `task_id`, `status`, `reason_code`, `error_code`.
+
 ---
 
 # 7. Pages for Devices

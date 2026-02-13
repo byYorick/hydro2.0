@@ -1,0 +1,115 @@
+menu "Test Node UI"
+
+config TEST_NODE_UI_ENABLE
+    bool "Enable local UI (ILI9341 + LVGL + encoder)"
+    default y
+
+config TEST_NODE_LCD_H_RES
+    int "ILI9341 horizontal resolution"
+    default 240
+    range 1 480
+
+config TEST_NODE_LCD_V_RES
+    int "ILI9341 vertical resolution"
+    default 320
+    range 1 480
+
+config TEST_NODE_LCD_BUFFER_LINES
+    int "LVGL draw buffer lines"
+    default 20
+    range 10 120
+
+config TEST_NODE_LCD_PIXEL_CLOCK_HZ
+    int "LCD SPI pixel clock (Hz)"
+    default 20000000
+    range 1000000 40000000
+
+config TEST_NODE_LCD_IO_QUEUE_DEPTH
+    int "LCD SPI transaction queue depth"
+    default 10
+    range 1 10
+
+config TEST_NODE_LCD_SINGLE_BUFFER
+    bool "Use single LVGL draw buffer (more stable, lower RAM)"
+    default n
+
+config TEST_NODE_LCD_SWAP_COLOR_BYTES
+    bool "LVGL RGB565 byte order swap (for some ILI9341 boards)"
+    default y
+
+config TEST_NODE_LCD_RGB_ORDER_BGR
+    bool "LCD RGB element order: BGR (ILI9341 typical)"
+    default y
+
+config TEST_NODE_LCD_SWAP_XY
+    bool "LCD swap X/Y axes"
+    default n
+
+config TEST_NODE_LCD_MIRROR_X
+    bool "LCD mirror X"
+    default y
+
+config TEST_NODE_LCD_MIRROR_Y
+    bool "LCD mirror Y"
+    default n
+
+config TEST_NODE_LCD_INVERT_COLORS
+    bool "LCD invert colors"
+    default n
+
+config TEST_NODE_LCD_PIN_SCLK
+    int "LCD SPI SCLK GPIO"
+    default 12
+    range -1 48
+
+config TEST_NODE_LCD_PIN_MOSI
+    int "LCD SPI MOSI GPIO"
+    default 11
+    range -1 48
+
+config TEST_NODE_LCD_PIN_MISO
+    int "LCD SPI MISO GPIO (-1 if unused)"
+    default -1
+    range -1 48
+
+config TEST_NODE_LCD_PIN_DC
+    int "LCD DC GPIO"
+    default 9
+    range -1 48
+
+config TEST_NODE_LCD_PIN_RST
+    int "LCD RESET GPIO"
+    default 14
+    range -1 48
+
+config TEST_NODE_LCD_PIN_CS
+    int "LCD CS GPIO"
+    default 10
+    range -1 48
+
+config TEST_NODE_LCD_PIN_BK_LIGHT
+    int "LCD backlight GPIO"
+    default 15
+    range -1 48
+
+config TEST_NODE_LCD_BK_LIGHT_ON_LEVEL
+    int "LCD backlight ON level"
+    default 1
+    range 0 1
+
+config TEST_NODE_ENCODER_PIN_A
+    int "Encoder pin A (CLK)"
+    default 5
+    range 0 48
+
+config TEST_NODE_ENCODER_PIN_B
+    int "Encoder pin B (DT)"
+    default 4
+    range 0 48
+
+config TEST_NODE_ENCODER_PIN_SW
+    int "Encoder pin SW"
+    default 6
+    range 0 48
+
+endmenu

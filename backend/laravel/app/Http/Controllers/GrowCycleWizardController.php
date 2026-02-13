@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
@@ -13,6 +15,7 @@ use App\Models\GrowCycle;
 use App\Enums\GrowCycleStatus;
 use App\Services\ZoneService;
 use App\Services\GrowCycleService;
+use App\Services\ZoneReadinessService;
 use App\Models\RecipeRevision;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,9 +25,25 @@ use Illuminate\Support\Facades\Validator;
 
 class GrowCycleWizardController extends Controller
 {
+    private const WIZARD_BINDING_ROLES = [
+        'main_pump',
+        'drain',
+        'mist',
+        'light',
+        'vent',
+        'heater',
+        'ph_acid_pump',
+        'ph_base_pump',
+        'ec_npk_pump',
+        'ec_calcium_pump',
+        'ec_magnesium_pump',
+        'ec_micro_pump',
+    ];
+
     public function __construct(
         private readonly ZoneService $zoneService,
-        private readonly GrowCycleService $growCycleService
+        private readonly GrowCycleService $growCycleService,
+        private readonly ZoneReadinessService $zoneReadinessService
     ) {
     }
 
@@ -120,6 +139,7 @@ class GrowCycleWizardController extends Controller
                             'ec_target' => $phase->ec_target,
                             'ec_min' => $phase->ec_min,
                             'ec_max' => $phase->ec_max,
+                            'irrigation_interval_sec' => $phase->irrigation_interval_sec,
                             'temp_air_target' => $phase->temp_air_target,
                             'humidity_target' => $phase->humidity_target,
                             'co2_target' => $phase->co2_target,
@@ -206,8 +226,8 @@ class GrowCycleWizardController extends Controller
             'batch.system' => 'nullable|string',
             'channel_bindings' => 'required|array',
             'channel_bindings.*.node_id' => 'required|exists:nodes,id',
-            'channel_bindings.*.channel_id' => 'required|exists:node_channels,id',
-            'channel_bindings.*.role' => 'required|string|in:main_pump,drain,mist,light,vent,heater',
+            'channel_bindings.*.channel_id' => 'required|distinct|exists:node_channels,id',
+            'channel_bindings.*.role' => 'required|string|distinct|in:'.implode(',', self::WIZARD_BINDING_ROLES),
             'stage_map' => 'nullable|array',
         ]);
 
@@ -226,44 +246,24 @@ class GrowCycleWizardController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Forbidden'], 403);
         }
 
-        // Проверяем готовность зоны перед созданием цикла
-        $readiness = $this->checkZoneReadiness($zone);
-        $readinessErrors = [];
-        
-        if (!$readiness['ready']) {
-            // Собираем детальные ошибки
-            if (!$readiness['checks']['main_pump']) {
-                $readinessErrors[] = 'Основная помпа не привязана к каналу';
-            }
-            if (!$readiness['checks']['drain']) {
-                $readinessErrors[] = 'Дренаж не привязан к каналу';
-            }
-            if (!$readiness['checks']['online_nodes']) {
-                $readinessErrors[] = 'Нет онлайн нод в зоне';
-            }
-            if ($readiness['nodes']['total'] === 0) {
-                $readinessErrors[] = 'Нет привязанных нод в зоне';
-            }
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Zone is not ready for cycle start',
-                'readiness_errors' => $readinessErrors,
-                'readiness' => $readiness,
-            ], 422);
-        }
-
         try {
             return DB::transaction(function () use ($data, $zone, $user) {
-                // 1. Привязываем каналы к ролям (сохраняем в config канала)
-                foreach ($data['channel_bindings'] as $binding) {
-                    $channel = NodeChannel::findOrFail($binding['channel_id']);
-                    $config = $channel->config ?? [];
-                    $config['zone_role'] = $binding['role'];
-                    $channel->update(['config' => $config]);
+                // 1. Привязываем каналы к ролям в нормализованной инфраструктуре.
+                $this->persistChannelBindings($zone, $data['channel_bindings']);
+
+                // 2. Проверяем готовность зоны после применения bind-ов.
+                $readiness = $this->checkZoneReadiness($zone->fresh());
+                $readinessErrors = $this->buildZoneReadinessErrors($readiness);
+                if (! $readiness['ready']) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Zone is not ready for cycle start',
+                        'readiness_errors' => $readinessErrors,
+                        'readiness' => $readiness,
+                    ], 422);
                 }
 
-                // 2. Привязываем растение к зоне (если еще не привязано)
+                // 3. Привязываем растение к зоне (если еще не привязано)
                 $plant = Plant::findOrFail($data['plant_id']);
                 if (!DB::table('plant_zone')->where('zone_id', $zone->id)->where('plant_id', $plant->id)->exists()) {
                     DB::table('plant_zone')->insert([
@@ -279,13 +279,13 @@ class GrowCycleWizardController extends Controller
                     ]);
                 }
 
-                // 3. Получаем ревизию рецепта (должна быть опубликована)
+                // 4. Получаем ревизию рецепта (должна быть опубликована)
                 $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
                 if ($revision->status !== 'PUBLISHED') {
                     throw new \DomainException('Only PUBLISHED revisions can be used for new cycles');
                 }
 
-                // 4. Создаем GrowCycle через GrowCycleService
+                // 5. Создаем GrowCycle через GrowCycleService
                 $plantingDate = new \DateTime($data['planting_date']);
                 $automationStartDate = new \DateTime($data['automation_start_date']);
                 
@@ -310,7 +310,7 @@ class GrowCycleWizardController extends Controller
                     $user->id
                 );
 
-                // 5. Обновляем статус зоны на RUNNING
+                // 6. Обновляем статус зоны на RUNNING
                 $zone->update(['status' => 'RUNNING']);
 
                 Log::info('Grow cycle created via wizard', [
@@ -350,61 +350,135 @@ class GrowCycleWizardController extends Controller
      */
     private function checkZoneReadiness(Zone $zone): array
     {
-        $requiredAssets = [
-            'main_pump' => false,
-            'drain' => false,
-            'tank_clean' => false,
-            'tank_nutrient' => false,
+        return $this->zoneReadinessService->checkZoneReadiness($zone);
+    }
+
+    private function buildZoneReadinessErrors(array $readiness): array
+    {
+        $errors = [];
+        $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
+
+        if (! ($checks['has_nodes'] ?? false)) {
+            $errors[] = 'Нет привязанных нод в зоне';
+        }
+        if (! ($checks['online_nodes'] ?? false)) {
+            $errors[] = 'Нет онлайн нод в зоне';
+        }
+
+        $roleMessages = [
+            'main_pump' => 'Основная помпа не привязана к каналу',
+            'drain' => 'Дренаж не привязан к каналу',
+            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
+            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
+            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
+            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
+            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
+            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
         ];
-
-        $optionalAssets = [
-            'light' => false,
-            'vent' => false,
-            'heater' => false,
-            'mist' => false,
-        ];
-
-        $onlineNodes = 0;
-        $totalNodes = $zone->nodes->count();
-
-        // Проверяем каналы и их роли
-        foreach ($zone->nodes as $node) {
-            if ($node->status === 'online') {
-                $onlineNodes++;
-            }
-
-            foreach ($node->channels as $channel) {
-                $role = $channel->config['zone_role'] ?? null;
-                if ($role) {
-                    if (in_array($role, ['main_pump', 'drain', 'mist'])) {
-                        $requiredAssets[$role] = true;
-                    } elseif (in_array($role, ['light', 'vent', 'heater'])) {
-                        $optionalAssets[$role] = true;
-                    }
-                }
+        foreach ($roleMessages as $role => $message) {
+            if (array_key_exists($role, $checks) && ! $checks[$role]) {
+                $errors[] = $message;
             }
         }
 
-        // Проверяем наличие инфраструктуры (если есть таблица zone_infrastructure)
-        // Пока упрощенно - проверяем только каналы
+        foreach ($readiness['errors'] ?? [] as $issue) {
+            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
+                $errors[] = $issue['message'];
+            } elseif (is_string($issue)) {
+                $errors[] = $issue;
+            }
+        }
 
-        $allRequiredReady = $requiredAssets['main_pump'] && $requiredAssets['drain'];
-        $hasOnlineNodes = $onlineNodes > 0;
+        return array_values(array_unique($errors));
+    }
 
-        return [
-            'ready' => $allRequiredReady && $hasOnlineNodes,
-            'required_assets' => $requiredAssets,
-            'optional_assets' => $optionalAssets,
-            'nodes' => [
-                'online' => $onlineNodes,
-                'total' => $totalNodes,
-                'all_online' => $onlineNodes === $totalNodes && $totalNodes > 0,
-            ],
-            'checks' => [
-                'main_pump' => $requiredAssets['main_pump'],
-                'drain' => $requiredAssets['drain'],
-                'online_nodes' => $hasOnlineNodes,
-            ],
-        ];
+    /**
+     * Сохранить channel bindings в нормализованной модели инфраструктуры.
+     *
+     * @param  array<int, array{node_id:int, channel_id:int, role:string}>  $bindings
+     */
+    private function persistChannelBindings(Zone $zone, array $bindings): void
+    {
+        $channelIds = array_values(array_unique(array_map(
+            static fn (array $binding): int => (int) $binding['channel_id'],
+            $bindings
+        )));
+
+        $channels = NodeChannel::query()
+            ->with('node:id,zone_id')
+            ->whereIn('id', $channelIds)
+            ->get()
+            ->keyBy('id');
+
+        foreach ($bindings as $binding) {
+            $channelId = (int) $binding['channel_id'];
+            $expectedNodeId = (int) $binding['node_id'];
+            $role = (string) $binding['role'];
+
+            /** @var NodeChannel|null $channel */
+            $channel = $channels->get($channelId);
+            if (! $channel) {
+                throw new \DomainException("Channel {$channelId} not found");
+            }
+
+            if ((int) $channel->node_id !== $expectedNodeId) {
+                throw new \DomainException("Channel {$channelId} does not belong to node {$expectedNodeId}");
+            }
+
+            $channelZoneId = (int) ($channel->node?->zone_id ?? 0);
+            if ($channelZoneId !== (int) $zone->id) {
+                throw new \DomainException("Channel {$channelId} does not belong to zone {$zone->id}");
+            }
+
+            $meta = $this->bindingRoleMeta($role);
+            $instance = InfrastructureInstance::query()->firstOrCreate(
+                [
+                    'owner_type' => 'zone',
+                    'owner_id' => $zone->id,
+                    'label' => $meta['label'],
+                ],
+                [
+                    'asset_type' => $meta['asset_type'],
+                    'required' => $meta['required'],
+                ]
+            );
+
+            if ($instance->asset_type !== $meta['asset_type'] || (bool) $instance->required !== $meta['required']) {
+                $instance->asset_type = $meta['asset_type'];
+                $instance->required = $meta['required'];
+                $instance->save();
+            }
+
+            ChannelBinding::query()->updateOrCreate(
+                ['node_channel_id' => $channel->id],
+                [
+                    'infrastructure_instance_id' => $instance->id,
+                    'direction' => 'actuator',
+                    'role' => $role,
+                ]
+            );
+        }
+    }
+
+    /**
+     * @return array{label:string, asset_type:string, required:bool}
+     */
+    private function bindingRoleMeta(string $role): array
+    {
+        return match ($role) {
+            'main_pump' => ['label' => 'Основная помпа', 'asset_type' => 'PUMP', 'required' => true],
+            'drain' => ['label' => 'Дренаж', 'asset_type' => 'PUMP', 'required' => true],
+            'mist' => ['label' => 'Туман', 'asset_type' => 'MIST', 'required' => false],
+            'light' => ['label' => 'Освещение', 'asset_type' => 'LIGHT', 'required' => false],
+            'vent' => ['label' => 'Вентиляция', 'asset_type' => 'FAN', 'required' => false],
+            'heater' => ['label' => 'Отопление', 'asset_type' => 'HEATER', 'required' => false],
+            'ph_acid_pump' => ['label' => 'Насос pH кислоты', 'asset_type' => 'PUMP', 'required' => true],
+            'ph_base_pump' => ['label' => 'Насос pH щёлочи', 'asset_type' => 'PUMP', 'required' => true],
+            'ec_npk_pump' => ['label' => 'Насос EC NPK', 'asset_type' => 'PUMP', 'required' => true],
+            'ec_calcium_pump' => ['label' => 'Насос EC Calcium', 'asset_type' => 'PUMP', 'required' => true],
+            'ec_magnesium_pump' => ['label' => 'Насос EC Magnesium', 'asset_type' => 'PUMP', 'required' => true],
+            'ec_micro_pump' => ['label' => 'Насос EC Micro', 'asset_type' => 'PUMP', 'required' => true],
+            default => ['label' => $role, 'asset_type' => 'PUMP', 'required' => false],
+        };
     }
 }

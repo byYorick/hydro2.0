@@ -7,7 +7,7 @@
   "properties": {
     "metric_type": {
       "type": "string",
-      "description": "Тип метрики (PH, EC, TEMPERATURE, HUMIDITY, WATER_LEVEL, FLOW_RATE, LIGHT_INTENSITY, etc.)",
+      "description": "Тип метрики (PH, EC, TEMPERATURE, HUMIDITY, WATER_LEVEL, WATER_LEVEL_SWITCH, FLOW_RATE, LIGHT_INTENSITY, etc.)",
       "minLength": 1,
       "maxLength": 50
     },
@@ -53,7 +53,7 @@
         {"type": "integer"},
         {"type": "number"}
       ],
-      "description": "TDS значение (от ec_node)"
+      "description": "TDS значение (от узла типа ec)"
     },
     "error_code": {
       "anyOf": [
@@ -79,7 +79,7 @@
     },
     "health": {
       "type": "object",
-      "description": "Метрики здоровья (от pump_node)",
+      "description": "Метрики здоровья (от узла типа irrig)",
       "additionalProperties": true
     },
     "zone_uid": {

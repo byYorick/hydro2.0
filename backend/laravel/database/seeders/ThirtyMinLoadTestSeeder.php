@@ -60,7 +60,7 @@ class ThirtyMinLoadTestSeeder extends Seeder
                 [
                     'zone_id' => $zone->id,
                     'name' => "Node {$i} - Zone " . $zone->name,
-                    'type' => $i % 4 === 0 ? 'ph' : ($i % 4 === 1 ? 'ec' : 'sensor'),
+                    'type' => $i % 4 === 0 ? 'ph' : ($i % 4 === 1 ? 'ec' : 'climate'),
                     'status' => 'online',
                     'lifecycle_state' => 'ACTIVE',
                     'fw_version' => '1.0.0',

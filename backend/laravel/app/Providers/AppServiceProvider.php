@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Events\NodeConfigUpdated;
 use App\Events\ZoneUpdated;
+use App\Listeners\PublishNodeConfigOnUpdate;
 use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
 use App\Models\ZoneEvent;
@@ -59,6 +61,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment(['testing', 'e2e'])) {
+            Vite::useHotFile(storage_path('framework/vite.hot'));
+        }
+
         Vite::prefetch(concurrency: 3);
 
         // Настройка rate limiting для регистрации нод
@@ -79,6 +85,10 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(
             ZoneUpdated::class,
             PublishZoneConfigUpdate::class
+        );
+        Event::listen(
+            NodeConfigUpdated::class,
+            PublishNodeConfigOnUpdate::class
         );
 
         // Регистрация Observer для Command

@@ -244,9 +244,9 @@ describe('Devices/Show.vue', () => {
   it('отображает кнопку Restart', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('Restart')
+    expect(wrapper.text()).toContain('Перезапустить')
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find(btn => btn.text().includes('Restart'))
+    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить'))
     expect(restartButton).toBeTruthy()
   })
 
@@ -257,7 +257,7 @@ describe('Devices/Show.vue', () => {
     await wrapper.vm.$nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find(btn => btn.text().includes('Restart'))
+    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить'))
     
     if (restartButton) {
       await restartButton.trigger('click')
@@ -279,7 +279,7 @@ describe('Devices/Show.vue', () => {
     await wrapper.vm.$nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find(btn => btn.text().includes('Restart') || btn.text().includes('Перезапуск'))
+    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить') || btn.text().includes('Перезапуск'))
     
     if (restartButton) {
       await restartButton.trigger('click')
@@ -409,4 +409,3 @@ describe('Devices/Show.vue', () => {
     expect(text).toBeTruthy()
   })
 })
-

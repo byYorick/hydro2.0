@@ -56,6 +56,19 @@ class ZoneOperationsService
     }
 
     /**
+     * Выполнить калибровку дозирующей помпы.
+     */
+    public function calibratePump(Zone $zone, array $data): string
+    {
+        $this->validateZoneOperation($zone, 'calibrate_pump');
+
+        $jobId = \Illuminate\Support\Str::uuid()->toString();
+        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'calibrate_pump', $data, $jobId);
+
+        return $jobId;
+    }
+
+    /**
      * Получить состояние здоровья зоны
      */
     public function getHealth(Zone $zone): array

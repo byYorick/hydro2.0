@@ -34,6 +34,20 @@ ERROR_RECEIVED = Counter(
     "Total error messages received",
     ["node_uid", "level"],
 )
+NODE_EVENT_RECEIVED = Counter(
+    "node_event_received_total",
+    "Total node event messages received",
+    ["event_code"],
+)
+NODE_EVENT_UNKNOWN = Counter(
+    "node_event_unknown_total",
+    "Total node event messages mapped to OTHER metric label",
+)
+NODE_EVENT_ERROR = Counter(
+    "node_event_error_total",
+    "Total errors while processing node event messages",
+    ["reason"],
+)
 NODE_HELLO_RECEIVED = Counter(
     "node_hello_received_total",
     "Total node_hello messages received",

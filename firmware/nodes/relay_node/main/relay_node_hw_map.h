@@ -25,12 +25,15 @@ typedef struct {
 } relay_node_hw_channel_t;
 
 #ifndef RELAY_NODE_HW_CHANNELS_DEF
-// Пример аппаратной карты: 4 канала.
+// Аппаратная карта под водную обвязку зоны:
+// - fill_valve: подача чистой воды в резервуар зоны
+// - water_control: переключение линии "коррекция pH/EC" ↔ "полив"
+// - drain_valve: дренаж (только для субстрата)
+// TODO: скорректировать GPIO под реальную плату.
 #define RELAY_NODE_HW_CHANNELS_DEF                     \
-    { "relay1", 4,  false, RELAY_TYPE_NO },            \
-    { "relay2", 5,  false, RELAY_TYPE_NO },            \
-    { "relay3", 18, false, RELAY_TYPE_NO },            \
-    { "relay4", 19, false, RELAY_TYPE_NO }
+    { "fill_valve",    4,  false, RELAY_TYPE_NO },     \
+    { "water_control", 5,  false, RELAY_TYPE_NO },     \
+    { "drain_valve",   18, false, RELAY_TYPE_NO }
 #endif
 
 extern const relay_node_hw_channel_t RELAY_NODE_HW_CHANNELS[];

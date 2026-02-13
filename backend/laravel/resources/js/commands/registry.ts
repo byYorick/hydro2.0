@@ -169,6 +169,14 @@ const staticCommandDefinitions: CommandDefinition[] = [
     route: '/recipes',
   },
   {
+    id: 'nav-nutrients',
+    label: 'Открыть Nutrients',
+    icon: '🧪',
+    groupId: 'navigation',
+    route: '/nutrients',
+    roles: ['admin', 'agronomist', 'operator'],
+  },
+  {
     id: 'nav-alerts',
     label: 'Открыть Alerts',
     icon: '⚠️',
@@ -214,6 +222,14 @@ const staticCommandDefinitions: CommandDefinition[] = [
     groupId: 'create',
     route: '/recipes/create',
     roles: ['agronomist'],
+  },
+  {
+    id: 'agro-setup-wizard',
+    label: 'Мастер настройки',
+    icon: '🧭',
+    groupId: 'management',
+    route: '/setup/wizard',
+    roles: ['agronomist', 'admin'],
   },
   {
     id: 'engineer-system',

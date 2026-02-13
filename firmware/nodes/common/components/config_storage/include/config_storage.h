@@ -183,6 +183,26 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
                                   char *error_msg, size_t error_msg_size);
 
 /**
+ * @brief Сброс gh_uid/zone_uid в конфигурации к указанным значениям.
+ *
+ * Wi-Fi и MQTT параметры сохраняются.
+ *
+ * @param gh_uid Новый gh_uid
+ * @param zone_uid Новый zone_uid
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_uid);
+
+/**
+ * @brief Полный сброс конфигурации в NVS (включая сетевые параметры).
+ *
+ * Удаляются все ключи в namespace node_config.
+ *
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_factory_reset(void);
+
+/**
  * @brief Деинициализация config_storage
  */
 void config_storage_deinit(void);
@@ -192,7 +212,6 @@ void config_storage_deinit(void);
 #endif
 
 #endif // CONFIG_STORAGE_H
-
 
 
 

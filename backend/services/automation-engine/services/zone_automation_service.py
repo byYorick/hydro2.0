@@ -5,9 +5,15 @@ Zone Automation Service - оркестрация обработки зоны.
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta
+import inspect
 from common.utils.time import utcnow
 from common.simulation_clock import SimulationClock
 from common.simulation_events import record_simulation_event
+from common.infra_alerts import (
+    send_infra_alert,
+    send_infra_exception_alert,
+    send_infra_resolved_alert,
+)
 from common.db import create_zone_event
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
@@ -46,6 +52,9 @@ INITIAL_BACKOFF_SECONDS = 30  # Начальный backoff
 MAX_BACKOFF_SECONDS = 600  # Максимальный backoff (10 минут)
 BACKOFF_MULTIPLIER = 2  # Множитель для экспоненциального backoff
 DEGRADED_MODE_THRESHOLD = 3  # Количество ошибок для перехода в degraded mode
+SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений о пропусках
+COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений cooldown
+CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
 
 
 class ZoneAutomationService:
@@ -95,8 +104,19 @@ class ZoneAutomationService:
         self._controller_failures: Dict[tuple[int, str], datetime] = {}
         
         # Per-zone state для backoff и degraded mode
-        # Ключ: zone_id, значение: {'error_streak': int, 'next_allowed_run_at': datetime}
+        # Ключ: zone_id, значение:
+        # {
+        #   'error_streak': int,
+        #   'next_allowed_run_at': datetime | None,
+        #   'last_backoff_reported_until': datetime | None,
+        #   'degraded_alert_active': bool,
+        #   'last_missing_targets_report_at': datetime | None
+        # }
         self._zone_states: Dict[int, Dict[str, Any]] = {}
+        # Ключ: (zone_id, controller_name), значение: datetime последнего cooldown skip report
+        self._controller_cooldown_reported_at: Dict[tuple[int, str], datetime] = {}
+        # Ключ: (zone_id, controller_name), значение: datetime последнего alert о circuit-open skip
+        self._controller_circuit_open_reported_at: Dict[tuple[int, str], datetime] = {}
     
     async def save_all_pid_states(self):
         """Сохранить состояние всех PID контроллеров."""
@@ -112,6 +132,7 @@ class ZoneAutomationService:
         """
         # Проверка backoff - пропускаем зону, если еще не прошло время
         if not self._should_process_zone(zone_id):
+            await self._emit_backoff_skip_signal(zone_id)
             return
         
         # Определяем режим работы (normal или degraded)
@@ -137,6 +158,7 @@ class ZoneAutomationService:
                 targets = grow_cycle.get("targets") if grow_cycle else None
 
                 if not targets or not isinstance(targets, dict):
+                    await self._emit_missing_targets_signal(zone_id, grow_cycle)
                     return
 
                 # Получаем телеметрию и capabilities
@@ -156,6 +178,7 @@ class ZoneAutomationService:
                     extra={"zone_id": zone_id}
                 )
                 self._record_zone_error(zone_id)
+                await self._emit_zone_data_unavailable_signal(zone_id)
                 return
             
             # Сохраняем telemetry_timestamps для использования в _process_correction_controllers
@@ -171,6 +194,7 @@ class ZoneAutomationService:
             
             # В degraded mode выполняем только safety checks + health + стоп-условия
             if is_degraded:
+                await self._emit_degraded_mode_signal(zone_id)
                 logger.warning(
                     f"Zone {zone_id}: Running in DEGRADED mode (error_streak={self._get_error_streak(zone_id)}). "
                     f"Only safety checks and health monitoring enabled.",
@@ -184,9 +208,11 @@ class ZoneAutomationService:
                     self._update_zone_health(zone_id),
                     zone_id
                 )
-                
+
                 # Успешное выполнение в degraded mode - сбрасываем streak
-                self._reset_zone_error_streak(zone_id)
+                previous_error_streak = self._reset_zone_error_streak(zone_id)
+                if previous_error_streak > 0:
+                    await self._emit_zone_recovered_signal(zone_id, previous_error_streak)
                 return
             
             # Нормальный режим - выполняем все контроллеры
@@ -254,9 +280,11 @@ class ZoneAutomationService:
                 self._update_zone_health(zone_id),
                 zone_id
             )
-            
+
             # Успешное выполнение - сбрасываем error_streak
-            self._reset_zone_error_streak(zone_id)
+            previous_error_streak = self._reset_zone_error_streak(zone_id)
+            if previous_error_streak > 0:
+                await self._emit_zone_recovered_signal(zone_id, previous_error_streak)
             
         except Exception as e:
             # Ошибка при обработке зоны - увеличиваем error_streak
@@ -320,11 +348,15 @@ class ZoneAutomationService:
             logger.debug(f"[TEST_HOOK] Failed to get state override: {e}")
         
         if zone_id not in self._zone_states:
-            self._zone_states[zone_id] = {
-                'error_streak': 0,
-                'next_allowed_run_at': None
-            }
-        return self._zone_states[zone_id]
+            self._zone_states[zone_id] = {}
+
+        state = self._zone_states[zone_id]
+        state.setdefault('error_streak', 0)
+        state.setdefault('next_allowed_run_at', None)
+        state.setdefault('last_backoff_reported_until', None)
+        state.setdefault('degraded_alert_active', False)
+        state.setdefault('last_missing_targets_report_at', None)
+        return state
     
     def _get_error_streak(self, zone_id: int) -> int:
         """Получить количество последовательных ошибок для зоны."""
@@ -413,7 +445,7 @@ class ZoneAutomationService:
             }
         )
     
-    def _reset_zone_error_streak(self, zone_id: int) -> None:
+    def _reset_zone_error_streak(self, zone_id: int) -> int:
         """
         Сбросить error_streak для зоны после успешного выполнения.
         
@@ -421,6 +453,7 @@ class ZoneAutomationService:
             zone_id: ID зоны
         """
         state = self._get_zone_state(zone_id)
+        previous_error_streak = int(state['error_streak'])
         if state['error_streak'] > 0:
             logger.info(
                 f"Zone {zone_id}: Resetting error_streak (was {state['error_streak']}) after successful cycle",
@@ -429,6 +462,314 @@ class ZoneAutomationService:
         
         state['error_streak'] = 0
         state['next_allowed_run_at'] = None
+        state['last_backoff_reported_until'] = None
+        state['degraded_alert_active'] = False
+        return previous_error_streak
+
+    async def _create_zone_event_safe(
+        self,
+        zone_id: int,
+        event_type: str,
+        details: Dict[str, Any],
+        signal_name: str,
+    ) -> bool:
+        """
+        Безопасно создать zone_event.
+        При сбое пишет error-сигнал в infra alerts, чтобы не было тихих потерь событий.
+        """
+        try:
+            await create_zone_event(zone_id, event_type, details)
+            return True
+        except Exception as event_error:
+            logger.warning(
+                "Zone %s: Failed to create %s event: %s",
+                zone_id,
+                event_type,
+                event_error,
+                exc_info=True,
+            )
+            await send_infra_exception_alert(
+                error=event_error,
+                code="infra_zone_event_write_failed",
+                alert_type="Zone Event Write Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_events",
+                details={
+                    "event_type": event_type,
+                    "signal_name": signal_name,
+                },
+            )
+            return False
+
+    async def _emit_backoff_skip_signal(self, zone_id: int) -> None:
+        """Лог/ивент/алерт при пропуске зоны из-за backoff (с защитой от спама)."""
+        state = self._get_zone_state(zone_id)
+        next_allowed = state.get('next_allowed_run_at')
+        if not next_allowed:
+            return
+
+        now = utcnow()
+        remaining_seconds = max(0, int((next_allowed - now).total_seconds()))
+        already_reported_until = state.get('last_backoff_reported_until')
+        if already_reported_until == next_allowed:
+            logger.debug(
+                "Zone %s: Backoff skip (already reported), remaining=%ss",
+                zone_id,
+                remaining_seconds,
+                extra={'zone_id': zone_id, 'next_allowed_run_at': next_allowed.isoformat()},
+            )
+            return
+
+        logger.warning(
+            "Zone %s: Skipped due to backoff, remaining=%ss, next_allowed_run_at=%s",
+            zone_id,
+            remaining_seconds,
+            next_allowed.isoformat(),
+            extra={
+                'zone_id': zone_id,
+                'error_streak': self._get_error_streak(zone_id),
+                'next_allowed_run_at': next_allowed.isoformat(),
+                'remaining_seconds': remaining_seconds,
+            },
+        )
+
+        event_created = await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='ZONE_SKIPPED_BACKOFF',
+            details={
+                'error_streak': self._get_error_streak(zone_id),
+                'next_allowed_run_at': next_allowed.isoformat(),
+                'remaining_seconds': remaining_seconds,
+            },
+            signal_name="backoff_skip",
+        )
+        alert_sent = await send_infra_alert(
+            code="infra_zone_backoff_skip",
+            alert_type="Zone Backoff Skip",
+            message=f"Zone {zone_id} skipped due to backoff",
+            severity="warning",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_processing",
+            error_type="BackoffSkip",
+            details={
+                "error_streak": self._get_error_streak(zone_id),
+                "next_allowed_run_at": next_allowed.isoformat(),
+                "remaining_seconds": remaining_seconds,
+            },
+        )
+        if event_created or alert_sent:
+            state['last_backoff_reported_until'] = next_allowed
+        else:
+            logger.warning(
+                "Zone %s: Backoff skip signal not persisted (event+alert failed), will retry",
+                zone_id,
+                extra={'zone_id': zone_id, 'next_allowed_run_at': next_allowed.isoformat()},
+            )
+
+    async def _emit_missing_targets_signal(self, zone_id: int, grow_cycle: Optional[Dict[str, Any]]) -> None:
+        """Лог/ивент/алерт при отсутствии targets (чтобы не было тихого return)."""
+        state = self._get_zone_state(zone_id)
+        now = utcnow()
+        last_reported = state.get('last_missing_targets_report_at')
+        if isinstance(last_reported, datetime) and (now - last_reported).total_seconds() < SKIP_REPORT_THROTTLE_SECONDS:
+            logger.debug(
+                "Zone %s: Missing targets (throttled report)",
+                zone_id,
+                extra={'zone_id': zone_id},
+            )
+            return
+
+        logger.warning(
+            "Zone %s: Skipping processing because targets are missing or invalid",
+            zone_id,
+            extra={'zone_id': zone_id, 'grow_cycle_present': bool(grow_cycle)},
+        )
+
+        event_created = await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='ZONE_SKIPPED_NO_TARGETS',
+            details={
+                'grow_cycle_present': bool(grow_cycle),
+                'reason': 'targets_missing_or_invalid',
+            },
+            signal_name="missing_targets",
+        )
+        alert_sent = await send_infra_alert(
+            code="infra_zone_targets_missing",
+            alert_type="Zone Targets Missing",
+            message=f"Zone {zone_id} skipped: targets are missing or invalid",
+            severity="warning",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_processing",
+            error_type="MissingTargets",
+            details={"grow_cycle_present": bool(grow_cycle)},
+        )
+        if event_created or alert_sent:
+            state['last_missing_targets_report_at'] = now
+        else:
+            logger.warning(
+                "Zone %s: Missing-targets signal not persisted (event+alert failed), will retry",
+                zone_id,
+                extra={'zone_id': zone_id},
+            )
+
+    async def _emit_zone_data_unavailable_signal(self, zone_id: int) -> None:
+        """Лог/ивент/алерт при недоступности данных зоны (DB circuit breaker open)."""
+        state = self._get_zone_state(zone_id)
+        next_allowed = state.get('next_allowed_run_at')
+        error_streak = state.get('error_streak', 0)
+        logger.warning(
+            "Zone %s: Zone data unavailable, scheduling retry with backoff",
+            zone_id,
+            extra={
+                'zone_id': zone_id,
+                'error_streak': error_streak,
+                'next_allowed_run_at': next_allowed.isoformat() if next_allowed else None,
+            },
+        )
+
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='ZONE_DATA_UNAVAILABLE',
+            details={
+                'reason': 'db_circuit_breaker_open',
+                'error_streak': error_streak,
+                'next_allowed_run_at': next_allowed.isoformat() if next_allowed else None,
+            },
+            signal_name="zone_data_unavailable",
+        )
+
+        await send_infra_alert(
+            code="infra_zone_data_unavailable",
+            alert_type="Zone Data Unavailable",
+            message=f"Zone {zone_id} data unavailable due to opened database circuit breaker",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_processing",
+            error_type="CircuitBreakerOpenError",
+            details={
+                "error_streak": error_streak,
+                "next_allowed_run_at": next_allowed.isoformat() if next_allowed else None,
+            },
+        )
+
+    async def _emit_degraded_mode_signal(self, zone_id: int) -> None:
+        """Лог/ивент/алерт при входе в degraded mode (один раз на инцидент)."""
+        state = self._get_zone_state(zone_id)
+        if state.get('degraded_alert_active', False):
+            return
+
+        error_streak = int(state.get('error_streak', 0))
+        logger.warning(
+            "Zone %s: Entered DEGRADED mode (error_streak=%s)",
+            zone_id,
+            error_streak,
+            extra={'zone_id': zone_id, 'error_streak': error_streak},
+        )
+
+        event_created = await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='ZONE_DEGRADED_MODE',
+            details={
+                'error_streak': error_streak,
+                'threshold': DEGRADED_MODE_THRESHOLD,
+            },
+            signal_name="degraded_mode",
+        )
+
+        alert_sent = await send_infra_alert(
+            code="infra_zone_degraded_mode",
+            alert_type="Zone Degraded Mode",
+            message=f"Zone {zone_id} switched to degraded mode",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_processing",
+            error_type="DegradedMode",
+            details={
+                "error_streak": error_streak,
+                "threshold": DEGRADED_MODE_THRESHOLD,
+            },
+        )
+        if event_created or alert_sent:
+            state['degraded_alert_active'] = True
+        else:
+            logger.warning(
+                "Zone %s: Degraded-mode signal not persisted (event+alert failed), will retry",
+                zone_id,
+                extra={'zone_id': zone_id, 'error_streak': error_streak},
+            )
+
+    async def _emit_zone_recovered_signal(self, zone_id: int, previous_error_streak: int) -> None:
+        """Явный recovery-сигнал в логи и zone_events после серии ошибок."""
+        logger.info(
+            "Zone %s: Recovered after %s consecutive errors",
+            zone_id,
+            previous_error_streak,
+            extra={'zone_id': zone_id, 'previous_error_streak': previous_error_streak},
+        )
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='ZONE_RECOVERED',
+            details={
+                'previous_error_streak': previous_error_streak,
+            },
+            signal_name="zone_recovered",
+        )
+        for resolved_code in (
+            "infra_zone_degraded_mode",
+            "infra_zone_data_unavailable",
+            "infra_zone_backoff_skip",
+            "infra_zone_targets_missing",
+        ):
+            await send_infra_resolved_alert(
+                code=resolved_code,
+                alert_type="Zone Recovered",
+                message=f"Zone {zone_id} recovered after {previous_error_streak} consecutive errors",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_processing",
+                details={"previous_error_streak": previous_error_streak},
+            )
+
+    async def _emit_controller_circuit_open_signal(
+        self,
+        zone_id: int,
+        controller_name: str,
+        *,
+        channel: Optional[str] = None,
+        cmd: Optional[str] = None,
+    ) -> None:
+        """Алерт о пропуске команды из-за открытого API Circuit Breaker (с троттлингом)."""
+        key = (zone_id, controller_name)
+        now = utcnow()
+        last_reported = self._controller_circuit_open_reported_at.get(key)
+        if last_reported and (now - last_reported).total_seconds() < CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS:
+            return
+
+        alert_sent = await send_infra_alert(
+            code="infra_controller_command_skipped_circuit_open",
+            alert_type="Controller Command Skipped (Circuit Open)",
+            message=f"Zone {zone_id} controller '{controller_name}' skipped command due to open API circuit breaker",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component=f"controller:{controller_name}",
+            channel=channel,
+            cmd=cmd,
+            error_type="CircuitBreakerOpenError",
+            details={
+                "controller": controller_name,
+                "throttle_seconds": CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+            },
+        )
+        if alert_sent:
+            self._controller_circuit_open_reported_at[key] = now
     
     def _is_controller_in_cooldown(self, zone_id: int, controller_name: str) -> bool:
         """
@@ -459,6 +800,7 @@ class ZoneAutomationService:
         """
         key = (zone_id, controller_name)
         self._controller_failures[key] = utcnow()
+        self._controller_cooldown_reported_at.pop(key, None)
     
     async def _safe_process_controller(
         self,
@@ -517,10 +859,12 @@ class ZoneAutomationService:
         """
         # Проверяем cooldown
         if self._is_controller_in_cooldown(zone_id, controller_name):
-            logger.debug(
-                f"Zone {zone_id}: Controller '{controller_name}' is in cooldown, skipping",
-                extra={'zone_id': zone_id, 'controller': controller_name}
-            )
+            # Корутину создают до входа в _safe_process_controller.
+            # Если контроллер в cooldown, нужно явно закрыть её,
+            # иначе остаются "висящие" coroutine-объекты.
+            if inspect.iscoroutine(controller_coro):
+                controller_coro.close()
+            await self._emit_controller_cooldown_skip_signal(zone_id, controller_name)
             return
         
         try:
@@ -529,6 +873,7 @@ class ZoneAutomationService:
             key = (zone_id, controller_name)
             if key in self._controller_failures:
                 del self._controller_failures[key]
+            self._controller_cooldown_reported_at.pop(key, None)
         except Exception as e:
             # Записываем время ошибки для cooldown
             self._record_controller_failure(zone_id, controller_name)
@@ -557,6 +902,94 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: Failed to create CONTROLLER_FAILED event: {event_error}",
                     exc_info=True
                 )
+
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_controller_failed",
+                alert_type="Controller Failed",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component=f"controller:{controller_name}",
+                details={
+                    "controller": controller_name,
+                    "cooldown_seconds": CONTROLLER_COOLDOWN_SECONDS,
+                },
+            )
+
+    async def _emit_controller_cooldown_skip_signal(self, zone_id: int, controller_name: str) -> None:
+        """Лог/ивент/алерт при skip контроллера в cooldown с троттлингом."""
+        key = (zone_id, controller_name)
+        now = utcnow()
+        last_reported = self._controller_cooldown_reported_at.get(key)
+        if last_reported and (now - last_reported).total_seconds() < COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS:
+            logger.debug(
+                "Zone %s: Controller '%s' cooldown skip (throttled report)",
+                zone_id,
+                controller_name,
+                extra={'zone_id': zone_id, 'controller': controller_name},
+            )
+            return
+
+        last_failure = self._controller_failures.get(key)
+        cooldown_end = (
+            last_failure + timedelta(seconds=CONTROLLER_COOLDOWN_SECONDS)
+            if last_failure
+            else None
+        )
+        remaining_seconds = (
+            max(0, int((cooldown_end - now).total_seconds()))
+            if cooldown_end
+            else CONTROLLER_COOLDOWN_SECONDS
+        )
+
+        logger.warning(
+            "Zone %s: Controller '%s' skipped due to cooldown, remaining=%ss",
+            zone_id,
+            controller_name,
+            remaining_seconds,
+            extra={
+                'zone_id': zone_id,
+                'controller': controller_name,
+                'remaining_seconds': remaining_seconds,
+            },
+        )
+
+        event_created = await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type='CONTROLLER_COOLDOWN_SKIP',
+            details={
+                'controller': controller_name,
+                'cooldown_seconds': CONTROLLER_COOLDOWN_SECONDS,
+                'remaining_seconds': remaining_seconds,
+            },
+            signal_name="controller_cooldown_skip",
+        )
+
+        alert_sent = await send_infra_alert(
+            code="infra_controller_cooldown_skip",
+            alert_type="Controller Cooldown Skip",
+            message=f"Zone {zone_id} controller '{controller_name}' skipped due to cooldown",
+            severity="warning",
+            zone_id=zone_id,
+            service="automation-engine",
+            component=f"controller:{controller_name}",
+            error_type="ControllerCooldown",
+            details={
+                "controller": controller_name,
+                "cooldown_seconds": CONTROLLER_COOLDOWN_SECONDS,
+                "remaining_seconds": remaining_seconds,
+            },
+        )
+        if event_created or alert_sent:
+            self._controller_cooldown_reported_at[key] = now
+        else:
+            logger.warning(
+                "Zone %s: Cooldown skip signal for controller '%s' not persisted, will retry",
+                zone_id,
+                controller_name,
+                extra={'zone_id': zone_id, 'controller': controller_name},
+            )
     
     async def _check_phase_transitions(
         self,
@@ -568,6 +1001,8 @@ class ZoneAutomationService:
         Для production-циклов без sim_clock переходы не выполняются.
         """
         if not sim_clock:
+            return
+        if sim_clock.mode == "live":
             return
 
         phase_info = await self.grow_cycle_repo.get_current_phase_timing(zone_id)
@@ -641,6 +1076,7 @@ class ZoneAutomationService:
                 zone_id,
                 extra={"zone_id": zone_id},
             )
+            await self._emit_controller_circuit_open_signal(zone_id, "phase_transition")
     
     async def _process_light_controller(
         self,
@@ -665,6 +1101,12 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping light command",
                     extra={"zone_id": zone_id}
                 )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "light",
+                    channel=light_cmd.get("channel"),
+                    cmd=light_cmd.get("cmd"),
+                )
     
     async def _process_climate_controller(
         self,
@@ -688,6 +1130,12 @@ class ZoneAutomationService:
                 logger.warning(
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping climate command",
                     extra={"zone_id": zone_id}
+                )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "climate",
+                    channel=cmd.get("channel"),
+                    cmd=cmd.get("cmd"),
                 )
                 break  # Прерываем цикл при открытом circuit breaker
     
@@ -725,6 +1173,19 @@ class ZoneAutomationService:
             can_run, error_msg = await can_run_pump(zone_id, pump_channel)
             if not can_run:
                 logger.warning(f"Zone {zone_id}: Cannot run irrigation pump {pump_channel}: {error_msg}")
+                await send_infra_alert(
+                    code="infra_irrigation_pump_blocked",
+                    alert_type="Irrigation Pump Blocked",
+                    message=f"Zone {zone_id}: irrigation pump blocked by safety rules",
+                    severity="error",
+                    zone_id=zone_id,
+                    service="automation-engine",
+                    component="controller:irrigation",
+                    channel=pump_channel,
+                    cmd="run_pump",
+                    error_type="PumpSafetyBlocked",
+                    details={"reason": error_msg},
+                )
                 irrigation_cmd = None
         
         if irrigation_cmd:
@@ -736,6 +1197,12 @@ class ZoneAutomationService:
                 logger.warning(
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping irrigation command",
                     extra={"zone_id": zone_id}
+                )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "irrigation",
+                    channel=irrigation_cmd.get("channel"),
+                    cmd=irrigation_cmd.get("cmd"),
                 )
     
     async def _process_recirculation_controller(
@@ -775,6 +1242,12 @@ class ZoneAutomationService:
                     f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping recirculation command",
                     extra={"zone_id": zone_id}
                 )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "recirculation",
+                    channel=recirculation_cmd.get("channel"),
+                    cmd=recirculation_cmd.get("cmd"),
+                )
     
     async def _process_correction_controllers(
         self,
@@ -806,6 +1279,12 @@ class ZoneAutomationService:
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping PH correction command",
                         extra={"zone_id": zone_id}
                     )
+                    await self._emit_controller_circuit_open_signal(
+                        zone_id,
+                        "ph_correction",
+                        channel=ph_cmd.get("channel"),
+                        cmd=ph_cmd.get("cmd"),
+                    )
         
         # EC Correction
         if capabilities.get("ec_control", False):
@@ -821,6 +1300,12 @@ class ZoneAutomationService:
                     logger.warning(
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping EC correction command",
                         extra={"zone_id": zone_id}
+                    )
+                    await self._emit_controller_circuit_open_signal(
+                        zone_id,
+                        "ec_correction",
+                        channel=ec_cmd.get("channel"),
+                        cmd=ec_cmd.get("cmd"),
                     )
     
     async def _update_zone_health(self, zone_id: int) -> None:
@@ -856,6 +1341,16 @@ class ZoneAutomationService:
                 logger.info(f"Cleared PID cache for deleted zone {zone_id}")
         except Exception as e:
             logger.warning(f"Failed to check zone deletion for zone {zone_id}: {e}", exc_info=True)
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_zone_deletion_check_failed",
+                alert_type="Zone Deletion Check Failed",
+                severity="warning",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_housekeeping",
+                details={"check": "zone_deletion"},
+            )
     
     async def _check_pid_config_updates(self, zone_id: int) -> None:
         """Проверить обновления PID конфигов и инвалидировать кеш при необходимости."""
@@ -894,3 +1389,13 @@ class ZoneAutomationService:
                             self.ec_controller._last_pid_tick.pop(zone_id, None)
         except Exception as e:
             logger.warning(f"Failed to check PID config updates for zone {zone_id}: {e}", exc_info=True)
+            await send_infra_exception_alert(
+                error=e,
+                code="infra_pid_config_update_check_failed",
+                alert_type="PID Config Update Check Failed",
+                severity="warning",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="zone_housekeeping",
+                details={"check": "pid_config_updates"},
+            )

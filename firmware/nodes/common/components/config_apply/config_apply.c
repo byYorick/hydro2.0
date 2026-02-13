@@ -318,6 +318,9 @@ esp_err_t config_apply_wifi(const cJSON *new_config,
     wifi_manager_config_t wifi_config = {
         .ssid = s_wifi_ssid,
         .password = s_wifi_password,
+        .timeout_sec = wifi_cfg.timeout_sec > 0 ? wifi_cfg.timeout_sec : 30,
+        .auto_reconnect = wifi_cfg.auto_reconnect,
+        .max_reconnect_attempts = 0,
     };
 
     err = wifi_manager_connect(&wifi_config);

@@ -136,7 +136,7 @@ dose_ml = (target - current_ec) * nutrient_strength_ml_per_ms
 create_command(
  zone.id,
  node_nutrient,
- "pump_nutrient",
+ "pump_a",
  "dose",
  {"ml": dose_ml}
 )

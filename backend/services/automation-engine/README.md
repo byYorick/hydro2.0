@@ -65,6 +65,36 @@
 #### 5. **Configuration** (`config/`)
 - `settings.py` - централизованные настройки (пороги, интервалы, множители)
 
+### Scheduler Task API (planner contract)
+
+`automation-engine` принимает от `scheduler` абстрактные задачи расписания:
+
+- `POST /scheduler/bootstrap` -> `ready|wait|deny` + lease
+- `POST /scheduler/bootstrap/heartbeat` -> refresh lease
+- `POST /scheduler/task` -> `accepted` + `task_id`
+- `GET /scheduler/task/{task_id}` -> `accepted|running|completed|failed|rejected|expired`
+- `GET /health/live` -> liveness probe
+- `GET /health/ready` -> readiness probe (`CommandBus + DB + bootstrap lease-store`)
+
+Поддерживаемые `task_type`:
+- `irrigation`
+- `lighting`
+- `ventilation`
+- `solution_change`
+- `mist`
+- `diagnostics`
+
+Важно: scheduler не должен отправлять device-level команды напрямую.  
+Детализация и исполнение задач выполняются внутри `automation-engine` через `CommandBus`.
+
+Дополнительно:
+- `correlation_id` в `POST /scheduler/task` обязателен;
+- повторный `POST` с тем же `correlation_id` и тем же payload возвращает тот же `task_id` (`is_duplicate=true`);
+- повтор с тем же `correlation_id`, но другим payload отклоняется (`409 idempotency_payload_mismatch`).
+
+Маппинг `task_type -> node_types/cmd/params` вынесен в `config/scheduler_task_mapping.py` и поддерживает override из `payload.config.execution`.
+Снимки статусов scheduler-task (`accepted/running/completed/failed`) сохраняются в `scheduler_logs` для восстановления после рестарта.
+
 ## 🚀 Возможности
 
 ### Основной функционал

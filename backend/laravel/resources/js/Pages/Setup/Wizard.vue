@@ -1,950 +1,966 @@
 <template>
+  <!-- eslint-disable vue/singleline-html-element-content-newline -->
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">
-      Мастер настройки системы
-    </h1>
-    
-    <Card>
-      <div class="space-y-6">
-        <!-- Шаг 1: Выбор/Создание теплицы -->
-        <div class="border-l-4 border-[color:var(--accent-green)] pl-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">
-              Шаг 1: Выбрать или создать теплицу
-            </h2>
-            <Badge
-              v-if="step1Complete"
-              variant="success"
+    <div class="space-y-5">
+      <section class="ui-hero p-6">
+        <h1 class="text-2xl font-semibold text-[color:var(--text-primary)]">
+          Мастер настройки системы
+        </h1>
+        <p class="text-sm text-[color:var(--text-muted)] mt-2">
+          Пошаговая настройка теплицы, зоны, культуры, устройств и автоматики.
+        </p>
+
+        <div class="mt-4 h-2 rounded-full bg-[color:var(--border-muted)] overflow-hidden">
+          <div
+            class="h-full bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
+            :style="{ width: `${progressPercent}%` }"
+          ></div>
+        </div>
+
+        <div class="mt-3 text-xs text-[color:var(--text-dim)]">
+          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/6)
+        </div>
+      </section>
+
+      <section
+        v-if="!canConfigure"
+        class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-4 text-sm text-[color:var(--badge-warning-text)]"
+      >
+        Режим только для просмотра. Полная настройка доступна агроному или администратору.
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+        <h2 class="text-sm font-semibold text-[color:var(--text-primary)] mb-3">
+          Сценарий запуска
+        </h2>
+        <ul class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <li
+            v-for="step in stepItems"
+            :key="step.id"
+            class="rounded-lg border px-3 py-2 text-xs"
+            :class="step.done
+              ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]'
+              : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)]'"
+          >
+            <div class="font-semibold">
+              {{ step.title }}
+            </div>
+            <div class="mt-1">
+              {{ step.hint }}
+            </div>
+          </li>
+        </ul>
+
+        <div class="mt-4 text-xs text-[color:var(--text-muted)]">
+          <span
+            v-for="item in launchChecklist"
+            :key="item.id"
+            class="inline-flex items-center mr-3"
+          >
+            <span class="mr-1">{{ item.done ? '✓' : '•' }}</span>{{ item.label }}
+          </span>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            1. Теплица
+          </h3>
+          <Badge :variant="stepGreenhouseDone ? 'success' : 'neutral'">
+            {{ stepGreenhouseDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div
+          v-if="greenhouseMode === 'select'"
+          class="grid gap-3 md:grid-cols-[1fr_auto]"
+        >
+          <select
+            v-model.number="selectedGreenhouseId"
+            class="input-select"
+            :disabled="!canConfigure || loading.greenhouses"
+            @change="selectGreenhouse"
+          >
+            <option :value="null">
+              Выберите теплицу
+            </option>
+            <option
+              v-for="greenhouse in availableGreenhouses"
+              :key="greenhouse.id"
+              :value="greenhouse.id"
             >
-              Готово
-            </Badge>
+              {{ greenhouse.name }} ({{ greenhouse.uid }})
+            </option>
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-test="toggle-greenhouse-create"
+            :disabled="!canConfigure"
+            @click="greenhouseMode = 'create'"
+          >
+            Создать
+          </Button>
+        </div>
+
+        <div
+          v-else
+          class="grid gap-3 md:grid-cols-3"
+        >
+          <input
+            v-model="greenhouseForm.name"
+            type="text"
+            placeholder="Название теплицы"
+            class="input-field"
+            :disabled="!canConfigure"
+          />
+          <input
+            :value="generatedGreenhouseUid"
+            type="text"
+            class="input-field"
+            disabled
+          />
+          <select
+            v-model.number="greenhouseForm.greenhouse_type_id"
+            class="input-select"
+            :disabled="!canConfigure"
+          >
+            <option :value="null">
+              Выберите тип теплицы
+            </option>
+            <option
+              v-for="greenhouseType in availableGreenhouseTypes"
+              :key="greenhouseType.id"
+              :value="greenhouseType.id"
+            >
+              {{ greenhouseType.name }}
+            </option>
+          </select>
+          <textarea
+            v-model="greenhouseForm.description"
+            class="input-field md:col-span-2"
+            rows="2"
+            placeholder="Описание"
+            :disabled="!canConfigure"
+          ></textarea>
+          <Button
+            size="sm"
+            :disabled="!canConfigure || !greenhouseForm.name.trim() || loading.stepGreenhouse"
+            @click="createGreenhouse"
+          >
+            {{ loading.stepGreenhouse ? 'Создание...' : 'Создать теплицу' }}
+          </Button>
+        </div>
+
+        <div
+          v-if="selectedGreenhouse"
+          class="text-sm text-[color:var(--text-muted)]"
+        >
+          Выбрано: <span class="font-semibold text-[color:var(--text-primary)]">{{ selectedGreenhouse.name }}</span>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            2. Зона
+          </h3>
+          <Badge :variant="stepZoneDone ? 'success' : 'neutral'">
+            {{ stepZoneDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div
+          v-if="zoneMode === 'select'"
+          class="grid gap-3 md:grid-cols-[1fr_auto]"
+        >
+          <select
+            v-model.number="selectedZoneId"
+            class="input-select"
+            :disabled="!canConfigure || loading.zones || !stepGreenhouseDone"
+            @change="selectZone"
+          >
+            <option :value="null">
+              Выберите зону
+            </option>
+            <option
+              v-for="zone in availableZones"
+              :key="zone.id"
+              :value="zone.id"
+            >
+              {{ zone.name }}
+            </option>
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-test="toggle-zone-create"
+            :disabled="!canConfigure || !stepGreenhouseDone"
+            @click="zoneMode = 'create'"
+          >
+            Создать
+          </Button>
+        </div>
+
+        <div
+          v-if="zoneMode === 'create'"
+          class="grid gap-3 md:grid-cols-4"
+        >
+          <input
+            v-model="zoneForm.name"
+            type="text"
+            placeholder="Название зоны"
+            class="input-field"
+            :disabled="!canConfigure || !stepGreenhouseDone"
+          />
+          <input
+            v-model="zoneForm.description"
+            type="text"
+            placeholder="Описание зоны"
+            class="input-field"
+            :disabled="!canConfigure || !stepGreenhouseDone"
+          />
+          <input
+            :value="generatedZoneUid"
+            type="text"
+            class="input-field"
+            disabled
+          />
+          <Button
+            size="sm"
+            :disabled="!canConfigure || !stepGreenhouseDone || !zoneForm.name.trim() || loading.stepZone"
+            @click="createZone"
+          >
+            {{ loading.stepZone ? 'Создание...' : 'Создать зону' }}
+          </Button>
+        </div>
+
+        <div
+          v-if="selectedZone"
+          class="text-sm text-[color:var(--text-muted)]"
+        >
+          Выбрано: <span class="font-semibold text-[color:var(--text-primary)]">{{ selectedZone.name }}</span>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            3. Культура и рецепт
+          </h3>
+          <Badge :variant="stepPlantDone ? 'success' : 'neutral'">
+            {{ stepPlantDone && stepRecipeDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+          <select
+            v-model.number="selectedPlantId"
+            class="input-select"
+            :disabled="!canConfigure || loading.plants"
+            @change="selectPlant"
+          >
+            <option :value="null">Выберите растение</option>
+            <option
+              v-for="plant in availablePlants"
+              :key="plant.id"
+              :value="plant.id"
+            >
+              {{ plant.name }}
+            </option>
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canConfigure"
+            @click="openPlantCreateWizard"
+          >
+            Создать
+          </Button>
+        </div>
+
+        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">
+            Рецепт по выбранной культуре
           </div>
           <div
-            v-if="!step1Complete"
-            class="space-y-3"
+            v-if="loading.stepRecipe"
+            class="text-sm text-[color:var(--text-muted)]"
           >
-            <!-- Переключатель режима -->
-            <div class="flex gap-2 mb-2">
-              <Button
-                size="sm"
-                :variant="greenhouseMode === 'select' ? 'primary' : 'secondary'"
-                @click="greenhouseMode = 'select'"
-              >
-                Выбрать существующую
-              </Button>
-              <Button
-                size="sm"
-                :variant="greenhouseMode === 'create' ? 'primary' : 'secondary'"
-                @click="greenhouseMode = 'create'"
-              >
-                Создать новую
-              </Button>
-            </div>
-
-            <!-- Выбор существующей теплицы -->
-            <div
-              v-if="greenhouseMode === 'select'"
-              class="space-y-3"
-            >
-              <div
-                v-if="loading.greenhouses"
-                class="text-sm text-[color:var(--text-dim)]"
-              >
-                Загрузка...
-              </div>
-              <div
-                v-else-if="availableGreenhouses.length === 0"
-                class="text-sm text-[color:var(--text-dim)]"
-              >
-                Нет доступных теплиц. Создайте новую.
-              </div>
-              <select
-                v-else
-                v-model="selectedGreenhouseId"
-                class="input-select w-full"
-              >
-                <option :value="null">
-                  Выберите теплицу
-                </option>
-                <option
-                  v-for="gh in availableGreenhouses"
-                  :key="gh.id"
-                  :value="gh.id"
-                >
-                  {{ gh.name }} ({{ gh.uid }})
-                </option>
-              </select>
-              <Button
-                size="sm"
-                :disabled="!selectedGreenhouseId || loading.step1"
-                @click="selectGreenhouse"
-              >
-                {{ loading.step1 ? 'Загрузка...' : 'Выбрать' }}
-              </Button>
-            </div>
-
-            <!-- Создание новой теплицы -->
-            <div
-              v-else
-              class="space-y-3"
-            >
-              <div>
-                <input
-                  v-model="greenhouseForm.name"
-                  type="text"
-                  placeholder="Название теплицы"
-                  class="input-field w-full"
-                />
-                <div class="text-xs text-[color:var(--text-dim)] mt-1">
-                  UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
-                </div>
-              </div>
-              <Button
-                size="sm"
-                :disabled="loading.step1 || !greenhouseForm.name.trim()"
-                @click="createGreenhouse"
-              >
-                {{ loading.step1 ? 'Создание...' : 'Создать теплицу' }}
-              </Button>
-            </div>
+            Подбираем и привязываем рецепт...
+          </div>
+          <div
+            v-else-if="selectedRecipe"
+            class="text-sm text-[color:var(--text-primary)]"
+          >
+            Используется рецепт: <span class="font-semibold">{{ selectedRecipe.name }}</span>
           </div>
           <div
             v-else
-            class="text-sm text-[color:var(--text-muted)]"
+            class="text-sm text-[color:var(--badge-warning-text)]"
           >
-            Теплица: <span class="font-semibold">{{ createdGreenhouse?.name }}</span>
+            Выберите или создайте культуру, чтобы автоматически назначить рецепт.
           </div>
         </div>
+      </section>
 
-        <!-- Шаг 2: Создание рецепта -->
-        <div
-          class="border-l-4 pl-4"
-          :class="step1Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">
-              Шаг 2: Создать рецепт с фазами
-            </h2>
-            <Badge
-              v-if="step2Complete"
-              variant="success"
-            >
-              Готово
-            </Badge>
-          </div>
-          <div
-            v-if="!step2Complete"
-            class="space-y-3"
-          >
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                v-model="recipeForm.name"
-                type="text"
-                placeholder="Название рецепта"
-                class="input-field"
-              />
-              <input
-                v-model="recipeForm.description"
-                type="text"
-                placeholder="Описание"
-                class="input-field"
-              />
-            </div>
-            
-            <div class="space-y-2">
-              <div class="text-xs text-[color:var(--text-muted)]">
-                Фазы рецепта:
-              </div>
-              <div
-                v-for="(phase, index) in recipeForm.phases"
-                :key="index"
-                class="p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            4. Устройства
+          </h3>
+          <Badge :variant="stepDevicesDone ? 'success' : 'neutral'">
+            {{ stepDevicesDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Полив (обязательно)</label>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.irrigation"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || irrigationNodes.length === 0"
               >
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-2">
-                  <input
-                    v-model="phase.name"
-                    type="text"
-                    placeholder="Название фазы"
-                    class="input-field h-8 text-xs"
-                  />
-                  <input
-                    v-model.number="phase.duration_hours"
-                    type="number"
-                    placeholder="Часов"
-                    class="input-field h-8 text-xs"
-                  />
-                  <input
-                    v-model.number="phase.targets.ph"
-                    type="number"
-                    step="0.1"
-                    placeholder="pH"
-                    class="input-field h-8 text-xs"
-                  />
-                  <input
-                    v-model.number="phase.targets.ec"
-                    type="number"
-                    step="0.1"
-                    placeholder="EC"
-                    class="input-field h-8 text-xs"
-                  />
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <input
-                    v-model.number="phase.targets.temp_air"
-                    type="number"
-                    placeholder="Температура"
-                    class="input-field h-8 text-xs"
-                  />
-                  <input
-                    v-model.number="phase.targets.humidity_air"
-                    type="number"
-                    placeholder="Влажность"
-                    class="input-field h-8 text-xs"
-                  />
-                  <input
-                    v-model.number="phase.targets.light_hours"
-                    type="number"
-                    placeholder="Свет (часов)"
-                    class="input-field h-8 text-xs"
-                  />
-                </div>
-              </div>
+                <option :value="null">Выберите узел полива</option>
+                <option v-for="node in irrigationNodes" :key="`irrigation-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
               <Button
                 size="sm"
                 variant="secondary"
-                @click="addPhase"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('irrigation')"
+                @click="attachNodeByRole('irrigation')"
               >
-                Добавить фазу
+                {{ attachButtonLabel('irrigation') }}
               </Button>
             </div>
-            
-            <Button
-              size="sm"
-              :disabled="loading.step2 || !step1Complete"
-              @click="createRecipe"
-            >
-              {{ loading.step2 ? 'Создание...' : 'Создать рецепт' }}
-            </Button>
           </div>
-          <div
-            v-else
-            class="text-sm text-[color:var(--text-muted)]"
-          >
-            Рецепт: <span class="font-semibold">{{ createdRecipe?.name }}</span>
-            ({{ createdRecipe?.phases?.length || 0 }} фаз)
-          </div>
-        </div>
-
-        <!-- Шаг 3: Выбор/Создание зоны -->
-        <div
-          class="border-l-4 pl-4"
-          :class="step2Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">
-              Шаг 3: Выбрать или создать зону
-            </h2>
-            <Badge
-              v-if="step3Complete"
-              variant="success"
-            >
-              Готово
-            </Badge>
-          </div>
-          <div
-            v-if="!step3Complete"
-            class="space-y-3"
-          >
-            <!-- Переключатель режима -->
-            <div class="flex gap-2 mb-2">
-              <Button
-                size="sm"
-                :variant="zoneMode === 'select' ? 'primary' : 'secondary'"
-                :disabled="!step2Complete"
-                @click="zoneMode = 'select'"
-              >
-                Выбрать существующую
-              </Button>
-              <Button
-                size="sm"
-                :variant="zoneMode === 'create' ? 'primary' : 'secondary'"
-                :disabled="!step2Complete"
-                @click="zoneMode = 'create'"
-              >
-                Создать новую
-              </Button>
-            </div>
-
-            <!-- Выбор существующей зоны -->
-            <div
-              v-if="zoneMode === 'select'"
-              class="space-y-3"
-            >
-              <div
-                v-if="loading.zones"
-                class="text-sm text-[color:var(--text-dim)]"
-              >
-                Загрузка...
-              </div>
-              <div
-                v-else-if="availableZones.length === 0"
-                class="text-sm text-[color:var(--text-dim)]"
-              >
-                Нет доступных зон в этой теплице. Создайте новую.
-              </div>
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция pH (обязательно)</label>
+            <div class="flex items-stretch gap-2">
               <select
-                v-else
-                v-model="selectedZoneId"
-                class="input-select w-full"
+                v-model.number="deviceAssignments.ph_correction"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || phCorrectionNodes.length === 0"
               >
-                <option :value="null">
-                  Выберите зону
-                </option>
-                <option
-                  v-for="zone in availableZones"
-                  :key="zone.id"
-                  :value="zone.id"
-                >
-                  {{ zone.name }} ({{ zone.status }})
-                  <span v-if="zone.greenhouse"> — {{ zone.greenhouse.name }}</span>
+                <option :value="null">Выберите узел коррекции pH</option>
+                <option v-for="node in phCorrectionNodes" :key="`ph-correction-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
                 </option>
               </select>
               <Button
                 size="sm"
-                :disabled="!selectedZoneId || loading.step3 || !step2Complete"
-                @click="selectZone"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('ph_correction')"
+                @click="attachNodeByRole('ph_correction')"
               >
-                {{ loading.step3 ? 'Загрузка...' : 'Выбрать' }}
+                {{ attachButtonLabel('ph_correction') }}
               </Button>
             </div>
-
-            <!-- Создание новой зоны -->
-            <div
-              v-else
-              class="space-y-3"
-            >
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  v-model="zoneForm.name"
-                  type="text"
-                  placeholder="Название зоны"
-                  class="input-field"
-                />
-                <input
-                  v-model="zoneForm.description"
-                  type="text"
-                  placeholder="Описание"
-                  class="input-field"
-                />
-              </div>
+          </div>
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Коррекция EC (обязательно)</label>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.ec_correction"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || ecCorrectionNodes.length === 0"
+              >
+                <option :value="null">Выберите узел коррекции EC</option>
+                <option v-for="node in ecCorrectionNodes" :key="`ec-correction-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
               <Button
                 size="sm"
-                :disabled="loading.step3 || !step2Complete"
-                @click="createZone"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('ec_correction')"
+                @click="attachNodeByRole('ec_correction')"
               >
-                {{ loading.step3 ? 'Создание...' : 'Создать зону' }}
+                {{ attachButtonLabel('ec_correction') }}
               </Button>
             </div>
           </div>
-          <div
-            v-else
-            class="text-sm text-[color:var(--text-muted)]"
-          >
-            Зона: <span class="font-semibold">{{ createdZone?.name }}</span>
-          </div>
-        </div>
-
-        <!-- Шаг 4: Запуск цикла выращивания -->
-        <div
-          class="border-l-4 pl-4"
-          :class="step3Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">
-              Шаг 4: Запустить цикл выращивания
-            </h2>
-            <Badge
-              v-if="step4Complete"
-              variant="success"
-            >
-              Готово
-            </Badge>
-          </div>
-          <div v-if="!step4Complete">
-            <Button
-              size="sm"
-              :disabled="loading.step4 || !step3Complete"
-              @click="attachRecipeToZone"
-            >
-              {{ loading.step4 ? 'Открываем...' : 'Открыть мастер цикла' }}
-            </Button>
-          </div>
-          <div
-            v-else
-            class="text-sm text-[color:var(--text-muted)]"
-          >
-            Мастер цикла доступен в зоне — запуск можно выполнить позже
-          </div>
-        </div>
-
-        <!-- Шаг 5: Привязка узлов -->
-        <div
-          class="border-l-4 pl-4"
-          :class="step4Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">
-              Шаг 5: Привязать узлы к зоне
-            </h2>
-            <Badge
-              v-if="step5Complete"
-              variant="success"
-            >
-              Готово
-            </Badge>
-          </div>
-          <div
-            v-if="!step5Complete"
-            class="space-y-3"
-          >
-            <div
-              v-if="availableNodes.length > 0"
-              class="space-y-2 max-h-[200px] overflow-y-auto"
-            >
-              <label
-                v-for="node in availableNodes"
-                :key="node.id"
-                class="flex items-center gap-2 p-2 rounded border border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)] cursor-pointer"
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Накопительный узел (обязательно)</label>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.accumulation"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || accumulationNodes.length === 0"
               >
-                <input
-                  v-model="selectedNodeIds"
-                  type="checkbox"
-                  :value="node.id"
-                  class="rounded"
-                />
-                <div class="flex-1 text-sm">
-                  {{ node.uid || node.name || `Node ${node.id}` }} — {{ node.type || 'unknown' }}
-                </div>
-              </label>
+                <option :value="null">Выберите накопительный узел</option>
+                <option v-for="node in accumulationNodes" :key="`accumulation-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('accumulation')"
+                @click="attachNodeByRole('accumulation')"
+              >
+                {{ attachButtonLabel('accumulation') }}
+              </Button>
             </div>
-            <div
-              v-else
-              class="text-sm text-[color:var(--text-dim)]"
-            >
-              Нет доступных узлов для привязки. Узлы будут доступны после регистрации через MQTT.
-            </div>
-            <Button
-              size="sm"
-              :disabled="loading.nodes"
-              @click="loadAvailableNodes"
-            >
-              {{ loading.nodes ? 'Загрузка...' : 'Обновить список узлов' }}
-            </Button>
-            <Button
-              size="sm"
-              :disabled="loading.step5 || selectedNodeIds.length === 0 || !step4Complete"
-              @click="attachNodesToZone"
-            >
-              {{ loading.step5 ? 'Привязка...' : `Привязать узлы (${selectedNodeIds.length})` }}
-            </Button>
           </div>
-          <div
-            v-else
-            class="text-sm text-[color:var(--text-muted)]"
-          >
-            Привязано узлов: {{ attachedNodesCount }}
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Климат (опционально)</label>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.climate"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || climateNodes.length === 0"
+              >
+                <option :value="null">Не выбирать</option>
+                <option v-for="node in climateNodes" :key="`climate-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('climate')"
+                @click="attachNodeByRole('climate')"
+              >
+                {{ attachButtonLabel('climate') }}
+              </Button>
+            </div>
+          </div>
+          <div class="space-y-1 min-w-0">
+            <label class="block text-xs text-[color:var(--text-muted)]">Свет (опционально)</label>
+            <div class="flex items-stretch gap-2">
+              <select
+                v-model.number="deviceAssignments.light"
+                class="input-select min-w-0 flex-1"
+                :disabled="!canConfigure || !stepZoneDone || lightNodes.length === 0"
+              >
+                <option :value="null">Не выбирать</option>
+                <option v-for="node in lightNodes" :key="`light-${node.id}`" :value="node.id">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </option>
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!canAttachRole('light')"
+                @click="attachNodeByRole('light')"
+              >
+                {{ attachButtonLabel('light') }}
+              </Button>
+            </div>
           </div>
         </div>
 
-        <!-- Завершение -->
-        <div
-          v-if="step5Complete"
-          class="pt-4 border-t border-[color:var(--border-muted)]"
-        >
-          <div class="text-center space-y-3">
-            <div class="text-lg font-semibold text-[color:var(--accent-green)]">
-              Система настроена!
-            </div>
-            <div class="text-sm text-[color:var(--text-muted)]">
-              Зона создана, рецепт привязан, узлы настроены. Система готова к работе.
-            </div>
-            <div class="flex justify-center gap-2">
-              <Link :href="`/zones/${createdZone?.id}`">
-                <Button size="sm">
-                  Открыть зону
-                </Button>
-              </Link>
-            </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
+          <span>Привязано: {{ attachedNodesCount }} (минимум 4 обязательных)</span>
+          <span v-if="missingRequiredDevices.length > 0" class="text-[color:var(--badge-warning-text)]">
+            Не выбрано: {{ missingRequiredDevices.join(', ') }}
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canConfigure || loading.nodes"
+            @click="refreshAvailableNodes"
+          >
+            {{ loading.nodes ? 'Обновление...' : 'Обновить' }}
+          </Button>
+          <Button
+            size="sm"
+            :disabled="!canAttachRequiredNodes"
+            @click="attachConfiguredNodes"
+          >
+            {{ loading.stepDevices ? 'Привязка...' : 'Привязать ноды зоны' }}
+          </Button>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            5. Логика автоматики
+          </h3>
+          <Badge :variant="stepAutomationDone ? 'success' : 'neutral'">
+            {{ stepAutomationDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">Система</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationSystemLabel }}</div>
+          </div>
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">pH target</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationWaterForm.targetPh.toFixed(2) }}</div>
+          </div>
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
+            <div class="text-xs text-[color:var(--text-muted)]">EC target</div>
+            <div class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">{{ automationWaterForm.targetEc.toFixed(2) }}</div>
           </div>
         </div>
-      </div>
-    </Card>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
+            <input
+              v-model="automationClimateForm.enabled"
+              type="checkbox"
+              :disabled="!canConfigure"
+            />
+            Управлять климатом
+          </label>
+          <label class="flex items-center gap-2 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-sm text-[color:var(--text-primary)]">
+            <input
+              v-model="automationLightingForm.enabled"
+              type="checkbox"
+              :disabled="!canConfigure"
+            />
+            Управлять освещением
+          </label>
+        </div>
+
+        <div class="text-xs text-[color:var(--text-muted)]">
+          Топология воды: {{ waterTopologyLabel }}
+        </div>
+        <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)] space-y-2">
+          <div class="font-semibold text-[color:var(--text-primary)]">Конфигуратор логики:</div>
+          <div>1. Кнопка "Открыть конфигуратор" запускает тот же мастер логики, что и на вкладке автоматизации зоны.</div>
+          <div>2. Настраиваются интервалы и поведение: полив, климат, досветка, диагностика, смена раствора.</div>
+          <div>3. Параметры накопления воды и подготовки рабочего раствора сохраняются в profile `setup`.</div>
+          <div>4. По "Применить логику автоматики" профиль сохраняется в БД и отправляется `GROWTH_CYCLE_CONFIG` (`profile_mode=setup`).</div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canConfigure || loading.stepAutomation"
+            @click="openAutomationConfigurator"
+          >
+            Открыть конфигуратор
+          </Button>
+          <span class="text-xs text-[color:var(--text-muted)]">
+            Климат: {{ automationClimateForm.intervalMinutes }} мин · Полив: {{ automationWaterForm.intervalMinutes }} мин / {{ automationWaterForm.durationSeconds }} сек · Диагностика: {{ automationWaterForm.diagnosticsIntervalMinutes }} мин
+          </span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            :disabled="!canConfigure || !stepZoneDone || loading.stepAutomation"
+            @click="applyAutomation"
+          >
+            {{ loading.stepAutomation ? 'Отправка...' : 'Применить логику автоматики' }}
+          </Button>
+          <span class="text-xs text-[color:var(--text-muted)]">
+            <span v-if="automationAppliedAt">Последнее применение: {{ formatDateTime(automationAppliedAt) }}</span>
+            <span v-else>Ещё не применено</span>
+          </span>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            6. Запуск и контроль
+          </h3>
+          <Badge :variant="canLaunch ? 'success' : 'warning'">
+            {{ canLaunch ? 'Можно запускать' : 'Есть незавершённые шаги' }}
+          </Badge>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            :disabled="!canLaunch || loading.stepLaunch"
+            @click="openCycleWizard"
+          >
+            {{ loading.stepLaunch ? 'Открытие...' : 'Открыть мастер запуска цикла' }}
+          </Button>
+
+          <Link
+            v-if="selectedZone"
+            :href="`/zones/${selectedZone.id}`"
+            class="text-xs text-[color:var(--accent-cyan)]"
+          >
+            Перейти к зоне
+          </Link>
+        </div>
+        <div
+          v-if="selectedZoneHasActiveCycle && launchBlockedReason"
+          class="text-xs text-[color:var(--badge-warning-text)]"
+        >
+          {{ launchBlockedReason }}
+        </div>
+      </section>
+    </div>
+
+    <ZoneAutomationEditWizard
+      :open="showAutomationConfigurator"
+      :climate-form="automationClimateForm"
+      :water-form="automationWaterForm"
+      :lighting-form="automationLightingForm"
+      :is-applying="loading.stepAutomation"
+      :is-system-type-locked="false"
+      @close="showAutomationConfigurator = false"
+      @apply="onApplyAutomationConfigurator"
+    />
+
+    <PlantCreateModal
+      :show="showPlantCreateWizard"
+      @close="handlePlantCreateClose"
+      @created="handlePlantCreated"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, onMounted, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import { useApi } from '@/composables/useApi'
-import { useToast } from '@/composables/useToast'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { extractData } from '@/utils/apiHelpers'
-import { logger } from '@/utils/logger'
-import { generateUid } from '@/utils/transliterate'
-import { router } from '@inertiajs/vue3'
+import PlantCreateModal from '@/Components/PlantCreateModal.vue'
+import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
+import { useSetupWizard } from '@/composables/useSetupWizard'
+import type { Node, SetupWizardDeviceAssignments } from '@/composables/setupWizardTypes'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from '@/composables/zoneAutomationTypes'
 
-const { showToast } = useToast()
-const { api } = useApi(showToast)
+const {
+  canConfigure,
+  loading,
+  greenhouseMode,
+  zoneMode,
+  plantMode,
+  availableGreenhouses,
+  availableGreenhouseTypes,
+  availableZones,
+  availablePlants,
+  availableNodes,
+  selectedGreenhouseId,
+  selectedZoneId,
+  selectedPlantId,
+  selectedGreenhouse,
+  selectedZone,
+  selectedRecipe,
+  selectedNodeIds,
+  attachedNodesCount,
+  greenhouseForm,
+  zoneForm,
+  automationClimateForm,
+  automationWaterForm,
+  automationLightingForm,
+  automationAppliedAt,
+  stepGreenhouseDone,
+  stepZoneDone,
+  stepPlantDone,
+  stepRecipeDone,
+  stepDevicesDone,
+  stepAutomationDone,
+  selectedZoneHasActiveCycle,
+  launchBlockedReason,
+  completedSteps,
+  progressPercent,
+  canLaunch,
+  launchChecklist,
+  stepItems,
+  waterTopologyLabel,
+  generatedGreenhouseUid,
+  generatedZoneUid,
+  createGreenhouse,
+  selectGreenhouse,
+  createZone,
+  selectZone,
+  selectPlant,
+  attachNodesToZone,
+  isNodeAttachedToCurrentZone,
+  refreshAvailableNodes,
+  applyAutomation,
+  openCycleWizard,
+  formatDateTime,
+} = useSetupWizard()
 
-interface Greenhouse {
-  id: number
-  uid: string
-  name: string
-}
+const showPlantCreateWizard = ref<boolean>(false)
+const showAutomationConfigurator = ref<boolean>(false)
+type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'accumulation' | 'climate' | 'light'
+const attachingRole = ref<DeviceRole | null>(null)
 
-interface Recipe {
-  id: number
-  name: string
-  phases?: Array<{
-    id: number
-    phase_index: number
-    name: string
-    duration_hours: number
-    targets: any
-  }>
-}
-
-interface Zone {
-  id: number
-  name: string
-  status?: string
-  greenhouse?: {
-    id: number
-    name: string
-  }
-}
-
-interface Node {
-  id: number
-  uid: string
-  name?: string
-  type?: string
-}
-
-const greenhouseForm = reactive({
-  name: '',
-  timezone: 'Europe/Moscow',
-  type: 'indoor',
-  description: ''
+const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
+  irrigation: null,
+  ph_correction: null,
+  ec_correction: null,
+  accumulation: null,
+  climate: null,
+  light: null,
 })
 
-const recipeForm = reactive({
-  name: 'Lettuce NFT Recipe',
-  description: 'Standard NFT recipe for lettuce',
-  phases: [
-    {
-      phase_index: 0,
-      name: 'Seedling',
-      duration_hours: 168,
-      targets: {
-        ph: 5.8,
-        ec: 1.2,
-        temp_air: 22,
-        humidity_air: 65,
-        light_hours: 18,
-        irrigation_interval_sec: 900,
-        irrigation_duration_sec: 10
-      }
-    },
-    {
-      phase_index: 1,
-      name: 'Vegetative',
-      duration_hours: 336,
-      targets: {
-        ph: 5.8,
-        ec: 1.4,
-        temp_air: 23,
-        humidity_air: 60,
-        light_hours: 16,
-        irrigation_interval_sec: 720,
-        irrigation_duration_sec: 12
-      }
+function resetDeviceAssignments(): void {
+  deviceAssignments.irrigation = null
+  deviceAssignments.ph_correction = null
+  deviceAssignments.ec_correction = null
+  deviceAssignments.accumulation = null
+  deviceAssignments.climate = null
+  deviceAssignments.light = null
+}
+
+function nodeChannels(node: Node): string[] {
+  const channels = Array.isArray(node.channels) ? node.channels : []
+  return channels
+    .map((item) => String(item?.channel ?? '').toLowerCase())
+    .filter((item) => item.length > 0)
+}
+
+function nodeType(node: Node): string {
+  return String(node.type ?? '').toLowerCase()
+}
+
+function hasAnyChannel(node: Node, candidates: string[]): boolean {
+  const set = new Set(nodeChannels(node))
+  return candidates.some((candidate) => set.has(candidate))
+}
+
+function matchesRole(node: Node, role: DeviceRole): boolean {
+  const type = nodeType(node)
+
+  if (role === 'irrigation') {
+    return type === 'irrig' || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
+  }
+
+  if (role === 'ph_correction') {
+    return type === 'ph' || hasAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
+  }
+
+  if (role === 'ec_correction') {
+    return type === 'ec' || hasAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
+  }
+
+  if (role === 'accumulation') {
+    return type === 'water_sensor' || type === 'recirculation' || hasAnyChannel(node, ['water_level', 'pump_in', 'drain', 'drain_main'])
+  }
+
+  if (role === 'climate') {
+    return type === 'climate' || hasAnyChannel(node, ['temp_air', 'air_temp_c', 'air_rh', 'humidity_air', 'co2_ppm', 'fan_air', 'heater_air', 'vent_drive'])
+  }
+
+  return type === 'light' || hasAnyChannel(node, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main'])
+}
+
+function nodesByRole(role: DeviceRole): Node[] {
+  return availableNodes.value.filter((node) => matchesRole(node, role))
+}
+
+const irrigationNodes = computed<Node[]>(() => nodesByRole('irrigation'))
+const phCorrectionNodes = computed<Node[]>(() => nodesByRole('ph_correction'))
+const ecCorrectionNodes = computed<Node[]>(() => nodesByRole('ec_correction'))
+const accumulationNodes = computed<Node[]>(() => nodesByRole('accumulation'))
+const climateNodes = computed<Node[]>(() => nodesByRole('climate'))
+const lightNodes = computed<Node[]>(() => nodesByRole('light'))
+
+function shouldResetRoleAssignment(nodeId: number | null, availableIds: Set<number>): boolean {
+  if (typeof nodeId !== 'number') {
+    return false
+  }
+
+  if (availableIds.has(nodeId)) {
+    return false
+  }
+
+  return !isNodeAttachedToCurrentZone(nodeId)
+}
+
+watch(
+  () => selectedZone.value?.id ?? null,
+  (currentZoneId, previousZoneId) => {
+    if (currentZoneId === previousZoneId) {
+      return
     }
+
+    resetDeviceAssignments()
+    attachingRole.value = null
+  }
+)
+
+watch(
+  availableNodes,
+  (nodes) => {
+    const ids = new Set(nodes.map((node) => node.id))
+    if (shouldResetRoleAssignment(deviceAssignments.irrigation, ids)) deviceAssignments.irrigation = null
+    if (shouldResetRoleAssignment(deviceAssignments.ph_correction, ids)) deviceAssignments.ph_correction = null
+    if (shouldResetRoleAssignment(deviceAssignments.ec_correction, ids)) deviceAssignments.ec_correction = null
+    if (shouldResetRoleAssignment(deviceAssignments.accumulation, ids)) deviceAssignments.accumulation = null
+    if (shouldResetRoleAssignment(deviceAssignments.climate, ids)) deviceAssignments.climate = null
+    if (shouldResetRoleAssignment(deviceAssignments.light, ids)) deviceAssignments.light = null
+  },
+  { immediate: true }
+)
+
+const selectedNodeIdsByRoles = computed<number[]>(() => {
+  const ids = new Set<number>()
+  const values = [
+    deviceAssignments.irrigation,
+    deviceAssignments.ph_correction,
+    deviceAssignments.ec_correction,
+    deviceAssignments.accumulation,
+    deviceAssignments.climate,
+    deviceAssignments.light,
   ]
-})
-
-const zoneForm = reactive({
-  name: 'Zone A',
-  description: 'Main cultivation zone',
-  status: 'RUNNING'
-})
-
-const loading = reactive({
-  step1: false,
-  step2: false,
-  step3: false,
-  step4: false,
-  step5: false,
-  nodes: false,
-  greenhouses: false,
-  zones: false
-})
-
-const greenhouseMode = ref<'select' | 'create'>('select')
-const zoneMode = ref<'select' | 'create'>('create')
-const availableGreenhouses = ref<Greenhouse[]>([])
-const availableZones = ref<Zone[]>([])
-const selectedGreenhouseId = ref<number | null>(null)
-const selectedZoneId = ref<number | null>(null)
-
-const createdGreenhouse = ref<Greenhouse | null>(null)
-const createdRecipe = ref<Recipe | null>(null)
-const createdZone = ref<Zone | null>(null)
-const availableNodes = ref<Node[]>([])
-const selectedNodeIds = ref<number[]>([])
-const attachedNodesCount = ref(0)
-
-const step1Complete = computed(() => createdGreenhouse.value !== null)
-const step2Complete = computed(() => createdRecipe.value !== null)
-const step3Complete = computed(() => createdZone.value !== null)
-const step4Complete = computed(() => createdZone.value !== null && createdRecipe.value !== null)
-const step5Complete = computed(() => attachedNodesCount.value > 0)
-
-// Вычисляемый UID на основе названия
-const generatedUid = computed(() => {
-  if (!greenhouseForm.name || !greenhouseForm.name.trim()) {
-    return 'gh-...'
-  }
-  return generateUid(greenhouseForm.name, 'gh-')
-})
-
-onMounted(() => {
-  loadAvailableNodes()
-  loadAvailableGreenhouses()
-})
-
-watch(() => createdGreenhouse.value?.id, (greenhouseId) => {
-  if (greenhouseId) {
-    loadAvailableZones(greenhouseId)
-  }
-})
-
-async function loadAvailableGreenhouses(): Promise<void> {
-  loading.greenhouses = true
-  try {
-    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
-    
-    const data = extractData<Greenhouse[]>(response.data) || []
-    if (Array.isArray(data)) {
-      availableGreenhouses.value = data
-    } else {
-      availableGreenhouses.value = []
-    }
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to load greenhouses:', error)
-    availableGreenhouses.value = []
-  } finally {
-    loading.greenhouses = false
-  }
-}
-
-async function loadAvailableZones(greenhouseId?: number) {
-  if (!greenhouseId && !createdGreenhouse.value?.id) return
-  
-  loading.zones = true
-  try {
-  const ghId = greenhouseId ?? createdGreenhouse.value?.id
-  if (!ghId) {
-    return
-  }
-    const response = await api.get<{ data?: Zone[] } | Zone[]>(
-      '/zones',
-      { params: { greenhouse_id: ghId } }
-    )
-    
-    const data = response.data as any
-    if (data?.data && Array.isArray(data.data)) {
-      availableZones.value = data.data
-    } else if (Array.isArray(data)) {
-      availableZones.value = data
-    } else {
-      availableZones.value = []
-    }
-  } catch (error) {
-    logger.error('Failed to load zones:', error)
-    availableZones.value = []
-  } finally {
-    loading.zones = false
-  }
-}
-
-async function selectGreenhouse(): Promise<void> {
-  if (!selectedGreenhouseId.value) return
-  
-  loading.step1 = true
-  try {
-    const response = await api.get<{ data?: Greenhouse } | Greenhouse>(
-      `/greenhouses/${selectedGreenhouseId.value}`
-    )
-    
-    createdGreenhouse.value = extractData<Greenhouse>(response.data) || createdGreenhouse.value
-    logger.info('Greenhouse selected:', createdGreenhouse.value)
-    
-    // Загружаем зоны для выбранной теплицы
-    await loadAvailableZones(createdGreenhouse.value.id)
-  } catch (error: any) {
-    logger.error('Failed to select greenhouse:', error)
-  } finally {
-    loading.step1 = false
-  }
-}
-
-async function selectZone() {
-  if (!selectedZoneId.value) return
-  
-  loading.step3 = true
-  try {
-    const response = await api.get<{ data?: Zone } | Zone>(
-      `/zones/${selectedZoneId.value}`
-    )
-    
-    createdZone.value = extractData<Zone>(response.data) || createdZone.value
-    logger.info('Zone selected:', createdZone.value)
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to select zone:', error)
-  } finally {
-    loading.step3 = false
-  }
-}
-
-async function createGreenhouse(): Promise<void> {
-  if (!greenhouseForm.name || !greenhouseForm.name.trim()) {
-    showToast('Введите название теплицы', 'error', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  loading.step1 = true
-  try {
-    // Генерируем UID автоматически на основе названия
-    const uid = generateUid(greenhouseForm.name, 'gh-')
-    
-    const response = await api.post<{ data?: Greenhouse } | Greenhouse>(
-      '/greenhouses',
-      {
-        ...greenhouseForm,
-        uid: uid
-      }
-    )
-    
-    createdGreenhouse.value = extractData<Greenhouse>(response.data) || createdGreenhouse.value
-    logger.info('Greenhouse created:', createdGreenhouse.value)
-    showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to create greenhouse:', error)
-  } finally {
-    loading.step1 = false
-  }
-}
-
-function addPhase() {
-  const maxIndex = recipeForm.phases.length > 0
-    ? Math.max(...recipeForm.phases.map(p => p.phase_index))
-    : -1
-  recipeForm.phases.push({
-    phase_index: maxIndex + 1,
-    name: '',
-    duration_hours: 24,
-    targets: {
-      ph: 6.0,
-      ec: 1.5,
-      temp_air: 23,
-      humidity_air: 60,
-      light_hours: 14,
-      irrigation_interval_sec: 900,
-      irrigation_duration_sec: 10
+  values.forEach((id) => {
+    if (typeof id === 'number') {
+      ids.add(id)
     }
   })
-}
+  return Array.from(ids)
+})
 
-async function createRecipe(): Promise<void> {
-  if (!createdGreenhouse.value) return
-  
-  loading.step2 = true
-  try {
-    // 1. Создать рецепт
-    const recipeResponse = await api.post<{ data?: Recipe } | Recipe>(
-      '/recipes',
-      {
-        name: recipeForm.name,
-        description: recipeForm.description
-      }
-    )
-    
-    const recipe = (recipeResponse.data as { data?: Recipe })?.data || (recipeResponse.data as Recipe)
-    const recipeId = recipe.id
-    
-    if (!recipeId) {
-      throw new Error('Recipe ID not found in response')
-    }
+const missingRequiredDevices = computed<string[]>(() => {
+  const missing: string[] = []
+  if (!deviceAssignments.irrigation) missing.push('полив')
+  if (!deviceAssignments.ph_correction) missing.push('коррекция pH')
+  if (!deviceAssignments.ec_correction) missing.push('коррекция EC')
+  if (!deviceAssignments.accumulation) missing.push('накопительный узел')
+  return missing
+})
 
-    // 2. Создать ревизию рецепта
-    const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
-      `/recipes/${recipeId}/revisions`,
-      { description: 'Initial revision' }
-    )
-    const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
-    const revisionId = revision?.id
-    if (!revisionId) {
-      throw new Error('Recipe revision ID not found in response')
-    }
+const canAttachRequiredNodes = computed<boolean>(() => {
+  return canConfigure.value
+    && stepZoneDone.value
+    && missingRequiredDevices.value.length === 0
+    && !loading.stepDevices
+})
 
-    // 3. Создать фазы для ревизии
-    for (const phase of recipeForm.phases) {
-      const phTarget = phase.targets?.ph
-      const isPhTargetObject = typeof phTarget === 'object' && phTarget !== null
-      const phTargetObject = isPhTargetObject ? (phTarget as { min?: number; max?: number }) : null
-      const phMin = phTargetObject && phTargetObject.min !== undefined ? phTargetObject.min : (typeof phTarget === 'number' ? phTarget : null)
-      const phMax = phTargetObject && phTargetObject.max !== undefined ? phTargetObject.max : (typeof phTarget === 'number' ? phTarget : null)
-
-      const ecTarget = phase.targets?.ec
-      const isEcTargetObject = typeof ecTarget === 'object' && ecTarget !== null
-      const ecTargetObject = isEcTargetObject ? (ecTarget as { min?: number; max?: number }) : null
-      const ecMin = ecTargetObject && ecTargetObject.min !== undefined ? ecTargetObject.min : (typeof ecTarget === 'number' ? ecTarget : null)
-      const ecMax = ecTargetObject && ecTargetObject.max !== undefined ? ecTargetObject.max : (typeof ecTarget === 'number' ? ecTarget : null)
-
-      await api.post(`/recipe-revisions/${revisionId}/phases`, {
-        phase_index: phase.phase_index,
-        name: phase.name || `Фаза ${phase.phase_index + 1}`,
-        duration_hours: phase.duration_hours,
-        ph_target: phTarget,
-        ph_min: phMin ?? undefined,
-        ph_max: phMax ?? undefined,
-        ec_target: ecTarget,
-        ec_min: ecMin ?? undefined,
-        ec_max: ecMax ?? undefined,
-        temp_air_target: phase.targets?.temp_air ?? null,
-        humidity_target: phase.targets?.humidity_air ?? null,
-        lighting_photoperiod_hours: phase.targets?.light_hours ?? null,
-        irrigation_interval_sec: phase.targets?.irrigation_interval_sec ?? null,
-        irrigation_duration_sec: phase.targets?.irrigation_duration_sec ?? null,
-      } as any)
-    }
-
-    // 4. Опубликовать ревизию, чтобы рецепт был доступен для циклов
-    await api.post(`/recipe-revisions/${revisionId}/publish`)
-
-    // 5. Загрузить полный рецепт с фазами
-    const fullRecipeResponse = await api.get<{ data?: Recipe } | Recipe>(
-      `/recipes/${recipeId}`
-    )
-    
-    createdRecipe.value = (fullRecipeResponse.data as { data?: Recipe })?.data || (fullRecipeResponse.data as Recipe)
-    logger.info('Recipe created:', createdRecipe.value)
-    showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to create recipe:', error)
-  } finally {
-    loading.step2 = false
+const automationSystemLabel = computed<string>(() => {
+  if (automationWaterForm.systemType === 'drip') {
+    return 'Капельный полив (drip)'
   }
-}
-
-async function createZone(): Promise<void> {
-  if (!createdGreenhouse.value) return
-  
-  loading.step3 = true
-  try {
-    const response = await api.post<{ data?: Zone } | Zone>(
-      '/zones',
-      {
-      ...zoneForm,
-      greenhouse_id: createdGreenhouse.value.id
-    }, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
-    
-    createdZone.value = response.data as any
-    logger.info('Zone created:', createdZone.value)
-    
-    // Обновляем список зон
-    await loadAvailableZones(createdGreenhouse.value.id)
-  } catch (error: any) {
-    logger.error('Failed to create zone:', error)
-  } finally {
-    loading.step3 = false
+  if (automationWaterForm.systemType === 'substrate_trays') {
+    return 'Лотки/субстрат (substrate trays)'
   }
-}
-
-async function attachRecipeToZone(): Promise<void> {
-  if (!createdZone.value) return
-  
-  loading.step4 = true
-  try {
-    const recipeId = createdRecipe.value?.id
-    const query = recipeId ? `?start_cycle=1&recipe_id=${recipeId}` : '?start_cycle=1'
-    logger.info('Opening grow cycle wizard for zone', { zoneId: createdZone.value.id, recipeId })
-    showToast('Открываем мастер цикла выращивания', 'info', TOAST_TIMEOUT.NORMAL)
-    router.visit(`/zones/${createdZone.value.id}${query}`)
-  } catch (error) {
-    logger.error('Failed to open grow cycle wizard:', error)
-  } finally {
-    loading.step4 = false
+  if (automationWaterForm.systemType === 'nft') {
+    return 'NFT (рециркуляция)'
   }
+
+  return automationWaterForm.systemType
+})
+
+interface AutomationConfiguratorApplyPayload {
+  climateForm: ClimateFormState
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
 }
 
-async function loadAvailableNodes() {
-  loading.nodes = true
-  try {
-    const response = await api.get<{ data?: Node[] } | Node[]>(
-      '/nodes',
-      { params: { unassigned: true } }
-    )
-    
-    const data = extractData<Node[]>(response.data) || []
-    // Обрабатываем pagination response
-    if (Array.isArray(data)) {
-      availableNodes.value = data
-    } else {
-      availableNodes.value = []
-    }
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to load nodes:', error)
-  } finally {
-    loading.nodes = false
+function openAutomationConfigurator(): void {
+  if (!canConfigure.value) {
+    return
   }
+  showAutomationConfigurator.value = true
 }
 
-async function attachNodesToZone(): Promise<void> {
-  if (!createdZone.value || selectedNodeIds.value.length === 0) return
-  
-  loading.step5 = true
+function onApplyAutomationConfigurator(payload: AutomationConfiguratorApplyPayload): void {
+  Object.assign(automationClimateForm, payload.climateForm)
+  Object.assign(automationWaterForm, payload.waterForm)
+  Object.assign(automationLightingForm, payload.lightingForm)
+  showAutomationConfigurator.value = false
+}
+
+function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
+  showPlantCreateWizard.value = false
+
+  if (!plant?.id) {
+    plantMode.value = 'select'
+    return
+  }
+
+  const exists = availablePlants.value.some((item) => item.id === plant.id)
+  if (!exists) {
+    availablePlants.value = [
+      ...availablePlants.value,
+      { id: plant.id, name: plant.name ?? `Plant #${plant.id}` },
+    ]
+  }
+
+  selectedPlantId.value = plant.id
+  plantMode.value = 'select'
+  selectPlant()
+}
+
+function openPlantCreateWizard(): void {
+  if (!canConfigure.value) {
+    return
+  }
+
+  plantMode.value = 'create'
+  showPlantCreateWizard.value = true
+}
+
+function handlePlantCreateClose(): void {
+  showPlantCreateWizard.value = false
+  plantMode.value = 'select'
+}
+
+async function attachConfiguredNodes(): Promise<void> {
+  if (!canAttachRequiredNodes.value) {
+    return
+  }
+
+  selectedNodeIds.value = selectedNodeIdsByRoles.value
+  await attachNodesToZone({ ...deviceAssignments })
+}
+
+function canAttachRole(role: DeviceRole): boolean {
+  const nodeId = deviceAssignments[role]
+  return canConfigure.value
+    && stepZoneDone.value
+    && typeof nodeId === 'number'
+    && !isNodeAttachedToCurrentZone(nodeId)
+    && !loading.stepDevices
+}
+
+function attachButtonLabel(role: DeviceRole): string {
+  const nodeId = deviceAssignments[role]
+  if (typeof nodeId === 'number' && isNodeAttachedToCurrentZone(nodeId)) {
+    return 'Привязано'
+  }
+
+  if (loading.stepDevices && attachingRole.value === role) {
+    return 'Привязка...'
+  }
+
+  return 'Привязать'
+}
+
+async function attachNodeByRole(role: DeviceRole): Promise<void> {
+  if (!canAttachRole(role)) {
+    return
+  }
+
+  const nodeId = deviceAssignments[role]
+  if (typeof nodeId !== 'number') {
+    return
+  }
+
+  attachingRole.value = role
   try {
-    const promises = selectedNodeIds.value.map(nodeId =>
-      api.patch(`/nodes/${nodeId}`, {
-        zone_id: createdZone.value.id
-      })
-    )
-    
-    await Promise.all(promises)
-    attachedNodesCount.value = selectedNodeIds.value.length
-    logger.info(`Attached ${attachedNodesCount.value} nodes to zone`)
-    showToast(`Успешно привязано узлов: ${attachedNodesCount.value}`, 'success', TOAST_TIMEOUT.NORMAL)
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to attach nodes:', error)
+    selectedNodeIds.value = [nodeId]
+    const assignmentsPayload = missingRequiredDevices.value.length === 0
+      ? { ...deviceAssignments }
+      : null
+    await attachNodesToZone(assignmentsPayload)
   } finally {
-    loading.step5 = false
+    attachingRole.value = null
   }
 }
 </script>

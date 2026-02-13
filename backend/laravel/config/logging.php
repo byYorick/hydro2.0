@@ -135,6 +135,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'access_shadow' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/access-shadow.log'),
+            'level' => env('ACCESS_CONTROL_SHADOW_LOG_LEVEL', 'notice'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

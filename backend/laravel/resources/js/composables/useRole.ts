@@ -46,6 +46,21 @@ export function useRole() {
     isAdmin.value || isAgronomist.value || isEngineer.value || isOperator.value
   )
   
+  // Конфигурация сущностей и инфраструктуры (CRUD)
+  const canConfigureEntities = computed(() =>
+    isAdmin.value || isAgronomist.value
+  )
+
+  // Операционное управление циклами (старт/стоп/контроль)
+  const canOperateCycles = computed(() =>
+    isAdmin.value || isAgronomist.value || isOperator.value
+  )
+
+  // Управление климатом в рантайме
+  const canOperateClimate = computed(() =>
+    isAdmin.value || isAgronomist.value || isOperator.value
+  )
+
   const canViewOnly = computed(() => isViewer.value)
   
   // Проверка конкретной роли
@@ -81,6 +96,9 @@ export function useRole() {
     canCreateCommands,
     canEditRecipes,
     canResolveAlerts,
+    canConfigureEntities,
+    canOperateCycles,
+    canOperateClimate,
     canViewOnly,
     
     // Утилиты

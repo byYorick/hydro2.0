@@ -8,6 +8,7 @@ use App\Models\DeviceNode;
 use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
+use App\Models\Alert;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
@@ -257,6 +258,23 @@ class PythonIngestControllerTest extends TestCase
         $this->assertEquals(Command::STATUS_DONE, $command->status);
     }
 
+    public function test_command_ack_endpoint_returns_404_when_command_not_found(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-missing-404',
+                'status' => 'SENT',
+            ])
+            ->assertStatus(404)
+            ->assertJson([
+                'status' => 'error',
+                'code' => 'COMMAND_NOT_FOUND',
+                'message' => 'Command not found',
+            ]);
+    }
+
     public function test_command_ack_endpoint_requires_auth(): void
     {
         // Убеждаемся, что токен не настроен для этого теста
@@ -267,5 +285,104 @@ class PythonIngestControllerTest extends TestCase
             'cmd_id' => 'cmd-test-123',
             'status' => 'DONE',
         ])->assertStatus(401);
+    }
+
+    public function test_alerts_endpoint_returns_202_when_rate_limited(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        Config::set('alerts.rate_limiting.enabled', true);
+        Config::set('alerts.rate_limiting.max_per_minute', 0);
+        Config::set('alerts.rate_limiting.critical_codes', []);
+
+        $zone = Zone::factory()->create();
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/alerts', [
+                'zone_id' => $zone->id,
+                'source' => 'infra',
+                'code' => 'infra_rate_limited_test',
+                'type' => 'Infrastructure Error',
+                'status' => 'ACTIVE',
+                'details' => ['message' => 'test'],
+            ]);
+
+        $response->assertStatus(202)
+            ->assertJsonPath('data.rate_limited', true);
+
+        $this->assertDatabaseMissing('alerts', [
+            'zone_id' => $zone->id,
+            'code' => 'infra_rate_limited_test',
+            'status' => 'ACTIVE',
+        ]);
+    }
+
+    public function test_alerts_endpoint_resolves_active_alert_with_status_resolved(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+
+        $zone = Zone::factory()->create();
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_resolve_test',
+            'type' => 'Infrastructure Error',
+            'status' => 'ACTIVE',
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/alerts', [
+                'zone_id' => $zone->id,
+                'source' => 'infra',
+                'code' => 'infra_resolve_test',
+                'type' => 'Infrastructure Error',
+                'status' => 'RESOLVED',
+                'details' => ['reason' => 'recovered'],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.resolved', true)
+            ->assertJsonPath('data.alert_id', $alert->id);
+
+        $this->assertDatabaseHas('alerts', [
+            'id' => $alert->id,
+            'status' => 'RESOLVED',
+        ]);
+    }
+
+    public function test_alerts_endpoint_accepts_node_source_and_normalizes_severity(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+
+        $zone = Zone::factory()->create();
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/alerts', [
+                'zone_id' => $zone->id,
+                'source' => 'node',
+                'code' => 'node_error_sensor_timeout',
+                'type' => 'node_error',
+                'severity' => 'CRITICAL',
+                'node_uid' => 'nd-node-1',
+                'hardware_id' => 'esp32-node-1',
+                'status' => 'active',
+                'details' => ['message' => 'Node timeout'],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok');
+
+        $this->assertDatabaseHas('alerts', [
+            'zone_id' => $zone->id,
+            'source' => 'node',
+            'code' => 'node_error_sensor_timeout',
+            'status' => 'ACTIVE',
+            'severity' => 'critical',
+            'category' => 'node',
+            'node_uid' => 'nd-node-1',
+            'hardware_id' => 'esp32-node-1',
+        ]);
     }
 }

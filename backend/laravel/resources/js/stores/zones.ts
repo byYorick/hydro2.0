@@ -2,6 +2,34 @@ import { defineStore } from 'pinia'
 import type { Zone } from '@/types/Zone'
 import { zoneEvents } from '@/composables/useStoreEvents'
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+function getActiveCycleSignature(zone: Zone): string {
+  const zoneWithLegacy = zone as Zone & { active_grow_cycle?: unknown }
+  const rawCycle = zone.activeGrowCycle ?? zoneWithLegacy.active_grow_cycle
+  const cycle = asRecord(rawCycle)
+  if (!cycle) {
+    return 'none'
+  }
+
+  const currentPhase = asRecord(cycle.currentPhase)
+  const recipeRevision = asRecord(cycle.recipeRevision)
+
+  const id = cycle.id ?? ''
+  const status = cycle.status ?? ''
+  const startedAt = cycle.started_at ?? ''
+  const currentPhaseId = cycle.current_phase_id ?? currentPhase?.id ?? ''
+  const recipeRevisionId = cycle.recipe_revision_id ?? recipeRevision?.id ?? ''
+
+  return `${String(id)}:${String(status)}:${String(startedAt)}:${String(currentPhaseId)}:${String(recipeRevisionId)}`
+}
+
 /**
  * Эффективное сравнение зон без JSON.stringify
  * Использует id + updated_at для определения изменений
@@ -22,7 +50,12 @@ function zonesEqual(existing: Zone, incoming: Zone): boolean {
   // Приоритет: используем updated_at для определения изменений
   // Это самый надежный способ, так как сервер обновляет его при любых изменениях
   if (existing.updated_at && incoming.updated_at) {
-    return existing.updated_at === incoming.updated_at
+    if (existing.updated_at !== incoming.updated_at) {
+      return false
+    }
+
+    // Важно: активный цикл может смениться без изменения updated_at самой зоны.
+    return getActiveCycleSignature(existing) === getActiveCycleSignature(incoming)
   }
   
   // Fallback: если updated_at нет, сравниваем значимые поля
@@ -33,7 +66,8 @@ function zonesEqual(existing: Zone, incoming: Zone): boolean {
     existing.status === incoming.status &&
     existing.description === incoming.description &&
     existing.greenhouse_id === incoming.greenhouse_id &&
-    existing.uid === incoming.uid
+    existing.uid === incoming.uid &&
+    getActiveCycleSignature(existing) === getActiveCycleSignature(incoming)
   )
   
   // Также сравниваем targets (важное поле для зоны)
@@ -339,4 +373,3 @@ export const useZonesStore = defineStore('zones', {
     },
   },
 })
-

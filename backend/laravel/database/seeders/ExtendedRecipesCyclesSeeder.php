@@ -8,6 +8,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\NutrientProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -20,10 +21,13 @@ use Illuminate\Support\Str;
  */
 class ExtendedRecipesCyclesSeeder extends Seeder
 {
+    private array $nutrientProductIds = [];
+
     public function run(): void
     {
         $this->command->info('=== Создание расширенных рецептов и циклов ===');
 
+        $this->seedNutrientProducts();
         $templates = $this->ensureStageTemplates();
         $revisions = $this->seedRecipes($templates);
         $this->seedGrowCycles($revisions);
@@ -1483,6 +1487,10 @@ class ExtendedRecipesCyclesSeeder extends Seeder
         $ecMin = $phaseData['ec_min'] ?? $ec['min'] ?? null;
         $ecMax = $phaseData['ec_max'] ?? $ec['max'] ?? null;
         $ecTarget = $phaseData['ec_target'] ?? $ec['target'] ?? $this->averageTarget(['min' => $ecMin, 'max' => $ecMax]);
+        $nutritionProfile = $this->buildNutritionProfile(
+            $phaseData,
+            $phaseData['stage_code'] ?? $stageTemplate?->code
+        );
 
         $tempMin = $phaseData['temp_air_min'] ?? $tempAir['min'] ?? null;
         $tempMax = $phaseData['temp_air_max'] ?? $tempAir['max'] ?? null;
@@ -1528,6 +1536,18 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             'ec_target' => $ecTarget,
             'ec_min' => $ecMin,
             'ec_max' => $ecMax,
+            'nutrient_program_code' => $nutritionProfile['program_code'],
+            'nutrient_npk_ratio_pct' => $nutritionProfile['npk_ratio_pct'],
+            'nutrient_calcium_ratio_pct' => $nutritionProfile['calcium_ratio_pct'],
+            'nutrient_micro_ratio_pct' => $nutritionProfile['micro_ratio_pct'],
+            'nutrient_npk_dose_ml_l' => $nutritionProfile['npk_dose_ml_l'],
+            'nutrient_calcium_dose_ml_l' => $nutritionProfile['calcium_dose_ml_l'],
+            'nutrient_micro_dose_ml_l' => $nutritionProfile['micro_dose_ml_l'],
+            'nutrient_npk_product_id' => $nutritionProfile['npk_product_id'],
+            'nutrient_calcium_product_id' => $nutritionProfile['calcium_product_id'],
+            'nutrient_micro_product_id' => $nutritionProfile['micro_product_id'],
+            'nutrient_dose_delay_sec' => $nutritionProfile['dose_delay_sec'],
+            'nutrient_ec_stop_tolerance' => $nutritionProfile['ec_stop_tolerance'],
             'irrigation_mode' => $irrigationMode,
             'irrigation_interval_sec' => $phaseData['irrigation_interval_sec'] ?? $irrigation['interval_sec'] ?? null,
             'irrigation_duration_sec' => $phaseData['irrigation_duration_sec'] ?? $irrigation['duration_sec'] ?? null,
@@ -1546,6 +1566,383 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             'target_gdd' => $phaseData['target_gdd'] ?? null,
             'dli_target' => $dliTarget,
             'extensions' => $extensions,
+        ];
+    }
+
+    private function buildNutritionProfile(array $phaseData, ?string $stageCode = null): array
+    {
+        $nutrition = is_array($phaseData['nutrition'] ?? null) ? $phaseData['nutrition'] : [];
+        $components = is_array($nutrition['components'] ?? null) ? $nutrition['components'] : [];
+        $defaults = $this->defaultNutritionRatiosByStage($stageCode);
+        $defaultDoses = $this->defaultNutritionDosesByStage($stageCode);
+        $programCode = $phaseData['nutrient_program_code']
+            ?? $nutrition['program_code']
+            ?? 'YARAREGA_CALCINIT_HAIFA_MICRO_V1';
+        $defaultProducts = $this->defaultNutritionProductsByProgram($programCode);
+
+        $npkRatio = $phaseData['nutrient_npk_ratio_pct']
+            ?? data_get($components, 'npk.ratio_pct')
+            ?? $defaults['npk'];
+        $calciumRatio = $phaseData['nutrient_calcium_ratio_pct']
+            ?? data_get($components, 'calcium.ratio_pct')
+            ?? $defaults['calcium'];
+        $microRatio = $phaseData['nutrient_micro_ratio_pct']
+            ?? data_get($components, 'micro.ratio_pct')
+            ?? $defaults['micro'];
+
+        $normalized = $this->normalizeNutritionRatios((float) $npkRatio, (float) $calciumRatio, (float) $microRatio);
+
+        return [
+            'program_code' => $programCode,
+            'npk_ratio_pct' => $normalized['npk'],
+            'calcium_ratio_pct' => $normalized['calcium'],
+            'micro_ratio_pct' => $normalized['micro'],
+            'npk_dose_ml_l' => $phaseData['nutrient_npk_dose_ml_l'] ?? data_get($components, 'npk.dose_ml_per_l') ?? $defaultDoses['npk'],
+            'calcium_dose_ml_l' => $phaseData['nutrient_calcium_dose_ml_l'] ?? data_get($components, 'calcium.dose_ml_per_l') ?? $defaultDoses['calcium'],
+            'micro_dose_ml_l' => $phaseData['nutrient_micro_dose_ml_l'] ?? data_get($components, 'micro.dose_ml_per_l') ?? $defaultDoses['micro'],
+            'npk_product_id' => $phaseData['nutrient_npk_product_id'] ?? data_get($components, 'npk.product_id') ?? $defaultProducts['npk_product_id'],
+            'calcium_product_id' => $phaseData['nutrient_calcium_product_id'] ?? data_get($components, 'calcium.product_id') ?? $defaultProducts['calcium_product_id'],
+            'micro_product_id' => $phaseData['nutrient_micro_product_id'] ?? data_get($components, 'micro.product_id') ?? $defaultProducts['micro_product_id'],
+            'dose_delay_sec' => $phaseData['nutrient_dose_delay_sec'] ?? $nutrition['dose_delay_sec'] ?? 12,
+            'ec_stop_tolerance' => $phaseData['nutrient_ec_stop_tolerance'] ?? $nutrition['ec_stop_tolerance'] ?? 0.07,
+        ];
+    }
+
+    private function seedNutrientProducts(): void
+    {
+        $terraTarsaMultiMicroPayload = [
+            'manufacturer' => 'TerraTarsa',
+            'name' => 'Powerfol Oil Crop',
+            'component' => 'micro',
+            'composition' => 'N 15%, MgO 1%, B 0.5%, Cu 0.04%, Fe 0.14%, Mn 1.1%, Mo 0.09%, Zn 1%',
+            'recommended_stage' => 'VEG,FLOWER,FRUIT',
+            'notes' => 'Жидкое микроудобрение с комплексом микроэлементов для предотвращения и коррекции дефицитов.',
+            'metadata' => [
+                'source_url' => 'https://terratarsa.com/en/prd/powerfol-oil-crops-3/',
+                'system_code' => 'TERRATARSA_NOVALON_DUCANIT_POWERFOLZN_V1',
+            ],
+        ];
+
+        // Миграция legacy-данных: заменяем старую одноэлементную позицию TerraTarsa Zn EDTA на multi-micro.
+        $legacyTerraTarsaZn = NutrientProduct::query()
+            ->where('manufacturer', 'TerraTarsa')
+            ->where('name', 'POWERFOL Zn EDTA')
+            ->where('component', 'micro')
+            ->first();
+
+        if (
+            $legacyTerraTarsaZn !== null &&
+            ! NutrientProduct::query()
+                ->where('manufacturer', $terraTarsaMultiMicroPayload['manufacturer'])
+                ->where('name', $terraTarsaMultiMicroPayload['name'])
+                ->where('component', $terraTarsaMultiMicroPayload['component'])
+                ->exists()
+        ) {
+            $legacyTerraTarsaZn->update([
+                'name' => $terraTarsaMultiMicroPayload['name'],
+                'composition' => $terraTarsaMultiMicroPayload['composition'],
+                'recommended_stage' => $terraTarsaMultiMicroPayload['recommended_stage'],
+                'notes' => $terraTarsaMultiMicroPayload['notes'],
+                'metadata' => $terraTarsaMultiMicroPayload['metadata'],
+            ]);
+        }
+
+        $products = [
+            [
+                'manufacturer' => 'Masterblend',
+                'name' => '5-11-26 Hydroponic Formula',
+                'component' => 'npk',
+                'composition' => 'NPK 5-11-26 + Mg + S + trace',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Водорастворимая гидропонная формула; в инструкции используется в паре с Calcium Nitrate.',
+                'metadata' => [
+                    'source_url' => 'https://www.masterblend.com/5-11-26-hydroponic-formula/',
+                    'system_code' => 'MASTERBLEND_51126_CA_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Masterblend',
+                'name' => 'Tomato 4-18-38',
+                'component' => 'npk',
+                'composition' => 'NPK 4-18-38',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Базовый комплекс NPK для двухкомпонентных гидросхем с отдельным кальцием.',
+                'metadata' => [
+                    'source_url' => 'https://www.masterblend.com/4-18-38-tomato-formula/',
+                    'system_code' => 'MASTERBLEND_41838_CA_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Yara',
+                'name' => 'YaraLiva Calcinit',
+                'component' => 'calcium',
+                'composition' => '15.5-0-0 + 19% Ca',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Источник нитратного азота и кальция; хранить отдельно от фосфатов/сульфатов.',
+                'metadata' => [
+                    'source_url' => 'https://www.yara.com/crop-nutrition/our-global-fertilizer-brands/yaraliva/',
+                    'system_code' => 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Haifa',
+                'name' => 'Micro Hydroponic Mix',
+                'component' => 'micro',
+                'composition' => 'Fe, Mn, Zn, Cu, B, Mo',
+                'recommended_stage' => 'GERMINATION,ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Хелатный микс микроэлементов для гидропоники.',
+                'metadata' => [
+                    'source_url' => 'https://www.haifa-group.com/haifa-micro-hydroponic-mix',
+                    'system_code' => 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Yara',
+                'name' => 'YaraRega Water-Soluble NPK',
+                'component' => 'npk',
+                'composition' => 'NPK range (various ratios) + S + optional Mg/Zn/B',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Линейка водорастворимых NPK для фертигации, включая варианты под разные стадии роста.',
+                'metadata' => [
+                    'source_url' => 'https://www.yara.com/crop-nutrition/our-global-fertilizer-brands/yararega/',
+                    'system_code' => 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Yara',
+                'name' => 'YaraTera Kristalon 18-18-18',
+                'component' => 'npk',
+                'composition' => 'NPK 18-18-18',
+                'recommended_stage' => 'VEG',
+                'notes' => 'Универсальная комплексная база NPK для вегетативных фаз.',
+                'metadata' => [
+                    'source_url' => 'https://www.yara.com/crop-nutrition/our-global-fertilizer-brands/yaratera/',
+                    'system_code' => 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Буйские удобрения',
+                'name' => 'Акварин для томатов, перцев, баклажанов',
+                'component' => 'npk',
+                'composition' => 'NPK 6-12-36 + MgO + S + микроэлементы',
+                'recommended_stage' => 'FLOWER,FRUIT',
+                'notes' => 'Водорастворимое NPK-удобрение из схем питания BHZ для томатов, перцев и баклажанов.',
+                'metadata' => [
+                    'source_url' => 'https://bhzshop.ru/catalog/dlya-sada-i-ogoroda/akvarin-dlya-tomatov/',
+                    'system_code' => 'BHZ_AKVARIN_CALCIUM_AKVAMIX_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Буйские удобрения',
+                'name' => 'Селитра кальциевая',
+                'component' => 'calcium',
+                'composition' => 'N 14.9%, CaO 27%',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Азотно-кальциевое водорастворимое удобрение для фертигации и корневых подкормок.',
+                'metadata' => [
+                    'source_url' => 'https://bhzshop.ru/catalog/kompleksnye-udobreniya/selitra-kaltsievaya/',
+                    'system_code' => 'BHZ_AKVARIN_CALCIUM_AKVAMIX_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'Буйские удобрения',
+                'name' => 'Аквамикс микроэлементный комплекс',
+                'component' => 'micro',
+                'composition' => 'Fe, Mn, Zn, Cu, Ca, B, Mo (хелатные формы для ряда элементов)',
+                'recommended_stage' => 'GERMINATION,ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Микроэлементный комплекс для профилактики хлорозов и коррекции микрообеспечения.',
+                'metadata' => [
+                    'source_url' => 'https://bhzshop.ru/catalog/mikroelementy-garden/akvamiks-mikroelementnyy-kompleks/',
+                    'system_code' => 'BHZ_AKVARIN_CALCIUM_AKVAMIX_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'TerraTarsa',
+                'name' => 'NovaloN 19-19-19+2MgO+ME',
+                'component' => 'npk',
+                'composition' => 'NPK 19-19-19 + MgO + хелатные микроэлементы',
+                'recommended_stage' => 'VEG',
+                'notes' => 'Комплексное водорастворимое удобрение с микроэлементами для активного вегетативного роста.',
+                'metadata' => [
+                    'source_url' => 'https://terratarsa.com/en/prd/novalon-19-19-192mgome/',
+                    'system_code' => 'TERRATARSA_NOVALON_DUCANIT_POWERFOLZN_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'TerraTarsa',
+                'name' => 'DUCANIT calcium nitrate',
+                'component' => 'calcium',
+                'composition' => 'Азотно-кальциевое полностью растворимое удобрение (кальциевая селитра)',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Компонент кальциевой линии в системах фертигации овощных и плодово-ягодных культур.',
+                'metadata' => [
+                    'source_url' => 'https://terratarsa.com/en/special-nitrogen-calcium-fertilizer/',
+                    'system_code' => 'TERRATARSA_NOVALON_DUCANIT_POWERFOLZN_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'TerraTarsa',
+                'name' => 'Powerfol Oil Crop',
+                'component' => 'micro',
+                'composition' => 'N 15%, MgO 1%, B 0.5%, Cu 0.04%, Fe 0.14%, Mn 1.1%, Mo 0.09%, Zn 1%',
+                'recommended_stage' => 'VEG,FLOWER,FRUIT',
+                'notes' => 'Жидкое микроудобрение с комплексом микроэлементов для предотвращения и коррекции дефицитов.',
+                'metadata' => [
+                    'source_url' => 'https://terratarsa.com/en/prd/powerfol-oil-crops-3/',
+                    'system_code' => 'TERRATARSA_NOVALON_DUCANIT_POWERFOLZN_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'АгроМастер',
+                'name' => 'АгроМастер 20-20-20 + микро',
+                'component' => 'npk',
+                'composition' => 'NPK 20-20-20 + микроэлементы',
+                'recommended_stage' => 'ROOTING,VEG',
+                'notes' => 'Формула для рассады и ранних этапов роста в стандартных питательных растворах.',
+                'metadata' => [
+                    'source_url' => 'https://agromaster.ru/ststandartpitatrastv',
+                    'system_code' => 'AGROMASTER_202020_CANO3_BOROPLUS_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'АгроМастер',
+                'name' => 'Нитрат кальция (кальциевая селитра)',
+                'component' => 'calcium',
+                'composition' => 'N 12%, CaO 24%',
+                'recommended_stage' => 'ROOTING,VEG,FLOWER,FRUIT',
+                'notes' => 'Кальциевая селитра (четырёхводная, кристаллическая), водорастворимая для фертигации.',
+                'metadata' => [
+                    'source_url' => 'https://agromaster.ru/prostminudobreniya',
+                    'system_code' => 'AGROMASTER_202020_CANO3_BOROPLUS_V1',
+                ],
+            ],
+            [
+                'manufacturer' => 'АгроМастер',
+                'name' => 'Бороплюс',
+                'component' => 'micro',
+                'composition' => 'Органическая форма бора (микроудобрение)',
+                'recommended_stage' => 'FLOWER,FRUIT',
+                'notes' => 'Микроудобрение для профилактики дефицита бора при листовых и капельных подкормках.',
+                'metadata' => [
+                    'source_url' => 'https://agromaster.ru/boroplus',
+                    'system_code' => 'AGROMASTER_202020_CANO3_BOROPLUS_V1',
+                ],
+            ],
+        ];
+
+        foreach ($products as $payload) {
+            $product = NutrientProduct::query()->firstOrCreate(
+                [
+                    'manufacturer' => $payload['manufacturer'],
+                    'name' => $payload['name'],
+                    'component' => $payload['component'],
+                ],
+                $payload
+            );
+            $this->nutrientProductIds[$payload['manufacturer'].'|'.$payload['name'].'|'.$payload['component']] = $product->id;
+        }
+    }
+
+    private function defaultNutritionProductsByProgram(string $programCode): array
+    {
+        $code = strtoupper($programCode);
+        $masterblend = [
+            'npk_product_id' => $this->nutrientProductIds['Masterblend|5-11-26 Hydroponic Formula|npk']
+                ?? $this->nutrientProductIds['Masterblend|Tomato 4-18-38|npk']
+                ?? null,
+            'calcium_product_id' => $this->nutrientProductIds['Yara|YaraLiva Calcinit|calcium'] ?? null,
+            'micro_product_id' => $this->nutrientProductIds['Haifa|Micro Hydroponic Mix|micro'] ?? null,
+        ];
+        $yaraRega = [
+            'npk_product_id' => $this->nutrientProductIds['Yara|YaraRega Water-Soluble NPK|npk']
+                ?? $this->nutrientProductIds['Yara|YaraTera Kristalon 18-18-18|npk']
+                ?? $masterblend['npk_product_id'],
+            'calcium_product_id' => $this->nutrientProductIds['Yara|YaraLiva Calcinit|calcium'] ?? $masterblend['calcium_product_id'],
+            'micro_product_id' => $this->nutrientProductIds['Haifa|Micro Hydroponic Mix|micro'] ?? $masterblend['micro_product_id'],
+        ];
+        $bhz = [
+            'npk_product_id' => $this->nutrientProductIds['Буйские удобрения|Акварин для томатов, перцев, баклажанов|npk']
+                ?? $yaraRega['npk_product_id'],
+            'calcium_product_id' => $this->nutrientProductIds['Буйские удобрения|Селитра кальциевая|calcium']
+                ?? $yaraRega['calcium_product_id'],
+            'micro_product_id' => $this->nutrientProductIds['Буйские удобрения|Аквамикс микроэлементный комплекс|micro']
+                ?? $yaraRega['micro_product_id'],
+        ];
+        $terraTarsa = [
+            'npk_product_id' => $this->nutrientProductIds['TerraTarsa|NovaloN 19-19-19+2MgO+ME|npk']
+                ?? $yaraRega['npk_product_id'],
+            'calcium_product_id' => $this->nutrientProductIds['TerraTarsa|DUCANIT calcium nitrate|calcium']
+                ?? $yaraRega['calcium_product_id'],
+            'micro_product_id' => $this->nutrientProductIds['TerraTarsa|Powerfol Oil Crop|micro']
+                ?? $yaraRega['micro_product_id'],
+        ];
+        $agromaster = [
+            'npk_product_id' => $this->nutrientProductIds['АгроМастер|АгроМастер 20-20-20 + микро|npk']
+                ?? $yaraRega['npk_product_id'],
+            'calcium_product_id' => $this->nutrientProductIds['АгроМастер|Нитрат кальция (кальциевая селитра)|calcium']
+                ?? $yaraRega['calcium_product_id'],
+            'micro_product_id' => $this->nutrientProductIds['АгроМастер|Бороплюс|micro']
+                ?? $yaraRega['micro_product_id'],
+        ];
+
+        return match ($code) {
+            'MASTERBLEND_51126_CA_HAIFA_MICRO_V1',
+            'MASTERBLEND_41838_CA_HAIFA_MICRO_V1',
+            'MASTERBLEND_3PART_V1',
+            'GENERIC_3PART_V1' => $masterblend,
+            'YARAREGA_CALCINIT_HAIFA_MICRO_V1' => $yaraRega,
+            'BHZ_AKVARIN_CALCIUM_AKVAMIX_V1' => $bhz,
+            'TERRATARSA_NOVALON_DUCANIT_POWERFOLZN_V1' => $terraTarsa,
+            'AGROMASTER_202020_CANO3_BOROPLUS_V1' => $agromaster,
+            default => $yaraRega,
+        };
+    }
+
+    private function defaultNutritionRatiosByStage(?string $stageCode): array
+    {
+        $code = strtoupper((string) $stageCode);
+
+        return match ($code) {
+            'GERMINATION' => ['npk' => 45.0, 'calcium' => 45.0, 'micro' => 10.0],
+            'ROOTING' => ['npk' => 45.0, 'calcium' => 45.0, 'micro' => 10.0],
+            'VEG' => ['npk' => 46.0, 'calcium' => 44.0, 'micro' => 10.0],
+            'FLOWER' => ['npk' => 43.0, 'calcium' => 44.0, 'micro' => 13.0],
+            'FRUIT' => ['npk' => 41.0, 'calcium' => 44.0, 'micro' => 15.0],
+            'HARVEST' => ['npk' => 40.0, 'calcium' => 45.0, 'micro' => 15.0],
+            default => ['npk' => 44.0, 'calcium' => 44.0, 'micro' => 12.0],
+        };
+    }
+
+    private function defaultNutritionDosesByStage(?string $stageCode): array
+    {
+        $code = strtoupper((string) $stageCode);
+
+        return match ($code) {
+            'GERMINATION' => ['npk' => 0.30, 'calcium' => 0.30, 'micro' => 0.05],
+            'ROOTING' => ['npk' => 0.45, 'calcium' => 0.45, 'micro' => 0.07],
+            'VEG' => ['npk' => 0.60, 'calcium' => 0.60, 'micro' => 0.10],
+            'FLOWER' => ['npk' => 0.70, 'calcium' => 0.65, 'micro' => 0.12],
+            'FRUIT' => ['npk' => 0.75, 'calcium' => 0.70, 'micro' => 0.15],
+            'HARVEST' => ['npk' => 0.40, 'calcium' => 0.40, 'micro' => 0.06],
+            default => ['npk' => 0.55, 'calcium' => 0.55, 'micro' => 0.09],
+        };
+    }
+
+    private function normalizeNutritionRatios(float $npk, float $calcium, float $micro): array
+    {
+        $npk = max(0.0, $npk);
+        $calcium = max(0.0, $calcium);
+        $micro = max(0.0, $micro);
+
+        $sum = $npk + $calcium + $micro;
+        if ($sum <= 0.0) {
+            return ['npk' => 45.0, 'calcium' => 35.0, 'micro' => 20.0];
+        }
+
+        return [
+            'npk' => round(($npk / $sum) * 100.0, 2),
+            'calcium' => round(($calcium / $sum) * 100.0, 2),
+            'micro' => round(($micro / $sum) * 100.0, 2),
         ];
     }
 

@@ -50,7 +50,7 @@ class ProcessAlert implements ShouldQueue
 
                 Log::info('Pending alert processed and deleted', [
                     'pending_alert_id' => $this->pendingAlertId,
-                    'alert_id' => $result['alert']->id ?? null,
+                    'alert_id' => $result['alert']?->id,
                 ]);
             }
 
@@ -94,7 +94,8 @@ class ProcessAlert implements ShouldQueue
                     ->update([
                         'status' => 'dlq',
                         'attempts' => $attempts,
-                        'last_attempt_at' => now(),
+                        'next_retry_at' => null,
+                        'moved_to_dlq_at' => now(),
                         'last_error' => $e->getMessage(),
                         'updated_at' => now(),
                     ]);
@@ -110,7 +111,8 @@ class ProcessAlert implements ShouldQueue
                     ->where('id', $this->pendingAlertId)
                     ->update([
                         'attempts' => $attempts,
-                        'last_attempt_at' => now(),
+                        'next_retry_at' => now()->addSeconds(60 * max($attempts, 1)),
+                        'moved_to_dlq_at' => null,
                         'last_error' => $e->getMessage(),
                         'status' => 'pending', // Остается pending для retry
                         'updated_at' => now(),
@@ -133,4 +135,3 @@ class ProcessAlert implements ShouldQueue
         return [60, 120, 240];
     }
 }
-

@@ -20,6 +20,8 @@
 
 static const char *TAG = "node_utils";
 
+static char s_node_type[32] = {0};
+
 // Смещение времени для нормализации Unix timestamp
 // time_offset_us = host_ts_us - esp_timer_get_time()
 // Используется для преобразования esp_timer_get_time() в Unix timestamp
@@ -35,6 +37,23 @@ esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size)
     dest[dest_size - 1] = '\0';  // Гарантируем null-termination
     
     return ESP_OK;
+}
+
+void node_utils_set_node_type(const char *node_type) {
+    if (!node_type || node_type[0] == '\0') {
+        s_node_type[0] = '\0';
+        return;
+    }
+    size_t len = strlen(node_type);
+    if (len >= sizeof(s_node_type)) {
+        len = sizeof(s_node_type) - 1;
+    }
+    memcpy(s_node_type, node_type, len);
+    s_node_type[len] = '\0';
+}
+
+const char *node_utils_get_node_type(void) {
+    return s_node_type[0] != '\0' ? s_node_type : NULL;
 }
 
 esp_err_t node_utils_get_hardware_id(char *hardware_id, size_t size) {
@@ -74,6 +93,10 @@ esp_err_t node_utils_init_wifi_config(
     
     wifi_config->ssid = wifi_ssid;
     wifi_config->password = wifi_password;
+    wifi_config->timeout_sec = (wifi_cfg.timeout_sec > 0) ? wifi_cfg.timeout_sec : 30;
+    wifi_config->auto_reconnect = wifi_cfg.auto_reconnect;
+    // 0 = безлимитные попытки переподключения для устойчивой работы нод.
+    wifi_config->max_reconnect_attempts = 0;
     
     ESP_LOGI(TAG, "WiFi config loaded: %s", wifi_cfg.ssid);
     return ESP_OK;
@@ -375,6 +398,32 @@ esp_err_t node_utils_publish_node_hello(
     return pub_err;
 }
 
+bool node_utils_should_send_node_hello(void) {
+    char node_id[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+
+    bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
+    bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
+    bool has_zone_uid = (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK);
+
+    if (!has_node_id || !has_gh_uid || !has_zone_uid) {
+        return true;
+    }
+
+    if (node_id[0] == '\0' || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return true;
+    }
+
+    if (strcmp(node_id, "node-temp") == 0 ||
+        strcmp(gh_uid, "gh-temp") == 0 ||
+        strcmp(zone_uid, "zn-temp") == 0) {
+        return true;
+    }
+
+    return false;
+}
+
 esp_err_t node_utils_publish_config_report(void) {
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
 
@@ -382,6 +431,32 @@ esp_err_t node_utils_publish_config_report(void) {
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to load NodeConfig for config_report: %s", esp_err_to_name(err));
         return err;
+    }
+
+    const char *node_type = node_utils_get_node_type();
+    if (node_type && node_type[0] != '\0') {
+        cJSON *config = cJSON_Parse(config_json);
+        if (config) {
+            cJSON *type_item = cJSON_GetObjectItem(config, "type");
+            bool needs_patch = !cJSON_IsString(type_item) || !type_item->valuestring ||
+                strlen(type_item->valuestring) == 0 || strcmp(type_item->valuestring, "unknown") == 0;
+            if (needs_patch) {
+                cJSON_DeleteItemFromObject(config, "type");
+                cJSON_AddStringToObject(config, "type", node_type);
+                char *patched = cJSON_PrintUnformatted(config);
+                if (patched) {
+                    size_t patched_len = strlen(patched);
+                    if (patched_len < sizeof(config_json)) {
+                        memcpy(config_json, patched, patched_len + 1);
+                        ESP_LOGI(TAG, "Patched config_report type to '%s'", node_type);
+                    } else {
+                        ESP_LOGW(TAG, "Patched config_report exceeds buffer, sending original config");
+                    }
+                    free(patched);
+                }
+            }
+            cJSON_Delete(config);
+        }
     }
 
     ESP_LOGI(TAG, "Publishing config_report (%zu bytes)", strlen(config_json));
@@ -416,15 +491,23 @@ esp_err_t node_utils_request_time(void) {
     cJSON_AddNumberToObject(request, "uptime", (double)(esp_timer_get_time() / 1000000));
     
     char *json_str = cJSON_PrintUnformatted(request);
-    if (json_str) {
-        ESP_LOGI(TAG, "Requesting time from server");
-        esp_err_t err = mqtt_manager_publish_raw("hydro/time/request", json_str, 1, 0);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to publish time request: %s", esp_err_to_name(err));
-        }
-        free(json_str);
+    if (!json_str) {
+        cJSON_Delete(request);
+        ESP_LOGE(TAG, "Failed to serialize time request JSON");
+        return ESP_ERR_NO_MEM;
     }
-    
+
+    ESP_LOGI(TAG, "Requesting time from server");
+    esp_err_t err = mqtt_manager_publish_raw("hydro/time/request", json_str, 1, 0);
+    if (err != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "Failed to publish time request: err=0x%x (%s)",
+            (unsigned)err,
+            esp_err_to_name(err)
+        );
+    }
+    free(json_str);
     cJSON_Delete(request);
-    return ESP_OK;
+    return err;
 }

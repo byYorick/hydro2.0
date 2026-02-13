@@ -30,7 +30,6 @@
 #include <stdio.h>
 
 static const char *TAG = "light_node_init";
-static bool s_node_hello_sent = false;
 
 // Setup mode function
 void light_node_run_setup_mode(void) {
@@ -99,9 +98,9 @@ void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - light_node is online");
 
-        if (!s_node_hello_sent) {
+        // Публикуем node_hello только если узел еще не зарегистрирован (временные ID)
+        if (node_utils_should_send_node_hello()) {
             light_node_publish_hello();
-            s_node_hello_sent = true;
         }
         
         node_utils_request_time();
@@ -158,7 +157,7 @@ esp_err_t light_node_init_components(void) {
     
     config_storage_wifi_t wifi_cfg;
     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
-        wifi_manager_config_t wifi_config;
+        wifi_manager_config_t wifi_config = {0};
         static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
         static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
         
@@ -168,6 +167,9 @@ esp_err_t light_node_init_components(void) {
         wifi_password[sizeof(wifi_password) - 1] = '\0';
         wifi_config.ssid = wifi_ssid;
         wifi_config.password = wifi_password;
+        wifi_config.auto_reconnect = wifi_cfg.auto_reconnect;
+        wifi_config.timeout_sec = wifi_cfg.timeout_sec > 0 ? wifi_cfg.timeout_sec : 30;
+        wifi_config.max_reconnect_attempts = 0;
         ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
         
         err = wifi_manager_connect(&wifi_config);

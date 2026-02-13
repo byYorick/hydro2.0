@@ -391,6 +391,42 @@
           "unit": "s"
         }
       }
+    },
+    {
+      "id": 15,
+      "title": "Unknown Node Events Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "targets": [
+        {
+          "expr": "rate(node_event_unknown_total[5m])",
+          "refId": "A",
+          "legendFormat": "unknown event rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.05,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      }
     }
   ]
 }

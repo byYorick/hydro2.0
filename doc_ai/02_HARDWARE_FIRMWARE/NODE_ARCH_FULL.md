@@ -31,6 +31,13 @@ Backend принимает решения → узлы исполняют.
  - SensorChannel
  - ActuatorChannel
 
+## 1.1. Термины (во избежание путаницы)
+
+- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `pump_node`).
+- `node_type` — бизнес-тип узла в payload/БД (`nodes.type`), только канонические значения:
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Имена `*_node` используются только как идентификаторы прошивочных модулей и не должны передаваться в `node_type`.
+
 ---
 
 # 2. Архитектура прошивки узла (Firmware Structure)
@@ -42,11 +49,11 @@ Backend принимает решения → узлы исполняют.
 Каждая нода — отдельный ESP-IDF проект:
 
 ```
-firmware/nodes/{node_type}/
+firmware/nodes/{firmware_module}/
 ├─ main/
 │  ├─ main.c                    # Точка входа приложения
-│  ├─ {node_type}_app.c         # Основная логика ноды
-│  ├─ {node_type}_app.h
+│  ├─ {firmware_module}_app.c   # Основная логика ноды
+│  ├─ {firmware_module}_app.h
 │  └─ CMakeLists.txt            # Конфигурация компонента main
 ├─ components/                  # Специфические компоненты ноды (опционально)
 ├─ CMakeLists.txt               # Корневой CMakeLists проекта
@@ -149,7 +156,7 @@ NodeConfig полностью формируется на backend.
 {
  "node_id": "nd-ph-1",
  "version": 3,
- "type": "ph_node",
+ "type": "ph",
  "gh_uid": "gh-1",
  "zone_uid": "zn-3",
  "channels": [
@@ -419,7 +426,7 @@ payload: "offline"
   - Перезагрузка устройства
   - Подключение к указанной Wi-Fi сети
 
-**Реализовано для всех типов нод:**
+**Реализовано для всех прошивочных модулей:**
 - `ph_node`
 - `ec_node`
 - `climate_node`

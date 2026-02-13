@@ -14,7 +14,7 @@
 Задача документа:
 - зафиксировать **контракты**;
 - помочь ИИ-агентам не плодить несогласованные эндпоинты;
-- обеспечить обратную совместимость при эволюции API.
+- обеспечить консистентную эволюцию API в рамках целевого Protocol 2.0.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -34,21 +34,25 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 **Публичные эндпоинты** (не требуют аутентификации):
 - `GET /api/system/health` - проверка здоровья сервиса
-- `GET /api/system/config/full` - полная конфигурация (для Python сервисов)
 - `POST /api/python/ingest/telemetry` - инжест телеметрии (token-based)
 - `POST /api/python/commands/ack` - подтверждение команд (token-based)
 - `POST /api/alerts/webhook` - webhook от Alertmanager
 
+**Service-token / служебные эндпоинты**:
+- `GET /api/system/config/full` - полная конфигурация (middleware `verify.python.service`: Sanctum или service token)
+
 **Защищенные эндпоинты** (требуют `auth:sanctum`):
 - Все эндпоинты в разделах 3-7, 9-12 требуют аутентификации через Laravel Sanctum
 - Раздел 2 (Auth): `POST /api/auth/logout` и `GET /api/auth/me` требуют аутентификации
-- Раздел 8 (System): полностью публичный (для Python сервисов)
+- Раздел 8 (System): `GET /api/system/health` публичный, `GET /api/system/config/full` защищен `verify.python.service`
 - Токен передается в заголовке: `Authorization: Bearer <token>`
 - Токен получается через `POST /api/auth/login`
 
 **Роли и права доступа**:
 - `viewer` - только чтение данных
 - `operator` - чтение + управление зонами, подтверждение алертов
+- `agronomist` - управление grow-cycle и ревизиями рецептов
+- `engineer` - инженерные операции и сервисные логи
 - `admin` - полный доступ, включая управление пользователями
 
 Стандартный формат ответа:
@@ -113,7 +117,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 3. Grow Cycles API (НОВОЕ после рефакторинга)
 
-**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `agronomist`.
+**Аутентификация:** `GET /api/zones/{zone}/grow-cycle` требует `auth:sanctum`; mutating-endpoint-ы grow-cycle требуют роль `agronomist` (дополнительно к route-level middleware).
 
 **Центр API для управления циклами выращивания.**
 
@@ -197,26 +201,34 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`.
 
-### 4.1. GET /api/recipes/{recipe}/revisions
-
-- **Описание:** Список ревизий рецепта
-
-### 4.2. POST /api/recipes/{recipe}/revisions
+### 4.1. POST /api/recipes/{recipe}/revisions
 
 - **Описание:** Создать новую ревизию из существующей
 - **Тело:** `{"from_revision_id": 456, "description": "Optimized for summer conditions"}`
 
-### 4.3. PATCH /api/recipe-revisions/{id}
+### 4.2. PATCH /api/recipe-revisions/{id}
 
 - **Описание:** Редактировать DRAFT ревизию
 
-### 4.4. POST /api/recipe-revisions/{id}/publish
+### 4.3. POST /api/recipe-revisions/{id}/publish
 
 - **Описание:** Опубликовать DRAFT ревизию
 
-### 4.5. GET /api/recipe-revisions/{id}
+### 4.4. GET /api/recipe-revisions/{id}
 
 - **Описание:** Получить ревизию с фазами
+
+### 4.5. POST /api/recipe-revisions/{id}/phases
+
+- **Описание:** Добавить фазу в ревизию рецепта
+
+### 4.6. PATCH /api/recipe-revision-phases/{id}
+
+- **Описание:** Обновить фазу ревизии рецепта
+
+### 4.7. DELETE /api/recipe-revision-phases/{id}
+
+- **Описание:** Удалить фазу ревизии рецепта
 
 ---
 
@@ -229,6 +241,96 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Описание:** Batch получение effective targets для зон
 - **Тело:** `{"zone_ids": [1, 2, 3]}`
 - **Ответ:** Массив effective targets по зонам
+
+#### Контракт scheduler-task execution (обязательная структура `targets.*.execution`)
+
+`scheduler` и `automation-engine` используют `effective-targets.targets` как единый контракт
+для task-level автоматизации.
+
+Для каждого task типа допускаются ключи:
+
+- `targets.irrigation`
+- `targets.lighting`
+- `targets.ventilation`
+- `targets.solution_change`
+- `targets.mist`
+- `targets.diagnostics`
+
+Каждый из этих объектов может содержать блок `execution`:
+
+```json
+{
+  "execution": {
+    "node_types": ["irrig"],
+    "cmd": "run_pump",
+    "cmd_true": "light_on",
+    "cmd_false": "light_off",
+    "state_key": "desired_state",
+    "default_state": true,
+    "params": {
+      "state": true
+    },
+    "duration_sec": 120
+  }
+}
+```
+
+Правила:
+- `node_types` (array<string>): типы нод для выполнения.
+- `node_types` должны содержать только канонические значения `nodes.type`:
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Legacy-алиасы (`irrigation`, `pump_node`, `climate_node`, `lighting_node` и т.п.) не допускаются.
+- `cmd` (string): основная команда для task.
+- `cmd_true`/`cmd_false` (string): команды для state-based task (например свет).
+- `state_key` (string): имя поля в payload для выбора ветки `cmd_true/cmd_false`.
+- `default_state` (bool): значение по умолчанию, если `state_key` не задан.
+- `params` (object): дефолтные параметры команды.
+- `duration_sec` (number): дефолтная длительность; нормализуется в `duration_ms` на стороне automation-engine.
+- для `targets.diagnostics.execution` дополнительно допускаются startup-поля `2 бака`:
+  - `workflow`: `startup|clean_fill_check|solution_fill_check|prepare_recirculation|prepare_recirculation_check|irrigation_recovery|irrigation_recovery_check`
+  - `level_poll_interval_sec`
+  - `clean_fill_timeout_sec`
+  - `solution_fill_timeout_sec`
+  - `prepare_recirculation_timeout_sec`
+  - `irrigation_recovery.max_continue_attempts`
+  - `irrigation_recovery.timeout_sec`
+  - `target_ec_prepare_npk` (optional override для этапа prepare)
+  - `nutrient_npk_ratio_pct` (optional override доли NPK, если не брать из `targets.nutrition.components.npk.ratio_pct`)
+
+Правило расчёта prepare EC:
+- `EC_prepare_npk = EC_target_total * nutrient_npk_ratio_pct / 100`
+- если `target_ec_prepare_npk` передан явно, используется он;
+- если доля NPK отсутствует, применяется безопасный fallback `nutrient_npk_ratio_pct=100` (поведение как у общего `EC target`).
+
+Если `execution` отсутствует, используется встроенный mapping automation-engine.
+
+#### Контракт scheduler-schedule (рекомендуемые поля в `targets`)
+
+- `<task>.interval_sec` — интервальное расписание.
+- `<task>.times` — массив времён `HH:MM`.
+- `<task>_schedule` — альтернативный ключ расписания (строка, массив или объект с `times`).
+
+Runtime-обновления из фронтового конфигуратора сохраняются в
+`zone_automation_logic_profiles` через API `/api/zones/{zone}/automation-logic-profile`
+и затем нормализуются в `effective_targets.targets` по тем же правилам
+(`interval_minutes -> interval_sec`, `duration_seconds -> duration_sec`, `subsystems.diagnostics -> targets.diagnostics.execution`).
+
+Команда применения runtime-профиля:
+- `POST /api/zones/{zone}/commands` с `type=GROWTH_CYCLE_CONFIG`
+- `params.mode` = `adjust|start`
+- `params.profile_mode` = `setup|working`
+- `params.subsystems` в команде не передаётся (инжектится сервером из `zone_automation_logic_profiles`)
+
+Команда ручного override (операторский режим, `2 бака`):
+- endpoint: `POST /api/zones/{zone}/commands`
+- `type`: `GROWTH_CYCLE_CONFIG`
+- `params.mode`: `adjust`
+- `params.manual_action`:
+  - `fill_clean_tank`
+  - `prepare_solution`
+  - `recirculate_solution`
+  - `resume_irrigation`
+- backend обязан логировать `manual_action` в `zone_events`/`scheduler_logs`.
 
 ### 5.2. POST /api/internal/realtime/telemetry-batch
 
@@ -264,7 +366,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.2. POST /api/greenhouses
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin` или `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание теплицы.
 
 ### 3.3. GET /api/greenhouses/{id}
@@ -274,7 +376,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.3.1. PATCH /api/greenhouses/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin` или `operator`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление теплицы.
 
 ### 3.3.2. DELETE /api/greenhouses/{id}
@@ -296,19 +398,91 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  - привязанные узлы и каналы;
  - последние значения ключевых метрик.
 
+### 3.5.1. GET /api/zones/{id}/scheduler-tasks
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает последние scheduler-task для зоны из `scheduler_logs`.
+- **Параметры запроса:**
+  - `limit` (1..100, default=20)
+  - `include_timeline` (bool, default=false) — при `true` добавляет `timeline[]` из `zone_events` для каждого task.
+- **Поля ответа:** `task_id`, `status`, `result`, `error`, `error_code`, `action_required`, `decision`, `reason_code`, `reason`, `source`, `lifecycle[]`, `timeline[]`.
+- **Lifecycle:** снимки статусов из `scheduler_logs` (типично `accepted/running/completed/failed`).
+- **Timeline:** task-события из `zone_events` (`TASK_STARTED`, `DECISION_MADE`, `COMMAND_DISPATCHED`, `COMMAND_FAILED`, `TASK_FINISHED`, ...),
+  фильтрация по `task_id` и/или `correlation_id`.
+- **Сортировка timeline:** строго по времени события по возрастанию (`created_at ASC`, затем `id ASC`).
+- **Инварианты контракта:** `correlation_id`, `due_at`, `expires_at` обязательны на уровне task-source (`automation-engine`).
+
+### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId}
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает актуальный статус scheduler-task по `taskId`.
+- **Поведение:** Laravel запрашивает `automation-engine /scheduler/task/{taskId}` без fallback на legacy-ветки.
+- **Источник:** в `data.source` возвращается только `automation_engine`.
+- **Дополнительно:** ответ всегда содержит:
+  - `lifecycle[]` (снимки `scheduler_logs`);
+  - `timeline[]` (детальные task-события из `zone_events`);
+  - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`.
+- Для 2-бакового recovery перехода (`irrigation -> tank-to-tank`) в `result.*` используются:
+  - `source_reason_code=online_correction_failed`
+  - `transition_reason_code=tank_to_tank_correction_started`
+  - `online_correction_error_code` (код исходной неуспешной online-коррекции).
+
+### 3.5.3. GET /api/zones/{id}/automation-logic-profile
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает сохранённые профили логики автоматики для зоны (`setup`/`working`) и активный режим.
+- **Ответ (`data`):**
+  - `active_mode: \"setup\"|\"working\"|null`
+  - `profiles.setup|profiles.working`:
+    - `mode`
+    - `is_active`
+    - `subsystems` (runtime-конфиг подсистем)
+    - `updated_at`
+
+### 3.5.4. POST /api/zones/{id}/automation-logic-profile
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- **Описание:** Upsert профиля логики автоматики зоны.
+- **Тело:**
+  - `mode: \"setup\"|\"working\"`
+  - `subsystems: object` (обязательны `ph/ec/irrigation`, enabled=true)
+  - `activate: bool` (optional, default=true)
+- **Эффект:** при `activate=true` профиль переводится в активный runtime-режим для `effective_targets`.
+
+Минимальные поля `subsystems` для `2 бака`:
+- `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
+- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` (default `1200`)
+- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` (default `1800`)
+- `subsystems.solution_prepare.startup.level_poll_interval_sec` (default `60`)
+- `subsystems.solution_prepare.startup.clean_fill_retry_cycles` (default `1`)
+- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` (default `1200`)
+- `subsystems.irrigation.recovery.max_continue_attempts` (default `5`)
+- `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` (default `20`)
+- `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` (default `10`)
+- `subsystems.solution_prepare.dosing_rules.prepare_allowed_components = [\"npk\"]`
+- `subsystems.irrigation.dosing_rules.irrigation_allowed_components = [\"calcium\", \"magnesium\", \"micro\"]`
+- `subsystems.irrigation.dosing_rules.irrigation_forbid_components = [\"npk\"]`
+
+Ограничение:
+- recipe-targets (`ph/ec/...`) не сохраняются в logic-profile.
+
+Условная обязательность:
+- при `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
+  обязательны оба блока: `subsystems.solution_prepare` и `subsystems.irrigation`.
+
 ### 3.6. POST /api/zones
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание зоны.
 
 ### 3.7. PATCH /api/zones/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление параметров зоны (название, тип, лимиты и т.п.).
 
 ### 3.7.1. DELETE /api/zones/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Удаление зоны (если нет активных зависимостей).
 
 ### 3.8. GET /api/nodes
@@ -326,17 +500,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.1. POST /api/nodes
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Регистрация нового узла ESP32.
 
 ### 3.9.2. PATCH /api/nodes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление метаданных узла (name, zone_id).
 
 ### 3.9.3. DELETE /api/nodes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Удаление узла.
 
 ### 3.9.4. GET /api/nodes/{id}/config
@@ -359,7 +533,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.5. POST /api/nodes/{id}/config/publish
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Публикация конфигурации узла через MQTT **отключена**.
 - Узлы отправляют конфиг самостоятельно (config_report), сервер хранит и использует его.
 
@@ -373,7 +547,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 3.9.6. POST /api/nodes/{id}/swap
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Замена узла новым узлом с миграцией данных.
 
 Тело запроса:
@@ -398,6 +572,102 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 }
 ```
 
+### 3.9.7. POST /api/setup-wizard/validate-devices
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
+- Серверная валидация шага `4. Устройства` в мастере настройки.
+- Проверяет:
+ - обязательные роли (`irrigation`, `ph_correction`, `ec_correction`, `accumulation`) заполнены;
+ - обязательные роли назначены на разные ноды;
+ - ноды доступны пользователю и не привязаны к другой зоне;
+ - выбранные ноды соответствуют ожидаемой роли по `type`/`channels`.
+
+Тело запроса:
+```json
+{
+  "zone_id": 12,
+  "assignments": {
+    "irrigation": 101,
+    "ph_correction": 102,
+    "ec_correction": 104,
+    "accumulation": 103,
+    "climate": null,
+    "light": null
+  },
+  "selected_node_ids": [101, 102, 104, 103]
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "validated": true,
+    "zone_id": 12,
+    "required_roles": {
+      "irrigation": 101,
+      "ph_correction": 102,
+      "ec_correction": 104,
+      "accumulation": 103
+    }
+  }
+}
+```
+
+### 3.9.8. POST /api/setup-wizard/apply-device-bindings
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
+- Применение шага `4. Устройства`:
+ - повторная серверная валидация назначения ролей;
+ - привязка ролей инфраструктуры зоны к каналам выбранных нод;
+ - для обязательных ролей создаются/обновляются bind-ы:
+   `main_pump`, `drain`, `ph_acid_pump`, `ph_base_pump`,
+   `ec_npk_pump`, `ec_calcium_pump`, `ec_magnesium_pump`, `ec_micro_pump`;
+ - для опциональных ролей, при наличии, создаются bind-ы `vent`, `heater`, `light`.
+
+Тело запроса:
+```json
+{
+  "zone_id": 12,
+  "assignments": {
+    "irrigation": 101,
+    "ph_correction": 102,
+    "ec_correction": 104,
+    "accumulation": 103,
+    "climate": 105,
+    "light": 106
+  },
+  "selected_node_ids": [101, 102, 104, 103, 105, 106]
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "validated": true,
+    "zone_id": 12,
+    "required_roles": {
+      "irrigation": 101,
+      "ph_correction": 102,
+      "ec_correction": 104,
+      "accumulation": 103
+    },
+    "applied_bindings": [
+      {
+        "assignment_role": "irrigation",
+        "binding_role": "main_pump",
+        "node_id": 101,
+        "node_uid": "nd-test-irrig-1",
+        "channel_id": 2001
+      }
+    ]
+  }
+}
+```
+
 ---
 
 ## 4. Recipes API
@@ -411,7 +681,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 4.2. POST /api/recipes
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание рецепта и базового набора фаз.
 
 ### 4.3. GET /api/recipes/{id}
@@ -421,7 +691,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 4.4. PATCH /api/recipes/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление рецепта (описание, культура и т.п.).
 
 ### 4.4.1. DELETE /api/recipes/{id}
@@ -429,48 +699,60 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
 - Удаление рецепта.
 
-### 4.5. POST /api/recipes/{id}/phases
+### 4.5. POST /api/recipes/{recipe}/revisions
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Добавление фазы к рецепту.
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Создание новой DRAFT-ревизии рецепта.
 
-### 4.6. PATCH /api/recipe-phases/{id}
+### 4.6. PATCH /api/recipe-revisions/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Обновление параметров фазы (цели pH, EC, продолжительность и т.п.).
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Обновление DRAFT-ревизии.
 
-### 4.6.1. DELETE /api/recipe-phases/{id}
+### 4.6.1. POST /api/recipe-revisions/{id}/publish
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
-- Удаление фазы рецепта.
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Публикация DRAFT-ревизии.
 
-### 4.7. POST /api/zones/{id}/attach-recipe
+### 4.6.2. GET /api/recipe-revisions/{id}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Назначение рецепта на зону.
-- Тело:
+- **Аутентификация:** Требуется `auth:sanctum`
+- Получение ревизии рецепта с фазами.
 
-```json
-{
- "recipe_id": 1,
- "start_at": "2025-11-15T10:00:00Z"
-}
-```
+### 4.6.3. POST /api/recipe-revisions/{id}/phases
 
-### 4.8. POST /api/zones/{id}/change-phase
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Добавление фазы ревизии рецепта.
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Ручной переход зоны на другую фазу.
+### 4.6.4. PATCH /api/recipe-revision-phases/{id}
 
-### 4.9. POST /api/zones/{id}/pause
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Обновление фазы ревизии.
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Приостановка работы зоны (временная остановка автоматизации).
+### 4.6.5. DELETE /api/recipe-revision-phases/{id}
 
-### 4.10. POST /api/zones/{id}/resume
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
+- Удаление фазы ревизии.
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Возобновление работы зоны после паузы.
+### 4.7. POST /api/zones/{zone}/grow-cycles
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Создание нового grow cycle для зоны.
+
+### 4.8. POST /api/grow-cycles/{growCycle}/set-phase
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Ручной переход фазы grow cycle.
+
+### 4.9. POST /api/grow-cycles/{growCycle}/pause
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Приостановка grow cycle.
+
+### 4.10. POST /api/grow-cycles/{growCycle}/resume
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`
+- Возобновление grow cycle.
 
 ### 4.11. GET /api/zones/{id}/cycles
 
@@ -549,11 +831,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 6. Commands API
 
-**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `operator` или `admin`.
+**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`.
 
 ### 6.1. POST /api/zones/{id}/commands
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Валидация:** Используется `StoreZoneCommandRequest` для валидации входных данных
 - **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
@@ -566,7 +848,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  - `FORCE_LIGHTING` - принудительное управление освещением;
  - `FORCE_CLIMATE` - принудительное управление климатом;
  - `FORCE_LIGHT_ON/OFF` - включение/выключение света (устаревшая, используйте `FORCE_LIGHTING`);
- - `ZONE_PAUSE/RESUME` - приостановка/возобновление зоны (лучше использовать `/api/zones/{id}/pause` и `/api/zones/{id}/resume`).
+ - `ZONE_PAUSE/RESUME` - legacy-команды управления зоной (предпочтителен lifecycle через grow-cycle endpoints).
 
 Тело запроса:
 
@@ -592,7 +874,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 6.2. POST /api/nodes/{id}/commands
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - **Валидация:** Используется `StoreNodeCommandRequest` для валидации входных данных
 - **Авторизация:** Проверка прав через `DeviceNodePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
@@ -616,7 +898,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 7.3. PATCH /api/alerts/{id}/ack
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
 - Подтверждение алерта оператором.
 
 ### 7.4. GET /api/alerts/stream
@@ -630,7 +912,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 8.1. GET /api/system/config/full
 
-- **Аутентификация:** Публичный эндпоинт (для Python сервисов)
+- **Аутентификация:** `verify.python.service` (Sanctum или service token)
 - Полная конфигурация теплиц/зон/узлов/каналов для Python/AI.
 
 ### 8.2. GET /api/system/health
@@ -749,7 +1031,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### 12.1. POST /api/simulations/zone/{zone}
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Запуск симуляции Digital Twin для зоны.
   - `full_simulation` (bool, optional) — выполнить полный цикл с созданием сущностей и отчетом.
 

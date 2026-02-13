@@ -16,6 +16,20 @@ use Illuminate\Support\Str;
 
 class PythonBridgeService
 {
+    private function normalizeRelayCommand(DeviceNode $node, array $payload): array
+    {
+        $cmd = $payload['type'] ?? ($payload['cmd'] ?? null);
+        if ($cmd === 'set_state') {
+            $nodeType = strtolower((string) ($node->type ?? ''));
+            if (str_contains($nodeType, 'relay')) {
+                $payload['cmd'] = 'set_relay';
+                $payload['type'] = 'set_relay';
+            }
+        }
+
+        return $payload;
+    }
+
     public function sendZoneCommand(Zone $zone, array $payload): string
     {
         $cmdId = Str::uuid()->toString();
@@ -32,6 +46,7 @@ class PythonBridgeService
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
         $commandType = $payload['type'] ?? 'unknown';
+        $node = null;
 
         // GROWTH_CYCLE_CONFIG - агрегированная команда на уровне зоны, не требует node_uid/channel
         if ($commandType === 'GROWTH_CYCLE_CONFIG') {
@@ -40,8 +55,9 @@ class PythonBridgeService
             $firstNode = DeviceNode::where('zone_id', $zone->id)
                 ->where('status', 'online')
                 ->first();
-            
+
             if ($firstNode) {
+                $node = $firstNode;
                 $nodeUid = $firstNode->uid;
                 // Используем первый доступный канал или null, если Python-сервис не требует его
                 $firstChannel = $firstNode->channels()->first();
@@ -52,7 +68,7 @@ class PythonBridgeService
                 $nodeUid = 'zone-'.$zone->id;
                 $channel = 'zone-control';
             }
-            
+
             Log::info('PythonBridgeService: Using zone-level node/channel for GROWTH_CYCLE_CONFIG', [
                 'zone_id' => $zone->id,
                 'node_uid' => $nodeUid,
@@ -90,6 +106,14 @@ class PythonBridgeService
                 );
             }
 
+            $payload = $this->normalizeRelayCommand($node, $payload);
+            $normalizedCmd = $payload['type'] ?? ($payload['cmd'] ?? null);
+            if ($normalizedCmd && $normalizedCmd !== $command->cmd) {
+                $command->cmd = $normalizedCmd;
+                $command->save();
+                $commandType = $normalizedCmd;
+            }
+
             // Валидируем, что канал существует у ноды
             $channelExists = $node->channels()->where('channel', $channel)->exists();
             if (! $channelExists) {
@@ -105,7 +129,7 @@ class PythonBridgeService
         if (! $baseUrl) {
             $error = 'History Logger URL not configured';
             Log::error('PythonBridgeService: '.$error, [
-'zone_id' => $zone->id,
+                'zone_id' => $zone->id,
                 'cmd_id' => $cmdId,
             ]);
             $this->markCommandFailed($command, $error);
@@ -129,21 +153,30 @@ class PythonBridgeService
 
         // Получаем zone_uid для команды
         $zoneUid = $zone->uid ?? null;
-        
+
         $requestData = [
             'cmd' => $command->cmd,
             'params' => $params,
             'greenhouse_uid' => $ghUid,
             'zone_uid' => $zoneUid, // Передаем zone_uid
             'node_uid' => $nodeUid,
-            'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
+            'hardware_id' => $node?->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
-        
+
         // Подписываем команду HMAC подписью
-        $signatureService = app(\App\Services\CommandSignatureService::class);
-        $requestData = $signatureService->signCommand($node, $requestData);
+        if ($node instanceof DeviceNode) {
+            $signatureService = app(\App\Services\CommandSignatureService::class);
+            $requestData = $signatureService->signCommand($node, $requestData);
+        } else {
+            Log::warning('PythonBridgeService: Sending zone command without node signature (node not resolved)', [
+                'zone_id' => $zone->id,
+                'cmd_id' => $cmdId,
+                'command_type' => $commandType,
+                'node_uid' => $nodeUid,
+            ]);
+        }
 
         try {
             $this->sendWithRetry(
@@ -169,11 +202,21 @@ class PythonBridgeService
 
     public function sendNodeCommand(DeviceNode $node, array $payload): string
     {
+        $payload = $this->normalizeRelayCommand($node, $payload);
+        $rawCmd = $payload['type'] ?? ($payload['cmd'] ?? 'unknown');
+        $normalizedCmd = is_string($rawCmd) ? strtolower($rawCmd) : $rawCmd;
+        if ($normalizedCmd === 'reboot') {
+            $normalizedCmd = 'restart';
+        }
+        if (is_string($normalizedCmd)) {
+            $payload['cmd'] = $normalizedCmd;
+            $payload['type'] = $normalizedCmd;
+        }
         $cmdId = Str::uuid()->toString();
-        
+
         // Получаем channel из payload или из params (для обратной совместимости)
         $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null);
-        
+
         $command = Command::create([
             'zone_id' => $node->zone_id,
             'node_id' => $node->id,
@@ -219,10 +262,12 @@ class PythonBridgeService
         if ($zoneId && $node->zone) {
             $zoneUid = $node->zone->uid;
         }
-        
+
         // Получаем channel из payload, params, или из command
         $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null) ?? $command->channel;
-        if (!$channel) {
+        $commandType = $command->cmd;
+        $isRestartCommand = is_string($commandType) && strtolower($commandType) === 'restart';
+        if (! $channel && ! $isRestartCommand) {
             $error = 'Channel is required for node command';
             Log::error('PythonBridgeService: '.$error, [
                 'node_id' => $node->id,
@@ -233,7 +278,14 @@ class PythonBridgeService
             $this->markCommandFailed($command, $error);
             throw new \InvalidArgumentException($error);
         }
-        
+        if (! $channel && $isRestartCommand) {
+            $channel = 'system';
+        }
+        if ($channel && $command->channel !== $channel) {
+            $command->channel = $channel;
+            $command->save();
+        }
+
         $requestData = [
             'cmd' => $command->cmd,
             'params' => $params,
@@ -245,7 +297,7 @@ class PythonBridgeService
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
-        
+
         // Подписываем команду HMAC подписью
         $signatureService = app(\App\Services\CommandSignatureService::class);
         $requestData = $signatureService->signCommand($node, $requestData);
@@ -320,6 +372,15 @@ class PythonBridgeService
         $timeout = Config::get('services.python_bridge.timeout', 10);
         $maxAttempts = Config::get('services.python_bridge.retry_attempts', 2);
         $retryDelay = Config::get('services.python_bridge.retry_delay', 1);
+        $verifySsl = $this->shouldVerifySsl();
+
+        if (! $verifySsl && app()->environment('production')) {
+            Log::warning('PythonBridgeService: SSL verification bypass requested in production, forcing verification', [
+                'cmd_id' => $command->cmd_id,
+                'url' => $url,
+            ]);
+            $verifySsl = true;
+        }
 
         $lastException = null;
 
@@ -329,14 +390,19 @@ class PythonBridgeService
                     'cmd_id' => $command->cmd_id,
                     'url' => $url,
                     'attempt' => $attempt,
-                    'has_token' => !empty($headers['Authorization'] ?? null),
+                    'has_token' => ! empty($headers['Authorization'] ?? null),
                 ]);
-                
+
                 // Используем новый HTTP клиент для каждого запроса, чтобы избежать проблем с keep-alive
                 // Отключаем DNS кэширование и принудительно закрываем соединения
-                $response = Http::withHeaders($headers)
-                    ->timeout($timeout)
-                    ->withoutVerifying() // Отключаем проверку SSL для внутренних запросов
+                $request = Http::withHeaders($headers)
+                    ->timeout($timeout);
+
+                if (! $verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request
                     ->withOptions([
                         'curl' => [
                             CURLOPT_TCP_NODELAY => true,
@@ -424,6 +490,18 @@ class PythonBridgeService
         throw $lastException ?? new \RuntimeException('Failed to send command: unknown error');
     }
 
+    private function shouldVerifySsl(): bool
+    {
+        $raw = Config::get('services.python_bridge.verify_ssl', true);
+        if (is_bool($raw)) {
+            return $raw;
+        }
+
+        $normalized = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return $normalized ?? true;
+    }
+
     /**
      * Автоматически определяет node_uid и channel для команды зоны на основе типа команды
      */
@@ -437,7 +515,7 @@ class PythonBridgeService
             ],
             'FORCE_EC_CONTROL' => [
                 'node_type' => 'ec',
-                'channels' => ['pump_nutrient'],
+                'channels' => ['pump_a', 'pump_b', 'pump_c', 'pump_d'],
             ],
             'FORCE_IRRIGATION' => [
                 'node_type' => 'irrig',
@@ -533,7 +611,7 @@ class PythonBridgeService
                 'status' => Command::STATUS_SEND_FAILED,
                 'failed_at' => now(),
             ];
-            
+
             // Проверяем, существуют ли поля error_code и error_message в таблице
             if (Schema::hasColumn('commands', 'error_code')) {
                 $updateData['error_code'] = 'SEND_FAILED';
@@ -544,7 +622,7 @@ class PythonBridgeService
             if (Schema::hasColumn('commands', 'result_code')) {
                 $updateData['result_code'] = 1;
             }
-            
+
             $command->update($updateData);
 
             Log::info('PythonBridgeService: Command marked as failed', [

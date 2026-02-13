@@ -7,7 +7,10 @@
         eyebrow="инфраструктура"
       >
         <template #actions>
-          <Link href="/devices/add">
+          <Link
+            v-if="canConfigureDevices"
+            href="/devices/add"
+          >
             <Button
               size="sm"
               variant="primary"
@@ -29,6 +32,52 @@
             </Button>
           </Link>
         </template>
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Всего устройств
+            </div>
+            <div class="ui-kpi-value">
+              {{ totalDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Узлы в реестре
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Онлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              {{ onlineDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Доступны сейчас
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Оффлайн
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+              {{ offlineDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Требуют проверки
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              По фильтру
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ visibleDevices }}
+            </div>
+            <div class="ui-kpi-hint">
+              Отображается в таблице
+            </div>
+          </div>
+        </div>
       </PageHeader>
 
       <FilterBar>
@@ -169,13 +218,20 @@ import PageHeader from '@/Components/PageHeader.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
+import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
 import { onWsStateChange } from '@/utils/echoClient'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage<{ devices?: Device[] }>()
+const { showToast } = useToast()
+const canConfigureDevices = computed(() => {
+  const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 const deviceUpdateEventName = '.device.updated'
@@ -224,6 +280,7 @@ const subscribeZoneChannel = (zoneId: number): void => {
     logger.debug('[Devices/Index] Subscribed to zone device channel', { channel: channelName })
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to zone device channel', { zoneId, err })
+    showToast(`Ошибка подписки на WebSocket зоны #${zoneId}`, 'error', TOAST_TIMEOUT.NORMAL)
   }
 }
 
@@ -262,6 +319,7 @@ const subscribeUnassignedChannel = (): void => {
     logger.debug('[Devices/Index] Subscribed to unassigned devices channel')
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to unassigned devices channel', err)
+    showToast('Ошибка подписки на канал неназначенных устройств', 'error', TOAST_TIMEOUT.NORMAL)
     unassignedChannel = null
   }
 }
@@ -388,6 +446,10 @@ const perPage = useUrlState<number>({
 })
 
 const { isDeviceFavorite, toggleDeviceFavorite } = useFavorites()
+const allDevices = computed(() => (Array.isArray(devicesStore.allDevices) ? devicesStore.allDevices : []))
+const totalDevices = computed(() => allDevices.value.length)
+const onlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'online').length)
+const offlineDevices = computed(() => allDevices.value.filter((device) => device.status === 'offline').length)
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())
@@ -409,6 +471,7 @@ const filtered = computed(() => {
     return okType && okQuery && okFavorites
   })
 })
+const visibleDevices = computed(() => filtered.value.length)
 
 const paginatedData = computed(() => {
   if (!Array.isArray(filtered.value)) {

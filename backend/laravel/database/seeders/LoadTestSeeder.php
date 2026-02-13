@@ -61,7 +61,7 @@ class LoadTestSeeder extends Seeder
                     [
                         'zone_id' => $zone->id,
                         'name' => "Node {$j} - Zone {$i}",
-                        'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'sensor'),
+                        'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'climate'),
                         'status' => 'online',
                         'lifecycle_state' => 'ACTIVE',
                         'fw_version' => '1.0.0',

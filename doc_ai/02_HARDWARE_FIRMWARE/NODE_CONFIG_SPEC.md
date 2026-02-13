@@ -40,7 +40,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 {
   "node_id": "nd-ph-1",
   "version": 3,
-  "type": "ph_node",
+  "type": "ph",
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
   "channels": [],
@@ -57,7 +57,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 |------|-----|--------------|----------|
 | `node_id` | string | Да | Уникальный идентификатор узла (UID) |
 | `version` | integer | Да | Версия формата конфигурации |
-| `type` | string | Да | Тип узла: `ph_node`, `ec_node`, `climate_node`, `pump_node`, `lighting_node` |
+| `type` | string | Да | Тип узла: `ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown` |
 | `gh_uid` | string | Да | Уникальный идентификатор теплицы (Greenhouse UID) |
 | `zone_uid` | string | Да | Уникальный идентификатор зоны (Zone UID) |
 | `channels` | array | Да | Массив каналов ноды (сенсоры/актуаторы). Каналы формируются в прошивке и отправляются нодой на сервер. |
@@ -80,7 +80,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Примеры:**
 - `"nd-ph-1"` — pH-нода #1
 - `"nd-ec-2"` — EC-нода #2
-- `"pump-001"` — насосная нода #001
+- `"nd-irrig-1"` — нода полива #1
 
 ### 3.2. `version`
 
@@ -93,11 +93,15 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 Тип узла. Определяет базовое поведение и доступные каналы.
 
 **Возможные значения:**
-- `ph_node` — нода измерения pH
-- `ec_node` — нода измерения EC (электропроводности)
-- `climate_node` — нода климата (температура, влажность, CO₂)
-- `pump_node` — нода управления насосами
-- `lighting_node` — нода управления освещением
+- `ph` — нода измерения pH
+- `ec` — нода измерения EC (электропроводности)
+- `climate` — нода климата (температура, влажность, CO₂)
+- `irrig` — нода управления насосами
+- `light` — нода управления освещением
+- `relay` — релейная нода (клапаны/реле)
+- `water_sensor` — нода уровня воды и расхода (water_level/flow_present)
+- `recirculation` — нода рециркуляции
+- `unknown` — fallback-тип для неклассифицированных узлов
 
 ### 3.4. `gh_uid`
 
@@ -183,7 +187,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   - `min_off_ms` — минимальное время простоя в мс
   - `fail_safe_mode` — режим НЗ/НО: `NC` или `NO` (для насосов/приводов)
 - `relay_type` (string, обязательное для `RELAY`/`VALVE`/`FAN`/`HEATER`) — тип реле: `NC` или `NO`
-- `channel` (string, необязательное) — физический канал (для pump_node)
+- `channel` (string, необязательное) — физический канал (для irrig)
 
 #### 3.4.3. Канал актуатора DRIVE (привод)
 
@@ -266,7 +270,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 
 ### 3.9. `limits`
 
-Безопасные лимиты для узла (особенно для pump_node).
+Безопасные лимиты для узла (особенно для irrig).
 
 ```json
 {
@@ -314,7 +318,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 ```json
 {
   "node_id": "nd-ph-1",
-  "type": "ph_node",
+  "type": "ph",
   "version": 3,
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
@@ -356,12 +360,12 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 }
 ```
 
-### 4.2. Насосная нода (pump_node)
+### 4.2. Насосная нода (irrig)
 
 ```json
 {
-  "node_id": "pump-001",
-  "type": "pump_node",
+  "node_id": "nd-irrig-1",
+  "type": "irrig",
   "version": 3,
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
@@ -407,12 +411,12 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 }
 ```
 
-### 4.3. Климатическая нода (climate_node)
+### 4.3. Климатическая нода (climate)
 
 ```json
 {
   "node_id": "nd-climate-1",
-  "type": "climate_node",
+  "type": "climate",
   "version": 3,
   "gh_uid": "gh-1",
   "zone_uid": "zn-3",
@@ -453,6 +457,11 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   }
 }
 ```
+
+Примечание: прошивка `climate` при получении NodeConfig через MQTT
+дополняет отсутствующие сенсорные каналы `temperature`, `humidity`, `co2`
+параметрами по умолчанию (как в примере выше). Если `channels` пустой или
+не содержит этих каналов, они будут добавлены и попадут в `config_report`.
 
 ---
 

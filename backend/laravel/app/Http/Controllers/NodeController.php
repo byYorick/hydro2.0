@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\NodeLifecycleState;
 use App\Http\Requests\PublishNodeConfigRequest;
+use App\Jobs\PublishNodeConfigJob;
 use App\Http\Requests\UpdateNodeRequest;
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
@@ -13,6 +14,7 @@ use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 class NodeController extends Controller
 {
@@ -451,14 +453,31 @@ class NodeController extends Controller
 
     /**
      * Опубликовать NodeConfig через MQTT.
-     * Конфиг больше не публикуется с сервера: ноды отправляют config_report на подключении.
      */
     public function publishConfig(PublishNodeConfigRequest $request, DeviceNode $node)
     {
+        $this->authorize('publishConfig', $node);
+
+        Log::info('NodeController: Config publish requested', [
+            'node_id' => $node->id,
+            'node_uid' => $node->uid,
+            'user_id' => $request->user()?->id,
+        ]);
+
+        PublishNodeConfigJob::dispatch($node->id);
+
+        Log::info('NodeController: Config publish job dispatched', [
+            'node_id' => $node->id,
+            'node_uid' => $node->uid,
+        ]);
+
         return response()->json([
-            'status' => 'error',
-            'message' => 'Config publishing from server is disabled. Nodes publish config_report on connect.',
-        ], Response::HTTP_GONE);
+            'status' => 'ok',
+            'data' => [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+            ],
+        ]);
     }
 
     /**

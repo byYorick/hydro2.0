@@ -14,8 +14,13 @@ class Metric(str, Enum):
     CO2 = "CO2"
     LIGHT_INTENSITY = "LIGHT_INTENSITY"
     WATER_LEVEL = "WATER_LEVEL"
+    WATER_LEVEL_SWITCH = "WATER_LEVEL_SWITCH"
     FLOW_RATE = "FLOW_RATE"
     PUMP_CURRENT = "PUMP_CURRENT"
+    SOIL_MOISTURE = "SOIL_MOISTURE"
+    SOIL_TEMP = "SOIL_TEMP"
+    WIND_SPEED = "WIND_SPEED"
+    OUTSIDE_TEMP = "OUTSIDE_TEMP"
 
 
 # Словарь канонических метрик для быстрого поиска

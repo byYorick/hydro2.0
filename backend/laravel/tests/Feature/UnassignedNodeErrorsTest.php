@@ -249,14 +249,14 @@ class UnassignedNodeErrorsTest extends TestCase
         // Проверяем, что alert создан
         $this->assertDatabaseHas('alerts', [
             'zone_id' => $zone->id,
-            'code' => 'infra_node_error_ERR_NODE_NOT_FOUND',
+            'code' => 'infra_node_error_err_node_not_found',
             'source' => 'infra',
             'status' => 'ACTIVE',
         ]);
 
         // Проверяем, что в alert сохранены count, first_seen_at, last_seen_at
         $alert = \App\Models\Alert::where('zone_id', $zone->id)
-            ->where('code', 'infra_node_error_ERR_NODE_NOT_FOUND')
+            ->where('code', 'infra_node_error_err_node_not_found')
             ->first();
 
         $this->assertNotNull($alert);

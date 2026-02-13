@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePlantPriceRequest;
 use App\Http\Requests\StorePlantRequest;
+use App\Http\Requests\UpdatePlantTaxonomyRequest;
 use App\Http\Requests\UpdatePlantRequest;
 use App\Models\Plant;
 use App\Services\Profitability\ProfitabilityCalculator;
@@ -226,6 +227,62 @@ class PlantController extends Controller
         ]);
     }
 
+    public function taxonomies(): JsonResponse
+    {
+        return response()->json([
+            'status' => 'ok',
+            'data' => $this->loadTaxonomies(),
+        ]);
+    }
+
+    public function updateTaxonomy(UpdatePlantTaxonomyRequest $request, string $taxonomy): JsonResponse
+    {
+        $taxonomies = $this->loadTaxonomies();
+        $allowedKeys = array_keys($taxonomies);
+
+        if (! in_array($taxonomy, $allowedKeys, true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unknown taxonomy key',
+            ], 422);
+        }
+
+        $items = collect($request->validated('items'))
+            ->map(function (array $item) use ($taxonomy): array {
+                $result = [
+                    'id' => $item['id'],
+                    'label' => $item['label'],
+                ];
+
+                if ($taxonomy === 'growing_system' && array_key_exists('uses_substrate', $item)) {
+                    $result['uses_substrate'] = (bool) $item['uses_substrate'];
+                }
+
+                return $result;
+            })
+            ->values()
+            ->all();
+
+        $ids = array_column($items, 'id');
+        if (count($ids) !== count(array_unique($ids))) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Duplicate taxonomy ids are not allowed',
+            ], 422);
+        }
+
+        $taxonomies[$taxonomy] = $items;
+        $this->saveTaxonomies($taxonomies);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'key' => $taxonomy,
+                'items' => $taxonomies[$taxonomy],
+            ],
+        ]);
+    }
+
     private function sanitizeEnvironment(mixed $value): ?array
     {
         if (! is_array($value)) {
@@ -265,12 +322,25 @@ class PlantController extends Controller
 
     private function loadTaxonomies(): array
     {
-        $path = base_path('../configs/plant_taxonomies.json');
+        $path = $this->taxonomyPath();
 
         if (! File::exists($path)) {
             return [];
         }
 
         return json_decode(File::get($path), true) ?? [];
+    }
+
+    private function saveTaxonomies(array $taxonomies): void
+    {
+        File::put(
+            $this->taxonomyPath(),
+            json_encode($taxonomies, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE).PHP_EOL
+        );
+    }
+
+    private function taxonomyPath(): string
+    {
+        return base_path('config/plant_taxonomies.json');
     }
 }

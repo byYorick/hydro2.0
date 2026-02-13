@@ -11,6 +11,7 @@ from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
 from common.simulation_clock import get_simulation_clocks, SimulationClock
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 import math
 import time
@@ -46,6 +47,9 @@ install_exception_handlers("automation-engine")
 
 logger = logging.getLogger(__name__)
 
+# Таймаут отправки алертов, чтобы внешние сбои не блокировали цикл обработки зон.
+ALERT_SEND_TIMEOUT_SECONDS = 5.0
+
 # Метрики для отслеживания ошибок
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
@@ -68,6 +72,7 @@ from repositories import (
     GrowCycleRepository,
     InfrastructureRepository
 )
+from repositories.laravel_api_repository import LaravelApiRepository
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
 from config.settings import get_settings as get_automation_settings
@@ -101,6 +106,124 @@ _shutdown_event = asyncio.Event()
 _zone_service: Optional[ZoneAutomationService] = None
 _command_tracker: Optional[CommandTracker] = None
 _command_bus: Optional[CommandBus] = None
+_last_db_circuit_open_alert_at: Optional[datetime] = None
+_DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
+_last_health_unhealthy_alert_at: Optional[datetime] = None
+_HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS = 180
+_last_health_check_failed_alert_at: Optional[datetime] = None
+_HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS = 180
+_last_config_unavailable_alert_at: Optional[datetime] = None
+_CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS = 180
+_last_missing_gh_uid_alert_at: Optional[datetime] = None
+_MISSING_GH_UID_ALERT_THROTTLE_SECONDS = 300
+_last_config_fetch_error_alert_at: Dict[str, datetime] = {}
+_CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS = 180
+
+
+def _should_emit_db_circuit_open_alert(now: datetime) -> bool:
+    """Троттлинг алертов об открытом DB circuit breaker."""
+    global _last_db_circuit_open_alert_at
+    if _last_db_circuit_open_alert_at is None:
+        _last_db_circuit_open_alert_at = now
+        return True
+
+    elapsed = (now - _last_db_circuit_open_alert_at).total_seconds()
+    if elapsed >= _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS:
+        _last_db_circuit_open_alert_at = now
+        return True
+
+    return False
+
+
+def _should_emit_health_unhealthy_alert(now: datetime) -> bool:
+    global _last_health_unhealthy_alert_at
+    if _last_health_unhealthy_alert_at is None:
+        _last_health_unhealthy_alert_at = now
+        return True
+
+    elapsed = (now - _last_health_unhealthy_alert_at).total_seconds()
+    if elapsed >= _HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS:
+        _last_health_unhealthy_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_health_check_failed_alert(now: datetime) -> bool:
+    global _last_health_check_failed_alert_at
+    if _last_health_check_failed_alert_at is None:
+        _last_health_check_failed_alert_at = now
+        return True
+
+    elapsed = (now - _last_health_check_failed_alert_at).total_seconds()
+    if elapsed >= _HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS:
+        _last_health_check_failed_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_config_unavailable_alert(now: datetime) -> bool:
+    global _last_config_unavailable_alert_at
+    if _last_config_unavailable_alert_at is None:
+        _last_config_unavailable_alert_at = now
+        return True
+
+    elapsed = (now - _last_config_unavailable_alert_at).total_seconds()
+    if elapsed >= _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS:
+        _last_config_unavailable_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_missing_gh_uid_alert(now: datetime) -> bool:
+    global _last_missing_gh_uid_alert_at
+    if _last_missing_gh_uid_alert_at is None:
+        _last_missing_gh_uid_alert_at = now
+        return True
+
+    elapsed = (now - _last_missing_gh_uid_alert_at).total_seconds()
+    if elapsed >= _MISSING_GH_UID_ALERT_THROTTLE_SECONDS:
+        _last_missing_gh_uid_alert_at = now
+        return True
+    return False
+
+
+def _should_emit_config_fetch_error_alert(now: datetime, error_type: str) -> bool:
+    last = _last_config_fetch_error_alert_at.get(error_type)
+    if last is None:
+        _last_config_fetch_error_alert_at[error_type] = now
+        return True
+
+    elapsed = (now - last).total_seconds()
+    if elapsed >= _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS:
+        _last_config_fetch_error_alert_at[error_type] = now
+        return True
+    return False
+
+
+async def _emit_config_fetch_failure_alert(
+    *,
+    error_type: str,
+    message: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    now = utcnow()
+    if not _should_emit_config_fetch_error_alert(now, error_type):
+        return
+
+    payload_details = dict(details) if isinstance(details, dict) else {}
+    payload_details["throttle_seconds"] = _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS
+
+    await send_infra_alert(
+        code="infra_config_fetch_failed",
+        alert_type="Config Fetch Failed",
+        message=message,
+        severity="error",
+        zone_id=None,
+        service="automation-engine",
+        component="config_fetch",
+        error_type=error_type,
+        details=payload_details,
+    )
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -201,7 +324,13 @@ async def publish_correction_command(
     from infrastructure import CommandBus
     history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
     history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-    command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+    command_bus = CommandBus(
+        mqtt=None,
+        gh_uid=gh_uid,
+        history_logger_url=history_logger_url,
+        history_logger_token=history_logger_token,
+        enforce_node_zone_assignment=True,
+    )
     await command_bus.start()
     try:
         return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
@@ -339,6 +468,29 @@ async def process_zones_parallel(
                         exc_info=True,
                         extra={'zone_id': zone_id, 'zone_name': zone_name}
                     )
+                    try:
+                        await asyncio.wait_for(
+                            send_infra_exception_alert(
+                                error=e,
+                                code="infra_zone_processing_failed",
+                                alert_type="Zone Processing Failed",
+                                severity="error",
+                                zone_id=zone_id,
+                                service="automation-engine",
+                                component="zone_processing",
+                                details={
+                                    "zone_name": zone_name,
+                                },
+                            ),
+                            timeout=ALERT_SEND_TIMEOUT_SECONDS,
+                        )
+                    except Exception as alert_error:
+                        logger.warning(
+                            "Zone %s: Failed to send infra exception alert: %s",
+                            zone_id,
+                            alert_error,
+                            extra={"zone_id": zone_id},
+                        )
         finally:
             # Очищаем контекст
             set_zone_id(None)
@@ -369,6 +521,32 @@ async def process_zones_parallel(
                     'errors': results['errors'][:10]  # Первые 10 ошибок
                 }
             )
+            try:
+                await asyncio.wait_for(
+                    send_infra_alert(
+                        code="infra_zone_failure_rate_high",
+                        alert_type="Zone Failure Rate High",
+                        message=f"Высокая доля ошибок обработки зон: {failure_rate:.1%}",
+                        severity=severity,
+                        zone_id=None,
+                        service="automation-engine",
+                        component="zone_processing",
+                        error_type="HighFailureRate",
+                        details={
+                            "total": results["total"],
+                            "failed": results["failed"],
+                            "failure_rate": failure_rate,
+                            "sample_errors": results["errors"][:5],
+                        },
+                    ),
+                    timeout=ALERT_SEND_TIMEOUT_SECONDS,
+                )
+            except Exception as alert_error:
+                logger.warning(
+                    "Failed to send high failure-rate infra alert: %s",
+                    alert_error,
+                    extra={"failure_rate": failure_rate, "failed": results["failed"], "total": results["total"]},
+                )
     
     return results
 
@@ -404,7 +582,13 @@ async def check_and_correct_zone(
     if _command_bus is None:
         history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
         history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-        _command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+        _command_bus = CommandBus(
+            mqtt=None,
+            gh_uid=gh_uid,
+            history_logger_url=history_logger_url,
+            history_logger_token=history_logger_token,
+            enforce_node_zone_assignment=True,
+        )
         await _command_bus.start()
     
     command_bus = _command_bus
@@ -458,7 +642,30 @@ async def fetch_full_config(
             if e.response.status_code == 401:
                 logger.error(f"Config fetch failed: Unauthorized (401) - invalid or missing token. Attempt {attempt + 1}/{max_retries}")
                 # Don't retry on 401 - it's a configuration issue
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message="Config fetch failed: Unauthorized (401) - invalid or missing token",
+                )
                 return None
+            elif e.response.status_code == 429:
+                retry_after = e.response.headers.get("Retry-After")
+                try:
+                    retry_after_sec = float(retry_after) if retry_after else retry_delay * (attempt + 1)
+                except ValueError:
+                    retry_after_sec = retry_delay * (attempt + 1)
+                logger.warning(
+                    f"Config fetch rate-limited (429). Retrying after {retry_after_sec:.1f}s. "
+                    f"Attempt {attempt + 1}/{max_retries}"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_after_sec)
+                    continue
+                else:
+                    await _emit_config_fetch_failure_alert(
+                        error_type=error_type,
+                        message="Config fetch failed after retries: rate-limited by API (429)",
+                    )
+                    return None
             elif e.response.status_code >= 500:
                 logger.warning(f"Config fetch failed: Server error {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
@@ -466,9 +673,17 @@ async def fetch_full_config(
                     continue
                 else:
                     logger.error(f"Config fetch failed after {max_retries} attempts: Server error {e.response.status_code}")
+                    await _emit_config_fetch_failure_alert(
+                        error_type=error_type,
+                        message=f"Config fetch failed after {max_retries} attempts: HTTP {e.response.status_code}",
+                    )
                     return None
             else:
                 logger.error(f"Config fetch failed: HTTP {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed: HTTP {e.response.status_code}",
+                )
                 return None
         except httpx.TimeoutException:
             error_type = "timeout"
@@ -479,6 +694,10 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: Timeout")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: timeout",
+                )
                 return None
         except httpx.NetworkError as e:
             error_type = "network_error"
@@ -489,6 +708,11 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: Network error - {e}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: network error",
+                    details={"error_message": str(e)},
+                )
                 return None
         except Exception as e:
             error_type = type(e).__name__
@@ -499,6 +723,11 @@ async def fetch_full_config(
                 continue
             else:
                 logger.error(f"Config fetch failed after {max_retries} attempts: {e}")
+                await _emit_config_fetch_failure_alert(
+                    error_type=error_type,
+                    message=f"Config fetch failed after {max_retries} attempts: unexpected error",
+                    details={"error_message": str(e)},
+                )
                 return None
     
     return None
@@ -594,6 +823,7 @@ async def main():
     # Инициализация Circuit Breakers
     db_circuit_breaker = CircuitBreaker("database", failure_threshold=5, timeout=60.0)
     api_circuit_breaker = CircuitBreaker("laravel_api", failure_threshold=5, timeout=60.0)
+    command_api_circuit_breaker = CircuitBreaker("history_logger_api", failure_threshold=5, timeout=30.0)
     mqtt_circuit_breaker = CircuitBreaker("mqtt", failure_threshold=3, timeout=30.0)
     
     # Инициализация Command Tracker
@@ -627,8 +857,38 @@ async def main():
                 health = await health_monitor.check_health()
                 if health['status'] != 'healthy':
                     logger.warning(f"System health: {health['status']}", extra=health)
+                    now = utcnow()
+                    if _should_emit_health_unhealthy_alert(now):
+                        await send_infra_alert(
+                            code="infra_system_unhealthy",
+                            alert_type="System Health Degraded",
+                            message=f"Automation system health is '{health['status']}'",
+                            severity="error",
+                            zone_id=None,
+                            service="automation-engine",
+                            component="health_monitor",
+                            error_type="Unhealthy",
+                            details={
+                                "health": health,
+                                "throttle_seconds": _HEALTH_UNHEALTHY_ALERT_THROTTLE_SECONDS,
+                            },
+                        )
             except Exception as e:
                 logger.error(f"Health check failed: {e}", exc_info=True)
+                now = utcnow()
+                if _should_emit_health_check_failed_alert(now):
+                    await send_infra_exception_alert(
+                        error=e,
+                        code="infra_health_check_failed",
+                        alert_type="Health Check Failed",
+                        severity="error",
+                        zone_id=None,
+                        service="automation-engine",
+                        component="health_monitor",
+                        details={
+                            "throttle_seconds": _HEALTH_CHECK_FAILED_ALERT_THROTTLE_SECONDS,
+                        },
+                    )
             await asyncio.sleep(30)
     
     health_task = asyncio.create_task(health_check_loop())
@@ -641,23 +901,73 @@ async def main():
         async with httpx.AsyncClient() as client:
             active_zones: List[Dict[str, Any]] = []
             global _zone_service
+            last_config: Optional[Dict[str, Any]] = None
+            last_config_ts = 0.0
+            laravel_api_repo = LaravelApiRepository()
             
             while not _shutdown_event.is_set():
+                simulation_clocks = {}
                 try:
-                    # Fetch config через Circuit Breaker
-                    try:
-                        cfg = await fetch_full_config(
-                            client, s.laravel_api_url, s.laravel_api_token, api_circuit_breaker
-                        )
-                    except CircuitBreakerOpenError:
-                        logger.warning("API Circuit Breaker is OPEN, using cached config or skipping")
-                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                        continue
+                    # Fetch config через Circuit Breaker (c кешированием)
+                    cfg: Optional[Dict[str, Any]] = None
+                    now = time.monotonic()
+                    if last_config and (now - last_config_ts) < automation_settings.CONFIG_FETCH_MIN_INTERVAL_SECONDS:
+                        cfg = last_config
+                    else:
+                        try:
+                            cfg = await fetch_full_config(
+                                client, s.laravel_api_url, s.laravel_api_token, api_circuit_breaker
+                            )
+                        except CircuitBreakerOpenError:
+                            if last_config:
+                                logger.warning("API Circuit Breaker is OPEN, using cached config")
+                                cfg = last_config
+                                last_config_ts = now
+                            else:
+                                logger.warning("API Circuit Breaker is OPEN, no cached config available")
+                                if _should_emit_config_unavailable_alert(utcnow()):
+                                    await send_infra_alert(
+                                        code="infra_api_circuit_open_no_cache",
+                                        alert_type="API Circuit Open Without Cache",
+                                        message="API circuit breaker is open and no cached config is available",
+                                        severity="critical",
+                                        zone_id=None,
+                                        service="automation-engine",
+                                        component="config_fetch",
+                                        error_type="CircuitBreakerOpenError",
+                                        details={
+                                            "throttle_seconds": _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS,
+                                        },
+                                    )
+                                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                                continue
                     
-                    if not cfg:
-                        logger.warning("Config fetch returned None, sleeping before retry")
-                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                        continue
+                        if not cfg:
+                            if last_config:
+                                logger.warning("Config fetch returned None, using cached config")
+                                cfg = last_config
+                                last_config_ts = now
+                            else:
+                                logger.warning("Config fetch returned None, sleeping before retry")
+                                if _should_emit_config_unavailable_alert(utcnow()):
+                                    await send_infra_alert(
+                                        code="infra_config_fetch_unavailable",
+                                        alert_type="Config Unavailable",
+                                        message="Config fetch returned empty response and no cached config is available",
+                                        severity="error",
+                                        zone_id=None,
+                                        service="automation-engine",
+                                        component="config_fetch",
+                                        error_type="ConfigUnavailable",
+                                        details={
+                                            "throttle_seconds": _CONFIG_UNAVAILABLE_ALERT_THROTTLE_SECONDS,
+                                        },
+                                    )
+                                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                                continue
+                        else:
+                            last_config = cfg
+                            last_config_ts = now
                     
                     # Validate config structure
                     is_valid, error_msg = validate_config(cfg)
@@ -672,6 +982,18 @@ async def main():
                     gh_uid = _extract_gh_uid_from_config(cfg)
                     if not gh_uid:
                         logger.warning("No greenhouse UID found in config, sleeping before retry")
+                        if _should_emit_missing_gh_uid_alert(utcnow()):
+                            await send_infra_alert(
+                                code="infra_config_missing_greenhouse_uid",
+                                alert_type="Config Missing Greenhouse UID",
+                                message="Config does not contain greenhouse UID",
+                                severity="error",
+                                zone_id=None,
+                                service="automation-engine",
+                                component="config_validation",
+                                error_type="MissingGreenhouseUid",
+                                details={"throttle_seconds": _MISSING_GH_UID_ALERT_THROTTLE_SECONDS},
+                            )
                         await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                         continue
                     
@@ -680,7 +1002,10 @@ async def main():
                     telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
                     node_repo = NodeRepository()
                     recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
-                    grow_cycle_repo = GrowCycleRepository(db_circuit_breaker=db_circuit_breaker)
+                    grow_cycle_repo = GrowCycleRepository(
+                        laravel_api_repo=laravel_api_repo,
+                        db_circuit_breaker=db_circuit_breaker
+                    )
                     infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
                     
                     # Инициализация Command Audit
@@ -700,7 +1025,8 @@ async def main():
                             command_validator=command_validator,
                             command_tracker=_command_tracker,
                             command_audit=command_audit,
-                            api_circuit_breaker=api_circuit_breaker
+                            api_circuit_breaker=command_api_circuit_breaker,
+                            enforce_node_zone_assignment=True,
                         )
                         await _command_bus.start()
                         logger.info("CommandBus initialized with long-lived HTTP client")
@@ -725,6 +1051,11 @@ async def main():
                         command_bus, 
                         pid_state_manager
                     )
+                    try:
+                        from api import set_zone_service
+                        set_zone_service(_zone_service)
+                    except ImportError:
+                        logger.warning("API module not available, scheduler task executor fallback is disabled")
                     
                     # Get active zones with recipes через Circuit Breaker
                     try:
@@ -734,6 +1065,22 @@ async def main():
                         zones = await db_circuit_breaker.call(_get_zones)
                     except CircuitBreakerOpenError:
                         logger.warning("Database Circuit Breaker is OPEN, skipping zone processing")
+                        now = utcnow()
+                        if _should_emit_db_circuit_open_alert(now):
+                            await send_infra_alert(
+                                code="infra_db_circuit_open",
+                                alert_type="Database Circuit Breaker Open",
+                                message="Database circuit breaker is OPEN, zone processing is skipped",
+                                severity="critical",
+                                zone_id=None,
+                                service="automation-engine",
+                                component="main_loop",
+                                error_type="CircuitBreakerOpenError",
+                                details={
+                                    "throttle_seconds": _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+                                    "detected_at": now.isoformat(),
+                                },
+                            )
                         await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                         continue
                     
@@ -784,7 +1131,6 @@ async def main():
                             )
                         
                         # Логируем состояние системы (каждые 5 минут)
-                        import time
                         if int(time.time()) % 300 == 0:  # Каждые 5 минут
                             await log_system_state(
                                 _zone_service,
@@ -800,6 +1146,15 @@ async def main():
                     break
                 except Exception as e:
                     handle_automation_error(e, {"action": "main_loop"})
+                    await send_infra_exception_alert(
+                        error=e,
+                        code="infra_automation_loop_error",
+                        alert_type="Automation Loop Error",
+                        severity="error",
+                        zone_id=None,
+                        service="automation-engine",
+                        component="main_loop",
+                    )
                     # Sleep before retrying to avoid tight error loops
                     await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                 

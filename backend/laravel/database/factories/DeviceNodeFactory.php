@@ -23,7 +23,7 @@ class DeviceNodeFactory extends Factory
                 $this->faker->unique()->numberBetween(0, 999)
             ),
             'name' => 'Node '.Str::upper(Str::random(4)),
-            'type' => Arr::random(['ph', 'ec', 'climate', 'irrigation', 'lighting']),
+            'type' => Arr::random(['ph', 'ec', 'climate', 'irrig', 'light', 'relay', 'water_sensor', 'recirculation']),
             'fw_version' => sprintf('1.%d.%d', random_int(0, 9), random_int(0, 9)),
             'status' => Arr::random(['online', 'offline', 'error']),
             'zone_id' => null,

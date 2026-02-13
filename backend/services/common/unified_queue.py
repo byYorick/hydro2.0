@@ -62,63 +62,13 @@ class UnifiedQueue:
         self._initialized = False
     
     async def ensure_table(self):
-        """Создаёт таблицу для очереди, если её нет."""
+        """Legacy unified queue disabled: schema must be managed via Laravel migrations."""
         if self._initialized:
             return
-        
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            # Основная таблица очереди
-            table_name = f"queue_{self.queue_type.value}"
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {table_name} (
-                    id BIGSERIAL PRIMARY KEY,
-                    payload JSONB NOT NULL,
-                    retry_count INTEGER DEFAULT 0,
-                    status VARCHAR(16) NOT NULL DEFAULT 'pending' 
-                        CHECK (status IN ('pending', 'processing', 'delivered', 'failed', 'dlq')),
-                    next_retry_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    delivered_at TIMESTAMP WITH TIME ZONE,
-                    error_message TEXT
-                )
-            """)
-            
-            # Индексы для производительности
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{table_name}_status_retry 
-                ON {table_name}(status, next_retry_at) 
-                WHERE status IN ('pending', 'processing', 'failed')
-            """)
-            
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{table_name}_created_at 
-                ON {table_name}(created_at)
-            """)
-            
-            # DLQ таблица (если это не сама DLQ)
-            if self.queue_type != QueueType.TELEMETRY_DLQ:
-                dlq_table_name = f"queue_{self.queue_type.value}_dlq"
-                await conn.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {dlq_table_name} (
-                        id BIGSERIAL PRIMARY KEY,
-                        original_id BIGINT,
-                        payload JSONB NOT NULL,
-                        retry_count INTEGER,
-                        error_message TEXT,
-                        failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                    )
-                """)
-                
-                await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS idx_{dlq_table_name}_failed_at 
-                    ON {dlq_table_name}(failed_at)
-                """)
-        
-        self._initialized = True
-        logger.info(f"Queue table initialized for {self.queue_type.value}")
+        raise RuntimeError(
+            f"UnifiedQueue '{self.queue_type.value}' is disabled. "
+            "Use dedicated queues with Laravel-managed schema migrations."
+        )
     
     async def enqueue(self, payload: Dict[str, Any]) -> Optional[int]:
         """

@@ -11,22 +11,29 @@ def test_automation_settings_defaults():
     """Test default values in AutomationSettings."""
     # Сбрасываем переменную окружения для теста
     import os
-    old_value = os.environ.get('MAX_CONCURRENT_ZONES')
+    old_max_concurrent_zones = os.environ.get('MAX_CONCURRENT_ZONES')
+    old_config_fetch_min_interval = os.environ.get('CONFIG_FETCH_MIN_INTERVAL_SECONDS')
+    expected_config_fetch_min_interval = int(old_config_fetch_min_interval or "30")
     if 'MAX_CONCURRENT_ZONES' in os.environ:
         del os.environ['MAX_CONCURRENT_ZONES']
+    if 'CONFIG_FETCH_MIN_INTERVAL_SECONDS' in os.environ:
+        del os.environ['CONFIG_FETCH_MIN_INTERVAL_SECONDS']
     
     # Перезагружаем настройки
     from config.settings import reload_settings
     settings = reload_settings()
     
     assert settings.MAIN_LOOP_SLEEP_SECONDS == 15
+    assert settings.CONFIG_FETCH_MIN_INTERVAL_SECONDS == expected_config_fetch_min_interval
     # MAX_CONCURRENT_ZONES по умолчанию 50 из env или может быть переопределено
     assert settings.MAX_CONCURRENT_ZONES >= 5
     assert settings.PH_CORRECTION_THRESHOLD == 0.2
     
     # Восстанавливаем переменную окружения
-    if old_value is not None:
-        os.environ['MAX_CONCURRENT_ZONES'] = old_value
+    if old_max_concurrent_zones is not None:
+        os.environ['MAX_CONCURRENT_ZONES'] = old_max_concurrent_zones
+    if old_config_fetch_min_interval is not None:
+        os.environ['CONFIG_FETCH_MIN_INTERVAL_SECONDS'] = old_config_fetch_min_interval
     assert settings.EC_CORRECTION_THRESHOLD == 0.2
     assert settings.PH_DOSING_MULTIPLIER == 10.0
     assert settings.EC_DOSING_MULTIPLIER == 100.0

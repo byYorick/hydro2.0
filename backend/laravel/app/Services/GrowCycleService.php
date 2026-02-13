@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\GrowCycleStatus;
 use App\Events\GrowCycleUpdated;
+use App\Events\ZoneUpdated;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
@@ -53,6 +54,18 @@ class GrowCycleService
 
             $startImmediately = $data['start_immediately'] ?? false;
             $phaseStartedAt = $startImmediately ? $plantingAt : null;
+            $settings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
+
+            $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
+            if (!empty($irrigation)) {
+                $settings['irrigation'] = [
+                    'system_type' => $irrigation['system_type'] ?? 'drip',
+                    'interval_minutes' => (int) ($irrigation['interval_minutes'] ?? 30),
+                    'duration_seconds' => (int) ($irrigation['duration_seconds'] ?? 120),
+                    'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),
+                    'nutrient_tank_target_l' => (int) ($irrigation['nutrient_tank_target_l'] ?? 280),
+                ];
+            }
 
             // Сначала создаем цикл без current_phase_id (временно null)
             $cycle = GrowCycle::create([
@@ -67,6 +80,7 @@ class GrowCycleService
                 'phase_started_at' => $phaseStartedAt,
                 'batch_label' => $data['batch_label'] ?? null,
                 'notes' => $data['notes'] ?? null,
+                'settings' => !empty($settings) ? $settings : null,
                 'started_at' => $startImmediately ? $plantingAt : null,
             ]);
 
@@ -103,6 +117,10 @@ class GrowCycleService
 
             // Отправляем WebSocket broadcast
             broadcast(new GrowCycleUpdated($cycle->fresh(), 'CREATED'));
+
+            if ($startImmediately) {
+                $this->syncZoneStatus($zone, 'RUNNING');
+            }
 
             Log::info('Grow cycle created', [
                 'cycle_id' => $cycle->id,
@@ -142,6 +160,7 @@ class GrowCycleService
                 'recipe_started_at' => $plantingAt,
                 'phase_started_at' => $plantingAt, // Устанавливаем phase_started_at при старте
             ]);
+            $this->syncZoneStatus($cycle->zone, 'RUNNING');
 
             // В новой модели фазы уже установлены при создании цикла через createPhaseSnapshot()
             // Вычисляем ожидаемую дату сбора
@@ -407,6 +426,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'PAUSED');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -448,6 +468,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'RUNNING');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -494,6 +515,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -539,6 +561,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
             ZoneEvent::create([
@@ -565,6 +588,17 @@ class GrowCycleService
 
             return $cycle->fresh();
         });
+    }
+
+    private function syncZoneStatus(Zone $zone, string $status): void
+    {
+        if ($zone->status === $status) {
+            return;
+        }
+
+        $zone->update(['status' => $status]);
+        $zone->refresh();
+        event(new ZoneUpdated($zone));
     }
 
     /**
@@ -841,6 +875,23 @@ class GrowCycleService
             'ec_target' => $templatePhase->ec_target,
             'ec_min' => $templatePhase->ec_min,
             'ec_max' => $templatePhase->ec_max,
+            'nutrient_program_code' => $templatePhase->nutrient_program_code,
+            'nutrient_mode' => $templatePhase->nutrient_mode,
+            'nutrient_npk_ratio_pct' => $templatePhase->nutrient_npk_ratio_pct,
+            'nutrient_calcium_ratio_pct' => $templatePhase->nutrient_calcium_ratio_pct,
+            'nutrient_magnesium_ratio_pct' => $templatePhase->nutrient_magnesium_ratio_pct,
+            'nutrient_micro_ratio_pct' => $templatePhase->nutrient_micro_ratio_pct,
+            'nutrient_npk_dose_ml_l' => $templatePhase->nutrient_npk_dose_ml_l,
+            'nutrient_calcium_dose_ml_l' => $templatePhase->nutrient_calcium_dose_ml_l,
+            'nutrient_magnesium_dose_ml_l' => $templatePhase->nutrient_magnesium_dose_ml_l,
+            'nutrient_micro_dose_ml_l' => $templatePhase->nutrient_micro_dose_ml_l,
+            'nutrient_npk_product_id' => $templatePhase->nutrient_npk_product_id,
+            'nutrient_calcium_product_id' => $templatePhase->nutrient_calcium_product_id,
+            'nutrient_magnesium_product_id' => $templatePhase->nutrient_magnesium_product_id,
+            'nutrient_micro_product_id' => $templatePhase->nutrient_micro_product_id,
+            'nutrient_dose_delay_sec' => $templatePhase->nutrient_dose_delay_sec,
+            'nutrient_ec_stop_tolerance' => $templatePhase->nutrient_ec_stop_tolerance,
+            'nutrient_solution_volume_l' => $templatePhase->nutrient_solution_volume_l,
             'irrigation_mode' => $templatePhase->irrigation_mode,
             'irrigation_interval_sec' => $templatePhase->irrigation_interval_sec,
             'irrigation_duration_sec' => $templatePhase->irrigation_duration_sec,

@@ -1,0 +1,345 @@
+import type { ComputedRef, Ref } from 'vue'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import type { ToastVariant } from '@/composables/useToast'
+import { logger } from '@/utils/logger'
+import { extractData } from '@/utils/apiHelpers'
+import { extractSetupWizardErrorMessage } from './setupWizardErrors'
+import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
+import type {
+  Plant,
+  Recipe,
+  RecipePhase,
+  RecipeFormState,
+  SetupWizardLoadingState,
+  Zone,
+} from './setupWizardTypes'
+import type {
+  ClimateFormState,
+  LightingFormState,
+  WaterFormState,
+} from './zoneAutomationTypes'
+import {
+  addRecipePhase as appendRecipePhase,
+  createRecipeForPlant,
+  type SetupWizardRecipeApiClient,
+} from './setupWizardRecipeCreation'
+import {
+  ensureRecipeBinding,
+  selectRecipeById,
+} from './setupWizardRecipeLinking'
+
+interface SetupWizardRecipeAutomationFlowsOptions {
+  api: SetupWizardRecipeApiClient
+  loading: SetupWizardLoadingState
+  canConfigure: ComputedRef<boolean>
+  showToast: (message: string, variant: ToastVariant, timeout?: number) => void
+  recipeForm: RecipeFormState
+  availableRecipes: Ref<Recipe[]>
+  selectedPlant: Ref<Plant | null>
+  selectedPlantId: Ref<number | null>
+  selectedRecipeId: Ref<number | null>
+  selectedRecipe: Ref<Recipe | null>
+  climateForm: ClimateFormState
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
+  selectedZone: Ref<Zone | null>
+  selectedZoneActiveCycleStatus: ComputedRef<string | null>
+  selectedZoneHasActiveCycle: ComputedRef<boolean>
+  automationAppliedAt: Ref<string | null>
+  loadRecipes: () => Promise<void>
+  visit: (url: string) => void
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  return null
+}
+
+function resolveSystemTypeFromPhase(phase: RecipePhase | undefined, current: WaterFormState['systemType']): WaterFormState['systemType'] {
+  const rawMode = phase?.irrigation_mode?.toString().toUpperCase() ?? ''
+  if (rawMode === 'SUBSTRATE') {
+    return 'substrate_trays'
+  }
+  if (rawMode === 'RECIRC') {
+    return 'nft'
+  }
+
+  return current
+}
+
+function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
+  if (!recipe || !Array.isArray(recipe.phases) || recipe.phases.length === 0) {
+    return null
+  }
+
+  return [...recipe.phases].sort((a, b) => a.phase_index - b.phase_index)[0] ?? null
+}
+
+export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecipeAutomationFlowsOptions) {
+  const {
+    api,
+    loading,
+    canConfigure,
+    showToast,
+    recipeForm,
+    availableRecipes,
+    selectedPlant,
+    selectedPlantId,
+    selectedRecipeId,
+    selectedRecipe,
+    climateForm,
+    waterForm,
+    lightingForm,
+    selectedZone,
+    selectedZoneActiveCycleStatus,
+    selectedZoneHasActiveCycle,
+    automationAppliedAt,
+    loadRecipes,
+    visit,
+  } = options
+
+  function addRecipePhase(): void {
+    appendRecipePhase(recipeForm)
+  }
+
+  function syncAutomationFromRecipe(recipe: Recipe | null): void {
+    const phase = pickPrimaryPhase(recipe)
+    if (!phase) {
+      return
+    }
+
+    const systemType = resolveSystemTypeFromPhase(phase, waterForm.systemType)
+    const phTarget = toNumberOrNull(phase.ph_target)
+    const ecTarget = toNumberOrNull(phase.ec_target)
+    const tempAirTarget = toNumberOrNull(phase.extensions?.day_night?.temperature?.day ?? phase.temp_air_target)
+    const humidityTarget = toNumberOrNull(phase.extensions?.day_night?.humidity?.day ?? phase.humidity_target)
+    const photoperiod = toNumberOrNull(phase.lighting_photoperiod_hours)
+    const irrigationIntervalSec = toNumberOrNull(phase.irrigation_interval_sec)
+    const irrigationDurationSec = toNumberOrNull(phase.irrigation_duration_sec)
+
+    waterForm.systemType = systemType
+    if (phTarget !== null) {
+      waterForm.targetPh = Number(phTarget.toFixed(2))
+    }
+    if (ecTarget !== null) {
+      waterForm.targetEc = Number(ecTarget.toFixed(2))
+    }
+    if (tempAirTarget !== null) {
+      climateForm.dayTemp = Number(tempAirTarget.toFixed(1))
+    }
+    if (humidityTarget !== null) {
+      climateForm.dayHumidity = Math.round(humidityTarget)
+    }
+    if (photoperiod !== null) {
+      lightingForm.luxDay = Math.max(4000, photoperiod * 1000)
+      lightingForm.hoursOn = Math.min(24, Math.max(0, Number(photoperiod.toFixed(1))))
+    }
+    if (irrigationIntervalSec !== null && irrigationIntervalSec > 0) {
+      waterForm.intervalMinutes = Math.max(1, Math.round(irrigationIntervalSec / 60))
+    }
+    if (irrigationDurationSec !== null && irrigationDurationSec > 0) {
+      waterForm.durationSeconds = Math.round(irrigationDurationSec)
+    }
+  }
+
+  async function loadRecipeDetails(recipeId: number | null): Promise<Recipe | null> {
+    if (!recipeId) {
+      return null
+    }
+
+    try {
+      const response = await api.get(`/recipes/${recipeId}`)
+      const recipe = extractData<Recipe>(response.data)
+      if (!recipe?.id) {
+        return null
+      }
+
+      const index = availableRecipes.value.findIndex((item) => item.id === recipe.id)
+      if (index >= 0) {
+        availableRecipes.value[index] = recipe
+      } else {
+        availableRecipes.value.push(recipe)
+      }
+
+      return recipe
+    } catch (error) {
+      logger.error('[Setup/Wizard] Failed to load recipe details', { error, recipeId })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить детали рецепта'), 'error', TOAST_TIMEOUT.NORMAL)
+      return null
+    }
+  }
+
+  async function ensureRecipeForPlant(createIfMissing = false): Promise<void> {
+    const result = await ensureRecipeBinding({
+      plantId: selectedPlantId.value,
+      availableRecipes,
+      selectedRecipe,
+      selectedRecipeId,
+      loading,
+      canCreateMissing: createIfMissing && canConfigure.value,
+      loadRecipes,
+      createRecipeForPlant: (plantId) => createRecipeForPlant({
+        api,
+        canConfigure: canConfigure.value,
+        recipeForm,
+        plantId,
+        plantName: selectedPlant.value?.name,
+      }),
+      onCreateError: (error) => {
+        logger.error('[Setup/Wizard] Failed to ensure recipe for plant', { error })
+      },
+    })
+
+    if (result === 'created') {
+      showToast('Рецепт для выбранной культуры создан и привязан', 'success', TOAST_TIMEOUT.NORMAL)
+    }
+  }
+
+  async function createRecipe(): Promise<void> {
+    if (!selectedPlantId.value) {
+      showToast('Сначала выберите растение на шаге 3', 'warning', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
+    await ensureRecipeForPlant(true)
+  }
+
+  function selectRecipe(): void {
+    if (!canConfigure.value) {
+      return
+    }
+
+    const recipe = selectRecipeById(availableRecipes.value, selectedRecipeId.value)
+    if (!recipe) {
+      return
+    }
+
+    selectedRecipe.value = recipe
+    syncAutomationFromRecipe(recipe)
+    showToast('Рецепт выбран', 'success', TOAST_TIMEOUT.NORMAL)
+  }
+
+  async function applyAutomation(): Promise<void> {
+    if (!canConfigure.value || !selectedZone.value?.id) {
+      return
+    }
+
+    if (!selectedRecipe.value?.id) {
+      await ensureRecipeForPlant(true)
+      if (!selectedRecipe.value?.id) {
+        showToast('Не удалось найти рецепт для выбранной культуры. Выберите культуру или создайте рецепт.', 'warning', TOAST_TIMEOUT.NORMAL)
+        return
+      }
+    }
+
+    const validationError = validateForms({ climateForm, waterForm })
+    if (validationError) {
+      showToast(validationError, 'error', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
+    loading.stepAutomation = true
+    try {
+      const payload = buildGrowthCycleConfigPayload({
+        climateForm,
+        waterForm,
+        lightingForm,
+      })
+      await api.post(`/zones/${selectedZone.value.id}/automation-logic-profile`, {
+        mode: 'setup',
+        activate: true,
+        subsystems: payload.subsystems,
+      })
+
+      await api.post(`/zones/${selectedZone.value.id}/commands`, {
+        type: 'GROWTH_CYCLE_CONFIG',
+        params: {
+          mode: 'adjust',
+          profile_mode: 'setup',
+        },
+      })
+
+      automationAppliedAt.value = new Date().toISOString()
+      showToast('Логика автоматики применена', 'success', TOAST_TIMEOUT.NORMAL)
+    } catch (error) {
+      logger.error('[Setup/Wizard] Failed to apply automation profile', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось применить логику автоматики'), 'error', TOAST_TIMEOUT.NORMAL)
+    } finally {
+      loading.stepAutomation = false
+    }
+  }
+
+  async function openCycleWizard(): Promise<void> {
+    if (selectedZoneHasActiveCycle.value) {
+      showToast(
+        `Запуск недоступен: в зоне уже есть активный цикл (${zoneCycleStatusLabel(selectedZoneActiveCycleStatus.value)}).`,
+        'warning',
+        TOAST_TIMEOUT.NORMAL
+      )
+      return
+    }
+
+    await ensureRecipeForPlant(false)
+
+    if (!selectedZone.value?.id || !selectedRecipe.value?.id) {
+      showToast('Не найден рецепт для выбранной культуры. Создайте культуру или рецепт.', 'warning', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
+    loading.stepLaunch = true
+    try {
+      const zoneResponse = await api.get(`/zones/${selectedZone.value.id}`)
+      const zonePayload = extractData<Record<string, unknown>>(zoneResponse.data)
+      const activeCycleStatus = extractZoneActiveCycleStatus(zonePayload)
+      if (isZoneCycleBlocking(activeCycleStatus)) {
+        showToast(
+          `Запуск недоступен: в зоне уже есть активный цикл (${zoneCycleStatusLabel(activeCycleStatus)}).`,
+          'warning',
+          TOAST_TIMEOUT.NORMAL
+        )
+        return
+      }
+
+      const recipeRevisionId = selectedRecipe.value.latest_published_revision_id
+        ?? selectedRecipe.value.latest_draft_revision_id
+        ?? null
+      const now = new Date()
+      const offsetMs = now.getTimezoneOffset() * 60_000
+      const startedAt = new Date(now.getTime() - offsetMs).toISOString().slice(0, 16)
+      const queryParams = new URLSearchParams({
+        start_cycle: '1',
+        source: 'setup_wizard',
+        recipe_id: String(selectedRecipe.value.id),
+        started_at: startedAt,
+      })
+
+      if (selectedPlantId.value) {
+        queryParams.set('plant_id', String(selectedPlantId.value))
+      }
+
+      if (recipeRevisionId) {
+        queryParams.set('recipe_revision_id', String(recipeRevisionId))
+      }
+
+      const url = `/zones/${selectedZone.value.id}?${queryParams.toString()}`
+      showToast('Открываю мастер запуска цикла', 'info', TOAST_TIMEOUT.NORMAL)
+      visit(url)
+    } finally {
+      loading.stepLaunch = false
+    }
+  }
+
+  return {
+    addRecipePhase,
+    createRecipe,
+    selectRecipe,
+    ensureRecipeForPlant,
+    applyAutomation,
+    openCycleWizard,
+    syncAutomationFromRecipe,
+    loadRecipeDetails,
+  }
+}

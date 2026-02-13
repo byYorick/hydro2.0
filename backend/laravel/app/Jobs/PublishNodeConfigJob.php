@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class PublishNodeConfigJob implements ShouldQueue
 {
@@ -46,11 +47,13 @@ class PublishNodeConfigJob implements ShouldQueue
      */
     public function handle(NodeConfigService $configService): void
     {
-        Log::info('PublishNodeConfigJob: Config publishing disabled, skipping', [
+        $publishId = (string) Str::uuid();
+
+        Log::info('PublishNodeConfigJob: Started', [
+            'publish_id' => $publishId,
             'node_id' => $this->nodeId,
             'dedupe_key' => $this->dedupeKey,
         ]);
-        return;
 
         // Быстрая проверка через Redis (для производительности)
         $lockKey = "lock:{$this->dedupeKey}";
@@ -68,10 +71,10 @@ class PublishNodeConfigJob implements ShouldQueue
         try {
             // Используем TransactionHelper для SERIALIZABLE isolation, retry логики и advisory lock
             // Advisory lock должен быть внутри транзакции с SERIALIZABLE, поэтому сначала serializable retry
-            $result = TransactionHelper::withSerializableRetry(function () use ($configService) {
+            $result = TransactionHelper::withSerializableRetry(function () use ($configService, $publishId) {
                 $lockResult = TransactionHelper::withAdvisoryLock(
                     "publish_config:{$this->nodeId}",
-                    function () use ($configService) {
+                    function () use ($configService, $publishId) {
                         // Используем SELECT FOR UPDATE для защиты от конкурентных изменений
                         $node = DeviceNode::where('id', $this->nodeId)
                             ->lockForUpdate()
@@ -135,8 +138,33 @@ class PublishNodeConfigJob implements ShouldQueue
                         // Передаём флаг привязки, чтобы релейные ноды получили временный конфиг (ACTUATOR) на этапе binding
                         $config = $configService->generateNodeConfig($node, null, true, $isNodeBinding);
 
+                        if (empty($config)) {
+                            Log::warning('PublishNodeConfigJob: Cannot publish empty config', [
+                                'node_id' => $node->id,
+                                'uid' => $node->uid,
+                                'zone_id' => $node->zone_id,
+                                'pending_zone_id' => $node->pending_zone_id,
+                            ]);
+
+                            if ($originalZoneId !== $node->zone_id) {
+                                $node->zone_id = $originalZoneId;
+                                $node->unsetRelation('zone');
+                            }
+
+                            return;
+                        }
+
                         // Получаем greenhouse_uid
                         $greenhouseUid = $node->zone?->greenhouse?->uid ?? $zoneForConfig?->greenhouse?->uid;
+                        $zoneUid = $node->zone?->uid ?? $zoneForConfig?->uid;
+
+                        if (! isset($config['node_id']) && ! isset($config['node_uid'])) {
+                            $config['node_id'] = $node->uid;
+                        }
+                        $config['gh_uid'] = $greenhouseUid;
+                        if ($zoneUid) {
+                            $config['zone_uid'] = $zoneUid;
+                        }
 
                         if (! $greenhouseUid) {
                             Log::warning('PublishNodeConfigJob: Cannot publish config: zone has no greenhouse', [
@@ -158,6 +186,7 @@ class PublishNodeConfigJob implements ShouldQueue
                         $token = Config::get('services.history_logger.token') ?? Config::get('services.python_bridge.token'); // Fallback на старый токен
 
                         Log::info('PublishNodeConfigJob: Preparing to call history-logger API', [
+                            'publish_id' => $publishId,
                             'node_id' => $node->id,
                             'uid' => $node->uid,
                             'base_url' => $baseUrl,
@@ -189,32 +218,26 @@ class PublishNodeConfigJob implements ShouldQueue
                         // Используем короткий таймаут
                         $timeout = 10; // секунд
                         
-                        // BUGFIX: Проверяем наличие hardware_id при привязке
-                        // Если hardware_id отсутствует, конфиг не будет опубликован на временный топик
-                        if ($isNodeBinding && !$node->hardware_id) {
-                            Log::warning('PublishNodeConfigJob: Cannot publish to temp topic: hardware_id is missing', [
-                                'node_id' => $node->id,
-                                'uid' => $node->uid,
-                            ]);
-                        }
-                        
                         $requestData = [
-                            'node_uid' => $node->uid,
-                            'hardware_id' => ($isNodeBinding && $node->hardware_id) ? $node->hardware_id : null, // Передаем hardware_id ТОЛЬКО при привязке и если он есть
                             'zone_id' => $targetZoneId,
                             'greenhouse_uid' => $greenhouseUid,
                             'config' => $config,
                         ];
+                        if ($zoneUid) {
+                            $requestData['zone_uid'] = $zoneUid;
+                        }
                         
                         Log::info('PublishNodeConfigJob: Request data prepared', [
+                            'publish_id' => $publishId,
                             'node_id' => $node->id,
                             'is_node_binding' => $isNodeBinding,
                             'pending_zone_id' => $node->pending_zone_id,
                             'zone_id' => $node->zone_id,
-                            'has_hardware_id' => !empty($requestData['hardware_id']),
+                            'has_zone_uid' => !empty($zoneUid),
                         ]);
 
                         Log::info('PublishNodeConfigJob: Sending request to history-logger', [
+                            'publish_id' => $publishId,
                             'node_id' => $node->id,
                             'uid' => $node->uid,
                             'url' => "{$baseUrl}/nodes/{$node->uid}/config",
@@ -234,12 +257,14 @@ class PublishNodeConfigJob implements ShouldQueue
 
                         if ($response->successful()) {
                             Log::info('PublishNodeConfigJob: NodeConfig published via MQTT', [
+                                'publish_id' => $publishId,
                                 'node_id' => $node->id,
                                 'uid' => $node->uid,
                                 'topic' => $response->json('data.topic'),
                             ]);
                         } else {
                             Log::warning('PublishNodeConfigJob: Non-successful response', [
+                                'publish_id' => $publishId,
                                 'node_id' => $node->id,
                                 'uid' => $node->uid,
                                 'status' => $response->status(),

@@ -18,6 +18,7 @@ const axiosPostMock = vi.hoisted(() => vi.fn())
 const routerVisitMock = vi.hoisted(() => vi.fn())
 const mockLoggerError = vi.hoisted(() => vi.fn())
 const mockLoggerInfo = vi.hoisted(() => vi.fn())
+const showToastMock = vi.hoisted(() => vi.fn())
 
 const mockAxiosInstance = vi.hoisted(() => ({
   get: vi.fn(),
@@ -40,7 +41,7 @@ vi.mock('@/composables/useApi', () => ({
 
 vi.mock('@/composables/useToast', () => ({
   useToast: () => ({
-    showToast: vi.fn(),
+    showToast: showToastMock,
   }),
 }))
 
@@ -69,6 +70,21 @@ const sampleRecipe = vi.hoisted(() => ({
       phase_index: 0,
       name: 'Seedling',
       duration_hours: 168,
+      nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+      nutrient_npk_ratio_pct: 44,
+      nutrient_calcium_ratio_pct: 36,
+      nutrient_magnesium_ratio_pct: 17,
+      nutrient_micro_ratio_pct: 3,
+      nutrient_npk_dose_ml_l: 0.55,
+      nutrient_calcium_dose_ml_l: 0.55,
+      nutrient_magnesium_dose_ml_l: 0.25,
+      nutrient_micro_dose_ml_l: 0.09,
+      nutrient_npk_product_id: 1,
+      nutrient_calcium_product_id: 2,
+      nutrient_magnesium_product_id: 3,
+      nutrient_micro_product_id: 4,
+      nutrient_dose_delay_sec: 12,
+      nutrient_ec_stop_tolerance: 0.07,
       targets: {
         ph: { min: 5.5, max: 6.0 },
         ec: { min: 1.0, max: 1.4 },
@@ -195,10 +211,34 @@ describe('Recipes/Edit.vue', () => {
     axiosPatchMock.mockClear()
     axiosPostMock.mockClear()
     routerVisitMock.mockClear()
-    mockAxiosInstance.get.mockResolvedValue({
-      data: {
-        data: [{ id: 1, name: 'Test Plant' }],
-      },
+    showToastMock.mockClear()
+    mockAxiosInstance.get.mockImplementation((url: string) => {
+      if (String(url).includes('/nutrient-products')) {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: 1, manufacturer: 'Yara', name: 'YaraRega', component: 'npk' },
+              { id: 2, manufacturer: 'Yara', name: 'Calcinit', component: 'calcium' },
+              { id: 3, manufacturer: 'TerraTarsa', name: 'MgSO4', component: 'magnesium' },
+              { id: 4, manufacturer: 'Haifa', name: 'Micro Mix', component: 'micro' },
+            ],
+          },
+        })
+      }
+
+      if (String(url).includes('/recipes/')) {
+        return Promise.resolve({
+          data: {
+            data: { plants: [{ id: 1, name: 'Test Plant' }] },
+          },
+        })
+      }
+
+      return Promise.resolve({
+        data: {
+          data: [{ id: 1, name: 'Test Plant' }],
+        },
+      })
     })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
@@ -214,13 +254,14 @@ describe('Recipes/Edit.vue', () => {
     const wrapper = mount(RecipesEdit)
     
     // Проверяем, что форма инициализирована с данными рецепта
-    const formInstance = useFormMock.mock.results[0]?.value
+    const formInstance = useFormMock.mock.results.at(-1)?.value
     expect(formInstance).toBeDefined()
     if (formInstance) {
       expect(formInstance.data.name).toBe('Test Recipe')
       expect(formInstance.data.description).toBe('Test Description')
       expect(formInstance.data.plant_id).toBe(1)
       expect(formInstance.data.phases.length).toBeGreaterThan(0)
+      expect(formInstance.data.phases[0].nutrient_program_code).toBe('YARAREGA_CALCINIT_HAIFA_MICRO_V1')
     }
   })
 
@@ -271,6 +312,114 @@ describe('Recipes/Edit.vue', () => {
       
       expect(axiosPatchMock).toHaveBeenCalled()
       expect(axiosPatchMock.mock.calls[0][0]).toMatch(/\/(api\/)?recipes\/\d+/)
+    }
+  })
+
+  it('блокирует сохранение при сумме nutrient ratio != 100', async () => {
+    const wrapper = mount(RecipesEdit)
+    await wrapper.vm.$nextTick()
+
+    const ratioInputs = wrapper.findAll('input').filter((input) => {
+      const placeholder = input.attributes('placeholder') || ''
+      return placeholder.includes('ratio, %')
+    })
+    expect(ratioInputs.length).toBeGreaterThanOrEqual(4)
+    if (ratioInputs.length >= 4) {
+      await ratioInputs[0].setValue('30')
+      await ratioInputs[1].setValue('30')
+      await ratioInputs[2].setValue('30')
+      await ratioInputs[3].setValue('30')
+    }
+
+    axiosPatchMock.mockClear()
+    axiosPostMock.mockClear()
+    showToastMock.mockClear()
+
+    const form = wrapper.find('form')
+    if (form.exists()) {
+      await form.trigger('submit.prevent')
+      await new Promise(resolve => setTimeout(resolve, 80))
+    }
+
+    expect(showToastMock).toHaveBeenCalled()
+    expect(axiosPatchMock).not.toHaveBeenCalled()
+    expect(axiosPostMock).not.toHaveBeenCalled()
+  })
+
+  it('нормализует ratio до 100% по кнопке', async () => {
+    const wrapper = mount(RecipesEdit)
+    await wrapper.vm.$nextTick()
+
+    const formInstance = useFormMock.mock.results.at(-1)?.value
+    expect(formInstance).toBeDefined()
+    if (formInstance) {
+      formInstance.phases[0].nutrient_npk_ratio_pct = 30
+      formInstance.phases[0].nutrient_calcium_ratio_pct = 30
+      formInstance.phases[0].nutrient_magnesium_ratio_pct = 30
+      formInstance.phases[0].nutrient_micro_ratio_pct = 30
+    }
+
+    const normalizeButton = wrapper.find('[data-testid="normalize-ratio-button"]')
+    expect(normalizeButton.exists()).toBe(true)
+    if (normalizeButton.exists()) {
+      await normalizeButton.trigger('click')
+      await wrapper.vm.$nextTick()
+    }
+
+    if (formInstance) {
+      const sum =
+        Number(formInstance.phases[0].nutrient_npk_ratio_pct || 0) +
+        Number(formInstance.phases[0].nutrient_calcium_ratio_pct || 0) +
+        Number(formInstance.phases[0].nutrient_magnesium_ratio_pct || 0) +
+        Number(formInstance.phases[0].nutrient_micro_ratio_pct || 0)
+      expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.01)
+    }
+
+    axiosPatchMock.mockClear()
+    axiosPostMock.mockClear()
+
+    const form = wrapper.find('form')
+    if (form.exists()) {
+      await form.trigger('submit.prevent')
+      await new Promise(resolve => setTimeout(resolve, 80))
+    }
+
+    expect(axiosPatchMock).toHaveBeenCalled()
+  })
+
+  it('передает nutrition-поля при сохранении фазы', async () => {
+    axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
+
+    const wrapper = mount(RecipesEdit)
+    const form = wrapper.find('form')
+    if (form.exists()) {
+      await form.trigger('submit.prevent')
+      await new Promise(resolve => setTimeout(resolve, 120))
+
+      const phasePatchCall = axiosPatchMock.mock.calls.find((call) =>
+        typeof call[0] === 'string' && call[0].includes('/recipe-revision-phases/')
+      )
+
+      expect(phasePatchCall).toBeDefined()
+      if (phasePatchCall) {
+        expect(phasePatchCall[1]).toMatchObject({
+          nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+          nutrient_npk_ratio_pct: 44,
+          nutrient_calcium_ratio_pct: 36,
+          nutrient_magnesium_ratio_pct: 17,
+          nutrient_micro_ratio_pct: 3,
+          nutrient_npk_dose_ml_l: 0.55,
+          nutrient_calcium_dose_ml_l: 0.55,
+          nutrient_magnesium_dose_ml_l: 0.25,
+          nutrient_micro_dose_ml_l: 0.09,
+          nutrient_npk_product_id: 1,
+          nutrient_calcium_product_id: 2,
+          nutrient_magnesium_product_id: 3,
+          nutrient_micro_product_id: 4,
+          nutrient_dose_delay_sec: 12,
+          nutrient_ec_stop_tolerance: 0.07,
+        })
+      }
     }
   })
 

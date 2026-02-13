@@ -244,6 +244,10 @@ interface GrowCycle {
   id: number
   zone_id: number
   status: string
+  current_phase_id?: number | null
+  currentPhase?: {
+    id?: number | null
+  } | null
   current_stage_code?: string | null
   current_stage_started_at?: string | null
   started_at?: string | null
@@ -258,6 +262,7 @@ interface ZoneEvent {
   type: string
   details?: any
   payload?: any
+  message?: string
   created_at?: string
   occurred_at?: string
 }
@@ -354,6 +359,10 @@ function getEventTypeLabel(type: string): string {
 }
 
 function getEventMessage(event: ZoneEvent): string {
+  if (typeof event.message === 'string' && event.message.trim().length > 0) {
+    return event.message
+  }
+
   const details = event.details || event.payload || {}
   const type = event.type
 
@@ -376,6 +385,23 @@ function getEventMessage(event: ZoneEvent): string {
   return getEventTypeLabel(type)
 }
 
+function parseEventPayload(rawEvent: any): Record<string, any> {
+  if (rawEvent && typeof rawEvent.details === 'object' && rawEvent.details !== null) {
+    return rawEvent.details
+  }
+
+  if (typeof rawEvent?.payload_json === 'string' && rawEvent.payload_json.length > 0) {
+    try {
+      const parsed = JSON.parse(rawEvent.payload_json)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  return {}
+}
+
 async function loadEvents(): Promise<void> {
   if (!props.cycle?.zone_id) {
     events.value = []
@@ -392,14 +418,18 @@ async function loadEvents(): Promise<void> {
     })
 
     if (response.data?.status === 'ok' && Array.isArray(response.data.data)) {
-      events.value = response.data.data.map((e: any) => ({
-        id: e.event_id || e.id,
-        type: e.type,
-        details: e.details || e.payload_json ? JSON.parse(e.payload_json || '{}') : {},
-        payload: e.payload || e.payload_json ? JSON.parse(e.payload_json || '{}') : {},
-        created_at: e.created_at,
-        occurred_at: e.created_at,
-      })).reverse() // Показываем последние события первыми
+      events.value = response.data.data.map((e: any) => {
+        const parsedPayload = parseEventPayload(e)
+        return {
+          id: e.event_id || e.id,
+          type: e.type,
+          details: parsedPayload,
+          payload: parsedPayload,
+          message: typeof e.message === 'string' ? e.message : undefined,
+          created_at: e.created_at,
+          occurred_at: e.created_at,
+        }
+      }).reverse() // Показываем последние события первыми
     }
   } catch (err) {
     logger.error('Failed to load cycle events:', err)

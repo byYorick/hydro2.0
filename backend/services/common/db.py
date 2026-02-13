@@ -1,5 +1,8 @@
 import asyncio
 import json
+import logging
+import threading
+import weakref
 from datetime import datetime, timezone
 from typing import Any, Optional, Dict
 
@@ -8,9 +11,35 @@ import asyncpg
 from .env import get_settings
 from .utils.time import utcnow
 
+logger = logging.getLogger(__name__)
 
-_pool: Optional[asyncpg.pool.Pool] = None
-_pool_loop: Optional[asyncio.AbstractEventLoop] = None
+_state_lock = threading.Lock()
+_pools: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncpg.pool.Pool]" = weakref.WeakKeyDictionary()
+_pool_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
+def _get_pool_lock(loop: asyncio.AbstractEventLoop) -> asyncio.Lock:
+    """
+    Возвращает lock инициализации пула для конкретного event loop.
+    Доступ к структурам состояния защищен thread lock, т.к. сервис может
+    работать с несколькими loop в разных потоках (например, main loop + API thread).
+    """
+    with _state_lock:
+        lock = _pool_locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            _pool_locks[loop] = lock
+        return lock
+
+
+def _get_pool_for_loop(loop: asyncio.AbstractEventLoop) -> Optional[asyncpg.pool.Pool]:
+    with _state_lock:
+        return _pools.get(loop)
+
+
+def _set_pool_for_loop(loop: asyncio.AbstractEventLoop, pool: asyncpg.pool.Pool) -> None:
+    with _state_lock:
+        _pools[loop] = pool
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
@@ -35,33 +64,42 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 
 
 async def get_pool() -> asyncpg.pool.Pool:
-    global _pool, _pool_loop
     loop = asyncio.get_running_loop()
 
-    if _pool is not None:
-        if _pool_loop is loop:
-            return _pool
-        # Старый пул привязан к другому loop - закрываем и пересоздаем
-        try:
-            await _pool.close()
-        except Exception:
-            pass
-        _pool = None
-        _pool_loop = None
+    pool = _get_pool_for_loop(loop)
+    if pool is not None:
+        return pool
 
-    s = get_settings()
-    _pool = await asyncpg.create_pool(
-        host=s.pg_host,
-        port=s.pg_port,
-        database=s.pg_db,
-        user=s.pg_user,
-        password=s.pg_pass,
-        min_size=1,
-        max_size=10,
-        init=_init_connection,
-    )
-    _pool_loop = loop
-    return _pool
+    async with _get_pool_lock(loop):
+        # Double-check после lock, чтобы не создать pool повторно в гонке.
+        pool = _get_pool_for_loop(loop)
+        if pool is not None:
+            return pool
+
+        s = get_settings()
+        pool_min_size = max(1, int(getattr(s, "pg_pool_min_size", 1)))
+        pool_max_size = max(pool_min_size, int(getattr(s, "pg_pool_max_size", 5)))
+        pg_app_name = str(getattr(s, "pg_app_name", "hydro:python-service"))
+
+        pool = await asyncpg.create_pool(
+            host=s.pg_host,
+            port=s.pg_port,
+            database=s.pg_db,
+            user=s.pg_user,
+            password=s.pg_pass,
+            min_size=pool_min_size,
+            max_size=pool_max_size,
+            server_settings={"application_name": pg_app_name},
+            init=_init_connection,
+        )
+        logger.info(
+            "Initialized PostgreSQL pool: min_size=%s max_size=%s app_name=%s",
+            pool_min_size,
+            pool_max_size,
+            pg_app_name,
+        )
+        _set_pool_for_loop(loop, pool)
+        return pool
 
 
 async def execute(query: str, *args: Any) -> str:
@@ -130,66 +168,70 @@ async def upsert_unassigned_node_error(
         last_payload: Последний payload ошибки (опционально)
     """
     last_payload_json = json.dumps(last_payload) if last_payload else None
-    
-    # Используем hardware_id + COALESCE(error_code, '') как уникальный ключ
-    # Обрабатываем NULL в error_code через COALESCE
-    normalized_code = error_code or ''
-    
-    # Используем функциональный уникальный индекс для ON CONFLICT
-    # Индекс создан как: CREATE UNIQUE INDEX ... ON (hardware_id, COALESCE(error_code, ''))
-    # Для использования функционального индекса в ON CONFLICT нужно использовать имя индекса
-    # или синтаксис ON CONFLICT ON CONSTRAINT, но для функционального индекса это не работает
-    # Поэтому используем подход с проверкой существования и обновлением
-    
-    # Сначала проверяем, существует ли запись
-    existing = await fetch(
-        """
-        SELECT id, count, last_seen_at
-        FROM unassigned_node_errors
-        WHERE hardware_id = $1 AND COALESCE(error_code, '') = COALESCE($2, '')
-        """,
-        hardware_id,
-        error_code
-    )
-    
-    if existing and len(existing) > 0:
-        # Обновляем существующую запись
-        await execute(
-            """
-            UPDATE unassigned_node_errors
-            SET 
-                count = count + 1,
-                last_seen_at = NOW(),
-                updated_at = NOW(),
-                last_payload = $1::jsonb,
-                error_message = $2,
-                severity = $3,
-                topic = $4
-            WHERE hardware_id = $5 AND COALESCE(error_code, '') = COALESCE($6, '')
-            """,
-            last_payload_json,
-            error_message,
-            severity,
-            topic,
-            hardware_id,
-            error_code
+
+    update_query = """
+        UPDATE unassigned_node_errors
+        SET
+            count = count + 1,
+            last_seen_at = NOW(),
+            updated_at = NOW(),
+            last_payload = $1::jsonb,
+            error_message = $2,
+            severity = $3,
+            topic = $4
+        WHERE hardware_id = $5 AND COALESCE(error_code, '') = COALESCE($6, '')
+    """
+
+    insert_query = """
+        INSERT INTO unassigned_node_errors (
+            hardware_id, error_message, error_code, severity, topic, last_payload,
+            count, first_seen_at, last_seen_at, updated_at
         )
-    else:
-        # Создаем новую запись
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
+    """
+
+    def _affected_rows(command_tag: str) -> int:
+        try:
+            return int(str(command_tag).split()[-1])
+        except (TypeError, ValueError, IndexError):
+            return 0
+
+    updated_tag = await execute(
+        update_query,
+        last_payload_json,
+        error_message,
+        severity,
+        topic,
+        hardware_id,
+        error_code,
+    )
+    if _affected_rows(updated_tag) > 0:
+        return
+
+    try:
         await execute(
-            """
-            INSERT INTO unassigned_node_errors (
-                hardware_id, error_message, error_code, severity, topic, last_payload,
-                count, first_seen_at, last_seen_at, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
-            """,
+            insert_query,
             hardware_id,
             error_message,
             error_code,
             severity,
             topic,
-            last_payload_json
+            last_payload_json,
+        )
+    except Exception as exc:
+        # Возможна гонка конкурентных вставок: второй воркер ловит unique violation.
+        is_unique_violation = isinstance(exc, asyncpg.UniqueViolationError) or getattr(exc, "sqlstate", None) == "23505"
+        if not is_unique_violation:
+            raise
+
+        await execute(
+            update_query,
+            last_payload_json,
+            error_message,
+            severity,
+            topic,
+            hardware_id,
+            error_code,
         )
 
 

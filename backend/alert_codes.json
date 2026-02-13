@@ -1,0 +1,438 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-02-09T00:00:00Z",
+  "codes": [
+    {
+      "code": "biz_no_flow",
+      "source": "biz",
+      "category": "safety",
+      "severity": "critical",
+      "title": "Нет потока воды",
+      "description": "Насос работает, но датчик потока не фиксирует расход.",
+      "recommendation": "Проверьте насос, магистрали и датчик потока.",
+      "node_related": true
+    },
+    {
+      "code": "biz_overcurrent",
+      "source": "biz",
+      "category": "safety",
+      "severity": "critical",
+      "title": "Сверхток насоса",
+      "description": "Зафиксирован превышенный ток исполнительного канала.",
+      "recommendation": "Проверьте насос, питание и заклинивание механики.",
+      "node_related": true
+    },
+    {
+      "code": "biz_dry_run",
+      "source": "biz",
+      "category": "safety",
+      "severity": "critical",
+      "title": "Риск сухого хода",
+      "description": "Низкий уровень воды создаёт риск работы насоса без жидкости.",
+      "recommendation": "Остановите насосы и восстановите уровень воды.",
+      "node_related": true
+    },
+    {
+      "code": "biz_pump_stuck_on",
+      "source": "biz",
+      "category": "safety",
+      "severity": "critical",
+      "title": "Насос не отключился",
+      "description": "Исполнительный канал остался активным дольше допустимого.",
+      "recommendation": "Проверьте реле/драйвер и аварийное отключение.",
+      "node_related": true
+    },
+    {
+      "code": "biz_high_ph",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Высокий pH",
+      "description": "Показания pH выше целевого диапазона.",
+      "recommendation": "Проверьте дозирование pH-down и калибровку сенсора.",
+      "node_related": false
+    },
+    {
+      "code": "biz_low_ph",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Низкий pH",
+      "description": "Показания pH ниже целевого диапазона.",
+      "recommendation": "Проверьте дозирование pH-up и калибровку сенсора.",
+      "node_related": false
+    },
+    {
+      "code": "biz_high_ec",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Высокий EC",
+      "description": "Электропроводность раствора выше целевого диапазона.",
+      "recommendation": "Проверьте дозирование удобрений и при необходимости разбавьте раствор.",
+      "node_related": false
+    },
+    {
+      "code": "biz_low_ec",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Низкий EC",
+      "description": "Электропроводность раствора ниже целевого диапазона.",
+      "recommendation": "Проверьте дозирование удобрений и работу насосов компонентов.",
+      "node_related": false
+    },
+    {
+      "code": "biz_high_temp",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Высокая температура",
+      "description": "Температура воздуха выше целевого диапазона.",
+      "recommendation": "Проверьте вентиляцию, охлаждение и настройки климата.",
+      "node_related": false
+    },
+    {
+      "code": "biz_low_temp",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Низкая температура",
+      "description": "Температура воздуха ниже целевого диапазона.",
+      "recommendation": "Проверьте обогрев и уставки климат-контроллера.",
+      "node_related": false
+    },
+    {
+      "code": "biz_high_humidity",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Высокая влажность",
+      "description": "Влажность воздуха выше целевого диапазона.",
+      "recommendation": "Проверьте осушение, вентиляцию и циркуляцию воздуха.",
+      "node_related": false
+    },
+    {
+      "code": "biz_low_humidity",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "warning",
+      "title": "Низкая влажность",
+      "description": "Влажность воздуха ниже целевого диапазона.",
+      "recommendation": "Проверьте увлажнение и уставки климат-контроллера.",
+      "node_related": false
+    },
+    {
+      "code": "biz_light_failure",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Сбой освещения",
+      "description": "Свет должен быть включен, но фактические показания это не подтверждают.",
+      "recommendation": "Проверьте световой канал, драйвер и датчик освещенности.",
+      "node_related": true
+    },
+    {
+      "code": "biz_node_offline",
+      "source": "biz",
+      "category": "node",
+      "severity": "error",
+      "title": "Узел офлайн",
+      "description": "Узел зоны не отвечает длительное время.",
+      "recommendation": "Проверьте питание, Wi-Fi и связь с брокером MQTT.",
+      "node_related": true
+    },
+    {
+      "code": "biz_config_error",
+      "source": "biz",
+      "category": "config",
+      "severity": "error",
+      "title": "Ошибка конфигурации",
+      "description": "Обнаружена некорректная конфигурация зоны/контроллера.",
+      "recommendation": "Проверьте bindings, targets и активный цикл выращивания.",
+      "node_related": false
+    },
+
+    {
+      "code": "infra_mqtt_down",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "MQTT недоступен",
+      "description": "Потеряно подключение к MQTT-брокеру.",
+      "recommendation": "Проверьте брокер, сеть и параметры подключения.",
+      "node_related": false
+    },
+    {
+      "code": "infra_db_unreachable",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "База данных недоступна",
+      "description": "Сервис не может подключиться к PostgreSQL.",
+      "recommendation": "Проверьте состояние БД, сеть и креды подключения.",
+      "node_related": false
+    },
+    {
+      "code": "infra_service_down",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Сервис недоступен",
+      "description": "Один из сервисов платформы не отвечает.",
+      "recommendation": "Проверьте контейнер, healthcheck и логи сервиса.",
+      "node_related": false
+    },
+    {
+      "code": "infra_freshness_check_failed",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "error",
+      "title": "Проверка свежести данных не пройдена",
+      "description": "Данные устарели, контроллеры могут принимать решения по stale-state.",
+      "recommendation": "Проверьте telemetry ingest и частоту обновлений.",
+      "node_related": false
+    },
+    {
+      "code": "infra_command_send_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Команда не отправлена",
+      "description": "Команда не дошла до исполнительного узла.",
+      "recommendation": "Проверьте MQTT, маршрутизацию и привязку нод.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_timeout",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Таймаут команды",
+      "description": "Подтверждение команды не получено вовремя.",
+      "recommendation": "Проверьте узел, канал, очередь команд и задержки сети.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Команда завершилась ошибкой",
+      "description": "Исполнитель вернул статус ошибки.",
+      "recommendation": "Проверьте параметры команды и состояние узла.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_invalid",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Команда отклонена",
+      "description": "Исполнитель не принял команду из-за некорректных параметров.",
+      "recommendation": "Проверьте payload команды и конфигурацию канала.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_busy",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Узел занят",
+      "description": "Узел временно не может принять команду.",
+      "recommendation": "Повторите позже и проверьте очередь команд.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_node_zone_mismatch",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Несоответствие node-zone",
+      "description": "Команда отклонена: node_uid не принадлежит целевой зоне.",
+      "recommendation": "Проверьте привязку ноды к зоне и актуальность bindings.",
+      "node_related": true
+    },
+    {
+      "code": "infra_command_node_zone_validation_failed",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Ошибка валидации node-zone",
+      "description": "Не удалось проверить соответствие node_uid и zone_id перед отправкой команды.",
+      "recommendation": "Проверьте доступность БД и состояние automation-engine.",
+      "node_related": true
+    },
+    {
+      "code": "infra_scheduler_command_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка команды планировщика",
+      "description": "Scheduler не смог выполнить команду в зоне.",
+      "recommendation": "Проверьте scheduler, automation-engine и связи нод.",
+      "node_related": true
+    },
+    {
+      "code": "infra_scheduler_command_timeout",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Таймаут команды планировщика",
+      "description": "Scheduler не дождался ответа downstream-сервиса.",
+      "recommendation": "Проверьте сетевую связность и очередь задач.",
+      "node_related": true
+    },
+    {
+      "code": "infra_zone_processing_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка обработки зоны",
+      "description": "Automation Engine завершил обработку зоны с ошибкой.",
+      "recommendation": "Проверьте конфигурацию зоны, targets и входную телеметрию.",
+      "node_related": false
+    },
+    {
+      "code": "infra_zone_failure_rate_high",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Высокий процент ошибок зон",
+      "description": "Слишком много зон завершаются ошибкой в рамках цикла.",
+      "recommendation": "Проверьте общую инфраструктуру и состояние core-сервисов.",
+      "node_related": false
+    },
+    {
+      "code": "infra_controller_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Сбой контроллера автоматики",
+      "description": "Один из контроллеров зоны завершился исключением.",
+      "recommendation": "Проверьте логи контроллера и входные данные.",
+      "node_related": false
+    },
+    {
+      "code": "infra_controller_cooldown_skip",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Контроллер в cooldown",
+      "description": "Контроллер временно пропущен после серии ошибок.",
+      "recommendation": "Устраните первичную причину ошибки и дождитесь завершения cooldown.",
+      "node_related": false
+    },
+    {
+      "code": "infra_zone_backoff_skip",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Зона пропущена по backoff",
+      "description": "Зона временно не обрабатывается из-за накопленных ошибок.",
+      "recommendation": "Проверьте ошибки зоны и восстановите стабильную обработку.",
+      "node_related": false
+    },
+    {
+      "code": "infra_zone_degraded_mode",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Деградированный режим зоны",
+      "description": "Выполняются только safety-check и health-check без полной автоматики.",
+      "recommendation": "Проверьте корректность целей и состояние контроллеров.",
+      "node_related": false
+    },
+    {
+      "code": "infra_zone_targets_missing",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "Отсутствуют targets зоны",
+      "description": "Для активной зоны не найден корректный набор целей управления.",
+      "recommendation": "Проверьте активный цикл и effective targets.",
+      "node_related": false
+    },
+    {
+      "code": "infra_zone_data_unavailable",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Данные зоны недоступны",
+      "description": "Доступ к данным зоны временно невозможен.",
+      "recommendation": "Проверьте БД, circuit-breaker и API доступность.",
+      "node_related": false
+    },
+    {
+      "code": "infra_db_circuit_open",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Открыт DB circuit breaker",
+      "description": "Автоматика перешла в режим ограниченной обработки из-за проблем БД.",
+      "recommendation": "Восстановите стабильность БД и сетевого доступа.",
+      "node_related": false
+    },
+    {
+      "code": "infra_fill_mode_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка режима Fill",
+      "description": "Режим наполнения завершился ошибкой.",
+      "recommendation": "Проверьте water loop, клапаны и датчики уровня.",
+      "node_related": true
+    },
+    {
+      "code": "infra_drain_mode_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка режима Drain",
+      "description": "Режим слива завершился ошибкой.",
+      "recommendation": "Проверьте дренажный канал и состояние исполнительных устройств.",
+      "node_related": true
+    },
+    {
+      "code": "infra_flow_calibration_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка калибровки расхода",
+      "description": "Операция калибровки расхода завершилась ошибкой.",
+      "recommendation": "Проверьте датчик потока, насос и условия теста.",
+      "node_related": true
+    },
+    {
+      "code": "infra_automation_loop_error",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Ошибка основного цикла автоматики",
+      "description": "Главный цикл automation-engine завершился исключением.",
+      "recommendation": "Проверьте логи automation-engine и health зависимостей.",
+      "node_related": false
+    },
+    {
+      "code": "infra_unknown_error",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "error",
+      "title": "Неизвестная инфраструктурная ошибка",
+      "description": "Сервис вернул необработанную ошибку без явной классификации.",
+      "recommendation": "Проверьте детали алерта и stack trace в логах.",
+      "node_related": false
+    },
+
+    {
+      "code": "node_error",
+      "source": "node",
+      "category": "node",
+      "severity": "error",
+      "title": "Ошибка узла",
+      "description": "Узел сообщил об ошибке на уровне железа, канала или firmware.",
+      "recommendation": "Проверьте питание, wiring, firmware и диагностические payload ноды.",
+      "node_related": true
+    }
+  ]
+}

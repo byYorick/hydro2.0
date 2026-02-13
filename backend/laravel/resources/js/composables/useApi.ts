@@ -3,6 +3,7 @@
  * Использует единый apiClient из utils/apiClient.ts
  */
 import apiClient, { setToastHandler, type ToastHandler, type AxiosRequestConfig } from '@/utils/apiClient'
+import { useToast } from '@/composables/useToast'
 import type { AxiosInstance } from 'axios'
 
 // Реэкспортируем тип для обратной совместимости
@@ -14,10 +15,12 @@ export type { ToastHandler }
  * @returns Объект с методами для работы с API
  */
 export function useApi(showToast: ToastHandler | null = null) {
-  // Если передана функция showToast, устанавливаем её как глобальную
-  if (showToast && typeof showToast === 'function') {
-    setToastHandler(showToast)
-  }
+  const { showToast: fallbackShowToast } = useToast()
+
+  // Всегда устанавливаем обработчик toast:
+  // 1) Явно переданный showToast имеет приоритет
+  // 2) Иначе используем глобальный из useToast
+  setToastHandler((showToast && typeof showToast === 'function') ? showToast : fallbackShowToast)
 
   return {
     api: apiClient as AxiosInstance,
@@ -28,4 +31,3 @@ export function useApi(showToast: ToastHandler | null = null) {
     delete: <T = unknown>(url: string, config?: AxiosRequestConfig) => apiClient.delete<T>(url, config),
   }
 }
-

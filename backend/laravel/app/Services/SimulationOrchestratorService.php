@@ -57,11 +57,11 @@ class SimulationOrchestratorService
                 'preset_id' => $sourceZone->preset_id,
                 'name' => 'SIM ' . ($sourceZone->name ?: ('Zone ' . $sourceZone->id)),
                 'description' => $sourceZone->description,
-                'status' => 'offline',
+                'status' => 'RUNNING',
                 'health_score' => $sourceZone->health_score,
                 'health_status' => $sourceZone->health_status,
                 'hardware_profile' => $sourceZone->hardware_profile,
-                'capabilities' => $sourceZone->capabilities,
+                'capabilities' => $this->buildSimulationCapabilities($sourceZone, $fullSimulation),
                 'water_state' => $sourceZone->water_state,
                 'solution_started_at' => $sourceZone->solution_started_at,
                 'settings' => $this->buildSimulationSettings($sourceZone),
@@ -73,6 +73,7 @@ class SimulationOrchestratorService
             if ($fullSimulation) {
                 $createdNode = $this->createExtraSimulationNode($simZone);
             }
+            $this->ensureSimulationDosingInfrastructure($simZone, $createdNode);
 
             $cycle = $this->createSimulationGrowCycle(
                 $sourceZone,
@@ -113,6 +114,26 @@ class SimulationOrchestratorService
         return $settings;
     }
 
+    private function buildSimulationCapabilities(Zone $sourceZone, bool $fullSimulation): array
+    {
+        $capabilities = $sourceZone->capabilities ?? [];
+        if (! is_array($capabilities)) {
+            $capabilities = [];
+        }
+
+        if ($fullSimulation) {
+            $capabilities = array_merge($capabilities, [
+                'ph_control' => true,
+                'ec_control' => true,
+                'climate_control' => true,
+                'light_control' => true,
+                'irrigation_control' => true,
+            ]);
+        }
+
+        return $capabilities;
+    }
+
     /**
      * @return array<int, int> map old node_channel_id -> new node_channel_id
      */
@@ -130,7 +151,7 @@ class SimulationOrchestratorService
                 'fw_version' => $node->fw_version,
                 'hardware_revision' => $node->hardware_revision,
                 'hardware_id' => 'sim-' . Str::uuid()->toString(),
-                'status' => 'offline',
+                'status' => 'online',
                 'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
                 'validated' => $node->validated,
                 'config' => $node->config,
@@ -321,7 +342,7 @@ class SimulationOrchestratorService
             'fw_version' => 'sim',
             'hardware_revision' => 'sim',
             'hardware_id' => 'sim-hw-' . Str::uuid()->toString(),
-            'status' => 'offline',
+            'status' => 'online',
             'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
             'validated' => true,
             'config' => [
@@ -335,6 +356,12 @@ class SimulationOrchestratorService
             ['channel' => 'solution_temp_c', 'type' => 'SENSOR', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
             ['channel' => 'air_temp_c', 'type' => 'SENSOR', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
             ['channel' => 'air_rh', 'type' => 'SENSOR', 'metric' => 'HUMIDITY', 'unit' => '%'],
+            ['channel' => 'pump_acid', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'ph_down']]],
+            ['channel' => 'pump_base', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'ph_up']]],
+            ['channel' => 'pump_a', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'npk']]],
+            ['channel' => 'pump_b', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'calcium']]],
+            ['channel' => 'pump_c', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'magnesium']]],
+            ['channel' => 'pump_d', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => '', 'config' => ['pump_calibration' => ['component' => 'micro']]],
             ['channel' => 'main_pump', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => ''],
             ['channel' => 'drain_pump', 'type' => 'ACTUATOR', 'metric' => 'PUMP', 'unit' => ''],
             ['channel' => 'fan', 'type' => 'ACTUATOR', 'metric' => 'FAN', 'unit' => ''],
@@ -352,6 +379,150 @@ class SimulationOrchestratorService
         }
 
         return $node;
+    }
+
+    private function ensureSimulationDosingInfrastructure(Zone $simZone, ?DeviceNode $preferredNode = null): void
+    {
+        $capabilities = $simZone->capabilities ?? [];
+        $phControl = (bool) ($capabilities['ph_control'] ?? false);
+        $ecControl = (bool) ($capabilities['ec_control'] ?? false);
+
+        if (! $phControl && ! $ecControl) {
+            return;
+        }
+
+        $zoneNodeIds = DeviceNode::query()
+            ->where('zone_id', $simZone->id)
+            ->pluck('id')
+            ->all();
+
+        if (empty($zoneNodeIds)) {
+            return;
+        }
+
+        $existingRoles = ChannelBinding::query()
+            ->join('infrastructure_instances as ii', 'ii.id', '=', 'channel_bindings.infrastructure_instance_id')
+            ->where('ii.owner_type', 'zone')
+            ->where('ii.owner_id', $simZone->id)
+            ->pluck('channel_bindings.role')
+            ->all();
+        $existingRoleSet = array_fill_keys($existingRoles, true);
+
+        $targetNode = $preferredNode;
+        if (! $targetNode) {
+            $targetNode = DeviceNode::query()
+                ->where('zone_id', $simZone->id)
+                ->orderByRaw("CASE WHEN type = 'ph' THEN 0 WHEN type = 'ec' THEN 1 WHEN type = 'irrig' THEN 2 ELSE 3 END")
+                ->orderBy('id')
+                ->first();
+        }
+
+        if (! $targetNode) {
+            return;
+        }
+
+        $definitions = [
+            'ph_acid_pump' => [
+                'channel' => 'pump_acid',
+                'label' => 'Насос дозирования кислоты',
+                'required' => true,
+                'enabled' => $phControl,
+                'calibration_component' => 'ph_down',
+            ],
+            'ph_base_pump' => [
+                'channel' => 'pump_base',
+                'label' => 'Насос дозирования щёлочи',
+                'required' => true,
+                'enabled' => $phControl,
+                'calibration_component' => 'ph_up',
+            ],
+            'ec_npk_pump' => [
+                'channel' => 'pump_a',
+                'label' => 'Насос EC NPK',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'npk',
+            ],
+            'ec_calcium_pump' => [
+                'channel' => 'pump_b',
+                'label' => 'Насос EC Calcium',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'calcium',
+            ],
+            'ec_magnesium_pump' => [
+                'channel' => 'pump_c',
+                'label' => 'Насос EC Magnesium',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'magnesium',
+            ],
+            'ec_micro_pump' => [
+                'channel' => 'pump_d',
+                'label' => 'Насос EC Micro',
+                'required' => true,
+                'enabled' => $ecControl,
+                'calibration_component' => 'micro',
+            ],
+        ];
+
+        foreach ($definitions as $role => $definition) {
+            if (! $definition['enabled'] || isset($existingRoleSet[$role])) {
+                continue;
+            }
+
+            $nodeChannel = NodeChannel::query()
+                ->whereIn('node_id', $zoneNodeIds)
+                ->where('channel', $definition['channel'])
+                ->first();
+
+            if (! $nodeChannel) {
+                $nodeChannel = NodeChannel::create([
+                    'node_id' => $targetNode->id,
+                    'channel' => $definition['channel'],
+                    'type' => 'ACTUATOR',
+                    'metric' => 'PUMP',
+                    'unit' => '',
+                    'config' => [
+                        'pump_calibration' => [
+                            'component' => $definition['calibration_component'] ?? null,
+                        ],
+                    ],
+                ]);
+            } elseif (! empty($definition['calibration_component'])) {
+                $channelConfig = is_array($nodeChannel->config) ? $nodeChannel->config : [];
+                $pumpCalibration = is_array($channelConfig['pump_calibration'] ?? null)
+                    ? $channelConfig['pump_calibration']
+                    : [];
+                if (($pumpCalibration['component'] ?? null) !== $definition['calibration_component']) {
+                    $pumpCalibration['component'] = $definition['calibration_component'];
+                    $channelConfig['pump_calibration'] = $pumpCalibration;
+                    $nodeChannel->config = $channelConfig;
+                    $nodeChannel->save();
+                }
+            }
+
+            $instance = InfrastructureInstance::firstOrCreate(
+                [
+                    'owner_type' => 'zone',
+                    'owner_id' => $simZone->id,
+                    'label' => $definition['label'],
+                ],
+                [
+                    'asset_type' => 'PUMP',
+                    'required' => $definition['required'],
+                ],
+            );
+
+            ChannelBinding::updateOrCreate(
+                ['node_channel_id' => $nodeChannel->id],
+                [
+                    'infrastructure_instance_id' => $instance->id,
+                    'direction' => 'actuator',
+                    'role' => $role,
+                ],
+            );
+        }
     }
 
     /**
@@ -524,7 +695,7 @@ class SimulationOrchestratorService
     private function buildReportMetrics(int $simulationId, int $zoneId, GrowCycle $cycle, array $phases, Carbon $finishedAt): array
     {
         $startedAt = $cycle->started_at ?? $cycle->created_at ?? now();
-        $durationSeconds = $finishedAt->diffInSeconds($startedAt);
+        $durationSeconds = max(0, $finishedAt->diffInSeconds($startedAt, false));
 
         return [
             'phases_count' => count($phases),

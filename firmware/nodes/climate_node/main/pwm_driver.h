@@ -25,6 +25,7 @@ typedef struct {
 
 esp_err_t pwm_driver_init(const pwm_driver_channel_config_t *channels, size_t channel_count);
 esp_err_t pwm_driver_init_from_config(void);
+esp_err_t pwm_driver_deinit(void);
 esp_err_t pwm_driver_set_duty_percent(const char *channel_name, float duty_percent);
 
 #ifdef __cplusplus

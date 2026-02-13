@@ -81,6 +81,16 @@ describe('Greenhouses/Create.vue', () => {
   beforeEach(() => {
     axiosPostMock.mockClear()
     routerVisitMock.mockClear()
+    mockAxiosInstance.get.mockReset()
+    mockAxiosInstance.get.mockResolvedValue({
+      data: {
+        data: [
+          { id: 1, code: 'indoor', name: 'Indoor (Закрытая)' },
+          { id: 2, code: 'outdoor', name: 'Outdoor (Открытая)' },
+          { id: 3, code: 'greenhouse', name: 'Greenhouse (Теплица)' },
+        ],
+      },
+    })
     axiosPostMock.mockResolvedValue({
       data: {
         data: {
@@ -253,6 +263,8 @@ describe('Greenhouses/Create.vue', () => {
 
   it('позволяет выбрать тип теплицы', async () => {
     const wrapper = mount(GreenhousesCreate)
+    await wrapper.vm.$nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
     
     const select = wrapper.find('select')
     expect(select.exists()).toBe(true)

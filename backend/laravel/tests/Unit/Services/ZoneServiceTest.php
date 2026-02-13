@@ -34,7 +34,7 @@ class ZoneServiceTest extends TestCase
 
         $this->assertInstanceOf(Zone::class, $zone);
         $this->assertEquals('Test Zone', $zone->name);
-        $this->assertEquals('RUNNING', $zone->status);
+        $this->assertEquals('NEW', $zone->status);
         $this->assertDatabaseHas('zones', [
             'id' => $zone->id,
             'name' => 'Test Zone',

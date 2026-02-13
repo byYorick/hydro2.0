@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 async function loginAsAdmin(page) {
-  await page.goto('/testing/login/1', { waitUntil: 'load' })
-  await page.waitForSelector('#app[data-page]', { timeout: 60000 })
+  await page.goto('/testing/login?email=agronomist@example.com', { waitUntil: 'load' })
+  await page.waitForSelector('#app[data-page]', { state: 'attached', timeout: 60000 })
 }
 
 async function inertiaComponent(page) {

@@ -1,6 +1,10 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
+
+vi.mock('@/composables/useUrlState', () => ({
+  useUrlState: ({ defaultValue }: { defaultValue: string }) => ref(defaultValue),
+}))
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -583,12 +587,32 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.html()).toBeTruthy()
   })
 
-  it('отображает устройства зоны', () => {
+  it('отображает устройства зоны', async () => {
     const wrapper = mount(ZonesShow)
+    const devicesTabButton = wrapper.findAll('button').find((button) => button.text().includes('Устройства'))
+    expect(devicesTabButton).toBeTruthy()
+    await devicesTabButton?.trigger('click')
+    await nextTick()
     
     expect(wrapper.text()).toContain('node-1')
     expect(wrapper.text()).toContain('node-2')
     expect(wrapper.text()).toContain('ONLINE')
+  })
+
+  it('показывает блок автоматики только на вкладке устройств', async () => {
+    const wrapper = mount(ZonesShow)
+
+    const devicesTabButton = wrapper.findAll('button').find((button) => button.text().includes('Устройства'))
+    expect(devicesTabButton).toBeTruthy()
+    await devicesTabButton?.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('Automation')
+
+    const eventsTabButton = wrapper.findAll('button').find((button) => button.text().includes('События'))
+    expect(eventsTabButton).toBeTruthy()
+    await eventsTabButton?.trigger('click')
+    await nextTick()
+    expect(wrapper.text()).not.toContain('Automation')
   })
 
   it('отображает события с цветовой кодировкой', () => {
@@ -601,8 +625,12 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toContain('Предупреждение') // WARNING переводится как "Предупреждение"
   })
 
-  it('отображает блок Cycles', () => {
+  it('отображает блок Cycles', async () => {
     const wrapper = mount(ZonesShow)
+    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    expect(cycleTabButton).toBeTruthy()
+    await cycleTabButton?.trigger('click')
+    await nextTick()
     
     // "Cycles" переводится как "Циклы"
     expect(wrapper.text()).toContain('Циклы')
@@ -614,15 +642,19 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toContain('Климат')
   })
 
-  it('показывает кнопки управления для агронома', () => {
+  it('показывает кнопки управления для агронома', async () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
+    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    expect(cycleTabButton).toBeTruthy()
+    await cycleTabButton?.trigger('click')
+    await nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
     expect(buttons.length).toBeGreaterThan(0)
     // Кнопки на русском языке
     expect(wrapper.text()).toContain('Приостановить')
-    expect(wrapper.text()).toContain('Полить сейчас')
+    expect(wrapper.text()).toContain('Собрать урожай')
     expect(wrapper.text()).toContain('Следующая фаза')
   })
 
@@ -659,6 +691,10 @@ describe('Zones/Show.vue', () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
+    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    expect(cycleTabButton).toBeTruthy()
+    await cycleTabButton?.trigger('click')
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // Проверяем что компонент отрендерился и содержит кнопку "Приостановить"
@@ -690,6 +726,37 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toBeTruthy()
     // Проверяем, что fetchHistory был вызван (для загрузки графиков)
     expect(fetchHistoryMock).toHaveBeenCalled()
+  })
+
+  it('не перезаписывает графики устаревшим ответом при быстрых переключениях диапазона', async () => {
+    const wrapper = mount(ZonesShow)
+    expect(wrapper.exists()).toBe(true)
+
+    await new Promise(resolve => setTimeout(resolve, 150))
+
+    fetchHistoryMock.mockReset()
+    fetchHistoryMock.mockImplementation((_zoneId: number, metric: 'PH' | 'EC', params: { from?: string }) => {
+      const isAllRangeRequest = !params?.from
+      const delayMs = isAllRangeRequest ? 60 : 10
+      const value = isAllRangeRequest
+        ? (metric === 'PH' ? 900 : 901)
+        : (metric === 'PH' ? 100 : 101)
+
+      return new Promise(resolve => {
+        setTimeout(() => {
+          resolve([{ ts: '2025-01-27T10:00:00Z', value }])
+        }, delayMs)
+      })
+    })
+
+    const vm = wrapper.vm as any
+    const slowRequest = vm.onChartTimeRangeChange('ALL')
+    const fastRequest = vm.onChartTimeRangeChange('1H')
+    await Promise.all([slowRequest, fastRequest])
+
+    expect(vm.chartTimeRange).toBe('1H')
+    expect(vm.chartDataPh[0]?.value).toBe(100)
+    expect(vm.chartDataEc[0]?.value).toBe(101)
   })
 
   it('обрабатывает ошибки загрузки графиков', async () => {
@@ -724,9 +791,13 @@ describe('Zones/Show.vue', () => {
     }
   })
 
-  it('форматирует время для циклов', () => {
+  it('форматирует время для циклов', async () => {
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
+    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    expect(cycleTabButton).toBeTruthy()
+    await cycleTabButton?.trigger('click')
+    await nextTick()
     
     // Проверяем, что блок Cycles отображается (переведен как "Циклы")
     expect(wrapper.text()).toContain('Циклы')
@@ -739,6 +810,10 @@ describe('Zones/Show.vue', () => {
     
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
+    const cycleTabButton = wrapper.findAll('button').find((button) => button.text().includes('Цикл'))
+    expect(cycleTabButton).toBeTruthy()
+    await cycleTabButton?.trigger('click')
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // Проверяем что блок Cycles отображается (переведен как "Циклы")

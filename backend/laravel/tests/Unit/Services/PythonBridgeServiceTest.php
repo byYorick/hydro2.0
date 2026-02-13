@@ -41,7 +41,7 @@ class PythonBridgeServiceTest extends TestCase
         NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_main',
-            'type' => 'pump',
+            'type' => 'ACTUATOR',
             'metric' => null,
         ]);
 

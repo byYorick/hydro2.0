@@ -16,8 +16,32 @@ const size_t EC_NODE_SENSOR_CHANNELS_COUNT = sizeof(EC_NODE_SENSOR_CHANNELS) / s
 
 const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
     {
-        .name = "pump_nutrient",
-        .gpio = EC_NODE_PUMP_NUTRIENT_GPIO,
+        .name = "pump_a",
+        .gpio = EC_NODE_PUMP_A_GPIO,
+        .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
+        .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
+        .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+    },
+    {
+        .name = "pump_b",
+        .gpio = EC_NODE_PUMP_B_GPIO,
+        .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
+        .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
+        .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+    },
+    {
+        .name = "pump_c",
+        .gpio = EC_NODE_PUMP_C_GPIO,
+        .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
+        .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
+        .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,
+        .ml_per_second = EC_NODE_PUMP_ML_PER_SECOND
+    },
+    {
+        .name = "pump_d",
+        .gpio = EC_NODE_PUMP_D_GPIO,
         .fail_safe_nc = EC_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = EC_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = EC_NODE_PUMP_MIN_OFF_MS,

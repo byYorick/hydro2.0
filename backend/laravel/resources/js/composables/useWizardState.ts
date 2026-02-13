@@ -8,6 +8,7 @@
  * - Навигация между шагами
  */
 import { ref, computed, type Ref } from 'vue'
+import { logger } from '@/utils/logger'
 
 export interface WizardStep {
   id: string
@@ -94,15 +95,7 @@ export function useWizardState<T extends Record<string, any> = Record<string, an
         const result = await step.validate()
         return result === true
       } catch (error) {
-        // Используем logger вместо console.error для консистентности
-        if (typeof window !== 'undefined') {
-          import('@/utils/logger').then(({ logger }) => {
-            logger.error('[useWizardState] Step validation error', { error })
-          }).catch(() => {
-            // Fallback к console.error если logger недоступен
-            console.error('[useWizardState] Step validation error:', error)
-          })
-        }
+        logger.error('[useWizardState] Step validation error', { error })
         return false
       }
     }
@@ -183,4 +176,3 @@ export function useWizardState<T extends Record<string, any> = Record<string, an
     submit,
   }
 }
-

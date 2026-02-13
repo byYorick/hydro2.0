@@ -48,6 +48,34 @@ async def test_publish_command_success():
 
 
 @pytest.mark.asyncio
+async def test_publish_command_uses_zone_greenhouse_uid_when_available():
+    """Command payload must use canonical greenhouse uid resolved from zone_id."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"gh_uid": "gh-zone-42"}])), \
+         patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-fallback",
+            history_logger_url="http://history-logger:9300",
+            history_logger_token="test-token",
+        )
+        result = await command_bus.publish_command(42, "nd-irrig-42", "default", "run_pump", {"duration_ms": 1000})
+
+        assert result is True
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["greenhouse_uid"] == "gh-zone-42"
+
+
+@pytest.mark.asyncio
 async def test_publish_command_http_error():
     """Test command publication with HTTP error."""
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -189,6 +217,41 @@ async def test_publish_controller_command_invalid():
 
 
 @pytest.mark.asyncio
+async def test_publish_controller_command_preserves_explicit_cmd_id_without_tracker():
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=None,
+        )
+        command = {
+            'node_uid': 'nd-irrig-1',
+            'channel': 'default',
+            'cmd': 'run_pump',
+            'params': {'duration_ms': 60000},
+            'cmd_id': 'cmd-explicit-1',
+        }
+
+        result = await command_bus.publish_controller_command(1, command)
+
+    assert result is True
+    call_args = mock_client.post.call_args
+    assert call_args[1]["json"]["cmd_id"] == "cmd-explicit-1"
+    assert command["cmd_id"] == "cmd-explicit-1"
+
+
+@pytest.mark.asyncio
 async def test_publish_command_with_params():
     """Test command publication with parameters."""
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -275,8 +338,10 @@ async def test_publish_command_with_trace_id():
 
 
 @pytest.mark.asyncio
-async def test_publish_command_without_token():
+async def test_publish_command_without_token(monkeypatch):
     """Test command publication without authentication token."""
+    monkeypatch.delenv("HISTORY_LOGGER_API_TOKEN", raising=False)
+    monkeypatch.delenv("PY_INGEST_TOKEN", raising=False)
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_response = Mock()
         mock_response.status_code = 200
@@ -368,3 +433,259 @@ async def test_publish_controller_command_without_params_preserves_cmd_id():
         # Проверяем, что cmd_id из трекера совпадает с отправленным
         tracked_cmd_id = list(pending_commands.keys())[0]
         assert tracked_cmd_id == cmd_id_in_payload, "cmd_id из трекера должен совпадать с отправленным в history-logger"
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_node_zone_mismatch_when_guard_enabled():
+    """Command must be rejected if node_uid is not assigned to zone_id."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"zone_id": 2, "status": "online"}])) as mock_fetch, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock(return_value=True)) as mock_alert:
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            enforce_node_zone_assignment=True,
+        )
+        result = await command_bus.publish_command(
+            1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 1000}
+        )
+
+        assert result is False
+        mock_fetch.assert_awaited()
+        mock_zone_event.assert_awaited()
+        mock_alert.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_publish_command_allows_matching_node_zone_when_guard_enabled():
+    """Command should be sent when node_uid belongs to the target zone."""
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[{"zone_id": 1, "status": "online"}])):
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-guard-1"}})
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            command_bus = CommandBus(
+                mqtt=None,
+                gh_uid="gh-1",
+                history_logger_url="http://history-logger:9300",
+                history_logger_token="test-token",
+                enforce_node_zone_assignment=True,
+            )
+            result = await command_bus.publish_command(
+                1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 1000}
+            )
+
+            assert result is True
+            mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_closed_loop_done_success():
+    tracker = Mock()
+    tracker.track_command = AsyncMock(return_value="cmd-closed-loop-1")
+    tracker.wait_for_command_done = AsyncMock(return_value=True)
+    tracker._get_command_status_from_db = AsyncMock(return_value="DONE")
+
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-closed-loop-1"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+        command = {
+            "node_uid": "nd-relay-1",
+            "channel": "default",
+            "cmd": "set_relay",
+            "params": {"state": True},
+        }
+        result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=2)
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is True
+    assert result["terminal_status"] == "DONE"
+    tracker.wait_for_command_done.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_closed_loop_no_effect_is_failure():
+    tracker = Mock()
+    tracker.track_command = AsyncMock(return_value="cmd-closed-loop-2")
+    tracker.wait_for_command_done = AsyncMock(return_value=False)
+    tracker._get_command_status_from_db = AsyncMock(return_value="NO_EFFECT")
+
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock()) as mock_alert:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-closed-loop-2"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+        command = {
+            "node_uid": "nd-relay-1",
+            "channel": "default",
+            "cmd": "set_relay",
+            "params": {"state": True},
+        }
+        result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=2)
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is False
+    assert result["terminal_status"] == "NO_EFFECT"
+    assert result["error_code"] == "NO_EFFECT"
+    mock_zone_event.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_closed_loop_timeout_marks_terminal_timeout():
+    tracker = Mock()
+    tracker.track_command = AsyncMock(return_value="cmd-closed-loop-3")
+    tracker.wait_for_command_done = AsyncMock(return_value=None)
+    tracker._get_command_status_from_db = AsyncMock(return_value=None)
+    tracker.confirm_command_status = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()), \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock()) as mock_alert:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-closed-loop-3"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+        command = {
+            "node_uid": "nd-relay-1",
+            "channel": "default",
+            "cmd": "set_relay",
+            "params": {"state": True},
+        }
+        result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=1)
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is False
+    assert result["terminal_status"] == "TIMEOUT"
+    tracker.confirm_command_status.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_closed_loop_fails_when_tracker_missing():
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock()) as mock_alert:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-closed-loop-4"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=None,
+        )
+        command = {
+            "node_uid": "nd-relay-1",
+            "channel": "default",
+            "cmd": "set_relay",
+            "params": {"state": True},
+        }
+        result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=1)
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is False
+    assert result["terminal_status"] == "TRACKER_UNAVAILABLE"
+    mock_zone_event.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_closed_loop_ignores_stale_cmd_id_when_tracking_fails():
+    tracker = Mock()
+    tracker.track_command = AsyncMock(side_effect=RuntimeError("tracker down"))
+    tracker.wait_for_command_done = AsyncMock(return_value=True)
+    tracker._get_command_status_from_db = AsyncMock(return_value="DONE")
+
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock()) as mock_alert:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-closed-loop-5"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+        command = {
+            "node_uid": "nd-relay-1",
+            "channel": "default",
+            "cmd": "set_relay",
+            "params": {"state": True},
+            # stale id from previous attempt must not be reused
+            "cmd_id": "cmd-stale-old",
+        }
+        result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=1)
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is False
+    assert result["terminal_status"] == "TRACKER_UNAVAILABLE"
+    assert result["cmd_id"] is None
+    assert "cmd_id" not in command
+    tracker.wait_for_command_done.assert_not_awaited()
+    mock_zone_event.assert_awaited_once()
+    mock_alert.assert_awaited_once()

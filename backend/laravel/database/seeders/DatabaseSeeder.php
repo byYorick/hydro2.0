@@ -91,6 +91,14 @@ class DatabaseSeeder extends Seeder
         $seedProfile = $seedProfile ? strtolower($seedProfile) : 'full';
         $this->command->info("🧩 Профиль сидеров: {$seedProfile}");
 
+        if ($seedProfile === 'start') {
+            $this->command->info('⚡ Запуск стартовых сидеров (только админ и агроном)');
+            $this->call(StartUsersSeeder::class);
+            $this->command->info('✅ Стартовые сидеры выполнены');
+
+            return;
+        }
+
         if ($seedProfile === 'lite') {
             $this->runLiteSeeders($isTesting);
 

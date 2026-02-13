@@ -247,6 +247,29 @@ esp_err_t mqtt_manager_reconnect(void);
 esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain);
 
 /**
+ * @brief Подписка на произвольный топик
+ *
+ * Используется тестовыми/служебными прошивками, которым нужно слушать
+ * несколько узлов/namespace одновременно.
+ *
+ * @param topic MQTT топик (может содержать wildcard)
+ * @param qos QoS уровень подписки
+ * @return ESP_OK при успехе
+ */
+esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos);
+
+/**
+ * @brief Отписка от произвольного топика
+ *
+ * Используется тестовыми/служебными прошивками, чтобы корректно переключать
+ * namespace и не получать сообщения из старых подписок.
+ *
+ * @param topic MQTT топик (может содержать wildcard)
+ * @return ESP_OK при успехе
+ */
+esp_err_t mqtt_manager_unsubscribe_raw(const char *topic);
+
+/**
  * @brief Обновить информацию об узле (gh_uid, zone_uid, node_uid) без переинициализации MQTT
  * 
  * Используется после получения конфига, чтобы обновить топики для публикации

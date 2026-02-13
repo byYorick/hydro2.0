@@ -28,6 +28,31 @@ static bool s_netif_initialized = false;
 static esp_netif_t *s_ap_netif = NULL;
 static SemaphoreHandle_t s_full_setup_sem = NULL;
 
+static const char *map_node_type_from_prefix(const char *prefix) {
+    if (!prefix) {
+        return "unknown";
+    }
+    if (strcmp(prefix, "PH") == 0) {
+        return "ph";
+    }
+    if (strcmp(prefix, "EC") == 0) {
+        return "ec";
+    }
+    if (strcmp(prefix, "CLIMATE") == 0) {
+        return "climate";
+    }
+    if (strcmp(prefix, "PUMP") == 0) {
+        return "pump";
+    }
+    if (strcmp(prefix, "RELAY") == 0) {
+        return "relay";
+    }
+    if (strcmp(prefix, "LIGHT") == 0) {
+        return "light";
+    }
+    return "unknown";
+}
+
 static const char *HTML_PAGE = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" \
     "<title>Hydro Setup</title><style>body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0;}" \
     ".container{max-width:420px;margin:4rem auto;background:#1f2937;padding:2rem;border-radius:16px;box-shadow:0 22px 45px rgba(15,23,42,0.45);}h1{text-align:center;}" \
@@ -348,7 +373,7 @@ esp_err_t setup_portal_generate_pin(char *pin_out, size_t pin_size) {
 static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx);
 
 // Internal callback for saving credentials to config_storage
-static void save_credentials_to_config_storage(const setup_portal_credentials_t *credentials) {
+static void save_credentials_to_config_storage(const setup_portal_credentials_t *credentials, const char *node_type_prefix) {
     if (!credentials) {
         return;
     }
@@ -385,6 +410,8 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
     // Load current config, update WiFi and MQTT, then save
     // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
     static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
+    const char *node_type = map_node_type_from_prefix(node_type_prefix);
+
     if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
         // Update existing config
         cJSON *config = cJSON_Parse(json_buf);
@@ -399,6 +426,15 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
                     cJSON_AddStringToObject(config, "node_id", hardware_id);
                     ESP_LOGI(TAG, "Updated node_id to hardware_id: %s", hardware_id);
                 }
+            }
+
+            // Обновляем type, если отсутствует или unknown
+            cJSON *type_item = cJSON_GetObjectItem(config, "type");
+            if (!cJSON_IsString(type_item) || !type_item->valuestring || strlen(type_item->valuestring) == 0 ||
+                strcmp(type_item->valuestring, "unknown") == 0) {
+                cJSON_DeleteItemFromObject(config, "type");
+                cJSON_AddStringToObject(config, "type", node_type);
+                ESP_LOGI(TAG, "Updated node type in config: %s", node_type);
             }
 
             // Update WiFi configuration
@@ -479,7 +515,7 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
             cJSON_AddStringToObject(config, "node_id", "node-temp"); // fallback
         }
         cJSON_AddNumberToObject(config, "version", 1);
-        cJSON_AddStringToObject(config, "type", "unknown");
+        cJSON_AddStringToObject(config, "type", node_type);
         cJSON_AddStringToObject(config, "gh_uid", "gh-temp"); // Temporary, will be replaced via MQTT
         cJSON_AddStringToObject(config, "zone_uid", "zn-temp"); // Temporary, will be replaced via MQTT
         
@@ -545,9 +581,9 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
 
 // Callback wrapper for full setup mode
 static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx) {
-    (void)ctx; // Unused
+    const char *node_type_prefix = (const char *)ctx;
     if (creds && s_full_setup_sem) {
-        save_credentials_to_config_storage(creds);
+        save_credentials_to_config_storage(creds, node_type_prefix);
         xSemaphoreGive(s_full_setup_sem);
     }
 }
@@ -649,7 +685,7 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
         .ap_ssid = ap_ssid,
         .ap_password = ap_password,
         .on_credentials = credentials_callback_wrapper,
-        .user_ctx = NULL,
+        .user_ctx = (void *)config->node_type_prefix,
     };
     
     err = setup_portal_start(&portal_cfg);

@@ -8,6 +8,7 @@
 import { logger } from '@/utils/logger'
 import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
+import type { EchoChannelLike, EchoLike, WsEventPayload } from '@/ws/subscriptionTypes'
 import type { Zone } from '@/types/Zone'
 import type { Alert } from '@/types/Alert'
 
@@ -20,6 +21,13 @@ export type ZoneUpdateHandler = (zone: Zone) => void
  * Обработчик событий создания алерта
  */
 export type AlertCreatedHandler = (alert: Alert) => void
+
+function toRecord(payload: unknown): WsEventPayload {
+  if (payload && typeof payload === 'object') {
+    return payload as WsEventPayload
+  }
+  return {}
+}
 
 /**
  * Подписаться на обновления зоны
@@ -50,8 +58,8 @@ export function subscribeZone(zoneId: number, handler: ZoneUpdateHandler): () =>
   // Но нам нужен прямой доступ к Echo для каналов зон (не commands)
   // Поэтому создаем подписку напрямую через Echo, но используем onWsStateChange для reconnect
   
-  let channel: any = null
-  let listener: ((event: any) => void) | null = null
+  let channel: EchoChannelLike | null = null
+  let listener: ((event: WsEventPayload) => void) | null = null
   let unsubscribeWsState: (() => void) | null = null
   let stopped = false
 
@@ -79,7 +87,7 @@ export function subscribeZone(zoneId: number, handler: ZoneUpdateHandler): () =>
       return
     }
 
-    const echo = window.Echo || getEchoInstance()
+    const echo = (window.Echo || getEchoInstance()) as EchoLike | null
     if (!echo) {
       logger.debug('[ws/subscriptions] Echo not available for zone subscription', { zoneId })
       return
@@ -90,10 +98,16 @@ export function subscribeZone(zoneId: number, handler: ZoneUpdateHandler): () =>
       cleanupChannel()
 
       channel = echo.private(channelName)
-      listener = (event: any) => {
+      listener = (event: WsEventPayload) => {
         if (stopped) return
         try {
-          handler(event.zone || event)
+          const payload = toRecord(event)
+          const zonePayload = payload.zone
+          if (zonePayload && typeof zonePayload === 'object') {
+            handler(zonePayload as Zone)
+            return
+          }
+          handler(payload as unknown as Zone)
         } catch (error) {
           logger.error('[ws/subscriptions] Zone update handler error', {
             zoneId,
@@ -174,8 +188,8 @@ export function subscribeAlerts(handler: AlertCreatedHandler): () => void {
   // Генерируем уникальный ID для этой подписки
   const handlerId = `alerts-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   
-  let channel: any = null
-  let listener: ((event: any) => void) | null = null
+  let channel: EchoChannelLike | null = null
+  let listener: ((event: WsEventPayload) => void) | null = null
   let unsubscribeWsState: (() => void) | null = null
   let stopped = false
 
@@ -202,7 +216,7 @@ export function subscribeAlerts(handler: AlertCreatedHandler): () => void {
       return
     }
 
-    const echo = window.Echo || getEchoInstance()
+    const echo = (window.Echo || getEchoInstance()) as EchoLike | null
     if (!echo) {
       logger.debug('[ws/subscriptions] Echo not available for alerts subscription')
       return
@@ -210,10 +224,16 @@ export function subscribeAlerts(handler: AlertCreatedHandler): () => void {
 
     try {
       channel = echo.private(channelName)
-      listener = (event: any) => {
+      listener = (event: WsEventPayload) => {
         if (stopped) return
         try {
-          handler(event.alert || event)
+          const payload = toRecord(event)
+          const alertPayload = payload.alert
+          if (alertPayload && typeof alertPayload === 'object') {
+            handler(alertPayload as Alert)
+            return
+          }
+          handler(payload as unknown as Alert)
         } catch (error) {
           logger.error('[ws/subscriptions] Alert created handler error', {
             error: error instanceof Error ? error.message : String(error)
@@ -277,4 +297,3 @@ export function subscribeAlerts(handler: AlertCreatedHandler): () => void {
     logger.debug('[ws/subscriptions] Unsubscribed from alerts channel')
   }
 }
-

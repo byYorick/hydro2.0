@@ -104,6 +104,7 @@ class ZoneController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'greenhouse_id' => ['required', 'integer', 'exists:greenhouses,id'],
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
+            'description' => ['nullable', 'string', 'max:1000'],
             'settings' => ['nullable', 'array'],
         ]);
 
@@ -325,7 +326,9 @@ class ZoneController extends Controller
         $this->authorizeZoneAccess($request->user(), $zone);
 
         $data = $request->validate([
-            'duration_sec' => ['required', 'integer', 'min:10', 'max:300'],
+            'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'channel' => ['required', 'string', 'max:64'],
+            'pump_duration_sec' => ['nullable', 'integer', 'min:1', 'max:120'],
         ]);
 
         $jobId = $this->operationsService->calibrateFlow($zone, $data);
@@ -333,6 +336,44 @@ class ZoneController extends Controller
         return response()->json([
             'status' => 'ok',
             'message' => 'Calibrate flow operation queued',
+            'job_id' => $jobId,
+        ], Response::HTTP_ACCEPTED);
+    }
+
+    public function calibratePump(Request $request, Zone $zone): JsonResponse
+    {
+        $this->authorizeZoneAccess($request->user(), $zone);
+
+        $data = $request->validate([
+            'node_channel_id' => ['required', 'integer', 'exists:node_channels,id'],
+            'duration_sec' => ['required', 'integer', 'min:1', 'max:120'],
+            'actual_ml' => ['nullable', 'numeric', 'min:0.01', 'max:100000'],
+            'skip_run' => ['nullable', 'boolean'],
+            'component' => ['nullable', 'string', 'in:npk,calcium,magnesium,micro,ph_up,ph_down'],
+            'test_volume_l' => ['nullable', 'numeric', 'min:0.1', 'max:100000'],
+            'ec_before_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
+            'ec_after_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
+            'temperature_c' => ['nullable', 'numeric', 'min:0', 'max:50'],
+        ]);
+
+        if (
+            isset($data['ec_before_ms'], $data['ec_after_ms'])
+            && (float) $data['ec_after_ms'] <= (float) $data['ec_before_ms']
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'ec_after_ms must be greater than ec_before_ms',
+                'errors' => [
+                    'ec_after_ms' => ['ec_after_ms must be greater than ec_before_ms'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $jobId = $this->operationsService->calibratePump($zone, $data);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Calibrate pump operation queued',
             'job_id' => $jobId,
         ], Response::HTTP_ACCEPTED);
     }

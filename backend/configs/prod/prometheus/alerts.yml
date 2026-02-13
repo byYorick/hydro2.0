@@ -113,6 +113,15 @@ groups:
           summary: "History Logger is not processing telemetry"
           description: "No telemetry messages processed in the last 5 minutes. Service may be stuck."
 
+      - alert: HistoryLoggerUnknownNodeEventsSpike
+        expr: rate(node_event_unknown_total[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger receives too many unknown node events"
+          description: "Unknown node event rate is {{ $value }} events/sec for 10m. Check node firmware event_code contract."
+
   - name: automation_engine_alerts
     interval: 30s
     rules:
@@ -173,3 +182,52 @@ groups:
           summary: "Automation Engine has high error rate"
           description: "Total error rate is {{ $value }} errors/sec. Multiple components may be failing."
 
+  - name: scheduler_task_alerts
+    interval: 30s
+    rules:
+      - alert: SchedulerTaskAcceptLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(scheduler_task_accept_latency_sec_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler task accept latency is high"
+          description: "P95 accept latency is {{ $value }}s (threshold: 2s). Scheduler -> automation-engine handoff is degraded."
+
+      - alert: SchedulerTaskCompletionLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(scheduler_task_completion_latency_sec_bucket{status="completed"}[5m]))
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler task completion latency is high"
+          description: "P95 completion latency is {{ $value }}s (threshold: 60s). Automation execution is slower than expected."
+
+      - alert: SchedulerTaskFailureRateHigh
+        expr: |
+          sum(
+            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found"}[5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler task failure rate is high"
+          description: "Failure rate is {{ $value }} tasks/sec for terminal error statuses."
+
+      - alert: SchedulerActiveTasksBacklogHigh
+        expr: scheduler_active_tasks > 100
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scheduler active tasks backlog is high"
+          description: "Active scheduler tasks are {{ $value }} (threshold: 100). Possible stuck reconciliation or automation slowdown."

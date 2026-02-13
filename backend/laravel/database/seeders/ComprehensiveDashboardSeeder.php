@@ -106,16 +106,18 @@ class ComprehensiveDashboardSeeder extends Seeder
     {
         $this->command->info('2. Создание команд...');
 
-        $commandTypes = [
-            'DOSE' => ['ml' => 0.5, 'channel' => 'pump_acid'],
-            'DOSE' => ['ml' => 1.0, 'channel' => 'pump_base'],
-            'DOSE' => ['ml' => 2.0, 'channel' => 'pump_nutrients'],
-            'DOSE' => ['ml' => 5.0, 'channel' => 'pump_dilute'],
-            'IRRIGATE' => ['duration_sec' => 8, 'flow_rate' => 2.0],
-            'SET_LIGHT' => ['intensity' => 300, 'duration_min' => 60],
-            'SET_CLIMATE' => ['temp' => 22.0, 'humidity' => 60],
-            'READ_SENSOR' => ['metric' => 'PH'],
-            'READ_SENSOR' => ['metric' => 'EC'],
+        $commandTemplates = [
+            ['cmd' => 'DOSE', 'params' => ['ml' => 0.5, 'channel' => 'pump_acid']],
+            ['cmd' => 'DOSE', 'params' => ['ml' => 1.0, 'channel' => 'pump_base']],
+            ['cmd' => 'DOSE', 'params' => ['ml' => 2.0, 'channel' => 'pump_a']],
+            ['cmd' => 'DOSE', 'params' => ['ml' => 2.0, 'channel' => 'pump_b']],
+            ['cmd' => 'DOSE', 'params' => ['ml' => 2.0, 'channel' => 'pump_c']],
+            ['cmd' => 'DOSE', 'params' => ['ml' => 1.0, 'channel' => 'pump_d']],
+            ['cmd' => 'IRRIGATE', 'params' => ['duration_sec' => 8, 'flow_rate' => 2.0]],
+            ['cmd' => 'SET_LIGHT', 'params' => ['intensity' => 300, 'duration_min' => 60]],
+            ['cmd' => 'SET_CLIMATE', 'params' => ['temp' => 22.0, 'humidity' => 60]],
+            ['cmd' => 'READ_SENSOR', 'params' => ['metric' => 'PH']],
+            ['cmd' => 'READ_SENSOR', 'params' => ['metric' => 'EC']],
         ];
 
         $statuses = [
@@ -157,8 +159,9 @@ class ComprehensiveDashboardSeeder extends Seeder
 
                 for ($i = 0; $i < $commandsPerDay; $i++) {
                     $node = $nodes->random();
-                    $cmdType = array_rand($commandTypes);
-                    $params = $commandTypes[$cmdType];
+                    $commandTemplate = $commandTemplates[array_rand($commandTemplates)];
+                    $cmdType = $commandTemplate['cmd'];
+                    $params = $commandTemplate['params'];
 
                     // Выбираем статус с учетом весов
                     $status = $this->weightedRandom($statusWeights);

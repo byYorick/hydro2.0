@@ -59,9 +59,8 @@ class NodeRegistryService
                 $node->name = $attributes['name'];
             }
             
-            if (isset($attributes['type'])) {
-                $node->type = $attributes['type'];
-            }
+            $incomingType = $attributes['type'] ?? $node->type;
+            $node->type = $this->normalizeNodeType((string) $incomingType);
             
             // Обновляем hardware_id, если указан
             if (isset($attributes['hardware_id'])) {
@@ -118,6 +117,8 @@ class NodeRegistryService
         $attempt = 0;
         $uidAttempt = 0;
         $maxUidAttempts = 5;
+        $requestedNodeUid = $this->extractRequestedNodeUid($helloData);
+        $useRequestedNodeUid = !empty($requestedNodeUid);
         
         while ($attempt < $maxRetries) {
             $transactionLevelBefore = DB::transactionLevel();
@@ -138,8 +139,10 @@ class NodeRegistryService
                     ->first();
 
                 if (!$node) {
-                    $nodeType = $helloData['node_type'] ?? 'unknown';
-                    $uid = $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
+                    $nodeType = $this->normalizeNodeType((string) ($helloData['node_type'] ?? 'unknown'));
+                    $uid = $useRequestedNodeUid
+                        ? $requestedNodeUid
+                        : $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
 
                     $node = new DeviceNode();
                     $node->uid = $uid;
@@ -155,7 +158,29 @@ class NodeRegistryService
                         'uid' => $uid,
                         'hardware_id' => $hardwareId,
                         'attempt' => $uidAttempt,
+                        'uid_source' => $useRequestedNodeUid ? 'provisioning_meta.node_uid' : 'generated',
                     ]);
+                } elseif ($useRequestedNodeUid && $requestedNodeUid && $node->uid !== $requestedNodeUid) {
+                    $uidAlreadyUsed = DeviceNode::where('uid', $requestedNodeUid)
+                        ->where('id', '!=', $node->id)
+                        ->exists();
+
+                    if (!$uidAlreadyUsed) {
+                        Log::info('NodeRegistryService: Aligning existing node uid with provisioning_meta.node_uid', [
+                            'node_id' => $node->id,
+                            'old_uid' => $node->uid,
+                            'new_uid' => $requestedNodeUid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                        $node->uid = $requestedNodeUid;
+                    } else {
+                        Log::warning('NodeRegistryService: Requested node_uid is already occupied, keeping existing uid', [
+                            'node_id' => $node->id,
+                            'current_uid' => $node->uid,
+                            'requested_uid' => $requestedNodeUid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                    }
                 }
 
                 $this->updateNodeAttributes($node, $helloData);
@@ -217,6 +242,17 @@ class NodeRegistryService
                 DB::rollBack();
 
                 if ($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) {
+                    if ($useRequestedNodeUid) {
+                        Log::warning('Requested node_uid caused unique collision, switching to generated uid', [
+                            'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                            'requested_uid' => $requestedNodeUid,
+                        ]);
+                        $useRequestedNodeUid = false;
+                        $uidAttempt = 0;
+                        usleep(100000);
+                        continue;
+                    }
+
                     $uidAttempt++;
 
                     if ($uidAttempt >= $maxUidAttempts) {
@@ -271,6 +307,10 @@ class NodeRegistryService
      */
     private function updateNodeAttributes(DeviceNode $node, array $helloData): void
     {
+        if (array_key_exists('node_type', $helloData)) {
+            $node->type = $this->normalizeNodeType((string) ($helloData['node_type'] ?? 'unknown'));
+        }
+
         if (isset($helloData['fw_version'])) {
             $node->fw_version = $helloData['fw_version'];
         }
@@ -284,6 +324,64 @@ class NodeRegistryService
             $node->name = $provisioningMeta['node_name'];
         }
     }
+
+    /**
+     * Нормализовать node_type в каноничный backend-тип (strict, без legacy alias).
+     */
+    private function normalizeNodeType(?string $nodeType): string
+    {
+        $normalized = strtolower(trim((string) $nodeType));
+        if ($normalized === '') {
+            return 'unknown';
+        }
+
+        $allowed = [
+            'ph',
+            'ec',
+            'climate',
+            'irrig',
+            'light',
+            'relay',
+            'water_sensor',
+            'recirculation',
+            'unknown',
+        ];
+
+        return in_array($normalized, $allowed, true) ? $normalized : 'unknown';
+    }
+
+    /**
+     * Извлечь запрошенный UID из provisioning_meta.node_uid.
+     *
+     * @param array $helloData
+     * @return string|null
+     */
+    private function extractRequestedNodeUid(array $helloData): ?string
+    {
+        $provisioningMeta = $helloData['provisioning_meta'] ?? null;
+        if (!is_array($provisioningMeta)) {
+            return null;
+        }
+
+        $rawNodeUid = $provisioningMeta['node_uid'] ?? null;
+        if (!is_string($rawNodeUid)) {
+            return null;
+        }
+
+        $nodeUid = strtolower(trim($rawNodeUid));
+        if ($nodeUid === '' || strlen($nodeUid) > 64) {
+            return null;
+        }
+
+        if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $nodeUid)) {
+            Log::warning('NodeRegistryService: Invalid provisioning_meta.node_uid format, fallback to generated uid', [
+                'node_uid' => $rawNodeUid,
+            ]);
+            return null;
+        }
+
+        return $nodeUid;
+    }
     
     /**
      * Генерировать uid для узла на основе hardware_id и типа.
@@ -295,8 +393,18 @@ class NodeRegistryService
      */
      private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
     {
-        // Используем первые 8 символов hardware_id и тип узла
-        $shortId = substr(str_replace([':', '-', '_'], '', $hardwareId), 0, 8);
+        // Нормализуем hardware_id, убирая разделители и префиксы
+        $normalized = strtolower(str_replace([':', '-', '_'], '', $hardwareId));
+        if (str_starts_with($normalized, 'esp32')) {
+            $normalized = substr($normalized, strlen('esp32'));
+        }
+
+        // Берём до 12 символов, чтобы использовать полный MAC (6 байт) без префикса
+        if ($normalized === '') {
+            $shortId = substr(md5($hardwareId), 0, 12);
+        } else {
+            $shortId = strlen($normalized) > 12 ? substr($normalized, 0, 12) : $normalized;
+        }
         
         // Определяем префикс типа узла
         $typePrefix = 'node';
@@ -306,10 +414,16 @@ class NodeRegistryService
             $typePrefix = 'ec';
         } elseif ($nodeType === 'climate') {
             $typePrefix = 'clim';
-        } elseif (in_array($nodeType, ['irrig', 'pump'])) {
+        } elseif ($nodeType === 'irrig') {
             $typePrefix = 'irr';
         } elseif ($nodeType === 'light') {
             $typePrefix = 'light';
+        } elseif ($nodeType === 'relay') {
+            $typePrefix = 'relay';
+        } elseif ($nodeType === 'water_sensor') {
+            $typePrefix = 'water';
+        } elseif ($nodeType === 'recirculation') {
+            $typePrefix = 'recirc';
         }
         
         $uid = "nd-{$typePrefix}-{$shortId}";
@@ -399,7 +513,13 @@ class NodeRegistryService
                     // Используем infra_node_error как базовый код, добавляем error_code если есть
                     $alertCode = 'infra_node_error';
                     if ($error->error_code) {
-                        $alertCode = 'infra_node_error_' . str_replace('-', '_', $error->error_code);
+                        $normalizedErrorCode = strtolower(trim((string) $error->error_code));
+                        $normalizedErrorCode = str_replace('-', '_', $normalizedErrorCode);
+                        $normalizedErrorCode = preg_replace('/[^a-z0-9_]/', '_', $normalizedErrorCode) ?? $normalizedErrorCode;
+
+                        if ($normalizedErrorCode !== '') {
+                            $alertCode = 'infra_node_error_' . $normalizedErrorCode;
+                        }
                     }
                     
                     // Преобразуем даты из строк в ISO8601 формат если нужно

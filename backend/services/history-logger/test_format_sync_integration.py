@@ -156,6 +156,55 @@ class TestConfigReportFormatSync:
             mock_processed.inc.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_handle_config_report_buffers_when_node_missing(self):
+        """Тест буферизации config_report, если узел еще не зарегистрирован."""
+        from mqtt_handlers import handle_config_report
+
+        topic = "hydro/gh-temp/zn-temp/esp32-aabbccddeeff/config_report"
+        payload_data = {
+            "node_id": "esp32-aabbccddeeff",
+            "version": 1,
+            "channels": [
+                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
+            ],
+        }
+        payload = json.dumps(payload_data).encode('utf-8')
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers._store_pending_config_report', new_callable=AsyncMock) as mock_store:
+
+            mock_fetch.return_value = []
+
+            await handle_config_report(topic, payload)
+
+            mock_store.assert_awaited_once_with("esp32-aabbccddeeff", topic, payload)
+
+    @pytest.mark.asyncio
+    async def test_process_pending_config_report_after_registration(self):
+        """Тест обработки буферизованного config_report после регистрации."""
+        from mqtt_handlers import (
+            _process_pending_config_report_after_registration,
+            _PENDING_CONFIG_REPORTS,
+        )
+
+        hardware_id = "esp32-aabbccddeeff"
+        topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config_report"
+        payload = b'{"node_id":"esp32-aabbccddeeff","version":1}'
+
+        _PENDING_CONFIG_REPORTS.clear()
+        _PENDING_CONFIG_REPORTS[hardware_id] = {
+            "topic": topic,
+            "payload": payload,
+            "ts": datetime.now().timestamp(),
+        }
+
+        with patch('mqtt_handlers.handle_config_report', new_callable=AsyncMock) as mock_handle:
+            await _process_pending_config_report_after_registration(hardware_id)
+
+            mock_handle.assert_awaited_once_with(topic, payload)
+            assert hardware_id not in _PENDING_CONFIG_REPORTS
+
+    @pytest.mark.asyncio
     async def test_handle_config_report_temp_topic_maps_hardware_id(self):
         """Тест обработки config_report из temp топика с hardware_id."""
         from mqtt_handlers import handle_config_report
@@ -196,6 +245,66 @@ class TestConfigReportFormatSync:
             mock_sync.assert_called_once()
             mock_complete.assert_called_once()
             mock_processed.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_binding_skips_duplicate_transition_after_first_success(self):
+        """Повторный config_report не должен повторно выполнять service-update и lifecycle transition."""
+        from mqtt_handlers import (
+            _BINDING_COMPLETION_LOCKS,
+            _complete_binding_after_config_report,
+        )
+
+        _BINDING_COMPLETION_LOCKS.clear()
+
+        node_snapshot = {
+            "id": 7,
+            "uid": "nd-ph-esp32aa-1",
+            "lifecycle_state": "REGISTERED_BACKEND",
+            "zone_id": None,
+            "pending_zone_id": 1,
+        }
+
+        update_response = MagicMock(status_code=200, text="OK")
+        transition_response = MagicMock(status_code=200, text="OK")
+        http_client = AsyncMock()
+        http_client.patch = AsyncMock(return_value=update_response)
+        http_client.post = AsyncMock(return_value=transition_response)
+
+        client_ctx = AsyncMock()
+        client_ctx.__aenter__.return_value = http_client
+        client_ctx.__aexit__.return_value = False
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.get_settings') as mock_settings, \
+             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
+
+            mock_fetch.side_effect = [
+                [
+                    {
+                        "lifecycle_state": "REGISTERED_BACKEND",
+                        "zone_id": None,
+                        "pending_zone_id": 1,
+                    }
+                ],
+                [{"id": 1}],
+                [
+                    {
+                        "lifecycle_state": "ASSIGNED_TO_ZONE",
+                        "zone_id": 1,
+                        "pending_zone_id": None,
+                    }
+                ],
+            ]
+
+            mock_settings.return_value.laravel_api_url = "http://laravel"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = None
+
+            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
+            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
+
+        assert http_client.patch.await_count == 1
+        assert http_client.post.await_count == 1
 
 
 class TestHeartbeatFormatSync:
@@ -261,6 +370,42 @@ class TestNodeHelloFormatSync:
             mock_received.inc.assert_called_once()
             # Проверяем, что был вызван Laravel API
             assert mock_post.called
+
+    @pytest.mark.asyncio
+    async def test_handle_node_hello_normalizes_non_canonical_node_type_to_unknown(self):
+        """Тест strict-нормализации node_type перед отправкой в Laravel."""
+        from mqtt_handlers import handle_node_hello
+
+        topic = "hydro/node_hello"
+        payload = json.dumps(
+            {
+                "message_type": "node_hello",
+                "hardware_id": "esp32-legacy-node-type",
+                "node_type": "pump_node",
+                "fw_version": "v5.1.0",
+            }
+        ).encode("utf-8")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.text = "OK"
+        mock_response.json.return_value = {"data": {"uid": "nd-unknown-1"}}
+
+        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post, \
+             patch("mqtt_handlers.get_settings") as mock_settings, \
+             patch("mqtt_handlers.NODE_HELLO_RECEIVED"), \
+             patch("mqtt_handlers.NODE_HELLO_REGISTERED"), \
+             patch("mqtt_handlers._process_pending_config_report_after_registration", new_callable=AsyncMock):
+            mock_post.return_value = mock_response
+            mock_settings.return_value.laravel_api_url = "http://localhost/api"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = "test-token"
+            mock_settings.return_value.laravel_api_timeout_sec = 5
+
+            await handle_node_hello(topic, payload)
+
+        sent_payload = mock_post.await_args.kwargs["json"]
+        assert sent_payload["node_type"] == "unknown"
 
 
 class TestTopicFormatSync:

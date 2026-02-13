@@ -1,14 +1,63 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <header class="space-y-2">
+      <header class="ui-hero p-5 space-y-4">
         <div>
-          <h1 class="text-lg font-semibold">
+          <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+            observability
+          </p>
+          <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
             Журнал сервисов
           </h1>
           <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
             Отслеживайте события автоматизации, MQTT Bridge и cron в одном окне.
           </p>
+        </div>
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Всего записей
+            </div>
+            <div class="ui-kpi-value">
+              {{ totalCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Для выбранного набора фильтров
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Ошибки
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-red)]">
+              {{ errorLogsCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              На текущей странице
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Предупреждения
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
+              {{ warningLogsCount }}
+            </div>
+            <div class="ui-kpi-hint">
+              Требуют внимания
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Сервис
+            </div>
+            <div class="ui-kpi-value text-base md:text-lg leading-tight">
+              {{ activeServiceLabel }}
+            </div>
+            <div class="ui-kpi-hint">
+              Активный контур мониторинга
+            </div>
+          </div>
         </div>
       </header>
 
@@ -308,6 +357,12 @@ const serviceLabelFor = (serviceKey: string) =>
 
 const hasLogs = computed(() => logs.value.length > 0)
 const totalCount = computed(() => meta.total || logs.value.length)
+const errorLogsCount = computed(() =>
+  logs.value.filter((entry) => entry.level?.toLowerCase().includes('error') || entry.level?.toLowerCase().includes('critical')).length
+)
+const warningLogsCount = computed(() =>
+  logs.value.filter((entry) => entry.level?.toLowerCase().includes('warn')).length
+)
 
 const levelVariant = (level: string) => {
   const normalized = level?.toLowerCase()
@@ -433,7 +488,8 @@ function startPolling() {
   }, POLL_INTERVAL_MS)
 
   if (typeof window !== 'undefined') {
-    ;(window as any)[POLL_KEY] = pollInterval
+    const win = window as any
+    win[POLL_KEY] = pollInterval
   }
 }
 
@@ -444,10 +500,11 @@ function stopPolling() {
   }
 
   if (typeof window !== 'undefined') {
-    const existing = (window as any)[POLL_KEY] as ReturnType<typeof setInterval> | null
+    const win = window as any
+    const existing = win[POLL_KEY] as ReturnType<typeof setInterval> | null
     if (existing) {
       clearInterval(existing)
-      ;(window as any)[POLL_KEY] = null
+      win[POLL_KEY] = null
     }
   }
 }
@@ -488,7 +545,8 @@ watch(
     searchDebounce = setTimeout(() => fetchLogs(1), 400)
 
     if (typeof window !== 'undefined') {
-      ;(window as any)[SEARCH_KEY] = searchDebounce
+      const win = window as any
+      win[SEARCH_KEY] = searchDebounce
     }
   }
 )
@@ -505,10 +563,11 @@ onUnmounted(() => {
     searchDebounce = null
   }
   if (typeof window !== 'undefined') {
-    const existing = (window as any)[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
+    const win = window as any
+    const existing = win[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
     if (existing) {
       clearTimeout(existing)
-      ;(window as any)[SEARCH_KEY] = null
+      win[SEARCH_KEY] = null
     }
   }
 })

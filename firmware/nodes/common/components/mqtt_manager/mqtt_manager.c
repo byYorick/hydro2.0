@@ -16,7 +16,6 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 #include "node_utils.h"
-#include "esp_timer.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
@@ -78,6 +77,7 @@ static SemaphoreHandle_t s_node_info_mutex = NULL;
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
                                int32_t event_id, void *event_data);
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain);
+static esp_err_t mqtt_manager_create_client(void);
 
 /**
  * @brief Построение MQTT топика
@@ -126,6 +126,98 @@ static esp_err_t build_topic(char *topic_buf, size_t buf_size, const char *type,
     if (len < 0 || (size_t)len >= buf_size) {
         ESP_LOGE(TAG, "Topic buffer too small: need %d, have %zu", len, buf_size);
         return ESP_ERR_INVALID_SIZE;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t mqtt_manager_create_client(void) {
+    if (s_mqtt_client != NULL) {
+        ESP_LOGE(TAG, "MQTT client already created");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_config.host || s_config.host[0] == '\0' || s_config.port == 0) {
+        ESP_LOGE(TAG, "MQTT config is incomplete");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_node_info.node_uid || s_node_info.node_uid[0] == '\0') {
+        ESP_LOGE(TAG, "Node UID is not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
+    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u",
+                           protocol, s_config.host, s_config.port);
+    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
+        ESP_LOGE(TAG, "MQTT URI is too long");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const char *client_id = s_config.client_id;
+    static char client_id_fallback[32] = {0};
+    if (!client_id || client_id[0] == '\0') {
+        uint8_t mac[6] = {0};
+        if (esp_efuse_mac_get_default(mac) == ESP_OK) {
+            snprintf(
+                client_id_fallback,
+                sizeof(client_id_fallback),
+                "esp32-%02x%02x%02x%02x%02x%02x",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+            );
+            client_id = client_id_fallback;
+        } else {
+            client_id = s_node_info.node_uid;
+        }
+    }
+
+    static char lwt_topic_static[192];
+    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to build LWT topic");
+        return ESP_FAIL;
+    }
+
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = s_mqtt_uri,
+        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 60,
+        .session.disable_clean_session = 0,
+        .network.reconnect_timeout_ms = 5000,
+        .network.timeout_ms = 30000,
+        .network.disable_auto_reconnect = false,
+        .session.last_will.topic = lwt_topic_static,
+        .session.last_will.msg = "offline",
+        .session.last_will.qos = 1,
+        .session.last_will.retain = 1,
+    };
+
+    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
+
+    if (s_config.username && s_config.username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_config.username;
+        if (s_config.password && s_config.password[0] != '\0') {
+            mqtt_cfg.credentials.authentication.password = s_config.password;
+        }
+    }
+
+    mqtt_cfg.credentials.client_id = client_id;
+    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (s_mqtt_client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT client");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = esp_mqtt_client_register_event(
+        s_mqtt_client,
+        ESP_EVENT_ANY_ID,
+        mqtt_event_handler,
+        NULL
+    );
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
+        esp_mqtt_client_destroy(s_mqtt_client);
+        s_mqtt_client = NULL;
+        return err;
     }
 
     return ESP_OK;
@@ -240,75 +332,11 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
     s_config.keepalive = config->keepalive;
     s_config.use_tls = config->use_tls;
 
-    // Формируем URI
-    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
-    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u", 
-                          protocol, s_config.host, s_config.port);
-    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
-        ESP_LOGE(TAG, "MQTT URI is too long");
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    // Определяем client_id
-    const char *client_id = s_config.client_id;
-    if (!client_id || client_id[0] == '\0') {
-        client_id = s_node_info.node_uid;  // Используем уже скопированное значение
-    }
-
-    // Настройка LWT (Last Will and Testament) - нужно статическое хранилище
-    static char lwt_topic_static[192];
-    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to build LWT topic");
-        return ESP_FAIL;
-    }
-
-    // Конфигурация MQTT клиента
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = s_mqtt_uri,
-        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
-        .session.disable_clean_session = 0,
-        .network.reconnect_timeout_ms = 10000,
-        .network.timeout_ms = 10000,
-        .session.last_will.topic = lwt_topic_static,
-        .session.last_will.msg = "offline",
-        .session.last_will.qos = 1,
-        .session.last_will.retain = 1,
-    };
-
-    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
-
-    // Аутентификация (если указана)
-    if (s_config.username && s_config.username[0] != '\0') {
-        mqtt_cfg.credentials.username = s_config.username;
-        if (s_config.password && s_config.password[0] != '\0') {
-            mqtt_cfg.credentials.authentication.password = s_config.password;
-        }
-    }
-
-    // Client ID
-    mqtt_cfg.credentials.client_id = client_id;
-
-    // Инициализация клиента
-    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    if (s_mqtt_client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize MQTT client");
-        return ESP_FAIL;
-    }
-
-    // Регистрация обработчика событий
-    esp_err_t err = esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID,
-                                                   mqtt_event_handler, NULL);
+    esp_err_t err = mqtt_manager_create_client();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
-        esp_mqtt_client_destroy(s_mqtt_client);
-        s_mqtt_client = NULL;
         return err;
     }
 
-    // КРИТИЧНО: Убираем логирование сразу после регистрации обработчика для предотвращения паники
-    // Проблема возникает при вызове ESP_LOGI - возможно из-за повреждения стека или heap
-    // Логирование будет выполнено позже, когда система стабилизируется
-    // ESP_LOGI(TAG, "MQTT manager initialized successfully");
     return ESP_OK;
 }
 
@@ -343,12 +371,23 @@ esp_err_t mqtt_manager_deinit(void) {
         esp_mqtt_client_destroy(s_mqtt_client);
         s_mqtt_client = NULL;
     }
+    if (s_node_info_mutex) {
+        vSemaphoreDelete(s_node_info_mutex);
+        s_node_info_mutex = NULL;
+    }
 
     memset(&s_config, 0, sizeof(s_config));
     memset(&s_node_info, 0, sizeof(s_node_info));
+    memset(s_mqtt_uri, 0, sizeof(s_mqtt_uri));
     s_is_connected = false;
     s_was_connected = false;
     s_reconnect_count = 0;
+    s_config_cb = NULL;
+    s_command_cb = NULL;
+    s_connection_cb = NULL;
+    s_config_user_ctx = NULL;
+    s_command_user_ctx = NULL;
+    s_connection_user_ctx = NULL;
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -546,7 +585,11 @@ esp_err_t mqtt_manager_reconnect(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "Reconnecting to MQTT broker...");
+    if (s_is_connected) {
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Manual reconnect requested");
     return esp_mqtt_client_reconnect(s_mqtt_client);
 }
 
@@ -555,6 +598,48 @@ esp_err_t mqtt_manager_reconnect(void) {
  */
 esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain) {
     return mqtt_manager_publish_internal(topic, data, qos, retain);
+}
+
+esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos) {
+    if (!topic || topic[0] == '\0') {
+        ESP_LOGE(TAG, "Invalid subscribe topic");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_mqtt_client) {
+        ESP_LOGE(TAG, "MQTT manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int msg_id = esp_mqtt_client_subscribe(s_mqtt_client, topic, qos);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to subscribe raw topic: %s", topic);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Subscribed to raw topic: %s (msg_id=%d)", topic, msg_id);
+    return ESP_OK;
+}
+
+esp_err_t mqtt_manager_unsubscribe_raw(const char *topic) {
+    if (!topic || topic[0] == '\0') {
+        ESP_LOGE(TAG, "Invalid unsubscribe topic");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_mqtt_client) {
+        ESP_LOGE(TAG, "MQTT manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int msg_id = esp_mqtt_client_unsubscribe(s_mqtt_client, topic);
+    if (msg_id < 0) {
+        ESP_LOGE(TAG, "Failed to unsubscribe raw topic: %s", topic);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Unsubscribed from raw topic: %s (msg_id=%d)", topic, msg_id);
+    return ESP_OK;
 }
 
 /**
@@ -755,8 +840,22 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             
             // Запрос времени у сервера для синхронизации часов устройства
             // Это обеспечивает единую временную линию между устройствами и бэкендом
-            node_utils_request_time();
-            ESP_LOGI(TAG, "Requested time synchronization from server");
+            esp_err_t time_req_err = node_utils_request_time();
+            if (time_req_err == ESP_OK) {
+                ESP_LOGI(TAG, "Requested time synchronization from server");
+            } else {
+                ESP_LOGW(
+                    TAG,
+                    "Time synchronization request skipped/failed: err=0x%x (%s)",
+                    (unsigned)time_req_err,
+                    esp_err_to_name(time_req_err)
+                );
+            }
+
+            if (!s_is_connected) {
+                ESP_LOGW(TAG, "MQTT disconnected before connection callback, skip connected callback");
+                break;
+            }
 
             // Вызов callback подключения
             if (s_connection_cb) {

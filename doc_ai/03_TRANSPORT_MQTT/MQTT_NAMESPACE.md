@@ -17,10 +17,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 1. Базовый формат топиков
 
-Общий паттерн:
+Общий паттерн для сообщений уровня канала (channel-level):
 
 ```text
 hydro/{gh}/{zone}/{node}/{channel}/{message_type}
+```
+
+Для сообщений уровня узла (node-level, без канала) используется паттерн:
+
+```text
+hydro/{gh}/{zone}/{node}/{message_type}
 ```
 
 Где:
@@ -28,7 +34,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `{gh}` — UID теплицы (`greenhouses.uid`),
 - `{zone}` — UID зоны (`zones.uid`),
 - `{node}` — UID узла (`nodes.uid`),
-- `{channel}` — ключ канала (`channels.key`),
+- `{channel}` — ключ канала (`channels.key`), используется только для channel-level сообщений,
 - `{message_type}` — тип сообщения: 
  `telemetry`, `command`, `status`, `event`, `config` и т.п.
 
@@ -36,7 +42,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ---
 
-## 2. Типы сообщений по каналам
+## 2. Типы сообщений
 
 ### 2.1. telemetry
 
@@ -60,6 +66,7 @@ Payload (пример):
 ```
 
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
+> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`.
 
 ### 2.2. command
 
@@ -90,18 +97,19 @@ Payload (пример):
 Получатель: **Python-сервис**
 
 ```text
-hydro/{gh}/{zone}/{node}/{channel}/status
+hydro/{gh}/{zone}/{node}/status
 ```
 
 Payload (пример):
 
 ```json
 {
- "request_id": "cmd-2025-01-01-12-00-00-001",
- "status": "OK",
- "ts": 1737355601123
+ "status": "ONLINE",
+ "ts": 1710001555
 }
 ```
+
+> `status` является node-level сообщением и публикуется без сегмента `{channel}`.
 
 ### 2.4. event
 
@@ -117,6 +125,12 @@ hydro/{gh}/{zone}/{node}/{channel}/event
 - `SENSOR_ERROR`, `SENSOR_CALIBRATION_REQUIRED`;
 - `ACTUATOR_FAULT`, `PUMP_OVERCURRENT`;
 - `PH_DRIFT_TOO_HIGH`, `EC_OUT_OF_RANGE`.
+
+Для канала `storage_state` (контур `2 бака`) payload события должен включать `event_code`.
+На стороне backend (`history-logger`) `event_code` нормализуется в `zone_events.type`:
+- `UPPERCASE`, замена не `[A-Z0-9]` на `_`, схлопывание повторов `_`;
+- если после нормализации длина >255, тип усекётся детерминированно с suffix `_{SHA1_10}`;
+- пустой код заменяется на `NODE_EVENT`.
 
 ---
 
@@ -147,7 +161,13 @@ hydro/system/{subtopic}
 - `ph_main`;
 - `ec_main`;
 - `temp_air`, `temp_water`;
-- `pump_acid`, `pump_base`, `pump_nutrient`;
+- `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`;
+- `pump_main`;
+- `level_clean_min`, `level_clean_max`, `level_solution_min`, `level_solution_max`;
+- `valve_clean_fill`, `valve_clean_supply`, `valve_solution_fill`, `valve_solution_supply`, `valve_irrigation`;
+- `soil_moisture`, `soil_temp`;
+- `wind_speed`, `outside_temp`;
+- `storage_state` (service/event channel для 2-бакового контура);
 - `fan_in`, `fan_out`;
 - `light_main`.
 
@@ -178,7 +198,9 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ## 6. Правила для ИИ-агентов
 
-1. Не менять базовый паттерн `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`.
+1. Не менять базовые паттерны:
+ - channel-level: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`;
+ - node-level: `hydro/{gh}/{zone}/{node}/{message_type}`.
 2. Любые новые темы должны быть расширением, а не заменой.
 3. Все изменения должны быть:
 

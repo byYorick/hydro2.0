@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-5">
-      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-6">
+      <section class="ui-hero p-6">
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
@@ -16,7 +16,7 @@
           </div>
           <div class="flex flex-wrap gap-2">
             <Button
-              v-if="canManageCycle"
+              v-if="canConfigureCycle"
               size="sm"
               variant="secondary"
               @click="router.visit('/recipes')"
@@ -32,52 +32,52 @@
             </Button>
           </div>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+        <div class="ui-kpi-grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mt-6">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Активные
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
               {{ summary.cycles_running }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Пауза
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
               {{ summary.cycles_paused }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               План
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">
+            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
               {{ summary.cycles_planned }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Без цикла
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ summary.cycles_none }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Алерты
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">
+            <div class="ui-kpi-value text-[color:var(--accent-red)]">
               {{ summary.alerts_active }}
             </div>
           </div>
-          <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
               Устройства
             </div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+            <div class="ui-kpi-value">
               {{ summary.devices_online }}/{{ summary.devices_total }}
             </div>
           </div>
@@ -443,7 +443,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
@@ -456,66 +456,13 @@ import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleSta
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useCommands } from '@/composables/useCommands'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
-
-interface Greenhouse {
-  id: number
-  name: string
-}
-
-interface CycleStage {
-  name?: string
-  code?: string
-  started_at?: string | null
-}
-
-interface CycleProgress {
-  overall_pct?: number
-  stage_pct?: number
-}
-
-interface GrowCycle {
-  id: number
-  status: string
-  planting_at?: string | null
-  expected_harvest_at?: string | null
-  current_stage?: CycleStage | null
-  progress?: CycleProgress
-}
-
-interface ZoneTelemetry {
-  ph: number | null
-  ec: number | null
-  temperature: number | null
-  humidity: number | null
-  co2: number | null
-  updated_at: string | null
-}
-
-interface ZoneSummary {
-  id: number
-  name: string
-  status: string
-  greenhouse: Greenhouse | null
-  telemetry: ZoneTelemetry
-  alerts_count: number
-  alerts_preview: Array<{ id: number; type: string; details: string; created_at: string }>
-  devices: { total: number; online: number }
-  recipe: { id: number; name: string } | null
-  plant: { id: number; name: string } | null
-  cycle: GrowCycle | null
-}
-
-interface Summary {
-  zones_total: number
-  cycles_running: number
-  cycles_paused: number
-  cycles_planned: number
-  cycles_none: number
-  alerts_active: number
-  devices_online: number
-  devices_total: number
-}
+import {
+  useCycleCenterView,
+  type Greenhouse,
+  type Summary,
+  type ZoneSummary,
+} from '@/composables/useCycleCenterView'
+import { useCycleCenterActions } from '@/composables/useCycleCenterActions'
 
 interface Props {
   summary: Summary
@@ -526,227 +473,55 @@ interface Props {
 const props = defineProps<Props>()
 const page = usePage()
 const role = computed(() => (page.props.auth as any)?.user?.role || 'viewer')
-const canManageCycle = computed(() => role.value === 'agronomist')
+const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.value))
+const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
 const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
-
-const query = ref('')
-const statusFilter = ref('')
-const greenhouseFilter = ref('')
-const showOnlyAlerts = ref(false)
-const denseView = ref(false)
-const currentPage = ref(1)
-const perPage = ref(8)
 
 const { api } = useApi()
 const { showToast } = useToast()
 const { sendZoneCommand } = useCommands(showToast)
 
-const actionLoading = reactive<Record<string, boolean>>({})
-
-const filteredZones = computed(() => {
-  const search = query.value.trim().toLowerCase()
-  return props.zones.filter((zone) => {
-    const matchesSearch = !search || [
-      zone.name,
-      zone.greenhouse?.name,
-      zone.recipe?.name,
-      zone.plant?.name,
-    ]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(search))
-
-    const cycleStatus = zone.cycle?.status || 'NONE'
-    const matchesStatus = !statusFilter.value || statusFilter.value === cycleStatus
-
-    const matchesGreenhouse = !greenhouseFilter.value || String(zone.greenhouse?.id || '') === greenhouseFilter.value
-
-    const matchesAlerts = !showOnlyAlerts.value || zone.alerts_count > 0
-
-    return matchesSearch && matchesStatus && matchesGreenhouse && matchesAlerts
-  })
-})
-
-const pagedZones = computed(() => {
-  const start = (currentPage.value - 1) * perPage.value
-  return filteredZones.value.slice(start, start + perPage.value)
-})
-
-watch([query, statusFilter, greenhouseFilter, showOnlyAlerts], () => {
-  currentPage.value = 1
-})
-
-function toggleDense() {
-  denseView.value = !denseView.value
-  perPage.value = denseView.value ? 12 : 8
-}
-
-function formatMetric(value: number | null, digits: number) {
-  if (value === null || value === undefined) {
-    return '—'
-  }
-  return Number(value).toFixed(digits)
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(date)
-}
-
-function formatTime(value: string) {
-  const date = new Date(value)
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function getZoneStatusVariant(status: string) {
-  switch (status) {
-    case 'RUNNING':
-      return 'success'
-    case 'PAUSED':
-      return 'info'
-    case 'WARNING':
-      return 'warning'
-    case 'ALARM':
-      return 'danger'
-    default:
-      return 'neutral'
-  }
-}
-
-function setActionLoading(zoneId: number, action: string, value: boolean) {
-  actionLoading[`${zoneId}-${action}`] = value
-}
-
-function isActionLoading(zoneId: number, action: string) {
-  return Boolean(actionLoading[`${zoneId}-${action}`])
-}
+const zonesRef = computed(() => props.zones)
+const {
+  query,
+  statusFilter,
+  greenhouseFilter,
+  showOnlyAlerts,
+  denseView,
+  currentPage,
+  perPage,
+  filteredZones,
+  pagedZones,
+  toggleDense,
+  formatMetric,
+  formatDate,
+  formatTime,
+  getZoneStatusVariant,
+} = useCycleCenterView({ zones: zonesRef })
 
 async function reloadCenter() {
   await router.reload({ only: ['zones', 'summary'] })
 }
-
-async function pauseCycle(zone: ZoneSummary) {
-  if (!zone.cycle?.id) return
-  setActionLoading(zone.id, 'pause', true)
-  try {
-    const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/pause`)
-    if (response.data?.status === 'ok') {
-      showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
-      await reloadCenter()
-    }
-  } finally {
-    setActionLoading(zone.id, 'pause', false)
-  }
-}
-
-async function resumeCycle(zone: ZoneSummary) {
-  if (!zone.cycle?.id) return
-  setActionLoading(zone.id, 'resume', true)
-  try {
-    const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/resume`)
-    if (response.data?.status === 'ok') {
-      showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
-      await reloadCenter()
-    }
-  } finally {
-    setActionLoading(zone.id, 'resume', false)
-  }
-}
-
-const harvestModal = reactive<{ open: boolean; zone: ZoneSummary | null; batchLabel: string }>({
-  open: false,
-  zone: null,
-  batchLabel: '',
+const {
+  harvestModal,
+  abortModal,
+  actionModal,
+  isActionLoading,
+  pauseCycle,
+  resumeCycle,
+  openHarvestModal,
+  closeHarvestModal,
+  confirmHarvest,
+  openAbortModal,
+  closeAbortModal,
+  confirmAbort,
+  openActionModal,
+  closeActionModal,
+  submitAction,
+} = useCycleCenterActions({
+  api,
+  showToast,
+  reloadCenter,
+  sendZoneCommand,
 })
-
-const abortModal = reactive<{ open: boolean; zone: ZoneSummary | null; notes: string }>({
-  open: false,
-  zone: null,
-  notes: '',
-})
-
-function openHarvestModal(zone: ZoneSummary) {
-  harvestModal.zone = zone
-  harvestModal.batchLabel = ''
-  harvestModal.open = true
-}
-
-function closeHarvestModal() {
-  harvestModal.open = false
-  harvestModal.zone = null
-}
-
-async function confirmHarvest() {
-  const zone = harvestModal.zone
-  if (!zone?.cycle?.id) return
-  setActionLoading(zone.id, 'harvest', true)
-  try {
-    const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/harvest`, {
-      batch_label: harvestModal.batchLabel || undefined,
-    })
-    if (response.data?.status === 'ok') {
-      showToast('Урожай зафиксирован', 'success', TOAST_TIMEOUT.NORMAL)
-      await reloadCenter()
-      closeHarvestModal()
-    }
-  } finally {
-    setActionLoading(zone.id, 'harvest', false)
-  }
-}
-
-function openAbortModal(zone: ZoneSummary) {
-  abortModal.zone = zone
-  abortModal.notes = ''
-  abortModal.open = true
-}
-
-function closeAbortModal() {
-  abortModal.open = false
-  abortModal.zone = null
-}
-
-async function confirmAbort() {
-  const zone = abortModal.zone
-  if (!zone?.cycle?.id) return
-  setActionLoading(zone.id, 'abort', true)
-  try {
-    const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/abort`, {
-      notes: abortModal.notes || undefined,
-    })
-    if (response.data?.status === 'ok') {
-      showToast('Цикл остановлен', 'success', TOAST_TIMEOUT.NORMAL)
-      await reloadCenter()
-      closeAbortModal()
-    }
-  } finally {
-    setActionLoading(zone.id, 'abort', false)
-  }
-}
-
-const actionModal = reactive<{ open: boolean; zone: ZoneSummary | null; actionType: 'FORCE_IRRIGATION' }>({
-  open: false,
-  zone: null,
-  actionType: 'FORCE_IRRIGATION',
-})
-
-function openActionModal(zone: ZoneSummary, actionType: 'FORCE_IRRIGATION') {
-  actionModal.open = true
-  actionModal.zone = zone
-  actionModal.actionType = actionType
-}
-
-function closeActionModal() {
-  actionModal.open = false
-  actionModal.zone = null
-}
-
-async function submitAction(payload: { actionType: 'FORCE_IRRIGATION'; params: Record<string, number> }) {
-  if (!actionModal.zone) return
-  await sendZoneCommand(actionModal.zone.id, payload.actionType, payload.params)
-  closeActionModal()
-}
 </script>

@@ -1,0 +1,492 @@
+# E67: Strict nutrition contract (4 components + mode)
+# DoD: effective-targets возвращает полный nutrition-контракт для 4 компонентов
+
+name: E67_nutrition_strict_contract
+description: |
+  Проверяет строгий nutrition-контракт без legacy fallback:
+  - Создается фаза с mode=delta_ec_by_k и 4 компонентами (npk/calcium/magnesium/micro)
+  - Создается grow-cycle и читаются effective-targets
+  - В effective-targets присутствуют все 4 компонента, mode и product links
+
+actions:
+  - step: set_test_zone_uid
+    type: set
+    test_zone_uid: zn-test-1
+
+  - step: get_test_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: set_ec_only_capabilities_for_cycle_start
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_primary_node_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND uid = 'nd-ph-esp32una';
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_zone_readiness_bindings
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'zone_role',
+        CASE
+          WHEN nc.channel = 'main_pump' THEN 'main_pump'
+          WHEN nc.channel = 'drain_pump' THEN 'drain'
+          ELSE nc.config->>'zone_role'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.zone_id = :zone_id
+        AND nc.channel IN ('main_pump', 'drain_pump');
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_main_and_drain_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('PUMP', 'E2E Main Pump'),
+            ('DRAIN', 'E2E Drain Pump')
+        ) AS m(asset_type, label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = m.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('main_pump', 'main_pump', 'E2E Main Pump'),
+            ('drain_pump', 'drain', 'E2E Drain Pump')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+
+  - step: verify_main_and_drain_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('main_pump', 'drain')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 2
+    timeout: 15.0
+
+  - step: ensure_ec_component_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, 'PUMP', x.label, false, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('E2E EC Pump A'),
+            ('E2E EC Pump B'),
+            ('E2E EC Pump C'),
+            ('E2E EC Pump D')
+        ) AS x(label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = x.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('fan', 'ec_npk_pump', 'E2E EC Pump A'),
+            ('heater', 'ec_calcium_pump', 'E2E EC Pump B'),
+            ('light', 'ec_magnesium_pump', 'E2E EC Pump C'),
+            ('mister', 'ec_micro_pump', 'E2E EC Pump D')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+
+  - step: verify_ec_component_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 4
+    timeout: 15.0
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: create_npk_product
+    type: api_post
+    endpoint: /api/nutrient-products
+    payload:
+      manufacturer: YaraRega
+      name: E2E NPK ${TIMESTAMP_S}
+      component: npk
+      composition: "18-18-18"
+      notes: "E2E strict nutrition contract"
+    save: npk_product_response
+
+  - step: create_calcium_product
+    type: api_post
+    endpoint: /api/nutrient-products
+    payload:
+      manufacturer: YaraRega
+      name: E2E Calcium ${TIMESTAMP_S}
+      component: calcium
+      composition: "Ca(NO3)2"
+      notes: "E2E strict nutrition contract"
+    save: calcium_product_response
+
+  - step: create_magnesium_product
+    type: api_post
+    endpoint: /api/nutrient-products
+    payload:
+      manufacturer: YaraRega
+      name: E2E Magnesium ${TIMESTAMP_S}
+      component: magnesium
+      composition: "MgSO4"
+      notes: "E2E strict nutrition contract"
+    save: magnesium_product_response
+
+  - step: create_micro_product
+    type: api_post
+    endpoint: /api/nutrient-products
+    payload:
+      manufacturer: YaraRega
+      name: E2E Micro ${TIMESTAMP_S}
+      component: micro
+      composition: "multi-micro + Fe"
+      notes: "E2E strict nutrition contract"
+    save: micro_product_response
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e67-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e67-${TIMESTAMP_S}
+      description: Test strict nutrition contract
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision E67
+    save: revision_response
+
+  - step: add_phase_with_full_nutrition
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: E67 strict phase
+      duration_hours: 24
+      ph_target: 5.9
+      ph_min: 5.7
+      ph_max: 6.1
+      ec_target: 1.9
+      ec_min: 1.7
+      ec_max: 2.1
+      nutrient_program_code: YARAREGA_4PART_V1
+      nutrient_mode: delta_ec_by_k
+      nutrient_solution_volume_l: 100
+      nutrient_dose_delay_sec: 12
+      nutrient_ec_stop_tolerance: 0.07
+      nutrient_npk_ratio_pct: 44
+      nutrient_calcium_ratio_pct: 36
+      nutrient_magnesium_ratio_pct: 17
+      nutrient_micro_ratio_pct: 3
+      nutrient_npk_dose_ml_l: 1.7
+      nutrient_calcium_dose_ml_l: 1.2
+      nutrient_magnesium_dose_ml_l: 0.6
+      nutrient_micro_dose_ml_l: 0.2
+      nutrient_npk_product_id: ${npk_product_response.data.id}
+      nutrient_calcium_product_id: ${calcium_product_response.data.id}
+      nutrient_magnesium_product_id: ${magnesium_product_response.data.id}
+      nutrient_micro_product_id: ${micro_product_response.data.id}
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_grow_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: wait_effective_targets
+    type: sleep
+    seconds: 2
+
+  - step: fetch_effective_targets
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
+    save: effective_targets_response
+
+  - step: fetch_phase_row
+    type: database_query
+    query: |
+      SELECT
+        nutrient_mode,
+        nutrient_npk_ratio_pct::double precision AS nutrient_npk_ratio_pct,
+        nutrient_calcium_ratio_pct::double precision AS nutrient_calcium_ratio_pct,
+        nutrient_magnesium_ratio_pct::double precision AS nutrient_magnesium_ratio_pct,
+        nutrient_micro_ratio_pct::double precision AS nutrient_micro_ratio_pct
+      FROM recipe_revision_phases
+      WHERE recipe_revision_id = :revision_id
+      AND phase_index = 0
+      LIMIT 1
+    params:
+      revision_id: ${revision_response.data.id}
+    save: phase_row
+
+assertions:
+  - name: nutrition_mode_and_components_present
+    type: json_assertion
+    source: effective_targets_response
+    path: data.targets.nutrition
+    expected:
+      - field: mode
+        operator: equals
+        value: delta_ec_by_k
+      - field: components.npk.ratio_pct
+        operator: equals
+        value: 44
+      - field: components.calcium.ratio_pct
+        operator: equals
+        value: 36
+      - field: components.magnesium.ratio_pct
+        operator: equals
+        value: 17
+      - field: components.micro.ratio_pct
+        operator: equals
+        value: 3
+
+  - name: has_four_nutrition_components
+    type: json_assertion
+    source: effective_targets_response
+    path: data.targets.nutrition.components
+    expected:
+      - field: length
+        operator: equals
+        value: 4
+
+  - name: magnesium_component_kept_in_effective_targets
+    type: json_assertion
+    source: effective_targets_response
+    path: data.targets.nutrition.components.magnesium
+    expected:
+      - field: product_id
+        operator: equals
+        value: ${magnesium_product_response.data.id}
+      - field: manufacturer
+        operator: equals
+        value: YaraRega
+
+  - name: phase_row_has_full_ratio_profile
+    type: json_assertion
+    source: phase_row
+    path: "[0]"
+    expected:
+      - field: nutrient_mode
+        operator: equals
+        value: delta_ec_by_k
+      - field: nutrient_npk_ratio_pct
+        operator: equals
+        value: 44.0
+      - field: nutrient_calcium_ratio_pct
+        operator: equals
+        value: 36.0
+      - field: nutrient_magnesium_ratio_pct
+        operator: equals
+        value: 17.0
+      - field: nutrient_micro_ratio_pct
+        operator: equals
+        value: 3.0
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+
+  - step: delete_micro_product
+    type: api_delete
+    endpoint: /api/nutrient-products/${micro_product_response.data.id}
+    optional: true
+
+  - step: delete_magnesium_product
+    type: api_delete
+    endpoint: /api/nutrient-products/${magnesium_product_response.data.id}
+    optional: true
+
+  - step: delete_calcium_product
+    type: api_delete
+    endpoint: /api/nutrient-products/${calcium_product_response.data.id}
+    optional: true
+
+  - step: delete_npk_product
+    type: api_delete
+    endpoint: /api/nutrient-products/${npk_product_response.data.id}
+    optional: true

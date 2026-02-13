@@ -496,6 +496,81 @@
         "type": "prometheus",
         "uid": "Prometheus"
       }
+    },
+    {
+      "id": 16,
+      "title": "Scheduler Task Latency (p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(scheduler_task_accept_latency_sec_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "accept p95 {{task_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(scheduler_task_completion_latency_sec_bucket{status=\"completed\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "complete p95 {{task_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      }
+    },
+    {
+      "id": 17,
+      "title": "Scheduler Active Tasks and Failures",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "scheduler_active_tasks",
+          "refId": "A",
+          "legendFormat": "active_tasks",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum by (task_type, status) (rate(scheduler_task_status_total{status=~\"failed|timeout|submit_failed|not_found\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "fail_rate {{task_type}}/{{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      }
     }
   ],
   "id": null,

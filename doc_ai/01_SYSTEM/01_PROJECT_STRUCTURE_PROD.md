@@ -124,6 +124,12 @@ hydro2.0/
 
 Здесь живут все ESP-прошивки, на чистом C, под ESP-IDF.
 
+Важно по терминологии:
+- `firmware_module` (например, `pump_node`, `ph_node`, `ec_node`, `climate_node`) — имя папки/проекта прошивки.
+- `node_type` в MQTT payload и в БД (`nodes.type`) использует только канонику:
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Имена `*_node` не являются значениями `node_type`.
+
 ```text
 firmware/
 ├─ nodes/
@@ -184,7 +190,7 @@ firmware/
 **Ключевые моменты боевой структуры:**
 
 1. **Общие компоненты** (датчики, INA209, дисплей, MQTT, Wi-Fi, config) живут в `firmware/nodes/common/components/`.
-2. Каждая нода — отдельный ESP-IDF-проект в `firmware/nodes/<node_type>/`.
+2. Каждая нода — отдельный ESP-IDF-проект в `firmware/nodes/<firmware_module>/`.
 3. Для каждой ноды:
    - есть `sdkconfig.defaults` с боевыми дефолтами,
    - есть `Kconfig` для выбора настроек,
@@ -332,6 +338,9 @@ configs/
 ```
 
 **Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
+
+Важно: имена шаблонов `*_node_template.json` привязаны к `firmware_module`.
+Поле `type` внутри NodeConfig должно оставаться каноническим (`ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`).
 
 ---
 

@@ -100,6 +100,12 @@ esp_err_t node_config_handler_publish_response(
  */
 typedef cJSON *(*node_config_channels_callback_t)(void *user_ctx);
 
+typedef esp_err_t (*node_config_post_apply_callback_t)(
+    const cJSON *config,
+    const cJSON *previous_config,
+    void *user_ctx
+);
+
 /**
  * @brief Регистрация callback для формирования channels в ответе на конфиг.
  *
@@ -110,6 +116,11 @@ typedef cJSON *(*node_config_channels_callback_t)(void *user_ctx);
  */
 void node_config_handler_set_channels_callback(
     node_config_channels_callback_t callback,
+    void *user_ctx
+);
+
+void node_config_handler_set_post_apply_callback(
+    node_config_post_apply_callback_t callback,
     void *user_ctx
 );
 

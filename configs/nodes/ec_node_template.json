@@ -6,10 +6,46 @@
   "zone_uid": "zn-1",
   "channels": [
     {
-      "name": "pump_nutrient",
+      "name": "pump_a",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
       "gpio": 26,
+      "ml_per_second": 3.0,
+      "max_duration_ms": 15000,
+      "safe_limits": {
+        "max_duration_ms": 15000,
+        "min_off_ms": 5000
+      }
+    },
+    {
+      "name": "pump_b",
+      "type": "ACTUATOR",
+      "actuator_type": "PUMP",
+      "gpio": 27,
+      "ml_per_second": 3.0,
+      "max_duration_ms": 15000,
+      "safe_limits": {
+        "max_duration_ms": 15000,
+        "min_off_ms": 5000
+      }
+    },
+    {
+      "name": "pump_c",
+      "type": "ACTUATOR",
+      "actuator_type": "PUMP",
+      "gpio": 25,
+      "ml_per_second": 3.0,
+      "max_duration_ms": 15000,
+      "safe_limits": {
+        "max_duration_ms": 15000,
+        "min_off_ms": 5000
+      }
+    },
+    {
+      "name": "pump_d",
+      "type": "ACTUATOR",
+      "actuator_type": "PUMP",
+      "gpio": 33,
       "ml_per_second": 3.0,
       "max_duration_ms": 15000,
       "safe_limits": {
@@ -28,5 +64,3 @@
     "keepalive": 30
   }
 }
-
-

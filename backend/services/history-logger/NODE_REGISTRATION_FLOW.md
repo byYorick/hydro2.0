@@ -272,6 +272,8 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 | `PY_INGEST_TOKEN` | History Logger → Laravel | Токен для регистрации и обновления узлов |
 | `HISTORY_LOGGER_API_TOKEN` | Laravel → History Logger | Токен для публикации команд |
 | `LARAVEL_API_URL` | History Logger | URL Laravel API (http://laravel) |
+| `CONFIG_REPORT_BUFFER_TTL_SEC` | History Logger | Сколько секунд хранить config_report, пришедший до регистрации (по умолчанию 120) |
+| `CONFIG_REPORT_BUFFER_MAX` | History Logger | Максимум буферизованных config_report (по умолчанию 128) |
 
 ## Мониторинг
 
@@ -378,6 +380,18 @@ environment:
   - PY_INGEST_TOKEN=dev-token-12345
   - HISTORY_LOGGER_API_TOKEN=dev-token-12345
 ```
+
+### Config_report пришёл до регистрации
+
+**Симптомы:** В логах History Logger есть строка  
+`Node not found for hardware_id ... skipping config_report` перед успешным `node_hello`.
+
+**Что происходит:** History Logger буферизует `config_report` из temp‑топика до завершения регистрации.
+
+**Решение:**
+1. Дождитесь регистрации узла — буфер будет обработан автоматически.
+2. Если узел не привязался, перезагрузите ESP32 (чтобы повторно отправить config_report).
+3. При частых гонках увеличьте `CONFIG_REPORT_BUFFER_TTL_SEC`.
 
 ### Узел отправляет данные, но они не записываются
 

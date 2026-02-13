@@ -65,7 +65,7 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
         USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
         if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
             echo "No users found, running database seeders..."
-            if php artisan db:seed --force 2>/dev/null; then
+            if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --force 2>/dev/null; then
                 echo "✓ Seeders completed successfully"
                 echo "✓ Database setup completed"
             else
@@ -88,7 +88,26 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
         # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
         if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
             echo "Ensuring AutomationEngineE2ESeeder data..."
-            php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1 || echo "⚠ Failed to run AutomationEngineE2ESeeder, continuing..."
+            seeder_attempts=10
+            seeder_try=0
+            seeder_ok=0
+
+            while [ $seeder_try -lt $seeder_attempts ]; do
+                if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1; then
+                    echo "✓ AutomationEngineE2ESeeder completed"
+                    seeder_ok=1
+                    break
+                fi
+
+                seeder_try=$((seeder_try + 1))
+                echo "  AutomationEngineE2ESeeder attempt $seeder_try/$seeder_attempts failed, retrying..."
+                sleep 2
+            done
+
+            if [ "$seeder_ok" != "1" ]; then
+                echo "✗ Failed to provision AutomationEngineE2ESeeder data after $seeder_attempts attempts"
+                exit 1
+            fi
         fi
     fi
 fi

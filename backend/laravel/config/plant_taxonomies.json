@@ -1,0 +1,124 @@
+{
+    "substrate_type": [
+        {
+            "id": "coco",
+            "label": "Кокосовый субстрат"
+        },
+        {
+            "id": "rockwool",
+            "label": "Минеральная вата"
+        },
+        {
+            "id": "clay",
+            "label": "Керамзит"
+        },
+        {
+            "id": "peat",
+            "label": "Торф"
+        }
+    ],
+    "growing_system": [
+        {
+            "id": "nft",
+            "label": "NFT",
+            "uses_substrate": false
+        },
+        {
+            "id": "drip",
+            "label": "Капельный полив",
+            "uses_substrate": true
+        },
+        {
+            "id": "ebb_flow",
+            "label": "Прилив-отлив",
+            "uses_substrate": true
+        },
+        {
+            "id": "aeroponics",
+            "label": "Аэропоника",
+            "uses_substrate": false
+        },
+        {
+            "id": "dwc",
+            "label": "DWC",
+            "uses_substrate": false
+        },
+        {
+            "id": "test",
+            "label": "тест",
+            "uses_substrate": false
+        }
+    ],
+    "photoperiod_preset": [
+        {
+            "id": "12_12",
+            "label": "12\/12 (цветение)"
+        },
+        {
+            "id": "16_8",
+            "label": "16\/8 (вегетация)"
+        },
+        {
+            "id": "18_6",
+            "label": "18\/6"
+        },
+        {
+            "id": "20_4",
+            "label": "20\/4 (быстрый рост)"
+        }
+    ],
+    "seasonality": [
+        {
+            "id": "all_year",
+            "label": "Круглый год"
+        },
+        {
+            "id": "multi_cycle",
+            "label": "Несколько циклов"
+        },
+        {
+            "id": "seasonal",
+            "label": "Сезонное выращивание"
+        }
+    ],
+    "cost_item_type": [
+        {
+            "id": "seedling",
+            "label": "Семена \/ Рассада"
+        },
+        {
+            "id": "substrate",
+            "label": "Субстрат"
+        },
+        {
+            "id": "nutrients",
+            "label": "Питательные растворы"
+        },
+        {
+            "id": "labor",
+            "label": "Трудовые затраты"
+        },
+        {
+            "id": "protection",
+            "label": "Средства защиты"
+        },
+        {
+            "id": "logistics",
+            "label": "Логистика"
+        }
+    ],
+    "sales_channel": [
+        {
+            "id": "wholesale",
+            "label": "Опт"
+        },
+        {
+            "id": "retail",
+            "label": "Розница"
+        },
+        {
+            "id": "subscription",
+            "label": "Подписка \/ CSA"
+        }
+    ]
+}

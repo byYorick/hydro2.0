@@ -10,32 +10,53 @@
 user python_service
 topic readwrite hydro/#
 
-# Automation engine - read telemetry, write commands
+# Automation engine - только чтение телеметрии и ответов, команды через history-logger REST API
 user automation_engine
-topic read hydro/+/+/telemetry/#
-topic read hydro/+/+/status/#
-topic write hydro/+/+/commands/#
+topic read hydro/+/+/+/+/telemetry
+topic read hydro/+/+/+/status
+topic read hydro/+/+/+/+/command_response
+topic read hydro/+/+/+/+/event
 topic readwrite hydro/+/+/events/#
 
 # ESP32 nodes - read/write their own topics
 # Pattern: hydro/{greenhouse_uid}/{zone_uid}/{node_uid}/#
 user esp32_node
-topic readwrite hydro/+/+/esp32_node/#
+topic write hydro/+/+/+/+/telemetry
+topic write hydro/node_hello
+topic write hydro/+/+/+/node_hello
 topic write hydro/+/+/+/status
-topic read hydro/+/+/+/commands/#
+topic write hydro/+/+/+/heartbeat
+topic write hydro/+/+/+/lwt
+topic write hydro/+/+/+/diagnostics
+topic write hydro/+/+/+/error
+topic write hydro/+/+/+/config_report
+topic write hydro/+/+/+/+/command_response
+topic write hydro/+/+/+/+/event
+topic read hydro/+/+/+/config
+topic read hydro/+/+/+/+/command
 
-# History logger - read telemetry, write events
+# History logger - единственная точка публикации команд, читает телеметрию
 user history_logger
-topic read hydro/+/+/telemetry/#
+topic read hydro/+/+/+/+/telemetry
+topic read hydro/+/+/+/status
+topic read hydro/+/+/+/heartbeat
+topic read hydro/+/+/+/lwt
+topic read hydro/+/+/+/diagnostics
+topic read hydro/+/+/+/error
+topic read hydro/+/+/+/config_report
+topic read hydro/+/+/+/node_hello
+topic read hydro/+/+/+/+/command_response
+topic read hydro/+/+/+/+/event
+topic read hydro/node_hello
+topic read hydro/time/request
+topic write hydro/+/+/+/+/command
 topic write hydro/+/+/events/#
 
-# Scheduler - read/write commands and status
+# Scheduler - только чтение статуса и телеметрии, команды через automation-engine REST API
 user scheduler
-topic read hydro/+/+/status/#
-topic write hydro/+/+/commands/#
-topic read hydro/+/+/telemetry/#
+topic read hydro/+/+/+/status
+topic read hydro/+/+/+/+/telemetry
 
 # MQTT Bridge - full access (bridge between systems)
 user mqtt_bridge
 topic readwrite hydro/#
-

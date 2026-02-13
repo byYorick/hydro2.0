@@ -2,8 +2,10 @@
 
 namespace Tests;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase as BaseRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 trait RefreshDatabase
 {
@@ -11,10 +13,30 @@ trait RefreshDatabase
         migrateDatabases as baseMigrateDatabases;
     }
 
+    private const MIGRATION_MAX_RETRIES = 3;
+
     protected function migrateDatabases(): void
     {
-        $this->dropTimescaleHypertables();
-        $this->baseMigrateDatabases();
+        $attempt = 0;
+
+        while (true) {
+            try {
+                $this->dropTimescaleHypertables();
+                $this->baseMigrateDatabases();
+
+                return;
+            } catch (Throwable $exception) {
+                $attempt++;
+
+                if (! $this->isRetryableMigrationException($exception) || $attempt >= self::MIGRATION_MAX_RETRIES) {
+                    throw $exception;
+                }
+
+                DB::disconnect();
+                DB::reconnect();
+                usleep($attempt * 250_000);
+            }
+        }
     }
 
     protected function dropTimescaleHypertables(): void
@@ -102,5 +124,23 @@ trait RefreshDatabase
                 }
             }
         }
+    }
+
+    protected function isRetryableMigrationException(Throwable $exception): bool
+    {
+        if (! $exception instanceof QueryException) {
+            return false;
+        }
+
+        $sqlState = $exception->getCode();
+        if ($sqlState === '40P01' || $sqlState === '55P03') {
+            return true;
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'deadlock detected')
+            || str_contains($message, 'could not obtain lock')
+            || str_contains($message, 'lock timeout');
     }
 }

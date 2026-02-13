@@ -21,7 +21,7 @@
 
 ### Актуаторы
 - `pump_*` - насосы (настраиваются через NodeConfig)
-  - Примеры: `pump_acid`, `pump_base`, `pump_nutrient`, `pump_in` и др.
+  - Примеры: `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`, `pump_in` и др.
 
 ## Команды
 

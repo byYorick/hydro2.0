@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-4">
-    <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5">
+    <section class="ui-hero p-5">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div class="flex-1 min-w-0">
           <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
@@ -40,6 +40,12 @@
                 фаза {{ activeGrowCycle.currentPhase.phase_index + 1 }}
               </span>
             </div>
+            <div
+              v-else-if="displayCycle"
+              class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]"
+            >
+              Цикл активен
+            </div>
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2 justify-end">
@@ -78,6 +84,52 @@
           </Link>
         </div>
       </div>
+      <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4 mt-4">
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            pH факт
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            {{ formatMetric(telemetry?.ph, 2) }}
+          </div>
+          <div class="ui-kpi-hint">
+            Текущее значение
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            EC факт
+          </div>
+          <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+            {{ formatMetric(telemetry?.ec, 2) }}
+          </div>
+          <div class="ui-kpi-hint">
+            мСм/см
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Температура
+          </div>
+          <div class="ui-kpi-value">
+            {{ formatMetric(telemetry?.temperature, 1) }}
+          </div>
+          <div class="ui-kpi-hint">
+            °C воздух
+          </div>
+        </article>
+        <article class="ui-kpi-card">
+          <div class="ui-kpi-label">
+            Влажность
+          </div>
+          <div class="ui-kpi-value">
+            {{ formatMetric(telemetry?.humidity, 0) }}
+          </div>
+          <div class="ui-kpi-hint">
+            % относительная
+          </div>
+        </article>
+      </div>
     </section>
 
     <div class="space-y-4">
@@ -113,7 +165,7 @@
           :started-at="activeGrowCycle.started_at"
         />
         <div
-          v-else-if="activeGrowCycle || zone.status === 'RUNNING'"
+          v-else-if="displayCycle"
           class="text-center py-6"
         >
           <div class="text-4xl mb-2">
@@ -135,6 +187,20 @@
             <div class="mt-2 text-[color:var(--text-dim)]">
               Привяжите рецепт для детального отслеживания прогресса фаз
             </div>
+          </div>
+        </div>
+        <div
+          v-else-if="zone.status === 'RUNNING' || zone.status === 'PAUSED'"
+          class="text-center py-6"
+        >
+          <div class="text-4xl mb-2">
+            🔄
+          </div>
+          <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+            Данные цикла ещё загружаются
+          </div>
+          <div class="text-xs text-[color:var(--text-muted)]">
+            Обновите данные зоны на вкладке «Цикл», чтобы синхронизировать активный цикл и таргеты
           </div>
         </div>
         <div
@@ -208,6 +274,7 @@ import ZoneTargets from '@/Components/ZoneTargets.vue'
 import { Link } from '@inertiajs/vue3'
 import { translateEventKind, translateStatus } from '@/utils/i18n'
 import { formatTimeShort } from '@/utils/formatTime'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -217,8 +284,9 @@ interface OverviewLoadingState {
 
 interface Props {
   zone: Zone
-  variant: 'success' | 'neutral' | 'warning' | 'danger'
+  variant: BadgeVariant
   activeGrowCycle?: any
+  activeCycle?: any
   loading: OverviewLoadingState
   canOperateZone: boolean
   targets: ZoneTargetsType
@@ -234,6 +302,7 @@ defineEmits<{
 }>()
 
 const props = defineProps<Props>()
+const displayCycle = computed(() => props.activeGrowCycle ?? props.activeCycle ?? null)
 
 const hasTargets = computed(() => {
   return Boolean(props.targets && (props.targets.ph || props.targets.ec || props.targets.temp || props.targets.humidity))
@@ -248,6 +317,13 @@ function getEventVariant(kind: string): 'danger' | 'warning' | 'info' | 'neutral
   if (kind === 'WARNING') return 'warning'
   if (kind === 'INFO') return 'info'
   return 'neutral'
+}
+
+function formatMetric(value: number | null | undefined, precision = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—'
+  }
+  return Number(value).toFixed(precision)
 }
 
 </script>

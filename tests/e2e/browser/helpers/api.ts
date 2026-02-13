@@ -303,11 +303,13 @@ export class APITestHelper {
   }
 
   async createTestZone(greenhouseId: number, data?: Partial<TestZone>): Promise<TestZone> {
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const payload = {
       greenhouse_id: greenhouseId,
-      name: data?.name || `Test Zone ${Date.now()}`,
+      name: data?.name || `Test Zone ${uniqueSuffix}`,
       description: data?.description || 'Test zone description',
       status: data?.status || 'PLANNED',
+      uid: (data as any)?.uid || `zn-test-zone-${uniqueSuffix}`,
       ...data,
     };
 

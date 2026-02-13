@@ -35,6 +35,7 @@ return [
         'base_url' => env('PY_API_URL', 'http://mqtt-bridge:9000'),
         'token' => env('PY_API_TOKEN'),
         'ingest_token' => env('PY_INGEST_TOKEN'),
+        'verify_ssl' => env('PY_API_VERIFY_SSL', true),
         'timeout' => env('PY_API_TIMEOUT', 10), // таймаут в секундах
         'retry_attempts' => env('PY_API_RETRY_ATTEMPTS', 2), // количество попыток
         'retry_delay' => env('PY_API_RETRY_DELAY', 1), // задержка между попытками в секундах
@@ -48,6 +49,11 @@ return [
     'history_logger' => [
         'url' => env('HISTORY_LOGGER_URL', 'http://history-logger:9300'),
         'token' => env('HISTORY_LOGGER_API_TOKEN') ?? env('PY_INGEST_TOKEN'), // Токен для аутентификации
+    ],
+
+    'automation_engine' => [
+        'api_url' => env('AUTOMATION_ENGINE_API_URL', 'http://automation-engine:9405'),
+        'timeout' => env('AUTOMATION_ENGINE_API_TIMEOUT_SEC', 2.0),
     ],
 
     'digital_twin' => [

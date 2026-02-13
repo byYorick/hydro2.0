@@ -22,6 +22,8 @@ class ZoneService
                 $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
             }
 
+            $data['status'] = 'NEW';
+
             $zone = Zone::create($data);
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
 
@@ -452,6 +454,84 @@ class ZoneService
                 'status' => $e->response?->status(),
             ]);
             throw new \DomainException('Flow calibration failed. Please check the request parameters.');
+        }
+    }
+
+    /**
+     * Калибровка дозирующей помпы (ml/sec).
+     */
+    public function calibratePump(Zone $zone, array $data): array
+    {
+        $baseUrl = config('services.history_logger.url');
+        if (! $baseUrl) {
+            throw new \DomainException('History Logger URL not configured');
+        }
+
+        $token = config('services.history_logger.token') ?? config('services.python_bridge.token');
+        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+
+        $payload = [
+            'node_channel_id' => $data['node_channel_id'],
+            'duration_sec' => $data['duration_sec'],
+            'skip_run' => (bool) ($data['skip_run'] ?? false),
+        ];
+        if (array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null) {
+            $payload['actual_ml'] = $data['actual_ml'];
+        }
+        if (! empty($data['component'])) {
+            $payload['component'] = $data['component'];
+        }
+        if (array_key_exists('test_volume_l', $data) && $data['test_volume_l'] !== null) {
+            $payload['test_volume_l'] = $data['test_volume_l'];
+        }
+        if (array_key_exists('ec_before_ms', $data) && $data['ec_before_ms'] !== null) {
+            $payload['ec_before_ms'] = $data['ec_before_ms'];
+        }
+        if (array_key_exists('ec_after_ms', $data) && $data['ec_after_ms'] !== null) {
+            $payload['ec_after_ms'] = $data['ec_after_ms'];
+        }
+        if (array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null) {
+            $payload['temperature_c'] = $data['temperature_c'];
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                ->timeout(180)
+                ->post("{$baseUrl}/zones/{$zone->id}/calibrate-pump", $payload);
+
+            if (! $response->successful()) {
+                Log::error('ZoneService: Pump calibration failed', [
+                    'zone_id' => $zone->id,
+                    'payload' => $payload,
+                    'status' => $response->status(),
+                    'response' => substr($response->body(), 0, 500),
+                ]);
+                throw new \DomainException('Pump calibration failed: '.substr($response->body(), 0, 200));
+            }
+
+            return $response->json('data', []);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('ZoneService: Connection error during pump calibration', [
+                'zone_id' => $zone->id,
+                'payload' => $payload,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Unable to connect to pump calibration service. Please try again later.');
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            Log::error('ZoneService: Timeout during pump calibration', [
+                'zone_id' => $zone->id,
+                'payload' => $payload,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Pump calibration timed out. Please try again later.');
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            Log::error('ZoneService: Request error during pump calibration', [
+                'zone_id' => $zone->id,
+                'payload' => $payload,
+                'error' => $e->getMessage(),
+                'status' => $e->response?->status(),
+            ]);
+            throw new \DomainException('Pump calibration failed. Please check the request parameters.');
         }
     }
 

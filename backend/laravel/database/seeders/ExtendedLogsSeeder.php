@@ -9,7 +9,7 @@ use App\Models\SchedulerLog;
 use App\Models\SystemLog;
 use App\Models\Zone;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Расширенный сидер для логов всех типов
@@ -26,7 +26,7 @@ class ExtendedLogsSeeder extends Seeder
         $systemLogsCreated = $this->seedSystemLogs();
         $nodeLogsCreated = $this->seedNodeLogs($nodes);
         $aiLogsCreated = $this->seedAiLogs($zones);
-        $schedulerLogsCreated = $this->seedSchedulerLogs();
+        $schedulerLogsCreated = $this->seedSchedulerLogs($zones);
 
         $this->command->info("Создано системных логов: " . number_format($systemLogsCreated));
         $this->command->info("Создано логов узлов: " . number_format($nodeLogsCreated));
@@ -193,50 +193,71 @@ class ExtendedLogsSeeder extends Seeder
         return $created;
     }
 
-    private function seedSchedulerLogs(): int
+    private function seedSchedulerLogs($zones): int
     {
         $created = 0;
-        $taskNames = [
-            'recipe_phase',
+        $taskTypes = [
             'irrigation',
-            'dosing',
-            'light_control',
-            'climate_control',
-            'data_backup',
-            'maintenance',
+            'lighting',
+            'ventilation',
+            'solution_change',
+            'mist',
+            'diagnostics',
         ];
-        
-        $statuses = ['success', 'failed', 'skipped'];
-        $statusWeights = [80, 15, 5];
+        $statusWeights = [
+            'accepted' => 14,
+            'running' => 18,
+            'completed' => 36,
+            'failed' => 12,
+            'rejected' => 7,
+            'expired' => 5,
+            'timeout' => 5,
+            'not_found' => 3,
+        ];
+
+        $zoneIds = $zones->pluck('id')->all();
+        if (empty($zoneIds)) {
+            return 0;
+        }
 
         // Создаем логи за последние 2 дня
         for ($daysAgo = 2; $daysAgo >= 0; $daysAgo--) {
             $logCount = rand(10, 20);
             
             for ($i = 0; $i < $logCount; $i++) {
-                $taskName = $taskNames[rand(0, count($taskNames) - 1)];
-                
-                // Выбираем статус по весам
-                $rand = rand(1, 100);
-                $cumulative = 0;
-                $status = 'success';
-                foreach ($statuses as $index => $stat) {
-                    $cumulative += $statusWeights[$index];
-                    if ($rand <= $cumulative) {
-                        $status = $stat;
-                        break;
-                    }
+                $createdAt = now()->subDays($daysAgo)->subHours(rand(0, 23))->subMinutes(rand(0, 59));
+                $status = $this->pickWeightedStatus($statusWeights);
+                $taskType = $taskTypes[rand(0, count($taskTypes) - 1)];
+                $zoneId = (int) $zoneIds[array_rand($zoneIds)];
+                $taskId = 'st-'.$zoneId.'-'.Str::lower(Str::random(10));
+                $correlationId = "sch:z{$zoneId}:{$taskType}:".Str::lower(Str::random(12));
+                $scheduledFor = $createdAt->copy()->subMinutes(rand(1, 30));
+                $dueAt = $scheduledFor->copy()->addSeconds(rand(20, 90));
+                $expiresAt = $dueAt->copy()->addMinutes(rand(2, 10));
+
+                $details = [
+                    'task_id' => $taskId,
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'status' => $status,
+                    'correlation_id' => $correlationId,
+                    'scheduled_for' => $scheduledFor->toIso8601String(),
+                    'due_at' => $dueAt->toIso8601String(),
+                    'expires_at' => $expiresAt->toIso8601String(),
+                    'contract_version' => 'scheduler_task_v2',
+                    'message' => "Scheduler task {$taskType} processed with status {$status}",
+                    'execution_time_ms' => rand(20, 5000),
+                ];
+
+                if (! in_array($status, ['accepted', 'running'], true)) {
+                    $details['result'] = $this->buildSchedulerResult($status);
                 }
 
                 SchedulerLog::create([
-                    'task_name' => $taskName,
+                    'task_name' => $taskType,
                     'status' => $status,
-                    'details' => [
-                        'message' => "Задача {$taskName} выполнена со статусом {$status}",
-                        'execution_time_ms' => rand(10, 5000),
-                        'zone_id' => rand(1, 20),
-                    ],
-                    'created_at' => now()->subDays($daysAgo)->subHours(rand(0, 23))->subMinutes(rand(0, 59)),
+                    'details' => $details,
+                    'created_at' => $createdAt,
                 ]);
 
                 $created++;
@@ -244,5 +265,102 @@ class ExtendedLogsSeeder extends Seeder
         }
 
         return $created;
+    }
+
+    private function pickWeightedStatus(array $weights): string
+    {
+        $random = rand(1, array_sum($weights));
+        $acc = 0;
+        foreach ($weights as $status => $weight) {
+            $acc += $weight;
+            if ($random <= $acc) {
+                return $status;
+            }
+        }
+
+        return 'failed';
+    }
+
+    private function buildSchedulerResult(string $status): array
+    {
+        return match ($status) {
+            'completed' => [
+                'action_required' => true,
+                'decision' => 'run',
+                'reason_code' => 'required_nodes_checked',
+                'error_code' => null,
+                'command_submitted' => true,
+                'command_effect_confirmed' => true,
+                'commands_total' => 1,
+                'commands_effect_confirmed' => 1,
+                'commands_failed' => 0,
+            ],
+            'failed' => [
+                'action_required' => true,
+                'decision' => 'fail',
+                'reason_code' => 'command_effect_not_confirmed',
+                'error_code' => 'command_effect_not_confirmed',
+                'command_submitted' => true,
+                'command_effect_confirmed' => false,
+                'commands_total' => 1,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 1,
+            ],
+            'rejected' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_due_deadline_exceeded',
+                'error_code' => 'task_due_deadline_exceeded',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'expired' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_expired',
+                'error_code' => 'task_expired',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'timeout' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_status_timeout',
+                'error_code' => 'task_status_timeout',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            'not_found' => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_status_not_found',
+                'error_code' => 'task_status_not_found',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+            default => [
+                'action_required' => false,
+                'decision' => 'skip',
+                'reason_code' => 'task_execution_failed',
+                'error_code' => 'task_execution_failed',
+                'command_submitted' => false,
+                'command_effect_confirmed' => false,
+                'commands_total' => 0,
+                'commands_effect_confirmed' => 0,
+                'commands_failed' => 0,
+            ],
+        };
     }
 }

@@ -16,7 +16,7 @@ export interface ZoneTelemetry {
   ph?: number
   ec?: number
   water_level?: number
-  [key: string]: any // Допускаем дополнительные метрики
+  [key: string]: unknown // Допускаем дополнительные метрики
 }
 
 /**
@@ -50,7 +50,7 @@ export interface ZoneAlert {
   occurred_at: string
   resolved_at?: string
   acknowledged_at?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -65,7 +65,7 @@ export interface ZoneNode {
   type: string
   status: 'ONLINE' | 'OFFLINE' | 'ERROR'
   last_seen?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -114,7 +114,7 @@ export interface ZoneSnapshot {
   /**
    * Дополнительные метаданные (опционально)
    */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -147,7 +147,7 @@ export interface ReconciliationData {
   /**
    * Дополнительные метаданные
    */
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -170,17 +170,23 @@ export interface SnapshotResponse {
 
 export type SnapshotHandler = (snapshot: ZoneSnapshot) => void
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /**
  * Проверка валидности snapshot
  */
-export function isValidSnapshot(snapshot: any): snapshot is ZoneSnapshot {
+export function isValidSnapshot(snapshot: unknown): snapshot is ZoneSnapshot {
+  if (!isRecord(snapshot)) {
+    return false
+  }
+
   return (
-    typeof snapshot === 'object' &&
-    snapshot !== null &&
     typeof snapshot.snapshot_id === 'string' &&
     typeof snapshot.server_ts === 'number' &&
     typeof snapshot.zone_id === 'number' &&
-    typeof snapshot.telemetry === 'object' &&
+    isRecord(snapshot.telemetry) &&
     Array.isArray(snapshot.active_alerts) &&
     Array.isArray(snapshot.recent_commands) &&
     Array.isArray(snapshot.nodes)
@@ -190,10 +196,12 @@ export function isValidSnapshot(snapshot: any): snapshot is ZoneSnapshot {
 /**
  * Проверка валидности reconciliation данных
  */
-export function isValidReconciliationData(data: any): data is ReconciliationData {
+export function isValidReconciliationData(data: unknown): data is ReconciliationData {
+  if (!isRecord(data)) {
+    return false
+  }
+
   return (
-    typeof data === 'object' &&
-    data !== null &&
     (
       data.telemetry === undefined || Array.isArray(data.telemetry)
     ) &&

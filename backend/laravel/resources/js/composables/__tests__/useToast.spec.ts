@@ -171,5 +171,35 @@ describe('useToast', () => {
     vi.advanceTimersByTime(2000)
     expect(toasts.value).toHaveLength(0)
   })
-})
 
+  it('should dedupe identical toasts within dedupe window', () => {
+    const { showToast, toasts } = useToast()
+
+    const firstId = showToast('Same error', 'error', 5000)
+    const secondId = showToast('Same error', 'error', 5000)
+
+    expect(secondId).toBe(firstId)
+    expect(toasts.value).toHaveLength(1)
+  })
+
+  it('should allow identical toast after dedupe window', () => {
+    const { showToast, toasts } = useToast()
+
+    const firstId = showToast('Same warning', 'warning', 0)
+    vi.advanceTimersByTime(5001)
+    const secondId = showToast('Same warning', 'warning', 0)
+
+    expect(secondId).not.toBe(firstId)
+    expect(toasts.value).toHaveLength(2)
+  })
+
+  it('should allow duplicates when allowDuplicates is enabled', () => {
+    const { showToast, toasts } = useToast()
+
+    const firstId = showToast('Same info', 'info', 5000)
+    const secondId = showToast('Same info', 'info', 5000, { allowDuplicates: true })
+
+    expect(secondId).not.toBe(firstId)
+    expect(toasts.value).toHaveLength(2)
+  })
+})

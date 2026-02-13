@@ -5,7 +5,7 @@
 Создан в рамках Волны 1 плана доработки фронтенда.
 
 **Дата создания:** 2025-01-27  
-**Статус:** Актуально
+**Статус:** Требует актуализации (проверено 2026-02-11)
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -21,16 +21,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |------------------------|------------------|-------|------------|--------|
 | `Zones/Show.vue:300` | `/api/zones/{id}/telemetry/history` | GET | `TelemetryController::zoneHistory` | ✅ Используется |
 | `Zones/Show.vue:340` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
-| `Zones/Show.vue:378` | `/api/zones/{id}/pause` | POST | `ZoneController::pause` | ✅ Используется |
-| `Zones/Show.vue:378` | `/api/zones/{id}/resume` | POST | `ZoneController::resume` | ✅ Используется |
+| `Zones/Tabs/ZoneAutomationTab.vue` | `/api/zones/{id}/grow-cycles` | POST | `GrowCycleController::store` | ✅ Используется |
+| `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/pause` | POST | `GrowCycleController::pause` | ✅ Используется |
+| `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/resume` | POST | `GrowCycleController::resume` | ✅ Используется |
 | `Zones/Show.vue:400` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
-| `Zones/Show.vue:421` | `/api/zones/{id}/change-phase` | POST | `ZoneController::changePhase` | ✅ Используется |
+| `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/set-phase` | POST | `GrowCycleController::setPhase` | ✅ Используется |
 | `Devices/Add.vue:250` | `/api/zones` | GET | `ZoneController::index` | ✅ Используется |
 | `Admin/Zones.vue:63` | `/api/zones` | POST | `ZoneController::store` | ✅ Используется |
 
 **Отсутствующие endpoints (требуются для плана):**
 - ❌ `/api/zones/{id}/available-actions` - схема допустимых параметров команд (нужен для Волны 2)
-- ❌ `/api/zones/{id}/cycles` - данные cycles (уже есть в Inertia props, но нужен REST endpoint для обновления)
 
 ### 1.2. Nodes (Узлы)
 
@@ -51,6 +51,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |------------------------|------------------|-------|------------|--------|
 | `Recipes/Edit.vue:96` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
 | `Admin/Recipes.vue:41` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
+| `Recipes/Edit.vue` | `/api/nutrient-products` | GET | `NutrientProductController::index` | ✅ Используется |
 
 **Отсутствующие endpoints (требуются для плана):**
 - ❌ `/api/recipes?search={query}` - поиск рецептов для Command Palette (Волна 4)
@@ -60,6 +61,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Frontend использование | Backend endpoint | Метод | Контроллер | Статус |
 |------------------------|------------------|-------|------------|--------|
 | `Alerts/Index.vue:86` | `/api/alerts/{id}/ack` | PATCH | `AlertController::ack` | ✅ Используется |
+
+### 1.4.1. Nutrients (Удобрения)
+
+| Frontend использование | Backend endpoint | Метод | Контроллер | Статус |
+|------------------------|------------------|-------|------------|--------|
+| `Nutrients/Index.vue` | `/api/nutrient-products` | GET | `NutrientProductController::index` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products` | POST | `NutrientProductController::store` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products/{id}` | PATCH | `NutrientProductController::update` | ✅ Используется |
+| `Nutrients/Edit.vue` | `/api/nutrient-products/{id}` | DELETE | `NutrientProductController::destroy` | ✅ Используется |
 
 ### 1.5. Greenhouses (Теплицы)
 
@@ -102,7 +112,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'dashboard' => [
         'greenhousesCount' => int,
         'zonesCount' => int,
@@ -128,7 +138,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'zones' => [
         // Каждая зона содержит:
         'id' => int,
@@ -160,7 +170,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'zoneId' => int,
     'zone' => [
         'id' => int,
@@ -240,7 +250,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'devices' => [
         'id' => int,
         'uid' => string,
@@ -266,7 +276,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'recipes' => [
         'id' => int,
         'name' => string,
@@ -287,7 +297,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Inertia Props:**
 ```php
 [
-    'auth' => ['user' => ['role' => 'viewer|operator|admin']],
+    'auth' => ['user' => ['role' => 'viewer|operator|admin|agronomist|engineer']],
     'alerts' => [
         'id' => int,
         'type' => string,
@@ -407,7 +417,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
           {
               "id": "zone_pause",
               "label": "Поставить зону на паузу",
-              "endpoint": "/api/zones/{id}/pause",
+              "endpoint": "/api/grow-cycles/{id}/pause",
               "requires_confirmation": true
           }
       ]

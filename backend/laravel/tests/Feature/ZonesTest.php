@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\ChannelBinding;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
+use App\Models\DeviceNode;
+use App\Models\InfrastructureInstance;
+use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
@@ -52,6 +56,63 @@ class ZonesTest extends TestCase
         $service = app(GrowCycleService::class);
 
         return $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => $start]);
+    }
+
+    private function attachRequiredInfrastructure(Zone $zone): void
+    {
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $mainPumpChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $drainChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain_main',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
+    }
+
+    private function bindChannelToRole(
+        Zone $zone,
+        NodeChannel $channel,
+        string $role,
+        string $label
+    ): void {
+        $instance = InfrastructureInstance::query()->firstOrCreate(
+            [
+                'owner_type' => 'zone',
+                'owner_id' => $zone->id,
+                'label' => $label,
+            ],
+            [
+                'asset_type' => 'PUMP',
+                'required' => true,
+            ]
+        );
+
+        ChannelBinding::query()->updateOrCreate(
+            ['node_channel_id' => $channel->id],
+            [
+                'infrastructure_instance_id' => $instance->id,
+                'direction' => 'actuator',
+                'role' => $role,
+            ]
+        );
     }
 
     public function test_zones_requires_auth(): void
@@ -139,6 +200,7 @@ class ZonesTest extends TestCase
     {
         $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $this->attachRequiredInfrastructure($zone);
         $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
         $revision = $this->createRevisionWithPhases($recipe, 1);
@@ -290,6 +352,128 @@ class ZonesTest extends TestCase
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Drain operation queued');
+    }
+
+    public function test_calibrate_flow_zone_success(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'flow_sensor',
+            'type' => 'sensor',
+            'metric' => 'FLOW_RATE',
+            'unit' => 'L/min',
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true],
+            ], 200),
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-flow", [
+                'node_id' => $node->id,
+                'channel' => 'flow_sensor',
+                'pump_duration_sec' => 10,
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Calibrate flow operation queued');
+    }
+
+    public function test_calibrate_pump_zone_success(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'ml_per_sec' => 0.85],
+            ], 200),
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 30,
+                'actual_ml' => 25.5,
+                'component' => 'npk',
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Calibrate pump operation queued');
+    }
+
+    public function test_calibrate_pump_zone_success_for_ph_down(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_acid',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'ml_per_sec' => 0.52],
+            ], 200),
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 30,
+                'actual_ml' => 15.6,
+                'component' => 'ph_down',
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Calibrate pump operation queued');
     }
 
     public function test_next_phase_success(): void

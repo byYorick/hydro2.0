@@ -71,6 +71,7 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useRecipesStore } from '@/stores/recipes'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Recipe } from '@/types/Recipe'
 
 interface PageProps {
@@ -112,7 +113,10 @@ async function onUpdate(): Promise<void> {
     form.description = ''
     showToast('Recipe updated successfully', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
+    logger.error('[Admin/Recipes] Failed to update recipe:', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось обновить рецепт: ${extractHumanErrorMessage(err, 'Ошибка обновления')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   }
 }
 </script>

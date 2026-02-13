@@ -13,6 +13,11 @@ def test_normalize_metric_type_valid():
     assert normalize_metric_type("  TEMPERATURE  ") == "TEMPERATURE"
     assert normalize_metric_type("ec") == "EC"
     assert normalize_metric_type("water_level") == "WATER_LEVEL"
+    assert normalize_metric_type("water_level_switch") == "WATER_LEVEL_SWITCH"
+    assert normalize_metric_type("soil_moisture") == "SOIL_MOISTURE"
+    assert normalize_metric_type("soil_temp") == "SOIL_TEMP"
+    assert normalize_metric_type("wind_speed") == "WIND_SPEED"
+    assert normalize_metric_type("outside_temp") == "OUTSIDE_TEMP"
 
 
 def test_normalize_metric_type_invalid():

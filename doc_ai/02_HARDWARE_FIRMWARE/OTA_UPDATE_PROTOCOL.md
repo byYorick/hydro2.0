@@ -44,7 +44,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 - `id` — PK;
 - `uid` — человекочитаемый идентификатор (например, `esp32-ph-v1.0.3`);
-- `node_type` — тип узла (`ph`, `ec`, `climate`, `light`, `irrig`);
+- `node_type` — тип узла (`ph`, `ec`, `climate`, `irrig`, `light`, `relay`, `water_sensor`, `recirculation`, `unknown`);
 - `version` — семантическая версия (`1.0.3`);
 - `file_path` — путь до бинарника;
 - `checksum_sha256` — контрольная сумма;

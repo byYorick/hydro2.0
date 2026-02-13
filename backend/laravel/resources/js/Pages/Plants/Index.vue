@@ -2,23 +2,75 @@
   <AppLayout>
     <Head title="Растения" />
     <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">
-            Растения
-          </h1>
-          <p class="text-sm text-[color:var(--text-muted)]">
-            Управление культурами и их агропрофилями
-          </p>
+      <section class="ui-hero p-5 space-y-4">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+              агросправочник
+            </p>
+            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
+              Растения
+            </h1>
+            <p class="text-sm text-[color:var(--text-muted)]">
+              Управление культурами и агропрофилями для зон и рецептов.
+            </p>
+          </div>
+          <Button
+            v-if="canConfigurePlants"
+            size="sm"
+            variant="primary"
+            @click="openCreateModal"
+          >
+            Новое растение
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="primary"
-          @click="openCreateModal"
-        >
-          Новое растение
-        </Button>
-      </div>
+        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Растений
+            </div>
+            <div class="ui-kpi-value">
+              {{ totalPlants }}
+            </div>
+            <div class="ui-kpi-hint">
+              Профилей в базе
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              С системой
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+              {{ plantsWithGrowingSystem }}
+            </div>
+            <div class="ui-kpi-hint">
+              Выбрана технология выращивания
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              С фотопериодом
+            </div>
+            <div class="ui-kpi-value text-[color:var(--accent-green)]">
+              {{ plantsWithPhotoperiod }}
+            </div>
+            <div class="ui-kpi-hint">
+              Профиль освещения задан
+            </div>
+          </div>
+          <div class="ui-kpi-card">
+            <div class="ui-kpi-label">
+              Диапазоны заполнены
+            </div>
+            <div class="ui-kpi-value">
+              {{ plantsWithEnvironmentRanges }}
+            </div>
+            <div class="ui-kpi-hint">
+              Есть рабочие пределы pH/EC/климата
+            </div>
+          </div>
+        </div>
+      </section>
       <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
         <div class="overflow-auto flex-1">
           <table class="w-full border-collapse">
@@ -220,8 +272,8 @@
               </option>
               <option
                 v-for="option in seasonOptions"
-                :key="option.value"
-                :value="option.value"
+                :key="option.id"
+                :value="option.id"
               >
                 {{ option.label }}
               </option>
@@ -304,7 +356,7 @@
 </template>
 
 <script setup lang="ts">
-import { Head, useForm, router, Link } from '@inertiajs/vue3'
+import { Head, useForm, router, Link, usePage } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
@@ -360,6 +412,29 @@ interface Props {
 const props = defineProps<Props>()
 const { showToast } = useToast()
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
+const page = usePage<{ auth?: { user?: { role?: string } } }>()
+const canConfigurePlants = computed(() => {
+  const role = page.props.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
+const totalPlants = computed(() => props.plants.length)
+const plantsWithGrowingSystem = computed(() => props.plants.filter((plant) => Boolean(plant.growing_system)).length)
+const plantsWithPhotoperiod = computed(() => props.plants.filter((plant) => Boolean(plant.photoperiod_preset)).length)
+const plantsWithEnvironmentRanges = computed(() => {
+  const metricKeys = ['temperature', 'humidity', 'ph', 'ec']
+  return props.plants.filter((plant) => {
+    const requirements = plant.environment_requirements
+    if (!requirements) return false
+
+    return metricKeys.some((metricKey) => {
+      const range = requirements[metricKey]
+      if (!range) return false
+      const hasMin = range.min !== null && range.min !== undefined && range.min !== ''
+      const hasMax = range.max !== null && range.max !== undefined && range.max !== ''
+      return hasMin || hasMax
+    })
+  }).length
+})
 const selectedPlantId = ref<number | null>(null)
 const deletingId = ref<number | null>(null)
 const deleteModal = ref<{ open: boolean; plant: PlantSummary | null }>({ open: false, plant: null })
@@ -404,6 +479,7 @@ const taxonomies = computed(() => ({
   substrate_type: props.taxonomies?.substrate_type ?? [],
   growing_system: props.taxonomies?.growing_system ?? [],
   photoperiod_preset: props.taxonomies?.photoperiod_preset ?? [],
+  seasonality: props.taxonomies?.seasonality ?? [],
 }))
 
 const taxonomyIndex = computed(() => {
@@ -417,11 +493,16 @@ const taxonomyIndex = computed(() => {
   return map
 })
 
-const seasonOptions = [
-  { value: 'all_year', label: 'Круглый год' },
-  { value: 'multi_cycle', label: 'Несколько циклов' },
-  { value: 'seasonal', label: 'Сезонное выращивание' },
+const defaultSeasonality = [
+  { id: 'all_year', label: 'Круглый год' },
+  { id: 'multi_cycle', label: 'Несколько циклов' },
+  { id: 'seasonal', label: 'Сезонное выращивание' },
 ]
+const seasonOptions = computed(() => (
+  (taxonomies.value.seasonality && taxonomies.value.seasonality.length > 0)
+    ? taxonomies.value.seasonality
+    : defaultSeasonality
+))
 
 const rangeMetrics = [
   { key: 'temperature', label: 'Температура (°C)' },

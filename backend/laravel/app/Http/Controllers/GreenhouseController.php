@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
+use App\Models\GreenhouseType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -33,7 +34,10 @@ class GreenhouseController extends Controller
             });
         }
         
-        $items = $query->latest('id')->paginate(25);
+        $items = $query
+            ->with('greenhouseType:id,code,name,description')
+            ->latest('id')
+            ->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -54,16 +58,35 @@ class GreenhouseController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'timezone' => ['nullable', 'string', 'max:128'],
             'type' => ['nullable', 'string', 'max:64'],
+            'greenhouse_type_id' => ['nullable', 'integer', 'exists:greenhouse_types,id'],
             'coordinates' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
         ]);
+
+        if (!empty($data['greenhouse_type_id'])) {
+            $selectedType = GreenhouseType::query()->find($data['greenhouse_type_id']);
+            if ($selectedType) {
+                $data['type'] = $selectedType->code;
+            }
+        } elseif (!empty($data['type'])) {
+            $selectedType = GreenhouseType::query()
+                ->whereRaw('lower(code) = ?', [strtolower((string) $data['type'])])
+                ->first();
+            if ($selectedType) {
+                $data['greenhouse_type_id'] = $selectedType->id;
+                $data['type'] = $selectedType->code;
+            }
+        }
         
         // Генерируем уникальный provisioning_token для регистрации нод
         // Этот токен не должен быть доступен через API (скрыт в модели)
         $data['provisioning_token'] = 'gh_' . \Illuminate\Support\Str::random(32);
         
         $greenhouse = Greenhouse::create($data);
-        return response()->json(['status' => 'ok', 'data' => $greenhouse], Response::HTTP_CREATED);
+        return response()->json([
+            'status' => 'ok',
+            'data' => $greenhouse->load('greenhouseType:id,code,name,description'),
+        ], Response::HTTP_CREATED);
     }
 
     public function show(Request $request, Greenhouse $greenhouse): JsonResponse
@@ -84,7 +107,7 @@ class GreenhouseController extends Controller
             ], 403);
         }
         
-        $greenhouse->load('zones');
+        $greenhouse->load('zones', 'greenhouseType:id,code,name,description');
         return response()->json(['status' => 'ok', 'data' => $greenhouse]);
     }
 
@@ -111,11 +134,35 @@ class GreenhouseController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'timezone' => ['nullable', 'string', 'max:128'],
             'type' => ['nullable', 'string', 'max:64'],
+            'greenhouse_type_id' => ['nullable', 'integer', 'exists:greenhouse_types,id'],
             'coordinates' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
         ]);
+
+        if (array_key_exists('greenhouse_type_id', $data)) {
+            if ($data['greenhouse_type_id']) {
+                $selectedType = GreenhouseType::query()->find($data['greenhouse_type_id']);
+                if ($selectedType) {
+                    $data['type'] = $selectedType->code;
+                }
+            } else {
+                $data['type'] = null;
+            }
+        } elseif (!empty($data['type'])) {
+            $selectedType = GreenhouseType::query()
+                ->whereRaw('lower(code) = ?', [strtolower((string) $data['type'])])
+                ->first();
+            if ($selectedType) {
+                $data['greenhouse_type_id'] = $selectedType->id;
+                $data['type'] = $selectedType->code;
+            }
+        }
+
         $greenhouse->update($data);
-        return response()->json(['status' => 'ok', 'data' => $greenhouse]);
+        return response()->json([
+            'status' => 'ok',
+            'data' => $greenhouse->load('greenhouseType:id,code,name,description'),
+        ]);
     }
 
     public function destroy(Request $request, Greenhouse $greenhouse): JsonResponse
@@ -377,4 +424,3 @@ class GreenhouseController extends Controller
         ]);
     }
 }
-

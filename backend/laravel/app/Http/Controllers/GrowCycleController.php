@@ -11,6 +11,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Services\GrowCycleService;
 use App\Services\GrowCyclePresenter;
 use App\Services\EffectiveTargetsService;
+use App\Services\ZoneReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +23,8 @@ class GrowCycleController extends Controller
     public function __construct(
         private GrowCycleService $growCycleService,
         private GrowCyclePresenter $growCyclePresenter,
-        private EffectiveTargetsService $effectiveTargetsService
+        private EffectiveTargetsService $effectiveTargetsService,
+        private ZoneReadinessService $zoneReadinessService
     ) {
     }
 
@@ -387,7 +389,30 @@ class GrowCycleController extends Controller
             'batch_label' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
             'start_immediately' => ['nullable', 'boolean'],
+            'settings' => ['nullable', 'array'],
+            'settings.expected_harvest_at' => ['nullable', 'date'],
+            'irrigation' => ['nullable', 'array'],
+            'irrigation.system_type' => ['nullable', 'string', 'in:drip,substrate_trays,nft'],
+            'irrigation.interval_minutes' => ['nullable', 'integer', 'min:5', 'max:1440'],
+            'irrigation.duration_seconds' => ['nullable', 'integer', 'min:1', 'max:3600'],
+            'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
+            'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
         ]);
+
+        $startImmediately = (bool) ($data['start_immediately'] ?? false);
+        if ($startImmediately) {
+            $zone->loadMissing('nodes.channels');
+            $readiness = $this->checkZoneReadiness($zone);
+            $readinessErrors = $this->buildZoneReadinessErrors($readiness);
+            if (! empty($readinessErrors)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Zone is not ready for cycle start',
+                    'readiness_errors' => $readinessErrors,
+                    'readiness' => $readiness,
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
 
         try {
             $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
@@ -419,6 +444,71 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Проверить готовность зоны к запуску цикла.
+     *
+     * @return array{
+     *   ready: bool,
+     *   required_assets: array{main_pump: bool, drain: bool},
+     *   optional_assets: array{light: bool, vent: bool, heater: bool, mist: bool},
+     *   nodes: array{online: int, total: int, all_online: bool},
+     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
+     * }
+     */
+    private function checkZoneReadiness(Zone $zone): array
+    {
+        return $this->zoneReadinessService->checkZoneReadiness($zone);
+    }
+
+    /**
+     * Сформировать читаемые ошибки готовности.
+     *
+     * @param  array{
+     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
+     * }  $readiness
+     * @return array<int, string>
+     */
+    private function buildZoneReadinessErrors(array $readiness): array
+    {
+        $errors = [];
+        $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
+
+        if (! ($checks['has_nodes'] ?? false)) {
+            $errors[] = 'Нет привязанных нод в зоне';
+        }
+        if (! ($checks['online_nodes'] ?? false)) {
+            $errors[] = 'Нет онлайн нод в зоне';
+        }
+
+        $roleMessages = [
+            'main_pump' => 'Основная помпа не привязана к каналу',
+            'drain' => 'Дренаж не привязан к каналу',
+            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
+            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
+            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
+            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
+            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
+            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
+        ];
+        foreach ($roleMessages as $role => $message) {
+            if (array_key_exists($role, $checks) && ! $checks[$role]) {
+                $errors[] = $message;
+            }
+        }
+
+        foreach ($readiness['errors'] ?? [] as $issue) {
+            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
+                $errors[] = $issue['message'];
+            } elseif (is_string($issue)) {
+                $errors[] = $issue;
+            }
+        }
+
+        $errors = array_values(array_unique($errors));
+
+        return $errors;
     }
 
     /**

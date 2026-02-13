@@ -99,6 +99,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `telemetry_processed_total` — общее количество обработанных сообщений
 - Соотношение `telemetry_processed_total / telemetry_received_total` должно быть близко к 1.0
 - `telemetry_batch_size` — размер батчей (целевое значение: 50-200 элементов)
+- `node_event_unknown_total` — количество node event, которые не попали в whitelist и агрегированы как `OTHER`
 
 ### Выделенные представления мониторинга
 
@@ -125,6 +126,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
    - `telemetry_dropped_total` по причинам (validation_failed, queue_push_failed, missing_metric_type)
    - `database_errors_total` по типам ошибок
    - `node_hello_errors_total` по типам ошибок
+   - `rate(node_event_unknown_total[5m])` — тренд unknown node events (контроль деградации `event_code` контракта)
 
 5. **Регистрация узлов:**
    - `node_hello_received_total` — получено сообщений node_hello
@@ -139,6 +141,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `telemetry_dropped_total{reason="queue_push_failed"} > 10` — критические потери данных
 - `database_errors_total > 5` за 5 минут — проблемы с БД
 - `telemetry_processing_duration_seconds > 5` — медленная обработка
+- `rate(node_event_unknown_total[5m]) > 0.05` в течение 10 минут — деградация контракта `event_code` между нодой и backend
 
 ---
 

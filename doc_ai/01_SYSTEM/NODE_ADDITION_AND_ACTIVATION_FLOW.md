@@ -56,6 +56,10 @@ Frontend (Vue/Inertia)
 - `firmware/nodes/*/main/*_node_init.c` - инициализация компонентов
 - `firmware/common/wifi_manager/` - менеджер Wi-Fi
 
+Примечание по терминам:
+- Имена файлов вида `*_node_init.c` относятся к прошивочным модулям (`firmware_module`).
+- Поле `node_type` в MQTT/API должно быть только каноническим (`ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`).
+
 **Процесс:**
 
 1. **Узел включается** и запускает прошивку

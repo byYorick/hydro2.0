@@ -48,12 +48,103 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Source:</label>
+          <select
+            v-model="sourceFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="biz">
+              biz
+            </option>
+            <option value="infra">
+              infra
+            </option>
+            <option value="node">
+              node
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Severity:</label>
+          <select
+            v-model="severityFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="critical">
+              critical
+            </option>
+            <option value="error">
+              error
+            </option>
+            <option value="warning">
+              warning
+            </option>
+            <option value="info">
+              info
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Category:</label>
+          <select
+            v-model="categoryFilter"
+            class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
+          >
+            <option value="">
+              Все
+            </option>
+            <option value="agronomy">
+              agronomy
+            </option>
+            <option value="operations">
+              operations
+            </option>
+            <option value="infrastructure">
+              infrastructure
+            </option>
+            <option value="node">
+              node
+            </option>
+            <option value="safety">
+              safety
+            </option>
+            <option value="config">
+              config
+            </option>
+            <option value="other">
+              other
+            </option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
           <input
             v-model="searchQuery"
             placeholder="type / code / message"
             class="input-field flex-1 sm:w-60"
           />
+        </div>
+
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Подавление:</label>
+          <input
+            v-model.number="toastSuppressionSec"
+            type="number"
+            min="0"
+            max="600"
+            step="5"
+            class="input-field w-24"
+          />
+          <span class="text-xs text-[color:var(--text-dim)]">сек</span>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -146,6 +237,12 @@
           </span>
         </template>
 
+        <template #cell-type="{ row }">
+          <span class="truncate block max-w-[320px]">
+            {{ getAlertMeta(row).title }}
+          </span>
+        </template>
+
         <template #cell-created_at="{ row }">
           {{ formatDate(row.created_at) }}
         </template>
@@ -215,7 +312,7 @@
               Тип
             </div>
             <div class="text-[color:var(--text-primary)] font-semibold">
-              {{ selectedAlert.type }}
+              {{ getAlertMeta(selectedAlert).title }}
             </div>
           </div>
           <div
@@ -241,14 +338,25 @@
             </div>
           </div>
           <div
-            v-if="selectedAlert.message"
+            v-if="selectedAlertMessage"
             class="space-y-1"
           >
             <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
               Сообщение
             </div>
             <div class="text-[color:var(--text-primary)]">
-              {{ selectedAlert.message }}
+              {{ selectedAlertMessage }}
+            </div>
+          </div>
+          <div
+            v-if="getAlertMeta(selectedAlert).recommendation"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Рекомендация
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ getAlertMeta(selectedAlert).recommendation }}
             </div>
           </div>
           <div class="space-y-1">
@@ -322,8 +430,12 @@ import { subscribeAlerts } from '@/ws/subscriptions'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type AlertCodeMeta } from '@/constants/alertErrorMap'
+import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Alert } from '@/types/Alert'
 
 interface AlertRecord extends Omit<Alert, 'zone'> {
@@ -339,9 +451,25 @@ interface PageProps {
   [key: string]: any
 }
 
+interface AlertCatalogItem {
+  code: string
+  title: string
+  description: string
+  recommendation?: string
+  severity?: AlertSeverity
+}
+
 const page = usePage<PageProps>()
 const alertsStore = useAlertsStore()
 const { api } = useApi()
+const { showToast } = useToast()
+const ALERT_TOAST_SUPPRESSION_KEY = 'hydro.alerts.toastSuppressionSec'
+const toastSuppressionSec = ref(30)
+const isSyncingSuppressionPreference = ref(false)
+let skipSuppressionPersistCount = 0
+const recentAlertToastAt = new Map<string, number>()
+const toastSuppressionMs = computed(() => Math.max(0, Math.floor(Number(toastSuppressionSec.value) || 0) * 1000))
+let suppressionPersistTimer: ReturnType<typeof setTimeout> | null = null
 
 const statusFilter = useUrlState<'active' | 'resolved' | 'all'>({
   key: 'status',
@@ -360,6 +488,38 @@ const zoneIdFilter = useUrlState<string>({
   parse: (value) => {
     if (!value) return ''
     return /^\d+$/.test(value) ? value : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const sourceFilter = useUrlState<string>({
+  key: 'source',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['biz', 'infra', 'node'].includes(normalized) ? normalized : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const severityFilter = useUrlState<string>({
+  key: 'severity',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['critical', 'error', 'warning', 'info'].includes(normalized) ? normalized : ''
+  },
+  serialize: (value) => value || null,
+})
+
+const categoryFilter = useUrlState<string>({
+  key: 'category',
+  defaultValue: '',
+  parse: (value) => {
+    const normalized = String(value || '').toLowerCase()
+    return ['agronomy', 'operations', 'infrastructure', 'node', 'safety', 'config', 'other'].includes(normalized)
+      ? normalized
+      : ''
   },
   serialize: (value) => value || null,
 })
@@ -399,6 +559,7 @@ watch(
 )
 
 const alerts = computed(() => alertsStore.items as AlertRecord[])
+const catalogMetaByCode = ref<Record<string, AlertCodeMeta>>({})
 
 const isRefreshing = ref(false)
 const isInitialLoading = computed(() => isRefreshing.value && alerts.value.length === 0)
@@ -415,6 +576,15 @@ const loadAlerts = async (): Promise<void> => {
     if (zoneIdFilter.value) {
       params.zone_id = parseInt(zoneIdFilter.value)
     }
+    if (sourceFilter.value) {
+      params.source = sourceFilter.value
+    }
+    if (severityFilter.value) {
+      params.severity = severityFilter.value
+    }
+    if (categoryFilter.value) {
+      params.category = categoryFilter.value
+    }
 
     const response = await api.get('/api/alerts', { params })
     const payload = response?.data?.data
@@ -426,6 +596,9 @@ const loadAlerts = async (): Promise<void> => {
     alertsStore.setAll(list)
   } catch (err) {
     logger.error('[Alerts] Failed to load alerts', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось загрузить алерты: ${extractHumanErrorMessage(err, 'Ошибка загрузки')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     isRefreshing.value = false
   }
@@ -434,6 +607,10 @@ const loadAlerts = async (): Promise<void> => {
 watch([statusFilter, zoneIdFilter], () => {
   loadAlerts()
 }, { immediate: true })
+
+watch([sourceFilter, severityFilter, categoryFilter], () => {
+  loadAlerts()
+})
 
 const zoneOptions = computed(() => {
   const map = new Map<number, string>()
@@ -448,6 +625,21 @@ const zoneOptions = computed(() => {
 
 const searchNeedle = computed(() => searchQuery.value.trim().toLowerCase())
 
+const getAlertMeta = (alert?: AlertRecord | null): AlertCodeMeta => {
+  const code = String(alert?.code || '').trim().toLowerCase()
+  if (code && catalogMetaByCode.value[code]) {
+    return catalogMetaByCode.value[code]
+  }
+  return resolveAlertCodeMeta(alert?.code)
+}
+
+const getAlertMessage = (alert?: AlertRecord | null): string => {
+  if (!alert) return ''
+  const messageFromPayload = String(alert.message || alert.details?.message || '').trim()
+  if (messageFromPayload) return messageFromPayload
+  return getAlertMeta(alert).description
+}
+
 const isResolved = (alert: AlertRecord): boolean => {
   return alert.status === 'resolved' || alert.status === 'RESOLVED'
 }
@@ -455,8 +647,8 @@ const isResolved = (alert: AlertRecord): boolean => {
 const isAlarm = (alert: AlertRecord): boolean => {
   const type = (alert.type || '').toUpperCase()
   const code = (alert.code || '').toUpperCase()
-  const severity = String(alert.details?.severity || alert.details?.level || '').toUpperCase()
-  return type.includes('ALARM') || type.includes('ALERT') || code.includes('ALARM') || severity.includes('CRITICAL')
+  const severity = resolveAlertSeverity(alert.code, alert.details)
+  return type.includes('ALARM') || type.includes('ALERT') || code.includes('ALARM') || severity === 'critical'
 }
 
 const filteredAlerts = computed(() => {
@@ -475,6 +667,21 @@ const filteredAlerts = computed(() => {
       if (String(alert.zone_id || '') !== zoneIdFilter.value) return false
     }
 
+    if (sourceFilter.value) {
+      const source = String(alert.source || '').toLowerCase()
+      if (source !== sourceFilter.value) return false
+    }
+
+    if (severityFilter.value) {
+      const severity = String(alert.severity || resolveAlertSeverity(alert.code, alert.details)).toLowerCase()
+      if (severity !== severityFilter.value) return false
+    }
+
+    if (categoryFilter.value) {
+      const category = String(alert.category || alert.details?.category || '').toLowerCase()
+      if (category !== categoryFilter.value) return false
+    }
+
     if (recentOnly.value && alert.created_at) {
       const created = new Date(alert.created_at).getTime()
       if (Number.isNaN(created) || now - created > dayMs) return false
@@ -487,7 +694,8 @@ const filteredAlerts = computed(() => {
       const searchStack = [
         alert.type,
         alert.code,
-        alert.message,
+        getAlertMessage(alert),
+        getAlertMeta(alert).title,
         alert.source,
         detailsText,
       ]
@@ -590,6 +798,9 @@ const doResolve = async (): Promise<void> => {
     applyResolved(confirm.value.alertId, updated)
   } catch (err) {
     logger.error('[Alerts] Failed to resolve alert', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось подтвердить алерт: ${extractHumanErrorMessage(err, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     closeConfirm()
   }
@@ -611,6 +822,9 @@ const resolveSelected = async (): Promise<void> => {
     }))
   } catch (err) {
     logger.error('[Alerts] Failed to resolve alerts', err)
+    if (!(err as any)?.response) {
+      showToast(`Не удалось подтвердить выбранные алерты: ${extractHumanErrorMessage(err, 'Ошибка подтверждения')}`, 'error', TOAST_TIMEOUT.NORMAL)
+    }
   } finally {
     bulkConfirm.value = { open: false, loading: false }
     selectedIds.value = new Set()
@@ -623,6 +837,8 @@ const selectedAlert = computed<AlertRecord | null>(() => {
   if (!selectedAlertId.value) return null
   return (alertsStore.alertById(selectedAlertId.value) as AlertRecord) || null
 })
+
+const selectedAlertMessage = computed(() => getAlertMessage(selectedAlert.value))
 
 const detailsJson = computed(() => {
   if (!selectedAlert.value?.details) return ''
@@ -648,18 +864,167 @@ const formatDate = (value?: string): string => {
   return parsed.toLocaleString('ru-RU')
 }
 
+const severityToToastVariant = (severity: AlertSeverity): 'info' | 'warning' | 'error' => {
+  if (severity === 'critical' || severity === 'error') return 'error'
+  if (severity === 'warning') return 'warning'
+  return 'info'
+}
+
+const getAlertToastKey = (alert: AlertRecord): string => {
+  const dedupeFromBackend = String(alert.details?.dedupe_key || '').trim()
+  if (dedupeFromBackend) return dedupeFromBackend
+  return [
+    String(alert.code || alert.type || 'unknown'),
+    String(alert.zone_id || 'global'),
+    String(alert.details?.node_uid || alert.details?.hardware_id || 'node'),
+  ].join('|')
+}
+
+const shouldSuppressAlertToast = (alert: AlertRecord): boolean => {
+  const windowMs = toastSuppressionMs.value
+  if (windowMs <= 0) return false
+
+  const now = Date.now()
+  for (const [key, timestamp] of recentAlertToastAt.entries()) {
+    if (now - timestamp > windowMs) {
+      recentAlertToastAt.delete(key)
+    }
+  }
+
+  const key = getAlertToastKey(alert)
+  const prevTimestamp = recentAlertToastAt.get(key)
+  if (prevTimestamp && now - prevTimestamp < windowMs) {
+    return true
+  }
+  recentAlertToastAt.set(key, now)
+  return false
+}
+
+const normalizeSuppressionSec = (value: unknown): number => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 30
+  return Math.min(600, Math.max(0, Math.floor(parsed)))
+}
+
+const applyToastSuppressionFromStorage = (): boolean => {
+  if (typeof window === 'undefined') return false
+  const raw = window.localStorage.getItem(ALERT_TOAST_SUPPRESSION_KEY)
+  if (!raw) return false
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return false
+  isSyncingSuppressionPreference.value = true
+  skipSuppressionPersistCount += 1
+  toastSuppressionSec.value = normalizeSuppressionSec(parsed)
+  isSyncingSuppressionPreference.value = false
+  return true
+}
+
+const loadToastSuppressionPreference = async (): Promise<void> => {
+  const hasLocalFallback = applyToastSuppressionFromStorage()
+  try {
+    const response = await api.get('/settings/preferences')
+    const fromProfile = response?.data?.data?.alert_toast_suppression_sec
+    isSyncingSuppressionPreference.value = true
+    skipSuppressionPersistCount += 1
+    toastSuppressionSec.value = normalizeSuppressionSec(fromProfile)
+    isSyncingSuppressionPreference.value = false
+  } catch (err) {
+    logger.warn('[Alerts] Failed to load toast suppression preference from profile', err)
+    if (!hasLocalFallback) {
+      isSyncingSuppressionPreference.value = true
+      skipSuppressionPersistCount += 1
+      toastSuppressionSec.value = 30
+      isSyncingSuppressionPreference.value = false
+    }
+  }
+}
+
+const persistToastSuppressionPreference = async (value: number): Promise<void> => {
+  try {
+    await api.patch('/settings/preferences', {
+      alert_toast_suppression_sec: value,
+    })
+  } catch (err) {
+    logger.warn('[Alerts] Failed to persist toast suppression preference', err)
+  }
+}
+
+watch(toastSuppressionSec, (value) => {
+  const normalized = normalizeSuppressionSec(value)
+  if (normalized !== value) {
+    toastSuppressionSec.value = normalized
+    return
+  }
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(ALERT_TOAST_SUPPRESSION_KEY, String(normalized))
+  }
+  if (skipSuppressionPersistCount > 0) {
+    skipSuppressionPersistCount -= 1
+    return
+  }
+  if (isSyncingSuppressionPreference.value) return
+  if (suppressionPersistTimer) {
+    clearTimeout(suppressionPersistTimer)
+  }
+  suppressionPersistTimer = setTimeout(() => {
+    persistToastSuppressionPreference(normalized)
+  }, 350)
+})
+
 let unsubscribeAlerts: (() => void) | null = null
 
+const loadAlertCatalog = async (): Promise<void> => {
+  try {
+    const response = await api.get('/api/alerts/catalog')
+    const items = response?.data?.data?.items
+    if (!Array.isArray(items)) return
+
+    const map: Record<string, AlertCodeMeta> = {}
+    items.forEach((item: AlertCatalogItem) => {
+      const code = String(item?.code || '').trim().toLowerCase()
+      if (!code) return
+      map[code] = {
+        title: item.title || 'Системное предупреждение',
+        description: item.description || 'Сервис сообщил о состоянии, которое требует проверки.',
+        recommendation: item.recommendation || 'Проверьте детали алерта и журналы сервиса.',
+        severity: (item.severity || 'warning') as AlertSeverity,
+      }
+    })
+    catalogMetaByCode.value = map
+  } catch (err) {
+    logger.warn('[Alerts] Failed to load alert catalog', err)
+  }
+}
+
 onMounted(() => {
+  loadToastSuppressionPreference()
+  loadAlertCatalog()
   unsubscribeAlerts = subscribeAlerts((event) => {
     const payload = event as AlertRecord
     if (payload?.id) {
       alertsStore.upsert(payload as Alert)
+      if (!isResolved(payload) && !shouldSuppressAlertToast(payload)) {
+        const meta = getAlertMeta(payload)
+        const severity = resolveAlertSeverity(payload.code, payload.details)
+        showToast(
+          getAlertMessage(payload),
+          severityToToastVariant(severity),
+          TOAST_TIMEOUT.NORMAL,
+          {
+            title: meta.title,
+            allowDuplicates: true,
+          }
+        )
+      }
     }
   })
 })
 
 onUnmounted(() => {
+  if (suppressionPersistTimer) {
+    clearTimeout(suppressionPersistTimer)
+    suppressionPersistTimer = null
+  }
   unsubscribeAlerts?.()
   unsubscribeAlerts = null
 })

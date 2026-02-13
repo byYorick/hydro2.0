@@ -8,15 +8,21 @@
         <template v-if="canManageRecipe">
           <Button
             size="sm"
-            :variant="activeGrowCycle ? 'secondary' : 'primary'"
+            :variant="displayCycle ? 'secondary' : 'primary'"
             data-testid="recipe-attach-btn"
-            @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
+            @click="handleRecipeAction"
           >
-            <span v-if="!activeGrowCycle" data-testid="zone-start-btn">
+            <span
+              v-if="!displayCycle"
+              data-testid="zone-start-btn"
+            >
               Запустить цикл
             </span>
-            <span v-else>
+            <span v-else-if="hasDetailedCycle">
               Сменить ревизию
+            </span>
+            <span v-else>
+              Обновить данные
             </span>
           </Button>
         </template>
@@ -48,6 +54,17 @@
           >
             {{ phaseTimeLeftLabel }}
           </span>
+        </div>
+      </div>
+      <div
+        v-else-if="displayCycle"
+        class="space-y-2"
+      >
+        <div class="text-sm text-[color:var(--text-dim)]">
+          Цикл уже активен, но данные фаз ещё не синхронизированы
+        </div>
+        <div class="text-xs text-[color:var(--text-dim)]">
+          Нажмите «Обновить данные», чтобы подтянуть активный цикл, фазы и таргеты.
         </div>
       </div>
       <div
@@ -192,12 +209,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
 import { translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatInterval, formatTimeShort } from '@/utils/formatTime'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Cycle } from '@/types'
 
 interface LoadingStateProps {
@@ -211,23 +230,23 @@ interface LoadingStateProps {
 interface Props {
   activeGrowCycle?: any
   activeCycle?: any
+  zoneStatus?: string
   currentPhase?: any
   cyclesList: Array<Cycle & { required?: boolean; recipeTargets?: any; last_run?: string | null; next_run?: string | null; interval?: number | null }>
   computedPhaseProgress: number | null
   computedPhaseDaysElapsed: number | null
   computedPhaseDaysTotal: number | null
   cycleStatusLabel: string
-  cycleStatusVariant: 'success' | 'neutral' | 'warning'
+  cycleStatusVariant: BadgeVariant
   phaseTimeLeftLabel: string
   canManageRecipe: boolean
   canManageCycle: boolean
   loading: LoadingStateProps
 }
 
-defineProps<Props>()
-
-defineEmits<{
+const emit = defineEmits<{
   (e: 'run-cycle'): void
+  (e: 'refresh-cycle'): void
   (e: 'change-recipe'): void
   (e: 'pause'): void
   (e: 'resume'): void
@@ -235,6 +254,35 @@ defineEmits<{
   (e: 'abort'): void
   (e: 'next-phase'): void
 }>()
+
+const props = defineProps<Props>()
+
+const displayCycle = computed(() => {
+  if (props.activeGrowCycle || props.activeCycle) {
+    return props.activeGrowCycle ?? props.activeCycle
+  }
+
+  if (props.zoneStatus === 'RUNNING' || props.zoneStatus === 'PAUSED') {
+    return { status: props.zoneStatus }
+  }
+
+  return null
+})
+const hasDetailedCycle = computed(() => Boolean(props.activeGrowCycle))
+
+function handleRecipeAction(): void {
+  if (!displayCycle.value) {
+    emit('run-cycle')
+    return
+  }
+
+  if (hasDetailedCycle.value) {
+    emit('change-recipe')
+    return
+  }
+
+  emit('refresh-cycle')
+}
 
 function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_run?: string | null; interval?: number | null }): number {
   if (!cycle.last_run || !cycle.interval || !cycle.next_run) return 0

@@ -79,26 +79,26 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         // Проверяем, что созданы alerts для каждой ошибки
         $this->assertDatabaseHas('alerts', [
             'zone_id' => $zone->id,
-            'code' => 'infra_node_error_ERR_TIMEOUT',
+            'code' => 'infra_node_error_err_timeout',
             'source' => 'infra',
             'status' => 'ACTIVE',
         ]);
         
         $this->assertDatabaseHas('alerts', [
             'zone_id' => $zone->id,
-            'code' => 'infra_node_error_ERR_SENSOR',
+            'code' => 'infra_node_error_err_sensor',
             'source' => 'infra',
             'status' => 'ACTIVE',
         ]);
 
         // Проверяем, что count, first_seen_at, last_seen_at сохранены
-        $timeoutAlert = Alert::where('code', 'infra_node_error_ERR_TIMEOUT')->first();
+        $timeoutAlert = Alert::where('code', 'infra_node_error_err_timeout')->first();
         $this->assertNotNull($timeoutAlert);
         $this->assertEquals(10, $timeoutAlert->details['count'], 'Count должен быть сохранен');
         $this->assertArrayHasKey('first_seen_at', $timeoutAlert->details);
         $this->assertArrayHasKey('last_seen_at', $timeoutAlert->details);
         
-        $sensorAlert = Alert::where('code', 'infra_node_error_ERR_SENSOR')->first();
+        $sensorAlert = Alert::where('code', 'infra_node_error_err_sensor')->first();
         $this->assertNotNull($sensorAlert);
         $this->assertEquals(5, $sensorAlert->details['count'], 'Count должен быть сохранен');
         $this->assertArrayHasKey('first_seen_at', $sensorAlert->details);
@@ -184,7 +184,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $method->invoke($nodeRegistryService, $node);
 
         // Проверяем, что alerts НЕ созданы (нет zone_id)
-        $alertsCount = Alert::where('code', 'infra_node_error_ERR_TEST')->count();
+        $alertsCount = Alert::where('code', 'infra_node_error_err_test')->count();
         $this->assertEquals(0, $alertsCount, 'Alerts не должны быть созданы без zone_id');
 
         // Проверяем, что ошибки НЕ архивированы
@@ -216,7 +216,7 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $existingAlert = Alert::create([
             'zone_id' => $zone->id,
             'source' => 'infra',
-            'code' => 'infra_node_error_ERR_TEST',
+            'code' => 'infra_node_error_err_test',
             'type' => 'Node Error: Test',
             'status' => 'ACTIVE',
             'details' => [
@@ -265,16 +265,9 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $firstSeenAt = \Carbon\Carbon::parse($alert->details['first_seen_at']);
         $this->assertTrue($firstSeenAt->lt($laterTime), 'first_seen_at должен быть более ранним');
         
-        // AlertService::createOrUpdateActive увеличивает count на 1, но мы передаем максимальное значение в details
-        // После merge наш count перезапишет увеличенный, так что должно быть 5
-        // Но если merge происходит после увеличения, то будет 4 (3+1). Проверяем, что count не меньше исходного
-        $this->assertGreaterThanOrEqual(3, $alert->details['count'], 'Count должен быть как минимум исходным значением');
-        // Проверяем, что count соответствует переданному максимальному значению (если merge перезаписывает)
-        // или увеличенному (если merge не перезаписывает). В любом случае должен быть >= 5
-        $this->assertTrue(
-            $alert->details['count'] >= 3 && $alert->details['count'] <= 5,
-            'Count должен быть в диапазоне от исходного (3) до максимального (5)'
-        );
+        // В dedup-потоке AlertService синхронизирует details.count с alerts.error_count.
+        $this->assertEquals($alert->error_count, $alert->details['count']);
+        $this->assertGreaterThanOrEqual(2, $alert->details['count'], 'Count должен увеличиваться при обновлении алерта');
     }
 
     /**
@@ -469,4 +462,3 @@ class UnassignedNodeErrorsAttachTest extends TestCase
         $this->assertEquals(0, $remainingErrors, 'Все ошибки должны быть удалены');
     }
 }
-

@@ -1,0 +1,5 @@
+managed_components/
+build/
+.cache/
+.vscode/
+build_textfix/

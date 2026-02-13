@@ -373,6 +373,24 @@ class TestZoneEventsContracts:
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, zone_events_schema)
 
+    def test_zone_event_type_length_boundaries(self, zone_events_schema):
+        """Тест границ длины поля type: <=255 валидно, >255 невалидно."""
+        import time
+        valid = {
+            "zone_id": 1,
+            "type": "A" * 255,
+            "server_ts": int(time.time() * 1000),
+        }
+        validate_against_schema(valid, zone_events_schema)
+
+        invalid = {
+            "zone_id": 1,
+            "type": "B" * 256,
+            "server_ts": int(time.time() * 1000),
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, zone_events_schema)
+
 
 class TestContractCompatibility:
     """Тесты совместимости контрактов между компонентами."""

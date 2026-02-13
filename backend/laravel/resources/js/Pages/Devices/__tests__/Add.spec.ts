@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPatchMock = vi.hoisted(() => vi.fn())
+const apiDeleteMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -34,6 +35,10 @@ vi.mock('@/composables/useApi', () => ({
       patch: (url: string, data?: any, config?: any) => {
         const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
         return apiPatchMock(finalUrl, data, config)
+      },
+      delete: (url: string, config?: any) => {
+        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
+        return apiDeleteMock(finalUrl, config)
       },
     },
   }),
@@ -68,6 +73,13 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => ({
+    props: {
+      auth: {
+        user: { role: 'agronomist' },
+      },
+    },
+  }),
   router: {
     visit: vi.fn(),
   },
@@ -80,6 +92,7 @@ describe('Devices/Add.vue', () => {
     vi.useFakeTimers()
     apiGetMock.mockReset()
     apiPatchMock.mockReset()
+    apiDeleteMock.mockReset()
 
     apiGetMock.mockImplementation((url: string) => {
       if (url === '/api/nodes') {
@@ -137,6 +150,7 @@ describe('Devices/Add.vue', () => {
   afterEach(() => {
     vi.runOnlyPendingTimers()
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('renders new nodes from paginated API responses', async () => {
@@ -146,6 +160,25 @@ describe('Devices/Add.vue', () => {
     expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', { params: { unassigned: true } })
     expect(wrapper.text()).toContain('UID: nd-clim-1')
     expect(wrapper.text()).not.toContain('Новых нод не найдено')
+
+    wrapper.unmount()
+  })
+
+  it('deletes a node after confirmation', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    apiDeleteMock.mockResolvedValue({ data: { status: 'ok' } })
+
+    const wrapper = mount(DevicesAdd)
+    await flushPromises()
+
+    const deleteButton = wrapper.find('[data-test="delete-node-1"]')
+    expect(deleteButton.exists()).toBe(true)
+
+    await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(apiDeleteMock).toHaveBeenCalledWith('/api/nodes/1', undefined)
+    expect(wrapper.text()).not.toContain('UID: nd-clim-1')
 
     wrapper.unmount()
   })

@@ -278,6 +278,22 @@
 - Мета real_duration_minutes задана
 - После завершения отправляются set_relay и set_pwm
 
+### E91_live_simulation_full_cycle.yaml
+**DoD:** live-симуляция проходит полный цикл, отчет сформирован
+
+Проверяет полный цикл live-симуляции:
+- Создается сим-зона и grow-cycle
+- Формируется отчет в simulation_reports
+- Все фазы проходят до HARVESTED
+
+### E92_digital_twin_model_simulation.yaml
+**DoD:** модельная симуляция Digital Twin завершена и результаты сохранены
+
+Проверяет модельную симуляцию:
+- Запуск через /api/zones/{id}/simulate без live-режима
+- Запись zone_simulations получает results и status=completed
+- События job идут в порядке running → completed
+
 ## CHAOS
 
 ### E70_mqtt_down_recovery.yaml
@@ -338,4 +354,3 @@
 Поддерживаемые сервисы: `laravel`, `mosquitto`, `postgres`, `history-logger`, `automation-engine`, `redis`, `reverb`.
 
 Поддерживаемые действия: `stop`, `start`, `pause`, `unpause`.
-

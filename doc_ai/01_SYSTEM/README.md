@@ -23,7 +23,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Полные потоки данных**
 - Telemetry Flow (узлы → backend)
 - Command Flow (backend → узлы)
-- Config Flow (backend → узлы)
+- Config Flow (`config_report`: узлы → backend)
 - Status/LWT Flow
 - Heartbeat Flow
 - Events Flow

@@ -1,0 +1,539 @@
+# E69: EC batch early-stop by ec_stop_tolerance
+# DoD: После первой компонентной дозы AE останавливает batch при достижении target - tolerance
+
+name: E69_ec_batch_early_stop_tolerance
+description: |
+  Проверяет раннюю остановку компонентного дозирования EC:
+  - Фаза с mode=ratio_ec_pid и 4 компонентами
+  - Включены nutrient_dose_delay_sec и nutrient_ec_stop_tolerance
+  - После первой команды поднимаем EC в telemetry_last выше порога stop
+  - AE создает EC_COMPONENT_BATCH_STOPPED и не отправляет оставшиеся компоненты
+
+actions:
+  - step: stop_node_simulator_initial
+    type: stop_simulator
+    wait_seconds: 3
+    optional: true
+
+  - step: start_node_simulator
+    type: start_simulator
+    wait_seconds: 3
+    optional: true
+
+  - step: set_test_zone_uid
+    type: set
+    test_zone_uid: zn-test-1
+
+  - step: get_test_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: set_ec_only_capabilities_for_cycle_start
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_zone_readiness_bindings
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'zone_role',
+        CASE
+          WHEN nc.channel = 'main_pump' THEN 'main_pump'
+          WHEN nc.channel = 'drain_pump' THEN 'drain'
+          ELSE nc.config->>'zone_role'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.zone_id = :zone_id
+        AND nc.channel IN ('main_pump', 'drain_pump');
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_main_and_drain_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('PUMP', 'E2E Main Pump'),
+            ('DRAIN', 'E2E Drain Pump')
+        ) AS m(asset_type, label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = m.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('main_pump', 'main_pump', 'E2E Main Pump'),
+            ('drain_pump', 'drain', 'E2E Drain Pump')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+
+  - step: verify_main_and_drain_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('main_pump', 'drain')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 2
+    timeout: 15.0
+
+  - step: force_primary_node_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND uid = 'nd-ph-esp32una';
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_ec_component_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, 'PUMP', x.label, false, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('E2E EC Pump A'),
+            ('E2E EC Pump B'),
+            ('E2E EC Pump C'),
+            ('E2E EC Pump D')
+        ) AS x(label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = x.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.zone_id = zc.zone_id
+         AND n.uid = 'nd-ph-esp32una'
+        JOIN (
+          VALUES
+            ('fan', 'ec_npk_pump', 'E2E EC Pump A'),
+            ('heater', 'ec_calcium_pump', 'E2E EC Pump B'),
+            ('light', 'ec_magnesium_pump', 'E2E EC Pump C'),
+            ('mister', 'ec_micro_pump', 'E2E EC Pump D')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+
+  - step: verify_ec_component_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND n.status = 'online'
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 4
+    timeout: 15.0
+
+  - step: ensure_ec_component_calibration
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'pump_calibration',
+        CASE nc.channel
+          WHEN 'fan' THEN jsonb_build_object('ml_per_sec', 0.12, 'k_ms_per_ml_l', 0.80)
+          WHEN 'heater' THEN jsonb_build_object('ml_per_sec', 0.10, 'k_ms_per_ml_l', 0.65)
+          WHEN 'light' THEN jsonb_build_object('ml_per_sec', 0.08, 'k_ms_per_ml_l', 0.50)
+          WHEN 'mister' THEN jsonb_build_object('ml_per_sec', 0.06, 'k_ms_per_ml_l', 0.35)
+          ELSE nc.config->'pump_calibration'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.zone_id = :zone_id
+        AND n.uid = 'nd-ph-esp32una'
+        AND nc.channel IN ('fan', 'heater', 'light', 'mister');
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_recent_commands
+    type: database_execute
+    query: |
+      DELETE FROM commands
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e69-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e69-${TIMESTAMP_S}
+      description: Test EC early stop by tolerance
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision E69
+    save: revision_response
+
+  - step: add_phase_for_early_stop
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: E69 early stop phase
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.8
+      ph_max: 6.2
+      ec_target: 2.0
+      ec_min: 1.8
+      ec_max: 2.2
+      nutrient_program_code: E2E_EARLY_STOP
+      nutrient_mode: ratio_ec_pid
+      nutrient_solution_volume_l: 100
+      nutrient_dose_delay_sec: 2
+      nutrient_ec_stop_tolerance: 0.05
+      nutrient_npk_ratio_pct: 40
+      nutrient_calcium_ratio_pct: 30
+      nutrient_magnesium_ratio_pct: 20
+      nutrient_micro_ratio_pct: 10
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_grow_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: ensure_zone_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: reset_recent_ec_correction_events
+    type: database_execute
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zone_id
+        AND (
+          type IN ('EC_DOSING', 'EC_CORRECTED')
+          OR (
+            type = 'DOSING'
+            AND (
+              POSITION('ec' IN LOWER(COALESCE(details->>'correction_type', ''))) > 0
+              OR POSITION('ec' IN LOWER(COALESCE(details->>'type', ''))) > 0
+            )
+          )
+        );
+    params:
+      zone_id: ${zone_id}
+
+  - step: reset_backoff
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: reset_backoff
+
+  - step: set_fresh_telemetry_low_ec
+    type: database_execute
+    query: |
+      UPDATE telemetry_last tl
+      SET last_value = CASE WHEN s.type = 'EC' THEN 1.00 ELSE 6.00 END,
+          last_ts = NOW(),
+          updated_at = NOW(),
+          last_quality = 'GOOD'
+      FROM sensors s
+      WHERE tl.sensor_id = s.id
+        AND s.zone_id = :zone_id
+        AND s.type IN ('PH', 'EC');
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_first_component_command
+    type: db.wait
+    query: |
+      SELECT id, cmd, params
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND cmd = 'run_pump'
+      AND params->>'type' = 'add_nutrients'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    timeout: 35.0
+    save: first_component_command
+
+  - step: raise_ec_to_stop_threshold
+    type: database_execute
+    query: |
+      UPDATE telemetry_last tl
+      SET last_value = 2.20,
+          last_ts = NOW(),
+          updated_at = NOW(),
+          last_quality = 'GOOD'
+      FROM sensors s
+      WHERE tl.sensor_id = s.id
+        AND s.zone_id = :zone_id
+        AND s.type = 'EC';
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_batch_stopped_event
+    type: wait_zone_event
+    zone_id: ${zone_id}
+    event_type: EC_COMPONENT_BATCH_STOPPED
+    timeout: 45.0
+
+assertions:
+  - name: exactly_one_add_nutrients_command
+    type: database_query
+    query: |
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND cmd = 'run_pump'
+      AND params->>'type' = 'add_nutrients'
+      AND created_at > NOW() - INTERVAL '3 minutes'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: cmd_count
+        operator: equals
+        value: 1
+
+  - name: has_component_recheck_event
+    type: database_query
+    query: |
+      SELECT id, type, details
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND type = 'EC_COMPONENT_RECHECK'
+      AND created_at > NOW() - INTERVAL '3 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  - name: has_batch_stopped_event
+    type: database_query
+    query: |
+      SELECT id, type, details
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND type = 'EC_COMPONENT_BATCH_STOPPED'
+      AND created_at > NOW() - INTERVAL '3 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+cleanup:
+  - step: restore_default_roles_after_test
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      )
+      UPDATE channel_bindings cb
+      SET role = CASE nc.channel
+        WHEN 'fan' THEN 'fan'
+        WHEN 'heater' THEN 'heater'
+        WHEN 'light' THEN 'light'
+        WHEN 'mister' THEN 'mister'
+        ELSE cb.role
+      END,
+      updated_at = NOW()
+      FROM zone_ctx zc
+      JOIN nodes n
+        ON n.zone_id = zc.zone_id
+       AND n.uid = 'nd-ph-esp32una'
+      JOIN node_channels nc
+        ON nc.node_id = n.id
+      WHERE cb.node_channel_id = nc.id
+        AND nc.channel IN ('fan', 'heater', 'light', 'mister');
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+
+  - step: start_node_simulator_back
+    type: start_simulator
+    optional: true

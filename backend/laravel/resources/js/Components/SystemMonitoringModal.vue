@@ -234,8 +234,8 @@ const {
   checkWebSocketStatus,
 } = useSystemStatus()
 
-const historyLoggerEndpoint = 'http://history-logger:9300/health'
-const automationEngineEndpoint = 'http://automation-engine:9401/metrics'
+const historyLoggerEndpoint = '/api/system/health[data.history_logger]'
+const automationEngineEndpoint = '/api/system/health[data.automation_engine]'
 
 // Вычисляем список проблемных компонентов для детального отображения
 const chainIssues = computed(() => {

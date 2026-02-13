@@ -11,6 +11,13 @@
 - UI (OLED и Android),
 - процессы эксплуатации.
 
+## Термины (для единообразия)
+
+- `firmware_module` — имя прошивочного ESP-IDF проекта (`ph_node`, `ec_node`, `climate_node`, `pump_node`).
+- `node_type` — тип узла в MQTT/API/БД (`nodes.type`) с каноническими значениями:
+  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Имена `*_node` не используются как `node_type` в payload и базе данных.
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -65,7 +72,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - шьётся базовая прошивка 2.0;
 - задаются:
  - hardware-ID (MAC),
- - factory-config (тип ноды: pH/EC/климат/свет),
+ - factory-config (канонический `node_type`: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`),
  - версия схемы NVS;
 - узел проходит минимальный self-test.
 
@@ -110,6 +117,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  }
 }
 ```
+
+`node_type` в `node_hello` передается только в канонической схеме (см. блок терминов выше).
 
 ### Соответствие идентификаторов
 

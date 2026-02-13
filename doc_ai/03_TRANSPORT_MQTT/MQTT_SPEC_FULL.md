@@ -80,7 +80,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`, `FLOW_RATE`, `PUMP_CURRENT`
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
 
@@ -98,6 +98,31 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 - Backend сохраняет TelemetrySample
 - Backend обновляет last_value в Redis
 - Backend может триггерить Alerts
+
+## 3.4. Telemetry для дискретных датчиков уровня (2-бака)
+
+Для каналов:
+- `level_clean_min`
+- `level_clean_max`
+- `level_solution_min`
+- `level_solution_max`
+
+узел публикует стандартную telemetry с `value` в формате `0|1`:
+
+```json
+{
+  "metric_type": "WATER_LEVEL_SWITCH",
+  "value": 1,
+  "ts": 1710001234
+}
+```
+
+Семантика:
+- `1` — датчик сработал;
+- `0` — датчик не сработал.
+
+Решение по контракту:
+- `WATER_LEVEL_SWITCH` является каноническим `metric_type` для дискретных датчиков уровня (`0|1`).
 
 ---
 
@@ -297,6 +322,36 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
+### 6) Тест сенсора канала
+```json
+{
+ "cmd": "test_sensor",
+ "params": {},
+ "cmd_id": "cmd-596",
+ "ts": 1737355117,
+ "sig": "f6a1b2c3d4e5..."
+}
+```
+**Правило (для всех нод):** команда `test_sensor` обязательна для любых узлов, у которых есть
+каналы типа `SENSOR`. Узел выполняет разовое чтение датчика для канала из MQTT-топика
+`.../{channel}/command` и отвечает `command_response`:
+- при успехе: `status=DONE` и `details` как объект с измерением (например `value`, `unit`,
+  `metric_type`, опционально `raw`, `stable`, `tvoc_ppb` и т.п.);
+- при ошибке чтения/инициализации: `status=ERROR` или `INVALID` + `error_code`/`error_message`.
+
+### 7) Перезапуск ноды
+```json
+{
+ "cmd": "restart",
+ "params": {},
+ "cmd_id": "cmd-597",
+ "ts": 1737355118,
+ "sig": "a7b8c9d0e1f2..."
+}
+```
+**Правило (для всех нод):** команда `restart` доступна для любых узлов. Узел обязан отправить
+`command_response` со статусом `DONE`, а затем выполнить перезагрузку устройства.
+
 ## 7.3. Формат команды с HMAC подписью
 
 Все команды должны содержать следующие обязательные поля:
@@ -367,7 +422,7 @@ Backend никогда не остаётся "в неизвестности": п
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
-- `details` (string) — детали выполнения команды
+- `details` (string|object) — детали выполнения команды
 
 **Пример успешного ответа:**
 ```json
@@ -450,8 +505,8 @@ Backend никогда не остаётся "в неизвестности": п
 
 ## 8.5. Особые правила для насосов (pump\_*)
 
-Для всех команд, связанных с насосами (`pump_acid`, `pump_base`, `pump_nutrient`,
-`pump_in` и другие актуаторные каналы насосов):
+Для всех команд, связанных с насосами (`pump_acid`, `pump_base`, `pump_a`, `pump_b`,
+`pump_c`, `pump_d`, `pump_in` и другие актуаторные каналы насосов):
 
 1. Узел **обязан** после включения насоса:
    - подождать минимальное время стабилизации (настраиваемое, например 100–300 ms),
@@ -468,6 +523,65 @@ Backend никогда не остаётся "в неизвестности": п
 
 Таким образом, backend всегда знает не только то, что команда на включение насоса была отправлена,
 но и то, что **реле реально замкнулось и насос потребляет ток** в ожидаемых пределах.
+
+## 8.6. Особые правила для авто-наполнения баков (2-бака)
+
+Для каналов `valve_clean_fill` и `valve_solution_fill`:
+
+1. Нода обязана локально остановить наполнение по датчику `*_max`:
+   - `level_clean_max` для чистого бака;
+   - `level_solution_max` для бака раствора.
+2. При авто-остановке нода обязана отправить `command_response`:
+
+```json
+{
+  "cmd_id": "cmd-701",
+  "status": "DONE",
+  "ts": 1710003399123,
+  "details": {
+    "result": "auto_stopped",
+    "reason_code": "level_max_reached",
+    "tank": "clean"
+  }
+}
+```
+
+3. Дополнительно нода публикует событие (канал `storage_state`):
+
+Топик:
+```text
+hydro/{gh}/{zone}/{node}/storage_state/event
+```
+
+Payload:
+```json
+{
+  "event_code": "clean_fill_completed",
+  "ts": 1710003399,
+  "state": {
+    "level_clean_min": 1,
+    "level_clean_max": 1,
+    "level_solution_min": 0,
+    "level_solution_max": 0
+  }
+}
+```
+
+Нормализация в backend (`history-logger`):
+- `event_code` (или fallback-поля `event`/`type`) преобразуется в `zone_events.type`;
+- преобразование: `UPPERCASE` + все не `[A-Z0-9]` символы заменяются на `_` + схлопывание повторов `_`;
+- пример: `clean fill-completed/v2` -> `CLEAN_FILL_COMPLETED_V2`;
+- если код пустой, используется `NODE_EVENT`.
+- для `zone_events.type` действует лимит 255 символов: если нормализованный код длиннее, он усечётся
+  детерминированно и получит suffix `_{SHA1_10}` (первые 10 hex-символов SHA1).
+
+Метрика приёма событий (`node_event_received_total{event_code=...}`):
+- в label попадают только whitelisted коды событий двухбакового контура;
+- все остальные коды агрегируются в `event_code="OTHER"` для контроля кардинальности Prometheus.
+
+Назначение:
+- automation-engine использует это событие как fast-path подтверждение;
+- scheduler/automation сохраняют периодический poll как резервный канал контроля.
 
 ---
 # 9. Дополнительные системные топики
@@ -503,6 +617,8 @@ hydro/{gh}/{zone}/{node}/node_hello
 - QoS = 1
 - Retain = false
 - Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего нода отправляет `config_report`.
+- `node_type` передаётся только в канонической схеме: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
+- Legacy-алиасы `node_type` не поддерживаются.
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API; автопривязка по token отключена)
 
@@ -618,6 +734,10 @@ ph_sensor
 ec_sensor
 pump_acid
 pump_base
+pump_a
+pump_b
+pump_c
+pump_d
 fan_A
 heater_1
 ```

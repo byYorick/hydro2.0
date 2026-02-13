@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { defineComponent } from 'vue'
+import { nextTick, reactive } from 'vue'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -220,6 +220,168 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     )
   })
 
+  it('should resubscribe to zone commands when zoneId changes', async () => {
+    const reactivePageProps = reactive({
+      zoneId: 1,
+      zone: {
+        id: 1,
+        name: 'Test Zone',
+        status: 'RUNNING',
+        description: 'Test Description',
+        recipeInstance: {
+          recipe: { id: 1, name: 'Test Recipe' },
+          current_phase_index: 0,
+        },
+      },
+      telemetry: { ph: 5.8, ec: 1.6, temperature: 22, humidity: 55 },
+      targets: {
+        ph: { min: 5.6, max: 6.0 },
+        ec: { min: 1.4, max: 1.8 },
+      },
+      devices: [],
+      events: [],
+      cycles: {},
+      auth: { user: { role: 'operator' } },
+    })
+
+    const unsubscribeZone1 = vi.fn()
+    const unsubscribeZone2 = vi.fn()
+    mockSubscribeToZoneCommands.mockReset()
+    mockSubscribeToZoneCommands
+      .mockReturnValueOnce(unsubscribeZone1)
+      .mockReturnValueOnce(unsubscribeZone2)
+
+    usePageMock.mockReturnValueOnce({
+      props: reactivePageProps,
+    })
+
+    const wrapper = mount(ShowComponent, {
+      global: {
+        stubs: {
+          AppLayout: true,
+          Card: true,
+          Button: true,
+          Badge: true,
+          ZoneTargets: true,
+          ZoneTelemetryChart: true,
+          MultiSeriesTelemetryChart: true,
+          PhaseProgress: true,
+          ZoneDevicesVisualization: true,
+          PidConfigForm: true,
+        },
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+    await new Promise(resolve => setTimeout(resolve, 120))
+    expect(mockSubscribeToZoneCommands).toHaveBeenNthCalledWith(1, 1, expect.any(Function))
+
+    reactivePageProps.zoneId = 2
+    reactivePageProps.zone = {
+      ...reactivePageProps.zone,
+      id: 2,
+      name: 'Zone 2',
+    }
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 80))
+
+    expect(unsubscribeZone1).toHaveBeenCalledTimes(1)
+    expect(mockSubscribeToZoneCommands).toHaveBeenNthCalledWith(2, 2, expect.any(Function))
+
+    wrapper.unmount()
+    await nextTick()
+    expect(unsubscribeZone2).toHaveBeenCalledTimes(1)
+  })
+
+  it('should leave previous grow-cycle Echo channel when zoneId changes', async () => {
+    const reactivePageProps = reactive({
+      zoneId: 1,
+      zone: {
+        id: 1,
+        name: 'Test Zone',
+        status: 'RUNNING',
+        description: 'Test Description',
+        recipeInstance: {
+          recipe: { id: 1, name: 'Test Recipe' },
+          current_phase_index: 0,
+        },
+      },
+      telemetry: { ph: 5.8, ec: 1.6, temperature: 22, humidity: 55 },
+      targets: {
+        ph: { min: 5.6, max: 6.0 },
+        ec: { min: 1.4, max: 1.8 },
+      },
+      devices: [],
+      events: [],
+      cycles: {},
+      auth: { user: { role: 'operator' } },
+    })
+
+    const leaveMock = vi.fn()
+    const stopListeningMock = vi.fn()
+    const privateMock = vi.fn(() => ({
+      listen: vi.fn(),
+      stopListening: stopListeningMock,
+    }))
+
+    const previousEcho = (window as any).Echo
+    ;(window as any).Echo = {
+      private: privateMock,
+      leave: leaveMock,
+    }
+
+    try {
+      usePageMock.mockReturnValueOnce({
+        props: reactivePageProps,
+      })
+
+      const wrapper = mount(ShowComponent, {
+        global: {
+          stubs: {
+            AppLayout: true,
+            Card: true,
+            Button: true,
+            Badge: true,
+            ZoneTargets: true,
+            ZoneTelemetryChart: true,
+            MultiSeriesTelemetryChart: true,
+            PhaseProgress: true,
+            ZoneDevicesVisualization: true,
+            PidConfigForm: true,
+          },
+        },
+      })
+
+      await wrapper.vm.$nextTick()
+      await new Promise(resolve => setTimeout(resolve, 120))
+      expect(privateMock).toHaveBeenCalledWith('hydro.zones.1')
+
+      reactivePageProps.zoneId = 2
+      reactivePageProps.zone = {
+        ...reactivePageProps.zone,
+        id: 2,
+        name: 'Zone 2',
+      }
+      await nextTick()
+      await new Promise(resolve => setTimeout(resolve, 80))
+
+      expect(stopListeningMock).toHaveBeenCalledWith('.App\\Events\\GrowCycleUpdated')
+      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.1')
+      expect(privateMock).toHaveBeenCalledWith('hydro.zones.2')
+
+      wrapper.unmount()
+      await nextTick()
+      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.2')
+    } finally {
+      const win = window as any
+      if (previousEcho === undefined) {
+        delete win.Echo
+      } else {
+        win.Echo = previousEcho
+      }
+    }
+  })
+
   it('should handle command status updates from WebSocket', async () => {
     let commandHandler: ((event: any) => void) | null = null
     
@@ -268,7 +430,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       )
       
       // Should reload zone after command completion
-      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles'])
+      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
     }
   })
 
@@ -319,7 +481,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
         'Command failed'
       )
       
-      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles'])
+      expect(mockReloadZoneAfterCommand).toHaveBeenCalledWith(1, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
     }
   })
 

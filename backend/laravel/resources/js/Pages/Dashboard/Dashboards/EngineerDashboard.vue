@@ -305,6 +305,65 @@ function formatTimeAgo(timestamp: string | Date): string {
   return `${days} дн назад`
 }
 
+async function waitForCommandResult(
+  cmdId: string,
+  maxAttempts = 20,
+  onStatusChange?: (status: string) => void
+): Promise<{
+  success: boolean
+  status: string
+  errorMessage?: string
+  errorCode?: string
+}> {
+  let lastStatus: string | null = null
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await api.get<{
+        status: string
+        data?: {
+          status: string
+          error_message?: string | null
+          error_code?: string | null
+        }
+      }>(
+        `/commands/${cmdId}/status`
+      )
+      
+      if (response.data?.status === 'ok' && response.data?.data?.status) {
+        const cmdStatus = String(response.data.data.status).toUpperCase()
+        if (cmdStatus !== lastStatus) {
+          lastStatus = cmdStatus
+          if (onStatusChange) {
+            onStatusChange(cmdStatus)
+          }
+        }
+        if (['DONE', 'NO_EFFECT'].includes(cmdStatus)) {
+          return { success: true, status: cmdStatus }
+        }
+        if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(cmdStatus)) {
+          return {
+            success: false,
+            status: cmdStatus,
+            errorMessage: response.data.data.error_message || undefined,
+            errorCode: response.data.data.error_code || undefined,
+          }
+        }
+      }
+    } catch (err) {
+      const errorStatus = (err as { response?: { status?: number } })?.response?.status
+      if (errorStatus !== 404 || i >= maxAttempts - 1) {
+        return {
+          success: false,
+          status: 'ERROR',
+          errorMessage: err instanceof Error ? err.message : 'Unknown error',
+        }
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+  return { success: false, status: 'TIMEOUT' }
+}
+
 async function testDevice(deviceId: number) {
   if (testingDevices.value.has(deviceId)) {
     return
@@ -353,15 +412,33 @@ async function confirmRestart(): Promise<void> {
     const response = await api.post<{ status: string; data?: { command_id: string } }>(
       `/nodes/${deviceId}/commands`,
       {
-        cmd: 'REBOOT',
+        cmd: 'restart',
         params: {},
       }
     )
     
-    if (response.data?.status === 'ok') {
+    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
+      const cmdId = response.data.data.command_id
       logger.debug('[EngineerDashboard] Restart command sent successfully', response.data)
       showToast('Команда перезапуска отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
+      
+      let executionNotified = false
+      const result = await waitForCommandResult(cmdId, 20, (status) => {
+        if (status === 'ACK' && !executionNotified) {
+          executionNotified = true
+          showToast('Перезапуск устройства...', 'info', TOAST_TIMEOUT.NORMAL)
+        }
+      })
+      
+      if (result.success) {
+        showToast('Устройство перезапущено', 'success', TOAST_TIMEOUT.LONG)
+      } else {
+        const detail = result.errorMessage || result.errorCode || result.status
+        showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
+      }
+      return
     }
+    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
   } catch (err) {
     logger.error('[EngineerDashboard] Failed to send restart command:', err)
     showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)

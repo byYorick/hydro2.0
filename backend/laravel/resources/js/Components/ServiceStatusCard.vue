@@ -34,10 +34,10 @@
           {{ getStatusText(status, statusType) }}
         </span>
         <div
-          v-if="endpoint"
+          v-if="endpointPreview"
           class="text-[10px] text-[color:var(--text-dim)] mt-0.5 truncate max-w-[120px]"
         >
-          {{ endpoint.replace(/^https?:\/\//, '').split('/')[0] }}
+          {{ endpointPreview }}
         </div>
       </div>
     </div>
@@ -63,6 +63,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+
 interface Props {
   name: string
   status: string
@@ -72,11 +74,25 @@ interface Props {
   endpoint?: string
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   icon: '📦',
   description: '',
   statusType: 'service',
   endpoint: undefined
+})
+
+const endpointPreview = computed(() => {
+  if (!props.endpoint) return ''
+
+  if (/^https?:\/\//.test(props.endpoint)) {
+    try {
+      return new URL(props.endpoint).host
+    } catch {
+      return props.endpoint
+    }
+  }
+
+  return props.endpoint
 })
 
 function getStatusDotClass(status: string, statusType: string): string {

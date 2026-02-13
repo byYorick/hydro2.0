@@ -15,8 +15,15 @@
       "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
     },
     "details": {
-      "type": "string",
-      "description": "Execution details (optional)"
+      "description": "Execution details (optional): short text or structured object",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object"
+        }
+      ]
     },
     "ts": {
       "type": "integer",
@@ -25,4 +32,3 @@
   },
   "additionalProperties": false
 }
-

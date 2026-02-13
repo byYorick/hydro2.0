@@ -153,3 +153,46 @@ async def test_sensor_insert_uses_on_conflict_and_caches_id():
         insert_query = mock_fetch.call_args_list[1][0][0]
         assert "ON CONFLICT (zone_id, node_id, scope, type, label)" in insert_query
         assert (1, 10, "PH", "ph_sensor") in _sensor_cache
+
+
+@pytest.mark.asyncio
+async def test_sensor_fk_violation_clears_caches_and_stops_batch():
+    with patch('telemetry_processing.fetch') as mock_fetch, \
+         patch('telemetry_processing.execute') as mock_execute:
+
+        tp._cache_last_update = time.time()
+        _zone_cache.clear()
+        _node_cache.clear()
+        _sensor_cache.clear()
+        _zone_greenhouse_cache.clear()
+
+        _zone_cache[('zn-1', 'gh-1')] = 1
+        _node_cache[('nd-1', 'gh-1')] = (10, 1)
+        _zone_greenhouse_cache[1] = 99
+
+        mock_fetch.side_effect = [
+            [],
+            Exception('insert or update on table "sensors" violates foreign key constraint "sensors_greenhouse_id_foreign"'),
+        ]
+        mock_execute.return_value = None
+
+        samples = [
+            TelemetrySampleModel(
+                zone_uid='zn-1',
+                gh_uid='gh-1',
+                node_uid='nd-1',
+                metric_type='PH',
+                channel='ph_sensor',
+                value=6.5,
+                ts=utcnow()
+            ),
+        ]
+
+        await process_telemetry_batch(samples)
+
+        assert _zone_cache == {}
+        assert _node_cache == {}
+        assert _sensor_cache == {}
+        assert _zone_greenhouse_cache == {}
+        assert tp._cache_last_update == 0.0
+        assert not mock_execute.called

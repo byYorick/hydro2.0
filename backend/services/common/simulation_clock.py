@@ -32,6 +32,7 @@ class SimulationClock:
     real_start: datetime
     sim_start: datetime
     time_scale: float
+    mode: Optional[str] = None
 
     def now(self) -> datetime:
         real_now = utcnow()
@@ -57,6 +58,7 @@ class SimulationClock:
 def _extract_simulation_clock(row: Dict[str, Any]) -> Optional[SimulationClock]:
     scenario = row.get("scenario") or {}
     sim_meta = scenario.get("simulation") or {}
+    mode = sim_meta.get("mode")
 
     real_start = _parse_iso_datetime(sim_meta.get("real_started_at") or sim_meta.get("started_at"))
     sim_start = _parse_iso_datetime(sim_meta.get("sim_started_at") or sim_meta.get("sim_start_at"))
@@ -92,6 +94,7 @@ def _extract_simulation_clock(row: Dict[str, Any]) -> Optional[SimulationClock]:
         real_start=real_start,
         sim_start=sim_start,
         time_scale=time_scale_value,
+        mode=mode if isinstance(mode, str) else None,
     )
 
 

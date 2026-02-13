@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\ChannelBinding;
 use App\Models\GrowCycle;
+use App\Models\DeviceNode;
+use App\Models\InfrastructureInstance;
+use App\Models\NodeChannel;
 use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
@@ -44,6 +48,65 @@ class GrowCycleControllerTest extends TestCase
             'recipe_revision_id' => $this->revision->id,
             'phase_index' => 0,
         ]);
+
+        $this->attachRequiredInfrastructure($this->zone);
+    }
+
+    private function attachRequiredInfrastructure(Zone $zone): void
+    {
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $mainPumpChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $drainChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'drain_main',
+            'type' => 'actuator',
+            'metric' => 'valve',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->bindChannelToRole($zone, $mainPumpChannel, 'main_pump', 'Основная помпа');
+        $this->bindChannelToRole($zone, $drainChannel, 'drain', 'Дренаж');
+    }
+
+    private function bindChannelToRole(
+        Zone $zone,
+        NodeChannel $channel,
+        string $role,
+        string $label
+    ): void {
+        $instance = InfrastructureInstance::query()->firstOrCreate(
+            [
+                'owner_type' => 'zone',
+                'owner_id' => $zone->id,
+                'label' => $label,
+            ],
+            [
+                'asset_type' => 'PUMP',
+                'required' => true,
+            ]
+        );
+
+        ChannelBinding::query()->updateOrCreate(
+            ['node_channel_id' => $channel->id],
+            [
+                'infrastructure_instance_id' => $instance->id,
+                'direction' => 'actuator',
+                'role' => $role,
+            ]
+        );
     }
 
     #[Test]
@@ -89,6 +152,113 @@ class GrowCycleControllerTest extends TestCase
         $cycle = GrowCycle::where('zone_id', $this->zone->id)->first();
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
         $this->assertNotNull($cycle->planting_at);
+        $this->assertSame('RUNNING', $this->zone->fresh()->status);
+    }
+
+    #[Test]
+    public function it_saves_irrigation_start_parameters_in_cycle_settings(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+                'irrigation' => [
+                    'system_type' => 'nft',
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 20,
+                    'clean_tank_fill_l' => 300,
+                    'nutrient_tank_target_l' => 280,
+                ],
+            ]);
+
+        $response->assertStatus(201);
+
+        $cycle = GrowCycle::query()
+            ->where('zone_id', $this->zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($cycle);
+        $this->assertSame('nft', data_get($cycle->settings, 'irrigation.system_type'));
+        $this->assertSame(20, data_get($cycle->settings, 'irrigation.interval_minutes'));
+        $this->assertSame(20, data_get($cycle->settings, 'irrigation.duration_seconds'));
+        $this->assertSame(300, data_get($cycle->settings, 'irrigation.clean_tank_fill_l'));
+        $this->assertSame(280, data_get($cycle->settings, 'irrigation.nutrient_tank_target_l'));
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_zone_has_no_bound_nodes(): void
+    {
+        $zoneWithoutNodes = Zone::factory()->create();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$zoneWithoutNodes->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start')
+            ->assertJsonPath('readiness.nodes.total', 0);
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Нет привязанных нод в зоне', $errors);
+    }
+
+    #[Test]
+    public function it_allows_creating_planned_cycle_when_zone_is_not_ready(): void
+    {
+        $zoneWithoutNodes = Zone::factory()->create();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$zoneWithoutNodes->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => false,
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.status', GrowCycleStatus::PLANNED->value);
+
+        $this->assertDatabaseHas('grow_cycles', [
+            'zone_id' => $zoneWithoutNodes->id,
+            'recipe_revision_id' => $this->revision->id,
+            'plant_id' => $this->plant->id,
+            'status' => GrowCycleStatus::PLANNED->value,
+        ]);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_ec_control_is_enabled_but_ec_pumps_are_missing(): void
+    {
+        $ecZone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => true,
+                'ph_control' => false,
+            ],
+        ]);
+        $this->attachRequiredInfrastructure($ecZone);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$ecZone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Насос EC NPK не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Calcium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Magnesium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Micro не привязан к каналу', $errors);
     }
 
     #[Test]
@@ -139,6 +309,7 @@ class GrowCycleControllerTest extends TestCase
     #[Test]
     public function it_pauses_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -151,11 +322,13 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::PAUSED, $cycle->status);
+        $this->assertSame('PAUSED', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_resumes_a_cycle(): void
     {
+        $this->zone->update(['status' => 'PAUSED']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::PAUSED,
@@ -168,11 +341,13 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
+        $this->assertSame('RUNNING', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_harvests_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -189,11 +364,13 @@ class GrowCycleControllerTest extends TestCase
         $this->assertEquals(GrowCycleStatus::HARVESTED, $cycle->status);
         $this->assertEquals('Batch-001', $cycle->batch_label);
         $this->assertNotNull($cycle->actual_harvest_at);
+        $this->assertSame('NEW', $this->zone->fresh()->status);
     }
 
     #[Test]
     public function it_aborts_a_cycle(): void
     {
+        $this->zone->update(['status' => 'RUNNING']);
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
             'status' => GrowCycleStatus::RUNNING,
@@ -208,5 +385,74 @@ class GrowCycleControllerTest extends TestCase
 
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::ABORTED, $cycle->status);
+        $this->assertSame('NEW', $this->zone->fresh()->status);
+    }
+
+    #[Test]
+    public function it_returns_422_when_pausing_non_running_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::PLANNED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/pause");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is not running');
+    }
+
+    #[Test]
+    public function it_returns_422_when_resuming_non_paused_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/resume");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is not paused');
+    }
+
+    #[Test]
+    public function it_returns_422_when_harvesting_completed_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::HARVESTED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/harvest", [
+                'batch_label' => 'Batch-002',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is already completed');
+    }
+
+    #[Test]
+    public function it_returns_422_when_aborting_completed_cycle(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'status' => GrowCycleStatus::ABORTED,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/abort", [
+                'notes' => 'Already stopped',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Cycle is already completed');
     }
 }

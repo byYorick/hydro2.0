@@ -4,54 +4,68 @@
  */
 
 import { logger } from '@/utils/logger'
+import type { Zone, Device, Recipe } from '@/types'
+
+interface StoreEventPayloadMap {
+  'zone:updated': Zone
+  'zone:created': Zone
+  'zone:deleted': number
+  'zone:recipe:attached': { zoneId: number; recipeId: number }
+  'zone:recipe:detached': { zoneId: number; recipeId: number }
+  'device:updated': Device
+  'device:created': Device
+  'device:deleted': number | string
+  'device:lifecycle:transitioned': { deviceId: number; fromState: string; toState: string }
+  'recipe:updated': Recipe
+  'recipe:created': Recipe
+  'recipe:deleted': number
+  'cache:invalidated': string
+}
 
 // Простая реализация EventEmitter для браузера
-class EventEmitter {
-  private events: Map<string, Array<(...args: any[]) => void>> = new Map()
+class EventEmitter<TEvents extends object> {
+  private events: Map<keyof TEvents & string, Set<(payload: unknown) => void>> = new Map()
 
-  on(event: string, listener: (...args: any[]) => void): void {
+  on<K extends keyof TEvents & string>(event: K, listener: (payload: TEvents[K]) => void): void {
     if (!this.events.has(event)) {
-      this.events.set(event, [])
+      this.events.set(event, new Set())
     }
-    const listeners = this.events.get(event)
-    if (listeners) {
-      listeners.push(listener)
-    }
+    this.events.get(event)?.add(listener as (payload: unknown) => void)
   }
 
-  off(event: string, listener: (...args: any[]) => void): void {
+  off<K extends keyof TEvents & string>(event: K, listener: (payload: TEvents[K]) => void): void {
     const listeners = this.events.get(event)
-    if (!listeners) return
-    
-    const index = listeners.indexOf(listener)
-    if (index > -1) {
-      listeners.splice(index, 1)
+    if (!listeners) {
+      return
     }
+    listeners.delete(listener as (payload: unknown) => void)
   }
 
-  emit(event: string, ...args: any[]): void {
+  emit<K extends keyof TEvents & string>(event: K, payload: TEvents[K]): void {
     const listeners = this.events.get(event)
-    if (!listeners) return
-    
+    if (!listeners) {
+      return
+    }
+
     // Вызываем все слушатели синхронно
     listeners.forEach(listener => {
       try {
-        listener(...args)
+        listener(payload)
       } catch (err) {
         logger.error(`[StoreEvents] Error in listener for "${event}":`, err)
       }
     })
   }
 
-  once(event: string, listener: (...args: any[]) => void): void {
-    const wrapper = (...args: any[]) => {
-      listener(...args)
+  once<K extends keyof TEvents & string>(event: K, listener: (payload: TEvents[K]) => void): void {
+    const wrapper = (payload: TEvents[K]) => {
+      listener(payload)
       this.off(event, wrapper)
     }
     this.on(event, wrapper)
   }
 
-  removeAllListeners(event?: string): void {
+  removeAllListeners<K extends keyof TEvents & string>(event?: K): void {
     if (event) {
       this.events.delete(event)
     } else {
@@ -63,25 +77,12 @@ class EventEmitter {
 /**
  * Глобальный экземпляр EventEmitter для координации stores
  */
-export const storeEvents = new EventEmitter()
+export const storeEvents = new EventEmitter<StoreEventPayloadMap>()
 
 /**
  * Типы событий для координации
  */
-export type StoreEventType =
-  | 'zone:updated'
-  | 'zone:created'
-  | 'zone:deleted'
-  | 'zone:recipe:attached'
-  | 'zone:recipe:detached'
-  | 'device:updated'
-  | 'device:created'
-  | 'device:deleted'
-  | 'device:lifecycle:transitioned'
-  | 'recipe:updated'
-  | 'recipe:created'
-  | 'recipe:deleted'
-  | 'cache:invalidated'
+export type StoreEventType = keyof StoreEventPayloadMap
 
 /**
  * Composable для работы с событиями stores
@@ -103,12 +104,12 @@ export function useStoreEvents() {
   /**
    * Подписаться на событие
    */
-  function subscribe<T = any>(
-    event: StoreEventType,
-    listener: (data: T) => void
+  function subscribe<K extends StoreEventType>(
+    event: K,
+    listener: (data: StoreEventPayloadMap[K]) => void
   ): () => void {
     // Обёртка для обработки ошибок в listeners
-    const wrappedListener = (data: T) => {
+    const wrappedListener = (data: StoreEventPayloadMap[K]) => {
       try {
         listener(data)
       } catch (error) {
@@ -127,9 +128,9 @@ export function useStoreEvents() {
   /**
    * Подписаться на событие с автоматической отпиской при размонтировании
    */
-  function subscribeWithCleanup<T = any>(
-    event: StoreEventType,
-    listener: (data: T) => void
+  function subscribeWithCleanup<K extends StoreEventType>(
+    event: K,
+    listener: (data: StoreEventPayloadMap[K]) => void
   ): void {
     const unsubscribe = subscribe(event, listener)
     
@@ -143,9 +144,9 @@ export function useStoreEvents() {
   /**
    * Отписаться от события
    */
-  function unsubscribe(
-    event: StoreEventType,
-    listener: (...args: any[]) => void
+  function unsubscribe<K extends StoreEventType>(
+    event: K,
+    listener: (data: StoreEventPayloadMap[K]) => void
   ): void {
     storeEvents.off(event, listener)
   }
@@ -153,7 +154,7 @@ export function useStoreEvents() {
   /**
    * Эмитнуть событие
    */
-  function emit<T = any>(event: StoreEventType, data: T): void {
+  function emit<K extends StoreEventType>(event: K, data: StoreEventPayloadMap[K]): void {
     storeEvents.emit(event, data)
   }
   
@@ -169,8 +170,8 @@ export function useStoreEvents() {
  * Хелперы для конкретных типов событий
  */
 export const zoneEvents = {
-  updated: (zone: any) => storeEvents.emit('zone:updated', zone),
-  created: (zone: any) => storeEvents.emit('zone:created', zone),
+  updated: (zone: Zone) => storeEvents.emit('zone:updated', zone),
+  created: (zone: Zone) => storeEvents.emit('zone:created', zone),
   deleted: (zoneId: number) => storeEvents.emit('zone:deleted', zoneId),
   recipeAttached: (data: { zoneId: number; recipeId: number }) => 
     storeEvents.emit('zone:recipe:attached', data),
@@ -179,15 +180,15 @@ export const zoneEvents = {
 }
 
 export const deviceEvents = {
-  updated: (device: any) => storeEvents.emit('device:updated', device),
-  created: (device: any) => storeEvents.emit('device:created', device),
+  updated: (device: Device) => storeEvents.emit('device:updated', device),
+  created: (device: Device) => storeEvents.emit('device:created', device),
   deleted: (deviceId: number | string) => storeEvents.emit('device:deleted', deviceId),
   lifecycleTransitioned: (data: { deviceId: number; fromState: string; toState: string }) => 
     storeEvents.emit('device:lifecycle:transitioned', data),
 }
 
 export const recipeEvents = {
-  updated: (recipe: any) => storeEvents.emit('recipe:updated', recipe),
-  created: (recipe: any) => storeEvents.emit('recipe:created', recipe),
+  updated: (recipe: Recipe) => storeEvents.emit('recipe:updated', recipe),
+  created: (recipe: Recipe) => storeEvents.emit('recipe:created', recipe),
   deleted: (recipeId: number) => storeEvents.emit('recipe:deleted', recipeId),
 }

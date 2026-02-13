@@ -188,7 +188,7 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
         FROM commands
         WHERE zone_id = $1
           AND cmd IN ('run_pump', 'dose')
-          AND channel IN ('pump_nutrient', 'pump_ec_up')
+          AND channel IN ('pump_a', 'pump_b', 'pump_c', 'pump_d')
           AND status = 'DONE'
           AND result_code = 0
           AND created_at IS NOT NULL

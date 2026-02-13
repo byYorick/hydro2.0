@@ -1,17 +1,22 @@
 import asyncio
+import hashlib
 import logging
 import os
+import re
 import uuid
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
 import httpx
 
 import state
 from common.command_status_queue import normalize_status, send_status_to_laravel
-from common.db import execute, fetch, upsert_unassigned_node_error
+from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
+from common.node_types import normalize_node_type
+from common.simulation_events import record_simulation_event
 from common.trace_context import clear_trace_id, inject_trace_id_header, set_trace_id_from_payload
 from common.utils.time import utcnow
 from metrics import (
@@ -26,6 +31,9 @@ from metrics import (
     NODE_HELLO_ERRORS,
     NODE_HELLO_RECEIVED,
     NODE_HELLO_REGISTERED,
+    NODE_EVENT_ERROR,
+    NODE_EVENT_RECEIVED,
+    NODE_EVENT_UNKNOWN,
     STATUS_RECEIVED,
 )
 from utils import (
@@ -38,12 +46,191 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
+_PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
+_PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_ZONE_EVENT_TYPE_MAX_LEN = 255
+_ZONE_EVENT_TYPE_HASH_LEN = 10
+_NODE_EVENT_METRIC_FALLBACK = "OTHER"
+_NODE_EVENT_METRIC_ALLOWED_CODES = {
+    "NODE_EVENT",
+    "CLEAN_FILL_STARTED",
+    "CLEAN_FILL_COMPLETED",
+    "CLEAN_FILL_TIMEOUT",
+    "CLEAN_FILL_FAILED",
+    "SOLUTION_FILL_STARTED",
+    "SOLUTION_FILL_COMPLETED",
+    "SOLUTION_FILL_TIMEOUT",
+    "SOLUTION_FILL_FAILED",
+    "SOLUTION_PREP_STARTED",
+    "SOLUTION_PREP_COMPLETED",
+    "SOLUTION_PREP_FAILED",
+    "IRRIGATION_STARTED",
+    "IRRIGATION_COMPLETED",
+    "IRRIGATION_FAILED",
+    "IRRIGATION_RECOVERY_STARTED",
+    "IRRIGATION_RECOVERY_COMPLETED",
+    "IRRIGATION_RECOVERY_FAILED",
+}
+_PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+_PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
+_BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
+_BINDING_COMPLETION_LOCKS_GUARD = asyncio.Lock()
+
+
+def _prune_pending_config_reports_locked(now_ts: float) -> None:
+    if not _PENDING_CONFIG_REPORTS:
+        return
+
+    expired_keys = [
+        hardware_id
+        for hardware_id, entry in _PENDING_CONFIG_REPORTS.items()
+        if now_ts - entry.get("ts", now_ts) > _PENDING_CONFIG_REPORT_TTL_SEC
+    ]
+
+    for hardware_id in expired_keys:
+        _PENDING_CONFIG_REPORTS.pop(hardware_id, None)
+
+
+async def _store_pending_config_report(
+    hardware_id: str, topic: str, payload: bytes
+) -> None:
+    now_ts = utcnow().timestamp()
+
+    async with _PENDING_CONFIG_REPORTS_LOCK:
+        _prune_pending_config_reports_locked(now_ts)
+        _PENDING_CONFIG_REPORTS[hardware_id] = {
+            "topic": topic,
+            "payload": payload,
+            "ts": now_ts,
+        }
+        _PENDING_CONFIG_REPORTS.move_to_end(hardware_id)
+
+        while len(_PENDING_CONFIG_REPORTS) > _PENDING_CONFIG_REPORT_MAX:
+            dropped_hardware_id, _ = _PENDING_CONFIG_REPORTS.popitem(last=False)
+            logger.warning(
+                "[CONFIG_REPORT] Dropped buffered config_report due to buffer limit: hardware_id=%s",
+                dropped_hardware_id,
+            )
+
+
+async def _pop_pending_config_report(hardware_id: str) -> Optional[Dict[str, Any]]:
+    now_ts = utcnow().timestamp()
+
+    async with _PENDING_CONFIG_REPORTS_LOCK:
+        _prune_pending_config_reports_locked(now_ts)
+        return _PENDING_CONFIG_REPORTS.pop(hardware_id, None)
+
+
+async def _process_pending_config_report_after_registration(hardware_id: str) -> None:
+    pending = await _pop_pending_config_report(hardware_id)
+    if not pending:
+        return
+
+    logger.info(
+        "[NODE_HELLO] Processing buffered config_report after registration: hardware_id=%s",
+        hardware_id,
+    )
+
+    try:
+        await handle_config_report(pending["topic"], pending["payload"])
+    except Exception as e:
+        logger.error(
+            "[NODE_HELLO] Failed to process buffered config_report: hardware_id=%s, error=%s",
+            hardware_id,
+            e,
+            exc_info=True,
+        )
+
+
+async def _get_binding_completion_lock(node_id: int) -> asyncio.Lock:
+    async with _BINDING_COMPLETION_LOCKS_GUARD:
+        lock = _BINDING_COMPLETION_LOCKS.get(node_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _BINDING_COMPLETION_LOCKS[node_id] = lock
+        return lock
+
 
 def _apply_trace_context(payload_data: Dict[str, Any], *, fallback_keys: Optional[tuple[str, ...]] = None) -> None:
     if fallback_keys:
         set_trace_id_from_payload(payload_data, keys=fallback_keys, fallback_generate=False)
     else:
         set_trace_id_from_payload(payload_data, fallback_generate=False)
+
+
+def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
+    if raw_details is None:
+        return {}
+    if isinstance(raw_details, dict):
+        return dict(raw_details)
+    if isinstance(raw_details, str):
+        message = raw_details.strip()
+        return {"message": message} if message else {}
+    return {"raw_details": raw_details}
+
+
+def _normalize_node_event_type(raw_event_code: Any) -> str:
+    event_code = str(raw_event_code or "").strip().upper()
+    if not event_code:
+        return "NODE_EVENT"
+    normalized = re.sub(r"[^A-Z0-9]+", "_", event_code)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    normalized = normalized or "NODE_EVENT"
+    if len(normalized) <= _ZONE_EVENT_TYPE_MAX_LEN:
+        return normalized
+    hash_suffix = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[
+        :_ZONE_EVENT_TYPE_HASH_LEN
+    ].upper()
+    trimmed_len = _ZONE_EVENT_TYPE_MAX_LEN - _ZONE_EVENT_TYPE_HASH_LEN - 1
+    return f"{normalized[:trimmed_len]}_{hash_suffix}"
+
+
+def _metric_event_code_label(event_type: str) -> str:
+    if event_type in _NODE_EVENT_METRIC_ALLOWED_CODES:
+        return event_type
+    return _NODE_EVENT_METRIC_FALLBACK
+
+
+async def _resolve_zone_id_for_node_event(zone_uid: Optional[str], node_uid: Optional[str]) -> Optional[int]:
+    if zone_uid:
+        zone_uid_str = str(zone_uid).strip()
+        if zone_uid_str.startswith("zn-"):
+            try:
+                return int(zone_uid_str.split("-", 1)[1])
+            except (ValueError, IndexError):
+                pass
+        else:
+            try:
+                return int(zone_uid_str)
+            except ValueError:
+                pass
+
+        zone_rows = await fetch(
+            """
+            SELECT id
+            FROM zones
+            WHERE uid = $1
+            LIMIT 1
+            """,
+            zone_uid_str,
+        )
+        if zone_rows:
+            return zone_rows[0].get("id")
+
+    if node_uid:
+        node_rows = await fetch(
+            """
+            SELECT zone_id
+            FROM nodes
+            WHERE uid = $1
+            LIMIT 1
+            """,
+            node_uid,
+        )
+        if node_rows:
+            return node_rows[0].get("zone_id")
+
+    return None
 
 
 async def handle_node_hello(topic: str, payload: bytes) -> None:
@@ -113,10 +300,26 @@ async def handle_node_hello(topic: str, payload: bytes) -> None:
             return
 
         try:
+            raw_node_type = data.get("node_type")
+            normalized_node_type = normalize_node_type(
+                str(raw_node_type) if raw_node_type is not None else None
+            )
+            if (
+                raw_node_type is not None
+                and str(raw_node_type).strip()
+                and normalized_node_type == "unknown"
+                and str(raw_node_type).strip().lower() != "unknown"
+            ):
+                logger.warning(
+                    "[NODE_HELLO] Non-canonical node_type received, normalized to unknown: hardware_id=%s node_type=%s",
+                    hardware_id,
+                    raw_node_type,
+                )
+
             api_data = {
                 "message_type": "node_hello",
                 "hardware_id": data.get("hardware_id"),
-                "node_type": data.get("node_type"),
+                "node_type": normalized_node_type,
                 "fw_version": data.get("fw_version"),
                 "hardware_revision": data.get("hardware_revision"),
                 "capabilities": data.get("capabilities"),
@@ -157,27 +360,19 @@ async def handle_node_hello(topic: str, payload: bytes) -> None:
                             headers=headers,
                         )
 
-                    if response.status_code == 201:
+                    if response.status_code in (200, 201):
                         response_data = response.json()
                         node_uid = response_data.get("data", {}).get("uid", "unknown")
+                        action = "registered" if response.status_code == 201 else "updated"
                         logger.info(
-                            "[NODE_HELLO] Node registered successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            "[NODE_HELLO] Node %s successfully: hardware_id=%s, node_uid=%s, attempts=%s",
+                            action,
                             hardware_id,
                             node_uid,
                             attempt + 1,
                         )
                         NODE_HELLO_REGISTERED.inc()
-                        return
-                    if response.status_code == 200:
-                        response_data = response.json()
-                        node_uid = response_data.get("data", {}).get("uid", "unknown")
-                        logger.info(
-                            "[NODE_HELLO] Node updated successfully: hardware_id=%s, node_uid=%s, attempts=%s",
-                            hardware_id,
-                            node_uid,
-                            attempt + 1,
-                        )
-                        NODE_HELLO_REGISTERED.inc()
+                        await _process_pending_config_report_after_registration(hardware_id)
                         return
                     if response.status_code == 401:
                         logger.error(
@@ -404,8 +599,7 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         logged_uptime = None
         if uptime is not None:
             try:
-                uptime_ms = float(uptime)
-                logged_uptime = int(uptime_ms / 1000.0)
+                logged_uptime = int(float(uptime))
             except (ValueError, TypeError):
                 logged_uptime = uptime
 
@@ -527,8 +721,8 @@ async def monitor_offline_nodes() -> None:
                 UPDATE nodes
                 SET status='offline', updated_at=NOW()
                 WHERE status='online'
-                  AND last_seen_at IS NOT NULL
-                  AND last_seen_at < NOW() - ($1 * interval '1 second')
+                  AND COALESCE(last_seen_at, last_heartbeat_at, updated_at, created_at)
+                      < NOW() - ($1 * interval '1 second')
                 """,
                 timeout_sec,
             )
@@ -752,6 +946,77 @@ async def handle_error(topic: str, payload: bytes) -> None:
         clear_trace_id()
 
 
+async def handle_node_event(topic: str, payload: bytes) -> None:
+    """
+    Обработчик channel-level event сообщений от узлов ESP32.
+    Пример топика: hydro/{gh}/{zone}/{node}/{channel}/event
+    """
+    try:
+        logger.info("[NODE_EVENT] ===== START processing node event =====")
+        logger.info("[NODE_EVENT] Topic: %s, payload length: %s", topic, len(payload))
+
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning("[NODE_EVENT] Invalid JSON in event from topic %s", topic)
+            NODE_EVENT_ERROR.labels(reason="invalid_json").inc()
+            return
+
+        _apply_trace_context(data, fallback_keys=("trace_id", "event_id", "cmd_id"))
+
+        gh_uid = _extract_gh_uid(topic)
+        zone_uid = _extract_zone_uid(topic)
+        node_uid = _extract_node_uid(topic)
+        channel = _extract_channel_from_topic(topic)
+
+        event_code_raw = data.get("event_code") or data.get("event") or data.get("type") or "node_event"
+        event_code = str(event_code_raw).strip()
+        if not event_code:
+            event_code = "node_event"
+        event_type = _normalize_node_event_type(event_code)
+
+        zone_id = await _resolve_zone_id_for_node_event(zone_uid, node_uid)
+        if not zone_id:
+            logger.warning(
+                "[NODE_EVENT] Could not resolve zone_id for event, skipping: gh_uid=%s zone_uid=%s node_uid=%s channel=%s event_code=%s",
+                gh_uid,
+                zone_uid,
+                node_uid,
+                channel,
+                event_code,
+            )
+            NODE_EVENT_ERROR.labels(reason="zone_not_resolved").inc()
+            return
+
+        details = {
+            "source": "node_event",
+            "topic": topic,
+            "gh_uid": gh_uid,
+            "zone_uid": zone_uid,
+            "node_uid": node_uid,
+            "channel": channel,
+            "event_code": event_code,
+            "payload": data,
+        }
+        await create_zone_event(zone_id, event_type, details)
+        metric_event_code = _metric_event_code_label(event_type)
+        NODE_EVENT_RECEIVED.labels(event_code=metric_event_code).inc()
+        if metric_event_code == _NODE_EVENT_METRIC_FALLBACK:
+            NODE_EVENT_UNKNOWN.inc()
+
+        logger.info(
+            "[NODE_EVENT] Stored zone event: zone_id=%s node_uid=%s channel=%s event_type=%s",
+            zone_id,
+            node_uid,
+            channel,
+            event_type,
+        )
+    except Exception:
+        NODE_EVENT_ERROR.labels(reason="handler_exception").inc()
+        logger.exception("[NODE_EVENT] Unexpected error while handling event topic %s", topic)
+    finally:
+        clear_trace_id()
+
+
 async def handle_config_report(topic: str, payload: bytes) -> None:
     """
     Обработчик config_report сообщений от узлов ESP32.
@@ -802,6 +1067,11 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, skipping config_report"
                 )
                 CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
+                await _store_pending_config_report(hardware_id, topic, payload)
+                logger.info(
+                    "[CONFIG_REPORT] Buffered config_report until node registration: hardware_id=%s",
+                    hardware_id,
+                )
                 return
             node = node_rows[0]
             node_uid = node.get("uid")
@@ -879,94 +1149,113 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
 async def _complete_binding_after_config_report(
     node: Dict[str, Any], node_uid: str
 ) -> None:
-    lifecycle_state = node.get("lifecycle_state")
-    zone_id = node.get("zone_id")
-    pending_zone_id = node.get("pending_zone_id")
-    target_zone_id = zone_id or pending_zone_id
-
-    if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
-        return
-
-    zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
-    if not zone_check:
-        logger.warning(
-            "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
-            target_zone_id,
-            node_uid,
-        )
-        return
-
-    s = get_settings()
-    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
-    ingest_token = (
-        s.history_logger_api_token
-        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
-        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
-    )
-
-    if not laravel_url:
-        logger.error(
-            "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
-        )
-        return
-
-    headers = inject_trace_id_header(
-        {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-    )
-    if ingest_token:
-        headers["Authorization"] = f"Bearer {ingest_token}"
-
     node_id = node.get("id")
+    if not node_id:
+        return
 
-    try:
-        if pending_zone_id and not zone_id:
+    lock = await _get_binding_completion_lock(int(node_id))
+    async with lock:
+        current_rows = await fetch(
+            """
+            SELECT lifecycle_state, zone_id, pending_zone_id
+            FROM nodes
+            WHERE id = $1
+            """,
+            node_id,
+        )
+        if not current_rows:
+            return
+
+        current_state = current_rows[0]
+        lifecycle_state = current_state.get("lifecycle_state")
+        zone_id = current_state.get("zone_id")
+        pending_zone_id = current_state.get("pending_zone_id")
+        target_zone_id = zone_id or pending_zone_id
+
+        if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
+            return
+
+        zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
+        if not zone_check:
+            logger.warning(
+                "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
+                target_zone_id,
+                node_uid,
+            )
+            return
+
+        s = get_settings()
+        laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
+        ingest_token = (
+            s.history_logger_api_token
+            if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
+            else (
+                s.ingest_token
+                if hasattr(s, "ingest_token") and s.ingest_token
+                else None
+            )
+        )
+
+        if not laravel_url:
+            logger.error(
+                "[CONFIG_REPORT] Laravel API URL not configured, cannot update node lifecycle"
+            )
+            return
+
+        headers = inject_trace_id_header(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        if ingest_token:
+            headers["Authorization"] = f"Bearer {ingest_token}"
+
+        try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                update_response = await client.patch(
-                    f"{laravel_url}/api/nodes/{node_id}/service-update",
+                if pending_zone_id and not zone_id:
+                    update_response = await client.patch(
+                        f"{laravel_url}/api/nodes/{node_id}/service-update",
+                        headers=headers,
+                        json={
+                            "zone_id": pending_zone_id,
+                            "pending_zone_id": None,
+                        },
+                    )
+                    if update_response.status_code != 200:
+                        logger.warning(
+                            "[CONFIG_REPORT] Failed to update zone_id for node %s (id=%s): %s %s",
+                            node_uid,
+                            node_id,
+                            update_response.status_code,
+                            update_response.text,
+                        )
+                        return
+
+                transition_response = await client.post(
+                    f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
                     headers=headers,
                     json={
-                        "zone_id": pending_zone_id,
-                        "pending_zone_id": None,
+                        "target_state": "ASSIGNED_TO_ZONE",
+                        "reason": "Config report received from node",
                     },
                 )
-                if update_response.status_code != 200:
+
+                if transition_response.status_code != 200:
                     logger.warning(
-                        "[CONFIG_REPORT] Failed to update zone_id for node %s (id=%s): %s %s",
+                        "[CONFIG_REPORT] Failed to transition node %s (id=%s) to ASSIGNED_TO_ZONE: %s %s",
                         node_uid,
                         node_id,
-                        update_response.status_code,
-                        update_response.text,
+                        transition_response.status_code,
+                        transition_response.text,
                     )
-                    return
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            transition_response = await client.post(
-                f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
-                headers=headers,
-                json={
-                    "target_state": "ASSIGNED_TO_ZONE",
-                    "reason": "Config report received from node",
-                },
+        except Exception as e:
+            logger.error(
+                "[CONFIG_REPORT] Error while completing binding for node %s: %s",
+                node_uid,
+                e,
+                exc_info=True,
             )
-
-            if transition_response.status_code != 200:
-                logger.warning(
-                    "[CONFIG_REPORT] Failed to transition node %s (id=%s) to ASSIGNED_TO_ZONE: %s %s",
-                    node_uid,
-                    node_id,
-                    transition_response.status_code,
-                    transition_response.text,
-                )
-    except Exception as e:
-        logger.error(
-            "[CONFIG_REPORT] Error while completing binding for node %s: %s",
-            node_uid,
-            e,
-            exc_info=True,
-        )
 
 
 async def sync_node_channels_from_payload(
@@ -1135,14 +1424,14 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         COMMAND_RESPONSE_RECEIVED.inc()
 
+        zone_id = None
+        cmd_name = None
         try:
             existing_cmd = await fetch(
-                "SELECT status FROM commands WHERE cmd_id = $1", cmd_id
+                "SELECT status, zone_id, cmd FROM commands WHERE cmd_id = $1", cmd_id
             )
             if not existing_cmd:
                 node_id = None
-                zone_id = None
-
                 if node_uid:
                     node_rows = await fetch(
                         "SELECT id, zone_id FROM nodes WHERE uid = $1", node_uid
@@ -1151,12 +1440,12 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                         node_id = node_rows[0]["id"]
                         zone_id = node_rows[0]["zone_id"]
 
-                cmd_name = "unknown"
                 status_value = (
                     normalized_status.value
                     if hasattr(normalized_status, "value")
                     else str(normalized_status)
                 )
+                cmd_name = "unknown"
 
                 await execute(
                     """
@@ -1179,6 +1468,9 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                     node_uid,
                     channel,
                 )
+            else:
+                zone_id = existing_cmd[0].get("zone_id")
+                cmd_name = existing_cmd[0].get("cmd")
         except Exception as e:
             logger.warning(
                 "[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id=%s: %s",
@@ -1187,7 +1479,11 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
 
-        details = dict(data.get("details") or {})
+        details = _normalize_command_response_details(data.get("details"))
+        if "error_code" in data and data.get("error_code") is not None:
+            details["error_code"] = data.get("error_code")
+        if "error_message" in data and data.get("error_message") is not None:
+            details["error_message"] = data.get("error_message")
         details.update({
             "raw_status": str(raw_status),
             "node_uid": node_uid,
@@ -1213,6 +1509,36 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 cmd_id,
                 node_uid,
                 channel,
+            )
+
+        if zone_id:
+            status_value = (
+                normalized_status.value
+                if hasattr(normalized_status, "value")
+                else str(normalized_status)
+            )
+            event_status = status_value.lower()
+            level = "info"
+            if event_status in ("error", "failed", "timeout", "send_failed"):
+                level = "error"
+            elif event_status in ("invalid", "busy", "no_effect"):
+                level = "warning"
+
+            await record_simulation_event(
+                zone_id,
+                service="history-logger",
+                stage="command_response",
+                status=event_status,
+                level=level,
+                message="Получен ответ на команду",
+                payload={
+                    "cmd_id": cmd_id,
+                    "cmd": cmd_name,
+                    "channel": channel,
+                    "node_uid": node_uid,
+                    "raw_status": raw_status,
+                    "delivery": "delivered" if success else "queued",
+                },
             )
 
     except Exception as e:

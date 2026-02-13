@@ -11,32 +11,8 @@
 import { onUnmounted } from 'vue'
 import { useWebSocket } from './useWebSocket'
 import type { ToastHandler } from './useApi'
-
-type ZoneCommandHandler = (event: {
-  commandId: number | string
-  status: string
-  message?: string
-  error?: string
-  zoneId?: number
-}) => void
-
-type GlobalEventHandler = (event: {
-  id: number | string
-  kind: string
-  message: string
-  zoneId?: number
-  occurredAt: string
-}) => void
-
-type SnapshotHandler = (snapshot: {
-  snapshot_id: string
-  server_ts: number
-  zone_id: number
-  telemetry: Record<string, any>
-  active_alerts: Array<any>
-  recent_commands: Array<any>
-  nodes: Array<any>
-}) => void | Promise<void>
+import type { SnapshotHandler } from '@/types/reconciliation'
+import type { GlobalEventHandler, ZoneCommandHandler } from '@/ws/subscriptionTypes'
 
 interface UseWsChannelOptions {
   showToast?: ToastHandler

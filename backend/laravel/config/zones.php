@@ -18,7 +18,7 @@ return [
             ? (is_string(env('ZONE_REQUIRED_BINDINGS')) 
                 ? explode(',', env('ZONE_REQUIRED_BINDINGS')) 
                 : env('ZONE_REQUIRED_BINDINGS'))
-            : ['main_pump'], // По умолчанию требуется только основной насос
+            : ['main_pump', 'drain'], // По умолчанию требуется основной насос и дренаж
 
         // Строгий режим проверки готовности
         // Если true - зона не может стартовать без обязательных bindings
@@ -28,4 +28,3 @@ return [
         'e2e_mode' => env('APP_ENV') === 'e2e',
     ],
 ];
-

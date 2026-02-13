@@ -19,6 +19,11 @@
     { "id": "18_6", "label": "18/6" },
     { "id": "20_4", "label": "20/4 (быстрый рост)" }
   ],
+  "seasonality": [
+    { "id": "all_year", "label": "Круглый год" },
+    { "id": "multi_cycle", "label": "Несколько циклов" },
+    { "id": "seasonal", "label": "Сезонное выращивание" }
+  ],
   "cost_item_type": [
     { "id": "seedling", "label": "Семена / Рассада" },
     { "id": "substrate", "label": "Субстрат" },
@@ -33,5 +38,4 @@
     { "id": "subscription", "label": "Подписка / CSA" }
   ]
 }
-
 

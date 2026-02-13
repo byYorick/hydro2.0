@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <header class="space-y-4">
+      <header class="ui-hero p-5 space-y-4">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.4em] text-[color:var(--text-dim)]">
@@ -70,7 +70,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              :disabled="!canManageGreenhouse || zones.length === 0 || climateSubmitting"
+              :disabled="!canOperateGreenhouse || climateSubmitting"
               @click="openClimateModal"
             >
               Управление климатом
@@ -78,7 +78,7 @@
             <Button
               size="sm"
               variant="outline"
-              :disabled="!canManageGreenhouse || maintenanceEnterTargets.length === 0 || maintenanceSubmitting"
+              :disabled="!canConfigureGreenhouse || maintenanceEnterTargets.length === 0 || maintenanceSubmitting"
               @click="openMaintenanceModal('MAINTENANCE')"
             >
               В обслуживание
@@ -86,7 +86,7 @@
             <Button
               size="sm"
               variant="ghost"
-              :disabled="!canManageGreenhouse || maintenanceExitTargets.length === 0 || maintenanceSubmitting"
+              :disabled="!canConfigureGreenhouse || maintenanceExitTargets.length === 0 || maintenanceSubmitting"
               @click="openMaintenanceModal('ACTIVE')"
             >
               Завершить обслуживание
@@ -96,8 +96,8 @@
         <div class="text-xs text-[color:var(--text-dim)]">
           Климат применится ко всем {{ climateZoneIds.length }} зонам теплицы.
           В обслуживании сейчас {{ maintenanceExitTargets.length }} / {{ climateNodes.length }} климат-узлов.
-          <span v-if="!canManageGreenhouse">
-            Доступно только для роли «агроном».
+          <span v-if="!canOperateGreenhouse">
+            Доступно только для ролей «оператор», «агроном», «админ».
           </span>
         </div>
         <div
@@ -138,8 +138,9 @@
           <div class="flex items-center gap-2">
             <span class="text-xs text-[color:var(--text-dim)]">{{ zones.length }} зон</span>
             <Button
+              v-if="canConfigureGreenhouse"
               size="sm"
-              @click="openZoneWizard()"
+              @click="openZoneWizardGuarded()"
             >
               <svg
                 class="w-4 h-4 mr-1"
@@ -354,6 +355,7 @@ interface PageProps {
       role?: string
     }
   }
+  [key: string]: unknown
 }
 
 type MaintenanceTargetState = 'MAINTENANCE' | 'ACTIVE'
@@ -371,13 +373,30 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage<PageProps>()
 const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
-const canManageGreenhouse = computed(() => role.value === 'agronomist')
+const canConfigureGreenhouse = computed(() => (
+  role.value === 'agronomist'
+  || role.value === 'admin'
+))
+const canOperateGreenhouse = computed(() => (
+  role.value === 'agronomist'
+  || role.value === 'admin'
+  || role.value === 'operator'
+))
 
 const { showToast } = useToast()
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
 
 const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
+
+function openZoneWizardGuarded(): void {
+  if (!canConfigureGreenhouse.value) {
+    showToast('Создание зон доступно только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
+  openZoneWizard()
+}
 
 function onZoneCreated(_zone: Zone): void {
   // Обновляем страницу для отображения новой зоны
@@ -505,8 +524,8 @@ const maintenanceModalConfirmVariant = computed(() => {
 })
 
 function openClimateModal(): void {
-  if (!canManageGreenhouse.value) {
-    showToast('Доступно только для роли «агроном».', 'warning', TOAST_TIMEOUT.NORMAL)
+  if (!canOperateGreenhouse.value) {
+    showToast('Управление климатом доступно только оператору и агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 
@@ -575,8 +594,8 @@ async function onClimateSubmit({ params }: { params: CommandParams }): Promise<v
 }
 
 function openMaintenanceModal(targetState: MaintenanceTargetState): void {
-  if (!canManageGreenhouse.value) {
-    showToast('Доступно только для роли «агроном».', 'warning', TOAST_TIMEOUT.NORMAL)
+  if (!canConfigureGreenhouse.value) {
+    showToast('Режим обслуживания доступен только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 

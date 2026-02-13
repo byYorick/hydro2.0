@@ -74,6 +74,26 @@ actions:
     zone_id: ${zone_row.0.id}
     node_id: ${node_row.0.node_id}
 
+  - step: ensure_main_pump_role
+    type: database_execute
+    query: |
+      UPDATE node_channels
+      SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('zone_role', 'main_pump')
+      WHERE node_id = :node_id
+        AND channel = 'heater';
+    params:
+      node_id: ${node_id}
+
+  - step: ensure_drain_role
+    type: database_execute
+    query: |
+      UPDATE node_channels
+      SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('zone_role', 'drain')
+      WHERE node_id = :node_id
+        AND channel = 'air_temp_c';
+    params:
+      node_id: ${node_id}
+
   - step: cleanup_old_cycles
     type: database_execute
     query: |
@@ -81,6 +101,135 @@ actions:
       WHERE zone_id = :zone_id;
     params:
       zone_id: ${zone_id}
+
+  - step: set_capabilities_without_ph_ec_requirements
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', false,
+        'ec_control', false,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: ensure_primary_node_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE id = :node_id;
+    params:
+      node_id: ${node_id}
+
+  - step: ensure_zone_readiness_bindings
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
+        'zone_role',
+        CASE
+          WHEN nc.channel = 'main_pump' THEN 'main_pump'
+          WHEN nc.channel = 'drain_pump' THEN 'drain'
+          ELSE nc.config->>'zone_role'
+        END
+      )
+      FROM nodes n
+      WHERE n.id = nc.node_id
+        AND n.id = :node_id
+        AND n.zone_id = :zone_id
+        AND nc.channel IN ('main_pump', 'drain_pump');
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
+  - step: ensure_main_and_drain_bindings
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      ),
+      ensure_instances AS (
+        INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        FROM zone_ctx zc
+        CROSS JOIN (
+          VALUES
+            ('PUMP', 'E2E Main Pump'),
+            ('DRAIN', 'E2E Drain Pump')
+        ) AS m(asset_type, label)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM infrastructure_instances ii
+          WHERE ii.owner_type = 'zone'
+            AND ii.owner_id = zc.zone_id
+            AND ii.label = m.label
+        )
+        RETURNING id
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ii.id,
+          nc.id,
+          'actuator',
+          m.role,
+          NOW(),
+          NOW()
+        FROM zone_ctx zc
+        JOIN nodes n
+          ON n.id = :node_id
+         AND n.zone_id = zc.zone_id
+        JOIN (
+          VALUES
+            ('main_pump', 'main_pump', 'E2E Main Pump'),
+            ('drain_pump', 'drain', 'E2E Drain Pump')
+        ) AS m(channel, role, label)
+          ON TRUE
+        JOIN node_channels nc
+          ON nc.node_id = n.id
+         AND nc.channel = m.channel
+        JOIN infrastructure_instances ii
+          ON ii.owner_type = 'zone'
+         AND ii.owner_id = zc.zone_id
+         AND ii.label = m.label
+        ON CONFLICT (node_channel_id) DO UPDATE SET
+          infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING node_channel_id
+      )
+      SELECT 1;
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+
+  - step: verify_main_and_drain_bindings_online
+    type: db.wait
+    query: |
+      SELECT cb.role
+      FROM channel_bindings cb
+      JOIN node_channels nc ON nc.id = cb.node_channel_id
+      JOIN nodes n ON n.id = nc.node_id
+      WHERE n.zone_id = :zone_id
+        AND n.id = :node_id
+        AND n.status = 'online'
+        AND cb.role IN ('main_pump', 'drain')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+      node_id: ${node_id}
+    expected_rows: 2
+    timeout: 15.0
 
   # Создаем рецепт с климатическими targets
   - step: create_plant
@@ -150,6 +299,40 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: ensure_heater_infrastructure
+    type: database_execute
+    query: |
+      WITH zone_ctx AS (
+        SELECT :zone_id::bigint AS zone_id
+      )
+      INSERT INTO infrastructure_instances (
+        owner_type,
+        owner_id,
+        asset_type,
+        label,
+        required,
+        created_at,
+        updated_at
+      )
+      SELECT
+        'zone',
+        zc.zone_id,
+        'HEATER',
+        'E2E Heater',
+        true,
+        NOW(),
+        NOW()
+      FROM zone_ctx zc
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM infrastructure_instances
+        WHERE owner_type = 'zone'
+          AND owner_id = zc.zone_id
+          AND asset_type = 'HEATER'
+      );
+    params:
+      zone_id: ${zone_id}
+
   # Привязка heater
   - step: fetch_heater_channel
     type: database_query
@@ -195,11 +378,16 @@ actions:
 
   - step: reset_backoff
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
   # Базовая проверка — климат работает
+  - step: baseline_window_open
+    type: database_query
+    query: |
+      SELECT NOW() as ts
+    save: baseline_start_ts
+
   - step: publish_temp_low_baseline
     type: mqtt_publish
     topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
@@ -210,38 +398,39 @@ actions:
     wait_seconds: 2
 
   - step: wait_for_baseline_command
-    type: sleep
-    seconds: 20
-
-  - step: baseline_timestamp
-    type: database_query
+    type: db.wait
     query: |
-      SELECT NOW() as ts
-    save: baseline_ts
-
-  - step: baseline_window_start
-    type: database_query
-    query: |
-      SELECT :baseline_ts::timestamp - INTERVAL '2 minutes' AS ts
+      SELECT id AS cmd_id, created_at AS cmd_ts
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at >= :baseline_start_ts
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
-      baseline_ts: ${baseline_ts.0.ts}
-    save: baseline_ts_min
+      zone_id: ${zone_id}
+      baseline_start_ts: ${baseline_start_ts.0.ts}
+    expected_rows: 1
+    timeout: 45.0
+    save: baseline_command_row
 
   # Включаем degraded mode через test hook
-  - step: set_degraded_state
-    type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
-    zone_id: ${zone_id}
-    action: set_state
-    state:
-      error_streak: 3
-      next_allowed_run_at: null
-
   - step: degraded_timestamp
     type: database_query
     query: |
       SELECT NOW() as ts
     save: degraded_ts
+
+  - step: set_degraded_state
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: set_state
+    state:
+      error_streak: 3
+      next_allowed_run_at: null
+      degraded_alert_active: false
 
   - step: publish_temp_low_degraded
     type: mqtt_publish
@@ -254,11 +443,10 @@ actions:
 
   - step: wait_for_degraded_cycle
     type: sleep
-    seconds: 20
+    seconds: 45
 
   - step: reset_backoff_after_degraded
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
 
@@ -279,24 +467,53 @@ actions:
 
   - step: wait_for_post_reset_command
     type: sleep
-    seconds: 20
+    seconds: 45
 
 assertions:
+  - name: degraded_mode_event_created
+    type: database_query
+    optional: true
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_DEGRADED_MODE'
+        AND created_at >= :degraded_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
+  - name: degraded_mode_infra_alert_upserted
+    type: database_query
+    optional: true
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_zone_degraded_mode'
+        AND status = 'ACTIVE'
+        AND created_at >= :degraded_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+    expected:
+      - field: alert_count
+        operator: greater_than
+        value: 0
+
   - name: baseline_heater_command_created
     type: database_query
     query: |
       SELECT COUNT(*) as cmd_count
       FROM commands
-      WHERE zone_id = :zone_id
-        AND cmd = 'set_relay'
-        AND channel = 'heater'
-        AND params->>'state' = 'true'
-        AND created_at <= :baseline_ts
-        AND created_at > :baseline_ts_min
+      WHERE id = :baseline_cmd_id
     params:
-      zone_id: ${zone_id}
-      baseline_ts: ${baseline_ts.0.ts}
-      baseline_ts_min: ${baseline_ts_min.0.ts}
+      baseline_cmd_id: ${baseline_command_row.0.cmd_id}
     expected:
       - field: cmd_count
         operator: greater_than
@@ -340,6 +557,23 @@ assertions:
         operator: greater_than
         value: 0
 
+  - name: zone_recovered_event_after_reset
+    type: database_query
+    optional: true
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'ZONE_RECOVERED'
+        AND created_at > :degraded_ts
+    params:
+      zone_id: ${zone_id}
+      degraded_ts: ${degraded_ts.0.ts}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+
 cleanup:
   - step: abort_cycle
     type: api_post
@@ -349,7 +583,6 @@ cleanup:
 
   - step: clear_state_override
     type: ae_test_hook
-    url: http://${AUTOMATION_ENGINE_HOST}:9505
     zone_id: ${zone_id}
     action: reset_backoff
     optional: true

@@ -18,8 +18,134 @@ from enum import Enum
 from .db import get_pool
 from .env import get_settings
 from .http_client_pool import make_request, calculate_backoff_with_jitter
+from .infra_alerts import send_infra_alert
 
 logger = logging.getLogger(__name__)
+
+_COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS = 120
+_last_command_ack_not_found_alert_at: Dict[str, datetime] = {}
+_PENDING_STATUS_UPDATES_REQUIRED_COLUMNS = {
+    "id",
+    "cmd_id",
+    "status",
+    "details",
+    "retry_count",
+    "max_attempts",
+    "next_retry_at",
+    "last_error",
+    "moved_to_dlq_at",
+    "created_at",
+    "updated_at",
+}
+_PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS = {
+    "id",
+    "cmd_id",
+    "status",
+    "details",
+    "retry_count",
+    "max_attempts",
+    "last_error",
+    "failed_at",
+    "moved_to_dlq_at",
+    "original_id",
+    "created_at",
+}
+
+
+class _SchemaValidationError(RuntimeError):
+    """Ошибка несовместимости runtime-кода и Laravel-схемы очереди."""
+
+
+def _decode_details_payload(raw: Any) -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            logger.warning("Failed to decode status details JSON, returning raw string payload")
+            return {"raw_details": raw}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"raw_details": parsed}
+    return {"raw_details": raw}
+
+
+def _decode_laravel_error_payload(resp: Any) -> Dict[str, Any]:
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {}
+
+
+def _is_command_not_found_response(resp: Any, payload: Dict[str, Any]) -> bool:
+    if getattr(resp, "status_code", None) != 404:
+        return False
+    return str(payload.get("code", "")).upper().strip() == "COMMAND_NOT_FOUND"
+
+
+def _should_emit_command_ack_not_found_alert(now: datetime, key: str) -> bool:
+    last = _last_command_ack_not_found_alert_at.get(key)
+    if last is None:
+        _last_command_ack_not_found_alert_at[key] = now
+        return True
+
+    if (now - last).total_seconds() >= _COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS:
+        _last_command_ack_not_found_alert_at[key] = now
+        return True
+
+    return False
+
+
+async def _emit_command_ack_not_found_alert(
+    *,
+    cmd_id: str,
+    status_value: str,
+    details: Optional[Dict[str, Any]],
+    http_status: int,
+) -> None:
+    zone_id_raw = None
+    if isinstance(details, dict):
+        zone_id_raw = details.get("zone_id")
+
+    zone_id: Optional[int] = None
+    if isinstance(zone_id_raw, int):
+        zone_id = zone_id_raw
+    elif isinstance(zone_id_raw, str):
+        try:
+            zone_id = int(zone_id_raw)
+        except ValueError:
+            zone_id = None
+
+    throttle_key = f"{zone_id or 'global'}:{status_value}"
+    now = utcnow()
+    if not _should_emit_command_ack_not_found_alert(now, throttle_key):
+        return
+
+    await send_infra_alert(
+        code="infra_command_ack_command_not_found",
+        alert_type="Command Ack Not Found",
+        message=f"Laravel не нашёл команду при обработке ACK: {cmd_id}",
+        severity="warning",
+        zone_id=zone_id,
+        service="history-logger",
+        component="command_status_delivery",
+        node_uid=details.get("node_uid") if isinstance(details, dict) else None,
+        channel=details.get("channel") if isinstance(details, dict) else None,
+        cmd=details.get("command") if isinstance(details, dict) else None,
+        error_type="command_not_found",
+        details={
+            "cmd_id": cmd_id,
+            "status": status_value,
+            "http_status": http_status,
+            "throttle_seconds": _COMMAND_ACK_NOT_FOUND_ALERT_TTL_SECONDS,
+        },
+    )
 
 
 class CommandStatus(str, Enum):
@@ -48,13 +174,13 @@ def normalize_status(raw_status: str) -> Optional[CommandStatus]:
     # ACK - команда принята к выполнению
     if raw_upper == "ACK":
         return CommandStatus.ACK
-    
+
     # DONE - команда успешно выполнена
     if raw_upper == "DONE":
         return CommandStatus.DONE
     
     # ERROR - команда завершилась с ошибкой
-    if raw_upper == "ERROR":
+    if raw_upper in ("ERROR", "FAILED", "FAIL"):
         return CommandStatus.ERROR
 
     if raw_upper == "INVALID":
@@ -74,115 +200,79 @@ class StatusUpdateQueue:
     
     def __init__(self):
         self._initialized = False
+        self._schema_error: Optional[str] = None
+
+    async def _load_columns(self, conn, table_name: str) -> set[str]:
+        rows = await conn.fetch(
+            """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = $1
+            """,
+            table_name,
+        )
+        return {str(row["column_name"]) for row in rows}
+
+    async def _validate_table_schema(
+        self,
+        conn,
+        table_name: str,
+        required_columns: set[str],
+    ) -> None:
+        actual_columns = await self._load_columns(conn, table_name)
+        if not actual_columns:
+            raise _SchemaValidationError(
+                f"Missing required table '{table_name}'. "
+                "Run Laravel migrations before starting history-logger."
+            )
+
+        missing_columns = sorted(required_columns - actual_columns)
+        if missing_columns:
+            raise _SchemaValidationError(
+                f"Table '{table_name}' is missing required columns: {', '.join(missing_columns)}. "
+                "Run Laravel migrations before starting history-logger."
+            )
     
     async def ensure_table(self):
-        """Создаёт таблицу для очереди, если её нет."""
+        """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
+        if self._schema_error:
+            raise RuntimeError(self._schema_error)
         
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_status_updates (
-                    id BIGSERIAL PRIMARY KEY,
-                    cmd_id VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL CHECK (status IN ('SENT', 'ACK', 'DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT')),
-                    details JSONB,
-                    retry_count INTEGER DEFAULT 0,
-                    max_attempts INTEGER DEFAULT 10,
-                    next_retry_at TIMESTAMP WITH TIME ZONE,
-                    last_error TEXT,
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    UNIQUE(cmd_id, status)
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await self._validate_table_schema(
+                    conn,
+                    "pending_status_updates",
+                    _PENDING_STATUS_UPDATES_REQUIRED_COLUMNS,
                 )
-            """)
-            
-            # Добавляем новые колонки, если они еще не существуют (для миграции существующих таблиц)
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_status_updates 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 10
-                """)
-            except Exception:
-                pass  # Колонка уже существует
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_status_updates 
-                    ADD COLUMN IF NOT EXISTS last_error TEXT
-                """)
-            except Exception:
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_status_updates 
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE
-                """)
-            except Exception:
-                pass
-            
-            # Индекс для быстрого поиска записей для ретрая
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_status_retry 
-                ON pending_status_updates(next_retry_at) 
-                WHERE next_retry_at IS NOT NULL
-            """)
-            
-            # Индекс для cmd_id
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_pending_status_cmd_id 
-                ON pending_status_updates(cmd_id)
-            """)
-            
-            # Таблица DLQ для pending_status_updates
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS pending_status_updates_dlq (
-                    id BIGSERIAL PRIMARY KEY,
-                    cmd_id VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL,
-                    details JSONB,
-                    retry_count INTEGER NOT NULL,
-                    max_attempts INTEGER,
-                    last_error TEXT,
-                    failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    original_id BIGINT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                await self._validate_table_schema(
+                    conn,
+                    "pending_status_updates_dlq",
+                    _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS,
                 )
-            """)
-            
-            # Добавляем новые колонки в DLQ, если они еще не существуют
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_status_updates_dlq 
-                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER
-                """)
-            except Exception:
-                pass
-            
-            try:
-                await conn.execute("""
-                    ALTER TABLE pending_status_updates_dlq 
-                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                """)
-            except Exception:
-                pass
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_status_dlq_cmd_id 
-                ON pending_status_updates_dlq(cmd_id)
-            """)
-            
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_status_dlq_failed_at 
-                ON pending_status_updates_dlq(failed_at)
-            """)
-        
+        except _SchemaValidationError as exc:
+            self._schema_error = str(exc)
+            logger.critical(
+                "[STATUS_QUEUE_SCHEMA_INVALID] %s",
+                self._schema_error,
+                exc_info=True,
+            )
+            raise RuntimeError(self._schema_error) from exc
+        except Exception as exc:
+            logger.error(
+                "[STATUS_QUEUE_SCHEMA_CHECK_FAILED] %s",
+                exc,
+                exc_info=True,
+            )
+            raise RuntimeError(
+                "Failed to validate status queue schema due to temporary infrastructure error"
+            ) from exc
+
         self._initialized = True
-        logger.info("Status update queue table initialized")
+        logger.info("Status update queue schema validated (Laravel migrations)")
     
     async def enqueue(
         self,
@@ -209,7 +299,6 @@ class StatusUpdateQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = json.dumps(details) if details else None
                 await conn.execute("""
                     INSERT INTO pending_status_updates (cmd_id, status, details, retry_count, next_retry_at)
                     VALUES ($1, $2, $3, 0, NOW())
@@ -219,7 +308,7 @@ class StatusUpdateQueue:
                         retry_count = 0,
                         next_retry_at = NOW(),
                         updated_at = NOW()
-                """, cmd_id, status_value, details_json)
+                """, cmd_id, status_value, details)
                 return True
             except Exception as e:
                 logger.error(f"Failed to enqueue status update: {e}", exc_info=True)
@@ -260,13 +349,12 @@ class StatusUpdateQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = json.dumps(details) if details else None
                 moved_at = utcnow()
                 await conn.execute("""
                     INSERT INTO pending_status_updates_dlq 
                     (cmd_id, status, details, retry_count, max_attempts, last_error, moved_to_dlq_at, original_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                """, cmd_id, status_value, details_json, retry_count, max_attempts, last_error, moved_at, update_id)
+                """, cmd_id, status_value, details, retry_count, max_attempts, last_error, moved_at, update_id)
                 
                 # Обновляем moved_to_dlq_at в основной таблице перед удалением
                 await conn.execute("""
@@ -303,7 +391,7 @@ class StatusUpdateQueue:
         
         result = []
         for row in rows:
-            details = json.loads(row['details']) if row['details'] else None
+            details = _decode_details_payload(row["details"])
             result.append((
                 row['id'],
                 row['cmd_id'],
@@ -400,7 +488,7 @@ class StatusUpdateQueue:
         
         result = []
         for row in rows:
-            details = json.loads(row['details']) if row['details'] else None
+            details = _decode_details_payload(row["details"])
             result.append({
                 'id': row['id'],
                 'cmd_id': row['cmd_id'],
@@ -531,7 +619,8 @@ async def get_status_queue() -> StatusUpdateQueue:
 async def send_status_to_laravel(
     cmd_id: str,
     status: Union[CommandStatus, str],
-    details: Optional[Dict[str, Any]] = None
+    details: Optional[Dict[str, Any]] = None,
+    enqueue_on_failure: bool = True,
 ) -> bool:
     """
     Отправляет статус команды в Laravel API.
@@ -542,6 +631,7 @@ async def send_status_to_laravel(
         cmd_id: Идентификатор команды
         status: Нормализованный статус
         details: Дополнительные детали
+        enqueue_on_failure: Добавлять ли запись в retry-очередь при неуспехе доставки
         
     Returns:
         True если успешно отправлено, False если сохранено в очередь
@@ -554,10 +644,11 @@ async def send_status_to_laravel(
     logger.info(f"[STATUS_DELIVERY] STEP 2: Checking Laravel API URL: {laravel_url}")
     if not laravel_url:
         logger.error("[STATUS_DELIVERY] STEP 2.1: ERROR - Laravel API URL not configured")
-        # Сохраняем в очередь для ретрая после настройки
-        queue = await get_status_queue()
-        await queue.enqueue(cmd_id, status, details)
-        logger.info(f"[STATUS_DELIVERY] STEP 2.2: Status saved to retry queue for cmd_id={cmd_id}")
+        if enqueue_on_failure:
+            # Сохраняем в очередь для ретрая после настройки
+            queue = await get_status_queue()
+            await queue.enqueue(cmd_id, status, details)
+            logger.info(f"[STATUS_DELIVERY] STEP 2.2: Status saved to retry queue for cmd_id={cmd_id}")
         return False
     
     ingest_token = (
@@ -574,7 +665,7 @@ async def send_status_to_laravel(
     }
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
-        logger.info(f"[STATUS_DELIVERY] STEP 3.1: Authorization header set, token_preview={ingest_token[:10]}..." if len(ingest_token) > 10 else f"[STATUS_DELIVERY] STEP 3.1: Authorization header set")
+        logger.info("[STATUS_DELIVERY] STEP 3.1: Authorization header set")
     else:
         logger.warning("[STATUS_DELIVERY] STEP 3.2: WARNING - No ingest token configured, request may fail with 401")
     
@@ -608,14 +699,35 @@ async def send_status_to_laravel(
             )
             return True
         else:
-            logger.warning(
-                f"[STATUS_DELIVERY] STEP 6.2: ERROR - Laravel responded with {resp.status_code}: "
-                f"{resp.text[:200]}"
-            )
-            # Сохраняем в очередь для ретрая
-            queue = await get_status_queue()
-            await queue.enqueue(cmd_id, status, details)
-            logger.info(f"[STATUS_DELIVERY] STEP 6.3: Status saved to retry queue for cmd_id={cmd_id}")
+            error_payload = _decode_laravel_error_payload(resp)
+            if _is_command_not_found_response(resp, error_payload):
+                logger.warning(
+                    f"[STATUS_DELIVERY] STEP 6.2: COMMAND_NOT_FOUND for cmd_id={cmd_id}, "
+                    f"status={status_value}. Response body: {resp.text[:200]}"
+                )
+                try:
+                    await _emit_command_ack_not_found_alert(
+                        cmd_id=cmd_id,
+                        status_value=status_value,
+                        details=details,
+                        http_status=resp.status_code,
+                    )
+                except Exception as alert_error:
+                    logger.error(
+                        f"[STATUS_DELIVERY] Failed to emit COMMAND_NOT_FOUND alert for cmd_id={cmd_id}: {alert_error}",
+                        exc_info=True,
+                    )
+            else:
+                logger.warning(
+                    f"[STATUS_DELIVERY] STEP 6.2: ERROR - Laravel responded with {resp.status_code}: "
+                    f"{resp.text[:200]}"
+                )
+
+            if enqueue_on_failure:
+                # Сохраняем в очередь для ретрая
+                queue = await get_status_queue()
+                await queue.enqueue(cmd_id, status, details)
+                logger.info(f"[STATUS_DELIVERY] STEP 6.3: Status saved to retry queue for cmd_id={cmd_id}")
             return False
             
     except Exception as e:
@@ -623,9 +735,10 @@ async def send_status_to_laravel(
             f"[STATUS_DELIVERY] STEP 6.4: EXCEPTION - Unexpected error sending status to Laravel: {e}",
             exc_info=True
         )
-        # Сохраняем в очередь для ретрая
-        queue = await get_status_queue()
-        await queue.enqueue(cmd_id, status, details)
+        if enqueue_on_failure:
+            # Сохраняем в очередь для ретрая
+            queue = await get_status_queue()
+            await queue.enqueue(cmd_id, status, details)
         return False
 
 
@@ -642,6 +755,15 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
     """
     logger.info("Starting status retry worker")
     queue = await get_status_queue()
+
+    async def _sleep_with_shutdown(timeout: float) -> None:
+        if shutdown_event is None:
+            await asyncio.sleep(timeout)
+            return
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
     
     while True:
         # Проверяем shutdown event, если передан
@@ -656,7 +778,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                 # Проверяем shutdown перед sleep
                 if shutdown_event and shutdown_event.is_set():
                     break
-                await asyncio.sleep(interval)
+                await _sleep_with_shutdown(interval)
                 continue
             
             logger.info(f"[RETRY_WORKER] Processing {len(pending)} pending status updates")
@@ -669,7 +791,12 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                 
                 try:
                     # Пытаемся отправить
-                    success = await send_status_to_laravel(cmd_id, status, details)
+                    success = await send_status_to_laravel(
+                        cmd_id,
+                        status,
+                        details,
+                        enqueue_on_failure=False,
+                    )
                     
                     if success:
                         # Успешно доставлено - удаляем из очереди
@@ -722,12 +849,13 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
             # Небольшая задержка перед следующей итерацией
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(1.0)
+            pause_sec = max(0.01, min(interval, 1.0))
+            await _sleep_with_shutdown(pause_sec)
             
         except Exception as e:
             logger.error(f"[RETRY_WORKER] Unexpected error in retry worker: {e}", exc_info=True)
             if shutdown_event and shutdown_event.is_set():
                 break
-            await asyncio.sleep(interval)
+            await _sleep_with_shutdown(interval)
     
     logger.info("Status retry worker stopped")

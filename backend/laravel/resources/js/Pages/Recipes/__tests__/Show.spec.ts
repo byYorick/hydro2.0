@@ -30,6 +30,30 @@ vi.mock('@inertiajs/vue3', () => ({
               ph: { min: 5.5, max: 6.0 },
               ec: { min: 1.0, max: 1.4 },
             },
+            nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+            nutrient_npk_ratio_pct: 44,
+            nutrient_calcium_ratio_pct: 44,
+            nutrient_micro_ratio_pct: 12,
+            nutrient_npk_dose_ml_l: 0.55,
+            nutrient_calcium_dose_ml_l: 0.55,
+            nutrient_micro_dose_ml_l: 0.09,
+            nutrient_dose_delay_sec: 12,
+            nutrient_ec_stop_tolerance: 0.07,
+            npk_product: {
+              id: 1,
+              manufacturer: 'Yara',
+              name: 'YaraRega Water-Soluble NPK',
+            },
+            calcium_product: {
+              id: 2,
+              manufacturer: 'Yara',
+              name: 'YaraLiva Calcinit',
+            },
+            micro_product: {
+              id: 3,
+              manufacturer: 'Haifa',
+              name: 'Micro Hydroponic Mix',
+            },
           },
           {
             id: 2,
@@ -111,6 +135,16 @@ describe('Recipes/Show.vue', () => {
     expect(wrapper.text()).toContain('EC 1.4–1.8')
   })
 
+  it('отображает параметры питания для фаз', () => {
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.text()).toContain('Программа: YARAREGA_CALCINIT_HAIFA_MICRO_V1')
+    expect(wrapper.text()).toContain('NPK: 44% / 0.55 мл/л / Yara · YaraRega Water-Soluble NPK')
+    expect(wrapper.text()).toContain('Кальций: 44% / 0.55 мл/л / Yara · YaraLiva Calcinit')
+    expect(wrapper.text()).toContain('Микро: 12% / 0.09 мл/л / Haifa · Micro Hydroponic Mix')
+    expect(wrapper.text()).toContain('Пауза доз: 12 сек, EC stop tolerance: 0.07')
+  })
+
   it('отображает цели по умолчанию', () => {
     const wrapper = mount(RecipesShow)
     
@@ -156,4 +190,3 @@ describe('Recipes/Show.vue', () => {
     expect(wrapper.text()).toMatch(/\d+\s*(ч|дн)/)
   })
 })
-

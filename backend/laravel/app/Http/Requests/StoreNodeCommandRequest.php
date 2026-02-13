@@ -50,10 +50,10 @@ class StoreNodeCommandRequest extends FormRequest
                 $validator->errors()->add('params', 'The params field must be an object, not a list.');
             }
             
-            // Для set_state требуем state от клиента
-            if (($data['cmd'] ?? '') === 'set_state') {
+            // Для set_state/set_relay требуем state от клиента
+            if (in_array(($data['cmd'] ?? ''), ['set_state', 'set_relay'], true)) {
                 if (!array_key_exists('state', $data['params'] ?? [])) {
-                    $validator->errors()->add('params.state', 'set_state requires params.state (0/1 or true/false)');
+                    $validator->errors()->add('params.state', 'set_state/set_relay requires params.state (0/1 or true/false)');
                 }
             }
         });

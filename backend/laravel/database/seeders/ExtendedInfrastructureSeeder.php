@@ -157,13 +157,13 @@ class ExtendedInfrastructureSeeder extends Seeder
                 continue;
             }
 
-            // Создаем привязку только если её еще нет
-            ChannelBinding::firstOrCreate(
+            // Учитываем уникальный индекс channel_bindings.node_channel_id.
+            ChannelBinding::updateOrCreate(
                 [
-                    'infrastructure_instance_id' => $asset->id,
                     'node_channel_id' => $channel->id,
                 ],
                 [
+                    'infrastructure_instance_id' => $asset->id,
                     'direction' => $bindingConfig['direction'],
                     'role' => $bindingConfig['role'],
                 ]
