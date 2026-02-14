@@ -259,3 +259,69 @@ async def test_recipe_repository_get_zones_recipes_batch():
         assert result[1]["targets"]["ph"]["target"] == 6.5
         assert result[2]["targets"]["ph"]["target"] == 6.8
         mock_api.get_effective_targets_batch.assert_awaited_once_with([1, 2])
+
+
+@pytest.mark.asyncio
+async def test_recipe_repository_get_zone_data_batch_reads_correction_flags_from_samples_metadata():
+    """Correction flags should be taken from telemetry_samples metadata when present."""
+    with patch("repositories.recipe_repository.LaravelApiRepository"):
+        repo = RecipeRepository()
+
+    with patch("repositories.recipe_repository.fetch") as mock_fetch:
+        mock_fetch.return_value = [{
+            "zone_info": {"zone_id": 1, "capabilities": {"ph_control": True}},
+            "telemetry": {
+                "PH": {"value": 6.4, "updated_at": "2026-02-14T11:00:00+00:00"},
+                "EC": {"value": 1.8, "updated_at": "2026-02-14T11:00:00+00:00"},
+                "FLOW_ACTIVE": {"value": 0, "updated_at": "2026-02-14T10:58:00+00:00"},
+            },
+            "correction_flags": {
+                "flow_active": "true",
+                "flow_active_ts": "2026-02-14T11:00:01+00:00",
+                "stable": "true",
+                "stable_ts": "2026-02-14T11:00:02+00:00",
+                "corrections_allowed": "false",
+                "corrections_allowed_ts": "2026-02-14T11:00:03+00:00",
+            },
+            "nodes": [],
+        }]
+
+        result = await repo.get_zone_data_batch(1)
+
+        flags = result["correction_flags"]
+        assert flags["flow_active"] is True
+        assert flags["stable"] is True
+        assert flags["corrections_allowed"] is False
+        assert flags["flow_active_ts"] == "2026-02-14T11:00:01+00:00"
+        assert flags["stable_ts"] == "2026-02-14T11:00:02+00:00"
+        assert flags["corrections_allowed_ts"] == "2026-02-14T11:00:03+00:00"
+
+
+@pytest.mark.asyncio
+async def test_recipe_repository_get_zone_data_batch_correction_flags_fallback_to_legacy_metrics():
+    """Fallback to legacy telemetry_last metrics when metadata flags are missing."""
+    with patch("repositories.recipe_repository.LaravelApiRepository"):
+        repo = RecipeRepository()
+
+    with patch("repositories.recipe_repository.fetch") as mock_fetch:
+        mock_fetch.return_value = [{
+            "zone_info": {"zone_id": 1, "capabilities": {"ph_control": True}},
+            "telemetry": {
+                "PH": {"value": 6.4, "updated_at": "2026-02-14T11:00:00+00:00"},
+                "FLOW_ACTIVE": {"value": 1, "updated_at": "2026-02-14T10:58:00+00:00"},
+                "STABLE": {"value": 1, "updated_at": "2026-02-14T10:58:01+00:00"},
+                "CORRECTIONS_ALLOWED": {"value": 0, "updated_at": "2026-02-14T10:58:02+00:00"},
+            },
+            "correction_flags": {},
+            "nodes": [],
+        }]
+
+        result = await repo.get_zone_data_batch(1)
+
+        flags = result["correction_flags"]
+        assert flags["flow_active"] is True
+        assert flags["stable"] is True
+        assert flags["corrections_allowed"] is False
+        assert flags["flow_active_ts"] == "2026-02-14T10:58:00+00:00"
+        assert flags["stable_ts"] == "2026-02-14T10:58:01+00:00"
+        assert flags["corrections_allowed_ts"] == "2026-02-14T10:58:02+00:00"

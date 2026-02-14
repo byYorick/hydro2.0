@@ -26,6 +26,7 @@ async def test_process_zone_no_recipe():
     grow_cycle_repo = Mock(spec=GrowCycleRepository)
     infrastructure_repo = Mock(spec=InfrastructureRepository)
     command_bus = Mock(spec=CommandBus)
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
     grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
@@ -84,6 +85,14 @@ async def test_process_zone_with_recipe():
             "phase_name": "Germination"
         },
         "telemetry": {"PH": 6.3, "EC": 1.7, "TEMPERATURE": 24.0},
+        "correction_flags": {
+            "flow_active": True,
+            "stable": True,
+            "corrections_allowed": True,
+            "flow_active_ts": datetime.now(timezone.utc).isoformat(),
+            "stable_ts": datetime.now(timezone.utc).isoformat(),
+            "corrections_allowed_ts": datetime.now(timezone.utc).isoformat(),
+        },
         "nodes": {
             "irrig:default": {"node_uid": "nd-irrig-1", "channel": "default", "type": "irrig"}
         },
@@ -140,6 +149,75 @@ async def test_process_zone_with_recipe():
         mock_irrigation.assert_called_once()
         mock_ph_controller.check_and_correct.assert_called_once()
         mock_ec_controller.check_and_correct.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_skips_with_missing_flags_and_activates_sensor_mode():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=15,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": True},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_not_awaited()
+    service.ec_controller.check_and_correct.assert_not_awaited()
+    assert service.command_bus.publish_controller_command.await_count == 2
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["activate_sensor_mode", "activate_sensor_mode"]
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "CORRECTION_SKIPPED_MISSING_FLAGS" in event_types
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_skips_when_flags_block_corrections():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=16,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": False,
+                "corrections_allowed": True,
+            },
+            nodes={},
+            capabilities={"ph_control": True, "ec_control": True},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_not_awaited()
+    service.ec_controller.check_and_correct.assert_not_awaited()
+    service.command_bus.publish_controller_command.assert_not_awaited()
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "CORRECTION_SKIPPED_FLAGS_GATING" in event_types
 
 
 @pytest.mark.asyncio
@@ -200,7 +278,8 @@ async def test_process_zone_light_controller():
         
         # Проверяем, что команда была отправлена
         command_bus.publish_controller_command.assert_called_once()
-        mock_event.assert_called_once()
+        event_types = [call.args[1] for call in mock_event.await_args_list]
+        assert "LIGHT_ON" in event_types
 
 
 @pytest.mark.asyncio

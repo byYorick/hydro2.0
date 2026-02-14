@@ -27,7 +27,9 @@ class TestTelemetryFormatSync:
             "node_id": "nd-ph-1",
             "raw": 1465,
             "stub": False,
-            "stable": True
+            "stable": True,
+            "flow_active": True,
+            "corrections_allowed": True,
         }
         payload = json.dumps(payload_data).encode('utf-8')
         
@@ -54,6 +56,9 @@ class TestTelemetryFormatSync:
             assert call_args.value == 6.5
             assert call_args.channel == "ph_sensor"
             assert isinstance(call_args.ts, datetime)
+            assert call_args.raw is not None
+            assert call_args.raw.get("flow_active") is True
+            assert call_args.raw.get("corrections_allowed") is True
     
     @pytest.mark.asyncio
     async def test_handle_telemetry_extracts_channel_from_topic(self):

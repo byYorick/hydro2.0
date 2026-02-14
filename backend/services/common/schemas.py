@@ -75,7 +75,7 @@ class CommandResponse(BaseModel):
     Соответствует JSON схеме: schemas/command_response.json
     """
     cmd_id: str = Field(..., max_length=128, description="Идентификатор команды")
-    status: Literal["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"] = Field(
+    status: Literal["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"] = Field(
         ..., description="Статус выполнения команды"
     )
     ts: int = Field(..., description="Unix timestamp ответа в миллисекундах")
@@ -106,6 +106,16 @@ class CommandResponse(BaseModel):
         return cls(
             cmd_id=cmd_id,
             status="ERROR",
+            ts=ts or int(time.time() * 1000),
+            details=details
+        )
+
+    @classmethod
+    def timeout(cls, cmd_id: str, details: Optional[Dict[str, Any]] = None, ts: Optional[int] = None) -> 'CommandResponse':
+        """Создает ответ со статусом TIMEOUT."""
+        return cls(
+            cmd_id=cmd_id,
+            status="TIMEOUT",
             ts=ts or int(time.time() * 1000),
             details=details
         )

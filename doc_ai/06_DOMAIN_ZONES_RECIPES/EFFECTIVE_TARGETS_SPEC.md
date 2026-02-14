@@ -143,6 +143,9 @@ interface Targets {
 
   // Дозирование
   dosing?: DosingTarget;
+
+  // Параметры correction cycle (стабилизация и интервалы)
+  correction_timings?: CorrectionTimingsTarget;
 }
 ```
 
@@ -415,6 +418,145 @@ interface DosingTarget {
 }
 ```
 
+### 4.7. Correction Cycle Timings
+
+**Назначение:** Параметры стабилизации и интервалов для correction cycle state machine.
+
+**ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Эти параметры управляют жизненным циклом активации/деактивации сенсорных нод и частотой коррекций.
+
+```typescript
+interface CorrectionTimingsTarget {
+  // Время стабилизации после активации (для разных состояний)
+  tank_fill_stabilization_sec: number;     // По умолчанию: 90
+  tank_recirc_stabilization_sec: number;   // По умолчанию: 30
+  irrigation_stabilization_sec: number;    // По умолчанию: 30
+  irrig_recirc_stabilization_sec: number;  // По умолчанию: 30
+
+  // Время ожидания после дозирования (mixing time)
+  npk_mix_time_sec: number;                // По умолчанию: 120
+  ph_mix_time_sec: number;                 // По умолчанию: 60
+  ca_mg_mix_time_sec: number;              // По умолчанию: 90
+
+  // Интервалы коррекции
+  min_correction_interval_sec: number;     // По умолчанию: 300 (5 мин)
+
+  // Максимальные попытки рециркуляции
+  max_tank_recirc_attempts: number;        // По умолчанию: 5
+  max_irrig_recirc_attempts: number;       // По умолчанию: 2
+
+  // Timeout режимов (макс. время выполнения)
+  tank_fill_timeout_sec: number;           // По умолчанию: 1800 (30 мин)
+  tank_recirc_timeout_sec: number;         // По умолчанию: 3600 (1 час)
+  irrigation_timeout_sec: number;          // По умолчанию: 600 (10 мин)
+}
+```
+
+**Пример (с default значениями):**
+```json
+{
+  "correction_timings": {
+    "tank_fill_stabilization_sec": 90,
+    "tank_recirc_stabilization_sec": 30,
+    "irrigation_stabilization_sec": 30,
+    "irrig_recirc_stabilization_sec": 30,
+    "npk_mix_time_sec": 120,
+    "ph_mix_time_sec": 60,
+    "ca_mg_mix_time_sec": 90,
+    "min_correction_interval_sec": 300,
+    "max_tank_recirc_attempts": 5,
+    "max_irrig_recirc_attempts": 2,
+    "tank_fill_timeout_sec": 1800,
+    "tank_recirc_timeout_sec": 3600,
+    "irrigation_timeout_sec": 600
+  }
+}
+```
+
+**Пример (кастомизированный):**
+```json
+{
+  "correction_timings": {
+    "tank_fill_stabilization_sec": 120,
+    "tank_recirc_stabilization_sec": 45,
+    "irrigation_stabilization_sec": 60,
+    "irrig_recirc_stabilization_sec": 45,
+    "npk_mix_time_sec": 180,
+    "ph_mix_time_sec": 90,
+    "ca_mg_mix_time_sec": 120,
+    "min_correction_interval_sec": 600,
+    "max_tank_recirc_attempts": 10,
+    "max_irrig_recirc_attempts": 3,
+    "tank_fill_timeout_sec": 2400,
+    "tank_recirc_timeout_sec": 5400,
+    "irrigation_timeout_sec": 900
+  }
+}
+```
+
+**Описание параметров:**
+
+**Стабилизация сенсоров:**
+- `tank_fill_stabilization_sec` — время стабилизации при активации в TANK_FILLING (обычно больше, т.к. идет заливка)
+- `tank_recirc_stabilization_sec` — время стабилизации в TANK_RECIRC (меньше, т.к. раствор уже смешан)
+- `irrigation_stabilization_sec` — время стабилизации при активации для IRRIGATING
+- `irrig_recirc_stabilization_sec` — время стабилизации в IRRIG_RECIRC
+
+**Mixing time (время перемешивания):**
+- `npk_mix_time_sec` — время ожидания после дозирования NPK для перемешивания
+- `ph_mix_time_sec` — время ожидания после pH коррекции
+- `ca_mg_mix_time_sec` — время ожидания после дозирования Ca/Mg/micro
+
+**Интервалы и ограничения:**
+- `min_correction_interval_sec` — минимальный интервал между коррекциями (предотвращает передозировку)
+- `max_tank_recirc_attempts` — максимальное количество попыток достичь целей в TANK_RECIRC
+- `max_irrig_recirc_attempts` — максимальное количество попыток в IRRIG_RECIRC
+
+**Timeouts:**
+- `tank_fill_timeout_sec` — максимальное время режима TANK_FILLING
+- `tank_recirc_timeout_sec` — максимальное время TANK_RECIRC
+- `irrigation_timeout_sec` — максимальное время IRRIGATING
+
+**Применение в state machine:**
+
+| Состояние | Используемый параметр стабилизации | Типы коррекций |
+|-----------|-----------------------------------|----------------|
+| **IDLE** | — | Нет коррекций |
+| **TANK_FILLING** | `tank_fill_stabilization_sec` (90s) | NPK + pH |
+| **TANK_RECIRC** | `tank_recirc_stabilization_sec` (30s) | NPK + pH (с `npk_mix_time_sec`, `ph_mix_time_sec`) |
+| **READY** | — | Нет коррекций |
+| **IRRIGATING** | `irrigation_stabilization_sec` (30s) | Ca/Mg/micro + pH |
+| **IRRIG_RECIRC** | `irrig_recirc_stabilization_sec` (30s) | Ca/Mg/micro + pH (с `ca_mg_mix_time_sec`, `ph_mix_time_sec`) |
+
+**Логика применения:**
+- После **активации** ноды ждут `*_stabilization_sec` перед разрешением коррекций
+- После **дозирования** automation-engine ждет `*_mix_time_sec` перед следующей проверкой
+- Между **коррекциями** выдерживается `min_correction_interval_sec`
+- При превышении `max_*_recirc_attempts` или `*_timeout_sec` происходит принудительный переход
+
+**Default значения:**
+```json
+{
+  "tank_fill_stabilization_sec": 90,
+  "tank_recirc_stabilization_sec": 30,
+  "irrigation_stabilization_sec": 30,
+  "irrig_recirc_stabilization_sec": 30,
+  "npk_mix_time_sec": 120,
+  "ph_mix_time_sec": 60,
+  "ca_mg_mix_time_sec": 90,
+  "min_correction_interval_sec": 300,
+  "max_tank_recirc_attempts": 5,
+  "max_irrig_recirc_attempts": 2,
+  "tank_fill_timeout_sec": 1800,
+  "tank_recirc_timeout_sec": 3600,
+  "irrigation_timeout_sec": 600
+}
+```
+
+**См. также:**
+- `CORRECTION_CYCLE_SPEC.md` — полная спецификация correction cycle state machine
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (секция 7.5) — команды activate/deactivate
+- `ARCHITECTURE_FLOWS.md` (секция 3.3) — диаграммы потоков коррекций
+
 ---
 
 ## 5. Примеры использования
@@ -445,6 +587,73 @@ if ph_target:
         # pH слишком низкий - дозировать pH+
         dose_ml = calculate_dose(current_ph, ph_target["target"])
         await send_command_dose_ph_up(zone_id=1, ml=dose_ml)
+```
+
+### 5.1b. Automation-Engine использует correction_timings
+
+```python
+from repositories.laravel_api_repository import LaravelApiRepository
+from correction_cycle import CorrectionStateMachine
+
+repo = LaravelApiRepository()
+
+# Получить targets для зоны
+targets = await repo.get_effective_targets(zone_id=1)
+
+# Извлечь параметры стабилизации и таймингов
+correction_timings = targets["targets"].get("correction_timings", {
+    "tank_fill_stabilization_sec": 90,
+    "tank_recirc_stabilization_sec": 30,
+    "irrigation_stabilization_sec": 30,
+    "irrig_recirc_stabilization_sec": 30,
+    "npk_mix_time_sec": 120,
+    "ph_mix_time_sec": 60,
+    "ca_mg_mix_time_sec": 90,
+    "min_correction_interval_sec": 300,
+    "max_tank_recirc_attempts": 5,
+    "max_irrig_recirc_attempts": 2,
+    "tank_fill_timeout_sec": 1800,
+    "tank_recirc_timeout_sec": 3600,
+    "irrigation_timeout_sec": 600
+})
+
+# Инициализация state machine
+state_machine = CorrectionStateMachine(
+    zone_id=1,
+    correction_timings=correction_timings
+)
+
+# Переход IDLE → TANK_FILLING
+await state_machine.transition_to_tank_filling()
+
+# Активация pH/EC нод с параметром стабилизации для TANK_FILLING
+await send_command_activate_sensor_mode(
+    zone_id=1,
+    node_uid="nd-ph-1",
+    stabilization_time_sec=correction_timings["tank_fill_stabilization_sec"]
+)
+
+# Control loop проверяет телеметрию
+telemetry = await get_current_telemetry(zone_id=1, metric="PH")
+
+# Проверяем флаги перед коррекцией
+if telemetry.get("corrections_allowed") and telemetry.get("stable"):
+    ph_target = targets["targets"]["ph"]
+
+    if telemetry["value"] < ph_target["min"]:
+        # Проверяем, прошло ли min_interval_sec с последней коррекции
+        if state_machine.can_correct():
+            dose_ml = calculate_dose(telemetry["value"], ph_target["target"])
+            await send_command_dose_ph_up(zone_id=1, ml=dose_ml)
+            state_machine.record_correction_time()
+else:
+    # Ещё стабилизируется - ждём
+    current_state = state_machine.get_current_state()
+    stabilization_param = f"{current_state.lower()}_stabilization_sec"
+    expected_time = correction_timings.get(stabilization_param, 60)
+
+    logger.info(f"Zone {zone_id} pH sensor stabilizing in {current_state}: "
+                f"{telemetry.get('stabilization_progress_sec')}s / {expected_time}s")
 ```
 
 ### 5.2. Scheduler использует targets
@@ -600,6 +809,21 @@ Python сервисы должны регулярно обновлять targets
   "climate": {
     "temp_air": {"target": 23.0, "min": 20.0, "max": 28.0},
     "humidity_air": {"target": 60.0, "min": 50.0, "max": 70.0}
+  },
+  "correction_timings": {
+    "tank_fill_stabilization_sec": 90,
+    "tank_recirc_stabilization_sec": 30,
+    "irrigation_stabilization_sec": 30,
+    "irrig_recirc_stabilization_sec": 30,
+    "npk_mix_time_sec": 120,
+    "ph_mix_time_sec": 60,
+    "ca_mg_mix_time_sec": 90,
+    "min_correction_interval_sec": 300,
+    "max_tank_recirc_attempts": 5,
+    "max_irrig_recirc_attempts": 2,
+    "tank_fill_timeout_sec": 1800,
+    "tank_recirc_timeout_sec": 3600,
+    "irrigation_timeout_sec": 600
   }
 }
 ```
@@ -610,6 +834,9 @@ Python сервисы должны регулярно обновлять targets
 
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон
+- `CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle state machine
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и системные команды
 - `../04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python сервисов
 - `../04_BACKEND_CORE/REST_API_REFERENCE.md` — REST API endpoints
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` — модель данных
+- `ARCHITECTURE_FLOWS.md` — диаграммы архитектурных потоков

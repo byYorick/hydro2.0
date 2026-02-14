@@ -97,6 +97,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Ключевые документы:**
 - `06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md` — контроллеры зон (pH, EC, климат, полив, свет)
 - `06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md` — движок рецептов
+- `06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация циклов коррекции раствора (pH/EC)
+- `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets для контроллеров
 - `06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` — зоны и пресеты культур
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
 - `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты

@@ -265,7 +265,7 @@ class TestCommandResponseProtocol:
             # Валидация через Pydantic модель
             response = CommandResponse(**fixture)
             assert response.cmd_id is not None
-            assert response.status in ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
+            assert response.status in ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"]
             assert response.ts > 0
     
     @pytest.mark.parametrize("invalid_status", ["INVALID_STATUS", "ACCEPTED", "FAILED"])
@@ -299,6 +299,7 @@ class TestErrorAlertProtocol:
         payload = {
             "level": "ERROR",
             "component": "sensor",
+            "error_code": "SENSOR_READ_FAILED",
             "message": "Sensor reading failed"
         }
         
@@ -326,7 +327,7 @@ class TestErrorAlertProtocol:
             "error_code": "ESP_ERR_NO_MEM",
             "error_code_num": 101,
             "message": "Out of memory",
-            "ts": 1737979200.5,
+            "ts": 1737979200000,
             "hardware_id": "AA:BB:CC:DD:EE:FF",
             "node_uid": "nd-ph-1",
             "zone_id": 1,
@@ -343,6 +344,7 @@ class TestErrorAlertProtocol:
         payload = {
             "level": "WARNING",
             "component": "automation",
+            "error_code": "ALERT_THRESHOLD",
             "source": "biz",
             "code": "PH_LOW",
             "type": "threshold",
@@ -350,7 +352,7 @@ class TestErrorAlertProtocol:
             "zone_id": 1,
             "node_uid": "nd-ph-1",
             "message": "pH value below threshold",
-            "ts": 1737979200.5,
+            "ts": 1737979200000,
             "details": {
                 "current_value": 5.5,
                 "threshold": 6.0
@@ -363,7 +365,9 @@ class TestErrorAlertProtocol:
         """Тест невалидного уровня ошибки."""
         payload = {
             "level": "INVALID_LEVEL",
-            "component": "sensor"
+            "component": "sensor",
+            "error_code": "INVALID_LEVEL",
+            "message": "invalid"
         }
         
         with pytest.raises(AssertionError):
@@ -372,12 +376,22 @@ class TestErrorAlertProtocol:
     def test_error_missing_required_fields(self, error_alert_schema):
         """Тест отсутствия обязательных полей."""
         # Отсутствует level
-        payload = {"component": "sensor"}
+        payload = {"component": "sensor", "error_code": "ERR", "message": "m"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, error_alert_schema)
         
         # Отсутствует component
-        payload = {"level": "ERROR"}
+        payload = {"level": "ERROR", "error_code": "ERR", "message": "m"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, error_alert_schema)
+
+        # Отсутствует error_code
+        payload = {"level": "ERROR", "component": "sensor", "message": "m"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, error_alert_schema)
+
+        # Отсутствует message
+        payload = {"level": "ERROR", "component": "sensor", "error_code": "ERR"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, error_alert_schema)
 

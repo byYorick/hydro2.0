@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 import state
-from common.command_status_queue import normalize_status, send_status_to_laravel
+from common.command_status_queue import CommandStatus, normalize_status, send_status_to_laravel
 from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
@@ -75,6 +75,25 @@ _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
 _BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
 _BINDING_COMPLETION_LOCKS_GUARD = asyncio.Lock()
+
+
+def _resolve_stub_insert_status(normalized_status: CommandStatus) -> str:
+    """
+    Для unknown cmd_id вставляем pre-terminal статус, чтобы terminal side-effects
+    формировались в Laravel через commandAck, а не терялись на early-return.
+    """
+    terminal_statuses = {
+        CommandStatus.DONE,
+        CommandStatus.ERROR,
+        CommandStatus.INVALID,
+        CommandStatus.BUSY,
+        CommandStatus.NO_EFFECT,
+        CommandStatus.TIMEOUT,
+        CommandStatus.SEND_FAILED,
+    }
+    if normalized_status in terminal_statuses:
+        return CommandStatus.ACK.value
+    return normalized_status.value
 
 
 def _prune_pending_config_reports_locked(now_ts: float) -> None:
@@ -1448,11 +1467,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                         node_id = node_rows[0]["id"]
                         zone_id = node_rows[0]["zone_id"]
 
-                status_value = (
-                    normalized_status.value
-                    if hasattr(normalized_status, "value")
-                    else str(normalized_status)
-                )
+                status_value = _resolve_stub_insert_status(normalized_status)
                 cmd_name = "unknown"
 
                 await execute(

@@ -395,7 +395,67 @@ async def test_execute_irrigation_returns_retry_and_enqueues_internal_retry_on_l
     assert isinstance(result["next_due_at"], str)
     command_bus.publish_controller_command_closed_loop.assert_not_awaited()
     mock_enqueue.assert_awaited_once()
+    enqueue_kwargs = mock_enqueue.await_args.kwargs
+    assert enqueue_kwargs["correlation_id"] != "corr-retry-low-water"
+    assert enqueue_kwargs["correlation_id"].startswith("corr-retry-low-water:retry1:")
+    assert enqueue_kwargs["payload"]["parent_correlation_id"] == "corr-retry-low-water"
     mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_retry_chain_keeps_root_parent_and_uses_unique_correlation_ids():
+    command_bus = _build_command_bus_mock()
+
+    enqueue_calls = []
+
+    async def _enqueue_side_effect(**kwargs):
+        enqueue_calls.append(kwargs)
+        return {
+            "enqueue_id": f"enq-retry-{len(enqueue_calls)}",
+            "status": "pending",
+            "scheduled_for": kwargs["scheduled_for"],
+            "task_type": kwargs["task_type"],
+            "correlation_id": kwargs["correlation_id"],
+        }
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue, \
+         patch("scheduler_task_executor.send_infra_alert", new_callable=AsyncMock):
+        mock_enqueue.side_effect = _enqueue_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+
+        first_result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={
+                "low_water": True,
+                "config": {"execution": {"decision": {"max_retry": 3, "backoff_sec": 60}}},
+            },
+            task_context={"correlation_id": "corr-retry-root"},
+        )
+
+        first_retry_correlation_id = enqueue_calls[0]["correlation_id"]
+        second_result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={
+                "low_water": True,
+                "retry_attempt": 1,
+                "parent_correlation_id": "corr-retry-root",
+                "config": {"execution": {"decision": {"max_retry": 3, "backoff_sec": 60}}},
+            },
+            task_context={"correlation_id": first_retry_correlation_id},
+        )
+
+    assert first_result["decision"] == "retry"
+    assert second_result["decision"] == "retry"
+    assert len(enqueue_calls) == 2
+    assert enqueue_calls[0]["correlation_id"] != enqueue_calls[1]["correlation_id"]
+    assert enqueue_calls[0]["correlation_id"].startswith("corr-retry-root:retry1:")
+    assert enqueue_calls[1]["correlation_id"].startswith("corr-retry-root:retry2:")
+    assert enqueue_calls[0]["payload"]["parent_correlation_id"] == "corr-retry-root"
+    assert enqueue_calls[1]["payload"]["parent_correlation_id"] == "corr-retry-root"
+    assert enqueue_calls[1]["payload"]["previous_correlation_id"] == first_retry_correlation_id
 
 
 @pytest.mark.asyncio
@@ -1549,3 +1609,187 @@ async def test_execute_two_tank_irrigation_recovery_check_attempts_exceeded():
     assert result["error_code"] == "irrigation_recovery_attempts_exceeded"
     assert command_bus.publish_controller_command_closed_loop.await_count == 3
     mock_enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_compensates_stop_when_enqueue_fails():
+    command_bus = _build_command_bus_mock()
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [{"sensor_id": 101, "sensor_label": "level_clean_max", "level": 0.0, "sample_ts": fresh_sample_ts}]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized and args[1] == "valve_clean_fill":
+            return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "valve_clean_fill"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock, side_effect=ValueError("enqueue failed")), \
+         patch("scheduler_task_executor.AE_TWOTANK_SAFETY_GUARDS_ENABLED", True):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays", "startup": {"required_node_types": ["irrig"]}}},
+            },
+            task_context={"task_id": "st-enqueue-fail", "correlation_id": "corr-enqueue-fail"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_clean_fill_enqueue_failed"
+    assert "stop_result" in result
+    assert result["stop_result"]["success"] is True
+    assert command_bus.publish_controller_command_closed_loop.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_clean_fill_timeout_blocks_retry_when_stop_not_confirmed():
+    command_bus = Mock()
+
+    async def _closed_loop_side_effect(**kwargs):
+        command = kwargs.get("command") if isinstance(kwargs.get("command"), dict) else {}
+        params = command.get("params") if isinstance(command.get("params"), dict) else {}
+        state = params.get("state")
+        if state is False:
+            return {
+                "command_submitted": True,
+                "command_effect_confirmed": False,
+                "terminal_status": "NO_EFFECT",
+                "cmd_id": "cmd-stop-failed",
+                "error_code": "NO_EFFECT",
+                "error": "terminal_no_effect",
+            }
+        return {
+            "command_submitted": True,
+            "command_effect_confirmed": True,
+            "terminal_status": "DONE",
+            "cmd_id": "cmd-ok",
+            "error_code": None,
+            "error": None,
+        }
+
+    command_bus.publish_command = AsyncMock(return_value=True)
+    command_bus.publish_controller_command_closed_loop = AsyncMock(side_effect=_closed_loop_side_effect)
+
+    stale_timeout = datetime.utcnow() - timedelta(seconds=5)
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from zone_events" in normalized and "type = any($2::text[])" in normalized:
+            return []
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [{"sensor_id": 111, "sensor_label": "level_clean_max", "level": 0.0, "sample_ts": fresh_sample_ts}]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized and args[1] == "valve_clean_fill":
+            return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "valve_clean_fill"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.AE_TWOTANK_SAFETY_GUARDS_ENABLED", True):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "clean_fill_check",
+                "clean_fill_started_at": (stale_timeout - timedelta(seconds=30)).isoformat(),
+                "clean_fill_timeout_at": stale_timeout.isoformat(),
+                "clean_fill_cycle": 1,
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays", "startup": {"required_node_types": ["irrig"]}}},
+            },
+            task_context={"task_id": "st-clean-timeout", "correlation_id": "corr-clean-timeout"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_clean_fill_timeout_stop_not_confirmed"
+    assert result["feature_flag_state"] is True
+    assert command_bus.publish_controller_command_closed_loop.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_irrigation_recovery_timeout_blocks_restart_when_stop_not_confirmed():
+    command_bus = Mock()
+
+    async def _closed_loop_side_effect(**kwargs):
+        command = kwargs.get("command") if isinstance(kwargs.get("command"), dict) else {}
+        params = command.get("params") if isinstance(command.get("params"), dict) else {}
+        state = params.get("state")
+        if state is False:
+            return {
+                "command_submitted": True,
+                "command_effect_confirmed": False,
+                "terminal_status": "NO_EFFECT",
+                "cmd_id": "cmd-stop-failed",
+                "error_code": "NO_EFFECT",
+                "error": "terminal_no_effect",
+            }
+        return {
+            "command_submitted": True,
+            "command_effect_confirmed": True,
+            "terminal_status": "DONE",
+            "cmd_id": "cmd-ok",
+            "error_code": None,
+            "error": None,
+        }
+
+    command_bus.publish_command = AsyncMock(return_value=True)
+    command_bus.publish_controller_command_closed_loop = AsyncMock(side_effect=_closed_loop_side_effect)
+
+    timeout_at = datetime.utcnow() - timedelta(seconds=5)
+    sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "where s.zone_id = $1 and s.type = $2 and s.is_active = true" in normalized:
+            sensor_type = args[1]
+            if sensor_type == "PH":
+                return [{"sensor_id": 41, "sensor_label": "ph_main", "value": 7.1, "sample_ts": sample_ts}]
+            if sensor_type == "EC":
+                return [{"sensor_id": 42, "sensor_label": "ec_main", "value": 0.4, "sample_ts": sample_ts}]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized and args[1] in {"pump_main", "valve_solution_fill", "valve_solution_supply"}:
+            return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": args[1]}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.AE_TWOTANK_SAFETY_GUARDS_ENABLED", True):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "irrigation_recovery_check",
+                "irrigation_recovery_attempt": 1,
+                "irrigation_recovery_started_at": (timeout_at - timedelta(seconds=20)).isoformat(),
+                "irrigation_recovery_timeout_at": timeout_at.isoformat(),
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                        "target_ph": 5.8,
+                        "target_ec": 1.6,
+                        "irrigation_recovery": {"max_continue_attempts": 5},
+                    }
+                },
+            },
+            task_context={"task_id": "st-recovery-timeout", "correlation_id": "corr-recovery-timeout"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irrigation_recovery_timeout_stop_not_confirmed"
+    assert result["feature_flag_state"] is True
+    assert command_bus.publish_controller_command_closed_loop.await_count == 3

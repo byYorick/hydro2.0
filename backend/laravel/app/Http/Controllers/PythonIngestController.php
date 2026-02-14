@@ -228,13 +228,13 @@ class PythonIngestController extends Controller
         
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY'],
+            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
             'details' => ['nullable', 'array'],
         ]);
         
         Log::info('[COMMAND_ACK] STEP 3: Request validated', ['data' => $data]);
 
-        // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY
+        // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
         $normalizedStatus = match (strtoupper($data['status'])) {
             'SENT' => \App\Models\Command::STATUS_SENT,
             'ACK' => \App\Models\Command::STATUS_ACK,
@@ -243,6 +243,8 @@ class PythonIngestController extends Controller
             'ERROR' => \App\Models\Command::STATUS_ERROR,
             'INVALID' => \App\Models\Command::STATUS_INVALID,
             'BUSY' => \App\Models\Command::STATUS_BUSY,
+            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
+            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']),
         };
         
@@ -271,6 +273,8 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
             ];
             
             // Если команда уже в конечном статусе, не обновляем (запрет отката)
@@ -300,6 +304,8 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR => 4,
                 \App\Models\Command::STATUS_INVALID => 4,
                 \App\Models\Command::STATUS_BUSY => 4,
+                \App\Models\Command::STATUS_TIMEOUT => 4,
+                \App\Models\Command::STATUS_SEND_FAILED => 4,
             ];
             
             $currentOrder = $statusOrder[$currentStatus] ?? 0;
@@ -358,11 +364,13 @@ class PythonIngestController extends Controller
                 $updates['ack_at'] = now();
             }
             
-            // ERROR/INVALID/BUSY - команда завершилась с ошибкой
+            // ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED - команда завершилась с ошибкой
             if (in_array($normalizedStatus, [
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
             ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
@@ -394,6 +402,8 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
             ], true)) {
                 Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
                 event(new \App\Events\CommandFailed(

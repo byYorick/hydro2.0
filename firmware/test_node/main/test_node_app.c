@@ -1,6 +1,6 @@
 /**
  * @file test_node_app.c
- * @brief ESP32 тест-нода, эмулирующая 6 виртуальных узлов Hydro 2.0
+ * @brief ESP32 тест-нода, эмулирующая 5 виртуальных узлов Hydro 2.0
  */
 
 #include "test_node_app.h"
@@ -11,6 +11,7 @@
 #include "test_node_ui.h"
 #include "node_utils.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
@@ -43,6 +44,9 @@ static const char *TAG = "test_node_multi";
 #define TASK_STACK_TELEMETRY_FALLBACK 5632
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
+#define CLEAN_FILL_DELAY_SEC 60
+#define CLEAN_MAX_LATCH_LEVEL 0.92f
+#define CLEAN_MAX_RELEASE_LEVEL 0.86f
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -68,19 +72,31 @@ typedef struct {
     float ph_value;
     float ec_value;
     float water_level;
+    float solution_level;
     float air_temp;
     float air_humidity;
     float light_level;
 
     bool irrigation_on;
+    bool main_pump_on;
+    bool valve_clean_fill_on;
+    bool valve_clean_supply_on;
+    bool valve_solution_fill_on;
+    bool valve_solution_supply_on;
+    bool valve_irrigation_on;
+    bool clean_fill_stage_active;
+    bool clean_max_latched;
     bool tank_fill_on;
     bool tank_drain_on;
     bool fan_on;
     bool light_on;
+    bool ph_sensor_mode_active;
+    bool ec_sensor_mode_active;
 
     uint8_t light_pwm;
     uint8_t irrigation_boost_ticks;
     uint8_t correction_boost_ticks;
+    int64_t clean_fill_started_at;
 } virtual_state_t;
 
 typedef enum {
@@ -107,14 +123,26 @@ typedef struct {
 
     bool amount_present;
     float amount_value;
+    bool duration_ms_present;
+    int duration_ms;
 
+    bool sim_status_present;
+    char sim_status[16];
+    bool sim_no_effect;
     int execute_delay_ms;
 } pending_command_t;
 
 static const channel_def_t IRRIGATION_CHANNELS[] = {
-    {.name = "pump_irrigation", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
-    {.name = "flow_present", .type = "SENSOR", .metric = "FLOW_RATE", .is_actuator = false},
-    {.name = "pump_bus_current", .type = "SENSOR", .metric = "PUMP_CURRENT", .is_actuator = false},
+    {.name = "pump_main", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_clean_fill", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_clean_supply", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_solution_fill", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_solution_supply", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "valve_irrigation", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "level_clean_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
+    {.name = "level_clean_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
+    {.name = "level_solution_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
+    {.name = "level_solution_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
 };
 
 static const channel_def_t PH_CORRECTION_CHANNELS[] = {
@@ -129,12 +157,6 @@ static const channel_def_t EC_CORRECTION_CHANNELS[] = {
     {.name = "pump_b", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "pump_c", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "pump_d", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
-};
-
-static const channel_def_t ACCUMULATION_CHANNELS[] = {
-    {.name = "water_level", .type = "SENSOR", .metric = "WATER_LEVEL", .is_actuator = false},
-    {.name = "pump_in", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
-    {.name = "drain_main", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
 };
 
 static const channel_def_t CLIMATE_CHANNELS[] = {
@@ -152,7 +174,6 @@ static const virtual_node_t VIRTUAL_NODES[] = {
     {.node_uid = "nd-test-irrig-1", .node_type = "irrig", .channels = IRRIGATION_CHANNELS, .channels_count = sizeof(IRRIGATION_CHANNELS) / sizeof(IRRIGATION_CHANNELS[0])},
     {.node_uid = "nd-test-ph-1", .node_type = "ph", .channels = PH_CORRECTION_CHANNELS, .channels_count = sizeof(PH_CORRECTION_CHANNELS) / sizeof(PH_CORRECTION_CHANNELS[0])},
     {.node_uid = "nd-test-ec-1", .node_type = "ec", .channels = EC_CORRECTION_CHANNELS, .channels_count = sizeof(EC_CORRECTION_CHANNELS) / sizeof(EC_CORRECTION_CHANNELS[0])},
-    {.node_uid = "nd-test-tank-1", .node_type = "water_sensor", .channels = ACCUMULATION_CHANNELS, .channels_count = sizeof(ACCUMULATION_CHANNELS) / sizeof(ACCUMULATION_CHANNELS[0])},
     {.node_uid = "nd-test-climate-1", .node_type = "climate", .channels = CLIMATE_CHANNELS, .channels_count = sizeof(CLIMATE_CHANNELS) / sizeof(CLIMATE_CHANNELS[0])},
     {.node_uid = "nd-test-light-1", .node_type = "light", .channels = LIGHT_CHANNELS, .channels_count = sizeof(LIGHT_CHANNELS) / sizeof(LIGHT_CHANNELS[0])},
 };
@@ -179,17 +200,29 @@ static virtual_state_t s_virtual_state = {
     .ph_value = 5.80f,
     .ec_value = 1.70f,
     .water_level = 0.62f,
+    .solution_level = 0.58f,
     .air_temp = 24.0f,
     .air_humidity = 60.0f,
     .light_level = 18000.0f,
     .irrigation_on = false,
+    .main_pump_on = false,
+    .valve_clean_fill_on = false,
+    .valve_clean_supply_on = false,
+    .valve_solution_fill_on = false,
+    .valve_solution_supply_on = false,
+    .valve_irrigation_on = false,
+    .clean_fill_stage_active = false,
+    .clean_max_latched = false,
     .tank_fill_on = false,
     .tank_drain_on = false,
     .fan_on = false,
     .light_on = false,
+    .ph_sensor_mode_active = false,
+    .ec_sensor_mode_active = false,
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
+    .clean_fill_started_at = 0,
 };
 
 static void ui_logf(const char *node_uid, const char *fmt, ...) {
@@ -460,8 +493,103 @@ static float clamp_float(float value, float min_value, float max_value) {
     return value;
 }
 
+static int random_range_ms(int min_value, int max_value) {
+    uint32_t span;
+    if (max_value <= min_value) {
+        return min_value;
+    }
+    span = (uint32_t)(max_value - min_value + 1);
+    return min_value + (int)(esp_random() % span);
+}
+
+static float level_switch_from_threshold(float level_value, float threshold, bool active_when_above) {
+    if (active_when_above) {
+        return level_value >= threshold ? 1.0f : 0.0f;
+    }
+    return level_value <= threshold ? 1.0f : 0.0f;
+}
+
+static float resolve_clean_max_switch_value(void) {
+    if (s_virtual_state.clean_max_latched) {
+        return 1.0f;
+    }
+    return level_switch_from_threshold(s_virtual_state.water_level, 0.90f, true);
+}
+
+static bool is_clean_fill_active(void) {
+    return s_virtual_state.tank_fill_on
+        || (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_fill_on);
+}
+
+static bool is_solution_fill_active(void) {
+    return s_virtual_state.main_pump_on
+        && s_virtual_state.valve_clean_supply_on
+        && s_virtual_state.valve_solution_fill_on;
+}
+
+static bool is_irrigation_active(void) {
+    return s_virtual_state.irrigation_on
+        || (
+            s_virtual_state.main_pump_on
+            && s_virtual_state.valve_solution_supply_on
+            && s_virtual_state.valve_irrigation_on
+        );
+}
+
+static bool is_transient_command(const pending_command_t *job) {
+    if (!job) {
+        return false;
+    }
+    return strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0;
+}
+
+static bool is_valid_terminal_status(const char *status) {
+    if (!status || status[0] == '\0') {
+        return false;
+    }
+    return strcmp(status, "DONE") == 0 ||
+           strcmp(status, "NO_EFFECT") == 0 ||
+           strcmp(status, "BUSY") == 0 ||
+           strcmp(status, "INVALID") == 0 ||
+           strcmp(status, "ERROR") == 0;
+}
+
+static bool is_main_pump_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "pump_main") == 0 ||
+            strcmp(channel, "main_pump") == 0
+        );
+}
+
+static bool is_fill_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "pump_in") == 0 ||
+            strcmp(channel, "fill_valve") == 0 ||
+            strcmp(channel, "water_control") == 0
+        );
+}
+
+static bool is_drain_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "drain_main") == 0 ||
+            strcmp(channel, "drain_valve") == 0 ||
+            strcmp(channel, "drain") == 0
+        );
+}
+
 static void publish_all_config_reports(const char *reason);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
+static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
+static void persist_received_config_or_namespace(
+    const char *node_uid,
+    const char *config_payload,
+    int config_payload_len,
+    const char *gh_uid,
+    const char *zone_uid
+);
 
 static const virtual_node_t *find_virtual_node(const char *node_uid) {
     size_t index = 0;
@@ -659,9 +787,10 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
 
 static void publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
-    char *payload_buf = NULL;
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
+    // Избегаем дополнительной heap-аллоцкации cJSON_PrintUnformatted во время burst-публикации.
+    char payload_buf[2048];
     bool node_preconfig_mode = false;
     cJSON *json;
     cJSON *channels;
@@ -736,13 +865,6 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         cJSON_AddItemToObject(json, "wifi", wifi);
     }
 
-    payload_buf = malloc(1536);
-    if (!payload_buf) {
-        ESP_LOGE(TAG, "Out of memory for config_report payload buffer");
-        cJSON_Delete(json);
-        return;
-    }
-
     publish_err = ESP_FAIL;
     for (int attempt = 0; attempt < 3; attempt++) {
         publish_err = publish_json_payload_preallocated(
@@ -751,7 +873,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
             1,
             0,
             payload_buf,
-            1536
+            sizeof(payload_buf)
         );
         if (publish_err == ESP_OK) {
             break;
@@ -791,7 +913,6 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         );
     }
 
-    free(payload_buf);
     cJSON_Delete(json);
 }
 
@@ -830,9 +951,6 @@ static const char *resolve_node_hello_name(const virtual_node_t *node) {
     }
     if (strstr(node->node_uid, "-ec-") != NULL) {
         return "Test: EC correction";
-    }
-    if (strstr(node->node_uid, "-tank-") != NULL) {
-        return "Test: accumulation node";
     }
     if (strstr(node->node_uid, "-climate-") != NULL) {
         return "Test: climate";
@@ -1209,6 +1327,22 @@ static cJSON *build_sensor_probe_details(const char *channel) {
         cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL");
         cJSON_AddNumberToObject(details, "value", s_virtual_state.water_level);
         cJSON_AddStringToObject(details, "unit", "ratio");
+    } else if (strcmp(channel, "level_clean_min") == 0) {
+        cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
+        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true));
+        cJSON_AddStringToObject(details, "unit", "bool");
+    } else if (strcmp(channel, "level_clean_max") == 0) {
+        cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
+        cJSON_AddNumberToObject(details, "value", resolve_clean_max_switch_value());
+        cJSON_AddStringToObject(details, "unit", "bool");
+    } else if (strcmp(channel, "level_solution_min") == 0) {
+        cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
+        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true));
+        cJSON_AddStringToObject(details, "unit", "bool");
+    } else if (strcmp(channel, "level_solution_max") == 0) {
+        cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
+        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true));
+        cJSON_AddStringToObject(details, "unit", "bool");
     } else if (strcmp(channel, "flow_present") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "FLOW_RATE");
         cJSON_AddNumberToObject(details, "value", s_virtual_state.flow_rate);
@@ -1227,18 +1361,52 @@ static cJSON *build_sensor_probe_details(const char *channel) {
     return details;
 }
 
-static int resolve_command_delay_ms(command_kind_t kind, cJSON *params) {
+static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t *job, cJSON *params) {
     int delay_ms = 900;
-    cJSON *ttl_ms = NULL;
+    cJSON *sim_delay_ms;
+    cJSON *ttl_ms;
+
+    if (params && cJSON_IsObject(params)) {
+        sim_delay_ms = cJSON_GetObjectItem(params, "sim_delay_ms");
+        if (sim_delay_ms && cJSON_IsNumber(sim_delay_ms)) {
+            delay_ms = (int)cJSON_GetNumberValue(sim_delay_ms);
+            if (delay_ms < 50) {
+                delay_ms = 50;
+            }
+            if (delay_ms > 20000) {
+                delay_ms = 20000;
+            }
+            return delay_ms;
+        }
+    }
 
     if (kind == COMMAND_KIND_SENSOR_PROBE) {
-        return 350;
+        return random_range_ms(180, 480);
     }
     if (kind == COMMAND_KIND_CONFIG_REPORT) {
-        return 200;
+        return random_range_ms(120, 320);
     }
     if (kind == COMMAND_KIND_RESTART) {
-        return 1500;
+        return random_range_ms(1200, 2200);
+    }
+
+    if (job && kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
+        int base_ms = random_range_ms(320, 640);
+        int duration_ms = job->duration_ms_present ? job->duration_ms : 0;
+        if (duration_ms <= 0 && job->amount_present && job->amount_value > 0.0f) {
+            duration_ms = (int)(job->amount_value * 120.0f);
+        }
+        if (duration_ms > 0) {
+            int scaled_ms = (duration_ms * 15) / 100;
+            if (scaled_ms < 300) {
+                scaled_ms = 300;
+            }
+            if (scaled_ms > 9000) {
+                scaled_ms = 9000;
+            }
+            return base_ms + scaled_ms;
+        }
+        return base_ms + random_range_ms(220, 520);
     }
 
     if (params && cJSON_IsObject(params)) {
@@ -1248,13 +1416,12 @@ static int resolve_command_delay_ms(command_kind_t kind, cJSON *params) {
         }
     }
 
-    if (delay_ms < 250) {
-        delay_ms = 250;
+    if (delay_ms < 150) {
+        delay_ms = 150;
     }
-    if (delay_ms > 4000) {
-        delay_ms = 4000;
+    if (delay_ms > 8000) {
+        delay_ms = 8000;
     }
-
     return delay_ms;
 }
 
@@ -1290,21 +1457,61 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
     if (ml && cJSON_IsNumber(ml)) {
         job->amount_present = true;
         job->amount_value = (float)cJSON_GetNumberValue(ml);
-    } else {
-        cJSON *duration = cJSON_GetObjectItem(params, "duration_ms");
-        if (duration && cJSON_IsNumber(duration)) {
-            job->amount_present = true;
-            job->amount_value = (float)cJSON_GetNumberValue(duration);
+    }
+
+    cJSON *duration = cJSON_GetObjectItem(params, "duration_ms");
+    if (duration && cJSON_IsNumber(duration)) {
+        job->duration_ms_present = true;
+        job->duration_ms = (int)cJSON_GetNumberValue(duration);
+    }
+
+    cJSON *sim_status = cJSON_GetObjectItem(params, "sim_status");
+    if (sim_status && cJSON_IsString(sim_status) && sim_status->valuestring) {
+        size_t idx;
+        size_t max_len = sizeof(job->sim_status) - 1;
+        size_t src_len = strlen(sim_status->valuestring);
+        if (src_len > max_len) {
+            src_len = max_len;
+        }
+        for (idx = 0; idx < src_len; idx++) {
+            job->sim_status[idx] = (char)toupper((unsigned char)sim_status->valuestring[idx]);
+        }
+        job->sim_status[src_len] = '\0';
+        if (is_valid_terminal_status(job->sim_status)) {
+            job->sim_status_present = true;
         }
     }
 
-    job->execute_delay_ms = resolve_command_delay_ms(job->kind, params);
+    cJSON *sim_no_effect = cJSON_GetObjectItem(params, "sim_no_effect");
+    if (sim_no_effect && cJSON_IsBool(sim_no_effect)) {
+        job->sim_no_effect = cJSON_IsTrue(sim_no_effect);
+    }
+
+    job->execute_delay_ms = resolve_command_delay_ms(job->kind, job, params);
 }
 
 static void update_virtual_state_from_command(const pending_command_t *job, cJSON *details, const char **status_out) {
     const char *status = "DONE";
 
     if (!job || !status_out) {
+        return;
+    }
+
+    if (job->sim_status_present) {
+        if (strcmp(job->sim_status, "DONE") != 0) {
+            if (strcmp(job->sim_status, "NO_EFFECT") == 0) {
+                cJSON_AddStringToObject(details, "note", "simulated_no_effect");
+            } else {
+                cJSON_AddStringToObject(details, "error", "simulated_terminal_status");
+                cJSON_AddStringToObject(details, "error_code", job->sim_status);
+            }
+            *status_out = job->sim_status;
+            return;
+        }
+    }
+    if (job->sim_no_effect) {
+        cJSON_AddStringToObject(details, "note", "sim_no_effect");
+        *status_out = "NO_EFFECT";
         return;
     }
 
@@ -1322,23 +1529,99 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         return;
     }
 
+    if (strcmp(job->cmd, "set_relay") == 0) {
+        bool has_state = true;
+        bool current_state = false;
+
+        if (strcmp(job->channel, "pump_irrigation") == 0) {
+            current_state = s_virtual_state.irrigation_on;
+        } else if (is_main_pump_channel(job->channel)) {
+            current_state = s_virtual_state.main_pump_on;
+        } else if (strcmp(job->channel, "valve_clean_fill") == 0) {
+            current_state = s_virtual_state.valve_clean_fill_on;
+        } else if (strcmp(job->channel, "valve_clean_supply") == 0) {
+            current_state = s_virtual_state.valve_clean_supply_on;
+        } else if (strcmp(job->channel, "valve_solution_fill") == 0) {
+            current_state = s_virtual_state.valve_solution_fill_on;
+        } else if (strcmp(job->channel, "valve_solution_supply") == 0) {
+            current_state = s_virtual_state.valve_solution_supply_on;
+        } else if (strcmp(job->channel, "valve_irrigation") == 0) {
+            current_state = s_virtual_state.valve_irrigation_on;
+        } else if (is_fill_channel(job->channel)) {
+            current_state = s_virtual_state.tank_fill_on;
+        } else if (is_drain_channel(job->channel)) {
+            current_state = s_virtual_state.tank_drain_on;
+        } else if (strcmp(job->channel, "fan_air") == 0) {
+            current_state = s_virtual_state.fan_on;
+        } else if (strcmp(job->channel, "white_light") == 0) {
+            current_state = s_virtual_state.light_on;
+        } else {
+            has_state = false;
+        }
+
+        if (has_state && current_state == job->relay_state) {
+            cJSON_AddStringToObject(details, "note", "already_in_requested_state");
+            *status_out = "NO_EFFECT";
+            return;
+        }
+    }
+
+    if (strcmp(job->channel, "white_light") == 0 && strcmp(job->cmd, "set_pwm") == 0) {
+        int pwm_value = job->pwm_value;
+        if (pwm_value < 0) {
+            pwm_value = 0;
+        }
+        if (pwm_value > 255) {
+            pwm_value = 255;
+        }
+        if ((int)s_virtual_state.light_pwm == pwm_value) {
+            cJSON_AddStringToObject(details, "note", "already_in_requested_pwm");
+            *status_out = "NO_EFFECT";
+            return;
+        }
+    }
+
     if (strcmp(job->channel, "pump_irrigation") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.irrigation_on = job->relay_state;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
             s_virtual_state.irrigation_boost_ticks = 3;
         }
-    } else if (strcmp(job->channel, "pump_in") == 0) {
+    } else if (is_main_pump_channel(job->channel)) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.main_pump_on = job->relay_state;
+        }
+    } else if (strcmp(job->channel, "valve_clean_fill") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_clean_fill_on = job->relay_state;
+        }
+    } else if (strcmp(job->channel, "valve_clean_supply") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_clean_supply_on = job->relay_state;
+        }
+    } else if (strcmp(job->channel, "valve_solution_fill") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_solution_fill_on = job->relay_state;
+        }
+    } else if (strcmp(job->channel, "valve_solution_supply") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_solution_supply_on = job->relay_state;
+        }
+    } else if (strcmp(job->channel, "valve_irrigation") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.valve_irrigation_on = job->relay_state;
+        }
+    } else if (is_fill_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.tank_fill_on = job->relay_state;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
             s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.02f, 0.05f, 0.98f);
         }
-    } else if (strcmp(job->channel, "drain_main") == 0) {
+    } else if (is_drain_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.tank_drain_on = job->relay_state;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
-            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level - 0.02f, 0.05f, 0.98f);
+            s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level - 0.02f, 0.05f, 0.98f);
         }
     } else if (strcmp(job->channel, "pump_acid") == 0) {
         s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - 0.03f, 4.8f, 7.2f);
@@ -1375,11 +1658,48 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             s_virtual_state.light_pwm = (uint8_t)pwm_value;
             s_virtual_state.light_on = pwm_value > 0;
         }
+    } else if (strcmp(job->channel, "system") == 0) {
+        if (strcmp(job->cmd, "activate_sensor_mode") == 0) {
+            if (strstr(job->node_uid, "-ph-") != NULL) {
+                if (s_virtual_state.ph_sensor_mode_active) {
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
+                    *status_out = "NO_EFFECT";
+                    return;
+                }
+                s_virtual_state.ph_sensor_mode_active = true;
+            } else if (strstr(job->node_uid, "-ec-") != NULL) {
+                if (s_virtual_state.ec_sensor_mode_active) {
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
+                    *status_out = "NO_EFFECT";
+                    return;
+                }
+                s_virtual_state.ec_sensor_mode_active = true;
+            }
+        } else if (strcmp(job->cmd, "deactivate_sensor_mode") == 0) {
+            if (strstr(job->node_uid, "-ph-") != NULL) {
+                if (!s_virtual_state.ph_sensor_mode_active) {
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive");
+                    *status_out = "NO_EFFECT";
+                    return;
+                }
+                s_virtual_state.ph_sensor_mode_active = false;
+            } else if (strstr(job->node_uid, "-ec-") != NULL) {
+                if (!s_virtual_state.ec_sensor_mode_active) {
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive");
+                    *status_out = "NO_EFFECT";
+                    return;
+                }
+                s_virtual_state.ec_sensor_mode_active = false;
+            }
+        }
     }
 
     if (job->amount_present) {
         cJSON_AddNumberToObject(details, "amount", job->amount_value);
     }
+
+    s_virtual_state.water_level = clamp_float(s_virtual_state.water_level, 0.05f, 0.98f);
+    s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level, 0.05f, 0.98f);
 
     *status_out = status;
 }
@@ -1410,6 +1730,49 @@ static void execute_pending_command(const pending_command_t *job) {
     cJSON_AddNumberToObject(details, "exec_delay_ms", job->execute_delay_ms);
     ui_logf(job->node_uid, "cmd run %s/%s dly=%d", job->channel, job->cmd, job->execute_delay_ms);
 
+    if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
+        if (strcmp(job->channel, "pump_irrigation") == 0 && s_virtual_state.irrigation_on) {
+            cJSON_AddStringToObject(details, "error", "actuator_busy");
+            publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
+            cJSON_Delete(details);
+            return;
+        }
+        if (is_main_pump_channel(job->channel) && s_virtual_state.main_pump_on) {
+            cJSON_AddStringToObject(details, "error", "actuator_busy");
+            publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
+            cJSON_Delete(details);
+            return;
+        }
+        if (is_fill_channel(job->channel) && s_virtual_state.tank_fill_on) {
+            cJSON_AddStringToObject(details, "error", "actuator_busy");
+            publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
+            cJSON_Delete(details);
+            return;
+        }
+        if (is_drain_channel(job->channel) && s_virtual_state.tank_drain_on) {
+            cJSON_AddStringToObject(details, "error", "actuator_busy");
+            publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
+            cJSON_Delete(details);
+            return;
+        }
+    }
+
+    if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
+        if (strcmp(job->channel, "pump_irrigation") == 0) {
+            s_virtual_state.irrigation_on = true;
+        } else if (is_main_pump_channel(job->channel)) {
+            s_virtual_state.main_pump_on = true;
+        } else if (is_fill_channel(job->channel)) {
+            s_virtual_state.tank_fill_on = true;
+        } else if (is_drain_channel(job->channel)) {
+            s_virtual_state.tank_drain_on = true;
+        }
+    }
+
+    if (job->execute_delay_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(job->execute_delay_ms));
+    }
+
     if (job->kind == COMMAND_KIND_SENSOR_PROBE) {
         cJSON *probe = build_sensor_probe_details(job->channel);
         if (probe) {
@@ -1429,6 +1792,18 @@ static void execute_pending_command(const pending_command_t *job) {
         cJSON_AddStringToObject(details, "note", "virtual_noop");
     }
 
+    if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
+        if (strcmp(job->channel, "pump_irrigation") == 0) {
+            s_virtual_state.irrigation_on = false;
+        } else if (is_main_pump_channel(job->channel)) {
+            s_virtual_state.main_pump_on = false;
+        } else if (is_fill_channel(job->channel)) {
+            s_virtual_state.tank_fill_on = false;
+        } else if (is_drain_channel(job->channel)) {
+            s_virtual_state.tank_drain_on = false;
+        }
+    }
+
     publish_command_response(job->node_uid, job->channel, job->cmd_id, final_status, details);
     ui_logf(job->node_uid, "cmd done %s/%s -> %s", job->channel, job->cmd, final_status);
     cJSON_Delete(details);
@@ -1442,9 +1817,6 @@ static void command_worker_task(void *pv_parameters) {
 
     while (1) {
         if (xQueueReceive(s_command_queue, &job, portMAX_DELAY) == pdTRUE) {
-            if (job.execute_delay_ms > 0) {
-                vTaskDelay(pdMS_TO_TICKS(job.execute_delay_ms));
-            }
             execute_pending_command(&job);
         }
     }
@@ -1476,7 +1848,9 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
         strcmp(cmd_name, "set_relay") == 0 ||
         strcmp(cmd_name, "set_pwm") == 0 ||
         strcmp(cmd_name, "run_pump") == 0 ||
-        strcmp(cmd_name, "dose") == 0
+        strcmp(cmd_name, "dose") == 0 ||
+        strcmp(cmd_name, "activate_sensor_mode") == 0 ||
+        strcmp(cmd_name, "deactivate_sensor_mode") == 0
     ) {
         return COMMAND_KIND_ACTUATOR;
     }
@@ -1586,7 +1960,7 @@ static void command_callback(const char *topic, const char *channel, const char 
     snprintf(job.cmd_id, sizeof(job.cmd_id), "%s", cmd_id);
     snprintf(job.cmd, sizeof(job.cmd), "%s", cmd_name);
     job.kind = resolve_command_kind(cmd_name);
-    job.execute_delay_ms = resolve_command_delay_ms(job.kind, NULL);
+    job.execute_delay_ms = resolve_command_delay_ms(job.kind, &job, NULL);
 
     extract_command_params(command_json, &job);
 
@@ -1721,6 +2095,14 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         );
     }
 
+    persist_received_config_or_namespace(
+        topic_node_uid,
+        data,
+        data_len,
+        next_gh_uid,
+        next_zone_uid
+    );
+
     publish_status_for_node(topic_node_uid, "ONLINE");
     publish_config_report_for_node(node);
     test_node_ui_set_node_zone(topic_node_uid, next_zone_uid);
@@ -1737,15 +2119,52 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 
 static void apply_passive_drift(void) {
     float drift = ((float)(s_telemetry_tick % 11) - 5.0f) * 0.002f;
+    bool clean_fill_active = is_clean_fill_active();
+    bool solution_fill_active = is_solution_fill_active();
+    bool irrigation_active = is_irrigation_active();
+    int64_t now_sec = get_timestamp_seconds();
 
     s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + drift, 4.8f, 7.2f);
     s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + (drift * 4.0f), 0.4f, 3.2f);
 
-    if (s_virtual_state.tank_fill_on) {
-        s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.008f, 0.05f, 0.98f);
+    if (clean_fill_active) {
+        if (!s_virtual_state.clean_fill_stage_active) {
+            s_virtual_state.clean_fill_stage_active = true;
+            s_virtual_state.clean_fill_started_at = now_sec;
+        }
+
+        if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {
+            if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
+                s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
+            }
+            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.010f, 0.05f, 0.98f);
+            s_virtual_state.clean_max_latched = true;
+        } else {
+            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.003f, 0.05f, 0.88f);
+        }
+    } else {
+        s_virtual_state.clean_fill_stage_active = false;
+        s_virtual_state.clean_fill_started_at = 0;
+    }
+    if (solution_fill_active) {
+        float transfer = 0.006f;
+        float available = s_virtual_state.water_level - 0.05f;
+        if (available > 0.0f) {
+            if (transfer > available) {
+                transfer = available;
+            }
+            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level - transfer, 0.05f, 0.98f);
+            s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level + transfer, 0.05f, 0.98f);
+        }
+    }
+    if (irrigation_active) {
+        s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level - 0.008f, 0.05f, 0.98f);
     }
     if (s_virtual_state.tank_drain_on) {
-        s_virtual_state.water_level = clamp_float(s_virtual_state.water_level - 0.008f, 0.05f, 0.98f);
+        s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level - 0.008f, 0.05f, 0.98f);
+    }
+    if (!clean_fill_active && s_virtual_state.water_level <= CLEAN_MAX_RELEASE_LEVEL) {
+        s_virtual_state.clean_max_latched = false;
     }
 
     if (s_virtual_state.fan_on) {
@@ -1766,17 +2185,17 @@ static void apply_passive_drift(void) {
         s_virtual_state.light_level = clamp_float(s_virtual_state.light_level - 700.0f, 100.0f, 36000.0f);
     }
 
-    s_virtual_state.flow_rate = s_virtual_state.irrigation_on ? 1.20f : 0.0f;
+    s_virtual_state.flow_rate = irrigation_active ? 1.20f : 0.0f;
     if (s_virtual_state.irrigation_boost_ticks > 0) {
         s_virtual_state.flow_rate += 0.40f;
         s_virtual_state.irrigation_boost_ticks--;
     }
 
     s_virtual_state.pump_bus_current = 120.0f;
-    if (s_virtual_state.irrigation_on) {
+    if (irrigation_active) {
         s_virtual_state.pump_bus_current += 80.0f;
     }
-    if (s_virtual_state.tank_fill_on || s_virtual_state.tank_drain_on) {
+    if (clean_fill_active || solution_fill_active || s_virtual_state.tank_drain_on) {
         s_virtual_state.pump_bus_current += 70.0f;
     }
     if (s_virtual_state.correction_boost_ticks > 0) {
@@ -1788,13 +2207,33 @@ static void apply_passive_drift(void) {
 static void publish_virtual_telemetry_batch(void) {
     apply_passive_drift();
 
-    publish_telemetry_for_node("nd-test-irrig-1", "flow_present", "FLOW_RATE", s_virtual_state.flow_rate);
-    publish_telemetry_for_node("nd-test-irrig-1", "pump_bus_current", "PUMP_CURRENT", s_virtual_state.pump_bus_current);
+    publish_telemetry_for_node(
+        "nd-test-irrig-1",
+        "level_clean_min",
+        "WATER_LEVEL_SWITCH",
+        level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true)
+    );
+    publish_telemetry_for_node(
+        "nd-test-irrig-1",
+        "level_clean_max",
+        "WATER_LEVEL_SWITCH",
+        resolve_clean_max_switch_value()
+    );
+    publish_telemetry_for_node(
+        "nd-test-irrig-1",
+        "level_solution_min",
+        "WATER_LEVEL_SWITCH",
+        level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true)
+    );
+    publish_telemetry_for_node(
+        "nd-test-irrig-1",
+        "level_solution_max",
+        "WATER_LEVEL_SWITCH",
+        level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true)
+    );
 
     publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
     publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
-
-    publish_telemetry_for_node("nd-test-tank-1", "water_level", "WATER_LEVEL", s_virtual_state.water_level);
 
     publish_telemetry_for_node("nd-test-climate-1", "air_temp_c", "TEMPERATURE", s_virtual_state.air_temp);
     publish_telemetry_for_node("nd-test-climate-1", "air_rh", "HUMIDITY", s_virtual_state.air_humidity);
@@ -2062,6 +2501,77 @@ static void reset_runtime_namespace_to_preconfig(
     );
 }
 
+static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid) {
+    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return true;
+    }
+
+    return (strcmp(gh_uid, PRECONFIG_GH_UID) == 0) || (strcmp(zone_uid, PRECONFIG_ZONE_UID) == 0);
+}
+
+static void persist_received_config_or_namespace(
+    const char *node_uid,
+    const char *config_payload,
+    int config_payload_len,
+    const char *gh_uid,
+    const char *zone_uid
+) {
+    bool allow_full_config_save = false;
+    char *payload_copy = NULL;
+    esp_err_t save_err = ESP_ERR_INVALID_ARG;
+
+    if (!node_uid || !gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return;
+    }
+
+    // Полный config в единственном NVS key сохраняем только для базовой виртуальной ноды,
+    // чтобы не перетирать node_id/type произвольной виртуалкой.
+    allow_full_config_save = (strcmp(node_uid, DEFAULT_MQTT_NODE_UID) == 0);
+
+    if (allow_full_config_save && config_payload && config_payload_len > 0) {
+        payload_copy = calloc(1, (size_t)config_payload_len + 1);
+        if (payload_copy) {
+            memcpy(payload_copy, config_payload, (size_t)config_payload_len);
+            payload_copy[config_payload_len] = '\0';
+            save_err = config_storage_save(payload_copy, (size_t)config_payload_len);
+            free(payload_copy);
+        } else {
+            save_err = ESP_ERR_NO_MEM;
+        }
+    } else if (!allow_full_config_save) {
+        save_err = ESP_ERR_NOT_SUPPORTED;
+    }
+
+    if (save_err == ESP_OK) {
+        ui_logf(node_uid, "config persisted");
+        return;
+    }
+
+    // Фолбэк: даже если полный config не сохранился, сохраняем хотя бы namespace.
+    save_err = config_storage_reset_namespace(gh_uid, zone_uid);
+    if (save_err == ESP_OK) {
+        ui_logf(node_uid, "namespace persisted");
+        ESP_LOGW(
+            TAG,
+            "Config save failed, namespace persisted only: node=%s gh=%s zone=%s",
+            node_uid,
+            gh_uid,
+            zone_uid
+        );
+        return;
+    }
+
+    ui_logf(node_uid, "config persist err=%s", esp_err_to_name(save_err));
+    ESP_LOGW(
+        TAG,
+        "Failed to persist config/namespace: node=%s gh=%s zone=%s err=%s",
+        node_uid,
+        gh_uid,
+        zone_uid,
+        esp_err_to_name(save_err)
+    );
+}
+
 static esp_err_t start_worker_task(
     TaskFunction_t task_fn,
     const char *task_name,
@@ -2140,13 +2650,13 @@ static void handle_ui_settings_action(test_node_ui_settings_action_t action, voi
 
     if (action == TEST_NODE_UI_SETTINGS_ACTION_RESET_ZONES) {
         size_t index;
-        esp_err_t save_err = config_storage_reset_namespace(DEFAULT_GH_UID, DEFAULT_ZONE_UID);
+        esp_err_t save_err = config_storage_reset_namespace(PRECONFIG_GH_UID, PRECONFIG_ZONE_UID);
 
         for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
             (void)update_node_namespace(
                 VIRTUAL_NODES[index].node_uid,
-                DEFAULT_GH_UID,
-                DEFAULT_ZONE_UID,
+                PRECONFIG_GH_UID,
+                PRECONFIG_ZONE_UID,
                 "ui_settings_reset_zones"
             );
         }
@@ -2157,7 +2667,7 @@ static void handle_ui_settings_action(test_node_ui_settings_action_t action, voi
         }
 
         if (save_err == ESP_OK) {
-            ui_logf(NULL, "settings: zones reset to %s/%s", DEFAULT_GH_UID, DEFAULT_ZONE_UID);
+            ui_logf(NULL, "settings: zones reset to %s/%s", PRECONFIG_GH_UID, PRECONFIG_ZONE_UID);
         } else {
             ui_logf(
                 NULL,
@@ -2294,14 +2804,19 @@ esp_err_t test_node_app_init(void) {
     }
     test_node_ui_show_step("App init: MQTT config OK");
 
-    reset_runtime_namespace_to_preconfig(
-        &mqtt_node_info,
-        gh_uid,
-        sizeof(gh_uid),
-        zone_uid,
-        sizeof(zone_uid)
-    );
-    test_node_ui_show_step("App init: preconfig namespace set");
+    if (should_boot_in_preconfig_mode(gh_uid, zone_uid)) {
+        reset_runtime_namespace_to_preconfig(
+            &mqtt_node_info,
+            gh_uid,
+            sizeof(gh_uid),
+            zone_uid,
+            sizeof(zone_uid)
+        );
+        test_node_ui_show_step("App init: preconfig namespace set");
+    } else {
+        ESP_LOGI(TAG, "Namespace restored from config storage: %s/%s", gh_uid, zone_uid);
+        test_node_ui_show_step("App init: namespace restored");
+    }
 
     s_topic_mutex = xSemaphoreCreateMutex();
     if (!s_topic_mutex) {

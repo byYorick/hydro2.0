@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
 from common.db import create_scheduler_log, create_zone_event
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_SCHEDULER_TASK_TYPES = {
     "irrigation",
@@ -50,8 +53,15 @@ async def enqueue_internal_scheduler_task(
         raise ValueError(f"Unsupported task_type: {task_type}")
 
     now = datetime.utcnow()
-    scheduled_for_dt = parse_iso_datetime(scheduled_for) or now
+    scheduled_for_dt = parse_iso_datetime(scheduled_for)
+    if scheduled_for is not None and scheduled_for_dt is None:
+        raise ValueError("scheduled_for_invalid")
+    if scheduled_for_dt is None:
+        scheduled_for_dt = now
+
     expires_at_dt = parse_iso_datetime(expires_at)
+    if expires_at is not None and expires_at_dt is None:
+        raise ValueError("expires_at_invalid")
     if expires_at_dt and expires_at_dt <= now:
         raise ValueError("expires_at_is_in_the_past")
     if expires_at_dt and expires_at_dt < scheduled_for_dt:
@@ -74,18 +84,28 @@ async def enqueue_internal_scheduler_task(
     }
 
     await create_scheduler_log(task_name, "pending", details)
-    await create_zone_event(
-        int(zone_id),
-        "SELF_TASK_ENQUEUED",
-        {
-            "enqueue_id": enqueue_id,
-            "task_type": normalized_task_type,
-            "scheduled_for": details["scheduled_for"],
-            "expires_at": details["expires_at"],
-            "correlation_id": effective_correlation_id,
-            "source": source,
-        },
-    )
+    try:
+        await create_zone_event(
+            int(zone_id),
+            "SELF_TASK_ENQUEUED",
+            {
+                "enqueue_id": enqueue_id,
+                "task_type": normalized_task_type,
+                "scheduled_for": details["scheduled_for"],
+                "expires_at": details["expires_at"],
+                "correlation_id": effective_correlation_id,
+                "source": source,
+            },
+        )
+    except Exception:
+        # Не роняем enqueue после успешного pending-log, иначе клиентский retry
+        # может создать дубликаты self-task.
+        logger.warning(
+            "Failed to create SELF_TASK_ENQUEUED event for enqueue_id=%s zone_id=%s",
+            enqueue_id,
+            zone_id,
+            exc_info=True,
+        )
 
     return {
         "enqueue_id": enqueue_id,

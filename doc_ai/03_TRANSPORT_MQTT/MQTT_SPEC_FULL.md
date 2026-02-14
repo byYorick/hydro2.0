@@ -456,6 +456,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 **Endpoint:** `POST http://history-logger:9300/commands`
 
 **Назначение:** Automation-engine преобразует абстрактную scheduler-task в конкретные device-level команды и отправляет их в history-logger для публикации в MQTT.
+Контракт history-logger strict: поле `cmd` обязательно, legacy `type` в `/commands` не допускается.
 
 **Преобразование задачи в команду:**
 
@@ -530,7 +531,7 @@ POST http://history-logger:9300/commands
   "zone_id": 1,
   "node_uid": "nd-pump-1",
   "channel": "pump_in",
-  "type": "run_pump",
+  "cmd": "run_pump",
   "params": {"duration_ms": 30000},
   "context": {
     "task_id": "task-irr-001",
@@ -760,6 +761,49 @@ hydro/gh-1/zn-1/nd-ec-1/system/command
 4. Публиковать расширенную телеметрию с флагами `flow_active`, `stable`, `corrections_allowed`
 5. Обрабатывать команды `activate_sensor_mode` и `deactivate_sensor_mode` с отправкой `command_response`
 
+**ВАЖНО про подписку на топики:**
+
+Узлы должны подписаться на системный топик **отдельно** от канальных команд:
+
+```c
+// Подписка на канальные команды (wildcard для всех каналов)
+mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/+/command");
+
+// Подписка на системные команды (отдельная подписка!)
+mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/system/command");
+```
+
+**Почему нужна отдельная подписка:**
+
+Wildcard `+/command` **НЕ захватывает** топик без канала между `{node}` и `command`.
+
+- `hydro/.../nd-ph-1/+/command` — подписывается на `ph_main/command`, `pump_ph_up/command` и т.д.
+- `hydro/.../nd-ph-1/system/command` — **НЕ** соответствует wildcard `+/command`, так как `system` находится на месте канала, но топик заканчивается на `system/command` без дополнительного уровня
+
+**Правильная инициализация подписок при подключении:**
+
+```c
+void mqtt_on_connected(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    // 1. Подписка на канальные команды
+    char topic_channels[128];
+    snprintf(topic_channels, sizeof(topic_channels),
+             "hydro/%s/%s/%s/+/command",
+             config->greenhouse_uid, config->zone_uid, config->node_uid);
+    esp_mqtt_client_subscribe(mqtt_client, topic_channels, 1);
+
+    // 2. Подписка на системные команды (отдельно!)
+    char topic_system[128];
+    snprintf(topic_system, sizeof(topic_system),
+             "hydro/%s/%s/%s/system/command",
+             config->greenhouse_uid, config->zone_uid, config->node_uid);
+    esp_mqtt_client_subscribe(mqtt_client, topic_system, 1);
+
+    ESP_LOGI(TAG, "Subscribed to channel commands: %s", topic_channels);
+    ESP_LOGI(TAG, "Subscribed to system commands: %s", topic_system);
+}
+```
+
 ### 7.5.7. См. также
 
 - `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle state machine
@@ -792,6 +836,7 @@ Backend никогда не остаётся "в неизвестности": п
 **Обязательные поля:**
 - `cmd_id` (string) — идентификатор команды, точно соответствующий `cmd_id` из команды
 - `status` (string) — статус выполнения: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`
+  (допустим также `TIMEOUT` для device-level timeout сценариев)
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
@@ -856,8 +901,10 @@ Backend никогда не остаётся "в неизвестности": п
 - `INVALID` — команда невалидна (неверные параметры);
 - `BUSY` — узел занят, команда не может быть выполнена сейчас;
 - `NO_EFFECT` — команда не оказала эффекта (например, реле уже в нужном состоянии).
+- `TIMEOUT` — команда/операция прервана по таймауту на стороне ноды.
 
 Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+`SEND_FAILED` — backend-layer статус (ошибка публикации), в `command_response` от ноды не используется.
 
 ## 8.4. Расширенный payload для ошибок
 

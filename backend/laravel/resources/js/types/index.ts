@@ -16,3 +16,4 @@ export type * from './User'
 // ZoneEvent экспортируется отдельно, чтобы избежать конфликта с встроенным типом Event
 export type { ZoneEvent, EventKind } from './ZoneEvent'
 export type * from './PidConfig'
+export type * from './Automation'

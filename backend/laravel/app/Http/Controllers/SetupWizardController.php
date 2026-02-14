@@ -17,7 +17,7 @@ class SetupWizardController extends Controller
     /**
      * @var array<int, string>
      */
-    private const REQUIRED_ASSIGNMENT_ROLES = ['irrigation', 'ph_correction', 'ec_correction', 'accumulation'];
+    private const REQUIRED_ASSIGNMENT_ROLES = ['irrigation', 'ph_correction', 'ec_correction'];
 
     /**
      * @var array<int, string>
@@ -190,6 +190,20 @@ class SetupWizardController extends Controller
     {
         $assignments = is_array($validated['assignments'] ?? null) ? $validated['assignments'] : [];
 
+        if (! is_numeric($assignments['accumulation'] ?? null) && is_numeric($assignments['irrigation'] ?? null)) {
+            $assignments['accumulation'] = (int) $assignments['irrigation'];
+        }
+
+        if (
+            is_numeric($assignments['irrigation'] ?? null)
+            && is_numeric($assignments['accumulation'] ?? null)
+            && (int) $assignments['irrigation'] !== (int) $assignments['accumulation']
+        ) {
+            throw ValidationException::withMessages([
+                'assignments.accumulation' => ['Накопительный узел должен совпадать с узлом полива.'],
+            ]);
+        }
+
         $requiredNodeIds = array_map(
             static fn (string $role): int => (int) ($assignments[$role] ?? 0),
             self::REQUIRED_ASSIGNMENT_ROLES
@@ -292,15 +306,15 @@ class SetupWizardController extends Controller
                 'label' => 'Основная помпа',
                 'asset_type' => 'PUMP',
                 'required' => true,
-                'channel_candidates' => ['main_pump', 'pump_main', 'pump_irrigation', 'valve_irrigation', 'pump_in'],
+                'channel_candidates' => ['pump_main', 'main_pump', 'pump_irrigation', 'valve_irrigation', 'pump_in'],
             ],
             [
-                'assignment_role' => 'accumulation',
+                'assignment_role' => 'irrigation',
                 'binding_role' => 'drain',
                 'label' => 'Дренаж',
                 'asset_type' => 'DRAIN',
                 'required' => true,
-                'channel_candidates' => ['drain', 'drain_main', 'drain_valve'],
+                'channel_candidates' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
             ],
             [
                 'assignment_role' => 'ph_correction',
@@ -424,7 +438,24 @@ class SetupWizardController extends Controller
 
         if ($role === 'irrigation') {
             return $type === 'irrig'
-                || $this->hasAnyChannel($channels, ['pump_irrigation', 'valve_irrigation', 'main_pump']);
+                || $this->hasAnyChannel($channels, [
+                    'pump_main',
+                    'main_pump',
+                    'pump_irrigation',
+                    'valve_irrigation',
+                    'valve_clean_fill',
+                    'valve_clean_supply',
+                    'valve_solution_fill',
+                    'valve_solution_supply',
+                    'level_clean_min',
+                    'level_clean_max',
+                    'level_solution_min',
+                    'level_solution_max',
+                    'water_level',
+                    'pump_in',
+                    'drain',
+                    'drain_main',
+                ]);
         }
 
         if ($role === 'ph_correction') {
@@ -438,8 +469,7 @@ class SetupWizardController extends Controller
         }
 
         if ($role === 'accumulation') {
-            return in_array($type, ['water_sensor', 'recirculation'], true)
-                || $this->hasAnyChannel($channels, ['water_level', 'pump_in', 'drain', 'drain_main']);
+            return $this->matchesRole($node, 'irrigation');
         }
 
         if ($role === 'climate') {
@@ -474,10 +504,10 @@ class SetupWizardController extends Controller
     private function roleLabel(string $role): string
     {
         return match ($role) {
-            'irrigation' => 'полив',
+            'irrigation' => 'полив + накопление',
             'ph_correction' => 'коррекция pH',
             'ec_correction' => 'коррекция EC',
-            'accumulation' => 'накопительный узел',
+            'accumulation' => 'накопительный узел (общий с поливом)',
             'climate' => 'климат',
             'light' => 'свет',
             default => $role,

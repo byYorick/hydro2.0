@@ -120,8 +120,9 @@ Payload (пример):
 hydro/{gh}/{zone}/{node}/{channel}/command_response
 ```
 
-Канонические `status`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`.  
+Канонические `status`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.  
 Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статус `SEND_FAILED` относится к backend/publish-layer и не публикуется нодой в MQTT `command_response`.
 
 ### 2.4. event
 

@@ -73,6 +73,7 @@
 - `POST /scheduler/bootstrap/heartbeat` -> refresh lease
 - `POST /scheduler/task` -> `accepted` + `task_id`
 - `GET /scheduler/task/{task_id}` -> `accepted|running|completed|failed|rejected|expired`
+- `GET /zones/{zone_id}/automation-state` -> текущий state workflow автоматики зоны для UI-панели
 - `GET /health/live` -> liveness probe
 - `GET /health/ready` -> readiness probe (`CommandBus + DB + bootstrap lease-store`)
 

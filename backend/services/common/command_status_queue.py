@@ -157,11 +157,13 @@ class CommandStatus(str, Enum):
     INVALID = "INVALID"
     BUSY = "BUSY"
     NO_EFFECT = "NO_EFFECT"
+    TIMEOUT = "TIMEOUT"
+    SEND_FAILED = "SEND_FAILED"
 
 
 def normalize_status(raw_status: str) -> Optional[CommandStatus]:
     """
-    Нормализует статус command_response в строго ACK/DONE/ERROR/INVALID/BUSY/NO_EFFECT.
+    Нормализует статус в строго ACK/DONE/ERROR/INVALID/BUSY/NO_EFFECT/TIMEOUT/SEND_FAILED.
     
     Args:
         raw_status: Сырой статус из command_response (может быть в любом регистре)
@@ -191,6 +193,12 @@ def normalize_status(raw_status: str) -> Optional[CommandStatus]:
 
     if raw_upper == "NO_EFFECT":
         return CommandStatus.NO_EFFECT
+
+    if raw_upper == "TIMEOUT":
+        return CommandStatus.TIMEOUT
+
+    if raw_upper == "SEND_FAILED":
+        return CommandStatus.SEND_FAILED
     
     return None
 
@@ -341,7 +349,7 @@ class StatusUpdateQueue:
         retry_count: int,
         max_attempts: int,
         last_error: str
-    ):
+    ) -> bool:
         """Перемещает запись в DLQ после превышения максимального количества попыток."""
         await self.ensure_table()
         
@@ -367,8 +375,10 @@ class StatusUpdateQueue:
                     f"[DLQ] Moved status update to DLQ: cmd_id={cmd_id}, "
                     f"status={status_value}, retry_count={retry_count}/{max_attempts}, error={last_error[:100]}"
                 )
+                return True
             except Exception as e:
                 logger.error(f"Failed to move status update to DLQ: {e}", exc_info=True)
+                return False
     
     async def get_pending(self, limit: int = 100) -> list:
         """
@@ -390,17 +400,57 @@ class StatusUpdateQueue:
             """, limit)
         
         result = []
+        invalid_rows = []
         for row in rows:
             details = _decode_details_payload(row["details"])
+            raw_status = row["status"]
+            try:
+                normalized_status = CommandStatus(str(raw_status).upper().strip())
+            except ValueError:
+                invalid_rows.append(
+                    (
+                        row["id"],
+                        row["cmd_id"],
+                        raw_status,
+                        details,
+                        row["retry_count"],
+                        row.get("max_attempts", 10),
+                        row.get("last_error"),
+                    )
+                )
+                continue
             result.append((
                 row['id'],
                 row['cmd_id'],
-                CommandStatus(row['status']),
+                normalized_status,
                 details,
                 row['retry_count'],
                 row.get('max_attempts', 10),
                 row.get('last_error')
             ))
+
+        for update_id, cmd_id, raw_status, details, retry_count, max_attempts, last_error in invalid_rows:
+            quarantine_reason = (
+                f"Invalid status value in pending_status_updates: {raw_status}. "
+                "Moved to DLQ quarantine."
+            )
+            logger.error(
+                "[STATUS_QUEUE] Poison status row quarantined: id=%s cmd_id=%s status=%s",
+                update_id,
+                cmd_id,
+                raw_status,
+            )
+            moved = await self.move_to_dlq(
+                update_id,
+                cmd_id,
+                str(raw_status),
+                details,
+                retry_count,
+                max_attempts,
+                quarantine_reason if not last_error else f"{last_error}; {quarantine_reason}",
+            )
+            if moved:
+                await self.mark_delivered(update_id)
         
         return result
     
@@ -808,26 +858,43 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     else:
                         # Не удалось - планируем следующий ретрай с jitter
                         new_retry_count = retry_count + 1
-                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
-                        next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
-                        
-                        error_msg = f"Failed to deliver after {new_retry_count} attempts"
-                        await queue.mark_retry(update_id, new_retry_count, next_retry_at, error_msg)
-                        logger.info(
-                            f"[RETRY_WORKER] Scheduled retry for update id={update_id}, "
-                            f"cmd_id={cmd_id}, retry_count={new_retry_count}, "
-                            f"next_retry_at={next_retry_at.isoformat()}"
-                        )
-                        
-                        # Проверяем максимальное количество попыток
                         if new_retry_count >= max_attempts:
                             logger.error(
                                 f"[RETRY_WORKER] Max retries reached for update "
                                 f"id={update_id}, cmd_id={cmd_id} ({new_retry_count}/{max_attempts}). Moving to DLQ."
                             )
                             # Перемещаем в DLQ перед удалением
-                            await queue.move_to_dlq(update_id, cmd_id, status, details, new_retry_count, max_attempts, "Max retries reached")
-                            await queue.mark_delivered(update_id)
+                            moved = await queue.move_to_dlq(
+                                update_id,
+                                cmd_id,
+                                status,
+                                details,
+                                new_retry_count,
+                                max_attempts,
+                                "Max retries reached",
+                            )
+                            if moved:
+                                await queue.mark_delivered(update_id)
+                            else:
+                                # Не удаляем pending-запись, если DLQ запись не сохранилась.
+                                # Иначе потеряем статус без следа.
+                                dlq_retry_at = utcnow() + timedelta(seconds=60)
+                                await queue.mark_retry(
+                                    update_id,
+                                    new_retry_count,
+                                    dlq_retry_at,
+                                    "dlq_move_failed_after_max_retries",
+                                )
+                        else:
+                            backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
+                            next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
+                            error_msg = f"Failed to deliver after {new_retry_count} attempts"
+                            await queue.mark_retry(update_id, new_retry_count, next_retry_at, error_msg)
+                            logger.info(
+                                f"[RETRY_WORKER] Scheduled retry for update id={update_id}, "
+                                f"cmd_id={cmd_id}, retry_count={new_retry_count}, "
+                                f"next_retry_at={next_retry_at.isoformat()}"
+                            )
                 
                 except Exception as e:
                     logger.error(
@@ -843,8 +910,25 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         await queue.mark_retry(update_id, new_retry_count, next_retry_at, error_msg)
                     else:
                         # Перемещаем в DLQ перед удалением
-                        await queue.move_to_dlq(update_id, cmd_id, status, details, new_retry_count, max_attempts, error_msg)
-                        await queue.mark_delivered(update_id)
+                        moved = await queue.move_to_dlq(
+                            update_id,
+                            cmd_id,
+                            status,
+                            details,
+                            new_retry_count,
+                            max_attempts,
+                            error_msg,
+                        )
+                        if moved:
+                            await queue.mark_delivered(update_id)
+                        else:
+                            dlq_retry_at = utcnow() + timedelta(seconds=60)
+                            await queue.mark_retry(
+                                update_id,
+                                new_retry_count,
+                                dlq_retry_at,
+                                "dlq_move_failed_after_processing_error",
+                            )
             
             # Небольшая задержка перед следующей итерацией
             if shutdown_event and shutdown_event.is_set():

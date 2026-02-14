@@ -306,6 +306,8 @@ class TestErrorAlertContracts:
         # Проверяем обязательные поля
         assert "level" in fixture
         assert "component" in fixture
+        assert "error_code" in fixture
+        assert "message" in fixture
     
     def test_error_missing_required_fields(self, error_alert_schema):
         """Тест, что схема отклоняет отсутствие обязательных полей."""
@@ -315,7 +317,17 @@ class TestErrorAlertContracts:
             validate_against_schema(invalid, error_alert_schema)
         
         # Отсутствует component
-        invalid = {"level": "ERROR"}
+        invalid = {"level": "ERROR", "error_code": "ERR", "message": "m"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, error_alert_schema)
+
+        # Отсутствует error_code
+        invalid = {"level": "ERROR", "component": "sensor", "message": "m"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, error_alert_schema)
+
+        # Отсутствует message
+        invalid = {"level": "ERROR", "component": "sensor", "error_code": "ERR"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, error_alert_schema)
     
@@ -323,7 +335,9 @@ class TestErrorAlertContracts:
         """Тест, что схема отклоняет невалидный уровень ошибки."""
         invalid = {
             "level": "INVALID_LEVEL",
-            "component": "sensor"
+            "component": "sensor",
+            "error_code": "ERR",
+            "message": "m",
         }
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, error_alert_schema)

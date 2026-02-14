@@ -454,7 +454,6 @@ describe('Setup/Wizard.vue', () => {
               { id: 101, uid: 'nd-test-irrig-1', type: 'irrig', channels: [{ channel: 'pump_irrigation' }] },
               { id: 102, uid: 'nd-test-ph-1', type: 'ph', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
               { id: 104, uid: 'nd-test-ec-1', type: 'ec', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
-              { id: 103, uid: 'nd-test-tank-1', type: 'water_sensor', channels: [{ channel: 'water_level' }, { channel: 'pump_in' }] },
             ],
           },
         })
@@ -512,20 +511,17 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
     await flushPromises()
 
-    const irrigationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел полива'))
+    const irrigationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите общий узел полива/накопления'))
     const phCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции pH'))
     const ecCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции EC'))
-    const accumulationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите накопительный узел'))
 
     expect(irrigationSelect).toBeTruthy()
     expect(phCorrectionSelect).toBeTruthy()
     expect(ecCorrectionSelect).toBeTruthy()
-    expect(accumulationSelect).toBeTruthy()
 
     await irrigationSelect?.setValue('101')
     await phCorrectionSelect?.setValue('102')
     await ecCorrectionSelect?.setValue('104')
-    await accumulationSelect?.setValue('103')
 
     await wrapper.findAll('button').find((btn) => btn.text().includes('Привязать ноды зоны'))?.trigger('click')
     await flushPromises()
@@ -538,7 +534,7 @@ describe('Setup/Wizard.vue', () => {
           irrigation: 101,
           ph_correction: 102,
           ec_correction: 104,
-          accumulation: 103,
+          accumulation: 101,
         }),
       }),
       undefined
@@ -552,12 +548,12 @@ describe('Setup/Wizard.vue', () => {
           irrigation: 101,
           ph_correction: 102,
           ec_correction: 104,
-          accumulation: 103,
+          accumulation: 101,
         }),
       }),
       undefined
     )
 
-    expect(apiPatchMock).toHaveBeenCalledTimes(4)
+    expect(apiPatchMock).toHaveBeenCalledTimes(3)
   })
 })

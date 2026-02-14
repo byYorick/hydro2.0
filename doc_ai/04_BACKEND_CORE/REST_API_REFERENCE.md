@@ -58,6 +58,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
+| GET | /api/zones/{id}/automation-state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`) |
 | GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
 | GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy к automation-engine) + `timeline` и outcome (`decision/reason_code`) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
@@ -229,7 +230,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/python/ingest/telemetry | token-based | Инжест телеметрии из Python‑сервисов |
-| POST | /api/python/commands/ack | token-based | ACK выполнения команд узлами |
+| POST | /api/python/commands/ack | token-based | Подтверждение статусов команд (`SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`) |
+
+Примечание по `POST /api/python/commands/ack`:
+- Терминальные статусы: `DONE`, `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED`.
+- Переходы из terminal в non-terminal запрещены (anti-rollback guard).
 
 ---
 

@@ -236,12 +236,6 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
           data: { id: 103, zone_id: null, pending_zone_id: 20 },
         },
       })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 104, zone_id: null, pending_zone_id: 20 },
-        },
-      })
     const apiGet = vi.fn().mockResolvedValue({
       data: {
         status: 'ok',
@@ -250,7 +244,7 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
     })
     const loadAvailableNodes = vi.fn().mockResolvedValue(undefined)
     const attachedNodesCount = ref(0)
-    const selectedNodeIds = ref<number[]>([101, 102, 103, 104])
+    const selectedNodeIds = ref<number[]>([101, 102, 103])
 
     const commands = createSetupWizardPlantNodeCommands({
       api: {
@@ -265,7 +259,6 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
         { id: 101, uid: 'nd-test-101', lifecycle_state: 'REGISTERED_BACKEND' },
         { id: 102, uid: 'nd-test-102', lifecycle_state: 'REGISTERED_BACKEND' },
         { id: 103, uid: 'nd-test-103', lifecycle_state: 'REGISTERED_BACKEND' },
-        { id: 104, uid: 'nd-test-104', lifecycle_state: 'REGISTERED_BACKEND' },
       ]),
       availablePlants: ref([]),
       selectedPlantId: ref(null),
@@ -288,7 +281,7 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
       irrigation: 101,
       ph_correction: 102,
       ec_correction: 103,
-      accumulation: 104,
+      accumulation: null,
       climate: null,
       light: null,
     })
@@ -297,7 +290,18 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
       '/setup-wizard/validate-devices',
       expect.objectContaining({
         zone_id: 20,
-        selected_node_ids: [101, 102, 103, 104],
+        selected_node_ids: [101, 102, 103],
+      })
+    )
+    expect(apiPost).toHaveBeenCalledWith(
+      '/setup-wizard/validate-devices',
+      expect.objectContaining({
+        assignments: expect.objectContaining({
+          irrigation: 101,
+          ph_correction: 102,
+          ec_correction: 103,
+          accumulation: 101,
+        }),
       })
     )
     expect(apiPost).toHaveBeenCalledWith(
@@ -307,8 +311,8 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
       })
     )
     expect(apiGet).toHaveBeenCalledWith('/nodes', { params: { unassigned: true } })
-    expect(apiPatch).toHaveBeenCalledTimes(4)
-    expect(attachedNodesCount.value).toBe(4)
+    expect(apiPatch).toHaveBeenCalledTimes(3)
+    expect(attachedNodesCount.value).toBe(3)
     expect(loadAvailableNodes).toHaveBeenCalled()
   })
 

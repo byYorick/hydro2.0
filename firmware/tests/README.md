@@ -21,6 +21,13 @@
 
 Тест формата ответов на команды (может использоваться отдельно).
 
+### 4. test_command_ack_terminal_timing.py
+
+HIL/интеграционный тест таймингов command lifecycle:
+- ✅ Подтверждает, что приходит `ACK`, затем terminal (`DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT`)
+- ✅ Проверяет окно задержки `ACK -> terminal` относительно `sim_delay_ms`
+- ✅ Поддерживает форс terminal-статуса через `sim_status`
+
 ## Быстрый старт
 
 ```bash
@@ -29,6 +36,10 @@
 
 # С параметрами
 MQTT_HOST=192.168.1.100 MQTT_PORT=1883 \
+./firmware/tests/run_compatibility_tests.sh
+
+# С включённым HIL тайминг-тестом ACK -> terminal
+RUN_HIL_TIMING=1 HIL_SIM_DELAY_MS=1500 HIL_SIM_STATUS=DONE \
 ./firmware/tests/run_compatibility_tests.sh
 
 # Прямой запуск Python скрипта
@@ -77,6 +88,25 @@ python3 firmware/tests/test_node_compatibility.py \
 - ✅ Соответствие JSON схеме
 
 ## Использование отдельных тестов
+
+### HIL тест ACK -> terminal таймингов
+
+```bash
+python3 firmware/tests/test_command_ack_terminal_timing.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-test-001 \
+    --channel ph_sensor \
+    --cmd set_relay \
+    --sim-delay-ms 1200 \
+    --sim-status DONE
+```
+
+Опциональные параметры допуска:
+- `--lower-jitter-ms` (по умолчанию `200`)
+- `--upper-jitter-ms` (по умолчанию `1500`)
 
 ### Тест формата телеметрии
 

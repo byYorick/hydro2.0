@@ -23,6 +23,12 @@ class TelemetryPayloadModel(BaseModel):
     stable: Optional[bool] = Field(
         None, description="Stability flag for sensor readings (from firmware)"
     )
+    flow_active: Optional[bool] = Field(
+        None, description="Flow activity flag for correction gating (from firmware)"
+    )
+    corrections_allowed: Optional[bool] = Field(
+        None, description="Correction permission flag for correction gating (from firmware)"
+    )
     tds: Optional[Union[int, float]] = Field(None, description="TDS value (from node type ec)")
     error_code: Optional[Union[int, str]] = Field(None, description="Error code (from firmware)")
     temperature: Optional[float] = Field(None, description="Temperature value (from firmware)")

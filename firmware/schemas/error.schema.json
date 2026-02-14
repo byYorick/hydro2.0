@@ -3,12 +3,12 @@
   "title": "ErrorPayload",
   "description": "Каноническая схема payload для MQTT topic .../error и backend-алертов",
   "type": "object",
-  "required": ["level", "component"],
+  "required": ["level", "component", "error_code", "message"],
   "properties": {
     "level": {
       "type": "string",
       "description": "Уровень ошибки",
-      "enum": ["ERROR", "WARNING", "INFO", "DEBUG", "CRITICAL", "FATAL"]
+      "enum": ["ERROR", "WARNING", "INFO"]
     },
     "component": {
       "type": "string",
@@ -30,8 +30,8 @@
       "maxLength": 512
     },
     "ts": {
-      "type": "number",
-      "description": "Unix timestamp в секундах",
+      "type": "integer",
+      "description": "Unix timestamp в миллисекундах",
       "minimum": 0
     },
     "hardware_id": {

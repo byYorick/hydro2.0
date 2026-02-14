@@ -53,24 +53,13 @@ class SetupWizardValidateDevicesTest extends TestCase
             'type' => 'ACTUATOR',
         ]);
 
-        $accumulationNode = DeviceNode::factory()->create([
-            'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor',
-            'zone_id' => null,
-        ]);
-        NodeChannel::query()->create([
-            'node_id' => $accumulationNode->id,
-            'channel' => 'water_level',
-            'type' => 'SENSOR',
-        ]);
-
         $response = $this->actingAs($user)->postJson('/api/setup-wizard/validate-devices', [
             'zone_id' => $zone->id,
             'assignments' => [
                 'irrigation' => $irrigationNode->id,
                 'ph_correction' => $phCorrectionNode->id,
                 'ec_correction' => $ecCorrectionNode->id,
-                'accumulation' => $accumulationNode->id,
+                'accumulation' => null,
                 'climate' => null,
                 'light' => null,
             ],
@@ -78,7 +67,6 @@ class SetupWizardValidateDevicesTest extends TestCase
                 $irrigationNode->id,
                 $phCorrectionNode->id,
                 $ecCorrectionNode->id,
-                $accumulationNode->id,
             ],
         ]);
 
@@ -89,7 +77,7 @@ class SetupWizardValidateDevicesTest extends TestCase
             ->assertJsonPath('data.required_roles.irrigation', $irrigationNode->id)
             ->assertJsonPath('data.required_roles.ph_correction', $phCorrectionNode->id)
             ->assertJsonPath('data.required_roles.ec_correction', $ecCorrectionNode->id)
-            ->assertJsonPath('data.required_roles.accumulation', $accumulationNode->id);
+            ->assertJsonPath('data.required_roles.accumulation', $irrigationNode->id);
     }
 
     public function test_it_rejects_wrong_node_for_required_role(): void
@@ -106,17 +94,6 @@ class SetupWizardValidateDevicesTest extends TestCase
             'node_id' => $irrigationNode->id,
             'channel' => 'pump_irrigation',
             'type' => 'ACTUATOR',
-        ]);
-
-        $accumulationNode = DeviceNode::factory()->create([
-            'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor',
-            'zone_id' => null,
-        ]);
-        NodeChannel::query()->create([
-            'node_id' => $accumulationNode->id,
-            'channel' => 'water_level',
-            'type' => 'SENSOR',
         ]);
 
         $ecCorrectionNode = DeviceNode::factory()->create([
@@ -147,7 +124,7 @@ class SetupWizardValidateDevicesTest extends TestCase
                 'irrigation' => $irrigationNode->id,
                 'ph_correction' => $wrongPhNode->id,
                 'ec_correction' => $ecCorrectionNode->id,
-                'accumulation' => $accumulationNode->id,
+                'accumulation' => null,
                 'climate' => null,
                 'light' => null,
             ],
@@ -175,6 +152,11 @@ class SetupWizardValidateDevicesTest extends TestCase
         $irrigationChannel = NodeChannel::query()->create([
             'node_id' => $irrigationNode->id,
             'channel' => 'pump_irrigation',
+            'type' => 'ACTUATOR',
+        ]);
+        $drainChannel = NodeChannel::query()->create([
+            'node_id' => $irrigationNode->id,
+            'channel' => 'valve_solution_supply',
             'type' => 'ACTUATOR',
         ]);
 
@@ -220,17 +202,6 @@ class SetupWizardValidateDevicesTest extends TestCase
             'type' => 'ACTUATOR',
         ]);
 
-        $accumulationNode = DeviceNode::factory()->create([
-            'uid' => 'nd-test-tank-1',
-            'type' => 'water_sensor',
-            'zone_id' => null,
-        ]);
-        $drainChannel = NodeChannel::query()->create([
-            'node_id' => $accumulationNode->id,
-            'channel' => 'drain_main',
-            'type' => 'ACTUATOR',
-        ]);
-
         $climateNode = DeviceNode::factory()->create([
             'uid' => 'nd-test-climate-1',
             'type' => 'climate',
@@ -264,7 +235,7 @@ class SetupWizardValidateDevicesTest extends TestCase
                 'irrigation' => $irrigationNode->id,
                 'ph_correction' => $phCorrectionNode->id,
                 'ec_correction' => $ecCorrectionNode->id,
-                'accumulation' => $accumulationNode->id,
+                'accumulation' => null,
                 'climate' => $climateNode->id,
                 'light' => $lightNode->id,
             ],
@@ -272,7 +243,6 @@ class SetupWizardValidateDevicesTest extends TestCase
                 $irrigationNode->id,
                 $phCorrectionNode->id,
                 $ecCorrectionNode->id,
-                $accumulationNode->id,
                 $climateNode->id,
                 $lightNode->id,
             ],

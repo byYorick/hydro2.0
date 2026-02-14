@@ -83,6 +83,61 @@ async def test_handle_command_response_creates_stub_for_missing_command():
 
 
 @pytest.mark.asyncio
+async def test_handle_command_response_creates_preterminal_stub_for_terminal_status():
+    """Missing command with terminal response must insert ACK stub before forwarding terminal status."""
+    from mqtt_handlers import handle_command_response
+    from common.command_status_queue import CommandStatus
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps({"cmd_id": "cmd-2-terminal", "status": "DONE", "ts": 1737979200010}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
+        mock_fetch.side_effect = [
+            [],
+            [{"id": 5, "zone_id": 9}],
+        ]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_execute.assert_called_once()
+        insert_args = mock_execute.call_args[0]
+        # Stub должен вставляться как ACK, а terminal DONE отправляется отдельно в Laravel.
+        assert insert_args[6] == CommandStatus.ACK.value
+        mock_send.assert_awaited_once()
+        assert mock_send.call_args[0][1] == CommandStatus.DONE
+        mock_record.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_timeout_uses_ack_stub_for_unknown_cmd():
+    from mqtt_handlers import handle_command_response
+    from common.command_status_queue import CommandStatus
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps({"cmd_id": "cmd-timeout-missing", "status": "TIMEOUT", "ts": 1737979200010}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = [
+            [],
+            [{"id": 5, "zone_id": 9}],
+        ]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        insert_args = mock_execute.call_args[0]
+        assert insert_args[6] == CommandStatus.ACK.value
+        assert mock_send.call_args[0][1] == CommandStatus.TIMEOUT
+
+
+@pytest.mark.asyncio
 async def test_handle_command_response_missing_cmd_id():
     """Missing cmd_id should be rejected and not forwarded."""
     from mqtt_handlers import handle_command_response

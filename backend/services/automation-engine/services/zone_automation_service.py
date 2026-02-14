@@ -2,7 +2,7 @@
 Zone Automation Service - оркестрация обработки зоны.
 Изолирует бизнес-логику от инфраструктуры.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime, timedelta
 import inspect
@@ -117,6 +117,8 @@ class ZoneAutomationService:
         self._controller_cooldown_reported_at: Dict[tuple[int, str], datetime] = {}
         # Ключ: (zone_id, controller_name), значение: datetime последнего alert о circuit-open skip
         self._controller_circuit_open_reported_at: Dict[tuple[int, str], datetime] = {}
+        # Ключ: zone_id, значение: последний отправленный sensor_mode (True=activate, False=deactivate)
+        self._correction_sensor_mode_state: Dict[int, bool] = {}
     
     async def save_all_pid_states(self):
         """Сохранить состояние всех PID контроллеров."""
@@ -165,6 +167,7 @@ class ZoneAutomationService:
                 zone_data = await self.recipe_repo.get_zone_data_batch(zone_id)
                 telemetry = zone_data.get("telemetry", {})
                 telemetry_timestamps = zone_data.get("telemetry_timestamps", {})
+                correction_flags = zone_data.get("correction_flags", {})
                 nodes = zone_data.get("nodes", {})
                 capabilities = zone_data.get("capabilities", {})
                 
@@ -181,8 +184,7 @@ class ZoneAutomationService:
                 await self._emit_zone_data_unavailable_signal(zone_id)
                 return
             
-            # Сохраняем telemetry_timestamps для использования в _process_correction_controllers
-            self._current_telemetry_timestamps = telemetry_timestamps
+            normalized_correction_flags = correction_flags if isinstance(correction_flags, dict) else {}
             
             # Проверка уровня воды (safety check, всегда выполняется)
             water_level_ok, water_level = await check_water_level(zone_id)
@@ -270,7 +272,18 @@ class ZoneAutomationService:
             # 5. pH/EC Correction Controllers
             await self._safe_process_controller(
                 'correction',
-                self._process_correction_controllers(zone_id, targets, telemetry, nodes, capabilities, water_level_ok, bindings, actuators),
+                self._process_correction_controllers(
+                    zone_id,
+                    targets,
+                    telemetry,
+                    telemetry_timestamps,
+                    normalized_correction_flags,
+                    nodes,
+                    capabilities,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                ),
                 zone_id
             )
             
@@ -1254,6 +1267,8 @@ class ZoneAutomationService:
         zone_id: int,
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
+        telemetry_timestamps: Dict[str, Any],
+        correction_flags: Dict[str, Any],
         nodes: Dict[str, Dict[str, Any]],
         capabilities: Dict[str, bool],
         water_level_ok: bool,
@@ -1261,8 +1276,54 @@ class ZoneAutomationService:
         actuators: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллеров корректировки pH/EC."""
-        # Получаем telemetry_timestamps из zone_data (передается через process_zone)
-        telemetry_timestamps = getattr(self, '_current_telemetry_timestamps', {})
+        gating_state = self._build_correction_gating_state(
+            telemetry=telemetry,
+            telemetry_timestamps=telemetry_timestamps,
+            correction_flags=correction_flags,
+        )
+        if gating_state["missing_flags"]:
+            await create_zone_event(
+                zone_id,
+                "CORRECTION_SKIPPED_MISSING_FLAGS",
+                {
+                    "reason_code": "missing_flags",
+                    "missing_flags": gating_state["missing_flags"],
+                    "correction_flags": gating_state["flags"],
+                },
+            )
+            await self._set_sensor_mode(
+                zone_id=zone_id,
+                nodes=nodes,
+                activate=True,
+                reason="missing_flags",
+            )
+            return
+
+        if not gating_state["can_run"]:
+            reason_code = str(gating_state["reason_code"] or "correction_flags_blocked")
+            await create_zone_event(
+                zone_id,
+                "CORRECTION_SKIPPED_FLAGS_GATING",
+                {
+                    "reason_code": reason_code,
+                    "correction_flags": gating_state["flags"],
+                },
+            )
+            if reason_code == "flow_inactive":
+                await self._set_sensor_mode(
+                    zone_id=zone_id,
+                    nodes=nodes,
+                    activate=False,
+                    reason=reason_code,
+                )
+            return
+
+        await self._set_sensor_mode(
+            zone_id=zone_id,
+            nodes=nodes,
+            activate=True,
+            reason="correction_gating_passed",
+        )
         
         # pH Correction
         if capabilities.get("ph_control", False):
@@ -1307,6 +1368,125 @@ class ZoneAutomationService:
                         channel=ec_cmd.get("channel"),
                         cmd=ec_cmd.get("cmd"),
                     )
+
+    @staticmethod
+    def _normalize_optional_bool(raw: Any) -> Optional[bool]:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            if raw == 1:
+                return True
+            if raw == 0:
+                return False
+            return None
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return None
+
+    def _build_correction_gating_state(
+        self,
+        *,
+        telemetry: Dict[str, Optional[float]],
+        telemetry_timestamps: Dict[str, Any],
+        correction_flags: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        flags = correction_flags if isinstance(correction_flags, dict) else {}
+        flow_active_raw = flags.get("flow_active", telemetry.get("FLOW_ACTIVE"))
+        stable_raw = flags.get("stable", telemetry.get("STABLE"))
+        corrections_allowed_raw = flags.get("corrections_allowed", telemetry.get("CORRECTIONS_ALLOWED"))
+        flow_active = self._normalize_optional_bool(flow_active_raw)
+        stable = self._normalize_optional_bool(stable_raw)
+        corrections_allowed = self._normalize_optional_bool(corrections_allowed_raw)
+        normalized_flags = {
+            "flow_active": flow_active,
+            "stable": stable,
+            "corrections_allowed": corrections_allowed,
+            "flow_active_ts": flags.get("flow_active_ts", telemetry_timestamps.get("FLOW_ACTIVE")),
+            "stable_ts": flags.get("stable_ts", telemetry_timestamps.get("STABLE")),
+            "corrections_allowed_ts": flags.get("corrections_allowed_ts", telemetry_timestamps.get("CORRECTIONS_ALLOWED")),
+        }
+        missing_flags = [name for name in ("flow_active", "stable", "corrections_allowed") if normalized_flags[name] is None]
+        if missing_flags:
+            return {
+                "can_run": False,
+                "reason_code": "missing_flags",
+                "missing_flags": missing_flags,
+                "flags": normalized_flags,
+            }
+        if not normalized_flags["flow_active"]:
+            return {"can_run": False, "reason_code": "flow_inactive", "missing_flags": [], "flags": normalized_flags}
+        if not normalized_flags["stable"]:
+            return {"can_run": False, "reason_code": "sensor_unstable", "missing_flags": [], "flags": normalized_flags}
+        if not normalized_flags["corrections_allowed"]:
+            return {"can_run": False, "reason_code": "corrections_not_allowed", "missing_flags": [], "flags": normalized_flags}
+        return {"can_run": True, "reason_code": "gating_passed", "missing_flags": [], "flags": normalized_flags}
+
+    @staticmethod
+    def _resolve_correction_sensor_nodes(nodes: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        seen = set()
+        for node in (nodes or {}).values():
+            if not isinstance(node, dict):
+                continue
+            node_type = str(node.get("type") or "").strip().lower()
+            if node_type not in {"ph", "ec"}:
+                continue
+            node_uid = str(node.get("node_uid") or "").strip()
+            if not node_uid:
+                continue
+            if node_uid in seen:
+                continue
+            seen.add(node_uid)
+            result.append({"node_uid": node_uid, "type": node_type})
+        return result
+
+    async def _set_sensor_mode(
+        self,
+        *,
+        zone_id: int,
+        nodes: Dict[str, Dict[str, Any]],
+        activate: bool,
+        reason: str,
+    ) -> None:
+        previous_state = self._correction_sensor_mode_state.get(zone_id)
+        if previous_state is not None and previous_state == activate:
+            return
+        sensor_nodes = self._resolve_correction_sensor_nodes(nodes)
+        if not sensor_nodes:
+            return
+
+        cmd = "activate_sensor_mode" if activate else "deactivate_sensor_mode"
+        params: Dict[str, Any] = {"reason": reason}
+        if activate:
+            params["stabilization_time_sec"] = 60
+
+        for sensor_node in sensor_nodes:
+            command = {
+                "node_uid": sensor_node["node_uid"],
+                "channel": "system",
+                "cmd": cmd,
+                "params": params,
+            }
+            try:
+                await self.command_bus.publish_controller_command(zone_id, command)
+            except CircuitBreakerOpenError:
+                logger.warning(
+                    "Zone %s: API Circuit Breaker is OPEN, skipping sensor mode command",
+                    zone_id,
+                    extra={"zone_id": zone_id, "cmd": cmd, "node_uid": sensor_node["node_uid"]},
+                )
+                await self._emit_controller_circuit_open_signal(
+                    zone_id,
+                    "correction_sensor_mode",
+                    channel="system",
+                    cmd=cmd,
+                )
+                return
+        self._correction_sensor_mode_state[zone_id] = activate
     
     async def _update_zone_health(self, zone_id: int) -> None:
         """Обновление health score зоны."""

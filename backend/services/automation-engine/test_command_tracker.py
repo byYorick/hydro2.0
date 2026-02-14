@@ -162,11 +162,11 @@ async def test_check_timeout_local_timeout_clears_pending_state():
         "_get_command_status_from_db",
         new=AsyncMock(return_value=None),
     ), patch.object(tracker, "_emit_failure_alert", new=AsyncMock()), \
+         patch.object(tracker, "confirm_command_status", new=AsyncMock()) as mock_confirm_status, \
          patch("infrastructure.command_tracker.create_zone_event", new=AsyncMock()) as mock_zone_event:
         await tracker._check_timeout(cmd_id)
 
-    assert cmd_id not in tracker.pending_commands
-    assert cmd_id not in tracker._timeout_tasks
+    mock_confirm_status.assert_awaited_once_with(cmd_id, "TIMEOUT", error="timeout")
     mock_zone_event.assert_awaited_once()
 
 
@@ -179,3 +179,67 @@ async def test_restore_pending_commands_uses_deterministic_order():
 
     query = " ".join(str(mock_fetch.await_args.args[0]).split()).lower()
     assert "order by created_at desc, cmd_id desc" in query
+
+
+@pytest.mark.asyncio
+async def test_confirm_command_status_timeout_persists_to_db_and_sends_laravel_ack():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    tracker.pending_commands["cmd-timeout-persist"] = {
+        "zone_id": 7,
+        "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
+        "command_type": "run_pump",
+        "sent_at": datetime.utcnow(),
+        "status": "ACK",
+        "context": {},
+    }
+
+    with patch("infrastructure.command_tracker.mark_command_timeout", new=AsyncMock(return_value=True)) as mock_mark, \
+         patch("infrastructure.command_tracker.send_status_to_laravel", new=AsyncMock(return_value=True)) as mock_send, \
+         patch.object(tracker, "_confirm_command_internal", new=AsyncMock()) as mock_confirm:
+        await tracker.confirm_command_status("cmd-timeout-persist", "TIMEOUT", error="closed_loop_timeout")
+
+    mock_mark.assert_awaited_once_with("cmd-timeout-persist")
+    mock_send.assert_awaited_once()
+    send_args = mock_send.await_args.args
+    assert send_args[0] == "cmd-timeout-persist"
+    assert send_args[1] == "TIMEOUT"
+    assert send_args[2]["zone_id"] == 7
+    assert send_args[2]["error_code"] == "TIMEOUT"
+    mock_confirm.assert_awaited_once_with(
+        "cmd-timeout-persist",
+        "TIMEOUT",
+        None,
+        "closed_loop_timeout",
+    )
+
+
+@pytest.mark.asyncio
+async def test_confirm_command_status_send_failed_persists_to_db_and_sends_laravel_ack():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    tracker.pending_commands["cmd-send-failed-persist"] = {
+        "zone_id": 9,
+        "command": {"cmd": "run_pump", "node_uid": "nd-irrig-2", "channel": "pump1"},
+        "command_type": "run_pump",
+        "sent_at": datetime.utcnow(),
+        "status": "QUEUED",
+        "context": {},
+    }
+
+    with patch("infrastructure.command_tracker.mark_command_send_failed", new=AsyncMock(return_value=True)) as mock_mark, \
+         patch("infrastructure.command_tracker.send_status_to_laravel", new=AsyncMock(return_value=True)) as mock_send, \
+         patch.object(tracker, "_confirm_command_internal", new=AsyncMock()) as mock_confirm:
+        await tracker.confirm_command_status("cmd-send-failed-persist", "SEND_FAILED", error="publish_failed")
+
+    mock_mark.assert_awaited_once_with("cmd-send-failed-persist", error_message="publish_failed")
+    mock_send.assert_awaited_once()
+    send_args = mock_send.await_args.args
+    assert send_args[0] == "cmd-send-failed-persist"
+    assert send_args[1] == "SEND_FAILED"
+    assert send_args[2]["zone_id"] == 9
+    assert send_args[2]["error_code"] == "SEND_FAILED"
+    mock_confirm.assert_awaited_once_with(
+        "cmd-send-failed-persist",
+        "SEND_FAILED",
+        None,
+        "publish_failed",
+    )

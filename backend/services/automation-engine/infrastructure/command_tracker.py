@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from common.utils.time import utcnow
 from common.db import execute, fetch, create_zone_event
 from common.infra_alerts import send_infra_alert
-from common.commands import new_command_id
+from common.command_status_queue import send_status_to_laravel
+from common.commands import mark_command_send_failed, mark_command_timeout, new_command_id
 from prometheus_client import Histogram, Counter, Gauge
 from decision_context import ContextLike, normalize_context
 
@@ -311,7 +312,52 @@ class CommandTracker:
         Явно подтвердить команду заданным статусом.
         Используется для сценариев, когда публикация команды не удалась до получения ACK.
         """
-        await self._confirm_command_internal(cmd_id, status, response, error)
+        normalized_status = str(status or "").strip().upper()
+        if normalized_status in {"TIMEOUT", "SEND_FAILED"}:
+            await self._persist_terminal_status(cmd_id=cmd_id, status=normalized_status, error=error)
+        await self._confirm_command_internal(cmd_id, normalized_status or status, response, error)
+
+    async def _persist_terminal_status(
+        self,
+        *,
+        cmd_id: str,
+        status: str,
+        error: Optional[str],
+    ) -> None:
+        """Персистит TIMEOUT/SEND_FAILED в commands и отправляет status-ack в Laravel."""
+        try:
+            transitioned = False
+            if status == "TIMEOUT":
+                transitioned = await mark_command_timeout(cmd_id)
+            elif status == "SEND_FAILED":
+                transitioned = await mark_command_send_failed(cmd_id, error_message=error)
+
+            if not transitioned:
+                return
+
+            command_info = self.pending_commands.get(cmd_id, {})
+            command_payload = command_info.get("command")
+            if not isinstance(command_payload, dict):
+                command_payload = {}
+            details = {
+                "zone_id": command_info.get("zone_id"),
+                "node_uid": command_payload.get("node_uid"),
+                "channel": command_payload.get("channel"),
+                "command": command_payload.get("cmd"),
+                "source": "automation-engine",
+                "status_origin": "command_tracker",
+                "error_code": status,
+                "error_message": error,
+            }
+            details = {k: v for k, v in details.items() if v is not None}
+            await send_status_to_laravel(cmd_id, status, details)
+        except Exception:
+            logger.warning(
+                "Failed to persist terminal status for cmd_id=%s status=%s",
+                cmd_id,
+                status,
+                exc_info=True,
+            )
     
     async def _check_timeout(self, cmd_id: str):
         """Проверить таймаут команды."""
@@ -363,8 +409,9 @@ class CommandTracker:
                     
                     COMMAND_TIMEOUT.labels(zone_id=str(zone_id), command_type=command_type).inc()
                     
-                    # Подтверждаем как timeout
-                    await self._confirm_command_internal(cmd_id, 'TIMEOUT', error='timeout')
+                    # Подтверждаем как timeout через public confirm-путь:
+                    # он персистит TIMEOUT в БД и отправляет status-ack в Laravel.
+                    await self.confirm_command_status(cmd_id, 'TIMEOUT', error='timeout')
                     
                     # Создаем событие
                     await create_zone_event(

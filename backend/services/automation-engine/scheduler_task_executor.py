@@ -67,6 +67,7 @@ AUTO_LOGIC_TANK_STATE_MACHINE_V1 = _env_bool("AUTO_LOGIC_TANK_STATE_MACHINE_V1",
 AUTO_LOGIC_CLIMATE_GUARDS_V1 = _env_bool("AUTO_LOGIC_CLIMATE_GUARDS_V1", True)
 AUTO_LOGIC_NEW_SENSORS_V1 = _env_bool("AUTO_LOGIC_NEW_SENSORS_V1", True)
 AUTO_LOGIC_EXTENDED_OUTCOME_V1 = _env_bool("AUTO_LOGIC_EXTENDED_OUTCOME_V1", True)
+AE_TWOTANK_SAFETY_GUARDS_ENABLED = _env_bool("AE_TWOTANK_SAFETY_GUARDS_ENABLED", True)
 
 
 ERR_COMMAND_PUBLISH_FAILED = "command_publish_failed"
@@ -726,6 +727,21 @@ class SchedulerTaskExecutor:
                 return raw.strip()
         return None
 
+    @staticmethod
+    def _build_decision_retry_correlation_id(
+        *,
+        zone_id: int,
+        task_type: str,
+        parent_correlation_id: Optional[str],
+        retry_attempt: Optional[int],
+    ) -> str:
+        retry_marker = f"retry{max(0, int(retry_attempt))}" if retry_attempt is not None else "retry"
+        unique_suffix = uuid4().hex[:10]
+        parent = str(parent_correlation_id or "").strip()
+        if parent:
+            return f"{parent}:{retry_marker}:{unique_suffix}"
+        return f"ae:retry:{zone_id}:{task_type}:{retry_marker}:{unique_suffix}"
+
     async def _enqueue_decision_retry(
         self,
         *,
@@ -749,6 +765,19 @@ class SchedulerTaskExecutor:
         if retry_attempt is not None:
             retry_payload["retry_attempt"] = max(0, retry_attempt)
         retry_payload["decision_retry_reason_code"] = decision.reason_code
+        context_correlation_id = str(context.get("correlation_id") or "").strip() or None
+        root_parent_correlation_id = str(retry_payload.get("parent_correlation_id") or "").strip() or None
+        parent_correlation_id = root_parent_correlation_id or context_correlation_id
+        if parent_correlation_id:
+            retry_payload["parent_correlation_id"] = parent_correlation_id
+        if context_correlation_id and context_correlation_id != parent_correlation_id:
+            retry_payload["previous_correlation_id"] = context_correlation_id
+        retry_correlation_id = self._build_decision_retry_correlation_id(
+            zone_id=zone_id,
+            task_type=task_type,
+            parent_correlation_id=parent_correlation_id,
+            retry_attempt=retry_attempt,
+        )
 
         try:
             enqueue_result = await enqueue_internal_scheduler_task(
@@ -756,7 +785,7 @@ class SchedulerTaskExecutor:
                 task_type=task_type,
                 payload=retry_payload,
                 scheduled_for=next_due_at,
-                correlation_id=context.get("correlation_id") or None,
+                correlation_id=retry_correlation_id,
                 source="automation-engine:decision-retry",
             )
         except ValueError as exc:
@@ -2449,7 +2478,15 @@ class SchedulerTaskExecutor:
         node_types = self._normalize_node_type_list(refill_cfg.get("node_types"), ("irrig",))
         preferred_channels = self._normalize_text_list(
             refill_cfg.get("preferred_channels"),
-            ("fill_valve", "water_control", "main_pump", "default"),
+            (
+                "valve_clean_fill",
+                "pump_in",
+                "fill_valve",
+                "pump_main",
+                "main_pump",
+                "water_control",
+                "default",
+            ),
         )
 
         rows = await fetch(
@@ -2593,6 +2630,88 @@ class SchedulerTaskExecutor:
             source="automation-engine:two-tank-startup",
         )
 
+    @staticmethod
+    def _two_tank_safety_guards_enabled() -> bool:
+        return AE_TWOTANK_SAFETY_GUARDS_ENABLED
+
+    def _log_two_tank_safety_guard(
+        self,
+        *,
+        zone_id: int,
+        context: Dict[str, Any],
+        phase: str,
+        stop_result: Dict[str, Any],
+        level: int = logging.WARNING,
+    ) -> None:
+        logger.log(
+            level,
+            "Two-tank safety guard decision",
+            extra={
+                "zone_id": zone_id,
+                "task_id": str(context.get("task_id") or ""),
+                "correlation_id": str(context.get("correlation_id") or ""),
+                "phase": phase,
+                "stop_result": stop_result,
+                "feature_flag_state": self._two_tank_safety_guards_enabled(),
+            },
+        )
+
+    def _build_two_tank_stop_not_confirmed_result(
+        self,
+        *,
+        workflow: str,
+        mode: str,
+        reason: str,
+        stop_result: Dict[str, Any],
+        fallback_error_code: str = ERR_TWO_TANK_COMMAND_FAILED,
+    ) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "task_type": "diagnostics",
+            "mode": mode,
+            "workflow": workflow,
+            "commands_total": stop_result.get("commands_total", 0),
+            "commands_failed": stop_result.get("commands_failed", 1),
+            "command_statuses": stop_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": REASON_CYCLE_REFILL_COMMAND_FAILED,
+            "reason": reason,
+            "error": str(stop_result.get("error") or fallback_error_code),
+            "error_code": str(stop_result.get("error_code") or fallback_error_code),
+            "stop_result": stop_result,
+            "feature_flag_state": self._two_tank_safety_guards_enabled(),
+        }
+
+    async def _compensate_two_tank_start_enqueue_failure(
+        self,
+        *,
+        zone_id: int,
+        context: Dict[str, Any],
+        workflow: str,
+        phase: str,
+        stop_command_plan: Sequence[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        stop_result = await self._dispatch_two_tank_command_plan(
+            zone_id=zone_id,
+            command_plan=stop_command_plan,
+            context=context,
+            decision=DecisionOutcome(
+                action_required=True,
+                decision="run",
+                reason_code=REASON_CYCLE_REFILL_COMMAND_FAILED,
+                reason=f"Compensating stop для {phase} после ошибки enqueue",
+            ),
+        )
+        self._log_two_tank_safety_guard(
+            zone_id=zone_id,
+            context=context,
+            phase=f"{phase}_enqueue_failed_compensating_stop",
+            stop_result=stop_result,
+            level=logging.INFO if stop_result.get("success") else logging.WARNING,
+        )
+        return stop_result
+
     async def _start_two_tank_clean_fill(
         self,
         *,
@@ -2643,6 +2762,13 @@ class SchedulerTaskExecutor:
                 phase_cycle=cycle,
             )
         except ValueError as exc:
+            stop_result = await self._compensate_two_tank_start_enqueue_failure(
+                zone_id=zone_id,
+                context=context,
+                workflow="startup",
+                phase="clean_fill_start",
+                stop_command_plan=runtime_cfg["commands"]["clean_fill_stop"],
+            )
             return {
                 "success": False,
                 "task_type": "diagnostics",
@@ -2657,6 +2783,8 @@ class SchedulerTaskExecutor:
                 "reason": "Команда наполнения отправлена, но self-task не поставлен",
                 "error": str(exc),
                 "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                "stop_result": stop_result,
+                "feature_flag_state": self._two_tank_safety_guards_enabled(),
             }
 
         await self._emit_task_event(
@@ -2739,6 +2867,13 @@ class SchedulerTaskExecutor:
                 poll_interval_sec=runtime_cfg["poll_interval_sec"],
             )
         except ValueError as exc:
+            stop_result = await self._compensate_two_tank_start_enqueue_failure(
+                zone_id=zone_id,
+                context=context,
+                workflow="startup",
+                phase="solution_fill_start",
+                stop_command_plan=runtime_cfg["commands"]["solution_fill_stop"],
+            )
             return {
                 "success": False,
                 "task_type": "diagnostics",
@@ -2753,6 +2888,8 @@ class SchedulerTaskExecutor:
                 "reason": "Команды наполнения раствора отправлены, но self-task не поставлен",
                 "error": str(exc),
                 "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                "stop_result": stop_result,
+                "feature_flag_state": self._two_tank_safety_guards_enabled(),
             }
 
         await self._emit_task_event(
@@ -2833,6 +2970,13 @@ class SchedulerTaskExecutor:
                 poll_interval_sec=runtime_cfg["poll_interval_sec"],
             )
         except ValueError as exc:
+            stop_result = await self._compensate_two_tank_start_enqueue_failure(
+                zone_id=zone_id,
+                context=context,
+                workflow="prepare_recirculation",
+                phase="prepare_recirculation_start",
+                stop_command_plan=runtime_cfg["commands"]["prepare_recirculation_stop"],
+            )
             return {
                 "success": False,
                 "task_type": "diagnostics",
@@ -2847,6 +2991,8 @@ class SchedulerTaskExecutor:
                 "reason": "Команды prepare recirculation отправлены, но self-task не поставлен",
                 "error": str(exc),
                 "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                "stop_result": stop_result,
+                "feature_flag_state": self._two_tank_safety_guards_enabled(),
             }
 
         return {
@@ -2915,6 +3061,13 @@ class SchedulerTaskExecutor:
                 poll_interval_sec=runtime_cfg["poll_interval_sec"],
             )
         except ValueError as exc:
+            stop_result = await self._compensate_two_tank_start_enqueue_failure(
+                zone_id=zone_id,
+                context=context,
+                workflow="irrigation_recovery",
+                phase="irrigation_recovery_start",
+                stop_command_plan=runtime_cfg["commands"]["irrigation_recovery_stop"],
+            )
             return {
                 "success": False,
                 "task_type": "diagnostics",
@@ -2929,6 +3082,8 @@ class SchedulerTaskExecutor:
                 "reason": "Команды irrigation recovery отправлены, но self-task не поставлен",
                 "error": str(exc),
                 "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
+                "stop_result": stop_result,
+                "feature_flag_state": self._two_tank_safety_guards_enabled(),
             }
 
         return {
@@ -3183,6 +3338,19 @@ class SchedulerTaskExecutor:
                         reason="Остановка наполнения чистого бака по таймауту",
                     ),
                 )
+                if self._two_tank_safety_guards_enabled() and not stop_result.get("success"):
+                    self._log_two_tank_safety_guard(
+                        zone_id=zone_id,
+                        context=context,
+                        phase="clean_fill_timeout",
+                        stop_result=stop_result,
+                    )
+                    return self._build_two_tank_stop_not_confirmed_result(
+                        workflow=workflow,
+                        mode="two_tank_clean_fill_timeout_stop_not_confirmed",
+                        reason="Таймаут clean fill: stop не подтверждён, повторный старт запрещён",
+                        stop_result=stop_result,
+                    )
                 if clean_cycle <= runtime_cfg["clean_fill_retry_cycles"]:
                     await self._emit_task_event(
                         zone_id=zone_id,
@@ -3390,6 +3558,19 @@ class SchedulerTaskExecutor:
                         reason="Остановка наполнения бака раствора по таймауту",
                     ),
                 )
+                if self._two_tank_safety_guards_enabled() and not stop_result.get("success"):
+                    self._log_two_tank_safety_guard(
+                        zone_id=zone_id,
+                        context=context,
+                        phase="solution_fill_timeout",
+                        stop_result=stop_result,
+                    )
+                    return self._build_two_tank_stop_not_confirmed_result(
+                        workflow=workflow,
+                        mode="two_tank_solution_fill_timeout_stop_not_confirmed",
+                        reason="Таймаут solution fill: stop не подтверждён",
+                        stop_result=stop_result,
+                    )
                 return {
                     "success": False,
                     "task_type": "diagnostics",
@@ -3528,6 +3709,19 @@ class SchedulerTaskExecutor:
                         reason="Остановка prepare recirculation по таймауту",
                     ),
                 )
+                if self._two_tank_safety_guards_enabled() and not stop_result.get("success"):
+                    self._log_two_tank_safety_guard(
+                        zone_id=zone_id,
+                        context=context,
+                        phase="prepare_recirculation_timeout",
+                        stop_result=stop_result,
+                    )
+                    return self._build_two_tank_stop_not_confirmed_result(
+                        workflow=workflow,
+                        mode="two_tank_prepare_recirculation_timeout_stop_not_confirmed",
+                        reason="Таймаут prepare recirculation: stop не подтверждён",
+                        stop_result=stop_result,
+                    )
                 return {
                     "success": False,
                     "task_type": "diagnostics",
@@ -3667,6 +3861,19 @@ class SchedulerTaskExecutor:
                         reason="Остановка irrigation recovery по таймауту попытки",
                     ),
                 )
+                if self._two_tank_safety_guards_enabled() and not stop_result.get("success"):
+                    self._log_two_tank_safety_guard(
+                        zone_id=zone_id,
+                        context=context,
+                        phase="irrigation_recovery_timeout",
+                        stop_result=stop_result,
+                    )
+                    return self._build_two_tank_stop_not_confirmed_result(
+                        workflow=workflow,
+                        mode="two_tank_irrigation_recovery_timeout_stop_not_confirmed",
+                        reason="Таймаут irrigation recovery: stop не подтверждён, retry запрещён",
+                        stop_result=stop_result,
+                    )
                 degraded_state = await self._evaluate_ph_ec_targets(
                     zone_id=zone_id,
                     target_ph=float(runtime_cfg["target_ph"]),

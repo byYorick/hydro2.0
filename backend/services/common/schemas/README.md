@@ -15,8 +15,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `INVALID`
 - `BUSY`
 - `NO_EFFECT`
+- `TIMEOUT`
 
 Legacy-статусы `ACCEPTED` и `FAILED` не поддерживаются.
+
+## Канонический error payload (`.../error`)
+
+Обязательные поля:
+
+- `level`: `ERROR|WARNING|INFO`
+- `component`
+- `error_code`
+- `message`
+
+`ts` при наличии передаётся как Unix timestamp в миллисекундах.
 
 ## Источник и зеркало
 

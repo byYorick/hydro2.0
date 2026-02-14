@@ -3,6 +3,7 @@ import asyncio
 import pytest
 import sys
 import os
+import httpx
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
@@ -185,6 +186,53 @@ def test_scheduler_command_endpoint_removed(client):
     assert response.status_code == 404
 
 
+def test_zone_automation_state_returns_idle_without_active_tasks(client):
+    response = client.get("/zones/1/automation-state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["zone_id"] == 1
+    assert data["state"] == "IDLE"
+    assert data["state_details"]["progress_percent"] == 0
+    assert data["active_processes"]["pump_in"] is False
+    assert data["system_config"]["tanks_count"] == 2
+
+
+def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
+    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    api._scheduler_tasks["st-panel-1"] = {
+        "task_id": "st-panel-1",
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "status": "running",
+        "payload": {
+            "workflow": "clean_fill_check",
+            "config": {
+                "execution": {
+                    "system_type": "substrate_trays",
+                    "tanks_count": 2,
+                    "clean_tank_fill_l": 80,
+                    "nutrient_tank_target_l": 120,
+                }
+            },
+            "clean_fill_started_at": now_iso,
+        },
+        "result": {"mode": "two_tank_clean_fill_in_progress"},
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+
+    response = client.get("/zones/1/automation-state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["state"] == "TANK_FILLING"
+    assert data["active_processes"]["pump_in"] is True
+    assert data["active_processes"]["circulation_pump"] is False
+    assert data["system_config"]["system_type"] == "substrate_trays"
+    assert data["system_config"]["tanks_count"] == 2
+    assert data["system_config"]["clean_tank_capacity_l"] == 80.0
+    assert data["system_config"]["nutrient_tank_capacity_l"] == 120.0
+
+
 def test_scheduler_bootstrap_wait_when_command_bus_not_ready(client):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid
@@ -333,6 +381,25 @@ def test_scheduler_internal_enqueue_creates_pending_entry(client):
     assert mock_zone_event.await_args.args[1] == "SELF_TASK_ENQUEUED"
 
 
+def test_scheduler_internal_enqueue_returns_ok_when_zone_event_fails(client):
+    tz_msk = timezone(timedelta(hours=3))
+    scheduled_for = (datetime.now(tz_msk) + timedelta(minutes=5)).replace(microsecond=0)
+
+    with patch("scheduler_internal_enqueue.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
+         patch("scheduler_internal_enqueue.create_zone_event", new_callable=AsyncMock, side_effect=RuntimeError("zone event failed")):
+        response = client.post("/scheduler/internal/enqueue", json={
+            "zone_id": 1,
+            "task_type": "diagnostics",
+            "payload": {"workflow": "check"},
+            "scheduled_for": scheduled_for.isoformat(),
+            "source": "automation-engine",
+        })
+
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "pending"
+    mock_scheduler_log.assert_awaited_once()
+
+
 def test_scheduler_internal_enqueue_rejects_expiry_before_schedule(client):
     tz_msk = timezone(timedelta(hours=3))
     scheduled_for = (datetime.now(tz_msk) + timedelta(minutes=5)).replace(microsecond=0)
@@ -349,6 +416,32 @@ def test_scheduler_internal_enqueue_rejects_expiry_before_schedule(client):
 
     assert response.status_code == 422
     assert response.json()["detail"] == "expires_at_before_scheduled_for"
+
+
+def test_scheduler_internal_enqueue_rejects_invalid_scheduled_for(client):
+    response = client.post("/scheduler/internal/enqueue", json={
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"workflow": "refill_check"},
+        "scheduled_for": "not-a-datetime",
+        "source": "automation-engine",
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "scheduled_for_invalid"
+
+
+def test_scheduler_internal_enqueue_rejects_invalid_expires_at(client):
+    response = client.post("/scheduler/internal/enqueue", json={
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "payload": {"workflow": "refill_check"},
+        "expires_at": "invalid-expiry",
+        "source": "automation-engine",
+    })
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "expires_at_invalid"
 
 
 @pytest.mark.asyncio
@@ -375,6 +468,26 @@ async def test_scheduler_task_success(client, mock_command_bus):
     assert status_data["task_type"] == "diagnostics"
     assert status_data["due_at"] == payload["due_at"]
     assert status_data["expires_at"] == payload["expires_at"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_task_accepts_when_schedule_event_fails(client, mock_command_bus):
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:event-fail")
+
+    def _cancel_background_task(coro):
+        coro.close()
+        return Mock()
+
+    with patch("api.create_zone_event", new=AsyncMock(side_effect=RuntimeError("event insert failed"))), \
+         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
+        response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    mock_create_task.assert_called_once()
 
 
 def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
@@ -555,6 +668,7 @@ def test_scheduler_task_deadline_fast_fail_expired(client, mock_command_bus):
 async def test_execute_scheduler_task_command_bus_unavailable_sets_structured_failure(mock_command_bus):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid
+    old_command_bus_loop_id = api._command_bus_loop_id
     try:
         set_command_bus(mock_command_bus, "gh-1")
         req = api.SchedulerTaskRequest(**scheduler_task_payload(correlation_id="sch:z1:diagnostics:bus-down"))
@@ -571,6 +685,31 @@ async def test_execute_scheduler_task_command_bus_unavailable_sets_structured_fa
         assert stored["result"]["action_required"] is True
     finally:
         set_command_bus(old_command_bus, old_gh_uid)
+        api._command_bus_loop_id = old_command_bus_loop_id
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduler_task_command_bus_loop_mismatch_sets_structured_failure(mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    old_command_bus_loop_id = api._command_bus_loop_id
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        req = api.SchedulerTaskRequest(**scheduler_task_payload(correlation_id="sch:z1:diagnostics:loop-mismatch"))
+        task, _ = await api._create_scheduler_task(req)
+
+        api._command_bus_loop_id = -1
+        await api._execute_scheduler_task(task["task_id"], req, None)
+
+        stored = api._scheduler_tasks[task["task_id"]]
+        assert stored["status"] == "failed"
+        assert stored["error_code"] == "command_bus_loop_mismatch"
+        assert stored["result"]["reason_code"] == "command_bus_loop_mismatch"
+        assert stored["result"]["decision"] == "fail"
+        assert stored["result"]["action_required"] is True
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+        api._command_bus_loop_id = old_command_bus_loop_id
 
 
 @pytest.mark.asyncio
@@ -791,6 +930,68 @@ def test_scheduler_task_idempotency_payload_mismatch_returns_409(client, mock_co
     )
     assert second.status_code == 409
     assert "idempotency_payload_mismatch" in second.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_task_concurrent_submit_with_housekeeping_no_loop_errors(mock_command_bus):
+    """Concurrent scheduler/task submits with background housekeeping must remain stable."""
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        bootstrap_response = await async_client.post(
+            "/scheduler/bootstrap",
+            json={
+                "scheduler_id": "scheduler-concurrent",
+                "scheduler_version": "test",
+                "protocol_version": "2.0",
+            },
+        )
+        assert bootstrap_response.status_code == 200
+        bootstrap_data = bootstrap_response.json()["data"]
+        lease_id = bootstrap_data["lease_id"]
+
+        headers = {
+            "X-Scheduler-Id": "scheduler-concurrent",
+            "X-Scheduler-Lease-Id": lease_id,
+        }
+
+        stop_housekeeping = asyncio.Event()
+
+        async def _housekeeping_loop():
+            while not stop_housekeeping.is_set():
+                await api._cleanup_scheduler_tasks_locked(datetime.utcnow())
+                await asyncio.sleep(0)
+
+        housekeeping_task = asyncio.create_task(_housekeeping_loop())
+        try:
+            async def _submit(index: int) -> str:
+                payload = scheduler_task_payload(
+                    correlation_id=f"sch:z1:diagnostics:concurrent-{index}",
+                    payload={"reason": "concurrent", "index": index},
+                )
+                response = await async_client.post(
+                    "/scheduler/task",
+                    json=payload,
+                    headers=headers,
+                )
+                assert response.status_code == 200, response.text
+                data = response.json()["data"]
+                assert data["is_duplicate"] is False
+                return data["task_id"]
+
+            task_ids = await asyncio.gather(*(_submit(i) for i in range(40)))
+        finally:
+            stop_housekeeping.set()
+            housekeeping_task.cancel()
+            try:
+                await housekeeping_task
+            except asyncio.CancelledError:
+                pass
+
+    assert len(task_ids) == 40
+    assert len(set(task_ids)) == 40
 
 
 def test_scheduler_task_status_not_found(client):

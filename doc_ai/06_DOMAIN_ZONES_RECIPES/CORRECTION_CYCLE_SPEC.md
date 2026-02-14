@@ -311,6 +311,112 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `hydro/gh-1/zn-1/nd-ph-1/system/command`
 - `hydro/gh-1/zn-1/nd-ec-1/system/command`
 
+### 4.4. Диаграмма жизненного цикла сенсорной ноды
+
+Визуализация переходов между режимами IDLE и ACTIVE для pH/EC нод:
+
+```
+         SENSOR NODE LIFECYCLE (pH/EC nodes)
+
+              ┌────────────────────────┐
+              │        IDLE            │
+              │                        │
+              │ Режим ожидания:        │
+              │ • Нет измерений        │
+              │ • Нет telemetry        │
+              │ • Только heartbeat     │
+              │ • LWT активен          │
+              └───────────┬────────────┘
+                          │
+                          │ activate_sensor_mode
+                          │ {stabilization_time_sec: 90}
+                          │
+                          ▼
+              ┌────────────────────────┐
+              │       ACTIVE           │
+              │                        │
+              │ ┌────────────────────┐ │
+              │ │  Stabilizing       │ │
+              │ │  (0-90 sec)        │ │
+              │ │                    │ │
+              │ │  • Измерения ON    │ │
+              │ │  • Telemetry ON    │ │
+              │ │  • flow_active:    │ │
+              │ │    true            │ │
+              │ │  • stable: false   │ │
+              │ │  • corrections_    │ │
+              │ │    allowed: false  │ │
+              │ │                    │ │
+              │ │  Прогресс:         │ │
+              │ │  stabilization_    │ │
+              │ │  progress_sec:     │ │
+              │ │  0→15→30→60→90     │ │
+              │ └──────┬─────────────┘ │
+              │         │               │
+              │         │ Время прошло  │
+              │         │ (90 sec)      │
+              │         │               │
+              │         ▼               │
+              │ ┌────────────────────┐ │
+              │ │  Stable & Ready    │ │
+              │ │  for corrections   │ │
+              │ │                    │ │
+              │ │  • Измерения ON    │ │
+              │ │  • Telemetry ON    │ │
+              │ │  • flow_active:    │ │
+              │ │    true            │ │
+              │ │  • stable: true    │ │
+              │ │  • corrections_    │ │
+              │ │    allowed: true   │ │
+              │ │                    │ │
+              │ │  Automation-engine │ │
+              │ │  может дозировать! │ │
+              │ └────────────────────┘ │
+              └───────────┬────────────┘
+                          │
+                          │ deactivate_sensor_mode
+                          │ {}
+                          │
+                          ▼
+              ┌────────────────────────┐
+              │        IDLE            │
+              │                        │
+              │ Возврат в ожидание:    │
+              │ • Измерения OFF        │
+              │ • Telemetry OFF        │
+              │ • Только heartbeat     │
+              └────────────────────────┘
+
+
+      Управляющие команды:
+
+      ┌─────────────────────────────────────────────────────┐
+      │  MQTT Topic:                                        │
+      │  hydro/{gh}/{zone}/{node}/system/command            │
+      │                                                     │
+      │  Commands:                                          │
+      │  • activate_sensor_mode   → IDLE → ACTIVE          │
+      │  • deactivate_sensor_mode → ACTIVE → IDLE          │
+      └─────────────────────────────────────────────────────┘
+```
+
+**Ключевые моменты:**
+
+1. **IDLE режим:** Экономия ресурсов (нет измерений, нет MQTT трафика)
+2. **Stabilizing период:** Сенсор адаптируется к потоку, измерения ещё неточные
+3. **Stable режим:** Можно доверять измерениям и выполнять коррекции
+4. **Переходы управляются automation-engine** через системные команды
+
+**Применение в correction cycle:**
+
+| Переход state machine | Команда ноде |
+|-----------------------|--------------|
+| IDLE → TANK_FILLING | `activate_sensor_mode` (90s) |
+| TANK_FILLING → TANK_RECIRC | Нода остается ACTIVE (30s) |
+| READY → IDLE | `deactivate_sensor_mode` |
+| READY → IRRIGATING | `activate_sensor_mode` (30s) |
+| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` |
+
 ---
 
 ## 5. Временные параметры (настраиваемые через effective-targets)

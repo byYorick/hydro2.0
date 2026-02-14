@@ -13,6 +13,24 @@ from common.effective_targets import parse_effective_targets
 logger = logging.getLogger(__name__)
 
 
+def _to_optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
 class RecipeRepository:
     """Репозиторий для работы с рецептами."""
     
@@ -25,6 +43,34 @@ class RecipeRepository:
         """
         self.db_circuit_breaker = db_circuit_breaker
         self.laravel_api = LaravelApiRepository()
+
+    @staticmethod
+    def _extract_correction_flags(
+        correction_flags_raw: Optional[Dict[str, Any]],
+        telemetry: Dict[str, Optional[float]],
+        telemetry_timestamps: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw_flags = correction_flags_raw if isinstance(correction_flags_raw, dict) else {}
+        flow_active = _to_optional_bool(raw_flags.get("flow_active"))
+        if flow_active is None:
+            flow_active = _to_optional_bool(telemetry.get("FLOW_ACTIVE"))
+        stable = _to_optional_bool(raw_flags.get("stable"))
+        if stable is None:
+            stable = _to_optional_bool(telemetry.get("STABLE"))
+        corrections_allowed = _to_optional_bool(raw_flags.get("corrections_allowed"))
+        if corrections_allowed is None:
+            corrections_allowed = _to_optional_bool(telemetry.get("CORRECTIONS_ALLOWED"))
+        return {
+            "flow_active": flow_active,
+            "stable": stable,
+            "corrections_allowed": corrections_allowed,
+            "flow_active_ts": raw_flags.get("flow_active_ts", telemetry_timestamps.get("FLOW_ACTIVE")),
+            "stable_ts": raw_flags.get("stable_ts", telemetry_timestamps.get("STABLE")),
+            "corrections_allowed_ts": raw_flags.get(
+                "corrections_allowed_ts",
+                telemetry_timestamps.get("CORRECTIONS_ALLOWED"),
+            ),
+        }
     
     async def get_zone_recipe_and_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -155,6 +201,75 @@ class RecipeRepository:
                         tl.updated_at DESC NULLS LAST,
                         tl.sensor_id DESC
                 ),
+                correction_flags AS (
+                    SELECT
+                        (
+                            SELECT ts.metadata->'raw'->>'flow_active'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'flow_active'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as flow_active,
+                        (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'flow_active'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as flow_active_ts,
+                        (
+                            SELECT ts.metadata->'raw'->>'stable'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'stable'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as stable,
+                        (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'stable'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as stable_ts,
+                        (
+                            SELECT ts.metadata->'raw'->>'corrections_allowed'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'corrections_allowed'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as corrections_allowed,
+                        (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'corrections_allowed'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as corrections_allowed_ts
+                ),
                 nodes_data AS (
                     SELECT n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
                     FROM nodes n
@@ -167,6 +282,7 @@ class RecipeRepository:
                         metric_type, 
                         json_build_object('value', value, 'updated_at', updated_at)
                     ) FROM telemetry_data) as telemetry,
+                    (SELECT row_to_json(correction_flags) FROM correction_flags) as correction_flags,
                     (SELECT json_agg(row_to_json(nodes_data)) FROM nodes_data) as nodes
                 """,
                 zone_id,
@@ -196,6 +312,10 @@ class RecipeRepository:
         telemetry_raw = result.get("telemetry") or {}
         if isinstance(telemetry_raw, str):
             telemetry_raw = json.loads(telemetry_raw)
+
+        correction_flags_raw = result.get("correction_flags") or {}
+        if isinstance(correction_flags_raw, str):
+            correction_flags_raw = json.loads(correction_flags_raw)
         
         nodes_list = result.get("nodes") or []
         if isinstance(nodes_list, str):
@@ -238,6 +358,11 @@ class RecipeRepository:
             "recipe_info": None,
             "telemetry": telemetry,
             "telemetry_timestamps": telemetry_timestamps,  # Добавляем timestamps для проверки свежести
+            "correction_flags": self._extract_correction_flags(
+                correction_flags_raw,
+                telemetry,
+                telemetry_timestamps,
+            ),
             "nodes": nodes_dict,
             "capabilities": capabilities
         }
@@ -313,6 +438,74 @@ class RecipeRepository:
                         FROM telemetry_data td
                         WHERE td.zone_id = zi.zone_id
                     ),
+                    'correction_flags', json_build_object(
+                        'flow_active', (
+                            SELECT ts.metadata->'raw'->>'flow_active'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'flow_active'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ),
+                        'flow_active_ts', (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'flow_active'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ),
+                        'stable', (
+                            SELECT ts.metadata->'raw'->>'stable'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'stable'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ),
+                        'stable_ts', (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'stable'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ),
+                        'corrections_allowed', (
+                            SELECT ts.metadata->'raw'->>'corrections_allowed'
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'corrections_allowed'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ),
+                        'corrections_allowed_ts', (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                              AND ts.metadata->'raw' ? 'corrections_allowed'
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        )
+                    ),
                     'nodes', (
                         SELECT json_object_agg(
                             nd.type || ':' || COALESCE(nd.channel, 'default'),
@@ -361,6 +554,14 @@ class RecipeRepository:
             # Обновляем zone_data с обработанной телеметрией
             zone_data['telemetry'] = telemetry
             zone_data['telemetry_timestamps'] = telemetry_timestamps or zone_data.get('telemetry_timestamps', {})
+            correction_flags_raw = zone_data.get("correction_flags")
+            if isinstance(correction_flags_raw, str):
+                correction_flags_raw = json.loads(correction_flags_raw)
+            zone_data['correction_flags'] = self._extract_correction_flags(
+                correction_flags_raw,
+                zone_data['telemetry'],
+                zone_data['telemetry_timestamps'],
+            )
             
             result[zone_id] = zone_data
         
@@ -371,6 +572,14 @@ class RecipeRepository:
                     "recipe_info": None,
                     "telemetry": {},
                     "telemetry_timestamps": {},
+                    "correction_flags": {
+                        "flow_active": None,
+                        "stable": None,
+                        "corrections_allowed": None,
+                        "flow_active_ts": None,
+                        "stable_ts": None,
+                        "corrections_allowed_ts": None,
+                    },
                     "nodes": {},
                     "capabilities": {}
                 }

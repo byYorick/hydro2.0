@@ -21,6 +21,8 @@
 
 ```
 QUEUED → SENT → ACK → DONE
+    ↓      ↓      ↓
+SEND_FAILED TIMEOUT TIMEOUT
                  ↓
               NO_EFFECT
                  ↓
@@ -32,17 +34,17 @@ QUEUED → SENT → ACK → DONE
 ```
 
 Примечание: терминальные статусы могут приходить без ACK, поэтому обновления разрешены из `QUEUED/SENT/ACK`.
-ACK является опциональным, а DONE/NO_EFFECT/ERROR/INVALID/BUSY могут приходить напрямую.
+ACK является опциональным, а DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED могут приходить напрямую.
 
 ### Защищенные функции
 
 #### `mark_command_sent(cmd_id)`
 
-**Защита:** `WHERE status = 'QUEUED'`
+**Защита:** `WHERE status IN ('QUEUED', 'SEND_FAILED')` (при `allow_resend=True`)
 
 **Логика:**
-- Обновляет только из `QUEUED`
-- Не обновляет если команда уже в `SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY`
+- Обновляет из `QUEUED` (или из `SEND_FAILED` при повторной отправке)
+- Не обновляет если команда уже в `SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT`
 
 **Использование:**
 ```python
@@ -56,7 +58,7 @@ await mark_command_sent(cmd_id)
 
 **Логика:**
 - Обновляет только из начальных статусов
-- Не обновляет если команда уже в `ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY`
+- Не обновляет если команда уже в `ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`
 
 #### `mark_command_done(cmd_id, duration_ms, result_code)`
 
@@ -64,7 +66,7 @@ await mark_command_sent(cmd_id)
 
 **Логика:**
 - Обновляет только из промежуточных статусов
-- Не обновляет если команда уже в конечном состоянии (`DONE/NO_EFFECT/ERROR/INVALID/BUSY`)
+- Не обновляет если команда уже в конечном состоянии (`DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`)
 
 #### `mark_command_no_effect(cmd_id, duration_ms)`
 
@@ -96,10 +98,32 @@ await mark_command_sent(cmd_id)
 
 **Защита:** `WHERE status IN ('QUEUED','SENT','ACK')`
 
+#### `mark_command_timeout(cmd_id)`
+
+**Статус:** `TIMEOUT`
+
+**Защита:** `WHERE status IN ('QUEUED','SENT','ACK')`
+
+**Логика:**
+- Обновляет только из промежуточных статусов
+- Не обновляет если команда уже в конечном состоянии
+- Возвращает `True` только если переход реально произошёл (`UPDATE > 0`)
+
+#### `mark_command_send_failed(cmd_id, error_message)`
+
+**Статус:** `SEND_FAILED`
+
+**Защита:** `WHERE status = 'QUEUED'`
+
+**Логика:**
+- Обновляет только из `QUEUED` (ошибка на этапе публикации)
+- Не обновляет если команда уже отправлена (`SENT/ACK`) или завершена
+- Возвращает `True` только если переход реально произошёл (`UPDATE > 0`)
+
 ## Правила защиты
 
 1. **Всегда проверяем текущий статус** перед обновлением
-2. **Не обновляем конечные состояния** (`DONE`, `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`)
+2. **Не обновляем конечные состояния** (`DONE`, `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED`)
 3. **Разрешаем только допустимые переходы** согласно state-machine
 4. **Используем `IN (...)` для множественных допустимых статусов**
 

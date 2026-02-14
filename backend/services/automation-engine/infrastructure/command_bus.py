@@ -670,9 +670,6 @@ class CommandBus:
         incoming_cmd_id = str(incoming_cmd_id_raw).strip() if isinstance(incoming_cmd_id_raw, str) else None
         if incoming_cmd_id == "":
             incoming_cmd_id = None
-        # Очищаем возможный stale cmd_id от предыдущих попыток/переиспользования dict.
-        # Актуальный cmd_id должен формироваться только в текущем вызове tracker.track_command.
-        command.pop('cmd_id', None)
         cmd_id = None
         normalized_context = normalize_context(context)
         
@@ -720,8 +717,12 @@ class CommandBus:
                 cmd_id = command['cmd_id']
             except Exception as e:
                 logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
-                # Если tracker не сработал, используем исходные params (могут быть None)
+                # Tracker недоступен: fail-closed для корреляции.
+                # Не используем входной cmd_id, чтобы не подтверждать stale-id
+                # от переиспользованного dict команды.
                 params = command.get('params')
+                cmd_id = None
+                command.pop('cmd_id', None)
         else:
             # Если tracker не настроен, используем исходные params
             params = command.get('params')

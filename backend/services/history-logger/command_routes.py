@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import Any, Optional
 
@@ -41,6 +42,7 @@ router = APIRouter()
 _FINAL_COMMAND_STATUSES = {"DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
 _NON_REPUBLISHABLE_COMMAND_STATUSES = _FINAL_COMMAND_STATUSES | {"ACK"}
 _REPUBLISH_ALLOWED_STATUSES = {"QUEUED", "SEND_FAILED"}
+_POST_PUBLISH_ALLOWED_STATUSES = _NON_REPUBLISHABLE_COMMAND_STATUSES | _REPUBLISH_ALLOWED_STATUSES | {"SENT"}
 
 
 def _validate_command_request_contract(req: CommandRequest) -> None:
@@ -208,6 +210,31 @@ def _normalize_command_status(status: Any) -> str:
     return str(status or "").strip().upper()
 
 
+async def _ensure_post_publish_status_persisted(cmd_id: str) -> None:
+    rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+    if not rows:
+        raise RuntimeError(f"command_not_found_after_publish:{cmd_id}")
+    status = _normalize_command_status(rows[0].get("status"))
+    if status not in _POST_PUBLISH_ALLOWED_STATUSES:
+        raise RuntimeError(f"invalid_post_publish_status:{status}")
+    if status == "QUEUED":
+        raise RuntimeError("post_publish_status_not_transitioned")
+
+
+def _normalize_params_for_idempotency(params: Any) -> str:
+    """Канонизация params для проверки коллизий cmd_id."""
+    candidate = {} if params is None else params
+    if isinstance(candidate, str):
+        try:
+            candidate = json.loads(candidate)
+        except Exception:
+            candidate = candidate.strip()
+    try:
+        return json.dumps(candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except Exception:
+        return str(candidate)
+
+
 async def _ensure_command_for_publish(
     *,
     cmd_id: str,
@@ -223,7 +250,7 @@ async def _ensure_command_for_publish(
     """Гарантирует fail-closed подготовку команды в БД перед MQTT publish."""
     try:
         existing_rows = await fetch(
-            "SELECT status, source, zone_id, node_id, channel, cmd FROM commands WHERE cmd_id = $1",
+            "SELECT status, source, zone_id, node_id, channel, cmd, params FROM commands WHERE cmd_id = $1",
             cmd_id,
         )
     except Exception as exc:
@@ -284,6 +311,11 @@ async def _ensure_command_for_publish(
             and str(existing_cmd) != str(cmd_name)
         ):
             collisions.append(f"cmd={existing_cmd}")
+
+        existing_params = _normalize_params_for_idempotency(existing.get("params"))
+        requested_params = _normalize_params_for_idempotency(params)
+        if existing_params != requested_params:
+            collisions.append("params")
 
         if collisions:
             collision_text = ", ".join(collisions)
@@ -654,31 +686,36 @@ async def publish_zone_command(
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra={"cmd_id": cmd_id},
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": zone_id,
+                    "node_uid": req.node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(zone_id), metric=req.get_command_name()).inc()
 
@@ -823,31 +860,36 @@ async def publish_node_command(
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": req.zone_id,
-                        "node_uid": node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra={"cmd_id": cmd_id},
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": req.zone_id,
+                    "node_uid": node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 
@@ -1007,31 +1049,36 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": req.zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra=log_context,
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": req.zone_id,
+                    "node_uid": req.node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 

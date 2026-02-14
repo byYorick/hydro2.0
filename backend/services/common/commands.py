@@ -7,6 +7,13 @@ import uuid
 from .db import execute
 
 
+def _affected_rows(command_tag: str) -> int:
+    try:
+        return int(str(command_tag).split()[-1])
+    except (TypeError, ValueError, IndexError):
+        return 0
+
+
 async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
     """
     Помечает команду как отправленную (SENT).
@@ -242,7 +249,7 @@ async def mark_command_timeout(cmd_id: str):
     Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACK).
     Не обновляет если команда уже в DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED.
     """
-    await execute(
+    result = await execute(
         """
         UPDATE commands
         SET status='TIMEOUT', failed_at=NOW(), 
@@ -251,6 +258,7 @@ async def mark_command_timeout(cmd_id: str):
         """,
         cmd_id,
     )
+    return _affected_rows(result) > 0
 
 
 async def mark_command_send_failed(cmd_id: str, error_message: str = None):
@@ -260,7 +268,7 @@ async def mark_command_send_failed(cmd_id: str, error_message: str = None):
     Защита от гонок: обновляет только если статус QUEUED.
     Не обновляет если команда уже отправлена (SENT/ACK) или завершена (DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT).
     """
-    await execute(
+    result = await execute(
         """
         UPDATE commands
         SET status='SEND_FAILED', failed_at=NOW(), 
@@ -270,6 +278,7 @@ async def mark_command_send_failed(cmd_id: str, error_message: str = None):
         cmd_id,
         error_message,
     )
+    return _affected_rows(result) > 0
 
 
 async def mark_timeouts(seconds: int = 30):

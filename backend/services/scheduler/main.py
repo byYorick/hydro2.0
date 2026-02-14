@@ -154,6 +154,18 @@ _INTERNAL_ENQUEUE_EXPIRE_GRACE_SEC = max(
         )
     ),
 )
+_INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS = max(
+    1,
+    int(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS", "3")),
+)
+_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_BASE_SEC = max(
+    1.0,
+    float(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_BASE_SEC", "10")),
+)
+_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_MAX_SEC = max(
+    _INTERNAL_ENQUEUE_DISPATCH_BACKOFF_BASE_SEC,
+    float(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_MAX_SEC", "300")),
+)
 _ACTIVE_TASK_RECOVERY_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_ACTIVE_TASK_RECOVERY_SCAN_LIMIT", "1000")))
 
 # Анти-спам для сервисных логов/алертов
@@ -179,6 +191,21 @@ def _diagnostic_allowed(key: str, now: datetime) -> bool:
         _LAST_DIAGNOSTIC_AT[key] = now
         return True
     return False
+
+
+def _safe_non_negative_int(value: Any, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return max(0, default)
+    return max(0, parsed)
+
+
+def _internal_enqueue_dispatch_backoff_sec(attempt: int) -> float:
+    # attempt=1 -> base, attempt=2 -> base*2 ...
+    exponent = max(0, attempt - 1)
+    delay = _INTERNAL_ENQUEUE_DISPATCH_BACKOFF_BASE_SEC * (2 ** exponent)
+    return min(_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_MAX_SEC, delay)
 
 
 async def _emit_scheduler_diagnostic(
@@ -624,7 +651,8 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
         if photoperiod_hours and start_time_str:
             start_t = _parse_time_spec(str(start_time_str))
             if start_t:
-                end_time_dt = datetime.combine(datetime.today(), start_t) + timedelta(hours=float(photoperiod_hours))
+                utc_today = utcnow().date()
+                end_time_dt = datetime.combine(utc_today, start_t) + timedelta(hours=float(photoperiod_hours))
                 schedule_item = {
                     "zone_id": zone_id,
                     "type": "lighting",
@@ -952,11 +980,22 @@ async def _load_pending_internal_enqueues() -> List[Dict[str, Any]]:
     try:
         rows = await fetch(
             """
-            SELECT DISTINCT ON (task_name)
-                task_name, status, details, created_at
-            FROM scheduler_logs
-            WHERE task_name LIKE $1
-            ORDER BY task_name, created_at DESC, id DESC
+            WITH ranked AS (
+                SELECT
+                    task_name,
+                    status,
+                    details,
+                    created_at,
+                    id,
+                    ROW_NUMBER() OVER (PARTITION BY task_name ORDER BY created_at DESC, id DESC) AS rn
+                FROM scheduler_logs
+                WHERE task_name LIKE $1
+            )
+            SELECT task_name, status, details, created_at, id
+            FROM ranked
+            WHERE rn = 1
+              AND LOWER(COALESCE(status, '')) = 'pending'
+            ORDER BY created_at ASC, id ASC
             LIMIT $2
             """,
             f"{_INTERNAL_ENQUEUE_TASK_NAME_PREFIX}%",
@@ -975,8 +1014,6 @@ async def _load_pending_internal_enqueues() -> List[Dict[str, Any]]:
 
     pending: List[Dict[str, Any]] = []
     for row in rows:
-        if str(row.get("status") or "").lower() != "pending":
-            continue
         details = row.get("details")
         if not isinstance(details, dict):
             continue
@@ -1090,6 +1127,48 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
             schedule_key=schedule_key,
         )
         if not dispatched:
+            dispatch_retry_count = _safe_non_negative_int(item.get("dispatch_retry_count"), 0)
+            next_retry_count = dispatch_retry_count + 1
+            if next_retry_count < _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS:
+                backoff_sec = _internal_enqueue_dispatch_backoff_sec(next_retry_count)
+                next_retry_at = now_dt + timedelta(seconds=backoff_sec)
+                retry_item = {
+                    **item,
+                    "dispatch_retry_count": next_retry_count,
+                    "scheduled_for": next_retry_at.isoformat(),
+                    "last_dispatch_error": "dispatch_failed",
+                    "last_dispatch_failed_at": now_dt.isoformat(),
+                }
+                await _emit_scheduler_diagnostic(
+                    reason="internal_enqueue_dispatch_retry_scheduled",
+                    message=f"Scheduler отложил retry internal enqueue после dispatch-fail (enqueue_id={enqueue_id})",
+                    level="warning",
+                    zone_id=zone_id,
+                    details={
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "retry_count": next_retry_count,
+                        "max_attempts": _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                        "backoff_sec": backoff_sec,
+                        "next_retry_at": next_retry_at.isoformat(),
+                    },
+                    alert_code="infra_scheduler_internal_enqueue_dispatch_retry",
+                    error_type="dispatch_retry_scheduled",
+                )
+                await _mark_internal_enqueue_status(task_name, "pending", retry_item)
+                await create_zone_event(
+                    zone_id,
+                    "SELF_TASK_DISPATCH_RETRY_SCHEDULED",
+                    {
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "retry_count": next_retry_count,
+                        "max_attempts": _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                        "next_retry_at": next_retry_at.isoformat(),
+                    },
+                )
+                continue
+
             await _emit_scheduler_diagnostic(
                 reason="internal_enqueue_dispatch_failed",
                 message=f"Scheduler не смог dispatch-ить internal enqueue задачу (enqueue_id={enqueue_id})",
@@ -1099,11 +1178,22 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
                     "enqueue_id": enqueue_id,
                     "task_type": task_type,
                     "scheduled_for": scheduled_for,
+                    "retry_count": next_retry_count,
+                    "max_attempts": _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
                 },
                 alert_code="infra_scheduler_internal_enqueue_dispatch_failed",
                 error_type="dispatch_failed",
             )
-            await _mark_internal_enqueue_status(task_name, "failed", {**item, "error": "dispatch_failed"})
+            await _mark_internal_enqueue_status(
+                task_name,
+                "failed",
+                {
+                    **item,
+                    "error": "dispatch_failed",
+                    "dispatch_retry_count": next_retry_count,
+                    "dispatch_retry_max_attempts": _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                },
+            )
             await create_zone_event(
                 zone_id,
                 "SELF_TASK_DISPATCH_FAILED",
@@ -1111,6 +1201,8 @@ async def process_internal_enqueued_tasks(now_dt: datetime) -> None:
                     "enqueue_id": enqueue_id,
                     "task_type": task_type,
                     "scheduled_for": scheduled_for,
+                    "retry_count": next_retry_count,
+                    "max_attempts": _INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
                 },
             )
             continue
@@ -2282,7 +2374,7 @@ async def check_and_execute_schedules(_unused: Any = None):
     zone_ids = sorted({schedule["zone_id"] for schedule in schedules})
     simulation_clocks = await get_simulation_clocks(zone_ids)
 
-    real_now = datetime.now()
+    real_now = utcnow().replace(tzinfo=None)
     executed: set = set()
     observed_window_keys: set = set()
     zone_now: Dict[int, datetime] = {}

@@ -15,7 +15,7 @@
     "status": {
       "type": "string",
       "description": "Статус выполнения команды",
-      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
+      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"]
     },
     "ts": {
       "type": "integer",

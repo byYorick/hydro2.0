@@ -34,6 +34,7 @@ use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZoneAutomationLogicProfileController;
+use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use Illuminate\Http\Request;
@@ -309,6 +310,7 @@ Route::middleware([
 
     // Commands status (viewer+)
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
+    Route::get('zones/{zone}/automation-state', [ZoneAutomationStateController::class, 'show']);
     Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
     Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);
 

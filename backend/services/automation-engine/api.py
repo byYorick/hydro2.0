@@ -49,6 +49,8 @@ async def trace_middleware(request: Request, call_next):
 _command_bus: Optional[CommandBus] = None
 _gh_uid: str = ""
 _zone_service: Optional[Any] = None
+_command_bus_loop_id: Optional[int] = None
+_zone_service_loop_id: Optional[int] = None
 _scheduler_tasks: Dict[str, Dict[str, Any]] = {}
 _scheduler_tasks_lock = asyncio.Lock()
 _SCHEDULER_TASK_TTL_SECONDS = max(60, int(os.getenv("SCHEDULER_TASK_TTL_SECONDS", "3600")))
@@ -78,8 +80,54 @@ _command_effect_confirmed_totals: Dict[str, int] = {}
 ERR_TASK_EXPIRED = "task_expired"
 ERR_TASK_DUE_DEADLINE_EXCEEDED = "task_due_deadline_exceeded"
 ERR_COMMAND_BUS_UNAVAILABLE = "command_bus_unavailable"
+ERR_COMMAND_BUS_LOOP_MISMATCH = "command_bus_loop_mismatch"
+ERR_ZONE_SERVICE_LOOP_MISMATCH = "zone_service_loop_mismatch"
 ERR_TASK_EXECUTION_FAILED = "task_execution_failed"
 ERR_EXECUTION_EXCEPTION = "execution_exception"
+
+AUTOMATION_STATE_IDLE = "IDLE"
+AUTOMATION_STATE_TANK_FILLING = "TANK_FILLING"
+AUTOMATION_STATE_TANK_RECIRC = "TANK_RECIRC"
+AUTOMATION_STATE_READY = "READY"
+AUTOMATION_STATE_IRRIGATING = "IRRIGATING"
+AUTOMATION_STATE_IRRIG_RECIRC = "IRRIG_RECIRC"
+
+AUTOMATION_STATE_LABELS: Dict[str, str] = {
+    AUTOMATION_STATE_IDLE: "Система в ожидании",
+    AUTOMATION_STATE_TANK_FILLING: "Набор бака с раствором",
+    AUTOMATION_STATE_TANK_RECIRC: "Рециркуляция бака",
+    AUTOMATION_STATE_READY: "Раствор готов к поливу",
+    AUTOMATION_STATE_IRRIGATING: "Полив",
+    AUTOMATION_STATE_IRRIG_RECIRC: "Рециркуляция после полива",
+}
+
+AUTOMATION_STATE_NEXT: Dict[str, Optional[str]] = {
+    AUTOMATION_STATE_IDLE: AUTOMATION_STATE_TANK_FILLING,
+    AUTOMATION_STATE_TANK_FILLING: AUTOMATION_STATE_TANK_RECIRC,
+    AUTOMATION_STATE_TANK_RECIRC: AUTOMATION_STATE_READY,
+    AUTOMATION_STATE_READY: AUTOMATION_STATE_IRRIGATING,
+    AUTOMATION_STATE_IRRIGATING: AUTOMATION_STATE_IRRIG_RECIRC,
+    AUTOMATION_STATE_IRRIG_RECIRC: AUTOMATION_STATE_IDLE,
+}
+
+AUTOMATION_TIMELINE_EVENT_LABELS: Dict[str, str] = {
+    "SCHEDULE_TASK_ACCEPTED": "Scheduler: задача принята",
+    "SCHEDULE_TASK_COMPLETED": "Scheduler: задача завершена",
+    "SCHEDULE_TASK_FAILED": "Scheduler: задача с ошибкой",
+    "TASK_RECEIVED": "Automation-engine: задача получена",
+    "TASK_STARTED": "Automation-engine: выполнение начато",
+    "DECISION_MADE": "Automation-engine: принято решение",
+    "COMMAND_DISPATCHED": "Отправлена команда узлу",
+    "COMMAND_FAILED": "Ошибка отправки команды",
+    "TASK_FINISHED": "Automation-engine: выполнение завершено",
+    "CLEAN_FILL_COMPLETED": "Бак чистой воды заполнен",
+    "SOLUTION_FILL_COMPLETED": "Бак рабочего раствора заполнен",
+    "CLEAN_FILL_RETRY_STARTED": "Запущен повторный цикл clean-fill",
+    "PREPARE_TARGETS_REACHED": "Целевые pH/EC достигнуты",
+    "TWO_TANK_STARTUP_INITIATED": "Запущен старт 2-баковой схемы",
+    "SCHEDULE_TASK_EXECUTION_STARTED": "Старт исполнения scheduler-task",
+    "SCHEDULE_TASK_EXECUTION_FINISHED": "Финиш исполнения scheduler-task",
+}
 
 # Test hooks для детерминированных ошибок (только в test mode)
 _test_mode = os.getenv("AE_TEST_MODE", "0") == "1"
@@ -87,11 +135,12 @@ _test_hooks: Dict[str, Dict[str, Any]] = {}  # zone_id -> {controller: error_typ
 _zone_states_override: Dict[int, Dict[str, Any]] = {}  # zone_id -> {error_streak: int, next_allowed_run_at: datetime}
 
 
-def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str):
+def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str, loop_id: Optional[int] = None):
     """Установить CommandBus для использования в endpoints."""
-    global _command_bus, _gh_uid
+    global _command_bus, _gh_uid, _command_bus_loop_id
     _command_bus = command_bus
     _gh_uid = gh_uid
+    _command_bus_loop_id = loop_id
 
 
 def _update_command_effect_confirm_rate(task_type: str, result: Dict[str, Any]) -> None:
@@ -127,10 +176,21 @@ def _update_command_effect_confirm_rate(task_type: str, result: Dict[str, Any]) 
     COMMAND_EFFECT_CONFIRM_RATE.labels(task_type=normalized_task_type).set(confirmed / max(total, 1))
 
 
-def set_zone_service(zone_service: Any) -> None:
+def set_zone_service(zone_service: Any, loop_id: Optional[int] = None) -> None:
     """Установить ZoneAutomationService для выполнения scheduler-task diagnostics."""
-    global _zone_service
+    global _zone_service, _zone_service_loop_id
     _zone_service = zone_service
+    _zone_service_loop_id = loop_id
+
+
+def _is_loop_affinity_mismatch(assigned_loop_id: Optional[int]) -> bool:
+    if assigned_loop_id is None:
+        return False
+    try:
+        current_loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        return False
+    return assigned_loop_id != current_loop_id
 
 
 async def _validate_scheduler_zone(zone_id: int) -> None:
@@ -391,6 +451,606 @@ def _normalize_cleanup_timestamp(raw_value: Any, fallback: datetime) -> datetime
     if parsed.tzinfo is not None:
         return parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
+
+
+def _to_optional_int(raw_value: Any) -> Optional[int]:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return value
+
+
+def _to_optional_float(raw_value: Any) -> Optional[float]:
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    if value != value:  # NaN
+        return None
+    return value
+
+
+def _coerce_datetime(raw_value: Any) -> Optional[datetime]:
+    if isinstance(raw_value, datetime):
+        if raw_value.tzinfo is not None:
+            return raw_value.astimezone(timezone.utc).replace(tzinfo=None)
+        return raw_value
+
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip()
+        if normalized == "":
+            return None
+        if normalized.endswith("Z"):
+            normalized = f"{normalized[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
+
+    return None
+
+
+def _extract_workflow(payload: Dict[str, Any]) -> str:
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    raw_workflow = payload.get("workflow") or payload.get("diagnostics_workflow") or execution.get("workflow") or ""
+    return str(raw_workflow).strip().lower()
+
+
+def _extract_topology(payload: Dict[str, Any]) -> str:
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    raw_topology = payload.get("topology") or execution.get("topology") or ""
+    return str(raw_topology).strip().lower()
+
+
+def _is_task_active(task: Dict[str, Any]) -> bool:
+    status = str(task.get("status") or "").strip().lower()
+    return status in {"accepted", "running"}
+
+
+def _task_sort_key(task: Dict[str, Any]) -> Tuple[int, datetime]:
+    active_rank = 1 if _is_task_active(task) else 0
+    timestamp = _coerce_datetime(task.get("updated_at")) or _coerce_datetime(task.get("created_at")) or datetime.utcnow()
+    return active_rank, timestamp
+
+
+def _pick_preferred_zone_task(tasks: list[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not tasks:
+        return None
+    ordered = sorted(tasks, key=_task_sort_key, reverse=True)
+    return dict(ordered[0])
+
+
+def _sanitize_scheduler_task_snapshot(raw_task: Dict[str, Any], fallback_task_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    task_id_raw = raw_task.get("task_id") or fallback_task_id
+    task_id = str(task_id_raw or "").strip()
+    zone_id = _to_optional_int(raw_task.get("zone_id"))
+    task_type = str(raw_task.get("task_type") or "").strip().lower()
+    status = str(raw_task.get("status") or "").strip().lower()
+    payload = raw_task.get("payload") if isinstance(raw_task.get("payload"), dict) else {}
+    result = raw_task.get("result") if isinstance(raw_task.get("result"), dict) else {}
+
+    if not task_id or zone_id is None or not task_type:
+        return None
+
+    return {
+        "task_id": task_id,
+        "zone_id": zone_id,
+        "task_type": task_type,
+        "status": status or "unknown",
+        "payload": payload,
+        "result": result,
+        "created_at": raw_task.get("created_at"),
+        "updated_at": raw_task.get("updated_at"),
+        "scheduled_for": raw_task.get("scheduled_for"),
+        "due_at": raw_task.get("due_at"),
+        "expires_at": raw_task.get("expires_at"),
+        "correlation_id": raw_task.get("correlation_id"),
+        "error": raw_task.get("error"),
+        "error_code": raw_task.get("error_code"),
+    }
+
+
+async def _load_latest_zone_task_from_db(zone_id: int) -> Optional[Dict[str, Any]]:
+    try:
+        rows = await fetch(
+            """
+            SELECT task_name, details, created_at
+            FROM scheduler_logs
+            WHERE task_name LIKE 'ae_scheduler_task_st-%'
+              AND details IS NOT NULL
+              AND jsonb_typeof(details) = 'object'
+              AND details ? 'zone_id'
+              AND (details->>'zone_id') ~ '^[0-9]+$'
+              AND (details->>'zone_id')::int = $1
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+            """,
+            zone_id,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to load latest zone scheduler task from DB: zone_id=%s",
+            zone_id,
+            exc_info=True,
+        )
+        return None
+
+    candidates: list[Dict[str, Any]] = []
+    for row in rows:
+        details = row.get("details") if isinstance(row.get("details"), dict) else None
+        if not isinstance(details, dict):
+            continue
+        fallback_task_id = _task_id_from_log_name(row.get("task_name"))
+        if not details.get("created_at") and row.get("created_at") is not None:
+            details = dict(details)
+            details["created_at"] = row["created_at"].isoformat()
+        task = _sanitize_scheduler_task_snapshot(details, fallback_task_id=fallback_task_id)
+        if task is not None:
+            candidates.append(task)
+
+    return _pick_preferred_zone_task(candidates)
+
+
+async def _load_latest_zone_task(zone_id: int) -> Optional[Dict[str, Any]]:
+    now = datetime.utcnow()
+    in_memory_candidates: list[Dict[str, Any]] = []
+    async with _scheduler_tasks_lock:
+        await _cleanup_scheduler_tasks_locked(now)
+        for raw_task in _scheduler_tasks.values():
+            task = _sanitize_scheduler_task_snapshot(raw_task)
+            if task is None:
+                continue
+            if int(task.get("zone_id") or 0) != int(zone_id):
+                continue
+            in_memory_candidates.append(task)
+
+    preferred = _pick_preferred_zone_task(in_memory_candidates)
+    if preferred is not None:
+        return preferred
+
+    from_db = await _load_latest_zone_task_from_db(zone_id)
+    if from_db is None:
+        return None
+
+    async with _scheduler_tasks_lock:
+        _scheduler_tasks[str(from_db["task_id"])] = dict(from_db)
+    return from_db
+
+
+def _system_config_from_task_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    startup = execution.get("startup") if isinstance(execution.get("startup"), dict) else {}
+
+    system_type = str(execution.get("system_type") or "").strip().lower() or None
+    tanks_count = _to_optional_int(execution.get("tanks_count"))
+    clean_capacity = _to_optional_float(execution.get("clean_tank_fill_l"))
+    nutrient_capacity = _to_optional_float(execution.get("nutrient_tank_target_l"))
+    topology = _extract_topology(payload)
+
+    if tanks_count not in {2, 3}:
+        if "three_tank" in topology:
+            tanks_count = 3
+        elif "two_tank" in topology:
+            tanks_count = 2
+        elif system_type == "drip":
+            tanks_count = 2
+        else:
+            tanks_count = 2
+
+    if system_type is None:
+        if "nft" in topology:
+            system_type = "nft"
+        elif "substrate" in topology:
+            system_type = "substrate_trays"
+        else:
+            system_type = "drip"
+
+    if clean_capacity is None:
+        clean_capacity = _to_optional_float(startup.get("clean_tank_fill_l"))
+    if nutrient_capacity is None:
+        nutrient_capacity = _to_optional_float(startup.get("nutrient_tank_target_l"))
+
+    return {
+        "tanks_count": tanks_count,
+        "system_type": system_type,
+        "clean_tank_capacity_l": clean_capacity,
+        "nutrient_tank_capacity_l": nutrient_capacity,
+    }
+
+
+async def _load_zone_system_config(zone_id: int, task_payload: Dict[str, Any]) -> Dict[str, Any]:
+    config = _system_config_from_task_payload(task_payload)
+
+    profile_subsystems: Dict[str, Any] = {}
+    try:
+        rows = await fetch(
+            """
+            SELECT subsystems
+            FROM zone_automation_logic_profiles
+            WHERE zone_id = $1 AND is_active = true
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        if rows:
+            subsystems = rows[0].get("subsystems")
+            if isinstance(subsystems, dict):
+                profile_subsystems = subsystems
+    except Exception:
+        logger.debug("zone_automation_logic_profiles unavailable for zone %s", zone_id, exc_info=True)
+
+    if profile_subsystems:
+        irrigation = profile_subsystems.get("irrigation") if isinstance(profile_subsystems.get("irrigation"), dict) else {}
+        execution = irrigation.get("execution") if isinstance(irrigation.get("execution"), dict) else {}
+        if config.get("system_type") in {None, ""}:
+            profile_system_type = str(execution.get("system_type") or "").strip().lower()
+            if profile_system_type:
+                config["system_type"] = profile_system_type
+        if config.get("tanks_count") not in {2, 3}:
+            profile_tanks = _to_optional_int(execution.get("tanks_count"))
+            if profile_tanks in {2, 3}:
+                config["tanks_count"] = profile_tanks
+        if config.get("clean_tank_capacity_l") is None:
+            config["clean_tank_capacity_l"] = _to_optional_float(execution.get("clean_tank_fill_l"))
+        if config.get("nutrient_tank_capacity_l") is None:
+            config["nutrient_tank_capacity_l"] = _to_optional_float(execution.get("nutrient_tank_target_l"))
+
+    try:
+        rows = await fetch(
+            """
+            SELECT settings
+            FROM grow_cycles
+            WHERE zone_id = $1
+              AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        if rows:
+            settings = rows[0].get("settings")
+            if isinstance(settings, dict):
+                irrigation = settings.get("irrigation") if isinstance(settings.get("irrigation"), dict) else {}
+                if config.get("system_type") in {None, ""}:
+                    cycle_system_type = str(irrigation.get("system_type") or "").strip().lower()
+                    if cycle_system_type:
+                        config["system_type"] = cycle_system_type
+                if config.get("clean_tank_capacity_l") is None:
+                    config["clean_tank_capacity_l"] = _to_optional_float(irrigation.get("clean_tank_fill_l"))
+                if config.get("nutrient_tank_capacity_l") is None:
+                    config["nutrient_tank_capacity_l"] = _to_optional_float(irrigation.get("nutrient_tank_target_l"))
+    except Exception:
+        logger.debug("grow_cycles.settings unavailable for zone %s", zone_id, exc_info=True)
+
+    if config.get("tanks_count") not in {2, 3}:
+        config["tanks_count"] = 2
+    if not config.get("system_type"):
+        config["system_type"] = "drip"
+
+    return config
+
+
+def _normalize_level_percent(raw_value: Any) -> Optional[float]:
+    value = _to_optional_float(raw_value)
+    if value is None:
+        return None
+    if 0.0 <= value <= 1.0:
+        return max(0.0, min(100.0, value * 100.0))
+    return max(0.0, min(100.0, value))
+
+
+async def _load_zone_current_levels(zone_id: int) -> Dict[str, Any]:
+    levels = {
+        "clean_tank_level_percent": 0.0,
+        "nutrient_tank_level_percent": 0.0,
+        "buffer_tank_level_percent": None,
+        "ph": None,
+        "ec": None,
+    }
+
+    try:
+        rows = await fetch(
+            """
+            SELECT s.type, s.label, tl.last_value, tl.last_ts
+            FROM sensors s
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            WHERE s.zone_id = $1
+              AND s.is_active = true
+            ORDER BY tl.last_ts DESC NULLS LAST, s.id DESC
+            """,
+            zone_id,
+        )
+    except Exception:
+        logger.warning("Failed to load telemetry levels for automation-state: zone_id=%s", zone_id, exc_info=True)
+        return levels
+
+    clean_level: Optional[float] = None
+    nutrient_level: Optional[float] = None
+    buffer_level: Optional[float] = None
+
+    for row in rows:
+        sensor_type = str(row.get("type") or "").strip().upper()
+        label = str(row.get("label") or "").strip().lower()
+        value = row.get("last_value")
+
+        if sensor_type == "PH" and levels["ph"] is None:
+            levels["ph"] = _to_optional_float(value)
+            continue
+        if sensor_type == "EC" and levels["ec"] is None:
+            levels["ec"] = _to_optional_float(value)
+            continue
+        if sensor_type != "WATER_LEVEL":
+            continue
+
+        normalized_level = _normalize_level_percent(value)
+        if normalized_level is None:
+            continue
+
+        if any(token in label for token in ("clean", "чист", "source")):
+            clean_level = max(clean_level or 0.0, normalized_level)
+            continue
+        if any(token in label for token in ("drain", "buffer", "слив")):
+            buffer_level = max(buffer_level or 0.0, normalized_level)
+            continue
+        if any(token in label for token in ("solution", "nutrient", "npk", "mix", "рабоч")):
+            nutrient_level = max(nutrient_level or 0.0, normalized_level)
+            continue
+
+        if nutrient_level is None:
+            nutrient_level = normalized_level
+
+    if clean_level is not None:
+        levels["clean_tank_level_percent"] = round(clean_level, 2)
+    if nutrient_level is not None:
+        levels["nutrient_tank_level_percent"] = round(nutrient_level, 2)
+    if buffer_level is not None:
+        levels["buffer_tank_level_percent"] = round(buffer_level, 2)
+
+    return levels
+
+
+def _derive_automation_state(task: Optional[Dict[str, Any]]) -> str:
+    if not task:
+        return AUTOMATION_STATE_IDLE
+
+    status = str(task.get("status") or "").strip().lower()
+    task_type = str(task.get("task_type") or "").strip().lower()
+    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
+
+    workflow = _extract_workflow(payload)
+    mode = str(result.get("mode") or "").strip().lower()
+    reason_code = str(result.get("reason_code") or "").strip().lower()
+
+    if status in {"accepted", "running"}:
+        if task_type == "irrigation":
+            if "recovery" in workflow or "recovery" in mode:
+                return AUTOMATION_STATE_IRRIG_RECIRC
+            return AUTOMATION_STATE_IRRIGATING
+        if task_type == "diagnostics":
+            if workflow in {"prepare_recirculation", "prepare_recirculation_check"}:
+                return AUTOMATION_STATE_TANK_RECIRC
+            if workflow in {"irrigation_recovery", "irrigation_recovery_check"}:
+                return AUTOMATION_STATE_IRRIG_RECIRC
+            return AUTOMATION_STATE_TANK_FILLING
+
+    if status == "completed":
+        if task_type == "diagnostics":
+            if mode in {"two_tank_startup_completed", "two_tank_prepare_recirculation_completed"}:
+                return AUTOMATION_STATE_READY
+            if reason_code in {"prepare_targets_reached", "solution_fill_completed"}:
+                return AUTOMATION_STATE_READY
+        if task_type == "irrigation":
+            return AUTOMATION_STATE_READY
+
+    return AUTOMATION_STATE_IDLE
+
+
+def _resolve_state_started_at(task: Optional[Dict[str, Any]], state: str) -> Optional[datetime]:
+    if not task:
+        return None
+    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
+
+    candidate_keys = []
+    if state == AUTOMATION_STATE_TANK_FILLING:
+        candidate_keys = ["clean_fill_started_at", "solution_fill_started_at", "started_at"]
+    elif state == AUTOMATION_STATE_TANK_RECIRC:
+        candidate_keys = ["prepare_recirculation_started_at", "started_at"]
+    elif state == AUTOMATION_STATE_IRRIG_RECIRC:
+        candidate_keys = ["irrigation_recovery_started_at", "started_at"]
+    elif state == AUTOMATION_STATE_IRRIGATING:
+        candidate_keys = ["started_at"]
+
+    for key in candidate_keys:
+        parsed = _coerce_datetime(payload.get(key))
+        if parsed is not None:
+            return parsed
+        parsed = _coerce_datetime(result.get(key))
+        if parsed is not None:
+            return parsed
+
+    return _coerce_datetime(task.get("created_at")) or _coerce_datetime(task.get("updated_at"))
+
+
+def _estimate_progress_percent(task: Optional[Dict[str, Any]], state: str) -> int:
+    if state == AUTOMATION_STATE_IDLE:
+        return 0
+    if state == AUTOMATION_STATE_READY:
+        return 100
+
+    payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
+    result = task.get("result") if isinstance(task, dict) and isinstance(task.get("result"), dict) else {}
+    explicit_progress = _to_optional_int(result.get("progress_percent"))
+    if explicit_progress is None:
+        explicit_progress = _to_optional_int(payload.get("progress_percent"))
+    if explicit_progress is not None:
+        return max(0, min(100, explicit_progress))
+
+    workflow = _extract_workflow(payload)
+    if state == AUTOMATION_STATE_TANK_FILLING:
+        if workflow == "clean_fill_check":
+            return 30
+        if workflow == "solution_fill_check":
+            return 60
+        return 20
+    if state == AUTOMATION_STATE_TANK_RECIRC:
+        return 80
+    if state == AUTOMATION_STATE_IRRIGATING:
+        return 55
+    if state == AUTOMATION_STATE_IRRIG_RECIRC:
+        return 75
+    return 0
+
+
+def _estimate_completion_seconds(task: Optional[Dict[str, Any]]) -> Optional[int]:
+    if not task:
+        return None
+
+    now = datetime.utcnow()
+    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
+    result = task.get("result") if isinstance(task.get("result"), dict) else {}
+
+    candidates = [
+        payload.get("clean_fill_timeout_at"),
+        payload.get("solution_fill_timeout_at"),
+        payload.get("prepare_recirculation_timeout_at"),
+        payload.get("irrigation_recovery_timeout_at"),
+        result.get("next_due_at"),
+    ]
+    for candidate in candidates:
+        parsed = _coerce_datetime(candidate)
+        if parsed is None:
+            continue
+        delta = int((parsed - now).total_seconds())
+        if delta > 0:
+            return delta
+
+    due_at = _coerce_datetime(task.get("due_at"))
+    if due_at is not None:
+        delta = int((due_at - now).total_seconds())
+        if delta > 0:
+            return delta
+    return None
+
+
+def _derive_active_processes(task: Optional[Dict[str, Any]], state: str) -> Dict[str, bool]:
+    payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
+    workflow = _extract_workflow(payload)
+
+    pump_in = state in {AUTOMATION_STATE_TANK_FILLING, AUTOMATION_STATE_IRRIGATING}
+    circulation = state in {AUTOMATION_STATE_TANK_RECIRC, AUTOMATION_STATE_IRRIG_RECIRC}
+
+    if workflow in {"prepare_recirculation", "prepare_recirculation_check", "irrigation_recovery", "irrigation_recovery_check"}:
+        circulation = True
+        pump_in = False
+    if workflow in {"startup", "clean_fill_check", "solution_fill_check"}:
+        pump_in = True
+
+    ph_correction = state in {
+        AUTOMATION_STATE_TANK_FILLING,
+        AUTOMATION_STATE_TANK_RECIRC,
+        AUTOMATION_STATE_IRRIG_RECIRC,
+    }
+    ec_correction = state in {
+        AUTOMATION_STATE_TANK_FILLING,
+        AUTOMATION_STATE_TANK_RECIRC,
+    }
+
+    return {
+        "pump_in": pump_in,
+        "circulation_pump": circulation,
+        "ph_correction": ph_correction,
+        "ec_correction": ec_correction,
+    }
+
+
+def _extract_timeline_reason(payload: Dict[str, Any]) -> Optional[str]:
+    reason_code = payload.get("reason_code")
+    if isinstance(reason_code, str) and reason_code.strip():
+        return reason_code.strip()
+    result = payload.get("result")
+    if isinstance(result, dict):
+        nested_reason_code = result.get("reason_code")
+        if isinstance(nested_reason_code, str) and nested_reason_code.strip():
+            return nested_reason_code.strip()
+    return None
+
+
+def _build_timeline_label(event_type: str, reason_code: Optional[str]) -> str:
+    base = AUTOMATION_TIMELINE_EVENT_LABELS.get(event_type, event_type)
+    if isinstance(reason_code, str) and reason_code:
+        return f"{base} ({reason_code})"
+    return base
+
+
+async def _load_automation_timeline(zone_id: int, limit: int = 24) -> list[Dict[str, Any]]:
+    event_types = [
+        "SCHEDULE_TASK_ACCEPTED",
+        "SCHEDULE_TASK_COMPLETED",
+        "SCHEDULE_TASK_FAILED",
+        "SCHEDULE_TASK_EXECUTION_STARTED",
+        "SCHEDULE_TASK_EXECUTION_FINISHED",
+        "TASK_RECEIVED",
+        "TASK_STARTED",
+        "DECISION_MADE",
+        "COMMAND_DISPATCHED",
+        "COMMAND_FAILED",
+        "TASK_FINISHED",
+        "TWO_TANK_STARTUP_INITIATED",
+        "CLEAN_FILL_COMPLETED",
+        "SOLUTION_FILL_COMPLETED",
+        "CLEAN_FILL_RETRY_STARTED",
+        "PREPARE_TARGETS_REACHED",
+    ]
+
+    try:
+        rows = await fetch(
+            """
+            SELECT id, type, payload_json, created_at
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = ANY($2::text[])
+            ORDER BY created_at DESC, id DESC
+            LIMIT $3
+            """,
+            zone_id,
+            event_types,
+            max(1, min(limit, 50)),
+        )
+    except Exception:
+        logger.debug("Failed to load automation timeline for zone_id=%s", zone_id, exc_info=True)
+        return []
+
+    timeline: list[Dict[str, Any]] = []
+    for row in reversed(rows):
+        payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+        event_type = str(payload.get("event_type") or row.get("type") or "").strip()
+        if not event_type:
+            continue
+        reason_code = _extract_timeline_reason(payload)
+        created_at = row.get("created_at")
+        timestamp = created_at.isoformat() if isinstance(created_at, datetime) else datetime.utcnow().isoformat()
+        timeline.append(
+            {
+                "event": event_type,
+                "label": _build_timeline_label(event_type, reason_code),
+                "timestamp": timestamp,
+                "active": False,
+            }
+        )
+
+    if timeline:
+        timeline[-1]["active"] = True
+    return timeline
 
 
 async def _cleanup_scheduler_tasks_locked(now: datetime) -> None:
@@ -794,11 +1454,42 @@ async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace
             error_code=str(failure_result["error_code"]),
         )
         return
+    if _is_loop_affinity_mismatch(_command_bus_loop_id):
+        failure_result = _build_execution_terminal_result(
+            error_code=ERR_COMMAND_BUS_LOOP_MISMATCH,
+            reason="CommandBus создан в другом event loop, выполнение задачи отклонено",
+            mode="dispatch_unavailable",
+        )
+        await _update_scheduler_task(
+            task_id=task_id,
+            status="failed",
+            result=failure_result,
+            error=str(failure_result["error"]),
+            error_code=str(failure_result["error_code"]),
+        )
+        return
 
     await _update_scheduler_task(task_id=task_id, status="running")
 
     try:
-        executor = SchedulerTaskExecutor(command_bus=command_bus, zone_service=_zone_service)
+        zone_service = _zone_service
+        if _is_loop_affinity_mismatch(_zone_service_loop_id):
+            if req.task_type == "diagnostics":
+                failure_result = _build_execution_terminal_result(
+                    error_code=ERR_ZONE_SERVICE_LOOP_MISMATCH,
+                    reason="ZoneAutomationService создан в другом event loop, diagnostics отклонен",
+                    mode="execution_unavailable",
+                )
+                await _update_scheduler_task(
+                    task_id=task_id,
+                    status="failed",
+                    result=failure_result,
+                    error=str(failure_result["error"]),
+                    error_code=str(failure_result["error_code"]),
+                )
+                return
+            zone_service = None
+        executor = SchedulerTaskExecutor(command_bus=command_bus, zone_service=zone_service)
         result = await executor.execute(
             zone_id=req.zone_id,
             task_type=req.task_type,
@@ -1095,18 +1786,30 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
                 },
             )
         else:
-            await create_zone_event(
-                req.zone_id,
-                "SCHEDULE_TASK_ACCEPTED",
-                {
-                    "task_id": task["task_id"],
-                    "task_type": req.task_type,
-                    "scheduled_for": req.scheduled_for,
-                    "due_at": req.due_at,
-                    "expires_at": req.expires_at,
-                    "correlation_id": req.correlation_id,
-                },
-            )
+            try:
+                await create_zone_event(
+                    req.zone_id,
+                    "SCHEDULE_TASK_ACCEPTED",
+                    {
+                        "task_id": task["task_id"],
+                        "task_type": req.task_type,
+                        "scheduled_for": req.scheduled_for,
+                        "due_at": req.due_at,
+                        "expires_at": req.expires_at,
+                        "correlation_id": req.correlation_id,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to create SCHEDULE_TASK_ACCEPTED event, task will still be dispatched",
+                    extra={
+                        "task_id": task["task_id"],
+                        "zone_id": req.zone_id,
+                        "task_type": req.task_type,
+                        "correlation_id": req.correlation_id,
+                    },
+                    exc_info=True,
+                )
 
             trace_id = get_trace_id()
             asyncio.create_task(_execute_scheduler_task(task["task_id"], req, trace_id))
@@ -1141,6 +1844,51 @@ async def scheduler_task_status(task_id: str):
     return {"status": "ok", "data": payload}
 
 
+async def _build_zone_automation_state_payload(zone_id: int) -> Dict[str, Any]:
+    task = await _load_latest_zone_task(zone_id)
+    payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
+    state = _derive_automation_state(task)
+    state_started_at = _resolve_state_started_at(task, state)
+    now = datetime.utcnow()
+    elapsed_sec = int((now - state_started_at).total_seconds()) if state_started_at is not None else 0
+    progress_percent = _estimate_progress_percent(task, state)
+
+    system_config = await _load_zone_system_config(zone_id, payload)
+    current_levels = await _load_zone_current_levels(zone_id)
+    active_processes = _derive_active_processes(task, state)
+    timeline = await _load_automation_timeline(zone_id)
+    estimated_completion_sec = _estimate_completion_seconds(task)
+
+    return {
+        "zone_id": zone_id,
+        "state": state,
+        "state_label": AUTOMATION_STATE_LABELS.get(state, AUTOMATION_STATE_LABELS[AUTOMATION_STATE_IDLE]),
+        "state_details": {
+            "started_at": state_started_at.isoformat() if state_started_at is not None else None,
+            "elapsed_sec": elapsed_sec,
+            "progress_percent": progress_percent,
+        },
+        "system_config": {
+            "tanks_count": int(system_config.get("tanks_count") or 2),
+            "system_type": str(system_config.get("system_type") or "drip"),
+            "clean_tank_capacity_l": system_config.get("clean_tank_capacity_l"),
+            "nutrient_tank_capacity_l": system_config.get("nutrient_tank_capacity_l"),
+        },
+        "current_levels": current_levels,
+        "active_processes": active_processes,
+        "timeline": timeline,
+        "next_state": AUTOMATION_STATE_NEXT.get(state),
+        "estimated_completion_sec": estimated_completion_sec,
+    }
+
+
+@app.get("/zones/{zone_id}/automation-state")
+async def zone_automation_state(zone_id: int):
+    await _validate_scheduler_zone(zone_id)
+    payload = await _build_zone_automation_state_payload(zone_id)
+    return payload
+
+
 @app.on_event("startup")
 async def run_scheduler_task_recovery_on_startup() -> None:
     summary = await _recover_inflight_scheduler_tasks()
@@ -1155,6 +1903,8 @@ async def run_scheduler_task_recovery_on_startup() -> None:
 def _is_command_bus_ready() -> Tuple[bool, str]:
     if _command_bus is None:
         return False, "command_bus_unavailable"
+    if _is_loop_affinity_mismatch(_command_bus_loop_id):
+        return False, ERR_COMMAND_BUS_LOOP_MISMATCH
     return True, "ok"
 
 

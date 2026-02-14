@@ -206,6 +206,11 @@ class GrowCycleControllerTest extends TestCase
 
         $errors = $response->json('readiness_errors', []);
         $this->assertContains('Нет привязанных нод в зоне', $errors);
+        $this->assertContains('Основная помпа не привязана к каналу', $errors);
+        $this->assertContains('Дренаж не привязан к каналу', $errors);
+        $this->assertNotContains('Нет онлайн нод в зоне', $errors);
+        $this->assertNotContains('Zone has no bound nodes', $errors);
+        $this->assertNotContains('Required bindings are missing: main_pump, drain', $errors);
     }
 
     #[Test]

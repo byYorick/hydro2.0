@@ -58,17 +58,11 @@ Content-Type: application/json
   "zone_id": 1,
   "node_uid": "nd-pump-1",
   "channel": "pump_in",
-  "type": "FORCE_IRRIGATION",
+  "cmd": "run_pump",
   "params": {
-    "duration_sec": 5,
-    "volume_ml": 1000
+    "duration_ms": 5000
   },
-  "context": {
-    "source": "automation-engine",
-    "cycle_id": 123,
-    "phase": "VEG",
-    "reason": "ph_correction"
-  }
+  "source": "automation-engine"
 }
 ```
 
@@ -77,30 +71,34 @@ Content-Type: application/json
 - `zone_id` (integer, optional) — ID зоны (для контекста)
 - `node_uid` (string, required) — UID ноды
 - `channel` (string, required) — канал ноды
-- `type` (string, required) — тип команды (см. MQTT_SPEC_FULL.md)
+- `cmd` (string, required) — команда для ноды
 - `params` (object, required) — параметры команды
-- `context` (object, optional) — контекст для логирования
+- `source` (string, optional) — источник команды (`automation`, `scheduler`, `api`)
 
 **Response (200 OK):**
 ```json
 {
-  "status": "published",
-  "command_id": "cmd-123456",
-  "topic": "hydro/gh-1/zone-1/nd-pump-1/pump_in/command",
-  "timestamp": "2026-02-14T10:30:00Z"
+  "status": "ok",
+  "data": {
+    "command_id": "cmd-123456",
+    "zone_id": 1,
+    "node_uid": "nd-pump-1",
+    "channel": "pump_in"
+  }
 }
 ```
 
 **Response (400 Bad Request):**
 ```json
 {
-  "status": "error",
-  "error": "validation_failed",
-  "message": "Invalid command type: UNKNOWN_COMMAND",
-  "details": {
-    "field": "type",
-    "allowed_values": ["FORCE_IRRIGATION", "FORCE_PUMP_ON", ...]
-  }
+  "detail": "Field 'cmd' is required; legacy field 'type' is not supported"
+}
+```
+
+**Response (401 Unauthorized):**
+```json
+{
+  "detail": "Unauthorized: invalid or missing token"
 }
 ```
 
@@ -132,9 +130,9 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "type": "FORCE_IRRIGATION",
+  "cmd": "run_pump",
   "params": {
-    "duration_sec": 5
+    "duration_ms": 5000
   },
   "greenhouse_uid": "gh-1",
   "node_uid": "nd-pump-1",
@@ -143,7 +141,7 @@ Content-Type: application/json
 ```
 
 **Поля:**
-- `type` (string, required) — тип команды
+- `cmd` (string, required) — команда
 - `params` (object, required) — параметры команды
 - `greenhouse_uid` (string, required) — UID теплицы
 - `node_uid` (string, required) — UID ноды
@@ -156,8 +154,8 @@ Content-Type: application/json
 curl -X POST http://localhost:9300/zones/1/commands \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "FORCE_IRRIGATION",
-    "params": {"duration_sec": 5},
+    "cmd": "run_pump",
+    "params": {"duration_ms": 5000},
     "greenhouse_uid": "gh-1",
     "node_uid": "nd-pump-1",
     "channel": "pump_in"
@@ -183,7 +181,7 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "type": "SET_CONFIG",
+  "cmd": "set_config",
   "params": {
     "key": "ph_calibration_offset",
     "value": 0.15
@@ -194,7 +192,7 @@ Content-Type: application/json
 ```
 
 **Поля:**
-- `type` (string, required) — тип команды
+- `cmd` (string, required) — команда
 - `params` (object, required) — параметры команды
 - `greenhouse_uid` (string, required) — UID теплицы
 - `channel` (string, required) — канал ноды
@@ -206,7 +204,7 @@ Content-Type: application/json
 curl -X POST http://localhost:9300/nodes/nd-ph-1/commands \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "SET_CONFIG",
+    "cmd": "set_config",
     "params": {"key": "calibration_offset", "value": 0.15},
     "greenhouse_uid": "gh-1",
     "channel": "ph_main"
@@ -311,7 +309,8 @@ curl http://localhost:9300/health
 History-logger выполняет следующую валидацию перед публикацией команды:
 
 1. **Проверка структуры:**
-   - Наличие обязательных полей (`greenhouse_uid`, `node_uid`, `channel`, `type`, `params`)
+   - Наличие обязательных полей (`greenhouse_uid`, `node_uid`, `channel`, `cmd`, `params`)
+   - Поле `type` отклоняется (strict policy, legacy alias не поддерживается)
    - Корректность типов данных
 
 2. **Проверка типа команды:**
@@ -421,9 +420,10 @@ history_logger_db_errors_total{operation="insert", table="telemetry_samples"} 2
 | Код | HTTP Status | Описание |
 |-----|-------------|----------|
 | `validation_failed` | 400 | Невалидные данные команды |
-| `unknown_command_type` | 400 | Неизвестный тип команды |
+| `unknown_command_type` | 400 | Неизвестная команда `cmd` |
 | `missing_required_params` | 400 | Отсутствуют обязательные параметры |
 | `invalid_param_value` | 400 | Невалидное значение параметра |
+| `unauthorized` | 401 | Отсутствует/некорректен токен |
 | `mqtt_publish_failed` | 500 | Ошибка публикации в MQTT |
 | `db_insert_failed` | 500 | Ошибка записи в БД |
 | `service_unavailable` | 503 | Сервис недоступен |
@@ -450,19 +450,11 @@ command = {
     "zone_id": 1,
     "node_uid": "nd-ph-1",
     "channel": "pump_ph_up",
-    "type": "DOSE_PH_UP",
+    "cmd": "dose_ph_up",
     "params": {
-        "ml": 5.0,
-        "duration_sec": 10
+        "ml": 5.0
     },
-    "context": {
-        "source": "automation-engine",
-        "cycle_id": 123,
-        "phase": "VEG",
-        "reason": "ph_too_low",
-        "current_ph": 5.2,
-        "target_ph": 6.0
-    }
+    "source": "automation-engine"
 }
 
 response = httpx.post(
@@ -472,7 +464,7 @@ response = httpx.post(
 )
 
 print(response.json())
-# {"status": "published", "command_id": "cmd-123456", ...}
+# {"status": "ok", "data": {"command_id": "cmd-123456", ...}}
 ```
 
 ### 8.2. Scheduler отправляет команду полива
@@ -480,10 +472,9 @@ print(response.json())
 ```python
 # Scheduler через automation-engine отправляет команду полива
 command = {
-    "type": "FORCE_IRRIGATION",
+    "cmd": "run_pump",
     "params": {
-        "duration_sec": 60,
-        "volume_ml": 2000
+        "duration_ms": 60000
     },
     "greenhouse_uid": "gh-1",
     "node_uid": "nd-pump-1",
@@ -506,14 +497,11 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
     'zone_id' => $zone->id,
     'node_uid' => 'nd-pump-1',
     'channel' => 'pump_in',
-    'type' => 'FORCE_IRRIGATION',
+    'cmd' => 'run_pump',
     'params' => [
-        'duration_sec' => 30
+        'duration_ms' => 30000
     ],
-    'context' => [
-        'source' => 'manual',
-        'user_id' => $request->user()->id
-    ]
+    'source' => 'manual',
 ]);
 ```
 
@@ -521,13 +509,14 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 
 ## 9. Security
 
-**Важно:** В текущей версии history-logger REST API **НЕ требует аутентификации**, так как работает внутри защищенной Docker сети.
+**Strict policy (актуально):**
+1. Для `POST /commands`, `POST /zones/{zone_id}/commands`, `POST /nodes/{node_uid}/commands` поле `cmd` обязательно.
+2. Legacy поле `type` отклоняется с `400`.
 
-**Рекомендации для production:**
-1. Добавить API token аутентификацию
-2. Ограничить доступ к REST API только от доверенных сервисов
-3. Добавить rate limiting
-4. Логировать все запросы с IP адресами
+**Аутентификация (фактическая модель):**
+1. Если `HISTORY_LOGGER_API_TOKEN`/`PY_INGEST_TOKEN` задан, запрос должен содержать `Authorization: Bearer <token>`.
+2. В production (`APP_ENV=production|prod`) токен обязателен всегда.
+3. Без токена в dev допускаются только localhost-запросы; внешние запросы получают `401`.
 
 ---
 

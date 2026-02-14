@@ -12,6 +12,11 @@ MQTT_PORT="${MQTT_PORT:-1884}"
 GH_UID="${GH_UID:-gh-test-1}"
 ZONE_UID="${ZONE_UID:-zn-test-1}"
 NODE_UID="${NODE_UID:-nd-test-001}"
+RUN_HIL_TIMING="${RUN_HIL_TIMING:-0}"
+HIL_CHANNEL="${HIL_CHANNEL:-ph_sensor}"
+HIL_CMD="${HIL_CMD:-set_relay}"
+HIL_SIM_DELAY_MS="${HIL_SIM_DELAY_MS:-1200}"
+HIL_SIM_STATUS="${HIL_SIM_STATUS:-DONE}"
 
 echo "=========================================="
 echo "Тестирование совместимости с эталоном node-sim"
@@ -23,6 +28,7 @@ echo "  MQTT Port: $MQTT_PORT"
 echo "  GH UID: $GH_UID"
 echo "  Zone UID: $ZONE_UID"
 echo "  Node UID: $NODE_UID"
+echo "  RUN_HIL_TIMING: $RUN_HIL_TIMING"
 echo ""
 
 # Проверка зависимостей
@@ -59,5 +65,21 @@ python3 firmware/tests/test_node_compatibility.py \
     --zone-uid "$ZONE_UID" \
     --node-uid "$NODE_UID"
 
-exit $?
+if [ "$RUN_HIL_TIMING" = "1" ]; then
+    echo ""
+    echo "=========================================="
+    echo "HIL: ACK -> terminal timing"
+    echo "=========================================="
+    python3 firmware/tests/test_command_ack_terminal_timing.py \
+        --mqtt-host "$MQTT_HOST" \
+        --mqtt-port "$MQTT_PORT" \
+        --gh-uid "$GH_UID" \
+        --zone-uid "$ZONE_UID" \
+        --node-uid "$NODE_UID" \
+        --channel "$HIL_CHANNEL" \
+        --cmd "$HIL_CMD" \
+        --sim-delay-ms "$HIL_SIM_DELAY_MS" \
+        --sim-status "$HIL_SIM_STATUS"
+fi
 
+exit $?

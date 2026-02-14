@@ -42,14 +42,14 @@ def create_error_fixture(
     level: str = "ERROR",
     component: str = "sensor",
     message: str = "Error occurred",
-    error_code: Optional[str] = None,
+    error_code: str = "UNKNOWN_ERROR",
     **kwargs
 ) -> Dict[str, Any]:
     """
     Создает fixture ошибки в формате JSON.
     
     Args:
-        level: Уровень ошибки (ERROR, WARNING, INFO, DEBUG, CRITICAL, FATAL)
+        level: Уровень ошибки (ERROR, WARNING, INFO)
         component: Компонент
         message: Сообщение об ошибке
         error_code: Код ошибки
@@ -61,14 +61,11 @@ def create_error_fixture(
     payload = {
         "level": level,
         "component": component,
-        "message": message
+        "message": message,
+        "error_code": error_code,
     }
-    
-    if error_code:
-        payload["error_code"] = error_code
-    
-    if "ts" not in payload:
-        payload["ts"] = time.time()
+
+    payload["ts"] = int(time.time() * 1000)
     
     payload.update(kwargs)
     return payload
@@ -99,9 +96,11 @@ def create_alert_fixture(
     payload = {
         "level": "WARNING",
         "component": "automation",
+        "error_code": "ALERT_TRIGGERED",
         "source": source,
         "code": code,
-        "type": type
+        "type": type,
+        "message": kwargs.get("message", "Alert triggered"),
     }
     
     if severity:
@@ -110,8 +109,7 @@ def create_alert_fixture(
     if zone_id:
         payload["zone_id"] = zone_id
     
-    if "ts" not in payload:
-        payload["ts"] = time.time()
+    payload["ts"] = int(time.time() * 1000)
     
     payload.update(kwargs)
     return payload
@@ -152,7 +150,7 @@ FIXTURE_ERROR_SENSOR = create_error_fixture(
 )
 
 FIXTURE_ERROR_PUMP = create_error_fixture(
-    level="CRITICAL",
+    level="ERROR",
     component="pump",
     message="Pump motor failure",
     error_code="MOTOR_ERROR",

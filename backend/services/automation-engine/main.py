@@ -33,7 +33,6 @@ from common.logging_setup import (
     get_log_format,
     get_log_level,
     setup_standard_logging,
-    install_asyncio_exception_handler,
     install_exception_handlers,
 )
 from common.trace_context import inject_trace_id_header
@@ -762,38 +761,22 @@ async def main():
     # Запуск сервера метрик Prometheus
     start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
     
-    # Запуск FastAPI сервера для REST API (endpoint scheduler) в отдельном потоке
-    import threading
+    # Запуск FastAPI сервера для REST API (endpoint scheduler) в том же event loop.
+    # Это устраняет cross-loop доступ к CommandBus/CommandTracker/ZoneAutomationService.
     import uvicorn
     from api import app as api_app
     
     api_port = int(os.getenv("AUTOMATION_ENGINE_API_PORT", "9405"))
     
-    def run_api_server():
-        """Запуск FastAPI сервера в отдельном потоке."""
-        import sys
-        # Создаем новый event loop для этого потока
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        install_asyncio_exception_handler("automation-engine", logger=logger)
-        
-        config = uvicorn.Config(
-            api_app,
-            host="0.0.0.0",
-            port=api_port,
-            log_level="info",
-            access_log=False
-        )
-        server = uvicorn.Server(config)
-        try:
-            loop.run_until_complete(server.serve())
-        except Exception as e:
-            logger.error(f"FastAPI server error: {e}", exc_info=True)
-            sys.exit(1)
-    
-    # Запускаем API сервер в отдельном потоке
-    api_thread = threading.Thread(target=run_api_server, daemon=True)
-    api_thread.start()
+    api_config = uvicorn.Config(
+        api_app,
+        host="0.0.0.0",
+        port=api_port,
+        log_level="info",
+        access_log=False,
+    )
+    api_server = uvicorn.Server(api_config)
+    api_task = asyncio.create_task(api_server.serve(), name="automation_api_server")
     logger.info(f"FastAPI server started on port {api_port}")
     
     send_service_log(
@@ -1036,26 +1019,28 @@ async def main():
                     # Устанавливаем CommandBus в API для scheduler endpoint
                     try:
                         from api import set_command_bus
-                        set_command_bus(command_bus, gh_uid)
+                        set_command_bus(command_bus, gh_uid, loop_id=id(asyncio.get_running_loop()))
                     except ImportError:
                         logger.warning("API module not available, scheduler endpoint will not work")
                     
-                    # Инициализация сервиса автоматизации зон
-                    _zone_service = ZoneAutomationService(
-                        zone_repo, 
-                        telemetry_repo, 
-                        node_repo, 
-                        recipe_repo, 
-                        grow_cycle_repo,
-                        infrastructure_repo,
-                        command_bus, 
-                        pid_state_manager
-                    )
-                    try:
-                        from api import set_zone_service
-                        set_zone_service(_zone_service)
-                    except ImportError:
-                        logger.warning("API module not available, scheduler task executor fallback is disabled")
+                    # Инициализация сервиса автоматизации зон (долгоживущий инстанс).
+                    # Важно: состояние backoff/degraded и PID хранится в памяти сервиса.
+                    if _zone_service is None:
+                        _zone_service = ZoneAutomationService(
+                            zone_repo,
+                            telemetry_repo,
+                            node_repo,
+                            recipe_repo,
+                            grow_cycle_repo,
+                            infrastructure_repo,
+                            command_bus,
+                            pid_state_manager,
+                        )
+                        try:
+                            from api import set_zone_service
+                            set_zone_service(_zone_service, loop_id=id(asyncio.get_running_loop()))
+                        except ImportError:
+                            logger.warning("API module not available, scheduler task executor fallback is disabled")
                     
                     # Get active zones with recipes через Circuit Breaker
                     try:
@@ -1175,6 +1160,22 @@ async def main():
     finally:
         # Graceful shutdown
         logger.info("Graceful shutdown initiated")
+
+        # 0. Останавливаем API сервер (тот же event loop).
+        try:
+            api_server.should_exit = True
+            await asyncio.wait_for(api_task, timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for API server shutdown")
+            api_task.cancel()
+            try:
+                await api_task
+            except asyncio.CancelledError:
+                pass
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to stop API server cleanly: {e}", exc_info=True)
         
         # Отменяем health check task
         health_task.cancel()

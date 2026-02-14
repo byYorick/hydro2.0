@@ -201,7 +201,7 @@ Total latency: ~695ms (от измерения до отображения)
 │  └────────────┘  │
 └──────┬───────────┘
        │ 2. HTTP POST /api/zones/1/commands
-       │    {type: "FORCE_IRRIGATION", params: {duration_sec: 60}}
+       │    {cmd: "run_pump", params: {duration_ms: 60000}}
        │
        ▼
 ┌──────────────────┐
@@ -216,8 +216,8 @@ Total latency: ~695ms (от измерения до отображения)
        │
        │ 6. HTTP POST http://history-logger:9300/zones/1/commands
        │    {
-       │      "type": "FORCE_IRRIGATION",
-       │      "params": {"duration_sec": 60},
+       │      "cmd": "run_pump",
+       │      "params": {"duration_ms": 60000},
        │      "greenhouse_uid": "gh-1",
        │      "node_uid": "nd-pump-1",
        │      "channel": "pump_in"
@@ -335,7 +335,7 @@ Payload:
        │      "zone_id": 1,
        │      "node_uid": "nd-pump-1",
        │      "channel": "pump_in",
-       │      "type": "run_pump",
+       │      "cmd": "run_pump",
        │      "params": {"duration_ms": 60000},
        │      "context": {
        │        "task_id": "task-irr-001",
@@ -475,8 +475,11 @@ Payload:
        │   "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
        │   "ec": {"target": 1.8, "min": 1.6, "max": 2.0},
        │   "correction_timings": {
-       │     "stabilization_time_sec": 60,
-       │     "min_interval_sec": 300
+       │     "tank_fill_stabilization_sec": 90,
+       │     "tank_recirc_stabilization_sec": 30,
+       │     "npk_mix_time_sec": 120,
+       │     "ph_mix_time_sec": 60,
+       │     "min_correction_interval_sec": 300
        │   }
        │ }
        │
@@ -495,8 +498,8 @@ Payload:
 │ :9300            │    {
 │                  │      "node_uid": "nd-ph-1",
 └──────┬───────────┘      "channel": "system",
-       │                  "type": "activate_sensor_mode",
-       │                  "params": {"stabilization_time_sec": 60}
+       │                  "cmd": "activate_sensor_mode",
+       │                  "params": {"stabilization_time_sec": 90}
        │                }
        │
        ▼
@@ -506,7 +509,7 @@ Topic: hydro/gh-1/zn-1/nd-ph-1/system/command
 ┌──────────────────┐
 │  pH Node         │ ◄─── 8. Получение activate_sensor_mode
 │  (nd-ph-1)       │      9. Переход в ACTIVE режим
-│                  │      10. Запуск таймера стабилизации (60 сек)
+│                  │      10. Запуск таймера стабилизации (90 сек)
 │ ┌──────────────┐ │      11. Старт измерений pH
 │ │ Sensor Mode  │ │
 │ │ Manager      │ │
@@ -578,7 +581,7 @@ Payload:
        │     {
        │       "node_uid": "nd-ph-1",
        │       "channel": "pump_ph_up",
-       │       "type": "dose",
+       │       "cmd": "dose",
        │       "params": {"ml": 2.0},
        │       "context": {
        │         "state": "TANK_FILLING",
@@ -592,7 +595,7 @@ Payload:
        │     {
        │       "node_uid": "nd-ec-1",
        │       "channel": "pump_npk",
-       │       "type": "dose",
+       │       "cmd": "dose",
        │       "params": {"ml": 5.0},
        │       "context": {
        │         "state": "TANK_FILLING",
@@ -623,7 +626,105 @@ Payload: {"cmd": "deactivate_sensor_mode"}
        │     - Публикуют только heartbeat и LWT
 ```
 
-#### 3.3.4. Логика активации/деактивации нод
+#### 3.3.4. Детальный пример деактивации нод
+
+**При переходе READY → IDLE или завершении цикла:**
+
+```
+┌──────────────────┐
+│ Automation-      │
+│ Engine           │ ◄─── 1. Определено завершение цикла
+│                  │      (цели достигнуты ИЛИ timeout)
+│ ┌──────────────┐ │
+│ │ State        │ │ ◄─── 2. Решение: переход в IDLE
+│ │ Machine      │ │
+│ └──────────────┘ │
+└──────┬───────────┘
+       │ 3. Отправка команды деактивации pH ноды
+       │
+       ▼
+┌──────────────────┐
+│ history-logger   │ ◄─── 4. POST /commands (деактивация)
+│ :9300            │    {
+│                  │      "greenhouse_uid": "gh-1",
+└──────┬───────────┘      "zone_id": 1,
+       │                  "node_uid": "nd-ph-1",
+       │                  "channel": "system",
+       │                  "cmd": "deactivate_sensor_mode",
+       │                  "params": {},
+       │                  "context": {
+       │                    "state": "TRANSITION_TO_IDLE",
+       │                    "reason": "cycle_completed"
+       │                  }
+       │                }
+       │
+       ▼
+┌──────────────────┐
+│ history-logger   │ ◄─── 5. HMAC подпись
+│                  │      6. Формирование MQTT команды
+└──────┬───────────┘
+       │ 7. Публикация в MQTT
+       │
+       ▼
+Topic: hydro/gh-1/zn-1/nd-ph-1/system/command
+Payload:
+{
+  "cmd": "deactivate_sensor_mode",
+  "params": {},
+  "cmd_id": "cmd-deact-789",
+  "ts": 1710003000,
+  "sig": "d4e5f6a1b2c3..."
+}
+       │
+       │ 8. MQTT брокер доставляет команду
+       │
+       ▼
+┌──────────────────┐
+│  pH Node         │ ◄─── 9. Получение deactivate_sensor_mode
+│  (nd-ph-1)       │
+│                  │
+│ ┌──────────────┐ │
+│ │ Sensor Mode  │ │ ◄─── 10. Переход из ACTIVE в IDLE режим
+│ │ Manager      │ │      11. Остановка измерений pH
+│ └──────────────┘ │      12. Остановка публикации telemetry
+│                  │      13. Переход на heartbeat only
+└──────┬───────────┘
+       │ 14. Отправка command_response
+       │
+       ▼
+Topic: hydro/gh-1/zn-1/nd-ph-1/system/command_response
+Payload:
+{
+  "cmd_id": "cmd-deact-789",
+  "status": "DONE",
+  "details": {
+    "mode": "IDLE",
+    "stopped_at": 1710003001
+  },
+  "ts": 1710003001000
+}
+       │
+       │ 15. History-logger записывает в БД
+       │
+       ▼
+┌──────────────────┐
+│ Automation-      │ ◄─── 16. Получение подтверждения деактивации
+│ Engine           │      17. Завершение перехода состояния
+│                  │      18. State = IDLE
+│ ┌──────────────┐ │
+│ │ State        │ │
+│ │ Machine      │ │ ◄─── ✓ Переход завершен
+│ └──────────────┘ │
+└──────────────────┘
+```
+
+**Результат деактивации:**
+- pH/EC ноды в IDLE режиме
+- Нет телеметрии pH/EC (экономия трафика и ресурсов)
+- Публикуются только heartbeat и LWT
+- Ноды готовы к следующему циклу активации
+
+#### 3.3.5. Логика активации/деактивации нод
 
 **Когда активировать:**
 - Переход в TANK_FILLING: перед началом заливки бака

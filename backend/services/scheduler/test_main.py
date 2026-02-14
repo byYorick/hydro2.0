@@ -120,6 +120,17 @@ def test_extract_simulation_clock_scales_time():
     assert sim_now == real_start + timedelta(hours=1)
 
 
+@pytest.mark.asyncio
+async def test_load_pending_internal_enqueues_orders_by_time_and_filters_pending_in_sql():
+    with patch("main.fetch", new_callable=AsyncMock, return_value=[] ) as mock_fetch:
+        await scheduler_main._load_pending_internal_enqueues()
+
+    query = " ".join(str(mock_fetch.await_args.args[0]).split()).lower()
+    assert "row_number() over (partition by task_name order by created_at desc, id desc)" in query
+    assert "lower(coalesce(status, '')) = 'pending'" in query
+    assert "order by created_at asc, id asc" in query
+
+
 def test_schedule_crossings_across_midnight():
     last_dt = datetime(2025, 1, 1, 23, 30, 0)
     now_dt = datetime(2025, 1, 2, 0, 30, 0)
@@ -1610,6 +1621,37 @@ async def test_process_internal_enqueued_tasks_dispatch_failed_emits_diagnostic(
 
     mock_mark.assert_awaited_once()
     assert mock_mark.await_args.args[0] == "ae_internal_enqueue_enq-dispatch-failed"
+    assert mock_mark.await_args.args[1] == "pending"
+    retry_details = mock_mark.await_args.args[2]
+    assert retry_details["dispatch_retry_count"] == 1
+    assert isinstance(retry_details["scheduled_for"], str)
+    assert mock_diag.await_count == 1
+    assert mock_diag.await_args.kwargs["reason"] == "internal_enqueue_dispatch_retry_scheduled"
+
+
+@pytest.mark.asyncio
+async def test_process_internal_enqueued_tasks_dispatch_failed_marks_failed_when_retry_budget_exhausted():
+    now_dt = datetime(2025, 1, 1, 8, 0, 0)
+    pending_entry = {
+        "enqueue_id": "enq-dispatch-failed-final",
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "payload": {},
+        "scheduled_for": (now_dt - timedelta(seconds=5)).isoformat(),
+        "dispatch_retry_count": scheduler_main._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS - 1,
+    }
+
+    with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
+         patch("main.execute_scheduled_task", new_callable=AsyncMock) as mock_execute, \
+         patch("main._mark_internal_enqueue_status", new_callable=AsyncMock) as mock_mark, \
+         patch("main.create_zone_event", new_callable=AsyncMock), \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_load.return_value = [pending_entry]
+        mock_execute.return_value = False
+        await process_internal_enqueued_tasks(now_dt)
+
+    mock_mark.assert_awaited_once()
+    assert mock_mark.await_args.args[0] == "ae_internal_enqueue_enq-dispatch-failed-final"
     assert mock_mark.await_args.args[1] == "failed"
     assert mock_diag.await_count == 1
     assert mock_diag.await_args.kwargs["reason"] == "internal_enqueue_dispatch_failed"

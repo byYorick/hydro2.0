@@ -59,7 +59,7 @@ const NODE_BINDING_POLL_INTERVAL_MS = 3000
 const NODE_BINDING_MAX_ATTEMPTS = 4
 const NODE_BINDING_INFO_TIMEOUT_MS = 5000
 const DEVICE_ROLE_LABELS: Record<keyof SetupWizardDeviceAssignments, string> = {
-  irrigation: 'полив',
+  irrigation: 'полив + накопление',
   ph_correction: 'коррекция pH',
   ec_correction: 'коррекция EC',
   accumulation: 'накопительный узел',
@@ -87,8 +87,24 @@ function hasRequiredAssignments(assignments: SetupWizardDeviceAssignments): bool
     typeof assignments.irrigation === 'number'
     && typeof assignments.ph_correction === 'number'
     && typeof assignments.ec_correction === 'number'
-    && typeof assignments.accumulation === 'number'
   )
+}
+
+function normalizeAssignmentsForUnifiedWaterNode(
+  assignments?: SetupWizardDeviceAssignments | null
+): SetupWizardDeviceAssignments | null {
+  if (!assignments) {
+    return null
+  }
+
+  const irrigationNodeId = typeof assignments.irrigation === 'number'
+    ? assignments.irrigation
+    : null
+
+  return {
+    ...assignments,
+    accumulation: irrigationNodeId,
+  }
 }
 
 export function createSetupWizardPlantNodeCommands(
@@ -349,16 +365,19 @@ export function createSetupWizardPlantNodeCommands(
     }
 
     const nodeIds = [...selectedNodeIds.value]
+    const normalizedAssignments = normalizeAssignmentsForUnifiedWaterNode(assignments)
     const failedNodeIds = new Set<number>()
     const waitingNodeIds = new Set<number>()
-    const shouldValidateAndApplyBindings = Boolean(assignments && hasRequiredAssignments(assignments))
+    const shouldValidateAndApplyBindings = Boolean(
+      normalizedAssignments && hasRequiredAssignments(normalizedAssignments)
+    )
 
     loading.stepDevices = true
     try {
-      if (assignments && shouldValidateAndApplyBindings) {
+      if (normalizedAssignments && shouldValidateAndApplyBindings) {
         await api.post('/setup-wizard/validate-devices', {
           zone_id: zoneId,
-          assignments,
+          assignments: normalizedAssignments,
           selected_node_ids: nodeIds,
         })
       }
@@ -403,8 +422,8 @@ export function createSetupWizardPlantNodeCommands(
         })
       }
 
-      if (assignments && shouldValidateAndApplyBindings) {
-        const unresolvedRoles = unresolvedAssignmentRoles(assignments, attachedNodeIds)
+      if (normalizedAssignments && shouldValidateAndApplyBindings) {
+        const unresolvedRoles = unresolvedAssignmentRoles(normalizedAssignments, attachedNodeIds)
         if (unresolvedRoles.length > 0) {
           showToast(
             `Привязка не завершена: нет подтверждения по ролям ${unresolvedRoles.join(', ')}.`,
@@ -414,7 +433,7 @@ export function createSetupWizardPlantNodeCommands(
         } else {
           await api.post('/setup-wizard/apply-device-bindings', {
             zone_id: zoneId,
-            assignments,
+            assignments: normalizedAssignments,
             selected_node_ids: nodeIds,
           })
         }

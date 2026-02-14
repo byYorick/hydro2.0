@@ -973,6 +973,50 @@ async def test_apply_correction_single_command_aborts_when_unconfirmed_after_ret
 
 
 @pytest.mark.asyncio
+async def test_apply_correction_single_command_fails_closed_when_tracker_active_but_cmd_id_missing():
+    controller = CorrectionController(CorrectionType.PH)
+    command = {
+        'node_uid': 'nd-ph-1',
+        'channel': 'pump_acid',
+        'cmd': 'dose',
+        'params': {'ml': 3.0, 'type': 'add_acid'},
+        'event_type': 'PH_CORRECTED',
+        'event_details': {
+            'correction_type': 'add_acid',
+            'current_ph': 6.8,
+            'target_ph': 6.5,
+            'diff': 0.3,
+            'ml': 3.0
+        },
+        'zone_id': 1,
+        'correction_type_str': 'ph',
+        'current_value': 6.8,
+        'target_value': 6.5,
+        'reason': 'Корректировка необходима'
+    }
+
+    from infrastructure.command_bus import CommandBus
+    command_bus = Mock(spec=CommandBus)
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=True)
+    command_bus.tracker.confirm_command_status = AsyncMock(return_value=None)
+
+    with patch("correction_controller.record_correction", new_callable=AsyncMock) as mock_record, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch("correction_controller.send_infra_alert", new_callable=AsyncMock), \
+         patch("correction_controller.fetch", new_callable=AsyncMock, return_value=[]):
+        await controller.apply_correction(command, command_bus)
+
+    assert command_bus.publish_controller_command.await_count >= 1
+    command_bus.tracker.wait_for_command_done.assert_not_awaited()
+    assert mock_record.await_count == 0
+    events = [call.args[1] for call in mock_zone_event.await_args_list if len(call.args) >= 2]
+    assert "CORRECTION_ABORTED_COMMAND_FAILURE" in events
+
+
+@pytest.mark.asyncio
 async def test_ph_controller_apply_correction():
     """Test applying pH correction (sending command and creating events)."""
     controller = CorrectionController(CorrectionType.PH)

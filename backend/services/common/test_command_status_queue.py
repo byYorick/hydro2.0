@@ -64,6 +64,14 @@ class _SchemaConnStub:
         return []
 
 
+class _PendingConnStub:
+    def __init__(self, rows):
+        self._rows = rows
+
+    async def fetch(self, query, *args):
+        return self._rows
+
+
 def test_decode_details_payload_accepts_dict_and_json_string():
     dict_payload = {"zone_id": 11, "node_uid": "nd-1"}
     assert _decode_details_payload(dict_payload) == dict_payload
@@ -78,6 +86,11 @@ def test_decode_details_payload_handles_invalid_string():
 def test_normalize_status_rejects_legacy_accepted_alias():
     assert normalize_status("ACCEPTED") is None
     assert normalize_status("FAILED") is None
+
+
+def test_normalize_status_accepts_timeout_and_send_failed():
+    assert normalize_status("TIMEOUT") == CommandStatus.TIMEOUT
+    assert normalize_status("send_failed") == CommandStatus.SEND_FAILED
 
 
 @pytest.mark.asyncio
@@ -271,3 +284,81 @@ async def test_ensure_table_retries_after_transient_pool_error():
 
     assert queue._schema_error is None
     assert queue._initialized is True
+
+
+@pytest.mark.asyncio
+async def test_get_pending_quarantines_invalid_status_row():
+    queue = StatusUpdateQueue()
+    queue.ensure_table = AsyncMock(return_value=None)
+    queue.move_to_dlq = AsyncMock(return_value=True)
+    queue.mark_delivered = AsyncMock(return_value=None)
+
+    rows = [
+        {
+            "id": 1,
+            "cmd_id": "cmd-ok",
+            "status": "ACK",
+            "details": {"zone_id": 1},
+            "retry_count": 0,
+            "max_attempts": 10,
+            "last_error": None,
+        },
+        {
+            "id": 2,
+            "cmd_id": "cmd-bad",
+            "status": "ACCEPTED",
+            "details": {"zone_id": 2},
+            "retry_count": 3,
+            "max_attempts": 10,
+            "last_error": "old_error",
+        },
+    ]
+    pool = _PoolStub(_PendingConnStub(rows))
+
+    with patch("common.command_status_queue.get_pool", new=AsyncMock(return_value=pool)):
+        pending = await queue.get_pending(limit=50)
+
+    assert len(pending) == 1
+    assert pending[0][1] == "cmd-ok"
+    assert pending[0][2] == CommandStatus.ACK
+    queue.move_to_dlq.assert_awaited_once()
+    queue.mark_delivered.assert_awaited_once_with(2)
+
+
+@pytest.mark.asyncio
+async def test_retry_worker_does_not_delete_pending_when_dlq_move_fails():
+    shutdown_event = asyncio.Event()
+    queue = AsyncMock()
+    pending_item = (
+        501,
+        "cmd-501",
+        CommandStatus.ACK,
+        {"zone_id": 9},
+        2,  # retry_count
+        3,  # max_attempts => next retry reaches max
+        "prev_error",
+    )
+
+    calls = {"count": 0}
+
+    async def _get_pending(limit=50):
+        if calls["count"] == 0:
+            calls["count"] += 1
+            return [pending_item]
+        shutdown_event.set()
+        return []
+
+    queue.get_pending = AsyncMock(side_effect=_get_pending)
+    queue.move_to_dlq = AsyncMock(return_value=False)
+    queue.mark_delivered = AsyncMock()
+    queue.mark_retry = AsyncMock()
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.send_status_to_laravel", new=AsyncMock(return_value=False)), \
+         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1):
+        await asyncio.wait_for(retry_worker(interval=0.01, shutdown_event=shutdown_event), timeout=1.0)
+
+    queue.move_to_dlq.assert_awaited_once()
+    queue.mark_delivered.assert_not_awaited()
+    queue.mark_retry.assert_awaited_once()
+    assert "dlq_move_failed" in str(queue.mark_retry.await_args.args[3])

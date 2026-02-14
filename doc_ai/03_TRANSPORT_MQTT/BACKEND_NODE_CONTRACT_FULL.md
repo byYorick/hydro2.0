@@ -415,8 +415,9 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 }
 ```
 
-Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`.
+Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.
 Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статус `SEND_FAILED` фиксируется на backend-слое при ошибке публикации и не приходит от ноды как `command_response`.
 
 ## 11.4. Подтверждение авто-остановки наполнения (2-бака)
 

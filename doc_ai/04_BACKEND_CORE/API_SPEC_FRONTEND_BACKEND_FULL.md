@@ -316,14 +316,14 @@ Runtime-обновления из фронтового конфигуратор�
 (`interval_minutes -> interval_sec`, `duration_seconds -> duration_sec`, `subsystems.diagnostics -> targets.diagnostics.execution`).
 
 Команда применения runtime-профиля:
-- `POST /api/zones/{zone}/commands` с `type=GROWTH_CYCLE_CONFIG`
+- `POST /api/zones/{zone}/commands` с `cmd=GROWTH_CYCLE_CONFIG`
 - `params.mode` = `adjust|start`
 - `params.profile_mode` = `setup|working`
 - `params.subsystems` в команде не передаётся (инжектится сервером из `zone_automation_logic_profiles`)
 
 Команда ручного override (операторский режим, `2 бака`):
 - endpoint: `POST /api/zones/{zone}/commands`
-- `type`: `GROWTH_CYCLE_CONFIG`
+- `cmd`: `GROWTH_CYCLE_CONFIG`
 - `params.mode`: `adjust`
 - `params.manual_action`:
   - `fill_clean_tank`
@@ -470,6 +470,21 @@ Runtime-обновления из фронтового конфигуратор�
 Условная обязательность:
 - при `subsystems.diagnostics.execution.topology = \"two_tank_drip_substrate_trays\"`
   обязательны оба блока: `subsystems.diagnostics` и `subsystems.irrigation`.
+
+### 3.5.5. GET /api/zones/{id}/automation-state
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Описание:** Возвращает текущее состояние workflow автоматизации для UI-панели.
+- **Поведение:** Laravel выступает proxy к `automation-engine /zones/{zone_id}/automation-state`.
+- **Ключевые поля ответа:**
+  - `state`: `IDLE | TANK_FILLING | TANK_RECIRC | READY | IRRIGATING | IRRIG_RECIRC`
+  - `state_label`: локализованная подпись текущего состояния
+  - `state_details.started_at|elapsed_sec|progress_percent`
+  - `system_config.tanks_count|system_type|clean_tank_capacity_l|nutrient_tank_capacity_l`
+  - `current_levels.clean_tank_level_percent|nutrient_tank_level_percent|buffer_tank_level_percent|ph|ec`
+  - `active_processes.pump_in|circulation_pump|ph_correction|ec_correction`
+  - `timeline[]` (недавние события task-execution)
+  - `next_state`, `estimated_completion_sec`
 
 ### 3.6. POST /api/zones
 
@@ -841,6 +856,7 @@ Runtime-обновления из фронтового конфигуратор�
 - **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Отправка команд на зону (через Python-сервис).
+- Контракт strict: поле `cmd` обязательно, legacy-поле `type` отклоняется (`400`).
 - Примеры команд:
  - `FORCE_IRRIGATION` - принудительный полив (требует `params.duration_sec`);
  - `FORCE_DRAIN` - принудительный дренаж;
@@ -855,7 +871,7 @@ Runtime-обновления из фронтового конфигуратор�
 
 ```json
 {
- "type": "FORCE_IRRIGATION",
+ "cmd": "FORCE_IRRIGATION",
  "params": {
  "duration_sec": 30
  }

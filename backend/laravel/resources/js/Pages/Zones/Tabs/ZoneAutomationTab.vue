@@ -69,6 +69,56 @@
         </div>
       </section>
 
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-2">
+        <button
+          type="button"
+          class="w-full rounded-xl px-3 py-2 text-left transition-colors hover:bg-[color:var(--surface-muted)]/40"
+          @click="processExpanded = !processExpanded"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[11px] uppercase tracking-[0.2em] text-[color:var(--text-dim)]">workflow</p>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="text-sm md:text-base font-semibold text-[color:var(--text-primary)]">
+                  Процесс выполнения автоматизации
+                </span>
+                <Badge
+                  v-if="isProcessActive"
+                  variant="info"
+                  class="animate-pulse"
+                >
+                  Выполняется
+                </Badge>
+              </div>
+            </div>
+            <svg
+              class="w-5 h-5 text-[color:var(--text-dim)] transition-transform duration-200"
+              :class="{ 'rotate-180': processExpanded }"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </div>
+        </button>
+
+        <div
+          v-show="processExpanded"
+          class="p-2 pt-3"
+        >
+          <AutomationProcessPanel
+            :zone-id="zoneId"
+            :fallback-tanks-count="waterForm.tanksCount"
+            :fallback-system-type="waterForm.systemType"
+            @state-change="handleProcessStateChange"
+          />
+        </div>
+      </section>
+
       <section class="grid gap-4 xl:grid-cols-2">
         <article class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Климат</h3>
@@ -514,6 +564,7 @@
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
+import AutomationProcessPanel from '@/Components/AutomationProcessPanel.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
@@ -522,6 +573,7 @@ import type {
   LightingFormState,
   WaterFormState,
 } from '@/composables/zoneAutomationTypes'
+import type { AutomationStateType } from '@/types/Automation'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
@@ -583,8 +635,15 @@ const {
 
 const zoneId = toRef(props, 'zoneId')
 const showEditWizard = ref(false)
+const processExpanded = ref(true)
+const processState = ref<AutomationStateType>('IDLE')
 const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
+const isProcessActive = computed(() => processState.value !== 'IDLE' && processState.value !== 'READY')
+
+function handleProcessStateChange(state: AutomationStateType): void {
+  processState.value = state
+}
 
 async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Promise<void> {
   Object.assign(climateForm, payload.climateForm)

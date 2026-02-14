@@ -613,6 +613,14 @@ class CorrectionController:
                         )
                 else:
                     last_failure_reason = "command_failed_status"
+            elif tracker and not cmd_id:
+                # Fail-closed: tracker активен, но cmd_id не получен -> подтверждение невозможно.
+                last_failure_reason = "cmd_id_missing_after_publish"
+                logger.warning(
+                    "Zone %s: correction command confirmation unavailable: tracker active but cmd_id missing",
+                    zone_id,
+                    extra={"zone_id": zone_id},
+                )
             else:
                 # Tracker отключен: подтверждение недоступно, считаем отправку успешной.
                 return True

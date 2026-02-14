@@ -98,6 +98,7 @@ async def test_ensure_command_for_publish_handles_unique_violation_race():
                 "node_id": 1,
                 "channel": "default",
                 "cmd": "run_pump",
+                "params": {"duration_ms": 1000},
             }]
         return []
 
@@ -123,6 +124,43 @@ async def test_ensure_command_for_publish_handles_unique_violation_race():
     assert response is not None
     assert response["status"] == "ok"
     assert response["data"]["command_id"] == "cmd-race-1"
+
+
+@pytest.mark.asyncio
+async def test_ensure_command_for_publish_rejects_cmd_id_with_different_params():
+    from fastapi import HTTPException
+    from command_routes import _ensure_command_for_publish
+
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from commands where cmd_id = $1" in normalized:
+            return [{
+                "status": "QUEUED",
+                "source": "automation",
+                "zone_id": 1,
+                "node_id": 1,
+                "channel": "default",
+                "cmd": "run_pump",
+                "params": {"duration_ms": 1000},
+            }]
+        return []
+
+    with patch("command_routes.fetch", new=AsyncMock(side_effect=_fetch)), \
+         patch("command_routes.execute", new=AsyncMock(return_value="OK")):
+        with pytest.raises(HTTPException) as exc_info:
+            await _ensure_command_for_publish(
+                cmd_id="cmd-same-id",
+                zone_id=1,
+                node_id=1,
+                node_uid="nd-irrig-1",
+                channel="default",
+                cmd_name="run_pump",
+                params={"duration_ms": 2000},
+                command_source="automation",
+            )
+
+    assert exc_info.value.status_code == 409
+    assert "params" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio
@@ -153,6 +191,29 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         # Проверяем, что команда была опубликована в MQTT
         # Структура: mqtt_client._client._client.publish()
         assert mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.asyncio
+async def test_publish_command_returns_500_when_sent_status_not_persisted(client, auth_headers, mock_mqtt_client):
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings, \
+         patch("command_routes.mark_command_sent", new_callable=AsyncMock, side_effect=RuntimeError("db write failed")):
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "params": {"duration_ms": 60000},
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "published_but_status_not_persisted"
 
 
 @pytest.mark.asyncio
@@ -289,6 +350,68 @@ async def test_publish_command_unauthorized(client, mock_mqtt_client):
             assert response.status_code == 401
     finally:
         # Восстанавливаем окружение
+        if original_env:
+            os.environ["APP_ENV"] = original_env
+        elif "APP_ENV" in os.environ:
+            del os.environ["APP_ENV"]
+
+
+@pytest.mark.asyncio
+async def test_publish_zone_command_unauthorized_in_production(client, mock_mqtt_client):
+    """Zone command endpoint must require token in production."""
+    import os
+    original_env = os.environ.get("APP_ENV")
+
+    try:
+        os.environ["APP_ENV"] = "production"
+        with patch("auth.get_settings") as mock_auth_settings, \
+             patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+             patch("command_routes.get_settings") as mock_settings:
+            mock_auth_settings.return_value = Mock(history_logger_api_token="required-token")
+            mock_get_mqtt.return_value = mock_mqtt_client
+            mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+            payload = {
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "node_uid": "nd-irrig-1",
+                "channel": "default",
+                "params": {"duration_ms": 1000},
+            }
+            response = client.post("/zones/1/commands", json=payload)
+            assert response.status_code == 401
+    finally:
+        if original_env:
+            os.environ["APP_ENV"] = original_env
+        elif "APP_ENV" in os.environ:
+            del os.environ["APP_ENV"]
+
+
+@pytest.mark.asyncio
+async def test_publish_node_command_unauthorized_in_production(client, mock_mqtt_client):
+    """Node command endpoint must require token in production."""
+    import os
+    original_env = os.environ.get("APP_ENV")
+
+    try:
+        os.environ["APP_ENV"] = "production"
+        with patch("auth.get_settings") as mock_auth_settings, \
+             patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+             patch("command_routes.get_settings") as mock_settings:
+            mock_auth_settings.return_value = Mock(history_logger_api_token="required-token")
+            mock_get_mqtt.return_value = mock_mqtt_client
+            mock_settings.return_value = Mock(mqtt_zone_format="id")
+
+            payload = {
+                "cmd": "run_pump",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "channel": "default",
+                "params": {"duration_ms": 1000},
+            }
+            response = client.post("/nodes/nd-irrig-1/commands", json=payload)
+            assert response.status_code == 401
+    finally:
         if original_env:
             os.environ["APP_ENV"] = original_env
         elif "APP_ENV" in os.environ:
