@@ -105,7 +105,7 @@ class TestLaravelDown:
         
         async with httpx.AsyncClient(timeout=2.0) as client:
             try:
-                response = await client.get(f"{invalid_url}/api/health")
+                response = await client.get(f"{invalid_url}/api/system/health")
                 # Если получили ответ, проверяем статус
                 assert response.status_code >= 400
             except (httpx.ConnectError, httpx.TimeoutException):
@@ -119,8 +119,9 @@ class TestLaravelDown:
         async with httpx.AsyncClient(timeout=0.1) as client:
             try:
                 # Используем реальный URL, но с очень коротким таймаутом
-                response = await client.get(f"{laravel_url}/api/health")
-                # Если получили ответ, это нормально
+                response = await client.get(f"{laravel_url}/api/system/health")
+                # Если ответ пришёл быстрее таймаута, endpoint должен быть валидным
+                assert response.status_code in (200, 503)
             except (httpx.TimeoutException, httpx.ConnectError):
                 # Ожидаем таймаут или недоступность
                 pass

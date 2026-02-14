@@ -212,17 +212,17 @@ class TestCommandProtocol:
     def test_command_missing_required_fields(self, command_schema):
         """Тест отсутствия обязательных полей."""
         # Отсутствует cmd_id
-        payload = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
         
         # Отсутствует cmd
-        payload = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
 
         # Отсутствует params
-        payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
 
@@ -414,7 +414,7 @@ class TestProtocolCompatibility:
         cmd = Command.create(
             cmd="dose",
             params={"ml": 1.2, "channel": "pump_a"},
-            sig="deadbeef"
+            sig="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         )
         
         # Конвертируем в JSON

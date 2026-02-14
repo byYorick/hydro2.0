@@ -6,6 +6,8 @@
 import time
 from typing import Dict, Any, Optional
 
+TEST_SIG_HEX64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 
 def create_command_fixture(
     cmd: str = "dose",
@@ -39,7 +41,7 @@ def create_command_fixture(
         "cmd": cmd,
         "params": params,
         "ts": ts,
-        "sig": sig or "test-signature"
+        "sig": sig or TEST_SIG_HEX64
     }
 
 

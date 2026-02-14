@@ -8,6 +8,8 @@ from typing import Dict, Any, Optional
 import sys
 from pathlib import Path
 
+TEST_SIG_HEX64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 # Импорты для использования в тестах
 # В реальном использовании импортируйте напрямую: from common.schemas import Command, CommandResponse
 try:
@@ -53,7 +55,7 @@ def create_command_fixture(
         "cmd": cmd,
         "params": params,
         "ts": ts,
-        "sig": sig or "test-signature"
+        "sig": sig or TEST_SIG_HEX64
     }
 
 

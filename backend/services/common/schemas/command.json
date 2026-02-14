@@ -30,9 +30,8 @@
     },
     "sig": {
       "type": "string",
-      "description": "HMAC подпись команды (hex)",
-      "minLength": 1,
-      "maxLength": 128
+      "description": "HMAC-SHA256 подпись команды (hex, 64 символа)",
+      "pattern": "^[0-9a-fA-F]{64}$"
     }
   },
   "additionalProperties": false

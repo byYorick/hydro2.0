@@ -2,8 +2,12 @@ from typing import Any, Dict, Optional, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 import time
+import re
 
 from common.node_types import CANONICAL_NODE_TYPES, normalize_node_type
+
+SIG_HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+DEV_SIG_HEX64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 
 class TelemetryPayload(BaseModel):
@@ -28,14 +32,22 @@ class Command(BaseModel):
     cmd: str = Field(..., max_length=64, description="Тип команды")
     params: Dict[str, Any] = Field(default_factory=dict, description="Параметры команды")
     ts: int = Field(..., description="Unix timestamp создания команды в секундах")
-    sig: str = Field(..., max_length=128, description="HMAC подпись команды (hex)")
+    sig: str = Field(..., min_length=64, max_length=64, description="HMAC-SHA256 подпись команды (hex, 64 символа)")
     
-    @field_validator('cmd_id', 'sig')
+    @field_validator('cmd_id')
     @classmethod
-    def validate_id_format(cls, v):
-        """Валидация формата идентификатора/подписи."""
+    def validate_cmd_id_format(cls, v):
+        """Валидация формата cmd_id."""
         if v and not all(c.isalnum() or c in '_-' for c in v):
             raise ValueError(f"Invalid format: {v}. Only alphanumeric, underscore and dash allowed")
+        return v
+
+    @field_validator('sig')
+    @classmethod
+    def validate_sig_format(cls, v):
+        """Валидация HMAC подписи: ровно 64 hex-символа."""
+        if not SIG_HEX64_RE.fullmatch(v):
+            raise ValueError("sig must be a 64-char hex string")
         return v
     
     @classmethod
@@ -53,7 +65,7 @@ class Command(BaseModel):
             cmd=cmd,
             params=params or {},
             ts=int(time.time()),
-            sig=sig or "dev-signature"
+            sig=sig or DEV_SIG_HEX64
         )
 
 
@@ -110,7 +122,12 @@ class CommandRequest(BaseModel):
     cmd_id: Optional[str] = Field(None, max_length=128, description="Command ID from Laravel")
     hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
     ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
-    sig: Optional[str] = Field(None, max_length=128, description="Command HMAC signature (hex)")
+    sig: Optional[str] = Field(
+        None,
+        min_length=64,
+        max_length=64,
+        description="Command HMAC signature (hex, 64 chars)",
+    )
     
     def to_command(self) -> Command:
         """Конвертирует CommandRequest в единый контракт Command."""
@@ -131,6 +148,15 @@ class CommandRequest(BaseModel):
         if v not in allowed_types:
             # Предупреждение, но не блокируем (для расширяемости)
             pass
+        return v
+
+    @field_validator('sig')
+    @classmethod
+    def validate_request_sig_format(cls, v):
+        if v is None:
+            return v
+        if not SIG_HEX64_RE.fullmatch(v):
+            raise ValueError("sig must be a 64-char hex string")
         return v
 
 

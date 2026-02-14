@@ -210,14 +210,25 @@ mqtt-bridge/
 
 ### 3.2. history-logger
 
-**Назначение:** Подписка на MQTT, запись телеметрии в PostgreSQL.
+**Назначение:** Подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT**.
+
+**Порты:**
+- **9300**: REST API для отправки команд
+- **9301**: Prometheus metrics (`/metrics`)
 
 **Функционал:**
 - Подписка на топики `hydro/+/+/+/telemetry`
 - Парсинг JSON payload
 - Батчинг и upsert в `telemetry_samples`
 - Обновление `telemetry_last`
+- **REST API для централизованной публикации команд в MQTT**
 - Обработка ошибок и реконнект
+
+**REST API Endpoints:**
+- `POST /commands` — универсальный endpoint для команд
+- `POST /zones/{zone_id}/commands` — команды для конкретной зоны
+- `POST /nodes/{node_uid}/commands` — команды для конкретной ноды
+- `GET /health` — health check
 
 **Зависимости:**
 - MQTT Broker
@@ -242,19 +253,32 @@ history-logger/
 
 ### 3.3. automation-engine
 
-**Назначение:** Контроллер зон, проверка targets, публикация команд корректировки.
+**Назначение:** Контроллер зон, проверка targets, публикация команд корректировки через history-logger.
 
-**Порт:** 9401 (Prometheus metrics)
+**Порты:**
+- **9401**: Prometheus metrics (`/metrics`)
+- **9405**: REST API для приема задач от scheduler
 
 **Функционал:**
 - Периодическая загрузка конфигурации из Laravel
 - Проверка активных зон с рецептами
 - Сравнение текущих значений с targets (pH, EC)
-- Публикация команд корректировки через MQTT
+- Публикация команд корректировки через history-logger REST API
+- Прием и выполнение задач от scheduler
 - Мониторинг через Prometheus
 
+**REST API Endpoints (порт 9405):**
+- `POST /scheduler/task` — прием задачи от scheduler
+  - Body: `{"task_id": "...", "type": "...", "zone_id": ..., "params": {...}}`
+  - Response: `{"status": "accepted", "task_id": "..."}`
+- `POST /scheduler/bootstrap` — инициализация scheduler
+- `POST /scheduler/bootstrap/heartbeat` — heartbeat от scheduler
+- `GET /scheduler/task/{task_id}` — получение статуса задачи
+- `POST /scheduler/internal/enqueue` — внутренний endpoint для постановки задач в очередь
+- `GET /health` — health check
+
 **Зависимости:**
-- MQTT Broker
+- history-logger REST API (для публикации команд)
 - PostgreSQL
 - Laravel API
 
@@ -356,9 +380,17 @@ scheduler/
 - `automation-engine`: может подписываться на события (опционально)
 
 **Публикации:**
-- `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command`
-- `automation-engine`: команды корректировки
-- `scheduler`: команды по расписанию
+- **ТОЛЬКО `history-logger`** публикует команды напрямую в MQTT: `hydro/{gh}/{zone}/{node}/{channel}/command`
+- `automation-engine` → REST (9300) → `history-logger` → MQTT
+- `scheduler` → REST (9405) → `automation-engine` → REST (9300) → `history-logger` → MQTT
+
+**Архитектура потока команд:**
+```
+Scheduler → REST → Automation-Engine → REST → History-Logger → MQTT → Узлы
+         (9405)                      (9300)
+```
+
+**Важно:** Централизованная публикация команд через history-logger обеспечивает единую точку логирования и мониторинга всех команд.
 
 ### 4.3. С PostgreSQL
 
@@ -502,6 +534,7 @@ php artisan tinker
 Все сервисы экспортируют Prometheus metrics:
 
 - `mqtt-bridge`: порт 9000 (`/metrics`)
+- `history-logger`: порт 9301 (`/metrics`)
 - `automation-engine`: порт 9401 (`/metrics`)
 - `scheduler`: порт 9402 (`/metrics`)
 

@@ -102,7 +102,7 @@ with open(schema_path) as f:
     schema = json.load(f)
 
 # Валидация через JSON-schema
-payload = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+payload = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
 jsonschema.validate(instance=payload, schema=schema)
 
 # Валидация через Pydantic
