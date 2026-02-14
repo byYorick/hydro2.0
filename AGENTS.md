@@ -1,8 +1,8 @@
 # AGENTS.md
 # Правила для ИИ‑агентов (Hydro 2.0, весь репозиторий)
 
-**Дата обновления:** 2026-01-23  
-**Версия:** 1.8  
+**Дата обновления:** 2026-02-14  
+**Версия:** 2.0  
 **Статус:** Основной документ правил для ИИ‑агентов
 
 ## Цель
@@ -15,11 +15,29 @@
 Этот файл задаёт общие правила для всего репозитория. Если в подкаталоге есть свой
 `AGENTS.md`, он дополняет и уточняет эти правила.
 
+## Быстрая сводка (обязательный минимум)
+
+- Общаться с пользователем только на русском языке.
+- Перед работой открыть минимум: `doc_ai/INDEX.md`, `doc_ai/SYSTEM_ARCH_FULL.md`,
+  `doc_ai/ARCHITECTURE_FLOWS.md`, `doc_ai/DEV_CONVENTIONS.md`.
+- `doc_ai/` — source of truth; `docs/` вручную не редактировать.
+- Команды к узлам не публикуются напрямую из scheduler/automation/Laravel:
+  единая точка публикации в MQTT — `history-logger`.
+- Базовый поток команд: `Scheduler -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
+- Не ломать защищённый пайплайн `ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`.
+- Любые изменения протокола/данных сопровождать обновлением спецификаций и строкой:
+  `Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0`.
+- Разработка backend и сервисов — внутри Docker; изменения БД — только через Laravel-миграции.
+
 ## Связанные документы
 
 - `doc_ai/DEV_CONVENTIONS.md` — общие конвенции разработки и оформления документации.
 - `doc_ai/SYSTEM_ARCH_FULL.md` — архитектурная истина.
+- `doc_ai/ARCHITECTURE_FLOWS.md` — визуализация ключевых потоков и пайплайнов.
 - `doc_ai/TASKS_FOR_AI_AGENTS.md` — правила постановки задач для ИИ.
+- `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — контракт REST API публикации команд.
+- `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — state machine циклов коррекции.
+- `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets.
 - `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` — базовый гайд поведения ИИ.
 - `doc_ai/10_AI_DEV_GUIDES/DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md` — спецификация задач.
 - `doc_ai/10_AI_DEV_GUIDES/HYDRO_PROMPTING_GUIDE.md` — правила формулирования промптов.
@@ -53,7 +71,8 @@
 
 ## 1.2) Среда разработки
 
-- Вся разработка выполняется в Docker; команды запускать внутри контейнеров проекта.
+- Backend/Laravel, Python-сервисы, БД и e2e запускать в Docker; команды выполнять внутри контейнеров проекта.
+- Прошивки ESP32 собирать в окружении ESP-IDF (вне Docker, если иное не указано локальными инструкциями).
 - Основные Docker-файлы:
   - `backend/docker-compose.dev.yml`
   - `backend/docker-compose.dev.win.yml`
@@ -85,13 +104,19 @@
 - При добавлении новых `message_type` или `channel` обновить
   `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md` и обработчики Python.
 - Обновить `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`.
+- Если затронут путь публикации команд — обновить `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md`.
+- Если затронуты циклы коррекции pH/EC — обновить
+  `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` и
+  `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`.
 - Если добавлена телеметрия — убедиться в записи `telemetry_samples` и `telemetry_last`.
 - Если меняются API-ответы или Inertia props — обновить фронтенд.
 - Указать строку `Compatible-With` (см. выше).
 
 ## 3) Правила по слоям
 
-- Команды к узлам идут только через Python/MQTT слой — не обходить планировщик (scheduler).
+- Команды к узлам идут только через Python-слой с централизованной MQTT-публикацией в `history-logger`.
+- Запрещено публиковать команды в MQTT напрямую из Laravel, scheduler и automation-engine.
+- Базовый путь команд: `Scheduler -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
 - Laravel владеет схемой БД: любые изменения через миграции, без ручного DDL.
 - При добавлении новых метрик телеметрии — обеспечить запись в `telemetry_samples`
   и `telemetry_last` (см. `doc_ai/05_DATA_AND_STORAGE`).
@@ -169,6 +194,5 @@
 - Не придумывать архитектуру заново и не игнорировать спецификации.
 - Если изменение затрагивает пайплайн/схемы взаимодействия и похоже на несовместимое или неочевидно,
   остановиться и запросить подтверждение.
-- Всегда отвечать на русском языке.
-- В ответах и документации использовать русские термины (бэкенд, фронтенд, база данных),
-  англоязычные — только как пояснение в скобках или в неизменяемых строках вроде `Compatible-With`.
+- Всегда отвечать на русском языке; англоязычные термины использовать только как технические
+  идентификаторы/имена API/протоколов.

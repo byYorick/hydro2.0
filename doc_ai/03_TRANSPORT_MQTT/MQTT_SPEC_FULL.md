@@ -393,6 +393,379 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
+## 7.4. Архитектура публикации команд через Scheduler-Task
+
+**Важно:** Scheduler и Automation-Engine **НЕ публикуют команды напрямую в MQTT**. Вместо этого используется многоуровневая архитектура с централизованной публикацией через history-logger.
+
+### 7.4.1. Поток команд
+
+```
+┌──────────┐      REST API (9405)      ┌────────────────┐      REST API (9300)      ┌───────────────┐
+│ Scheduler│ ────────────────────────> │ Automation-    │ ────────────────────────> │ History-      │
+│          │  POST /scheduler/task     │ Engine         │  POST /commands           │ Logger        │
+└──────────┘                            └────────────────┘                            └───────────────┘
+                                                                                              │
+                                                                                              │ MQTT Publish
+                                                                                              ▼
+                                                                                      ┌──────────────┐
+                                                                                      │ MQTT Broker  │
+                                                                                      │ (Mosquitto)  │
+                                                                                      └──────────────┘
+                                                                                              │
+                                                                                              │ Subscribe
+                                                                                              ▼
+                                                                                      ┌──────────────┐
+                                                                                      │  ESP32 Nodes │
+                                                                                      └──────────────┘
+```
+
+### 7.4.2. Scheduler → Automation-Engine
+
+**Endpoint:** `POST http://automation-engine:9405/scheduler/task`
+
+**Назначение:** Scheduler создает абстрактную задачу (scheduler-task) и отправляет её в automation-engine для выполнения.
+
+**Формат scheduler-task:**
+```json
+{
+  "task_id": "task-irrigation-123",
+  "type": "IRRIGATION",
+  "zone_id": 1,
+  "params": {
+    "duration_sec": 60,
+    "volume_ml": 2000,
+    "mode": "SCHEDULED"
+  },
+  "context": {
+    "source": "scheduler",
+    "cycle_id": 456,
+    "phase": "VEG",
+    "scheduled_at": "2026-02-14T10:00:00Z"
+  }
+}
+```
+
+**Типы scheduler-task:**
+- `IRRIGATION` — задача полива
+- `LIGHTING` — задача управления освещением
+- `DOSING` — задача дозирования (pH/EC)
+- `CLIMATE_CONTROL` — задача управления климатом
+
+### 7.4.3. Automation-Engine → History-Logger
+
+**Endpoint:** `POST http://history-logger:9300/commands`
+
+**Назначение:** Automation-engine преобразует абстрактную scheduler-task в конкретные device-level команды и отправляет их в history-logger для публикации в MQTT.
+
+**Преобразование задачи в команду:**
+
+Scheduler-task `IRRIGATION`:
+```json
+{
+  "task_id": "task-irrigation-123",
+  "type": "IRRIGATION",
+  "zone_id": 1,
+  "params": {
+    "duration_sec": 60
+  }
+}
+```
+
+↓ **Преобразуется automation-engine в** ↓
+
+MQTT команда `run_pump`:
+```json
+{
+  "cmd": "run_pump",
+  "params": {
+    "duration_ms": 60000
+  },
+  "cmd_id": "cmd-12345",
+  "ts": 1710001234,
+  "sig": "a1b2c3d4e5f6..."
+}
+```
+
+**Топик:** `hydro/gh-1/zn-1/nd-pump-1/pump_in/command`
+
+### 7.4.4. History-Logger → MQTT
+
+**Назначение:** History-logger — **единственная точка публикации команд в MQTT**. Это обеспечивает:
+- Централизованное логирование всех команд
+- Единая точка валидации
+- Единая точка HMAC подписи
+- Упрощенный мониторинг и отладка
+
+**Действия history-logger:**
+1. Получает команду через REST API (9300)
+2. Валидирует формат команды
+3. Добавляет HMAC подпись (если требуется)
+4. Публикует в MQTT топик
+5. Логирует команду в БД (`commands` таблица)
+6. Экспортирует метрики в Prometheus
+
+### 7.4.5. Пример полного потока
+
+**1. Scheduler отправляет задачу:**
+```bash
+POST http://automation-engine:9405/scheduler/task
+{
+  "task_id": "task-irr-001",
+  "type": "IRRIGATION",
+  "zone_id": 1,
+  "params": {"duration_sec": 30}
+}
+```
+
+**2. Automation-engine обрабатывает задачу:**
+- Получает effective-targets для зоны 1
+- Определяет, какую ноду и канал использовать (например, `nd-pump-1/pump_in`)
+- Преобразует в device-level команду `run_pump`
+
+**3. Automation-engine отправляет команду в history-logger:**
+```bash
+POST http://history-logger:9300/commands
+{
+  "greenhouse_uid": "gh-1",
+  "zone_id": 1,
+  "node_uid": "nd-pump-1",
+  "channel": "pump_in",
+  "type": "run_pump",
+  "params": {"duration_ms": 30000},
+  "context": {
+    "task_id": "task-irr-001",
+    "source": "scheduler"
+  }
+}
+```
+
+**4. History-logger публикует в MQTT:**
+```
+Topic: hydro/gh-1/zn-1/nd-pump-1/pump_in/command
+Payload:
+{
+  "cmd": "run_pump",
+  "params": {"duration_ms": 30000},
+  "cmd_id": "cmd-abc123",
+  "ts": 1710001234,
+  "sig": "a1b2c3..."
+}
+```
+
+**5. ESP32 нода получает команду:**
+- Подписана на топик `hydro/gh-1/zn-1/nd-pump-1/pump_in/command`
+- Проверяет HMAC подпись
+- Выполняет команду
+- Отправляет `command_response` (см. раздел 8)
+
+### 7.4.6. Преимущества архитектуры
+
+1. **Разделение ответственности:**
+   - Scheduler — планирование и расписания
+   - Automation-engine — бизнес-логика и преобразование задач
+   - History-logger — транспортный уровень и логирование
+
+2. **Централизованное логирование:**
+   - Все команды проходят через history-logger
+   - Единая точка для аудита и отладки
+   - Упрощенный мониторинг через Prometheus
+
+3. **Гибкость:**
+   - Scheduler работает с абстрактными задачами
+   - Automation-engine может менять логику преобразования без изменения scheduler
+   - History-logger может менять MQTT брокер без изменения вышестоящих сервисов
+
+4. **Безопасность:**
+   - HMAC подпись добавляется в одном месте (history-logger)
+   - Централизованная валидация команд
+   - Единая точка для rate limiting
+
+### 7.4.7. См. также
+
+- `../04_BACKEND_CORE/HISTORY_LOGGER_API.md` — REST API спецификация history-logger
+- `../04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python сервисов
+- `BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и нодами
+
+## 7.5. Системные команды активации/деактивации нод (Correction Cycle)
+
+**ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Automation-Engine управляет жизненным циклом сенсорных нод через системные команды активации/деактивации.
+
+### 7.5.1. Топик системных команд
+
+В отличие от канальных команд, системные команды публикуются в топик **без указания канала**:
+
+```
+hydro/{gh}/{zone}/{node}/system/command
+```
+
+**Примеры:**
+```
+hydro/gh-1/zn-1/nd-ph-1/system/command
+hydro/gh-1/zn-1/nd-ec-1/system/command
+```
+
+### 7.5.2. Команда activate_sensor_mode
+
+**Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
+
+**Топик:** `hydro/{gh}/{zone}/{node}/system/command`
+
+**Payload:**
+```json
+{
+  "cmd": "activate_sensor_mode",
+  "params": {
+    "stabilization_time_sec": 60
+  },
+  "cmd_id": "cmd-activate-123",
+  "ts": 1710001234,
+  "sig": "a1b2c3d4e5f6..."
+}
+```
+
+**Параметры:**
+- `stabilization_time_sec` (integer, обязательно) — время стабилизации сенсора в секундах. После активации нода ждет это время перед разрешением коррекций.
+
+**Поведение ноды при получении activate_sensor_mode:**
+1. Переход из режима IDLE в режим ACTIVE
+2. Запуск таймера стабилизации (`stabilization_time_sec`)
+3. Начало измерений и публикации телеметрии
+4. Установка флагов в телеметрии:
+   - `flow_active: true` (есть поток)
+   - `stable: false` (пока идет стабилизация)
+   - `corrections_allowed: false` (коррекции запрещены до окончания стабилизации)
+5. По истечении `stabilization_time_sec`:
+   - `stable: true`
+   - `corrections_allowed: true` (коррекции разрешены)
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-activate-123",
+  "status": "DONE",
+  "details": {
+    "mode": "ACTIVE",
+    "stabilization_time_sec": 60
+  },
+  "ts": 1710001235000
+}
+```
+
+### 7.5.3. Команда deactivate_sensor_mode
+
+**Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
+
+**Топик:** `hydro/{gh}/{zone}/{node}/system/command`
+
+**Payload:**
+```json
+{
+  "cmd": "deactivate_sensor_mode",
+  "params": {},
+  "cmd_id": "cmd-deactivate-456",
+  "ts": 1710002234,
+  "sig": "b2c3d4e5f6a1..."
+}
+```
+
+**Параметры:** Пустой объект (команда не требует параметров).
+
+**Поведение ноды при получении deactivate_sensor_mode:**
+1. Переход из режима ACTIVE в режим IDLE
+2. Остановка измерений
+3. Прекращение публикации телеметрии
+4. Публикация только heartbeat и LWT (status)
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-deactivate-456",
+  "status": "DONE",
+  "details": {
+    "mode": "IDLE"
+  },
+  "ts": 1710002235000
+}
+```
+
+### 7.5.4. Расширенная телеметрия при активации
+
+При активированном режиме ACTIVE, pH/EC ноды публикуют расширенную телеметрию с дополнительными флагами:
+
+**Топик:** `hydro/{gh}/{zone}/{node}/{channel}/telemetry`
+
+**Payload (во время стабилизации):**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001250,
+  "flow_active": true,
+  "stable": false,
+  "stabilization_progress_sec": 15,
+  "corrections_allowed": false
+}
+```
+
+**Payload (после стабилизации):**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001300,
+  "flow_active": true,
+  "stable": true,
+  "stabilization_progress_sec": 60,
+  "corrections_allowed": true
+}
+```
+
+**Новые поля телеметрии:**
+- `flow_active` (boolean) — индикатор наличия потока через сенсор
+- `stable` (boolean) — true после истечения `stabilization_time_sec`
+- `stabilization_progress_sec` (integer) — прогресс стабилизации (секунды с момента активации)
+- `corrections_allowed` (boolean) — разрешение на коррекции (true после стабилизации + min_interval_sec)
+
+### 7.5.5. Применение в Correction Cycle State Machine
+
+Системные команды активации/деактивации используются automation-engine для управления state machine коррекции:
+
+| Переход состояний | Команда | Ноды |
+|------------------|---------|------|
+| IDLE → TANK_FILLING | `activate_sensor_mode` | pH, EC |
+| READY → IDLE | `deactivate_sensor_mode` | pH, EC |
+| READY → IRRIGATING | `activate_sensor_mode` | pH, EC (если требуется) |
+| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` | pH, EC |
+
+**Режимы активации:**
+
+**TANK_FILLING / TANK_RECIRC:**
+- Активируются pH + EC ноды
+- Коррекции: NPK (через EC ноду) + pH
+- Deactivation при переходе в READY
+
+**IRRIGATING / IRRIG_RECIRC:**
+- Активируются pH + EC ноды (если не были активны)
+- Коррекции: Ca/Mg/micro (через EC ноду) + pH
+- Deactivation при переходе в IDLE
+
+### 7.5.6. Требования к реализации на прошивке
+
+**pH/EC ноды должны:**
+1. Подписаться на топик `hydro/{gh}/{zone}/{node}/system/command` при подключении
+2. Поддерживать два режима работы:
+   - **IDLE:** Нет измерений, только heartbeat и LWT
+   - **ACTIVE:** Активные измерения и публикация телеметрии
+3. Реализовать таймер стабилизации для постепенного перехода к разрешению коррекций
+4. Публиковать расширенную телеметрию с флагами `flow_active`, `stable`, `corrections_allowed`
+5. Обрабатывать команды `activate_sensor_mode` и `deactivate_sensor_mode` с отправкой `command_response`
+
+### 7.5.7. См. также
+
+- `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle state machine
+- `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — конфигурация параметров стабилизации
+- `ARCHITECTURE_FLOWS.md` — диаграммы потоков с state machine
+
 ---
 
 # 8. Command Response (узлы → backend)

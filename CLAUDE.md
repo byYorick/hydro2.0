@@ -29,6 +29,7 @@
 **ВСЕГДА читай это в первую очередь при работе над задачей:**
 - `doc_ai/INDEX.md` — главный индекс документации (source of truth)
 - `doc_ai/SYSTEM_ARCH_FULL.md` — архитектура системы
+- `doc_ai/ARCHITECTURE_FLOWS.md` — **архитектурные схемы и пайплайны** (визуализация потоков данных)
 - `doc_ai/DEV_CONVENTIONS.md` — конвенции разработки
 - `README.md` — быстрые ссылки и обзор структуры
 
@@ -38,12 +39,14 @@
 
 - **Backend:** `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`, `backend/README.md`
 - **Python сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `backend/services/README.md`
+- **history-logger API:** `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — REST API спецификация
 - **Прошивки:** `doc_ai/02_HARDWARE_FIRMWARE/`, `firmware/README.md`
 - **MQTT протокол:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - **NodeConfig:** `firmware/NODE_CONFIG_SPEC.md`
 - **Frontend:** `doc_ai/07_FRONTEND/FRONTEND_ARCH_FULL.md`
 - **Android:** `doc_ai/12_ANDROID_APP/`
 - **Зоны/Рецепты:** `doc_ai/06_DOMAIN_ZONES_RECIPES/`
+- **Effective Targets:** `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация контроллеров
 
 ## Основные команды разработки
 

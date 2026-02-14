@@ -338,7 +338,162 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   узел формирует `command_response` со статусом `ERROR` и соответствующим `error_code`,
   а также может публиковать дополнительную диагностическую telemetry.
 
-## 4. Виртуальные каналы (VIRTUAL)
+## 4. Системные каналы и команды (SYSTEM)
+
+### 4.1. Системный канал
+
+Системный канал используется для управления жизненным циклом ноды и не привязан к конкретному физическому каналу.
+
+**Ключ канала:** `system`
+
+**Тип:** SYSTEM (специальный тип для управляющих команд)
+
+**MQTT топик:**
+```
+hydro/{gh}/{zone}/{node}/system/command
+```
+
+**Отличия от канальных команд:**
+- Топик не содержит имя канала между `{node}` и `command`
+- Команды влияют на поведение всей ноды, а не отдельного канала
+- Используется для управления режимами работы сенсорных нод
+
+### 4.2. Команда activate_sensor_mode
+
+**Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
+
+**Применимость:** pH ноды, EC ноды (узлы с сенсорами, зависящими от потока раствора).
+
+**Payload:**
+```json
+{
+  "cmd": "activate_sensor_mode",
+  "params": {
+    "stabilization_time_sec": 60
+  },
+  "cmd_id": "cmd-activate-123",
+  "ts": 1710001234,
+  "sig": "a1b2c3d4e5f6..."
+}
+```
+
+**Параметры:**
+- `stabilization_time_sec` (integer, обязательно) — время стабилизации сенсора в секундах
+
+**Поведение ноды:**
+1. Переход из режима IDLE в режим ACTIVE
+2. Запуск таймера стабилизации
+3. Начало измерений и публикации телеметрии с расширенными флагами:
+   - `flow_active: true`
+   - `stable: false` (до истечения stabilization_time_sec)
+   - `stabilization_progress_sec` — прогресс стабилизации
+   - `corrections_allowed: false` (до истечения stabilization_time_sec)
+4. После стабилизации: `stable: true`, `corrections_allowed: true`
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-activate-123",
+  "status": "DONE",
+  "details": {
+    "mode": "ACTIVE",
+    "stabilization_time_sec": 60
+  },
+  "ts": 1710001235000
+}
+```
+
+### 4.3. Команда deactivate_sensor_mode
+
+**Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
+
+**Применимость:** pH ноды, EC ноды.
+
+**Payload:**
+```json
+{
+  "cmd": "deactivate_sensor_mode",
+  "params": {},
+  "cmd_id": "cmd-deactivate-456",
+  "ts": 1710002234,
+  "sig": "b2c3d4e5f6a1..."
+}
+```
+
+**Параметры:** Пустой объект (команда не требует параметров).
+
+**Поведение ноды:**
+1. Переход из режима ACTIVE в режим IDLE
+2. Остановка измерений
+3. Прекращение публикации телеметрии
+4. Публикация только heartbeat и LWT (status)
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-deactivate-456",
+  "status": "DONE",
+  "details": {
+    "mode": "IDLE"
+  },
+  "ts": 1710002235000
+}
+```
+
+### 4.4. Расширенная телеметрия в ACTIVE режиме
+
+В режиме ACTIVE pH/EC ноды публикуют стандартную телеметрию с дополнительными полями:
+
+**Во время стабилизации:**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001250,
+  "flow_active": true,
+  "stable": false,
+  "stabilization_progress_sec": 15,
+  "corrections_allowed": false
+}
+```
+
+**После стабилизации:**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001300,
+  "flow_active": true,
+  "stable": true,
+  "stabilization_progress_sec": 60,
+  "corrections_allowed": true
+}
+```
+
+**Новые поля:**
+- `flow_active` (boolean) — индикатор наличия потока через сенсор
+- `stable` (boolean) — true после истечения stabilization_time_sec
+- `stabilization_progress_sec` (integer) — прогресс стабилизации (секунды с момента активации)
+- `corrections_allowed` (boolean) — разрешение на коррекции
+
+### 4.5. Применение в Correction Cycle
+
+Системные команды используются automation-engine для управления state machine коррекции:
+
+| Переход состояний | Команда | Применимость |
+|------------------|---------|-------------|
+| IDLE → TANK_FILLING | `activate_sensor_mode` | pH, EC ноды |
+| READY → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
+| READY → IRRIGATING | `activate_sensor_mode` | pH, EC ноды (если не активны) |
+| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
+
+**См. также:**
+- `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (секция 7.5) — полная спецификация системных команд
+
+---
+
+## 5. Виртуальные каналы (VIRTUAL)
 
 Примеры:
 
@@ -355,7 +510,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ---
 
-## 5. Правила расширения справочника
+## 6. Правила расширения справочника
 
 1. Любой новый канал должен быть добавлен:
  - сюда;
