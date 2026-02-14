@@ -63,11 +63,18 @@ actions:
       zone_id: ${zone_id}
     save: baseline_mismatch_alert
 
-  - step: mismatch_window_start_ts
+  - step: baseline_mismatch_zone_event_id
     type: database_query
     query: |
-      SELECT NOW() AS ts
-    save: mismatch_start_ts
+      SELECT COALESCE(MAX(id), 0) AS baseline_event_id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'COMMAND_ZONE_NODE_MISMATCH'
+        AND details->>'node_uid' = :node_uid
+    params:
+      zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
+    save: baseline_mismatch_zone_event
 
   - step: create_mismatch_zone
     type: database_query
@@ -127,13 +134,13 @@ actions:
         AND type = 'COMMAND_ZONE_NODE_MISMATCH'
         AND details->>'reason' = 'zone_mismatch'
         AND details->>'node_uid' = :node_uid
-        AND created_at >= :mismatch_start_ts
+        AND id > :baseline_event_id
       ORDER BY id DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
-      mismatch_start_ts: ${mismatch_start_ts.0.ts}
+      baseline_event_id: ${baseline_mismatch_zone_event.0.baseline_event_id}
     expected_rows: 1
     timeout: 30.0
 
@@ -174,11 +181,11 @@ assertions:
         AND type = 'COMMAND_ZONE_NODE_MISMATCH'
         AND details->>'reason' = 'zone_mismatch'
         AND details->>'node_uid' = :node_uid
-        AND created_at >= :mismatch_start_ts
+        AND id > :baseline_event_id
     params:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
-      mismatch_start_ts: ${mismatch_start_ts.0.ts}
+      baseline_event_id: ${baseline_mismatch_zone_event.0.baseline_event_id}
     expected:
       - field: event_count
         operator: greater_than
@@ -209,11 +216,9 @@ assertions:
       WHERE zone_id = :zone_id
         AND cmd = 'set_relay'
         AND params->>'marker' = :marker
-        AND created_at >= :mismatch_start_ts
     params:
       zone_id: ${zone_id}
       marker: ${mismatch_marker}
-      mismatch_start_ts: ${mismatch_start_ts.0.ts}
     expected:
       - field: command_count
         operator: equals

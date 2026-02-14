@@ -9,6 +9,11 @@ echo "=== Запуск контрактных тестов ==="
 # Переходим в директорию с тестами
 cd "$(dirname "$0")/../.." || exit 1
 
+# Проверка паритета runtime-схем между backend source и firmware mirror
+if [ -x "../../tools/check_runtime_schema_parity.sh" ]; then
+    ../../tools/check_runtime_schema_parity.sh
+fi
+
 # Проверяем наличие pytest
 if ! command -v pytest &> /dev/null; then
     echo "Ошибка: pytest не установлен"
@@ -72,4 +77,3 @@ fi
 
 echo ""
 echo "=== Все тесты прошли успешно ==="
-

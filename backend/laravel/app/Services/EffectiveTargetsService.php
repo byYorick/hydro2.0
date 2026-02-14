@@ -325,8 +325,6 @@ class EffectiveTargetsService
             return $targets;
         }
 
-        $targets = $this->mergePhSubsystem($targets, $subsystems);
-        $targets = $this->mergeEcSubsystem($targets, $subsystems);
         $targets = $this->mergeIrrigationSubsystem($targets, $subsystems);
         $targets = $this->mergeLightingSubsystem($targets, $subsystems);
         $targets = $this->mergeClimateSubsystem($targets, $subsystems);
@@ -700,11 +698,6 @@ class EffectiveTargetsService
 
     protected function extractSubsystemTargets(array $subsystems, string $subsystem): ?array
     {
-        $raw = $subsystems[$subsystem]['targets'] ?? null;
-        if (is_array($raw)) {
-            return $raw;
-        }
-
         $execution = $subsystems[$subsystem]['execution'] ?? null;
         if (!is_array($execution)) {
             return null;

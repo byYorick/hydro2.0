@@ -184,12 +184,13 @@ class TestBurstTelemetry:
         """Тест обработки большого количества телеметрии за короткое время."""
         # Симулируем burst телеметрии
         telemetry_messages = []
+        ts_base = int(time.time())
         for i in range(1000):
             telemetry_messages.append({
                 "metric_type": "PH",
                 "value": 6.5 + (i % 10) * 0.1,
-                "ts": time.time() + i * 0.001,
-                "node_id": f"nd-ph-{i % 10}"
+                # Контракт telemetry.schema.json требует integer ts (unix seconds)
+                "ts": ts_base + i,
             })
         
         # Проверяем, что все сообщения валидны
@@ -215,12 +216,12 @@ class TestBurstTelemetry:
         # Симулируем отправку большого количества сообщений в очередь
         # (в реальном коде это может быть Redis очередь)
         messages = []
+        ts_base = int(time.time())
         for i in range(100):
             messages.append({
                 "metric_type": "PH",
                 "value": 6.5,
-                "ts": time.time(),
-                "node_id": f"nd-ph-{i}"
+                "ts": ts_base + i,
             })
         
         # Проверяем, что все сообщения могут быть обработаны

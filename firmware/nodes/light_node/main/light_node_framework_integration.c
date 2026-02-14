@@ -111,7 +111,7 @@ static esp_err_t handle_test_sensor(
     if (strcmp(channel, "light") != 0) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_channel",
             "Unknown sensor channel",
             NULL
@@ -122,7 +122,7 @@ static esp_err_t handle_test_sensor(
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "i2c_not_initialized",
             "I2C bus is not initialized",
             NULL
@@ -137,7 +137,7 @@ static esp_err_t handle_test_sensor(
     if (!read_success || isnan(light_lux) || !isfinite(light_lux) || light_lux < 0.0f) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "read_failed",
             "Failed to read light sensor",
             NULL
@@ -148,7 +148,7 @@ static esp_err_t handle_test_sensor(
     if (using_stub) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "sensor_stub",
             "Light sensor returned stub values",
             NULL

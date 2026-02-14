@@ -267,11 +267,16 @@ test.describe('Zone Detail', () => {
       await page.getByRole('tab', { name: 'Автоматизация' }).click();
       await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
 
-      await page.locator('select').first().selectOption('done_unconfirmed');
+      const schedulerPresetSelect = page
+        .locator('select')
+        .filter({ has: page.locator('option[value="done_unconfirmed"]') })
+        .first();
+      await expect(schedulerPresetSelect).toBeVisible({ timeout: 15000 });
+      await schedulerPresetSelect.selectOption('done_unconfirmed');
       await expect(page.getByText('st-e2e-done-unconfirmed')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText(doneTaskId)).not.toBeVisible();
 
-      await page.locator('select').first().selectOption('all');
+      await schedulerPresetSelect.selectOption('all');
       await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('st-e2e-failed');
       await expect(page.getByText('st-e2e-failed')).toBeVisible({ timeout: 15000 });
 

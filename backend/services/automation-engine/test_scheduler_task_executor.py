@@ -54,6 +54,10 @@ async def test_execute_irrigation_success():
     assert result["reason_code"] == "irrigation_required"
     assert result["command_submitted"] is True
     assert result["command_effect_confirmed"] is True
+    assert result["run_mode"] == "run_full"
+    assert isinstance(result["executed_steps"], list)
+    assert isinstance(result["safety_flags"], list)
+    assert "next_due_at" in result
     called_kwargs = command_bus.publish_controller_command_closed_loop.await_args.kwargs
     assert called_kwargs["command"]["params"]["duration_ms"] == 5000
     command_bus.publish_controller_command_closed_loop.assert_awaited_once()
@@ -271,6 +275,166 @@ async def test_execute_ventilation_skips_when_outside_temperature_below_limit():
     assert result["action_required"] is False
     assert result["commands_total"] == 0
     command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_skips_when_soil_moisture_in_norm_and_no_heat():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={
+                "sensor_inputs": {
+                    "soil_moisture_pct": 82.0,
+                    "ambient_temp_c": 24.0,
+                    "soil_temp_c": 22.0,
+                }
+            },
+        )
+
+    assert result["success"] is True
+    assert result["action_required"] is False
+    assert result["decision"] == "skip"
+    assert result["reason_code"] == "target_already_met"
+    assert result["run_mode"] == "skip"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_skips_when_already_running():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"already_running": True},
+        )
+
+    assert result["success"] is True
+    assert result["action_required"] is False
+    assert result["decision"] == "skip"
+    assert result["reason_code"] == "already_running"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_skips_when_outside_window():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"outside_window": True},
+        )
+
+    assert result["success"] is True
+    assert result["action_required"] is False
+    assert result["decision"] == "skip"
+    assert result["reason_code"] == "outside_window"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_skips_when_safety_blocked():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"safety": {"blocked": True}},
+        )
+
+    assert result["success"] is True
+    assert result["action_required"] is False
+    assert result["decision"] == "skip"
+    assert result["reason_code"] == "safety_blocked"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_irrigation_returns_retry_and_enqueues_internal_retry_on_low_water():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue, \
+         patch("scheduler_task_executor.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-retry-1",
+            "status": "pending",
+            "scheduled_for": "2026-02-13T11:00:00",
+            "task_type": "irrigation",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={
+                "low_water": True,
+                "config": {"execution": {"decision": {"max_retry": 3, "backoff_sec": 60}}},
+            },
+            task_context={"correlation_id": "corr-retry-low-water"},
+        )
+
+    assert result["success"] is True
+    assert result["action_required"] is False
+    assert result["decision"] == "retry"
+    assert result["reason_code"] == "low_water"
+    assert result["retry_attempt"] == 1
+    assert result["retry_max_attempts"] == 3
+    assert result["retry_backoff_sec"] == 60
+    assert result["retry_enqueued"]["enqueue_id"] == "enq-retry-1"
+    assert isinstance(result["next_due_at"], str)
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+    mock_enqueue.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_ventilation_marks_external_fallback_when_weather_metrics_unavailable():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors s" in normalized and "s.type = $2" in normalized:
+            return []
+        if "from nodes n" in normalized and "lower(trim(coalesce(n.type, ''))) = any($2::text[])" in normalized:
+            return [{"uid": "nd-vent-1", "type": "climate", "channel": "default"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="ventilation",
+            payload={
+                "config": {
+                    "execution": {
+                        "limits": {
+                            "strong_wind_mps": 10.0,
+                            "low_outside_temp_c": 8.0,
+                        }
+                    }
+                }
+            },
+        )
+
+    assert result["success"] is True
+    assert result["decision"] == "run"
+    assert result["reason_code"] == "climate_external_nodes_unavailable"
+    assert "climate_external_nodes_unavailable" in result["safety_flags"]
+    assert result["decision_details"]["climate_fallback"]["active"] is True
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
 
 
 @pytest.mark.asyncio

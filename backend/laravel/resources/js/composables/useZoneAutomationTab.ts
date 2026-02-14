@@ -553,6 +553,14 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (!normalized) return reasonText ? String(reasonText) : '-'
 
     const reasonMap: Record<string, string> = {
+      already_running: 'Операция уже выполняется',
+      outside_window: 'Задача вызвана вне окна выполнения',
+      safety_blocked: 'Выполнение заблокировано safety-политикой',
+      target_already_met: 'Целевое состояние уже достигнуто',
+      nodes_unavailable: 'Недоступны обязательные ноды',
+      low_water: 'Недостаточный уровень воды/раствора',
+      climate_external_nodes_unavailable: 'Внешние climate-ноды недоступны, включён fallback',
+      irrigation_required: 'Требуется выполнение полива',
       task_due_deadline_exceeded: 'Задача отклонена: пропущен дедлайн due_at',
       task_expired: 'Задача просрочена: превышен expires_at',
       command_bus_unavailable: 'CommandBus недоступен',

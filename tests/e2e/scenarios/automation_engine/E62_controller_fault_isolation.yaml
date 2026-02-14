@@ -86,9 +86,11 @@ actions:
       SET status = 'online',
           last_seen_at = COALESCE(last_seen_at, NOW()),
           updated_at = NOW()
-      WHERE zone_id = :zone_id;
+      WHERE zone_id = :zone_id
+        AND uid = :node_uid;
     params:
       zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
 
   - step: ensure_zone_readiness_bindings
     type: database_execute
@@ -177,11 +179,13 @@ actions:
       JOIN node_channels nc ON nc.id = cb.node_channel_id
       JOIN nodes n ON n.id = nc.node_id
       WHERE n.zone_id = :zone_id
+        AND n.uid = :node_uid
         AND n.status = 'online'
         AND cb.role IN ('main_pump', 'drain')
       ORDER BY cb.role
     params:
       zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
     expected_rows: 2
     timeout: 15.0
 

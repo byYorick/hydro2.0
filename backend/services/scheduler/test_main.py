@@ -128,6 +128,37 @@ def test_schedule_crossings_across_midnight():
     assert crossings == [datetime(2025, 1, 2, 0, 15, 0)]
 
 
+def test_extract_task_outcome_fields_includes_extended_contract_fields():
+    outcome = scheduler_main._extract_task_outcome_fields(
+        {
+            "status": "completed",
+            "result": {
+                "action_required": False,
+                "decision": "retry",
+                "reason_code": "nodes_unavailable",
+                "executed_steps": [{"step": "decision_retry", "status": "retry_scheduled"}],
+                "safety_flags": ["nodes_unavailable"],
+                "next_due_at": "2026-02-13T11:00:00",
+                "run_mode": "run_full",
+                "retry_attempt": 2,
+                "retry_max_attempts": 10,
+                "retry_backoff_sec": 60,
+                "measurements_before_after": {"before": {"soil_moisture_pct": 71.2}, "after": None},
+            },
+        }
+    )
+
+    assert outcome["decision"] == "retry"
+    assert outcome["reason_code"] == "nodes_unavailable"
+    assert outcome["next_due_at"] == "2026-02-13T11:00:00"
+    assert outcome["executed_steps"][0]["step"] == "decision_retry"
+    assert outcome["safety_flags"] == ["nodes_unavailable"]
+    assert outcome["run_mode"] == "run_full"
+    assert outcome["retry_attempt"] == 2
+    assert outcome["retry_max_attempts"] == 10
+    assert outcome["retry_backoff_sec"] == 60
+
+
 @pytest.mark.asyncio
 async def test_resolve_zone_last_check_loads_persistent_cursor():
     now_dt = datetime(2025, 1, 1, 12, 0, 0)

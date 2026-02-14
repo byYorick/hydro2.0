@@ -65,6 +65,7 @@ down-dev: down
 .PHONY: protocol-check
 protocol-check:
 	@echo "Running protocol contract tests..."
+	@./tools/check_runtime_schema_parity.sh
 	@cd backend/services/common/schemas && bash run_contract_tests.sh
 
 .PHONY: erd

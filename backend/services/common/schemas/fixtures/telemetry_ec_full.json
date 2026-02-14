@@ -2,11 +2,7 @@
   "metric_type": "EC",
   "value": 1.2,
   "ts": 1737979200,
-  "channel": "ec_sensor",
-  "node_id": "nd-ec-1",
+  "unit": "mS/cm",
   "raw": 1200,
-  "tds": 840,
-  "temperature": 22.5,
   "stable": true
 }
-

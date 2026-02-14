@@ -396,6 +396,12 @@ class E2ERunner:
                         timeout=30
                     )
                 if result.returncode != 0:
+                    stderr_text = (result.stderr or "").strip()
+                    if "is not paused" in stderr_text.lower():
+                        logger.info(
+                            f"[FAULT_INJECT] Service {compose_service} already unpaused; skipping duplicate unpause"
+                        )
+                        return
                     logger.error(f"[FAULT_INJECT] Failed to unpause {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to unpause service {compose_service}: {result.stderr}")
                 logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} unpaused")

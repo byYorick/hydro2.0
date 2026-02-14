@@ -421,7 +421,7 @@ static esp_err_t relay_node_init_channel_callback(
 }
 
 // Обработчик команды set_relay с командным автоматом
-// Состояния: ACCEPTED -> DONE/FAILED
+// Состояния: ACK -> DONE/ERROR
 static esp_err_t handle_set_state(
     const char *channel,
     const cJSON *params,
@@ -443,7 +443,7 @@ static esp_err_t handle_set_state(
         ESP_LOGW(TAG, "set_relay invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid state",
             NULL
@@ -465,7 +465,7 @@ static esp_err_t handle_set_state(
     
     bool use_delayed_done = (state == 1 && duration_ms > 0);
 
-    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды (если DONE будет сразу)
+    // Шаг 1: Отправляем ACK сразу при принятии команды (если DONE будет сразу)
     if (cmd_id && !use_delayed_done) {
         node_command_handler_publish_accepted(cmd_id, channel);
     }
@@ -475,14 +475,14 @@ static esp_err_t handle_set_state(
     // Шаг 2: Выполняем команду
     esp_err_t err = relay_driver_set_state(channel, relay_state);
     
-    // Шаг 3: Отправляем финальный ответ DONE или FAILED
+    // Шаг 3: Отправляем финальный ответ DONE или ERROR
     const char *final_status;
     const char *error_code = NULL;
     const char *error_message = NULL;
     cJSON *error_details = NULL;
     
     if (err != ESP_OK) {
-        final_status = "FAILED";
+        final_status = "ERROR";
         relay_node_build_error_details(
             err,
             channel,
@@ -496,7 +496,7 @@ static esp_err_t handle_set_state(
         relay_node_cancel_auto_off(channel, true);
     } else {
         if (use_delayed_done) {
-            final_status = "ACCEPTED";
+            final_status = "ACK";
             relay_node_schedule_auto_off(channel, cmd_id, duration_ms);
         } else {
             final_status = "DONE";
@@ -555,7 +555,7 @@ static esp_err_t handle_toggle(
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", get_err, error_message);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             error_code,
             error_message,
             error_details
@@ -586,7 +586,7 @@ static esp_err_t handle_toggle(
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             error_code,
             error_message,
             error_details

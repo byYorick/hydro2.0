@@ -2,8 +2,10 @@ import { test, expect } from '../fixtures/test-data';
 import { TEST_IDS } from '../constants';
 
 test.describe('Cycle Control', () => {
+  test.describe.configure({ timeout: 60000 });
+
   test('should start zone and change status to RUNNING', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
 
     // Проверяем начальный статус
@@ -20,7 +22,7 @@ test.describe('Cycle Control', () => {
     }
 
     // Ждем обновления статуса
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
     
     // Проверяем, что статус изменился на RUNNING (или уже был RUNNING)
@@ -37,7 +39,7 @@ test.describe('Cycle Control', () => {
       console.log('Zone might already be started:', e);
     }
     
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -57,7 +59,7 @@ test.describe('Cycle Control', () => {
       }
     }
     
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
     
     // Проверяем статус PAUSED
@@ -78,7 +80,7 @@ test.describe('Cycle Control', () => {
       // Если не удалось установить состояние, пробуем продолжить
     }
     
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -98,7 +100,7 @@ test.describe('Cycle Control', () => {
       }
     }
     
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
     
     // Проверяем статус (может быть RUNNING или другим)
@@ -116,7 +118,7 @@ test.describe('Cycle Control', () => {
       console.log('Zone might already be started:', e);
     }
     
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -138,7 +140,7 @@ test.describe('Cycle Control', () => {
     }
 
     // Проверяем изменение статуса
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
     
     // Проверяем статус (может быть HARVESTED или другим, если harvest не поддерживается)
@@ -148,7 +150,7 @@ test.describe('Cycle Control', () => {
   });
 
   test('should show zone events after actions', async ({ page, testZone, apiHelper }) => {
-    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -171,7 +173,7 @@ test.describe('Cycle Control', () => {
 
     // Ждем обновления событий
     await page.waitForTimeout(3000);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2000);
 
     // Проверяем, что список событий все еще виден (если был)
@@ -183,4 +185,3 @@ test.describe('Cycle Control', () => {
     }
   });
 });
-

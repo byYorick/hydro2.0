@@ -179,7 +179,7 @@ static esp_err_t handle_run_pump(
         // cmd_id будет добавлен автоматически в node_command_handler_process
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid duration_ms",
             NULL
@@ -191,7 +191,7 @@ static esp_err_t handle_run_pump(
     if (duration_ms <= 0 || duration_ms > 60000) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "duration_ms must be between 1 and 60000",
             NULL
@@ -213,7 +213,7 @@ static esp_err_t handle_run_pump(
     if (!ph_node_pump_queue_push(&queued_cmd)) {
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             "pump_queue_full",
             "Pump queue is full",
             NULL
@@ -231,7 +231,7 @@ static esp_err_t handle_run_pump(
     }
     *response = node_command_handler_create_response(
         cmd_id,
-        "ACCEPTED",
+        "ACK",
         NULL,
         NULL,
         extra
@@ -266,7 +266,7 @@ static esp_err_t handle_calibrate_ph(
     if (strcmp(channel, "ph_sensor") != 0) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_channel",
             "calibrate command only works for ph_sensor channel",
             NULL
@@ -285,7 +285,7 @@ static esp_err_t handle_calibrate_ph(
         !known_ph_item || !cJSON_IsNumber(known_ph_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_parameter",
             "Missing or invalid stage/known_ph/ph_value",
             NULL
@@ -300,7 +300,7 @@ static esp_err_t handle_calibrate_ph(
     if (stage < 1 || stage > 2) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_parameter",
             "stage must be 1 or 2",
             NULL
@@ -312,7 +312,7 @@ static esp_err_t handle_calibrate_ph(
     if (known_ph < 0.0f || known_ph > 14.0f || isnan(known_ph) || isinf(known_ph)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_parameter",
             "known_ph must be between 0.0 and 14.0",
             NULL
@@ -335,7 +335,7 @@ static esp_err_t handle_calibrate_ph(
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_FAIL, "pH sensor calibration failed");
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "calibration_failed",
             "Failed to calibrate pH sensor",
             NULL
@@ -362,7 +362,7 @@ static esp_err_t handle_test_sensor(
         if (!i2c_bus_is_initialized()) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "i2c_not_initialized",
                 "I2C bus is not initialized",
                 NULL
@@ -374,7 +374,7 @@ static esp_err_t handle_test_sensor(
             if (!trema_ph_init()) {
                 *response = node_command_handler_create_response(
                     NULL,
-                    "FAILED",
+                    "ERROR",
                     "sensor_init_failed",
                     "Failed to initialize pH sensor",
                     NULL
@@ -390,7 +390,7 @@ static esp_err_t handle_test_sensor(
         if (!read_success || isnan(ph_value) || !isfinite(ph_value)) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "read_failed",
                 "Failed to read pH sensor",
                 NULL
@@ -401,7 +401,7 @@ static esp_err_t handle_test_sensor(
         if (using_stub) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "sensor_stub",
                 "pH sensor returned stub values",
                 NULL
@@ -412,7 +412,7 @@ static esp_err_t handle_test_sensor(
         if (ph_value < 0.0f || ph_value > 14.0f) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "out_of_range",
                 "pH value out of range",
                 NULL
@@ -449,7 +449,7 @@ static esp_err_t handle_test_sensor(
     if (strcmp(channel, "solution_temp_c") == 0) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "sensor_unavailable",
             "Solution temperature sensor is not configured in firmware",
             NULL
@@ -459,7 +459,7 @@ static esp_err_t handle_test_sensor(
 
     *response = node_command_handler_create_response(
         NULL,
-        "FAILED",
+        "ERROR",
         "invalid_channel",
         "Unknown sensor channel",
         NULL
@@ -678,7 +678,7 @@ static void ph_node_test_done_task(void *pvParameters) {
         if (!event.current_valid) {
             cJSON *failed_response = node_command_handler_create_response(
                 event.cmd_id,
-                "FAILED",
+                "ERROR",
                 "current_unavailable",
                 "Pump current is unavailable",
                 NULL
@@ -691,7 +691,7 @@ static void ph_node_test_done_task(void *pvParameters) {
                 }
                 cJSON_Delete(failed_response);
             }
-            node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "FAILED");
+            node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "ERROR");
             continue;
         }
 
@@ -971,7 +971,7 @@ static void ph_node_process_pump_queue(void) {
             if (!ph_node_pump_queue_push(&cmd)) {
                 cJSON *failed_response = node_command_handler_create_response(
                     cmd.cmd_id[0] ? cmd.cmd_id : NULL,
-                    "FAILED",
+                    "ERROR",
                     "pump_queue_full",
                     "Pump queue is full",
                     NULL
@@ -985,7 +985,7 @@ static void ph_node_process_pump_queue(void) {
                     cJSON_Delete(failed_response);
                 }
                 if (cmd.cmd_id[0]) {
-                    node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+                    node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
                 }
             }
             if (cooldown_remaining_ms > 0) {
@@ -1010,7 +1010,7 @@ static void ph_node_process_pump_queue(void) {
 
         cJSON *failed_response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "pump_error",
             "Failed to run pump",
             NULL
@@ -1035,7 +1035,7 @@ static void ph_node_process_pump_queue(void) {
             cJSON_Delete(failed_response);
         }
         if (cmd.cmd_id[0]) {
-            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
         }
     }
     if (min_cooldown_ms > 0) {
@@ -1138,7 +1138,7 @@ static cJSON *ph_node_create_pump_failed_response(const char *cmd_id, const char
 
     return node_command_handler_create_response(
         cmd_id,
-        "FAILED",
+        "ERROR",
         error_code,
         error_message,
         NULL

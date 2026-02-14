@@ -405,7 +405,7 @@ Runtime-обновления из фронтового конфигуратор�
 - **Параметры запроса:**
   - `limit` (1..100, default=20)
   - `include_timeline` (bool, default=false) — при `true` добавляет `timeline[]` из `zone_events` для каждого task.
-- **Поля ответа:** `task_id`, `status`, `result`, `error`, `error_code`, `action_required`, `decision`, `reason_code`, `reason`, `source`, `lifecycle[]`, `timeline[]`.
+- **Поля ответа:** `task_id`, `status`, `result`, `error`, `error_code`, `action_required`, `decision`, `reason_code`, `reason`, `executed_steps`, `safety_flags`, `next_due_at`, `measurements_before_after`, `run_mode`, `retry_attempt`, `retry_max_attempts`, `retry_backoff_sec`, `source`, `lifecycle[]`, `timeline[]`.
 - **Lifecycle:** снимки статусов из `scheduler_logs` (типично `accepted/running/completed/failed`).
 - **Timeline:** task-события из `zone_events` (`TASK_STARTED`, `DECISION_MADE`, `COMMAND_DISPATCHED`, `COMMAND_FAILED`, `TASK_FINISHED`, ...),
   фильтрация по `task_id` и/или `correlation_id`.
@@ -421,7 +421,7 @@ Runtime-обновления из фронтового конфигуратор�
 - **Дополнительно:** ответ всегда содержит:
   - `lifecycle[]` (снимки `scheduler_logs`);
   - `timeline[]` (детальные task-события из `zone_events`);
-  - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`.
+  - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`, `executed_steps`, `safety_flags`, `next_due_at`, `measurements_before_after`, `run_mode`, `retry_attempt`, `retry_max_attempts`, `retry_backoff_sec`.
 - Для 2-бакового recovery перехода (`irrigation -> tank-to-tank`) в `result.*` используются:
   - `source_reason_code=online_correction_failed`
   - `transition_reason_code=tank_to_tank_correction_started`
@@ -448,18 +448,19 @@ Runtime-обновления из фронтового конфигуратор�
   - `subsystems: object` (обязательны `ph/ec/irrigation`, enabled=true)
   - `activate: bool` (optional, default=true)
 - **Эффект:** при `activate=true` профиль переводится в активный runtime-режим для `effective_targets`.
+- **Валидация:** поля `subsystems.*.targets` запрещены (HTTP `422`), допускается только `subsystems.*.execution`.
 
 Минимальные поля `subsystems` для `2 бака`:
-- `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
-- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` (default `1200`)
-- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` (default `1800`)
-- `subsystems.solution_prepare.startup.level_poll_interval_sec` (default `60`)
-- `subsystems.solution_prepare.startup.clean_fill_retry_cycles` (default `1`)
-- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` (default `1200`)
+- `subsystems.diagnostics.execution.topology = \"two_tank_drip_substrate_trays\"`
+- `subsystems.diagnostics.execution.startup.clean_fill_timeout_sec` (default `1200`)
+- `subsystems.diagnostics.execution.startup.solution_fill_timeout_sec` (default `1800`)
+- `subsystems.diagnostics.execution.startup.level_poll_interval_sec` (default `60`)
+- `subsystems.diagnostics.execution.startup.clean_fill_retry_cycles` (default `1`)
+- `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` (default `1200`)
 - `subsystems.irrigation.recovery.max_continue_attempts` (default `5`)
 - `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` (default `20`)
 - `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` (default `10`)
-- `subsystems.solution_prepare.dosing_rules.prepare_allowed_components = [\"npk\"]`
+- `subsystems.diagnostics.execution.dosing_rules.prepare_allowed_components = [\"npk\"]`
 - `subsystems.irrigation.dosing_rules.irrigation_allowed_components = [\"calcium\", \"magnesium\", \"micro\"]`
 - `subsystems.irrigation.dosing_rules.irrigation_forbid_components = [\"npk\"]`
 
@@ -467,8 +468,8 @@ Runtime-обновления из фронтового конфигуратор�
 - recipe-targets (`ph/ec/...`) не сохраняются в logic-profile.
 
 Условная обязательность:
-- при `subsystems.solution_prepare.topology = \"two_tank_drip_substrate_trays\"`
-  обязательны оба блока: `subsystems.solution_prepare` и `subsystems.irrigation`.
+- при `subsystems.diagnostics.execution.topology = \"two_tank_drip_substrate_trays\"`
+  обязательны оба блока: `subsystems.diagnostics` и `subsystems.irrigation`.
 
 ### 3.6. POST /api/zones
 

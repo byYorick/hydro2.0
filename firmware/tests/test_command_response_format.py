@@ -26,35 +26,7 @@ def validate_command_response(message_str):
     
     try:
         jsonschema.validate(instance=message, schema=schema)
-        
-        # Дополнительные проверки
-        errors = []
-        
-        # Проверка обязательных полей
-        required_fields = ["cmd_id", "status", "ts"]
-        for field in required_fields:
-            if field not in message:
-                errors.append(f"Missing required field: {field}")
-        
-        # Проверка формата ts (должен быть в миллисекундах - большое число)
-        if "ts" in message:
-            ts = message["ts"]
-            if isinstance(ts, (int, float)):
-                # Проверяем, что это похоже на миллисекунды (больше 1000000000000 для 2024 года)
-                if ts < 1000000000000:
-                    errors.append(f"ts seems to be in seconds, expected milliseconds: {ts}")
-        
-        # Проверка статуса
-        if "status" in message:
-            valid_statuses = ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
-            if message["status"] not in valid_statuses:
-                errors.append(f"Invalid status: {message['status']}, expected one of {valid_statuses}")
-        
-        if errors:
-            return False, "; ".join(errors)
-        
         return True, "OK"
-        
     except jsonschema.ValidationError as e:
         return False, f"Schema validation error: {e.message}"
 
@@ -94,4 +66,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -344,7 +344,7 @@ INDEX: recipe_revision_phase_idx (recipe_revision_id)
 
 Правила валидации для топологии `2 бака`:
 - область применения: только при активной runtime-топологии
-  `zone_automation_logic_profiles.subsystems.solution_prepare.topology = "two_tank_drip_substrate_trays"`.
+  `zone_automation_logic_profiles.subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"`.
 - для фаз со статусом ревизии `PUBLISHED` обязательны поля:
   - `nutrient_npk_ratio_pct`
   - `nutrient_calcium_ratio_pct`
@@ -1111,17 +1111,17 @@ channel_binding 1—1 node_channel
 - `subsystems.solution_change.execution.duration_sec` -> `targets.solution_change.duration_sec`
 - `subsystems.solution_change.execution.*` -> `targets.solution_change.execution.*`
 - `subsystems.diagnostics.execution.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
-- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
-- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
-- `subsystems.solution_prepare.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
-- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
-- `subsystems.solution_prepare.topology` -> `targets.diagnostics.execution.topology`
+- `subsystems.diagnostics.execution.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
+- `subsystems.diagnostics.execution.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
+- `subsystems.diagnostics.execution.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
+- `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
+- `subsystems.diagnostics.execution.topology` -> `targets.diagnostics.execution.topology`
 - `subsystems.irrigation.recovery.max_continue_attempts` -> `targets.irrigation.execution.max_continue_attempts`
 - `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` -> `targets.irrigation.execution.degraded_tolerance.ec_pct`
 - `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`
 
 Совместимость rollout:
-- legacy `subsystems.*.targets` временно принимается backend-слоем и нормализуется в `execution`;
+- legacy `subsystems.*.targets` отклоняется backend-слоем (`422`);
 - канонический формат для новых payload/документации: `subsystems.*.execution`.
 
 Политика enable/disable подсистем:

@@ -71,6 +71,11 @@ services:
       - APP_ENV=local
       - APP_DEBUG=true
       - APP_DEBUG_MODE=true
+      # Разделяем кеши bootstrap между dev и e2e, чтобы не было перекрестного DB_HOST
+      - APP_CONFIG_CACHE=/tmp/laravel-config-local.php
+      - APP_SERVICES_CACHE=/tmp/laravel-services-local.php
+      - APP_PACKAGES_CACHE=/tmp/laravel-packages-local.php
+      - APP_EVENTS_CACHE=/tmp/laravel-events-local.php
       - SESSION_DRIVER=file
       - CACHE_DRIVER=file
       - SESSION_SAME_SITE=lax

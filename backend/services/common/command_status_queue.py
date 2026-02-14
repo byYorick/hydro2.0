@@ -180,7 +180,7 @@ def normalize_status(raw_status: str) -> Optional[CommandStatus]:
         return CommandStatus.DONE
     
     # ERROR - команда завершилась с ошибкой
-    if raw_upper in ("ERROR", "FAILED", "FAIL"):
+    if raw_upper == "ERROR":
         return CommandStatus.ERROR
 
     if raw_upper == "INVALID":

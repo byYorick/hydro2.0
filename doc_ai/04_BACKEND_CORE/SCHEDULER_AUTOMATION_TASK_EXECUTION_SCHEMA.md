@@ -1,7 +1,7 @@
-# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.2)
+# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.3)
 
-**Дата:** 2026-02-10  
-**Статус:** Актуализировано после реализации cycle-start/refill workflow  
+**Дата:** 2026-02-13  
+**Статус:** Актуализировано после внедрения decision/outcome v1 (AUTO_LOGIC_*)  
 **Область:** `backend/services/scheduler`, `backend/services/automation-engine`, `backend/laravel`  
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -142,7 +142,34 @@ Breaking-change: обратная совместимость для старых
   - `timeout`
   - `not_found`
 
-## 2.3.1 Формальная owner-модель статусов (фиксировано, R0)
+### 2.3.1 Terminal outcome (as-is, обновлено 2026-02-13)
+
+В terminal snapshot/result нормализуются поля decision-layer:
+
+- `action_required`
+- `decision` (`run|skip|retry|fail`)
+- `reason_code`
+- `reason`
+- `error_code`/`error` (для failure/terminal fail)
+
+Расширенный summary-контракт (feature-flag `AUTO_LOGIC_EXTENDED_OUTCOME_V1`):
+
+- `executed_steps[]`
+- `safety_flags[]`
+- `next_due_at`
+- `measurements_before_after`
+- `run_mode`
+- `retry_attempt`
+- `retry_max_attempts`
+- `retry_backoff_sec`
+
+Для `decision=retry` (например, `low_water`, `nodes_unavailable`) `automation-engine`:
+
+- публикует infra-alert;
+- ставит internal enqueue retry-задачу;
+- возвращает `mode=decision_retry`, `next_due_at`, retry-метаданные.
+
+## 2.3.2 Формальная owner-модель статусов (фиксировано, R0)
 
 - Business-статусы (owner: `automation-engine`, источник истины: `/scheduler/task/{task_id}`):
   - `accepted`, `running`, `completed`, `failed`, `rejected`, `expired`.
@@ -433,6 +460,19 @@ Container-level chaos:
 
 Нормализованные коды outcome (актуально):
 - reason:
+  - `already_running`
+  - `outside_window`
+  - `safety_blocked`
+  - `target_already_met`
+  - `irrigation_required`
+  - `low_water`
+  - `nodes_unavailable`
+  - `lighting_already_in_target_state`
+  - `wind_blocked`
+  - `outside_temp_blocked`
+  - `climate_external_nodes_unavailable`
+  - `sensor_level_unavailable`
+  - `sensor_stale_detected`
   - `task_due_deadline_exceeded`
   - `task_expired`
   - `command_bus_unavailable`
@@ -566,6 +606,7 @@ Container-level chaos:
 | Single-leader scheduler | реализован feature-flag путь (`pg advisory lock`, follower safe-mode, reconnect backoff) + unit/service-level/process-level/container-level chaos failover | выполнять regression прогоны chaos-suite в CI | P1 |
 | Idempotency | реализован (`correlation_id` required + payload mismatch) | расширить observability dedupe hit-rate | P1 |
 | Decision layer | реализован (structured result + run/skip/retry/fail + normalized failure fallback) | UI labels/локализация reason_code | P2 |
+| Extended outcome v1 | реализован в `automation-engine -> scheduler -> laravel API` (`executed_steps/safety_flags/next_due_at/...`) | расширить frontend-визуализацию полей (операторские подсказки retry/fallback) | P2 |
 | error_code | реализован в snapshot/API + унифицирован для API-level failure веток | поддерживать словарь при новых workflow | P3 |
 | Event timeline | реализован базовый timeline + tank/refill events + SLA-render в ZoneAutomationTab + browser e2e UI-сценарий | расширить операторские пресеты при добавлении новых workflow | P2 |
 | Self-task enqueue | реализован (`/scheduler/internal/enqueue` + scheduler scan/dispatched) + anti-silent diagnostics | расширить сценарии ретраев/backoff | P2 |

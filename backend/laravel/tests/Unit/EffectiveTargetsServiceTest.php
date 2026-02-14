@@ -326,11 +326,19 @@ class EffectiveTargetsServiceTest extends TestCase
             'subsystems' => [
                 'ph' => [
                     'enabled' => true,
-                    'execution' => [],
+                    'execution' => [
+                        'target' => 5.4,
+                        'min' => 5.2,
+                        'max' => 5.6,
+                    ],
                 ],
                 'ec' => [
                     'enabled' => true,
-                    'execution' => [],
+                    'execution' => [
+                        'target' => 2.4,
+                        'min' => 2.1,
+                        'max' => 2.7,
+                    ],
                 ],
                 'irrigation' => [
                     'enabled' => true,
@@ -360,11 +368,22 @@ class EffectiveTargetsServiceTest extends TestCase
                     'enabled' => true,
                     'execution' => [
                         'interval_minutes' => 30,
+                        'topology' => 'two_tank_drip_substrate_trays',
                         'workflow' => 'cycle_start',
                         'required_node_types' => ['irrig', 'climate'],
                         'clean_tank_full_threshold' => 0.9,
                         'refill_duration_sec' => 40,
                         'refill_timeout_sec' => 600,
+                        'startup' => [
+                            'clean_fill_timeout_sec' => 1200,
+                            'solution_fill_timeout_sec' => 1800,
+                            'level_poll_interval_sec' => 60,
+                            'clean_fill_retry_cycles' => 1,
+                            'prepare_recirculation_timeout_sec' => 1200,
+                        ],
+                        'dosing_rules' => [
+                            'prepare_allowed_components' => ['npk'],
+                        ],
                         'refill' => [
                             'channel' => 'fill_valve',
                         ],
@@ -417,10 +436,17 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertTrue($result['targets']['ventilation']['execution']['force_skip']);
 
         $this->assertSame(1800, $result['targets']['diagnostics']['interval_sec']);
+        $this->assertSame('two_tank_drip_substrate_trays', $result['targets']['diagnostics']['execution']['topology']);
         $this->assertSame('cycle_start', $result['targets']['diagnostics']['execution']['workflow']);
         $this->assertSame(0.9, $result['targets']['diagnostics']['execution']['clean_tank_full_threshold']);
         $this->assertSame(40, $result['targets']['diagnostics']['execution']['refill_duration_sec']);
         $this->assertSame(600, $result['targets']['diagnostics']['execution']['refill_timeout_sec']);
+        $this->assertSame(1200, $result['targets']['diagnostics']['execution']['startup']['clean_fill_timeout_sec']);
+        $this->assertSame(1800, $result['targets']['diagnostics']['execution']['startup']['solution_fill_timeout_sec']);
+        $this->assertSame(60, $result['targets']['diagnostics']['execution']['startup']['level_poll_interval_sec']);
+        $this->assertSame(1, $result['targets']['diagnostics']['execution']['startup']['clean_fill_retry_cycles']);
+        $this->assertSame(1200, $result['targets']['diagnostics']['execution']['startup']['prepare_recirculation_timeout_sec']);
+        $this->assertSame(['npk'], $result['targets']['diagnostics']['execution']['dosing_rules']['prepare_allowed_components']);
         $this->assertSame('fill_valve', $result['targets']['diagnostics']['execution']['refill']['channel']);
 
         $this->assertSame(10800, $result['targets']['solution_change']['interval_sec']);
@@ -532,19 +558,19 @@ class EffectiveTargetsServiceTest extends TestCase
             'subsystems' => [
                 'ph' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'target' => 5.4,
                     ],
                 ],
                 'ec' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'target' => 2.3,
                     ],
                 ],
                 'irrigation' => [
                     'enabled' => true,
-                    'targets' => [
+                    'execution' => [
                         'interval_minutes' => 10,
                         'duration_seconds' => 15,
                     ],
@@ -603,10 +629,8 @@ class EffectiveTargetsServiceTest extends TestCase
             'subsystems' => [
                 'lighting' => [
                     'enabled' => true,
-                    'targets' => [
-                        'execution' => [
-                            'force_skip' => false,
-                        ],
+                    'execution' => [
+                        'force_skip' => false,
                     ],
                 ],
             ],

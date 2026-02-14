@@ -68,7 +68,7 @@ class CommandRequest(BaseModel):
     greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
-    cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+    cmd_id: Optional[str] = Field(None, max_length=128, description="Command ID from Laravel")
     ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
     sig: Optional[str] = Field(None, max_length=128, description="Command HMAC signature (hex)")
     trace_id: Optional[str] = Field(None, max_length=64, description="Trace ID for logging")

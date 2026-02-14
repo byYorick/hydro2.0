@@ -77,6 +77,7 @@ def test_decode_details_payload_handles_invalid_string():
 
 def test_normalize_status_rejects_legacy_accepted_alias():
     assert normalize_status("ACCEPTED") is None
+    assert normalize_status("FAILED") is None
 
 
 @pytest.mark.asyncio

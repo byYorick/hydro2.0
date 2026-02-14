@@ -1,37 +1,38 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Command Message Schema",
-  "description": "Schema for command messages sent to firmware nodes",
+  "title": "Command",
+  "description": "Единый контракт команды для всех сервисов",
   "type": "object",
   "required": ["cmd_id", "cmd", "params", "ts", "sig"],
   "properties": {
     "cmd_id": {
       "type": "string",
-      "description": "Unique command identifier"
+      "description": "Уникальный идентификатор команды (UUID)",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
     },
     "cmd": {
       "type": "string",
-      "description": "Command name",
-      "enum": [
-        "dose",
-        "run_pump",
-        "set_relay",
-        "set_pwm"
-      ]
+      "description": "Тип команды (dose, run_pump, set_relay, set_pwm, test_sensor, restart)",
+      "minLength": 1,
+      "maxLength": 64
     },
     "params": {
       "type": "object",
-      "description": "Command parameters",
+      "description": "Параметры команды",
       "additionalProperties": true
     },
     "ts": {
       "type": "integer",
-      "description": "Unix timestamp (seconds) when command was created",
+      "description": "Unix timestamp создания команды в секундах",
       "minimum": 0
     },
     "sig": {
       "type": "string",
-      "description": "HMAC signature for command payload (hex)"
+      "description": "HMAC подпись команды (hex)",
+      "minLength": 1,
+      "maxLength": 128
     }
   },
   "additionalProperties": false

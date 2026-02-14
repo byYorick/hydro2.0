@@ -141,11 +141,6 @@ class ZoneAutomationLogicProfileService
                 $execution = $subsystem['execution'];
             }
 
-            $legacyTargets = is_array($subsystem['targets'] ?? null) ? $subsystem['targets'] : [];
-            if (!empty($legacyTargets)) {
-                $execution = array_replace_recursive($this->extractLegacyExecutionPatch($name, $legacyTargets), $execution);
-            }
-
             if (!empty($execution)) {
                 $entry['execution'] = $execution;
             }
@@ -156,19 +151,5 @@ class ZoneAutomationLogicProfileService
         }
 
         return $normalized;
-    }
-
-    protected function extractLegacyExecutionPatch(string $subsystemName, array $legacyTargets): array
-    {
-        $nestedExecution = is_array($legacyTargets['execution'] ?? null) ? $legacyTargets['execution'] : [];
-
-        if (in_array($subsystemName, ['ph', 'ec'], true)) {
-            return $nestedExecution;
-        }
-
-        $flatPatch = $legacyTargets;
-        unset($flatPatch['execution']);
-
-        return array_replace_recursive($flatPatch, $nestedExecution);
     }
 }

@@ -64,6 +64,13 @@ class UpsertZoneAutomationLogicProfileRequest extends FormRequest
                 if (isset($subsystem['execution']) && !is_array($subsystem['execution'])) {
                     $validator->errors()->add("subsystems.{$name}.execution", 'The execution field must be an object.');
                 }
+
+                if (array_key_exists('targets', $subsystem)) {
+                    $validator->errors()->add(
+                        "subsystems.{$name}.targets",
+                        'The targets field is not allowed in automation logic profile. Use execution only.'
+                    );
+                }
             }
         });
     }

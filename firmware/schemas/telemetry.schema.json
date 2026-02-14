@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Telemetry Message Schema",
-  "description": "Schema for telemetry messages published by firmware nodes",
+  "title": "TelemetryPayload",
+  "description": "Payload телеметрии от узлов через MQTT",
   "type": "object",
   "required": ["metric_type", "value", "ts"],
   "properties": {
     "metric_type": {
       "type": "string",
-      "description": "Type of metric (UPPERCASE, canonical)",
+      "description": "Тип метрики (UPPERCASE) согласно MQTT спецификации",
       "enum": [
         "PH",
         "EC",
@@ -16,34 +16,40 @@
         "CO2",
         "LIGHT_INTENSITY",
         "WATER_LEVEL",
+        "WATER_LEVEL_SWITCH",
+        "SOIL_MOISTURE",
+        "SOIL_TEMP",
+        "WIND_SPEED",
+        "OUTSIDE_TEMP",
         "FLOW_RATE",
-        "PUMP_CURRENT",
-        "OTHER"
+        "PUMP_CURRENT"
       ]
     },
     "value": {
       "type": "number",
-      "description": "Metric value"
+      "description": "Значение метрики"
     },
     "ts": {
       "type": "integer",
-      "description": "UTC timestamp in seconds (Unix timestamp)"
+      "description": "Unix timestamp в секундах (UTC)",
+      "minimum": 0
     },
     "unit": {
       "type": "string",
-      "description": "Unit of measurement (optional)"
+      "description": "Единица измерения",
+      "maxLength": 32
     },
     "raw": {
       "type": "integer",
-      "description": "Raw sensor value (optional)"
+      "description": "Сырое значение сенсора"
     },
     "stub": {
       "type": "boolean",
-      "description": "Flag indicating simulated value (optional)"
+      "description": "Флаг, указывающий что значение симулировано"
     },
     "stable": {
       "type": "boolean",
-      "description": "Flag indicating value stability (optional)"
+      "description": "Флаг стабильности показаний сенсора"
     }
   },
   "additionalProperties": false

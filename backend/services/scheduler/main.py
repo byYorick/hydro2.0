@@ -817,13 +817,78 @@ def _extract_task_outcome_fields(status_payload: Dict[str, Any]) -> Dict[str, An
     if not isinstance(error, str):
         error = result.get("error") if isinstance(result.get("error"), str) else None
 
+    executed_steps = payload.get("executed_steps")
+    if not isinstance(executed_steps, list):
+        executed_steps = result.get("executed_steps") if isinstance(result.get("executed_steps"), list) else None
+
+    safety_flags = payload.get("safety_flags")
+    if not isinstance(safety_flags, list):
+        safety_flags = result.get("safety_flags") if isinstance(result.get("safety_flags"), list) else None
+
+    next_due_at = payload.get("next_due_at")
+    if not isinstance(next_due_at, str):
+        next_due_at = result.get("next_due_at") if isinstance(result.get("next_due_at"), str) else None
+
+    measurements_before_after = payload.get("measurements_before_after")
+    if not isinstance(measurements_before_after, dict):
+        measurements_before_after = (
+            result.get("measurements_before_after")
+            if isinstance(result.get("measurements_before_after"), dict)
+            else None
+        )
+
+    run_mode = payload.get("run_mode")
+    if not isinstance(run_mode, str):
+        run_mode = result.get("run_mode") if isinstance(result.get("run_mode"), str) else None
+
+    retry_attempt = payload.get("retry_attempt")
+    if not isinstance(retry_attempt, int):
+        retry_attempt = result.get("retry_attempt") if isinstance(result.get("retry_attempt"), int) else None
+
+    retry_max_attempts = payload.get("retry_max_attempts")
+    if not isinstance(retry_max_attempts, int):
+        retry_max_attempts = (
+            result.get("retry_max_attempts")
+            if isinstance(result.get("retry_max_attempts"), int)
+            else None
+        )
+
+    retry_backoff_sec = payload.get("retry_backoff_sec")
+    if not isinstance(retry_backoff_sec, int):
+        retry_backoff_sec = (
+            result.get("retry_backoff_sec")
+            if isinstance(result.get("retry_backoff_sec"), int)
+            else None
+        )
+
     return {
         "action_required": action_required,
         "decision": decision,
         "reason_code": reason_code,
         "error_code": error_code,
         "error": error,
+        "executed_steps": executed_steps,
+        "safety_flags": safety_flags,
+        "next_due_at": next_due_at,
+        "measurements_before_after": measurements_before_after,
+        "run_mode": run_mode,
+        "retry_attempt": retry_attempt,
+        "retry_max_attempts": retry_max_attempts,
+        "retry_backoff_sec": retry_backoff_sec,
         "result": result if result else None,
+    }
+
+
+def _outcome_extended_fields(outcome: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "executed_steps": outcome.get("executed_steps"),
+        "safety_flags": outcome.get("safety_flags"),
+        "next_due_at": outcome.get("next_due_at"),
+        "measurements_before_after": outcome.get("measurements_before_after"),
+        "run_mode": outcome.get("run_mode"),
+        "retry_attempt": outcome.get("retry_attempt"),
+        "retry_max_attempts": outcome.get("retry_max_attempts"),
+        "retry_backoff_sec": outcome.get("retry_backoff_sec"),
     }
 
 
@@ -1889,6 +1954,7 @@ async def reconcile_active_tasks() -> None:
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                     "result": outcome["result"],
                 },
             )
@@ -1902,6 +1968,7 @@ async def reconcile_active_tasks() -> None:
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                 },
             )
         else:
@@ -1921,6 +1988,7 @@ async def reconcile_active_tasks() -> None:
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                 },
             )
             await create_zone_event(
@@ -1935,6 +2003,7 @@ async def reconcile_active_tasks() -> None:
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                 },
             )
 
@@ -2104,6 +2173,7 @@ async def execute_scheduled_task(
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                     "result": outcome["result"],
                     "terminal_on_submit": True,
                 },
@@ -2118,6 +2188,7 @@ async def execute_scheduled_task(
                     "action_required": outcome["action_required"],
                     "decision": outcome["decision"],
                     "reason_code": outcome["reason_code"],
+                    **_outcome_extended_fields(outcome),
                     "terminal_on_submit": True,
                 },
             )
@@ -2138,6 +2209,7 @@ async def execute_scheduled_task(
                 "action_required": outcome["action_required"],
                 "decision": outcome["decision"],
                 "reason_code": outcome["reason_code"],
+                **_outcome_extended_fields(outcome),
                 "terminal_on_submit": True,
             },
         )
@@ -2153,6 +2225,7 @@ async def execute_scheduled_task(
                 "action_required": outcome["action_required"],
                 "decision": outcome["decision"],
                 "reason_code": outcome["reason_code"],
+                **_outcome_extended_fields(outcome),
                 "terminal_on_submit": True,
             },
         )

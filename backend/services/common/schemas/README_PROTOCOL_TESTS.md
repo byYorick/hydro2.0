@@ -15,10 +15,12 @@
 
 Все схемы находятся в `backend/services/common/schemas/`:
 
-1. **telemetry.json** - Payload телеметрии от узлов
-2. **command.json** - Payload команды к узлам
-3. **command_response.json** - Payload ответа на команду
-4. **error_alert.json** - Payload ошибки/алерта
+1. **telemetry.schema.json** - Payload телеметрии от узлов
+2. **command.schema.json** - Payload команды к узлам
+3. **command_response.schema.json** - Payload ответа на команду
+4. **status.schema.json** - Payload статус-сообщений
+5. **heartbeat.schema.json** - Payload heartbeat
+6. **error.schema.json** / **error_alert.schema.json** - Payload ошибки/алерта
 
 ## Запуск тестов
 
@@ -27,6 +29,9 @@
 ```bash
 # Из корня проекта
 make protocol-check
+
+# Проверка паритета backend source <-> firmware mirror
+./tools/check_runtime_schema_parity.sh
 
 # Или напрямую
 cd backend/services/common/schemas
@@ -74,11 +79,12 @@ protocol-check:
 
 При изменении payload'ов:
 
-1. Обновите соответствующую JSON-schema
-2. Обновите Pydantic модель (если нужно)
-3. Обновите fixtures
-4. Запустите тесты: `make protocol-check`
-5. Если тесты падают - исправьте payload'ы или схемы
+1. Обновите схему только в `backend/services/common/schemas` (source of truth)
+2. Синхронизируйте зеркало: `./tools/sync_runtime_schemas.sh`
+3. Обновите Pydantic модель (если нужно)
+4. Обновите fixtures
+5. Запустите тесты: `make protocol-check`
+6. Если тесты падают - исправьте payload'ы или схемы
 
 ## Примеры использования
 
