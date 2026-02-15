@@ -98,6 +98,7 @@ ERR_TWO_TANK_CHANNEL_NOT_FOUND = "two_tank_channel_not_found"
 ERR_PREPARE_NPK_PH_TARGET_NOT_REACHED = "prepare_npk_ph_target_not_reached"
 ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED = "irrigation_recovery_attempts_exceeded"
 ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
+ERR_INVALID_PAYLOAD_MISSING_WORKFLOW = "invalid_payload_missing_workflow"
 
 REASON_REQUIRED_NODES_CHECKED = "required_nodes_checked"
 REASON_TANK_LEVEL_CHECKED = "tank_level_checked"
@@ -152,6 +153,16 @@ class SchedulerTaskExecutor:
     def __init__(self, command_bus: CommandBus, zone_service: Optional[Any] = None):
         self.command_bus = command_bus
         self.zone_service = zone_service
+
+    @staticmethod
+    def _requires_explicit_workflow(payload: Dict[str, Any]) -> bool:
+        topology = SchedulerTaskExecutor._extract_topology(payload)
+        return topology in {
+            "two_tank_drip_substrate_trays",
+            "three_tank_drip_substrate_trays",
+            "three_tank_substrate_trays",
+            "three_tank",
+        }
 
     async def _create_zone_event_safe(
         self,
@@ -323,6 +334,25 @@ class SchedulerTaskExecutor:
                         "retry_max_attempts": result.get("retry_max_attempts"),
                     },
                 )
+        elif (
+            task_type == "diagnostics"
+            and AUTO_LOGIC_TANK_STATE_MACHINE_V1
+            and self._requires_explicit_workflow(payload)
+            and not self._extract_workflow(payload)
+        ):
+            result = {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "diagnostics_invalid_payload",
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": False,
+                "decision": "fail",
+                "reason_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+                "reason": "Для startup workflow требуется явный payload.workflow",
+                "error": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+                "error_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+            }
         elif (
             task_type == "diagnostics"
             and AUTO_LOGIC_TANK_STATE_MACHINE_V1
@@ -1345,7 +1375,7 @@ class SchedulerTaskExecutor:
             payload.get("workflow")
             or payload.get("diagnostics_workflow")
             or execution.get("workflow")
-            or "cycle_start"
+            or ""
         )
         return str(raw_workflow or "").strip().lower()
 
@@ -4194,6 +4224,22 @@ class SchedulerTaskExecutor:
         decision: DecisionOutcome,
     ) -> Dict[str, Any]:
         workflow = self._extract_workflow(payload)
+        if workflow not in {"startup", "cycle_start", "refill_check"}:
+            return {
+                "success": False,
+                "task_type": "diagnostics",
+                "mode": "three_tank_unknown_workflow",
+                "workflow": workflow,
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": True,
+                "decision": "fail",
+                "reason_code": "unsupported_workflow",
+                "reason": f"Неподдерживаемый workflow для топологии three_tank: {workflow or '<missing>'}",
+                "error": "unsupported_workflow",
+                "error_code": "unsupported_workflow",
+            }
+
         fallback_workflow = "refill_check" if workflow == "refill_check" else "cycle_start"
         payload_for_cycle_start = dict(payload)
         payload_for_cycle_start["workflow"] = fallback_workflow
