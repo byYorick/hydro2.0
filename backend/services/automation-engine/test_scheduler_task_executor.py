@@ -757,6 +757,57 @@ async def test_execute_three_tank_cycle_start_uses_dedicated_state_machine_branc
 
 
 @pytest.mark.asyncio
+async def test_execute_three_tank_unknown_workflow_fails_closed():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "unexpected_step",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={"task_id": "st-cycle-3tank-invalid", "correlation_id": "corr-cycle-3tank-invalid"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "three_tank_unknown_workflow"
+    assert result["error_code"] == "unsupported_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_missing_workflow_fails_payload_validation():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={"task_id": "st-cycle-3tank-missing", "correlation_id": "corr-cycle-3tank-missing"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_missing_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_cycle_start_dispatches_refill_and_enqueues_check():
     command_bus = _build_command_bus_mock()
     fresh_sample_ts = datetime.utcnow()
