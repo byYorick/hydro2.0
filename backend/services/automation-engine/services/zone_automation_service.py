@@ -71,6 +71,7 @@ CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг ал
 CORRECTION_FLAGS_MAX_AGE_SECONDS = max(30, _env_int("AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300))
 CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(5, _env_int("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120))
 CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
+CORRECTION_REQUIRED_FLAG_NAMES = ("flow_active", "stable", "corrections_allowed")
 
 
 class ZoneAutomationService:
@@ -1520,7 +1521,7 @@ class ZoneAutomationService:
         now: datetime,
     ) -> List[str]:
         stale_flags: List[str] = []
-        for flag_name in ("flow_active", "stable", "corrections_allowed"):
+        for flag_name in CORRECTION_REQUIRED_FLAG_NAMES:
             raw_ts = normalized_flags.get(f"{flag_name}_ts")
             parsed_ts = cls._parse_optional_timestamp(raw_ts)
             if parsed_ts is None:
@@ -1542,7 +1543,7 @@ class ZoneAutomationService:
         now: datetime,
     ) -> Dict[str, float]:
         ages: Dict[str, float] = {}
-        for flag_name in ("flow_active", "stable", "corrections_allowed"):
+        for flag_name in CORRECTION_REQUIRED_FLAG_NAMES:
             parsed_ts = cls._parse_optional_timestamp(normalized_flags.get(f"{flag_name}_ts"))
             if parsed_ts is None:
                 continue
@@ -1574,7 +1575,7 @@ class ZoneAutomationService:
             "stable_ts": flags.get("stable_ts", telemetry_timestamps.get("STABLE")),
             "corrections_allowed_ts": flags.get("corrections_allowed_ts", telemetry_timestamps.get("CORRECTIONS_ALLOWED")),
         }
-        missing_flags = [name for name in ("flow_active", "stable", "corrections_allowed") if normalized_flags[name] is None]
+        missing_flags = [name for name in CORRECTION_REQUIRED_FLAG_NAMES if normalized_flags[name] is None]
         if missing_flags:
             return {
                 "can_run": False,
