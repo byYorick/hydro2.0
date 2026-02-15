@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from common.simulation_clock import SimulationClock
+import services.zone_automation_service as zas_mod
 from services.zone_automation_service import (
     ZoneAutomationService,
     INITIAL_BACKOFF_SECONDS,
@@ -424,6 +425,80 @@ async def test_process_correction_controllers_throttle_flushes_suppressed_counte
     assert gating_events[-1]["reason_code"] == "sensor_unstable"
     assert gating_events[-1]["suppressed_events_since_last_emit"] >= 1
     assert "flag_age_seconds" in gating_events[-1]
+
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_missing_timestamps_fail_closed_when_required():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=35,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": True,
+                "corrections_allowed": True,
+            },
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode"]
+    gating_events = [
+        call.args[2]
+        for call in mock_event.await_args_list
+        if call.args[1] == "CORRECTION_SKIPPED_FLAGS_GATING"
+    ]
+    assert gating_events
+    assert gating_events[-1]["reason_code"] == "stale_flags"
+    assert set(gating_events[-1]["stale_flags"]) == {"flow_active", "stable", "corrections_allowed"}
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_missing_timestamps_allowed_when_requirement_disabled():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+
+    with patch.object(zas_mod, "CORRECTION_FLAGS_REQUIRE_TIMESTAMPS", False), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        await service._process_correction_controllers(
+            zone_id=36,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": True,
+                "corrections_allowed": True,
+            },
+            nodes={},
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_process_zone_light_controller():

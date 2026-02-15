@@ -70,6 +70,7 @@ CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-а
 CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг алертов missing_flags
 CORRECTION_FLAGS_MAX_AGE_SECONDS = max(30, _env_int("AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300))
 CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(5, _env_int("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120))
+CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class ZoneAutomationService:
@@ -1523,6 +1524,8 @@ class ZoneAutomationService:
             raw_ts = normalized_flags.get(f"{flag_name}_ts")
             parsed_ts = cls._parse_optional_timestamp(raw_ts)
             if parsed_ts is None:
+                if CORRECTION_FLAGS_REQUIRE_TIMESTAMPS:
+                    stale_flags.append(flag_name)
                 continue
             if parsed_ts.tzinfo is None:
                 parsed_ts = parsed_ts.replace(tzinfo=now.tzinfo)
