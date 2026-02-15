@@ -757,6 +757,37 @@ async def test_execute_three_tank_cycle_start_uses_dedicated_state_machine_branc
     assert result["reason_code"] == "tank_refill_not_required"
 
 
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_unknown_workflow_fails_closed():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "unexpected_step",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-2tank-invalid",
+                "correlation_id": "corr-cycle-2tank-invalid",
+            },
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_unknown_workflow"
+    assert result["error_code"] == "unsupported_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_execute_three_tank_unknown_workflow_fails_closed():
     command_bus = _build_command_bus_mock()

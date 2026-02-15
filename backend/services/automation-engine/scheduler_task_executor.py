@@ -3350,11 +3350,14 @@ class SchedulerTaskExecutor:
                 payload_contract_version=contract_version or "v2",
             )
 
+        topology = self._extract_topology(payload)
         return await self._dispatch_diagnostics_workflow(
             zone_id=zone_id,
             payload=payload,
             context=context,
             decision=decision,
+            workflow=workflow,
+            topology=topology,
         )
 
     async def _dispatch_diagnostics_workflow(
@@ -3364,22 +3367,37 @@ class SchedulerTaskExecutor:
         payload: Dict[str, Any],
         context: Dict[str, Any],
         decision: DecisionOutcome,
+        workflow: str,
+        topology: str,
     ) -> Dict[str, Any]:
-        if self._is_two_tank_startup_workflow(payload):
+        two_tank_topologies = {
+            "two_tank_drip_substrate_trays",
+            "two_tank",
+        }
+        three_tank_topologies = {
+            "three_tank_drip_substrate_trays",
+            "three_tank_substrate_trays",
+            "three_tank",
+        }
+        normalized_topology = str(topology or "").strip().lower()
+
+        if normalized_topology in two_tank_topologies:
             return await self._execute_two_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
                 context=context,
                 decision=decision,
             )
-        if self._is_three_tank_startup_workflow(payload):
+
+        if normalized_topology in three_tank_topologies:
             return await self._execute_three_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
                 context=context,
                 decision=decision,
             )
-        if self._is_cycle_start_workflow(payload):
+
+        if workflow in {"cycle_start", "refill_check"}:
             return await self._execute_cycle_start_workflow(
                 zone_id=zone_id,
                 payload=payload,
