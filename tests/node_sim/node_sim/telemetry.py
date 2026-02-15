@@ -154,6 +154,17 @@ class TelemetryPublisher:
             "value": value,
             "ts": int(time.time()),
         }
+
+        if channel.lower() in ("ph_sensor", "ph"):
+            sensor_mode_active = bool(getattr(self.node, "ph_sensor_mode_active", False))
+            payload["flow_active"] = sensor_mode_active
+            payload["stable"] = sensor_mode_active
+            payload["corrections_allowed"] = sensor_mode_active
+        elif channel.lower() in ("ec_sensor", "ec"):
+            sensor_mode_active = bool(getattr(self.node, "ec_sensor_mode_active", False))
+            payload["flow_active"] = sensor_mode_active
+            payload["stable"] = sensor_mode_active
+            payload["corrections_allowed"] = sensor_mode_active
         
         # Определяем топик используя единую библиотеку topics
         if self.node.mode == "preconfig":

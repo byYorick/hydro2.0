@@ -93,3 +93,57 @@ def test_send_error_response_uses_unknown_cmd_id_when_missing():
     assert payload["cmd_id"] == "unknown"
     assert payload["status"] == "ERROR"
     assert payload["details"]["error_code"] == "invalid_command_format"
+
+
+def test_handle_command_rejects_actuator_command_on_sensor_channel():
+    published = []
+
+    class _DummyMqtt:
+        def publish_json(self, topic, payload, qos=1):
+            published.append((topic, payload, qos))
+
+    node = _make_node(NodeType.PH)
+    handler = CommandHandler(node, mqtt_client=_DummyMqtt())
+
+    asyncio.run(
+        handler._handle_command(
+            channel="ph_sensor",
+            cmd_id="cmd-compat-1",
+            cmd="set_relay",
+            params={"state": True},
+            exec_time_ms=100,
+        )
+    )
+
+    assert len(published) == 1
+    _, payload, _ = published[0]
+    assert payload["status"] == "INVALID"
+    assert payload["details"]["error_code"] == "unsupported_channel_cmd"
+
+
+def test_sensor_mode_commands_toggle_flags_for_ph_node():
+    node = _make_node(NodeType.PH)
+    handler = CommandHandler(node, mqtt_client=None)
+
+    status, details = handler._handle_activate_sensor_mode(
+        "activate_sensor_mode",
+        {"channel": "system"},
+    )
+    assert status == CommandStatus.DONE
+    assert details["details"] == "sensor_mode_activated"
+    assert node.ph_sensor_mode_active is True
+
+    status, details = handler._handle_activate_sensor_mode(
+        "activate_sensor_mode",
+        {"channel": "system"},
+    )
+    assert status == CommandStatus.NO_EFFECT
+    assert details["note"] == "sensor_mode_already_active"
+
+    status, details = handler._handle_deactivate_sensor_mode(
+        "deactivate_sensor_mode",
+        {"channel": "system"},
+    )
+    assert status == CommandStatus.DONE
+    assert details["details"] == "sensor_mode_deactivated"
+    assert node.ph_sensor_mode_active is False

@@ -248,7 +248,7 @@ class TestConfigReportFormatSync:
             updated_payload = mock_execute.call_args[0][1]
             assert updated_payload["node_id"] == "nd-ph-esp32aa-1"
             mock_sync.assert_called_once()
-            mock_complete.assert_called_once()
+            mock_complete.assert_not_called()
             mock_processed.inc.assert_called_once()
 
     @pytest.mark.asyncio

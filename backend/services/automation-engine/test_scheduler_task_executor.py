@@ -70,6 +70,30 @@ async def test_execute_irrigation_success():
 
 
 @pytest.mark.asyncio
+async def test_execute_irrigation_continues_when_zone_event_persist_fails():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+        patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock) as mock_event, \
+        patch("scheduler_task_executor.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.return_value = [
+            {"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_a"},
+        ]
+        mock_event.side_effect = RuntimeError("zone_event_write_failed")
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"config": {"duration_sec": 5}},
+            task_context={"task_id": "st-1", "correlation_id": "corr-1"},
+        )
+
+    assert result["success"] is True
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+    assert mock_alert.await_count >= 1
+
+
+@pytest.mark.asyncio
 async def test_execute_irrigation_success_with_uppercase_node_type_in_db():
     command_bus = _build_command_bus_mock()
 
@@ -123,6 +147,44 @@ async def test_execute_irrigation_fails_with_legacy_pump_node_type_in_db():
     assert result["error_code"] == "no_online_nodes"
     command_bus.publish_controller_command_closed_loop.assert_not_awaited()
     mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_zone_nodes_query_filters_actuator_channels():
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "left join node_channels nc" in normalized:
+            assert "upper(trim(coalesce(nc.type, ''))) = 'actuator'" in normalized
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
+        rows = await executor._get_zone_nodes(22, ["irrig"])
+
+    assert rows == [{"node_uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+
+
+@pytest.mark.asyncio
+async def test_resolve_online_node_for_channel_query_filters_actuator_channels():
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "join node_channels nc on nc.node_id = n.id" in normalized:
+            assert "upper(trim(coalesce(nc.type, ''))) = 'actuator'" in normalized
+            return []
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
+        resolved = await executor._resolve_online_node_for_channel(
+            zone_id=22,
+            channel="level_clean_max",
+            node_types=["irrig"],
+        )
+
+    assert resolved is None
 
 
 @pytest.mark.asyncio
@@ -1211,6 +1273,219 @@ async def test_execute_two_tank_startup_starts_clean_fill_and_enqueues_check():
     assert cmd_kwargs["command"]["cmd"] == "set_relay"
     assert cmd_kwargs["command"]["params"]["state"] is True
     mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_accepts_no_effect_for_start_command():
+    command_bus = _build_command_bus_mock(
+        command_submitted=True,
+        command_effect_confirmed=False,
+        terminal_status="NO_EFFECT",
+    )
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 101,
+                    "sensor_label": "level_clean_max",
+                    "level": 0.0,
+                    "sample_ts": fresh_sample_ts,
+                    "level_source": "telemetry_last",
+                }
+            ]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            if channel == "valve_clean_fill":
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "valve_clean_fill"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-clean-no-effect",
+            "scheduled_for": "2026-02-13T10:01:00",
+            "expires_at": "2026-02-13T10:20:00",
+            "correlation_id": "ae:self:28:diagnostics:enq-clean-no-effect",
+            "status": "pending",
+            "zone_id": 28,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {
+                            "required_node_types": ["irrig"],
+                            "level_poll_interval_sec": 60,
+                            "clean_fill_timeout_sec": 1200,
+                        },
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-startup-no-effect", "correlation_id": "corr-two-tank-startup-no-effect"},
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_clean_fill_in_progress"
+    assert result["commands_failed"] == 0
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_matches_sensor_label_by_canonical_form():
+    command_bus = _build_command_bus_mock()
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return []
+        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
+            return [
+                {
+                    "sensor_id": 131,
+                    "sensor_label": "LEVEL-CLEAN MAX",
+                    "level": 0.0,
+                    "sample_ts": fresh_sample_ts,
+                }
+            ]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            if channel == "valve_clean_fill":
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": "valve_clean_fill"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-clean-canonical",
+            "scheduled_for": "2026-02-13T10:01:00",
+            "expires_at": "2026-02-13T10:20:00",
+            "correlation_id": "ae:self:28:diagnostics:enq-clean-canonical",
+            "status": "pending",
+            "zone_id": 28,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {
+                            "required_node_types": ["irrig"],
+                            "level_poll_interval_sec": 60,
+                            "clean_fill_timeout_sec": 1200,
+                        },
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-canonical", "correlation_id": "corr-two-tank-canonical"},
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_clean_fill_in_progress"
+    assert result["reason_code"] == "clean_fill_started"
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_unavailable_level_includes_expected_and_available_labels():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return []
+        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
+            return [
+                {"sensor_id": 901, "sensor_label": "clean_top_sensor", "level": None, "sample_ts": None},
+                {"sensor_id": 902, "sensor_label": "solution_top_sensor", "level": None, "sample_ts": None},
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-unavailable", "correlation_id": "corr-two-tank-unavailable"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_clean_level_unavailable"
+    assert result["error_code"] == "two_tank_level_unavailable"
+    assert result["expected_sensor_labels"] == ["level_clean_max", "clean_max"]
+    assert "clean_top_sensor" in result["available_sensor_labels"]
+    assert "solution_top_sensor" in result["available_sensor_labels"]
+    assert result["level_source"] == "none"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_read_level_switch_uses_telemetry_samples_fallback_source():
+    executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 501,
+                    "sensor_label": "level_clean_max",
+                    "level": 1.0,
+                    "sample_ts": fresh_sample_ts,
+                    "level_source": "telemetry_samples_fallback",
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.side_effect = _fetch_side_effect
+        result = await executor._read_level_switch(
+            zone_id=28,
+            sensor_labels=["level_clean_max"],
+            threshold=0.5,
+        )
+
+    assert result["has_level"] is True
+    assert result["is_triggered"] is True
+    assert result["level_source"] == "telemetry_samples_fallback"
 
 
 @pytest.mark.asyncio

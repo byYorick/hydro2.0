@@ -21,6 +21,9 @@ static const char *NVS_TEMP_KEY = "last_temp";
 
 // Внутренний буфер для хранения JSON конфигурации
 static char s_config_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
+// Буфер верификации переиспользуется внутри config_storage_save() под mutex.
+// Это убирает крупный временный буфер со стека mqtt_task.
+static char s_verify_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
 static bool s_config_loaded = false;
 static nvs_handle_t s_nvs_handle = 0;
 static SemaphoreHandle_t s_config_mutex = NULL;
@@ -491,9 +494,8 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     
     // КРИТИЧНО: Проверяем, что сохраненная конфигурация может быть прочитана обратно
     // Это гарантирует, что после перезагрузки конфигурация будет доступна
-    size_t verify_size = sizeof(s_config_json);
-    char verify_buffer[CONFIG_STORAGE_MAX_JSON_SIZE];
-    err = nvs_get_str(s_nvs_handle, NVS_KEY, verify_buffer, &verify_size);
+    size_t verify_size = sizeof(s_verify_json);
+    err = nvs_get_str(s_nvs_handle, NVS_KEY, s_verify_json, &verify_size);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "CRITICAL: Failed to verify saved config: %s", esp_err_to_name(err));
         s_config_loaded = false;
@@ -502,9 +504,9 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     }
     
     // Проверяем соответствие сохраненного конфига (используем s_config_json, так как там уже сохранен final_json)
-    if (strncmp(s_config_json, verify_buffer, strlen(s_config_json)) != 0) {
+    if (strncmp(s_config_json, s_verify_json, strlen(s_config_json)) != 0) {
         ESP_LOGE(TAG, "CRITICAL: Saved config verification failed - data mismatch");
-        ESP_LOGE(TAG, "Saved length: %zu, Verify length: %zu", strlen(s_config_json), strlen(verify_buffer));
+        ESP_LOGE(TAG, "Saved length: %zu, Verify length: %zu", strlen(s_config_json), strlen(s_verify_json));
         s_config_loaded = false;
         config_storage_unlock();
         return ESP_FAIL;
@@ -513,7 +515,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     // Дополнительная проверка: проверяем, что SSID присутствует в сохраненном конфиге
     // КРИТИЧНО: Если WiFi секция есть, то SSID должен быть валидным
     // Но если WiFi секции нет (конфиг от MQTT после setup), то это нормально - WiFi уже настроен
-    cJSON *verify_config = cJSON_Parse(verify_buffer);
+    cJSON *verify_config = cJSON_Parse(s_verify_json);
     if (verify_config) {
         cJSON *verify_wifi = cJSON_GetObjectItem(verify_config, "wifi");
         if (verify_wifi && cJSON_IsObject(verify_wifi)) {
@@ -1094,7 +1096,7 @@ esp_err_t config_storage_get_last_temperature(float *temperature) {
 }
 
 esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_uid) {
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    char *config_json = NULL;
     cJSON *config = NULL;
     cJSON *gh_item = NULL;
     cJSON *zone_item = NULL;
@@ -1105,13 +1107,21 @@ esp_err_t config_storage_reset_namespace(const char *gh_uid, const char *zone_ui
         return ESP_ERR_INVALID_ARG;
     }
 
-    err = config_storage_get_json(config_json, sizeof(config_json));
+    config_json = (char *)calloc(1, CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (!config_json) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    err = config_storage_get_json(config_json, CONFIG_STORAGE_MAX_JSON_SIZE);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Namespace reset skipped: config not available (%s)", esp_err_to_name(err));
+        free(config_json);
         return err;
     }
 
     config = cJSON_Parse(config_json);
+    free(config_json);
+    config_json = NULL;
     if (!config) {
         ESP_LOGE(TAG, "Namespace reset failed: invalid JSON in config buffer");
         return ESP_FAIL;

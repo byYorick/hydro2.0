@@ -167,6 +167,7 @@ _INTERNAL_ENQUEUE_DISPATCH_BACKOFF_MAX_SEC = max(
     float(os.getenv("SCHEDULER_INTERNAL_ENQUEUE_DISPATCH_BACKOFF_MAX_SEC", "300")),
 )
 _ACTIVE_TASK_RECOVERY_SCAN_LIMIT = max(50, int(os.getenv("SCHEDULER_ACTIVE_TASK_RECOVERY_SCAN_LIMIT", "1000")))
+SCHEDULER_ZONE_PREFLIGHT_ENFORCE = str(os.getenv("SCHEDULER_ZONE_PREFLIGHT_ENFORCE", "0")).strip().lower() in _TRUE_VALUES
 
 # Анти-спам для сервисных логов/алертов
 _LAST_DIAGNOSTIC_AT: Dict[str, datetime] = {}
@@ -1891,6 +1892,60 @@ def _is_schedule_busy(schedule_key: str) -> bool:
     return bool(task_id and task_id in _ACTIVE_TASKS)
 
 
+async def _zone_exists_preflight(zone_id: int) -> Optional[bool]:
+    try:
+        rows = await fetch(
+            """
+            SELECT 1
+            FROM zones
+            WHERE id = $1
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        return bool(rows)
+    except Exception as exc:
+        logger.warning(
+            "Scheduler zone preflight check failed, continue in fail-open mode: zone_id=%s error=%s",
+            zone_id,
+            exc,
+            exc_info=True,
+        )
+        return None
+
+
+async def _create_zone_event_safe(
+    zone_id: int,
+    event_type: str,
+    payload: Dict[str, Any],
+    *,
+    task_id: Optional[str] = None,
+    task_type: Optional[str] = None,
+) -> bool:
+    try:
+        await create_zone_event(zone_id, event_type, payload)
+        return True
+    except Exception as exc:
+        await _emit_scheduler_diagnostic(
+            reason="zone_event_write_failed",
+            message=(
+                f"Scheduler не смог записать zone_event {event_type} "
+                f"для task {task_id or 'unknown'} (zone={zone_id})"
+            ),
+            level="error",
+            zone_id=zone_id,
+            details={
+                "task_id": task_id,
+                "task_type": task_type,
+                "event_type": event_type,
+                "error": str(exc),
+            },
+            alert_code="infra_scheduler_zone_event_write_failed",
+            error_type=type(exc).__name__,
+        )
+        return False
+
+
 async def recover_active_tasks_after_restart() -> int:
     if _ACTIVE_TASKS:
         SCHEDULER_ACTIVE_TASKS.set(len(_ACTIVE_TASKS))
@@ -2031,75 +2086,98 @@ async def reconcile_active_tasks() -> None:
         _update_deadline_violation_rate(task_type, terminal_status)
         outcome = _extract_task_outcome_fields(status_payload)
 
-        if terminal_status == "completed":
-            SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type=task_type).inc()
-            SCHEDULER_TASK_STATUS.labels(task_type=task_type, status="completed").inc()
-            await create_scheduler_log(
-                task_name,
-                "completed",
-                {
-                    "zone_id": zone_id,
-                    "task_type": task_type,
+        try:
+            if terminal_status == "completed":
+                SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type=task_type).inc()
+                SCHEDULER_TASK_STATUS.labels(task_type=task_type, status="completed").inc()
+                await create_scheduler_log(
+                    task_name,
+                    "completed",
+                    {
+                        "zone_id": zone_id,
+                        "task_type": task_type,
+                        "task_id": task_id,
+                        "status": terminal_status,
+                        "status_payload": status_payload,
+                        "action_required": outcome["action_required"],
+                        "decision": outcome["decision"],
+                        "reason_code": outcome["reason_code"],
+                        **_outcome_extended_fields(outcome),
+                        "result": outcome["result"],
+                    },
+                )
+                await _create_zone_event_safe(
+                    zone_id,
+                    "SCHEDULE_TASK_COMPLETED",
+                    {
+                        "task_type": task_type,
+                        "task_id": task_id,
+                        "status": terminal_status,
+                        "action_required": outcome["action_required"],
+                        "decision": outcome["decision"],
+                        "reason_code": outcome["reason_code"],
+                        **_outcome_extended_fields(outcome),
+                    },
+                    task_id=task_id,
+                    task_type=task_type,
+                )
+            else:
+                final_status = terminal_status or "failed"
+                SCHEDULER_TASK_STATUS.labels(task_type=task_type, status=final_status).inc()
+                await create_scheduler_log(
+                    task_name,
+                    "failed",
+                    {
+                        "zone_id": zone_id,
+                        "task_type": task_type,
+                        "task_id": task_id,
+                        "status": final_status,
+                        "status_payload": status_payload,
+                        "error": outcome["error"],
+                        "error_code": outcome["error_code"],
+                        "action_required": outcome["action_required"],
+                        "decision": outcome["decision"],
+                        "reason_code": outcome["reason_code"],
+                        **_outcome_extended_fields(outcome),
+                    },
+                )
+                await _create_zone_event_safe(
+                    zone_id,
+                    "SCHEDULE_TASK_FAILED",
+                    {
+                        "task_type": task_type,
+                        "task_id": task_id,
+                        "status": final_status,
+                        "error": outcome["error"],
+                        "error_code": outcome["error_code"],
+                        "action_required": outcome["action_required"],
+                        "decision": outcome["decision"],
+                        "reason_code": outcome["reason_code"],
+                        **_outcome_extended_fields(outcome),
+                    },
+                    task_id=task_id,
+                    task_type=task_type,
+                )
+        except Exception as exc:
+            await _emit_scheduler_diagnostic(
+                reason="task_terminal_persist_failed",
+                message=(
+                    f"Scheduler не смог сохранить terminal snapshot "
+                    f"task {task_id} (status={terminal_status})"
+                ),
+                level="error",
+                zone_id=zone_id,
+                details={
                     "task_id": task_id,
+                    "task_type": task_type,
                     "status": terminal_status,
-                    "status_payload": status_payload,
-                    "action_required": outcome["action_required"],
-                    "decision": outcome["decision"],
-                    "reason_code": outcome["reason_code"],
-                    **_outcome_extended_fields(outcome),
-                    "result": outcome["result"],
+                    "error": str(exc),
                 },
+                alert_code="infra_scheduler_task_terminal_persist_failed",
+                error_type=type(exc).__name__,
             )
-            await create_zone_event(
-                zone_id,
-                "SCHEDULE_TASK_COMPLETED",
-                {
-                    "task_type": task_type,
-                    "task_id": task_id,
-                    "status": terminal_status,
-                    "action_required": outcome["action_required"],
-                    "decision": outcome["decision"],
-                    "reason_code": outcome["reason_code"],
-                    **_outcome_extended_fields(outcome),
-                },
-            )
-        else:
-            final_status = terminal_status or "failed"
-            SCHEDULER_TASK_STATUS.labels(task_type=task_type, status=final_status).inc()
-            await create_scheduler_log(
-                task_name,
-                "failed",
-                {
-                    "zone_id": zone_id,
-                    "task_type": task_type,
-                    "task_id": task_id,
-                    "status": final_status,
-                    "status_payload": status_payload,
-                    "error": outcome["error"],
-                    "error_code": outcome["error_code"],
-                    "action_required": outcome["action_required"],
-                    "decision": outcome["decision"],
-                    "reason_code": outcome["reason_code"],
-                    **_outcome_extended_fields(outcome),
-                },
-            )
-            await create_zone_event(
-                zone_id,
-                "SCHEDULE_TASK_FAILED",
-                {
-                    "task_type": task_type,
-                    "task_id": task_id,
-                    "status": final_status,
-                    "error": outcome["error"],
-                    "error_code": outcome["error_code"],
-                    "action_required": outcome["action_required"],
-                    "decision": outcome["decision"],
-                    "reason_code": outcome["reason_code"],
-                    **_outcome_extended_fields(outcome),
-                },
-            )
-
-        _drop_active_task(task_id)
+        finally:
+            _drop_active_task(task_id)
 
 
 async def execute_scheduled_task(
@@ -2122,6 +2200,41 @@ async def execute_scheduled_task(
         return False
 
     task_name = f"{task_type}_zone_{zone_id}"
+    if SCHEDULER_ZONE_PREFLIGHT_ENFORCE:
+        zone_exists = await _zone_exists_preflight(zone_id)
+        if zone_exists is False:
+            SCHEDULER_DISPATCH_SKIPS.labels(reason="zone_not_found").inc()
+            await create_scheduler_log(
+                task_name,
+                "failed",
+                {
+                    "zone_id": zone_id,
+                    "task_type": task_type,
+                    "error": "zone_not_found",
+                    "error_code": "zone_not_found",
+                },
+            )
+            await _create_zone_event_safe(
+                zone_id,
+                "SCHEDULE_TASK_FAILED",
+                {
+                    "task_type": task_type,
+                    "reason": "zone_not_found",
+                    "error_code": "zone_not_found",
+                },
+                task_type=task_type,
+            )
+            await _emit_scheduler_diagnostic(
+                reason="dispatch_zone_not_found",
+                message=f"Scheduler пропустил dispatch: зона {zone_id} не найдена",
+                level="error",
+                zone_id=zone_id,
+                details={"task_type": task_type, "schedule_key": schedule_key},
+                alert_code="infra_scheduler_dispatch_zone_not_found",
+                error_type="zone_not_found",
+            )
+            return False
+
     normalized_key = schedule_key or _build_schedule_key(zone_id, schedule)
     if _is_schedule_busy(normalized_key):
         SCHEDULER_DISPATCH_SKIPS.labels(reason="schedule_busy").inc()
@@ -2218,7 +2331,7 @@ async def execute_scheduled_task(
                 "schedule_key": normalized_key,
             },
         )
-        await create_zone_event(
+        await _create_zone_event_safe(
             zone_id,
             "SCHEDULE_TASK_FAILED",
             {
@@ -2226,6 +2339,7 @@ async def execute_scheduled_task(
                 "reason": "submit_failed",
                 "correlation_id": correlation_id,
             },
+            task_type=task_type,
         )
         return False
 
@@ -2270,7 +2384,7 @@ async def execute_scheduled_task(
                     "terminal_on_submit": True,
                 },
             )
-            await create_zone_event(
+            await _create_zone_event_safe(
                 zone_id,
                 "SCHEDULE_TASK_COMPLETED",
                 {
@@ -2283,6 +2397,8 @@ async def execute_scheduled_task(
                     **_outcome_extended_fields(outcome),
                     "terminal_on_submit": True,
                 },
+                task_id=task_id,
+                task_type=task_type,
             )
             return True
 
@@ -2305,7 +2421,7 @@ async def execute_scheduled_task(
                 "terminal_on_submit": True,
             },
         )
-        await create_zone_event(
+        await _create_zone_event_safe(
             zone_id,
             "SCHEDULE_TASK_FAILED",
             {
@@ -2320,10 +2436,12 @@ async def execute_scheduled_task(
                 **_outcome_extended_fields(outcome),
                 "terminal_on_submit": True,
             },
+            task_id=task_id,
+            task_type=task_type,
         )
         return False
 
-    await create_zone_event(
+    await _create_zone_event_safe(
         zone_id,
         "SCHEDULE_TASK_ACCEPTED",
         {
@@ -2333,6 +2451,8 @@ async def execute_scheduled_task(
             "schedule_key": normalized_key,
             "correlation_id": correlation_id,
         },
+        task_id=task_id,
+        task_type=task_type,
     )
     await create_scheduler_log(
         task_name,

@@ -75,8 +75,8 @@ static const char *TAG = "test_node_ui";
 #define LVGL_TASK_PERIOD_MS 10
 #define LVGL_TASK_STACK_SIZE 16384
 #define LVGL_TASK_PRIORITY 5
-#define UI_EVENT_QUEUE_LEN 64
-#define UI_LOG_EVENT_QUEUE_LEN 256
+#define UI_EVENT_QUEUE_LEN 32
+#define UI_LOG_EVENT_QUEUE_LEN 96
 #define UI_MAX_HP_EVENTS_PER_CYCLE 32
 #define UI_MAX_LOG_EVENTS_PER_CYCLE 16
 #define UI_TEXT_MAX 80
@@ -2212,6 +2212,16 @@ esp_err_t test_node_ui_init(void) {
         ui_cleanup_init_resources();
         return ESP_ERR_NO_MEM;
     }
+    ESP_LOGI(
+        TAG,
+        "UI queues allocated: msg=%uB hp=%u (~%uB) log=%u (~%uB), heap=%u",
+        (unsigned)sizeof(ui_event_msg_t),
+        (unsigned)UI_EVENT_QUEUE_LEN,
+        (unsigned)(UI_EVENT_QUEUE_LEN * sizeof(ui_event_msg_t)),
+        (unsigned)UI_LOG_EVENT_QUEUE_LEN,
+        (unsigned)(UI_LOG_EVENT_QUEUE_LEN * sizeof(ui_event_msg_t)),
+        (unsigned)esp_get_free_heap_size()
+    );
 
     err = init_lvgl();
     if (err != ESP_OK) {

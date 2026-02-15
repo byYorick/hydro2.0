@@ -55,6 +55,7 @@ DEGRADED_MODE_THRESHOLD = 3  # Количество ошибок для пере
 SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений о пропусках
 COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений cooldown
 CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
+CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг алертов missing_flags
 
 
 class ZoneAutomationService:
@@ -110,7 +111,8 @@ class ZoneAutomationService:
         #   'next_allowed_run_at': datetime | None,
         #   'last_backoff_reported_until': datetime | None,
         #   'degraded_alert_active': bool,
-        #   'last_missing_targets_report_at': datetime | None
+        #   'last_missing_targets_report_at': datetime | None,
+        #   'last_missing_correction_flags_report_at': datetime | None
         # }
         self._zone_states: Dict[int, Dict[str, Any]] = {}
         # Ключ: (zone_id, controller_name), значение: datetime последнего cooldown skip report
@@ -369,6 +371,7 @@ class ZoneAutomationService:
         state.setdefault('last_backoff_reported_until', None)
         state.setdefault('degraded_alert_active', False)
         state.setdefault('last_missing_targets_report_at', None)
+        state.setdefault('last_missing_correction_flags_report_at', None)
         return state
     
     def _get_error_streak(self, zone_id: int) -> int:
@@ -629,6 +632,57 @@ class ZoneAutomationService:
                 zone_id,
                 extra={'zone_id': zone_id},
             )
+
+    async def _emit_correction_missing_flags_signal(
+        self,
+        zone_id: int,
+        gating_state: Dict[str, Any],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Инфра-алерт о пропуске коррекций из-за отсутствия sensor-mode flags."""
+        state = self._get_zone_state(zone_id)
+        now = utcnow()
+        last_reported = state.get('last_missing_correction_flags_report_at')
+        if isinstance(last_reported, datetime) and (
+            now - last_reported
+        ).total_seconds() < CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS:
+            return
+
+        missing_flags = list(gating_state.get("missing_flags") or [])
+        correction_flags = gating_state.get("flags") if isinstance(gating_state.get("flags"), dict) else {}
+        sensor_nodes = [node.get("node_uid") for node in self._resolve_correction_sensor_nodes(nodes)]
+
+        logger.warning(
+            "Zone %s: correction skipped, missing flags=%s, sensor_nodes=%s",
+            zone_id,
+            missing_flags,
+            sensor_nodes,
+            extra={
+                "zone_id": zone_id,
+                "missing_flags": missing_flags,
+                "sensor_nodes": sensor_nodes,
+                "correction_flags": correction_flags,
+            },
+        )
+
+        alert_sent = await send_infra_alert(
+            code="infra_correction_flags_missing",
+            alert_type="Correction Flags Missing",
+            message=f"Zone {zone_id} skipped correction due to missing sensor-mode flags",
+            severity="warning",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="correction_gating",
+            error_type="missing_flags",
+            details={
+                "missing_flags": missing_flags,
+                "correction_flags": correction_flags,
+                "sensor_nodes": sensor_nodes,
+                "throttle_seconds": CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS,
+            },
+        )
+        if alert_sent:
+            state['last_missing_correction_flags_report_at'] = now
 
     async def _emit_zone_data_unavailable_signal(self, zone_id: int) -> None:
         """Лог/ивент/алерт при недоступности данных зоны (DB circuit breaker open)."""
@@ -1291,6 +1345,7 @@ class ZoneAutomationService:
                     "correction_flags": gating_state["flags"],
                 },
             )
+            await self._emit_correction_missing_flags_signal(zone_id, gating_state, nodes)
             await self._set_sensor_mode(
                 zone_id=zone_id,
                 nodes=nodes,

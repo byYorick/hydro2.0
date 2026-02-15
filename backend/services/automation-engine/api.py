@@ -14,10 +14,10 @@ from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from prometheus_client import Gauge
-from typing import Optional, Dict, Any, Literal, Tuple
+from typing import Optional, Dict, Any, Literal, Tuple, Coroutine
 
 from infrastructure import CommandBus
-from common.infra_alerts import send_infra_exception_alert
+from common.infra_alerts import send_infra_exception_alert, send_infra_alert
 from common.db import fetch, create_scheduler_log, create_zone_event
 from common.trace_context import extract_trace_id_from_headers
 from utils.logging_context import set_trace_id, get_trace_id
@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Automation Engine API")
 
 
+def _env_true(name: str, default: str = "0") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+_APP_ENV = str(os.getenv("APP_ENV", "local")).strip().lower()
+_AE_VERBOSE_HTTP_LOGGING = _env_true(
+    "AE_DEV_VERBOSE_HTTP_LOGGING",
+    "1" if _APP_ENV in {"local", "dev", "development"} else "0",
+)
+
+
 @app.middleware("http")
 async def trace_middleware(request: Request, call_next):
     trace_id = extract_trace_id_from_headers(request.headers)
@@ -40,9 +51,89 @@ async def trace_middleware(request: Request, call_next):
         set_trace_id(trace_id)
     else:
         trace_id = set_trace_id()
-    response = await call_next(request)
+    request_started_at = datetime.utcnow()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        duration_ms = max(0.0, (datetime.utcnow() - request_started_at).total_seconds() * 1000.0)
+        logger.error(
+            "Unhandled API exception: method=%s path=%s duration_ms=%.2f error=%s",
+            request.method,
+            request.url.path,
+            duration_ms,
+            exc,
+            exc_info=True,
+            extra={"trace_id": trace_id},
+        )
+        try:
+            await send_infra_exception_alert(
+                error=exc,
+                code="infra_automation_api_unhandled_exception",
+                alert_type="Automation API Unhandled Exception",
+                severity="error",
+                zone_id=None,
+                service="automation-engine",
+                component=f"api:{request.url.path}",
+                details={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": round(duration_ms, 2),
+                    "trace_id": trace_id,
+                },
+            )
+        except Exception as alert_exc:
+            logger.warning(
+                "Failed to send infra alert for unhandled API exception: %s",
+                alert_exc,
+                exc_info=True,
+            )
+        raise
+
+    duration_ms = max(0.0, (datetime.utcnow() - request_started_at).total_seconds() * 1000.0)
     if trace_id:
         response.headers["X-Trace-Id"] = trace_id
+
+    if _AE_VERBOSE_HTTP_LOGGING or response.status_code >= 500:
+        log_level = logging.ERROR if response.status_code >= 500 else logging.DEBUG
+        logger.log(
+            log_level,
+            "API request completed: method=%s path=%s status=%s duration_ms=%.2f",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+            extra={"trace_id": trace_id},
+        )
+
+    if response.status_code >= 500:
+        try:
+            await send_infra_alert(
+                code="infra_automation_api_http_5xx",
+                alert_type="Automation API HTTP 5xx",
+                message=(
+                    f"Automation API вернул HTTP {response.status_code} "
+                    f"для {request.method} {request.url.path}"
+                ),
+                severity="error",
+                zone_id=None,
+                service="automation-engine",
+                component=f"api:{request.url.path}",
+                error_type=f"http_{response.status_code}",
+                details={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": round(duration_ms, 2),
+                    "trace_id": trace_id,
+                },
+            )
+        except Exception as alert_exc:
+            logger.warning(
+                "Failed to send infra alert for API HTTP 5xx: %s",
+                alert_exc,
+                exc_info=True,
+            )
+
     return response
 
 # Глобальные переменные для доступа к CommandBus
@@ -133,6 +224,67 @@ AUTOMATION_TIMELINE_EVENT_LABELS: Dict[str, str] = {
 _test_mode = os.getenv("AE_TEST_MODE", "0") == "1"
 _test_hooks: Dict[str, Dict[str, Any]] = {}  # zone_id -> {controller: error_type, ...}
 _zone_states_override: Dict[int, Dict[str, Any]] = {}  # zone_id -> {error_streak: int, next_allowed_run_at: datetime}
+
+
+def _spawn_background_task(
+    coro: Coroutine[Any, Any, Any],
+    *,
+    task_name: str,
+    zone_id: Optional[int] = None,
+    task_id: Optional[str] = None,
+    task_type: Optional[str] = None,
+) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+
+    def _on_done(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            return
+        try:
+            exc = done_task.exception()
+        except Exception as callback_exc:
+            logger.error(
+                "Failed to inspect background task result: task_name=%s error=%s",
+                task_name,
+                callback_exc,
+                exc_info=True,
+            )
+            return
+        if exc is None:
+            return
+        logger.error(
+            "Background task crashed: task_name=%s task_id=%s task_type=%s zone_id=%s error=%s",
+            task_name,
+            task_id,
+            task_type,
+            zone_id,
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        try:
+            alert_coro = send_infra_exception_alert(
+                error=exc,
+                code="infra_automation_background_task_crashed",
+                alert_type="Automation Background Task Crashed",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component=f"background:{task_name}",
+                details={
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "zone_id": zone_id,
+                },
+            )
+            asyncio.create_task(alert_coro)
+        except Exception:
+            logger.warning(
+                "Failed to schedule infra alert for crashed background task: task_name=%s",
+                task_name,
+                exc_info=True,
+            )
+
+    task.add_done_callback(_on_done)
+    return task
 
 
 def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str, loop_id: Optional[int] = None):
@@ -1812,7 +1964,13 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
                 )
 
             trace_id = get_trace_id()
-            asyncio.create_task(_execute_scheduler_task(task["task_id"], req, trace_id))
+            _spawn_background_task(
+                _execute_scheduler_task(task["task_id"], req, trace_id),
+                task_name=f"scheduler_task_{task['task_id']}",
+                zone_id=req.zone_id,
+                task_id=task["task_id"],
+                task_type=req.task_type,
+            )
 
     return {
         "status": "ok",

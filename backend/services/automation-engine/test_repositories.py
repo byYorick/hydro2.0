@@ -325,3 +325,97 @@ async def test_recipe_repository_get_zone_data_batch_correction_flags_fallback_t
         assert flags["flow_active_ts"] == "2026-02-14T10:58:00+00:00"
         assert flags["stable_ts"] == "2026-02-14T10:58:01+00:00"
         assert flags["corrections_allowed_ts"] == "2026-02-14T10:58:02+00:00"
+
+
+@pytest.mark.asyncio
+async def test_recipe_repository_get_zone_data_batch_emits_alert_when_samples_missing_for_correction_zone():
+    with patch("repositories.recipe_repository.LaravelApiRepository"):
+        repo = RecipeRepository()
+
+    with patch("repositories.recipe_repository.fetch") as mock_fetch, patch(
+        "repositories.recipe_repository.send_infra_alert", new_callable=AsyncMock
+    ) as mock_send_alert, patch(
+        "repositories.recipe_repository.create_zone_event", new_callable=AsyncMock
+    ) as mock_create_zone_event:
+        mock_send_alert.return_value = True
+        mock_fetch.return_value = [{
+            "zone_info": {"zone_id": 5, "capabilities": {"ph_control": True, "ec_control": True}},
+            "telemetry": {},
+            "correction_flags": {
+                "samples_present": False,
+                "latest_sample_ts": None,
+            },
+            "nodes": [],
+        }]
+
+        await repo.get_zone_data_batch(5)
+
+        mock_send_alert.assert_awaited_once()
+        mock_create_zone_event.assert_awaited_once()
+        assert mock_create_zone_event.await_args.args[1] == "CORRECTION_FLAGS_SOURCE_MISSING"
+        assert mock_send_alert.await_args.kwargs["code"] == "infra_correction_flags_telemetry_samples_missing"
+        assert mock_send_alert.await_args.kwargs["zone_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_recipe_repository_get_zone_data_batch_emits_resolved_when_samples_restored():
+    with patch("repositories.recipe_repository.LaravelApiRepository"):
+        repo = RecipeRepository()
+
+    with patch("repositories.recipe_repository.fetch") as mock_fetch, patch(
+        "repositories.recipe_repository.send_infra_alert", new_callable=AsyncMock
+    ) as mock_send_alert, patch(
+        "repositories.recipe_repository.send_infra_resolved_alert", new_callable=AsyncMock
+    ) as mock_send_resolved, patch(
+        "repositories.recipe_repository.create_zone_event", new_callable=AsyncMock
+    ) as mock_create_zone_event:
+        mock_send_alert.return_value = True
+        mock_send_resolved.return_value = True
+        mock_fetch.side_effect = [
+            [{
+                "zone_info": {"zone_id": 5, "capabilities": {"ph_control": True}},
+                "telemetry": {},
+                "correction_flags": {"samples_present": False, "latest_sample_ts": None},
+                "nodes": [],
+            }],
+            [{
+                "zone_info": {"zone_id": 5, "capabilities": {"ph_control": True}},
+                "telemetry": {},
+                "correction_flags": {"samples_present": True, "latest_sample_ts": "2026-02-14T13:00:00+00:00"},
+                "nodes": [],
+            }],
+        ]
+
+        await repo.get_zone_data_batch(5)
+        await repo.get_zone_data_batch(5)
+
+        mock_send_alert.assert_awaited_once()
+        mock_send_resolved.assert_awaited_once()
+        assert mock_create_zone_event.await_count == 2
+        assert mock_create_zone_event.await_args_list[0].args[1] == "CORRECTION_FLAGS_SOURCE_MISSING"
+        assert mock_create_zone_event.await_args_list[1].args[1] == "CORRECTION_FLAGS_SOURCE_RESTORED"
+        assert mock_send_resolved.await_args.kwargs["code"] == "infra_correction_flags_telemetry_samples_missing"
+        assert mock_send_resolved.await_args.kwargs["zone_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_recipe_repository_get_zone_data_batch_skips_missing_samples_alert_for_non_correction_zone():
+    with patch("repositories.recipe_repository.LaravelApiRepository"):
+        repo = RecipeRepository()
+
+    with patch("repositories.recipe_repository.fetch") as mock_fetch, patch(
+        "repositories.recipe_repository.send_infra_alert", new_callable=AsyncMock
+    ) as mock_send_alert, patch(
+        "repositories.recipe_repository.create_zone_event", new_callable=AsyncMock
+    ) as mock_create_zone_event:
+        mock_fetch.return_value = [{
+            "zone_info": {"zone_id": 8, "capabilities": {"ph_control": False, "ec_control": False}},
+            "telemetry": {},
+            "correction_flags": {"samples_present": False, "latest_sample_ts": None},
+            "nodes": [],
+        }]
+
+        await repo.get_zone_data_batch(8)
+
+        mock_send_alert.assert_not_awaited()
+        mock_create_zone_event.assert_not_awaited()

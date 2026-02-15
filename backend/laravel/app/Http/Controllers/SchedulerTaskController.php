@@ -17,6 +17,100 @@ use Illuminate\Support\Facades\Schema;
 
 class SchedulerTaskController extends Controller
 {
+    private const PROCESS_PHASE_SEQUENCE = [
+        'clean_fill',
+        'solution_fill',
+        'parallel_correction',
+        'setup_transition',
+    ];
+
+    private const PROCESS_PHASE_LABELS = [
+        'clean_fill' => 'Набор бака с чистой водой',
+        'solution_fill' => 'Набор бака с раствором',
+        'parallel_correction' => 'Параллельная коррекция pH/EC',
+        'setup_transition' => 'Завершение setup и переход в рабочий режим',
+    ];
+
+    private const PROCESS_CLEAN_FILL_REASON_CODES = [
+        'clean_fill_started',
+        'clean_fill_in_progress',
+        'clean_fill_completed',
+        'clean_fill_timeout',
+        'clean_fill_retry_started',
+        'tank_refill_started',
+        'tank_refill_in_progress',
+        'tank_refill_completed',
+        'tank_refill_timeout',
+        'tank_refill_required',
+        'tank_refill_not_required',
+    ];
+
+    private const PROCESS_SOLUTION_FILL_REASON_CODES = [
+        'solution_fill_started',
+        'solution_fill_in_progress',
+        'solution_fill_completed',
+        'solution_fill_timeout',
+    ];
+
+    private const PROCESS_PARALLEL_CORRECTION_REASON_CODES = [
+        'prepare_recirculation_started',
+        'prepare_targets_not_reached',
+        'prepare_npk_ph_target_not_reached',
+        'tank_to_tank_correction_started',
+        'online_correction_failed',
+        'irrigation_recovery_started',
+        'irrigation_recovery_recovered',
+        'irrigation_recovery_failed',
+        'irrigation_recovery_degraded',
+    ];
+
+    private const PROCESS_SETUP_TRANSITION_REASON_CODES = [
+        'prepare_targets_reached',
+        'setup_completed',
+        'setup_finished',
+        'setup_to_working',
+        'working_mode_activated',
+    ];
+
+    private const PROCESS_FAIL_REASON_CODES = [
+        'clean_fill_timeout',
+        'solution_fill_timeout',
+        'prepare_targets_not_reached',
+        'prepare_npk_ph_target_not_reached',
+        'online_correction_failed',
+        'irrigation_recovery_failed',
+        'irrigation_recovery_attempts_exceeded',
+        'cycle_start_refill_timeout',
+        'task_execution_failed',
+        'execution_exception',
+    ];
+
+    private const PROCESS_SUCCESS_REASON_CODES = [
+        'clean_fill_completed',
+        'tank_refill_completed',
+        'solution_fill_completed',
+        'prepare_targets_reached',
+        'irrigation_recovery_recovered',
+        'irrigation_recovery_degraded',
+        'setup_completed',
+        'setup_finished',
+        'setup_to_working',
+        'working_mode_activated',
+    ];
+
+    private const PROCESS_RUNNING_REASON_CODES = [
+        'clean_fill_started',
+        'clean_fill_in_progress',
+        'clean_fill_retry_started',
+        'tank_refill_started',
+        'tank_refill_in_progress',
+        'solution_fill_started',
+        'solution_fill_in_progress',
+        'prepare_recirculation_started',
+        'tank_to_tank_correction_started',
+        'irrigation_recovery_started',
+    ];
+
     private const TASK_TIMELINE_EVENT_TYPES = [
         'TASK_RECEIVED',
         'TASK_STARTED',
@@ -107,11 +201,15 @@ class SchedulerTaskController extends Controller
             $lifecycle = $this->buildLifecycle($taskId, $zone->id);
             $payload = $this->normalizeTaskPayload($automationTask, $taskId, 'automation_engine');
             $payload['lifecycle'] = $lifecycle;
-            $payload['timeline'] = $this->buildTaskTimeline(
+            $timeline = $this->buildTaskTimeline(
                 $zone->id,
                 (string) ($payload['task_id'] ?? $taskId),
                 is_string($payload['correlation_id'] ?? null) ? $payload['correlation_id'] : null
             );
+            $payload['timeline'] = $timeline;
+            $process = $this->buildTaskProcessView($payload, $timeline);
+            $payload['process_state'] = $process['process_state'];
+            $payload['process_steps'] = $process['process_steps'];
 
             return response()->json([
                 'status' => 'ok',
@@ -292,6 +390,9 @@ class SchedulerTaskController extends Controller
                 $payload = $entry['payload'];
                 $payload['lifecycle'] = $entry['lifecycle'];
                 $payload['timeline'] = [];
+                $process = $this->buildTaskProcessView($payload, []);
+                $payload['process_state'] = $process['process_state'];
+                $payload['process_steps'] = $process['process_steps'];
 
                 return $payload;
             })
@@ -302,11 +403,15 @@ class SchedulerTaskController extends Controller
 
         if ($includeTimeline) {
             foreach ($items as &$item) {
-                $item['timeline'] = $this->buildTaskTimeline(
+                $timeline = $this->buildTaskTimeline(
                     $zoneId,
                     (string) ($item['task_id'] ?? ''),
                     is_string($item['correlation_id'] ?? null) ? $item['correlation_id'] : null
                 );
+                $item['timeline'] = $timeline;
+                $process = $this->buildTaskProcessView($item, $timeline);
+                $item['process_state'] = $process['process_state'];
+                $item['process_steps'] = $process['process_steps'];
             }
             unset($item);
         }
@@ -474,6 +579,239 @@ class SchedulerTaskController extends Controller
                 'source' => 'zone_events',
             ];
         })->values()->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @param  array<int, array<string,mixed>>  $timeline
+     * @return array{process_state: array<string,mixed>, process_steps: array<int, array<string,mixed>>}
+     */
+    private function buildTaskProcessView(array $payload, array $timeline): array
+    {
+        $stepsByPhase = [];
+        foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+            $stepsByPhase[$phaseCode] = [
+                'phase' => $phaseCode,
+                'label' => self::PROCESS_PHASE_LABELS[$phaseCode] ?? $phaseCode,
+                'status' => 'pending',
+                'status_label' => $this->processStatusLabel('pending'),
+                'started_at' => null,
+                'updated_at' => null,
+                'last_reason_code' => null,
+                'last_event_type' => null,
+            ];
+        }
+
+        $latestAction = null;
+        foreach ($timeline as $event) {
+            if (! is_array($event)) {
+                continue;
+            }
+
+            $eventType = is_string($event['event_type'] ?? null) ? strtoupper(trim($event['event_type'])) : '';
+            $reasonCode = is_string($event['reason_code'] ?? null) ? strtolower(trim($event['reason_code'])) : '';
+            $runMode = is_string($event['run_mode'] ?? null) ? strtolower(trim($event['run_mode'])) : '';
+            $at = $this->toIso8601($event['at'] ?? null);
+
+            $phaseCode = $this->resolveProcessPhaseCode($eventType, $reasonCode, $runMode);
+            if ($phaseCode === null || ! isset($stepsByPhase[$phaseCode])) {
+                continue;
+            }
+
+            if ($at !== null && (
+                ! is_array($latestAction)
+                || strcmp((string) ($latestAction['at'] ?? ''), $at) <= 0
+            )) {
+                $latestAction = [
+                    'event_type' => $eventType !== '' ? $eventType : null,
+                    'reason_code' => $reasonCode !== '' ? $reasonCode : null,
+                    'at' => $at,
+                ];
+            }
+
+            $step = $stepsByPhase[$phaseCode];
+            if ($step['started_at'] === null) {
+                $step['started_at'] = $at;
+            }
+            $step['updated_at'] = $at;
+            $step['last_reason_code'] = $reasonCode !== '' ? $reasonCode : null;
+            $step['last_event_type'] = $eventType !== '' ? $eventType : null;
+
+            $resolvedStatus = $this->resolveProcessStepStatus($eventType, $reasonCode);
+            if ($resolvedStatus !== null) {
+                $step['status'] = $resolvedStatus;
+                $step['status_label'] = $this->processStatusLabel($resolvedStatus);
+            } elseif ($step['status'] === 'pending') {
+                $step['status'] = 'running';
+                $step['status_label'] = $this->processStatusLabel('running');
+            }
+
+            $stepsByPhase[$phaseCode] = $step;
+        }
+
+        $taskStatus = strtolower(trim((string) ($payload['status'] ?? '')));
+        $runMode = strtolower(trim((string) ($payload['run_mode'] ?? (($payload['result']['run_mode'] ?? '')))));
+        if (in_array($taskStatus, ['failed', 'rejected', 'expired'], true)) {
+            $failedPhase = $this->resolveCurrentPhaseCode($stepsByPhase) ?? 'setup_transition';
+            $stepsByPhase[$failedPhase]['status'] = 'failed';
+            $stepsByPhase[$failedPhase]['status_label'] = $this->processStatusLabel('failed');
+            if ($stepsByPhase[$failedPhase]['updated_at'] === null) {
+                $stepsByPhase[$failedPhase]['updated_at'] = $this->toIso8601($payload['updated_at'] ?? null);
+            }
+        }
+
+        if ($taskStatus === 'completed') {
+            if ($runMode === 'working') {
+                $setupStep = $stepsByPhase['setup_transition'];
+                if ($setupStep['status'] !== 'completed') {
+                    $setupStep['status'] = 'completed';
+                    $setupStep['status_label'] = $this->processStatusLabel('completed');
+                    if ($setupStep['updated_at'] === null) {
+                        $setupStep['updated_at'] = $this->toIso8601($payload['updated_at'] ?? null);
+                    }
+                }
+                $stepsByPhase['setup_transition'] = $setupStep;
+            }
+
+            foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+                if ($stepsByPhase[$phaseCode]['status'] === 'running') {
+                    $stepsByPhase[$phaseCode]['status'] = 'completed';
+                    $stepsByPhase[$phaseCode]['status_label'] = $this->processStatusLabel('completed');
+                }
+            }
+        }
+
+        $currentPhase = $this->resolveCurrentPhaseCode($stepsByPhase);
+        $hasFailedStep = collect($stepsByPhase)->contains(static fn (array $step): bool => $step['status'] === 'failed');
+        $hasRunningStep = collect($stepsByPhase)->contains(static fn (array $step): bool => $step['status'] === 'running');
+        $allCompleted = collect($stepsByPhase)->every(static fn (array $step): bool => $step['status'] === 'completed');
+
+        $processStatus = 'pending';
+        if (in_array($taskStatus, ['failed', 'rejected', 'expired'], true) || $hasFailedStep) {
+            $processStatus = 'failed';
+        } elseif (in_array($taskStatus, ['accepted', 'running'], true) || $hasRunningStep) {
+            $processStatus = 'running';
+        } elseif ($taskStatus === 'completed' || $allCompleted) {
+            $processStatus = 'completed';
+        }
+
+        $setupCompleted = $stepsByPhase['setup_transition']['status'] === 'completed';
+        $processSteps = [];
+        foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+            $processSteps[] = $stepsByPhase[$phaseCode];
+        }
+
+        $processState = [
+            'status' => $processStatus,
+            'status_label' => $this->processStatusLabel($processStatus),
+            'phase' => $currentPhase,
+            'phase_label' => $currentPhase !== null ? (self::PROCESS_PHASE_LABELS[$currentPhase] ?? $currentPhase) : null,
+            'is_setup_completed' => $setupCompleted,
+            'is_work_mode' => $runMode === 'working' || $setupCompleted,
+            'current_action' => $latestAction,
+        ];
+
+        return [
+            'process_state' => $processState,
+            'process_steps' => $processSteps,
+        ];
+    }
+
+    private function resolveProcessPhaseCode(string $eventType, string $reasonCode, string $runMode): ?string
+    {
+        if ($reasonCode !== '' && in_array($reasonCode, self::PROCESS_CLEAN_FILL_REASON_CODES, true)) {
+            return 'clean_fill';
+        }
+        if ($reasonCode !== '' && in_array($reasonCode, self::PROCESS_SOLUTION_FILL_REASON_CODES, true)) {
+            return 'solution_fill';
+        }
+        if ($reasonCode !== '' && in_array($reasonCode, self::PROCESS_SETUP_TRANSITION_REASON_CODES, true)) {
+            return 'setup_transition';
+        }
+        if ($reasonCode !== '' && in_array($reasonCode, self::PROCESS_PARALLEL_CORRECTION_REASON_CODES, true)) {
+            return 'parallel_correction';
+        }
+
+        if (in_array($eventType, ['TANK_REFILL_STARTED', 'TANK_REFILL_COMPLETED', 'TANK_REFILL_TIMEOUT'], true)) {
+            return 'clean_fill';
+        }
+
+        if (in_array($eventType, ['CYCLE_START_INITIATED', 'NODES_AVAILABILITY_CHECKED', 'TANK_LEVEL_CHECKED', 'TANK_LEVEL_STALE'], true)) {
+            return 'clean_fill';
+        }
+
+        if (in_array($eventType, ['TASK_RECEIVED', 'TASK_STARTED', 'DECISION_MADE'], true)) {
+            return 'clean_fill';
+        }
+
+        if ($runMode === 'working' && in_array($eventType, ['TASK_FINISHED', 'SCHEDULE_TASK_EXECUTION_FINISHED'], true)) {
+            return 'setup_transition';
+        }
+
+        return null;
+    }
+
+    private function resolveProcessStepStatus(string $eventType, string $reasonCode): ?string
+    {
+        if (
+            $reasonCode !== '' && in_array($reasonCode, self::PROCESS_FAIL_REASON_CODES, true)
+            || in_array($eventType, ['TANK_REFILL_TIMEOUT', 'SCHEDULE_TASK_FAILED'], true)
+        ) {
+            return 'failed';
+        }
+
+        if (
+            $reasonCode !== '' && in_array($reasonCode, self::PROCESS_SUCCESS_REASON_CODES, true)
+            || in_array($eventType, ['TANK_REFILL_COMPLETED', 'TASK_FINISHED', 'SCHEDULE_TASK_COMPLETED', 'SCHEDULE_TASK_EXECUTION_FINISHED'], true)
+        ) {
+            return 'completed';
+        }
+
+        if (
+            $reasonCode !== '' && in_array($reasonCode, self::PROCESS_RUNNING_REASON_CODES, true)
+            || in_array($eventType, ['TASK_STARTED', 'SCHEDULE_TASK_EXECUTION_STARTED', 'TANK_REFILL_STARTED'], true)
+        ) {
+            return 'running';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, array<string,mixed>>  $stepsByPhase
+     */
+    private function resolveCurrentPhaseCode(array $stepsByPhase): ?string
+    {
+        foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+            if (($stepsByPhase[$phaseCode]['status'] ?? null) === 'running') {
+                return $phaseCode;
+            }
+        }
+
+        foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+            if (($stepsByPhase[$phaseCode]['status'] ?? null) === 'failed') {
+                return $phaseCode;
+            }
+        }
+
+        $lastCompleted = null;
+        foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
+            if (($stepsByPhase[$phaseCode]['status'] ?? null) === 'completed') {
+                $lastCompleted = $phaseCode;
+            }
+        }
+
+        return $lastCompleted;
+    }
+
+    private function processStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'running' => 'Выполняется',
+            'completed' => 'Выполнено',
+            'failed' => 'Ошибка',
+            default => 'Ожидание',
+        };
     }
 
     /**

@@ -143,6 +143,27 @@ async def test_confirm_command_internal_does_not_cancel_current_timeout_task():
 
 
 @pytest.mark.asyncio
+async def test_confirm_command_internal_suppresses_no_effect_alert_for_sensor_mode():
+    tracker = CommandTracker(command_timeout=0, poll_interval=1)
+    cmd_id = "cmd-no-effect-sensor-mode"
+    tracker.pending_commands[cmd_id] = {
+        "cmd_id": cmd_id,
+        "zone_id": 22,
+        "command": {"cmd": "deactivate_sensor_mode", "node_uid": "nd-test-ph-1", "channel": "system"},
+        "command_type": "deactivate_sensor_mode",
+        "sent_at": datetime.utcnow(),
+        "status": "ACK",
+        "context": {},
+    }
+
+    with patch.object(tracker, "_emit_failure_alert", new=AsyncMock()) as mock_alert:
+        await tracker._confirm_command_internal(cmd_id, "NO_EFFECT", error="Command NO_EFFECT")
+
+    assert cmd_id not in tracker.pending_commands
+    mock_alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_check_timeout_local_timeout_clears_pending_state():
     tracker = CommandTracker(command_timeout=0, poll_interval=1)
     cmd_id = "cmd-local-timeout-cleanup"

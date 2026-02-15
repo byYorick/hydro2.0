@@ -164,6 +164,40 @@ async def test_ensure_command_for_publish_rejects_cmd_id_with_different_params()
 
 
 @pytest.mark.asyncio
+async def test_ensure_command_for_publish_allows_empty_params_shape_compat():
+    from command_routes import _ensure_command_for_publish
+
+    async def _fetch(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from commands where cmd_id = $1" in normalized:
+            return [{
+                "status": "QUEUED",
+                "source": "automation",
+                "zone_id": 1,
+                "node_id": 1,
+                "channel": "default",
+                "cmd": "run_pump",
+                "params": [],
+            }]
+        return []
+
+    with patch("command_routes.fetch", new=AsyncMock(side_effect=_fetch)), \
+         patch("command_routes.execute", new=AsyncMock(return_value="OK")):
+        response = await _ensure_command_for_publish(
+            cmd_id="cmd-empty-shape-compat",
+            zone_id=1,
+            node_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd_name="run_pump",
+            params={},
+            command_source="automation",
+        )
+
+    assert response is None
+
+
+@pytest.mark.asyncio
 async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
     """Test successful command publication via /commands endpoint."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \

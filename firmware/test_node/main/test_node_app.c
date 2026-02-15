@@ -26,8 +26,10 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 static const char *TAG = "test_node_multi";
+static const char *CMD_TAG = "test_node_cmd";
 
 #define DEFAULT_MQTT_NODE_UID "nd-test-irrig-1"
 #define DEFAULT_GH_UID "gh-test-1"
@@ -44,9 +46,12 @@ static const char *TAG = "test_node_multi";
 #define TASK_STACK_TELEMETRY_FALLBACK 5632
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
-#define CLEAN_FILL_DELAY_SEC 60
+#define CLEAN_FILL_DELAY_SEC 120
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define CLEAN_MAX_RELEASE_LEVEL 0.86f
+#define CONFIG_REPORT_RETRY_DELAY_MS 250
+#define CONFIG_REPORT_NODE_SPACING_MS 120
+#define MIN_VALID_UNIX_TS_SEC 1000000000LL
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -188,11 +193,14 @@ typedef struct {
 
 static virtual_node_namespace_t s_virtual_namespaces[VIRTUAL_NODE_COUNT] = {0};
 static int64_t s_start_time_seconds = 0;
+static int64_t s_timestamp_offset_sec = 0;
+static bool s_timestamp_offset_valid = false;
 static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
 static bool s_wildcard_subscriptions_ready = false;
 static bool s_factory_reset_pending = false;
+static volatile bool s_config_report_on_connect_pending = false;
 
 static virtual_state_t s_virtual_state = {
     .flow_rate = 0.0f,
@@ -238,16 +246,59 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
     vsnprintf(line, sizeof(line), fmt, args);
     va_end(args);
 
-    ESP_LOGI(TAG, "UI_LOG [%s] %s", origin, line);
+    if (strncmp(line, "cmd", 3) == 0) {
+        ESP_LOGI(CMD_TAG, "[%s] %s", origin, line);
+    }
     test_node_ui_log_event(node_uid, line);
 }
 
-static int64_t get_timestamp_seconds(void) {
+static int64_t get_uptime_seconds(void) {
     return esp_timer_get_time() / 1000000LL;
 }
 
+static void maybe_calibrate_timestamp_offset_from_command_ts(int64_t command_ts_raw) {
+    int64_t command_ts_sec = command_ts_raw;
+    int64_t uptime_sec;
+    int64_t previous_offset = s_timestamp_offset_sec;
+    bool was_valid = s_timestamp_offset_valid;
+
+    if (command_ts_sec > 1000000000000LL) {
+        command_ts_sec /= 1000LL;
+    }
+    if (command_ts_sec < MIN_VALID_UNIX_TS_SEC) {
+        return;
+    }
+
+    uptime_sec = get_uptime_seconds();
+    s_timestamp_offset_sec = command_ts_sec - uptime_sec;
+    s_timestamp_offset_valid = true;
+
+    if (!was_valid || llabs(previous_offset - s_timestamp_offset_sec) > 2) {
+        ESP_LOGI(
+            CMD_TAG,
+            "time calibrated from command: ts=%lld uptime=%lld offset=%lld",
+            (long long)command_ts_sec,
+            (long long)uptime_sec,
+            (long long)s_timestamp_offset_sec
+        );
+    }
+}
+
+static int64_t get_timestamp_seconds(void) {
+    int64_t wallclock_sec = (int64_t)time(NULL);
+    int64_t uptime_sec = get_uptime_seconds();
+
+    if (wallclock_sec >= MIN_VALID_UNIX_TS_SEC) {
+        return wallclock_sec;
+    }
+    if (s_timestamp_offset_valid) {
+        return uptime_sec + s_timestamp_offset_sec;
+    }
+    return uptime_sec;
+}
+
 static int64_t get_timestamp_ms(void) {
-    return esp_timer_get_time() / 1000LL;
+    return get_timestamp_seconds() * 1000LL;
 }
 
 static bool find_virtual_node_index(const char *node_uid, size_t *index_out) {
@@ -754,6 +805,8 @@ static void publish_heartbeat_for_node(const char *node_uid) {
 static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value) {
     char topic[192];
     cJSON *json;
+    bool has_sensor_mode_flags = false;
+    bool sensor_mode_active = false;
 
     if (!mqtt_manager_is_connected()) {
         return;
@@ -773,6 +826,18 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
     cJSON_AddNumberToObject(json, "value", value);
     cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
     cJSON_AddBoolToObject(json, "stub", true);
+    if (channel && strcmp(channel, "ph_sensor") == 0) {
+        has_sensor_mode_flags = true;
+        sensor_mode_active = s_virtual_state.ph_sensor_mode_active;
+    } else if (channel && strcmp(channel, "ec_sensor") == 0) {
+        has_sensor_mode_flags = true;
+        sensor_mode_active = s_virtual_state.ec_sensor_mode_active;
+    }
+    if (has_sensor_mode_flags) {
+        cJSON_AddBoolToObject(json, "flow_active", sensor_mode_active);
+        cJSON_AddBoolToObject(json, "stable", sensor_mode_active);
+        cJSON_AddBoolToObject(json, "corrections_allowed", sensor_mode_active);
+    }
 
     publish_json_payload(topic, json, 1, 0);
     ui_logf(
@@ -789,8 +854,10 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
-    // Избегаем дополнительной heap-аллоцкации cJSON_PrintUnformatted во время burst-публикации.
-    char payload_buf[2048];
+    // Важно: не держим большой буфер на стеке, т.к. функция может вызываться из mqtt_task callback.
+    // Выделяем буфер в heap на время публикации.
+    char *payload_buf = NULL;
+    const size_t payload_buf_size = 2048;
     bool node_preconfig_mode = false;
     cJSON *json;
     cJSON *channels;
@@ -865,23 +932,28 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         cJSON_AddItemToObject(json, "wifi", wifi);
     }
 
+    payload_buf = (char *)malloc(payload_buf_size);
     publish_err = ESP_FAIL;
-    for (int attempt = 0; attempt < 3; attempt++) {
-        publish_err = publish_json_payload_preallocated(
-            topic,
-            json,
-            1,
-            0,
-            payload_buf,
-            sizeof(payload_buf)
-        );
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (payload_buf) {
+            publish_err = publish_json_payload_preallocated(
+                topic,
+                json,
+                1,
+                0,
+                payload_buf,
+                payload_buf_size
+            );
+        } else {
+            publish_err = publish_json_payload(topic, json, 1, 0);
+        }
         if (publish_err == ESP_OK) {
             break;
         }
         if (!mqtt_manager_is_connected()) {
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(30));
+        vTaskDelay(pdMS_TO_TICKS(CONFIG_REPORT_RETRY_DELAY_MS));
     }
     if (publish_err != ESP_OK) {
         if (mqtt_manager_is_connected()) {
@@ -913,6 +985,9 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         );
     }
 
+    if (payload_buf) {
+        free(payload_buf);
+    }
     cJSON_Delete(json);
 }
 
@@ -926,6 +1001,12 @@ static void publish_all_config_reports(const char *reason) {
 
     for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
         publish_config_report_for_node(&VIRTUAL_NODES[index]);
+        if (!mqtt_manager_is_connected()) {
+            break;
+        }
+        if ((index + 1) < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0]))) {
+            vTaskDelay(pdMS_TO_TICKS(CONFIG_REPORT_NODE_SPACING_MS));
+        }
     }
 
     ESP_LOGI(TAG, "config_report batch published for all virtual nodes (reason=%s)", source);
@@ -1492,6 +1573,7 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
 
 static void update_virtual_state_from_command(const pending_command_t *job, cJSON *details, const char **status_out) {
     const char *status = "DONE";
+    bool handled = false;
 
     if (!job || !status_out) {
         return;
@@ -1584,51 +1666,84 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
     if (strcmp(job->channel, "pump_irrigation") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.irrigation_on = job->relay_state;
+            handled = true;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
             s_virtual_state.irrigation_boost_ticks = 3;
+            handled = true;
         }
     } else if (is_main_pump_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.main_pump_on = job->relay_state;
+            handled = true;
         }
     } else if (strcmp(job->channel, "valve_clean_fill") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
+            bool was_on = s_virtual_state.valve_clean_fill_on;
             s_virtual_state.valve_clean_fill_on = job->relay_state;
+            handled = true;
+            if (!was_on && job->relay_state) {
+                s_virtual_state.clean_fill_stage_active = true;
+                s_virtual_state.clean_fill_started_at = get_timestamp_seconds();
+                ui_logf(
+                    job->node_uid,
+                    "cmd delay clean_fill start %ds",
+                    CLEAN_FILL_DELAY_SEC
+                );
+            } else if (was_on && !job->relay_state) {
+                if (s_virtual_state.clean_fill_stage_active && !s_virtual_state.clean_max_latched) {
+                    ui_logf(
+                        job->node_uid,
+                        "cmd delay clean_fill cancel"
+                    );
+                }
+                s_virtual_state.clean_fill_stage_active = false;
+                s_virtual_state.clean_fill_started_at = 0;
+            }
         }
     } else if (strcmp(job->channel, "valve_clean_supply") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.valve_clean_supply_on = job->relay_state;
+            handled = true;
         }
     } else if (strcmp(job->channel, "valve_solution_fill") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.valve_solution_fill_on = job->relay_state;
+            handled = true;
         }
     } else if (strcmp(job->channel, "valve_solution_supply") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.valve_solution_supply_on = job->relay_state;
+            handled = true;
         }
     } else if (strcmp(job->channel, "valve_irrigation") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.valve_irrigation_on = job->relay_state;
+            handled = true;
         }
     } else if (is_fill_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.tank_fill_on = job->relay_state;
+            handled = true;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
             s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.02f, 0.05f, 0.98f);
+            handled = true;
         }
     } else if (is_drain_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.tank_drain_on = job->relay_state;
+            handled = true;
         } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
             s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level - 0.02f, 0.05f, 0.98f);
+            handled = true;
         }
     } else if (strcmp(job->channel, "pump_acid") == 0) {
         s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - 0.03f, 4.8f, 7.2f);
         s_virtual_state.correction_boost_ticks = 2;
+        handled = true;
     } else if (strcmp(job->channel, "pump_base") == 0) {
         s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + 0.03f, 4.8f, 7.2f);
         s_virtual_state.correction_boost_ticks = 2;
+        handled = true;
     } else if (
         strcmp(job->channel, "pump_a") == 0 ||
         strcmp(job->channel, "pump_b") == 0 ||
@@ -1637,9 +1752,11 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
     ) {
         s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + 0.05f, 0.4f, 3.2f);
         s_virtual_state.correction_boost_ticks = 2;
+        handled = true;
     } else if (strcmp(job->channel, "fan_air") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.fan_on = job->relay_state;
+            handled = true;
         }
     } else if (strcmp(job->channel, "white_light") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
@@ -1647,6 +1764,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             if (!job->relay_state) {
                 s_virtual_state.light_pwm = 0;
             }
+            handled = true;
         } else if (strcmp(job->cmd, "set_pwm") == 0) {
             int pwm_value = job->pwm_value;
             if (pwm_value < 0) {
@@ -1657,6 +1775,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             s_virtual_state.light_pwm = (uint8_t)pwm_value;
             s_virtual_state.light_on = pwm_value > 0;
+            handled = true;
         }
     } else if (strcmp(job->channel, "system") == 0) {
         if (strcmp(job->cmd, "activate_sensor_mode") == 0) {
@@ -1667,6 +1786,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     return;
                 }
                 s_virtual_state.ph_sensor_mode_active = true;
+                handled = true;
             } else if (strstr(job->node_uid, "-ec-") != NULL) {
                 if (s_virtual_state.ec_sensor_mode_active) {
                     cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
@@ -1674,6 +1794,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     return;
                 }
                 s_virtual_state.ec_sensor_mode_active = true;
+                handled = true;
             }
         } else if (strcmp(job->cmd, "deactivate_sensor_mode") == 0) {
             if (strstr(job->node_uid, "-ph-") != NULL) {
@@ -1683,6 +1804,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     return;
                 }
                 s_virtual_state.ph_sensor_mode_active = false;
+                handled = true;
             } else if (strstr(job->node_uid, "-ec-") != NULL) {
                 if (!s_virtual_state.ec_sensor_mode_active) {
                     cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive");
@@ -1690,8 +1812,16 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     return;
                 }
                 s_virtual_state.ec_sensor_mode_active = false;
+                handled = true;
             }
         }
+    }
+
+    if (!handled) {
+        cJSON_AddStringToObject(details, "error", "unsupported_channel_cmd");
+        status = "INVALID";
+        *status_out = status;
+        return;
     }
 
     if (job->amount_present) {
@@ -1813,7 +1943,7 @@ static void command_worker_task(void *pv_parameters) {
     pending_command_t job;
     (void)pv_parameters;
 
-    ESP_LOGI(TAG, "Command worker started");
+    ESP_LOGI(CMD_TAG, "Command worker started");
 
     while (1) {
         if (xQueueReceive(s_command_queue, &job, portMAX_DELAY) == pdTRUE) {
@@ -1868,6 +1998,7 @@ static void command_callback(const char *topic, const char *channel, const char 
     cJSON *command_json;
     cJSON *cmd_id_item;
     cJSON *cmd_item;
+    cJSON *ts_item;
     const char *cmd_id;
     const char *cmd_name;
     const char *validation_error_code = NULL;
@@ -1953,6 +2084,10 @@ static void command_callback(const char *topic, const char *channel, const char 
         return;
     }
     cmd_name = (cmd_item && cJSON_IsString(cmd_item) && cmd_item->valuestring) ? cmd_item->valuestring : "";
+    ts_item = cJSON_GetObjectItem(command_json, "ts");
+    if (ts_item && cJSON_IsNumber(ts_item)) {
+        maybe_calibrate_timestamp_offset_from_command_ts((int64_t)cJSON_GetNumberValue(ts_item));
+    }
 
     memset(&job, 0, sizeof(job));
     snprintf(job.node_uid, sizeof(job.node_uid), "%s", node_uid);
@@ -1982,7 +2117,7 @@ static void command_callback(const char *topic, const char *channel, const char 
     cJSON_Delete(command_json);
 
     ESP_LOGI(
-        TAG,
+        CMD_TAG,
         "Virtual command accepted: node=%s channel=%s cmd=%s cmd_id=%s",
         node_uid,
         channel ? channel : topic_channel,
@@ -2127,24 +2262,22 @@ static void apply_passive_drift(void) {
     s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + drift, 4.8f, 7.2f);
     s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + (drift * 4.0f), 0.4f, 3.2f);
 
-    if (clean_fill_active) {
-        if (!s_virtual_state.clean_fill_stage_active) {
-            s_virtual_state.clean_fill_stage_active = true;
-            s_virtual_state.clean_fill_started_at = now_sec;
-        }
-
+    if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {
             if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
                 s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
             }
-            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.010f, 0.05f, 0.98f);
+            if (!s_virtual_state.clean_max_latched) {
+                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay clean_fill done max=1");
+            }
             s_virtual_state.clean_max_latched = true;
-        } else {
-            s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.003f, 0.05f, 0.88f);
+            s_virtual_state.clean_fill_stage_active = false;
+            s_virtual_state.clean_fill_started_at = 0;
         }
-    } else {
-        s_virtual_state.clean_fill_stage_active = false;
-        s_virtual_state.clean_fill_started_at = 0;
+    }
+
+    if (clean_fill_active) {
+        s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.003f, 0.05f, 0.88f);
     }
     if (solution_fill_active) {
         float transfer = 0.006f;
@@ -2307,6 +2440,12 @@ static void task_publish_telemetry(void *pv_parameters) {
         }
 
         if (mqtt_connected) {
+            if (s_config_report_on_connect_pending) {
+                s_config_report_on_connect_pending = false;
+                publish_all_config_reports("mqtt_connected_deferred");
+                config_elapsed_ms = 0;
+            }
+
             for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
                 if (!mqtt_manager_is_connected()) {
                     break;
@@ -2352,6 +2491,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 
     if (!connected) {
         s_wildcard_subscriptions_ready = false;
+        s_config_report_on_connect_pending = false;
         test_node_ui_set_mqtt_status(false, "X");
         ui_logf(NULL, "mqtt disconnected");
         for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
@@ -2399,7 +2539,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     }
 
     if (mqtt_manager_is_connected()) {
-        publish_all_config_reports("mqtt_connected");
+        s_config_report_on_connect_pending = true;
     }
     test_node_ui_show_step("MQTT connected: virtual nodes ONLINE");
 
@@ -2547,13 +2687,28 @@ static void persist_received_config_or_namespace(
         return;
     }
 
-    // Фолбэк: даже если полный config не сохранился, сохраняем хотя бы namespace.
-    save_err = config_storage_reset_namespace(gh_uid, zone_uid);
-    if (save_err == ESP_OK) {
-        ui_logf(node_uid, "namespace persisted");
-        ESP_LOGW(
+    // В test_node config_storage хранит один общий NodeConfig key.
+    // Если писать namespace сюда для любой виртуальной ноды, после reboot все виртуальные
+    // ноды стартуют в одной и той же зоне. Поэтому fallback-персист namespace
+    // разрешаем только для базовой виртуальной ноды.
+    if (allow_full_config_save) {
+        save_err = config_storage_reset_namespace(gh_uid, zone_uid);
+        if (save_err == ESP_OK) {
+            ui_logf(node_uid, "namespace persisted");
+            ESP_LOGW(
+                TAG,
+                "Config save failed, namespace persisted only: node=%s gh=%s zone=%s",
+                node_uid,
+                gh_uid,
+                zone_uid
+            );
+            return;
+        }
+    } else {
+        ui_logf(node_uid, "namespace persist skipped");
+        ESP_LOGI(
             TAG,
-            "Config save failed, namespace persisted only: node=%s gh=%s zone=%s",
+            "Skip global namespace persist for virtual node=%s gh=%s zone=%s",
             node_uid,
             gh_uid,
             zone_uid

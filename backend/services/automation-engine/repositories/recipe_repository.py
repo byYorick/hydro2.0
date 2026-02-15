@@ -4,13 +4,17 @@ Recipe Repository - доступ к рецептам и фазам.
 """
 import json
 import logging
+from datetime import datetime
 from typing import Dict, Any, Optional, List
-from common.db import fetch
+from common.db import fetch, create_zone_event
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
+from common.utils.time import utcnow
 from infrastructure.circuit_breaker import CircuitBreaker
 from repositories.laravel_api_repository import LaravelApiRepository
 from common.effective_targets import parse_effective_targets
 
 logger = logging.getLogger(__name__)
+MISSING_TELEMETRY_SAMPLES_REPORT_THROTTLE_SECONDS = 300
 
 
 def _to_optional_bool(value: Any) -> Optional[bool]:
@@ -43,6 +47,136 @@ class RecipeRepository:
         """
         self.db_circuit_breaker = db_circuit_breaker
         self.laravel_api = LaravelApiRepository()
+        self._telemetry_samples_missing_alert_active: Dict[int, bool] = {}
+        self._telemetry_samples_missing_last_report_at: Dict[int, datetime] = {}
+
+    @staticmethod
+    def _normalize_timestamp(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+    async def _create_zone_event_safe(
+        self,
+        *,
+        zone_id: int,
+        event_type: str,
+        details: Dict[str, Any],
+    ) -> bool:
+        try:
+            await create_zone_event(zone_id, event_type, details)
+            return True
+        except Exception as event_error:
+            logger.warning(
+                "Zone %s: failed to persist zone event %s: %s",
+                zone_id,
+                event_type,
+                event_error,
+                exc_info=True,
+            )
+            return False
+
+    async def _sync_telemetry_samples_health_signal(
+        self,
+        *,
+        zone_id: int,
+        correction_flags_raw: Optional[Dict[str, Any]],
+        capabilities: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(correction_flags_raw, dict):
+            return
+        if isinstance(capabilities, dict):
+            if not bool(capabilities.get("ph_control") or capabilities.get("ec_control")):
+                return
+
+        samples_present_raw = correction_flags_raw.get("samples_present")
+        if samples_present_raw is None:
+            return
+
+        samples_present = _to_optional_bool(samples_present_raw)
+        if samples_present is None:
+            return
+
+        latest_sample_ts = self._normalize_timestamp(correction_flags_raw.get("latest_sample_ts"))
+        is_active = bool(self._telemetry_samples_missing_alert_active.get(zone_id, False))
+
+        if samples_present:
+            if not is_active:
+                return
+            resolved_sent = await send_infra_resolved_alert(
+                code="infra_correction_flags_telemetry_samples_missing",
+                alert_type="Correction Flags Telemetry Missing",
+                message=f"Zone {zone_id}: telemetry_samples for correction flags restored",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="recipe_repository",
+                details={
+                    "zone_id": zone_id,
+                    "sensor_types": ["PH", "EC"],
+                    "latest_sample_ts": latest_sample_ts,
+                },
+            )
+            if resolved_sent:
+                await self._create_zone_event_safe(
+                    zone_id=zone_id,
+                    event_type="CORRECTION_FLAGS_SOURCE_RESTORED",
+                    details={
+                        "source": "telemetry_samples",
+                        "sensor_types": ["PH", "EC"],
+                        "latest_sample_ts": latest_sample_ts,
+                    },
+                )
+                self._telemetry_samples_missing_alert_active[zone_id] = False
+                self._telemetry_samples_missing_last_report_at.pop(zone_id, None)
+            return
+
+        now = utcnow()
+        last_reported = self._telemetry_samples_missing_last_report_at.get(zone_id)
+        if isinstance(last_reported, datetime) and (
+            now - last_reported
+        ).total_seconds() < MISSING_TELEMETRY_SAMPLES_REPORT_THROTTLE_SECONDS:
+            return
+
+        logger.warning(
+            "Zone %s: telemetry_samples missing for PH/EC sensors, correction flags cannot be computed from samples metadata",
+            zone_id,
+            extra={"zone_id": zone_id, "latest_sample_ts": latest_sample_ts},
+        )
+
+        event_created = False
+        if not is_active:
+            event_created = await self._create_zone_event_safe(
+                zone_id=zone_id,
+                event_type="CORRECTION_FLAGS_SOURCE_MISSING",
+                details={
+                    "source": "telemetry_samples",
+                    "sensor_types": ["PH", "EC"],
+                    "latest_sample_ts": latest_sample_ts,
+                    "reason": "samples_absent_for_ph_ec",
+                },
+            )
+
+        alert_sent = await send_infra_alert(
+            code="infra_correction_flags_telemetry_samples_missing",
+            alert_type="Correction Flags Telemetry Missing",
+            message=f"Zone {zone_id}: telemetry_samples missing for PH/EC, correction flags degraded",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="recipe_repository",
+            error_type="TelemetrySamplesMissing",
+            details={
+                "zone_id": zone_id,
+                "sensor_types": ["PH", "EC"],
+                "latest_sample_ts": latest_sample_ts,
+                "throttle_seconds": MISSING_TELEMETRY_SAMPLES_REPORT_THROTTLE_SECONDS,
+            },
+        )
+        if alert_sent or event_created:
+            self._telemetry_samples_missing_alert_active[zone_id] = True
+            self._telemetry_samples_missing_last_report_at[zone_id] = now
 
     @staticmethod
     def _extract_correction_flags(
@@ -268,7 +402,27 @@ class RecipeRepository:
                               AND ts.metadata->'raw' ? 'corrections_allowed'
                             ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
                             LIMIT 1
-                        ) as corrections_allowed_ts
+                        ) as corrections_allowed_ts,
+                        (
+                            SELECT EXISTS(
+                                SELECT 1
+                                FROM telemetry_samples ts
+                                JOIN sensors s ON s.id = ts.sensor_id
+                                WHERE s.zone_id = $1
+                                  AND s.is_active = TRUE
+                                  AND s.type IN ('PH', 'EC')
+                            )
+                        ) as samples_present,
+                        (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = $1
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
+                        ) as latest_sample_ts
                 ),
                 nodes_data AS (
                     SELECT n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
@@ -316,7 +470,7 @@ class RecipeRepository:
         correction_flags_raw = result.get("correction_flags") or {}
         if isinstance(correction_flags_raw, str):
             correction_flags_raw = json.loads(correction_flags_raw)
-        
+
         nodes_list = result.get("nodes") or []
         if isinstance(nodes_list, str):
             nodes_list = json.loads(nodes_list)
@@ -353,6 +507,11 @@ class RecipeRepository:
         if not capabilities:
             from .zone_repository import ZoneRepository
             capabilities = ZoneRepository.DEFAULT_CAPABILITIES.copy()
+        await self._sync_telemetry_samples_health_signal(
+            zone_id=zone_id,
+            correction_flags_raw=correction_flags_raw,
+            capabilities=capabilities,
+        )
         
         return {
             "recipe_info": None,
@@ -504,6 +663,26 @@ class RecipeRepository:
                               AND ts.metadata->'raw' ? 'corrections_allowed'
                             ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
                             LIMIT 1
+                        ),
+                        'samples_present', (
+                            SELECT EXISTS(
+                                SELECT 1
+                                FROM telemetry_samples ts
+                                JOIN sensors s ON s.id = ts.sensor_id
+                                WHERE s.zone_id = zi.zone_id
+                                  AND s.is_active = TRUE
+                                  AND s.type IN ('PH', 'EC')
+                            )
+                        ),
+                        'latest_sample_ts', (
+                            SELECT ts.ts
+                            FROM telemetry_samples ts
+                            JOIN sensors s ON s.id = ts.sensor_id
+                            WHERE s.zone_id = zi.zone_id
+                              AND s.is_active = TRUE
+                              AND s.type IN ('PH', 'EC')
+                            ORDER BY ts.ts DESC NULLS LAST, ts.id DESC
+                            LIMIT 1
                         )
                     ),
                     'nodes', (
@@ -557,6 +736,11 @@ class RecipeRepository:
             correction_flags_raw = zone_data.get("correction_flags")
             if isinstance(correction_flags_raw, str):
                 correction_flags_raw = json.loads(correction_flags_raw)
+            await self._sync_telemetry_samples_health_signal(
+                zone_id=zone_id,
+                correction_flags_raw=correction_flags_raw,
+                capabilities=zone_data.get("capabilities"),
+            )
             zone_data['correction_flags'] = self._extract_correction_flags(
                 correction_flags_raw,
                 zone_data['telemetry'],

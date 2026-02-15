@@ -126,6 +126,46 @@ describe('ZoneAutomationTab.vue', () => {
                 commands_effect_confirmed: 1,
                 commands_failed: 0,
               },
+              process_state: {
+                status: 'running',
+                status_label: 'Выполняется',
+                phase: 'clean_fill',
+                phase_label: 'Набор бака с чистой водой',
+                is_setup_completed: false,
+                is_work_mode: false,
+                current_action: {
+                  event_type: 'TASK_STARTED',
+                  reason_code: 'clean_fill_started',
+                  at: '2026-02-10T08:00:40Z',
+                },
+              },
+              process_steps: [
+                {
+                  phase: 'clean_fill',
+                  label: 'Набор бака с чистой водой',
+                  status: 'running',
+                  status_label: 'Выполняется',
+                  updated_at: '2026-02-10T08:00:40Z',
+                },
+                {
+                  phase: 'solution_fill',
+                  label: 'Набор бака с раствором',
+                  status: 'pending',
+                  status_label: 'Ожидание',
+                },
+                {
+                  phase: 'parallel_correction',
+                  label: 'Параллельная коррекция pH/EC',
+                  status: 'pending',
+                  status_label: 'Ожидание',
+                },
+                {
+                  phase: 'setup_transition',
+                  label: 'Завершение setup и переход в рабочий режим',
+                  status: 'pending',
+                  status_label: 'Ожидание',
+                },
+              ],
               timeline: [
                 {
                   event_id: 'evt-1',
@@ -137,6 +177,19 @@ describe('ZoneAutomationTab.vue', () => {
                   event_type: 'TANK_LEVEL_CHECKED',
                   reason_code: 'tank_level_checked',
                   at: '2026-02-10T08:00:30Z',
+                },
+                {
+                  event_id: 'evt-3',
+                  event_type: 'TASK_STARTED',
+                  reason_code: 'clean_fill_started',
+                  at: '2026-02-10T08:00:40Z',
+                },
+                {
+                  event_id: 'evt-4',
+                  event_type: 'TASK_FINISHED',
+                  reason_code: 'prepare_targets_reached',
+                  run_mode: 'working',
+                  at: '2026-02-10T08:01:00Z',
                 },
               ],
             },
@@ -361,12 +414,30 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.text()).toContain('SLA выполнен')
     expect(wrapper.text()).toContain('Запуск цикла инициирован')
     expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
+    expect(wrapper.text()).toContain('набор бака с чистой водой')
+    expect(wrapper.text()).toContain('завершение setup и переход в рабочий режим')
+    expect(wrapper.text()).toContain('Текущий этап автоматики')
+    expect(wrapper.text()).toContain('Набор бака с чистой водой')
+    expect(wrapper.text()).toContain('Набор бака с раствором')
+    expect(wrapper.text()).toContain('Параллельная коррекция pH/EC')
     expect(wrapper.text()).toContain('tank_level_checked')
     expect(wrapper.text()).toContain('DONE подтвержден')
 
     const vm = wrapper.vm as any
     expect(vm.schedulerTaskStatusLabel('expired')).toBe('Просрочена')
-    expect(vm.schedulerTaskEventLabel('SCHEDULE_TASK_EXECUTION_STARTED')).toContain('execution started')
+    expect(
+      vm.schedulerTaskTimelineStageLabel({
+        event_type: 'TASK_STARTED',
+        reason_code: 'solution_fill_started',
+      })
+    ).toContain('набор бака с раствором')
+    expect(
+      vm.schedulerTaskTimelineStepLabel({
+        event_type: 'TASK_FINISHED',
+        reason_code: 'prepare_targets_reached',
+        run_mode: 'working',
+      })
+    ).toContain('завершение setup и переход в рабочий режим')
     expect(vm.schedulerTaskReasonLabel('task_expired')).toContain('expires_at')
     expect(vm.schedulerTaskReasonLabel('online_correction_failed')).toContain('Online-коррекция')
     expect(vm.schedulerTaskReasonLabel('tank_to_tank_correction_started')).toContain('баковая коррекция')

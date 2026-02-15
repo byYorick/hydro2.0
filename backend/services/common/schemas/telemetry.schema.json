@@ -50,6 +50,14 @@
     "stable": {
       "type": "boolean",
       "description": "Флаг стабильности показаний сенсора"
+    },
+    "flow_active": {
+      "type": "boolean",
+      "description": "Флаг наличия потока через сенсор (для correction gating)"
+    },
+    "corrections_allowed": {
+      "type": "boolean",
+      "description": "Флаг разрешения коррекций (для correction gating)"
     }
   },
   "additionalProperties": false

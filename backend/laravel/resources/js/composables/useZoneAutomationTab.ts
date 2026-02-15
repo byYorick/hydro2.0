@@ -54,8 +54,37 @@ export interface SchedulerTaskTimelineItem {
   command_submitted?: boolean | null
   command_effect_confirmed?: boolean | null
   terminal_status?: string | null
+  status?: string | null
+  run_mode?: string | null
   source?: string | null
   details?: Record<string, unknown> | null
+}
+
+export interface SchedulerTaskProcessAction {
+  event_type?: string | null
+  reason_code?: string | null
+  at?: string | null
+}
+
+export interface SchedulerTaskProcessState {
+  status?: string | null
+  status_label?: string | null
+  phase?: string | null
+  phase_label?: string | null
+  is_setup_completed?: boolean | null
+  is_work_mode?: boolean | null
+  current_action?: SchedulerTaskProcessAction | null
+}
+
+export interface SchedulerTaskProcessStep {
+  phase: string
+  label: string
+  status: string
+  status_label?: string | null
+  started_at?: string | null
+  updated_at?: string | null
+  last_reason_code?: string | null
+  last_event_type?: string | null
 }
 
 export interface SchedulerTaskStatus {
@@ -84,6 +113,8 @@ export interface SchedulerTaskStatus {
   source?: string | null
   lifecycle: SchedulerTaskLifecycleItem[]
   timeline?: SchedulerTaskTimelineItem[]
+  process_state?: SchedulerTaskProcessState | null
+  process_steps?: SchedulerTaskProcessStep[] | null
 }
 
 interface SchedulerTasksResponse {
@@ -184,6 +215,43 @@ function toFiniteNumber(value: unknown): number | null {
 
 const TARGET_SCHEDULER_STATUSES = ['accepted', 'running', 'completed', 'failed', 'rejected', 'expired'] as const
 type TargetSchedulerStatus = (typeof TARGET_SCHEDULER_STATUSES)[number]
+const CLEAN_FILL_REASON_CODES = new Set([
+  'clean_fill_started',
+  'clean_fill_in_progress',
+  'clean_fill_completed',
+  'clean_fill_timeout',
+  'clean_fill_retry_started',
+  'tank_refill_started',
+  'tank_refill_in_progress',
+  'tank_refill_completed',
+  'tank_refill_timeout',
+  'tank_refill_required',
+  'tank_refill_not_required',
+])
+const SOLUTION_FILL_REASON_CODES = new Set([
+  'solution_fill_started',
+  'solution_fill_in_progress',
+  'solution_fill_completed',
+  'solution_fill_timeout',
+])
+const PARALLEL_CORRECTION_REASON_CODES = new Set([
+  'prepare_recirculation_started',
+  'prepare_targets_not_reached',
+  'prepare_npk_ph_target_not_reached',
+  'tank_to_tank_correction_started',
+  'online_correction_failed',
+  'irrigation_recovery_started',
+  'irrigation_recovery_recovered',
+  'irrigation_recovery_failed',
+  'irrigation_recovery_degraded',
+])
+const SETUP_TRANSITION_REASON_CODES = new Set([
+  'prepare_targets_reached',
+  'setup_completed',
+  'setup_finished',
+  'setup_to_working',
+  'working_mode_activated',
+])
 
 function normalizeTargetSchedulerStatus(status: string | null | undefined): TargetSchedulerStatus | null {
   const normalized = String(status ?? '').trim().toLowerCase()
@@ -193,6 +261,8 @@ function normalizeTargetSchedulerStatus(status: string | null | undefined): Targ
   }
   return null
 }
+
+type SchedulerTaskProcessStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 function toBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value
@@ -509,6 +579,33 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     return 'Неизвестно'
   }
 
+  function normalizeProcessStatus(status: string | null | undefined): SchedulerTaskProcessStatus {
+    const normalized = String(status ?? '').trim().toLowerCase()
+    if (normalized === 'running') return 'running'
+    if (normalized === 'completed') return 'completed'
+    if (normalized === 'failed') return 'failed'
+    return 'pending'
+  }
+
+  function schedulerTaskProcessStatusVariant(status: string | null | undefined): SchedulerTaskSlaVariant {
+    const normalized = normalizeProcessStatus(status)
+    if (normalized === 'running') return 'warning'
+    if (normalized === 'completed') return 'success'
+    if (normalized === 'failed') return 'danger'
+    return 'secondary'
+  }
+
+  function schedulerTaskProcessStatusLabel(status: string | null | undefined, fallbackLabel?: string | null): string {
+    if (typeof fallbackLabel === 'string' && fallbackLabel.trim() !== '') {
+      return fallbackLabel
+    }
+    const normalized = normalizeProcessStatus(status)
+    if (normalized === 'running') return 'Выполняется'
+    if (normalized === 'completed') return 'Выполнено'
+    if (normalized === 'failed') return 'Ошибка'
+    return 'Ожидание'
+  }
+
   function schedulerTaskEventLabel(eventType: string | null | undefined): string {
     const normalized = String(eventType ?? '').toUpperCase()
     if (normalized === 'TASK_RECEIVED') return 'Задача получена'
@@ -518,8 +615,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (normalized === 'COMMAND_FAILED') return 'Ошибка отправки команды'
     if (normalized === 'COMMAND_EFFECT_NOT_CONFIRMED') return 'Команда не подтверждена нодой (не DONE)'
     if (normalized === 'TASK_FINISHED') return 'Задача завершена'
-    if (normalized === 'SCHEDULE_TASK_EXECUTION_STARTED') return 'Automation-engine: execution started'
-    if (normalized === 'SCHEDULE_TASK_EXECUTION_FINISHED') return 'Automation-engine: execution finished'
+    if (normalized === 'SCHEDULE_TASK_EXECUTION_STARTED') return 'Automation-engine: запуск выполнения'
+    if (normalized === 'SCHEDULE_TASK_EXECUTION_FINISHED') return 'Automation-engine: выполнение завершено'
     if (normalized === 'DIAGNOSTICS_SERVICE_UNAVAILABLE') return 'Diagnostics service недоступен'
     if (normalized === 'CYCLE_START_INITIATED') return 'Запуск цикла инициирован'
     if (normalized === 'NODES_AVAILABILITY_CHECKED') return 'Проверена доступность нод'
@@ -537,6 +634,56 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (normalized === 'SCHEDULE_TASK_FAILED') return 'Scheduler: задача завершилась с ошибкой'
 
     return eventType ? String(eventType) : 'Событие'
+  }
+
+  function schedulerTaskTimelineStageLabel(step: SchedulerTaskTimelineItem | null | undefined): string | null {
+    if (!step) return null
+
+    const eventType = String(step.event_type ?? '').trim().toUpperCase()
+    const reasonCode = String(step.reason_code ?? '').trim().toLowerCase()
+    const runMode = String(step.run_mode ?? '').trim().toLowerCase()
+
+    if (
+      CLEAN_FILL_REASON_CODES.has(reasonCode) ||
+      (eventType === 'TANK_REFILL_STARTED' || eventType === 'TANK_REFILL_COMPLETED' || eventType === 'TANK_REFILL_TIMEOUT')
+    ) {
+      return 'Этап: набор бака с чистой водой'
+    }
+
+    if (SOLUTION_FILL_REASON_CODES.has(reasonCode)) {
+      return 'Этап: набор бака с раствором'
+    }
+
+    if (
+      SETUP_TRANSITION_REASON_CODES.has(reasonCode) ||
+      ((eventType === 'SCHEDULE_TASK_EXECUTION_FINISHED' || eventType === 'TASK_FINISHED') && runMode === 'working')
+    ) {
+      return 'Этап: завершение setup и переход в рабочий режим'
+    }
+
+    if (PARALLEL_CORRECTION_REASON_CODES.has(reasonCode)) {
+      return 'Этап: параллельная коррекция pH/EC'
+    }
+
+    return null
+  }
+
+  function schedulerTaskTimelineStepLabel(step: SchedulerTaskTimelineItem | null | undefined): string {
+    if (!step) return 'Событие'
+
+    const stageLabel = schedulerTaskTimelineStageLabel(step)
+    if (stageLabel) {
+      if (step.reason_code) {
+        return `${stageLabel.replace('Этап: ', '')}: ${schedulerTaskReasonLabel(step.reason_code, step.reason)}`
+      }
+      if (step.error_code) {
+        return `${stageLabel.replace('Этап: ', '')}: ${schedulerTaskErrorLabel(step.error_code)}`
+      }
+      const eventLabel = schedulerTaskEventLabel(step.event_type)
+      return `${stageLabel.replace('Этап: ', '')}: ${eventLabel}`
+    }
+
+    return schedulerTaskEventLabel(step.event_type)
   }
 
   function schedulerTaskDecisionLabel(decision: string | null | undefined): string {
@@ -1463,7 +1610,11 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     lookupSchedulerTask,
     schedulerTaskStatusVariant,
     schedulerTaskStatusLabel,
+    schedulerTaskProcessStatusVariant,
+    schedulerTaskProcessStatusLabel,
     schedulerTaskEventLabel,
+    schedulerTaskTimelineStageLabel,
+    schedulerTaskTimelineStepLabel,
     schedulerTaskDecisionLabel,
     schedulerTaskReasonLabel,
     schedulerTaskErrorLabel,

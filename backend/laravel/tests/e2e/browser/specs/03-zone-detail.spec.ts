@@ -164,7 +164,7 @@ test.describe('Zone Detail', () => {
       await expect(page.getByText('SLA-контроль')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('SLA нарушен: expires_at')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Задача получена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Automation-engine: execution started')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Automation-engine: запуск выполнения')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Превышен срок expires_at (task_expired)').first()).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});

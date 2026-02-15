@@ -177,7 +177,8 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.task_id', 'st-live01')
             ->assertJsonPath('data.status', 'running')
-            ->assertJsonPath('data.source', 'automation_engine');
+            ->assertJsonPath('data.source', 'automation_engine')
+            ->assertJsonPath('data.process_state.status', 'running');
 
         $this->assertNotNull($response->json('data.due_at'));
         $this->assertNotNull($response->json('data.expires_at'));
@@ -224,7 +225,10 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.0.task_id', 'st-with-timeline')
             ->assertJsonCount(1, 'data.0.timeline')
-            ->assertJsonPath('data.0.timeline.0.event_type', 'TASK_STARTED');
+            ->assertJsonPath('data.0.timeline.0.event_type', 'TASK_STARTED')
+            ->assertJsonPath('data.0.process_state.status', 'completed')
+            ->assertJsonPath('data.0.process_state.phase', 'clean_fill')
+            ->assertJsonPath('data.0.process_steps.0.phase', 'clean_fill');
     }
 
     public function test_scheduler_task_show_returns_not_found_when_automation_missing_even_if_scheduler_log_exists(): void
@@ -395,7 +399,11 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonCount(2, 'data.timeline')
             ->assertJsonPath('data.timeline.0.event_type', 'TASK_STARTED')
             ->assertJsonPath('data.timeline.1.event_type', 'DECISION_MADE')
-            ->assertJsonPath('data.timeline.1.reason_code', 'irrigation_not_required');
+            ->assertJsonPath('data.timeline.1.reason_code', 'irrigation_not_required')
+            ->assertJsonPath('data.process_state.status', 'completed')
+            ->assertJsonPath('data.process_state.phase', 'clean_fill')
+            ->assertJsonPath('data.process_state.status_label', 'Выполнено')
+            ->assertJsonPath('data.process_steps.0.phase', 'clean_fill');
     }
 
     public function test_scheduler_task_timeline_falls_back_to_result_fields_when_root_fields_missing(): void
@@ -471,7 +479,8 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('data.timeline.0.action_required', true)
             ->assertJsonPath('data.timeline.0.decision', 'fail')
             ->assertJsonPath('data.timeline.0.reason_code', 'execution_exception')
-            ->assertJsonPath('data.timeline.0.error_code', 'execution_exception');
+            ->assertJsonPath('data.timeline.0.error_code', 'execution_exception')
+            ->assertJsonPath('data.process_state.status', 'failed');
     }
 
     public function test_scheduler_task_show_includes_command_effect_confirmation_fields(): void

@@ -55,6 +55,9 @@ static const char *TAG = "mqtt_manager";
 // Конфигурация под burst публикации (например, batch config_report от test_node)
 #define MQTT_MANAGER_BUFFER_SIZE_BYTES 2048
 #define MQTT_MANAGER_OUTBOX_LIMIT_BYTES (32 * 1024)
+// MQTT callback может вызывать тяжёлые обработчики (config/apply/report), поэтому
+// используем увеличенный stack mqtt_task для запаса.
+#define MQTT_MANAGER_TASK_STACK_SIZE_BYTES (12 * 1024)
 
 // Внутренние структуры
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
@@ -188,6 +191,7 @@ static esp_err_t mqtt_manager_create_client(void) {
         .network.reconnect_timeout_ms = 5000,
         .network.timeout_ms = 30000,
         .network.disable_auto_reconnect = false,
+        .task.stack_size = MQTT_MANAGER_TASK_STACK_SIZE_BYTES,
         .buffer.size = MQTT_MANAGER_BUFFER_SIZE_BYTES,
         .buffer.out_size = MQTT_MANAGER_BUFFER_SIZE_BYTES,
         .outbox.limit = MQTT_MANAGER_OUTBOX_LIMIT_BYTES,
@@ -198,6 +202,7 @@ static esp_err_t mqtt_manager_create_client(void) {
     };
 
     ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
+    ESP_LOGI(TAG, "MQTT task stack: %d bytes", MQTT_MANAGER_TASK_STACK_SIZE_BYTES);
     ESP_LOGI(TAG, "MQTT buffers: in/out=%d bytes, outbox_limit=%llu bytes",
              MQTT_MANAGER_BUFFER_SIZE_BYTES,
              (unsigned long long)MQTT_MANAGER_OUTBOX_LIMIT_BYTES);

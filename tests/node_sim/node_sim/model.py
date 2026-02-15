@@ -106,6 +106,10 @@ class NodeModel:
 
     # Состояние доступности
     offline_until: Optional[float] = None
+
+    # Состояние sensor mode для коррекционных сенсоров
+    ph_sensor_mode_active: bool = False
+    ec_sensor_mode_active: bool = False
     
     def __post_init__(self):
         """Инициализация после создания."""

@@ -209,6 +209,12 @@ services:
       dockerfile: automation-engine/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - LOG_FORMAT=json
+      - PYTHONUNBUFFERED=1
+      - PYTHONFAULTHANDLER=1
+      - AE_DEV_VERBOSE_HTTP_LOGGING=1
+      - AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -241,6 +247,7 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - APP_ENV=local
+      - SCHEDULER_ZONE_PREFLIGHT_ENFORCE=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0

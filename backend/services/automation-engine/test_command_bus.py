@@ -689,3 +689,73 @@ async def test_publish_controller_command_closed_loop_ignores_stale_cmd_id_when_
     tracker.wait_for_command_done.assert_not_awaited()
     mock_zone_event.assert_awaited_once()
     mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_command_rejects_actuator_command_on_sensor_channel_when_compatibility_enabled():
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes n" in normalized and "left join node_channels nc" in normalized:
+            return [{"channel_type": "SENSOR"}]
+        return []
+
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(side_effect=_fetch_side_effect)), \
+         patch("infrastructure.command_bus.create_zone_event", new=AsyncMock()) as mock_zone_event, \
+         patch("infrastructure.command_bus.send_infra_alert", new=AsyncMock()) as mock_alert:
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            enforce_command_channel_compatibility=True,
+        )
+        result = await command_bus.publish_command(
+            zone_id=22,
+            node_uid="nd-test-climate-1",
+            channel="air_temp_c",
+            cmd="set_relay",
+            params={"state": True},
+        )
+
+    assert result is False
+    mock_zone_event.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_command_allows_sensor_mode_on_system_channel_when_compatibility_enabled():
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from zones z" in normalized and "join greenhouses g" in normalized:
+            return [{"gh_uid": "gh-zone-22"}]
+        return []
+
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(side_effect=_fetch_side_effect)), \
+         patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-system-1"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-fallback",
+            history_logger_url="http://history-logger:9300",
+            enforce_command_channel_compatibility=True,
+        )
+        result = await command_bus.publish_command(
+            zone_id=22,
+            node_uid="nd-test-ph-1",
+            channel="system",
+            cmd="activate_sensor_mode",
+            params={"stabilization_time_sec": 60},
+        )
+
+    assert result is True
+    payload = mock_client.post.call_args[1]["json"]
+    assert payload["channel"] == "system"
+    assert payload["cmd"] == "activate_sensor_mode"

@@ -66,6 +66,8 @@ PENDING_COMMANDS = Gauge(
     ["zone_id"]
 )
 
+_NO_EFFECT_ALERT_SUPPRESSED_COMMANDS = {"activate_sensor_mode", "deactivate_sensor_mode"}
+
 
 class CommandTracker:
     """
@@ -97,6 +99,29 @@ class CommandTracker:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _resolve_command_name(command_info: Dict[str, Any]) -> str:
+        command_payload = command_info.get("command") if isinstance(command_info, dict) else None
+        if isinstance(command_payload, dict):
+            cmd_value = command_payload.get("cmd")
+            if isinstance(cmd_value, str):
+                normalized = cmd_value.strip().lower()
+                if normalized:
+                    return normalized
+        command_type = command_info.get("command_type") if isinstance(command_info, dict) else None
+        if isinstance(command_type, str):
+            normalized = command_type.strip().lower()
+            if normalized:
+                return normalized
+        return ""
+
+    @classmethod
+    def _should_suppress_no_effect_alert(cls, status: str, command_info: Dict[str, Any]) -> bool:
+        if str(status or "").strip().upper() != "NO_EFFECT":
+            return False
+        command_name = cls._resolve_command_name(command_info)
+        return command_name in _NO_EFFECT_ALERT_SUPPRESSED_COMMANDS
     
     async def track_command(
         self,
@@ -166,12 +191,12 @@ class CommandTracker:
             response: Ответ от узла (опционально)
             error: Сообщение об ошибке (опционально)
         """
-        if cmd_id not in self.pending_commands:
-            # Команда может быть не в pending, если она была восстановлена из БД
+        command_info = self.pending_commands.get(cmd_id)
+        if not command_info:
+            # Команда может быть не в pending, если уже обработана в конкурентной ветке
             logger.debug(f"Command {cmd_id} not found in pending commands (may be already processed)")
             return
-        
-        command_info = self.pending_commands[cmd_id]
+
         zone_id = command_info['zone_id']
         command_type = command_info['command_type']
         
@@ -185,6 +210,7 @@ class CommandTracker:
         # ВАЖНО: closed-loop успех только при DONE.
         # NO_EFFECT/BUSY/INVALID/ERROR/TIMEOUT/SEND_FAILED считаются неуспехом.
         success = status == "DONE"
+        suppress_no_effect_alert = self._should_suppress_no_effect_alert(status, command_info)
         
         # Обновляем статус
         command_info['status'] = status
@@ -221,27 +247,40 @@ class CommandTracker:
                 }
             )
         else:
-            logger.warning(
-                f"Zone {zone_id}: Command {cmd_id} failed (status: {status}): {error}",
-                extra={
-                    'zone_id': zone_id,
-                    'cmd_id': cmd_id,
-                    'command_type': command_type,
-                    'status': status,
-                    'error': error,
-                    'latency': latency
-                }
-            )
-            await self._emit_failure_alert(
-                zone_id=zone_id,
-                cmd_id=cmd_id,
-                status=status,
-                command_info=command_info,
-                error=error,
-            )
+            if suppress_no_effect_alert:
+                logger.info(
+                    f"Zone {zone_id}: Command {cmd_id} completed with expected NO_EFFECT (command={command_type})",
+                    extra={
+                        'zone_id': zone_id,
+                        'cmd_id': cmd_id,
+                        'command_type': command_type,
+                        'status': status,
+                        'error': error,
+                        'latency': latency
+                    }
+                )
+            else:
+                logger.warning(
+                    f"Zone {zone_id}: Command {cmd_id} failed (status: {status}): {error}",
+                    extra={
+                        'zone_id': zone_id,
+                        'cmd_id': cmd_id,
+                        'command_type': command_type,
+                        'status': status,
+                        'error': error,
+                        'latency': latency
+                    }
+                )
+                await self._emit_failure_alert(
+                    zone_id=zone_id,
+                    cmd_id=cmd_id,
+                    status=status,
+                    command_info=command_info,
+                    error=error,
+                )
         
         # Удаляем из pending
-        del self.pending_commands[cmd_id]
+        self.pending_commands.pop(cmd_id, None)
 
     async def _emit_failure_alert(
         self,

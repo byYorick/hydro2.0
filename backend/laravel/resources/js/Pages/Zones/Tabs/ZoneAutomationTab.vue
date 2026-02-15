@@ -433,6 +433,51 @@
             </div>
           </dl>
 
+          <section
+            v-if="schedulerTaskStatus.process_state || (schedulerTaskStatus.process_steps && schedulerTaskStatus.process_steps.length > 0)"
+            class="rounded-xl border border-[color:var(--border-muted)]/50 bg-[color:var(--surface-card)]/40 p-3 space-y-2"
+          >
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div class="text-xs text-[color:var(--text-dim)]">Текущий этап автоматики</div>
+              <Badge :variant="schedulerTaskProcessStatusVariant(schedulerTaskStatus.process_state?.status)">
+                {{ schedulerTaskProcessStatusLabel(schedulerTaskStatus.process_state?.status, schedulerTaskStatus.process_state?.status_label) }}
+              </Badge>
+            </div>
+            <p class="text-sm text-[color:var(--text-primary)]">
+              {{ schedulerTaskStatus.process_state?.phase_label || 'Этап не определён' }}
+            </p>
+            <p
+              v-if="schedulerTaskStatus.process_state?.current_action"
+              class="text-xs text-[color:var(--text-dim)]"
+            >
+              {{
+                schedulerTaskEventLabel(schedulerTaskStatus.process_state.current_action.event_type) +
+                (schedulerTaskStatus.process_state.current_action.reason_code
+                  ? ` · ${schedulerTaskReasonLabel(schedulerTaskStatus.process_state.current_action.reason_code)}`
+                  : '')
+              }}
+              · {{ formatDateTime(schedulerTaskStatus.process_state.current_action.at || null) }}
+            </p>
+            <ul
+              v-if="schedulerTaskStatus.process_steps && schedulerTaskStatus.process_steps.length > 0"
+              class="space-y-1 text-xs"
+            >
+              <li
+                v-for="step in schedulerTaskStatus.process_steps"
+                :key="`${schedulerTaskStatus.task_id}-process-${step.phase}`"
+                class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
+              >
+                <div class="text-[color:var(--text-primary)]">{{ step.label }}</div>
+                <div class="flex items-center gap-2">
+                  <Badge :variant="schedulerTaskProcessStatusVariant(step.status)">
+                    {{ schedulerTaskProcessStatusLabel(step.status, step.status_label || null) }}
+                  </Badge>
+                  <span class="text-[color:var(--text-dim)]">{{ formatDateTime(step.updated_at || step.started_at || null) }}</span>
+                </div>
+              </li>
+            </ul>
+          </section>
+
           <ul
             v-if="schedulerTaskStatus.timeline && schedulerTaskStatus.timeline.length > 0"
             class="space-y-1 text-xs"
@@ -443,9 +488,15 @@
               class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
             >
               <div class="text-[color:var(--text-primary)]">
-                {{ schedulerTaskEventLabel(step.event_type) }}
+                {{ schedulerTaskTimelineStepLabel(step) }}
                 <span
-                  v-if="step.reason_code"
+                  v-if="schedulerTaskTimelineStageLabel(step)"
+                  class="text-[color:var(--text-dim)]"
+                >
+                  · {{ schedulerTaskTimelineStageLabel(step) }}
+                </span>
+                <span
+                  v-if="step.reason_code && !schedulerTaskTimelineStageLabel(step)"
                   class="text-[color:var(--text-dim)]"
                 >
                   · {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
@@ -624,6 +675,10 @@ const {
   lookupSchedulerTask,
   schedulerTaskStatusVariant,
   schedulerTaskStatusLabel,
+  schedulerTaskProcessStatusVariant,
+  schedulerTaskProcessStatusLabel,
+  schedulerTaskTimelineStageLabel,
+  schedulerTaskTimelineStepLabel,
   schedulerTaskEventLabel,
   schedulerTaskDecisionLabel,
   schedulerTaskReasonLabel,

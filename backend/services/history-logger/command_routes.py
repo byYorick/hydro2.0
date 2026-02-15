@@ -229,6 +229,10 @@ def _normalize_params_for_idempotency(params: Any) -> str:
             candidate = json.loads(candidate)
         except Exception:
             candidate = candidate.strip()
+    # Laravel historically persisted empty params both as [] and {},
+    # treat them as equivalent for cmd_id idempotency checks.
+    if isinstance(candidate, list) and len(candidate) == 0:
+        candidate = {}
     try:
         return json.dumps(candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     except Exception:

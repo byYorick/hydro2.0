@@ -277,7 +277,11 @@ services:
     environment:
       - APP_ENV=local
       - LOG_LEVEL=DEBUG
+      - LOG_FORMAT=json
       - PYTHONUNBUFFERED=1
+      - PYTHONFAULTHANDLER=1
+      - AE_DEV_VERBOSE_HTTP_LOGGING=1
+      - AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -331,6 +335,7 @@ services:
       - LARAVEL_API_URL=http://laravel
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - SCHEDULER_ZONE_PREFLIGHT_ENFORCE=1
     depends_on:
       mqtt:
         condition: service_healthy

@@ -162,11 +162,13 @@ async def send_infra_exception_alert(
     hardware_id: Optional[str] = None,
     channel: Optional[str] = None,
     cmd: Optional[str] = None,
+    error_type: Optional[str] = None,
     ts_device: Optional[str] = None,
 ) -> bool:
     """Удобный wrapper для отправки alert по объекту Exception."""
     details_with_error = dict(details) if isinstance(details, dict) else {}
     details_with_error.setdefault("error_message", str(error))
+    resolved_error_type = str(error_type).strip() if isinstance(error_type, str) and error_type.strip() else type(error).__name__
 
     return await send_infra_alert(
         code=code,
@@ -181,7 +183,7 @@ async def send_infra_exception_alert(
         hardware_id=hardware_id,
         channel=channel,
         cmd=cmd,
-        error_type=type(error).__name__,
+        error_type=resolved_error_type,
         ts_device=ts_device,
     )
 

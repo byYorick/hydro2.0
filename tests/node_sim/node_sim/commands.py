@@ -131,6 +131,10 @@ class CommandHandler:
             "run_pump": self._handle_run,
             "dose": self._handle_dose,
             "set_pwm": self._handle_set_pwm,
+            "light_on": self._handle_light_on,
+            "light_off": self._handle_light_off,
+            "activate_sensor_mode": self._handle_activate_sensor_mode,
+            "deactivate_sensor_mode": self._handle_deactivate_sensor_mode,
             "FORCE_IRRIGATION": self._handle_force_irrigation,
             "hil_set_sensor": self._handle_hil_set_sensor,
             "hil_raise_error": self._handle_hil_raise_error,
@@ -336,6 +340,27 @@ class CommandHandler:
             return ("invalid_hmac_format", "Invalid sig")
         return None
 
+    def _node_type_name(self) -> str:
+        node_type = getattr(self.node, "node_type", "")
+        return str(getattr(node_type, "value", node_type)).lower()
+
+    def _validate_command_channel_compatibility(self, channel: str, cmd: str) -> Optional[str]:
+        if cmd.startswith("hil_") or cmd == "FORCE_IRRIGATION":
+            return None
+
+        if cmd in {"activate_sensor_mode", "deactivate_sensor_mode"}:
+            if channel != "system":
+                return f"Command {cmd} is only supported on channel 'system', got '{channel}'"
+            if self._node_type_name() not in {"ph", "ec"}:
+                return f"Command {cmd} is only supported for ph/ec nodes, got '{self._node_type_name()}'"
+            return None
+
+        if cmd in {"set_relay", "run_pump", "dose", "set_pwm", "light_on", "light_off"}:
+            if channel not in set(getattr(self.node, "actuators", []) or []):
+                return f"Command {cmd} is not supported on channel '{channel}'"
+
+        return None
+
     async def _handle_command(
         self,
         channel: str,
@@ -366,6 +391,18 @@ class CommandHandler:
         if cmd not in self.command_map:
             logger.warning(f"Unknown command: {cmd}")
             await self._send_error_response(channel, cmd_id, "INVALID", f"Unknown command: {cmd}")
+            return
+
+        compatibility_error = self._validate_command_channel_compatibility(channel, cmd)
+        if compatibility_error:
+            logger.warning(f"Unsupported channel/cmd combination: {compatibility_error}")
+            await self._send_error_response(
+                channel,
+                cmd_id,
+                "INVALID",
+                compatibility_error,
+                error_code="unsupported_channel_cmd",
+            )
             return
         
         # Принимаем команду в state machine
@@ -776,6 +813,49 @@ class CommandHandler:
             self.pwm_values[channel] = value
             logger.info(f"Set PWM {channel} to {value}")
             return CommandStatus.DONE, {"details": f"PWM {channel} set to {value}", "value": value}
+
+    def _handle_light_on(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать light_on как set_relay(state=true)."""
+        payload = dict(params or {})
+        payload["state"] = True
+        return self._handle_set_relay("set_relay", payload)
+
+    def _handle_light_off(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать light_off как set_relay(state=false)."""
+        payload = dict(params or {})
+        payload["state"] = False
+        return self._handle_set_relay("set_relay", payload)
+
+    def _handle_activate_sensor_mode(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Активировать sensor mode для pH/EC ноды."""
+        return self._handle_sensor_mode_change(activate=True, params=params)
+
+    def _handle_deactivate_sensor_mode(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Деактивировать sensor mode для pH/EC ноды."""
+        return self._handle_sensor_mode_change(activate=False, params=params)
+
+    def _handle_sensor_mode_change(
+        self,
+        activate: bool,
+        params: Dict[str, Any],
+    ) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        channel = params.get("channel", "system")
+        if channel != "system":
+            return CommandStatus.INVALID, {"error": "unsupported_channel_cmd"}
+
+        node_type = self._node_type_name()
+        if node_type not in {"ph", "ec"}:
+            return CommandStatus.INVALID, {"error": "unsupported_channel_cmd"}
+
+        flag_name = "ph_sensor_mode_active" if node_type == "ph" else "ec_sensor_mode_active"
+        is_active = bool(getattr(self.node, flag_name, False))
+        if activate == is_active:
+            note = "sensor_mode_already_active" if activate else "sensor_mode_already_inactive"
+            return CommandStatus.NO_EFFECT, {"note": note}
+
+        setattr(self.node, flag_name, activate)
+        note = "sensor_mode_activated" if activate else "sensor_mode_deactivated"
+        return CommandStatus.DONE, {"details": note}
     
     def _handle_hil_set_sensor(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду hil_set_sensor (HIL инжект телеметрии)."""

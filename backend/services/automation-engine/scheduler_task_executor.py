@@ -153,6 +153,49 @@ class SchedulerTaskExecutor:
         self.command_bus = command_bus
         self.zone_service = zone_service
 
+    async def _create_zone_event_safe(
+        self,
+        *,
+        zone_id: int,
+        event_type: str,
+        payload: Dict[str, Any],
+        task_type: str,
+        context: Dict[str, Any],
+    ) -> bool:
+        try:
+            await create_zone_event(zone_id, event_type, payload)
+            return True
+        except Exception as exc:
+            task_id = str(context.get("task_id") or "") or None
+            correlation_id = str(context.get("correlation_id") or "") or None
+            logger.warning(
+                "Failed to persist scheduler task zone event: zone_id=%s task_type=%s task_id=%s event_type=%s error=%s",
+                zone_id,
+                task_type,
+                task_id,
+                event_type,
+                exc,
+                exc_info=True,
+            )
+            await send_infra_alert(
+                code="infra_scheduler_task_event_persist_failed",
+                alert_type="Scheduler Task Event Persist Failed",
+                message=f"Не удалось сохранить zone_event {event_type} для scheduler-task",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="scheduler_task_executor",
+                error_type=type(exc).__name__,
+                details={
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "event_type": event_type,
+                    "correlation_id": correlation_id,
+                    "error": str(exc),
+                },
+            )
+            return False
+
     async def execute(
         self,
         *,
@@ -190,15 +233,17 @@ class SchedulerTaskExecutor:
             event_type="TASK_STARTED",
             payload={"payload": payload},
         )
-        await create_zone_event(
-            zone_id,
-            "SCHEDULE_TASK_EXECUTION_STARTED",
-            {
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type="SCHEDULE_TASK_EXECUTION_STARTED",
+            payload={
                 "task_type": task_type,
                 "payload": payload,
                 "task_id": context["task_id"] or None,
                 "correlation_id": context["correlation_id"] or None,
             },
+            task_type=task_type,
+            context=context,
         )
 
         decision = self._decide_action(task_type=task_type, payload=payload)
@@ -359,16 +404,18 @@ class SchedulerTaskExecutor:
                 "reason_code": str(result.get("reason_code") or "unknown"),
             },
         )
-        await create_zone_event(
-            zone_id,
-            "SCHEDULE_TASK_EXECUTION_FINISHED",
-            {
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type="SCHEDULE_TASK_EXECUTION_FINISHED",
+            payload={
                 "task_type": task_type,
                 "success": bool(result.get("success")),
                 "result": result,
                 "task_id": context["task_id"] or None,
                 "correlation_id": context["correlation_id"] or None,
             },
+            task_type=task_type,
+            context=context,
         )
         return result
 
@@ -936,7 +983,13 @@ class SchedulerTaskExecutor:
         }
         if isinstance(payload, dict):
             event_payload.update(payload)
-        await create_zone_event(zone_id, event_type, event_payload)
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type=event_type,
+            payload=event_payload,
+            task_type=task_type,
+            context=context,
+        )
 
     async def _get_zone_nodes(self, zone_id: int, node_types: Sequence[str]) -> List[Dict[str, Any]]:
         normalized_types = [str(item).strip().lower() for item in node_types if str(item).strip()]
@@ -951,6 +1004,10 @@ class SchedulerTaskExecutor:
             WHERE n.zone_id = $1
               AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
               AND LOWER(TRIM(COALESCE(n.type, ''))) = ANY($2::text[])
+              AND (
+                nc.id IS NULL
+                OR UPPER(TRIM(COALESCE(nc.type, ''))) = 'ACTUATOR'
+              )
             """,
             zone_id,
             normalized_types,
@@ -976,7 +1033,17 @@ class SchedulerTaskExecutor:
         params: Optional[Dict[str, Any]] = None,
         context: Dict[str, Any],
         decision: DecisionOutcome,
+        accepted_terminal_statuses: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
+        accepted_statuses = {
+            str(status).strip().upper()
+            for status in (accepted_terminal_statuses or ("DONE",))
+            if str(status).strip()
+        }
+        if not accepted_statuses:
+            accepted_statuses = {"DONE"}
+        accepted_statuses.add("DONE")
+
         commands_total = 0
         commands_submitted = 0
         commands_effect_confirmed = 0
@@ -1035,6 +1102,9 @@ class SchedulerTaskExecutor:
                 cmd_id_raw = closed_loop_result.get("cmd_id")
                 cmd_id = str(cmd_id_raw).strip() if isinstance(cmd_id_raw, str) and cmd_id_raw.strip() else None
                 failure_error_code = self._terminal_status_to_error_code(terminal_status)
+                if submitted and terminal_status in accepted_statuses:
+                    effect_confirmed = True
+                    failure_error_code = ""
             elif TASK_EXECUTE_CLOSED_LOOP_ENFORCE:
                 submitted = False
                 effect_confirmed = False
@@ -1066,6 +1136,7 @@ class SchedulerTaskExecutor:
                     "command_submitted": submitted,
                     "command_effect_confirmed": effect_confirmed,
                     "terminal_status": terminal_status,
+                    "terminal_status_accepted": terminal_status in accepted_statuses,
                 }
             )
 
@@ -1091,6 +1162,7 @@ class SchedulerTaskExecutor:
                         "action_required": decision.action_required,
                         "decision": decision.decision,
                         "reason_code": decision.reason_code,
+                        "accepted_terminal_statuses": sorted(accepted_statuses),
                     },
                 )
 
@@ -1501,6 +1573,16 @@ class SchedulerTaskExecutor:
         return [str(item).strip().lower() for item in default if str(item).strip()]
 
     @staticmethod
+    def _canonical_sensor_label(raw: Any) -> str:
+        label = str(raw or "").strip().lower()
+        if not label:
+            return ""
+        normalized = "".join(ch if ch.isalnum() else "_" for ch in label)
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized.strip("_")
+
+    @staticmethod
     def _merge_dict_recursive(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
         merged: Dict[str, Any] = dict(base)
         for key, value in patch.items():
@@ -1635,6 +1717,7 @@ class SchedulerTaskExecutor:
         *,
         default_plan: Sequence[Dict[str, Any]],
         default_node_types: Sequence[str],
+        default_allow_no_effect: bool = False,
     ) -> List[Dict[str, Any]]:
         if not isinstance(raw, Sequence):
             raw = default_plan
@@ -1648,12 +1731,18 @@ class SchedulerTaskExecutor:
             cmd = str(item.get("cmd") or "set_relay").strip() or "set_relay"
             params = item.get("params") if isinstance(item.get("params"), dict) else {}
             node_types = self._normalize_node_type_list(item.get("node_types"), default_node_types)
+            allow_no_effect = (
+                bool(item.get("allow_no_effect"))
+                if "allow_no_effect" in item
+                else bool(default_allow_no_effect)
+            )
             normalized.append(
                 {
                     "channel": channel,
                     "cmd": cmd,
                     "params": dict(params),
                     "node_types": node_types,
+                    "allow_no_effect": allow_no_effect,
                 }
             )
         return normalized
@@ -1680,41 +1769,49 @@ class SchedulerTaskExecutor:
             commands_cfg.get("clean_fill_start"),
             default_plan=clean_fill_start_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=True,
         )
         clean_fill_stop = self._normalize_command_plan(
             commands_cfg.get("clean_fill_stop"),
             default_plan=clean_fill_stop_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=False,
         )
         solution_fill_start = self._normalize_command_plan(
             commands_cfg.get("solution_fill_start"),
             default_plan=solution_fill_start_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=True,
         )
         solution_fill_stop = self._normalize_command_plan(
             commands_cfg.get("solution_fill_stop"),
             default_plan=solution_fill_stop_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=False,
         )
         prepare_recirculation_start = self._normalize_command_plan(
             commands_cfg.get("prepare_recirculation_start"),
             default_plan=prepare_recirculation_start_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=True,
         )
         prepare_recirculation_stop = self._normalize_command_plan(
             commands_cfg.get("prepare_recirculation_stop"),
             default_plan=prepare_recirculation_stop_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=False,
         )
         irrigation_recovery_start = self._normalize_command_plan(
             commands_cfg.get("irrigation_recovery_start"),
             default_plan=irrigation_recovery_start_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=True,
         )
         irrigation_recovery_stop = self._normalize_command_plan(
             commands_cfg.get("irrigation_recovery_stop"),
             default_plan=irrigation_recovery_stop_default,
             default_node_types=required_node_types,
+            default_allow_no_effect=False,
         )
 
         recovery_cfg = execution.get("irrigation_recovery") if isinstance(execution.get("irrigation_recovery"), dict) else {}
@@ -1881,6 +1978,11 @@ class SchedulerTaskExecutor:
         threshold: float,
     ) -> Dict[str, Any]:
         labels = [str(item).strip().lower() for item in sensor_labels if str(item).strip()]
+        canonical_labels: List[str] = []
+        for item in labels:
+            canonical = self._canonical_sensor_label(item)
+            if canonical:
+                canonical_labels.append(canonical)
         if not labels:
             return {
                 "sensor_id": None,
@@ -1891,6 +1993,9 @@ class SchedulerTaskExecutor:
                 "is_stale": False,
                 "has_level": False,
                 "is_triggered": False,
+                "expected_labels": [],
+                "available_sensor_labels": [],
+                "level_source": "none",
             }
 
         rows = await fetch(
@@ -1898,34 +2003,94 @@ class SchedulerTaskExecutor:
             SELECT
                 s.id AS sensor_id,
                 s.label AS sensor_label,
-                tl.last_value AS level,
-                COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+                COALESCE(tl.last_value, ts_fallback.value) AS level,
+                COALESCE(tl.last_ts, tl.updated_at, ts_fallback.ts) AS sample_ts,
+                CASE
+                    WHEN tl.last_value IS NOT NULL THEN 'telemetry_last'
+                    WHEN ts_fallback.value IS NOT NULL THEN 'telemetry_samples_fallback'
+                    ELSE 'none'
+                END AS level_source
             FROM sensors s
             LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            LEFT JOIN LATERAL (
+                SELECT ts, value
+                FROM telemetry_samples t
+                WHERE t.sensor_id = s.id
+                ORDER BY t.ts DESC, t.id DESC
+                LIMIT 1
+            ) ts_fallback ON TRUE
             WHERE s.zone_id = $1
               AND s.type = 'WATER_LEVEL'
               AND s.is_active = TRUE
               AND LOWER(TRIM(COALESCE(s.label, ''))) = ANY($2::text[])
             ORDER BY
-                COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST,
+                COALESCE(tl.last_ts, tl.updated_at, ts_fallback.ts) DESC NULLS LAST,
                 s.id DESC
             LIMIT 1
             """,
             zone_id,
             labels,
         )
+        matched_by = "exact"
 
         if not rows:
-            return {
-                "sensor_id": None,
-                "sensor_label": None,
-                "level": None,
-                "sample_ts": None,
-                "sample_age_sec": None,
-                "is_stale": False,
-                "has_level": False,
-                "is_triggered": False,
-            }
+            candidate_rows = await fetch(
+                """
+                SELECT
+                    s.id AS sensor_id,
+                    s.label AS sensor_label,
+                    COALESCE(tl.last_value, ts_fallback.value) AS level,
+                    COALESCE(tl.last_ts, tl.updated_at, ts_fallback.ts) AS sample_ts,
+                    CASE
+                        WHEN tl.last_value IS NOT NULL THEN 'telemetry_last'
+                        WHEN ts_fallback.value IS NOT NULL THEN 'telemetry_samples_fallback'
+                        ELSE 'none'
+                    END AS level_source
+                FROM sensors s
+                LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+                LEFT JOIN LATERAL (
+                    SELECT ts, value
+                    FROM telemetry_samples t
+                    WHERE t.sensor_id = s.id
+                    ORDER BY t.ts DESC, t.id DESC
+                    LIMIT 1
+                ) ts_fallback ON TRUE
+                WHERE s.zone_id = $1
+                  AND s.type = 'WATER_LEVEL'
+                  AND s.is_active = TRUE
+                ORDER BY
+                    COALESCE(tl.last_ts, tl.updated_at, ts_fallback.ts) DESC NULLS LAST,
+                    s.id DESC
+                """,
+                zone_id,
+            )
+            selected_row = None
+            available_sensor_labels: List[str] = []
+            for candidate in candidate_rows:
+                label = str(candidate.get("sensor_label") or "").strip()
+                if label:
+                    available_sensor_labels.append(label)
+                canonical_label = self._canonical_sensor_label(label)
+                if canonical_label and canonical_label in canonical_labels and selected_row is None:
+                    selected_row = candidate
+
+            if selected_row is None:
+                return {
+                    "sensor_id": None,
+                    "sensor_label": None,
+                    "level": None,
+                    "sample_ts": None,
+                    "sample_age_sec": None,
+                    "is_stale": False,
+                    "has_level": False,
+                    "is_triggered": False,
+                    "expected_labels": labels,
+                    "available_sensor_labels": available_sensor_labels,
+                    "level_source": "none",
+                }
+
+            rows = [selected_row]
+            matched_by = "canonical"
 
         row = rows[0]
         raw_level = row.get("level")
@@ -1958,6 +2123,10 @@ class SchedulerTaskExecutor:
             "is_stale": is_stale,
             "has_level": has_level,
             "is_triggered": bool(has_level and level >= threshold),
+            "expected_labels": labels,
+            "available_sensor_labels": [str(row.get("sensor_label") or "").strip()] if str(row.get("sensor_label") or "").strip() else [],
+            "matched_by": matched_by,
+            "level_source": str(row.get("level_source") or "none"),
         }
 
     async def _read_latest_metric(self, *, zone_id: int, sensor_type: str) -> Dict[str, Any]:
@@ -2133,6 +2302,7 @@ class SchedulerTaskExecutor:
             WHERE n.zone_id = $1
               AND LOWER(TRIM(COALESCE(n.status, ''))) = 'online'
               AND LOWER(COALESCE(nc.channel, 'default')) = $2
+              AND UPPER(TRIM(COALESCE(nc.type, ''))) = 'ACTUATOR'
               AND LOWER(COALESCE(n.type, '')) = ANY($3::text[])
             ORDER BY n.id ASC, nc.id ASC
             LIMIT 1
@@ -2183,6 +2353,7 @@ class SchedulerTaskExecutor:
             channel = str(entry.get("channel") or "").strip().lower()
             cmd = str(entry.get("cmd") or "set_relay").strip() or "set_relay"
             params = entry.get("params") if isinstance(entry.get("params"), dict) else {}
+            allow_no_effect = bool(entry.get("allow_no_effect"))
             node_types = entry.get("node_types") if isinstance(entry.get("node_types"), Sequence) else ()
             node = await self._resolve_online_node_for_channel(
                 zone_id=zone_id,
@@ -2216,6 +2387,7 @@ class SchedulerTaskExecutor:
                 params=params,
                 context=context,
                 decision=decision,
+                accepted_terminal_statuses=("DONE", "NO_EFFECT") if allow_no_effect else ("DONE",),
             )
             commands_total += int(step_result.get("commands_total") or 0)
             commands_failed += int(step_result.get("commands_failed") or 0)
@@ -3171,6 +3343,13 @@ class SchedulerTaskExecutor:
                 },
             )
             if not clean_level["has_level"]:
+                logger.warning(
+                    "Zone %s: two_tank clean level unavailable (startup), expected=%s available=%s source=%s",
+                    zone_id,
+                    clean_level.get("expected_labels", runtime_cfg["clean_max_labels"]),
+                    clean_level.get("available_sensor_labels", []),
+                    clean_level.get("level_source", "none"),
+                )
                 return {
                     "success": False,
                     "task_type": "diagnostics",
@@ -3184,6 +3363,9 @@ class SchedulerTaskExecutor:
                     "reason": "Нет данных датчика верхнего уровня чистого бака",
                     "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
                     "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                    "expected_sensor_labels": clean_level.get("expected_labels", runtime_cfg["clean_max_labels"]),
+                    "available_sensor_labels": clean_level.get("available_sensor_labels", []),
+                    "level_source": clean_level.get("level_source", "none"),
                 }
             if TELEMETRY_FRESHNESS_ENFORCE and clean_level["is_stale"]:
                 return {
@@ -3249,6 +3431,13 @@ class SchedulerTaskExecutor:
                 )
                 clean_triggered = bool(clean_level["is_triggered"])
                 if not clean_level["has_level"]:
+                    logger.warning(
+                        "Zone %s: two_tank clean level unavailable (clean_fill_check), expected=%s available=%s source=%s",
+                        zone_id,
+                        clean_level.get("expected_labels", runtime_cfg["clean_max_labels"]),
+                        clean_level.get("available_sensor_labels", []),
+                        clean_level.get("level_source", "none"),
+                    )
                     return {
                         "success": False,
                         "task_type": "diagnostics",
@@ -3262,6 +3451,9 @@ class SchedulerTaskExecutor:
                         "reason": "Нет данных датчика верхнего уровня чистого бака",
                         "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
                         "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                        "expected_sensor_labels": clean_level.get("expected_labels", runtime_cfg["clean_max_labels"]),
+                        "available_sensor_labels": clean_level.get("available_sensor_labels", []),
+                        "level_source": clean_level.get("level_source", "none"),
                     }
                 if TELEMETRY_FRESHNESS_ENFORCE and clean_level["is_stale"]:
                     return {
@@ -3460,6 +3652,13 @@ class SchedulerTaskExecutor:
                 )
                 solution_triggered = bool(solution_level["is_triggered"])
                 if not solution_level["has_level"]:
+                    logger.warning(
+                        "Zone %s: two_tank solution level unavailable (solution_fill_check), expected=%s available=%s source=%s",
+                        zone_id,
+                        solution_level.get("expected_labels", runtime_cfg["solution_max_labels"]),
+                        solution_level.get("available_sensor_labels", []),
+                        solution_level.get("level_source", "none"),
+                    )
                     return {
                         "success": False,
                         "task_type": "diagnostics",
@@ -3473,6 +3672,9 @@ class SchedulerTaskExecutor:
                         "reason": "Нет данных датчика верхнего уровня бака раствора",
                         "error": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
                         "error_code": ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+                        "expected_sensor_labels": solution_level.get("expected_labels", runtime_cfg["solution_max_labels"]),
+                        "available_sensor_labels": solution_level.get("available_sensor_labels", []),
+                        "level_source": solution_level.get("level_source", "none"),
                     }
                 if TELEMETRY_FRESHNESS_ENFORCE and solution_level["is_stale"]:
                     return {

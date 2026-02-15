@@ -1148,7 +1148,11 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     exc_info=True,
                 )
 
-        await _complete_binding_after_config_report(node, node_uid)
+        await _complete_binding_after_config_report(
+            node,
+            node_uid,
+            is_temp_topic=is_temp_topic,
+        )
 
         CONFIG_REPORT_PROCESSED.inc()
         logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
@@ -1163,7 +1167,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
 
 
 async def _complete_binding_after_config_report(
-    node: Dict[str, Any], node_uid: str
+    node: Dict[str, Any], node_uid: str, *, is_temp_topic: bool = False
 ) -> None:
     node_id = node.get("id")
     if not node_id:
@@ -1187,6 +1191,14 @@ async def _complete_binding_after_config_report(
         zone_id = current_state.get("zone_id")
         pending_zone_id = current_state.get("pending_zone_id")
         target_zone_id = zone_id or pending_zone_id
+
+        if is_temp_topic:
+            logger.info(
+                "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): temp namespace requires confirmation from target namespace",
+                node_uid,
+                node_id,
+            )
+            return
 
         if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
             return

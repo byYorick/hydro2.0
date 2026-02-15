@@ -89,6 +89,8 @@ class CommandValidator:
         """Валидация команды run_pump (ирригация/рециркуляция/дозирование)."""
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
+        if not str(command.get('channel') or '').strip():
+            return False, "Missing required field: channel"
         if command.get('cmd') != 'run_pump':
             return False, "Invalid command type, expected run_pump"
 
@@ -121,6 +123,8 @@ class CommandValidator:
         """Валидация dose (ph/ec насосы)."""
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
+        if not str(command.get('channel') or '').strip():
+            return False, "Missing required field: channel"
         if command.get('cmd') != 'dose':
             return False, "Invalid command type, expected dose"
 
@@ -158,6 +162,8 @@ class CommandValidator:
         # Проверка обязательных полей
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
+        if not str(command.get('channel') or '').strip():
+            return False, "Missing required field: channel"
         if 'cmd' not in command or command['cmd'] != 'set_relay':
             return False, "Invalid command type for climate"
         
@@ -188,6 +194,8 @@ class CommandValidator:
         # Проверка обязательных полей
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
+        if not str(command.get('channel') or '').strip():
+            return False, "Missing required field: channel"
         
         cmd = command.get('cmd')
         if cmd not in ['set_pwm', 'set_relay']:
@@ -256,6 +264,19 @@ class CommandValidator:
                 return self.validate_light_command(command)
             # По умолчанию проверяем как климат
             return self.validate_climate_command(command)
+        elif cmd in ['light_on', 'light_off']:
+            if 'node_uid' not in command:
+                return False, "Missing required field: node_uid"
+            if not str(command.get('channel') or '').strip():
+                return False, "Missing required field: channel"
+            return True, None
+        elif cmd in ['activate_sensor_mode', 'deactivate_sensor_mode']:
+            if 'node_uid' not in command:
+                return False, "Missing required field: node_uid"
+            channel = str(command.get('channel') or '').strip().lower()
+            if channel != 'system':
+                return False, "Sensor mode commands require system channel"
+            return True, None
         elif cmd == 'set_pwm':
             return self.validate_light_command(command)
         else:

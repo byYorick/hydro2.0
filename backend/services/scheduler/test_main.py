@@ -1004,6 +1004,69 @@ async def test_reconcile_active_tasks_handles_expired_status_as_terminal():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_active_tasks_drops_task_when_zone_event_write_fails():
+    accepted_at = datetime(2025, 1, 1, 8, 0, 0)
+    _ACTIVE_TASKS["st-event-fail-1"] = {
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "task_name": "diagnostics_zone_28",
+        "accepted_at": accepted_at,
+        "schedule_key": "zone:28|type:diagnostics|interval=1800",
+    }
+    _ACTIVE_SCHEDULE_TASKS["zone:28|type:diagnostics|interval=1800"] = "st-event-fail-1"
+
+    status_payload = {
+        "task_id": "st-event-fail-1",
+        "status": "failed",
+        "error": "execution_exception",
+        "error_code": "execution_exception",
+    }
+
+    with patch("main._fetch_task_status_once", new_callable=AsyncMock) as mock_status, \
+         patch("main.create_scheduler_log", new_callable=AsyncMock), \
+         patch("main.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_status.return_value = ("failed", status_payload)
+        mock_event.side_effect = RuntimeError("fk violation")
+        await reconcile_active_tasks()
+
+    assert "st-event-fail-1" not in _ACTIVE_TASKS
+    assert "zone:28|type:diagnostics|interval=1800" not in _ACTIVE_SCHEDULE_TASKS
+    assert mock_diag.await_args.kwargs["reason"] == "zone_event_write_failed"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_active_tasks_drops_task_when_terminal_snapshot_persist_fails():
+    accepted_at = datetime(2025, 1, 1, 8, 0, 0)
+    _ACTIVE_TASKS["st-log-fail-1"] = {
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "task_name": "diagnostics_zone_28",
+        "accepted_at": accepted_at,
+        "schedule_key": "zone:28|type:diagnostics|interval=1800",
+    }
+    _ACTIVE_SCHEDULE_TASKS["zone:28|type:diagnostics|interval=1800"] = "st-log-fail-1"
+
+    status_payload = {
+        "task_id": "st-log-fail-1",
+        "status": "completed",
+        "result": {"success": True},
+    }
+
+    with patch("main._fetch_task_status_once", new_callable=AsyncMock) as mock_status, \
+         patch("main.create_scheduler_log", new_callable=AsyncMock) as mock_log, \
+         patch("main.create_zone_event", new_callable=AsyncMock), \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_status.return_value = ("completed", status_payload)
+        mock_log.side_effect = RuntimeError("write failed")
+        await reconcile_active_tasks()
+
+    assert "st-log-fail-1" not in _ACTIVE_TASKS
+    assert "zone:28|type:diagnostics|interval=1800" not in _ACTIVE_SCHEDULE_TASKS
+    assert mock_diag.await_args.kwargs["reason"] == "task_terminal_persist_failed"
+
+
+@pytest.mark.asyncio
 async def test_execute_scheduled_task_success_flow():
     with patch("main.submit_task_to_automation_engine", new_callable=AsyncMock) as mock_submit, \
          patch("main.create_scheduler_log", new_callable=AsyncMock) as mock_log, \
@@ -1023,6 +1086,30 @@ async def test_execute_scheduled_task_success_flow():
     assert "st-1" in _ACTIVE_TASKS
     event_types = [call.args[1] for call in mock_events.await_args_list]
     assert "SCHEDULE_TASK_ACCEPTED" in event_types
+
+
+@pytest.mark.asyncio
+async def test_execute_scheduled_task_zone_not_found_is_rejected_before_dispatch():
+    with patch("main.SCHEDULER_ZONE_PREFLIGHT_ENFORCE", True), \
+         patch("main._zone_exists_preflight", new_callable=AsyncMock) as mock_zone_exists, \
+         patch("main.create_scheduler_log", new_callable=AsyncMock) as mock_log, \
+         patch("main.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("main.submit_task_to_automation_engine", new_callable=AsyncMock) as mock_submit, \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_zone_exists.return_value = False
+
+        dispatched = await execute_scheduled_task(
+            zone_id=999,
+            schedule={"type": "irrigation", "targets": {"irrigation": {"duration_sec": 20}}},
+            trigger_time=datetime(2025, 1, 1, 8, 0, 0),
+        )
+
+    assert dispatched is False
+    mock_submit.assert_not_awaited()
+    assert mock_log.await_args.args[1] == "failed"
+    assert mock_log.await_args.args[2]["error_code"] == "zone_not_found"
+    assert mock_event.await_args.args[1] == "SCHEDULE_TASK_FAILED"
+    assert mock_diag.await_args.kwargs["reason"] == "dispatch_zone_not_found"
 
 
 @pytest.mark.asyncio
