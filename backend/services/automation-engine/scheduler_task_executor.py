@@ -71,6 +71,15 @@ AUTO_LOGIC_EXTENDED_OUTCOME_V1 = _env_bool("AUTO_LOGIC_EXTENDED_OUTCOME_V1", Tru
 AE_TWOTANK_SAFETY_GUARDS_ENABLED = _env_bool("AE_TWOTANK_SAFETY_GUARDS_ENABLED", True)
 
 
+TWO_TANK_TOPOLOGIES = {"two_tank_drip_substrate_trays", "two_tank"}
+THREE_TANK_TOPOLOGIES = {
+    "three_tank_drip_substrate_trays",
+    "three_tank_substrate_trays",
+    "three_tank",
+}
+CYCLE_START_WORKFLOWS = {"cycle_start", "refill_check"}
+
+
 ERR_COMMAND_PUBLISH_FAILED = "command_publish_failed"
 ERR_COMMAND_SEND_FAILED = "command_send_failed"
 ERR_COMMAND_TIMEOUT = "command_timeout"
@@ -159,12 +168,7 @@ class SchedulerTaskExecutor:
     @staticmethod
     def _requires_explicit_workflow(payload: Dict[str, Any]) -> bool:
         topology = SchedulerTaskExecutor._extract_topology(payload)
-        return topology in {
-            "two_tank_drip_substrate_trays",
-            "three_tank_drip_substrate_trays",
-            "three_tank_substrate_trays",
-            "three_tank",
-        }
+        return topology in (TWO_TANK_TOPOLOGIES | THREE_TANK_TOPOLOGIES)
 
     async def _create_zone_event_safe(
         self,
@@ -3370,18 +3374,10 @@ class SchedulerTaskExecutor:
         workflow: str,
         topology: str,
     ) -> Dict[str, Any]:
-        two_tank_topologies = {
-            "two_tank_drip_substrate_trays",
-            "two_tank",
-        }
-        three_tank_topologies = {
-            "three_tank_drip_substrate_trays",
-            "three_tank_substrate_trays",
-            "three_tank",
-        }
         normalized_topology = str(topology or "").strip().lower()
+        normalized_workflow = str(workflow or "").strip().lower()
 
-        if normalized_topology in two_tank_topologies:
+        if normalized_topology in TWO_TANK_TOPOLOGIES:
             return await self._execute_two_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
@@ -3389,7 +3385,7 @@ class SchedulerTaskExecutor:
                 decision=decision,
             )
 
-        if normalized_topology in three_tank_topologies:
+        if normalized_topology in THREE_TANK_TOPOLOGIES:
             return await self._execute_three_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
@@ -3397,7 +3393,7 @@ class SchedulerTaskExecutor:
                 decision=decision,
             )
 
-        if workflow in {"cycle_start", "refill_check"}:
+        if normalized_workflow in CYCLE_START_WORKFLOWS:
             return await self._execute_cycle_start_workflow(
                 zone_id=zone_id,
                 payload=payload,
