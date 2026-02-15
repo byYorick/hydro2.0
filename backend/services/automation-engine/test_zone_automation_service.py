@@ -267,6 +267,7 @@ async def test_process_correction_controllers_skips_when_flags_stale_and_deactiv
     assert stale_events
     assert stale_events[-1]["reason_code"] == "stale_flags"
     assert set(stale_events[-1]["stale_flags"]) == {"flow_active", "stable", "corrections_allowed"}
+    assert set(stale_events[-1]["flag_age_seconds"].keys()) == {"flow_active", "stable", "corrections_allowed"}
 
 
 @pytest.mark.asyncio
@@ -422,6 +423,7 @@ async def test_process_correction_controllers_throttle_flushes_suppressed_counte
     assert len(gating_events) == 2
     assert gating_events[-1]["reason_code"] == "sensor_unstable"
     assert gating_events[-1]["suppressed_events_since_last_emit"] >= 1
+    assert "flag_age_seconds" in gating_events[-1]
 
 @pytest.mark.asyncio
 async def test_process_zone_light_controller():

@@ -1396,6 +1396,7 @@ class ZoneAutomationService:
                     "reason_code": "missing_flags",
                     "missing_flags": gating_state["missing_flags"],
                     "correction_flags": gating_state["flags"],
+                    "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
                 },
                 reason_code="missing_flags",
             )
@@ -1417,6 +1418,7 @@ class ZoneAutomationService:
                     "reason_code": reason_code,
                     "stale_flags": gating_state.get("stale_flags") or [],
                     "correction_flags": gating_state["flags"],
+                    "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
                 },
                 reason_code=reason_code,
             )
@@ -1529,6 +1531,24 @@ class ZoneAutomationService:
                 stale_flags.append(flag_name)
         return stale_flags
 
+    @classmethod
+    def _collect_correction_flag_ages_seconds(
+        cls,
+        *,
+        normalized_flags: Dict[str, Any],
+        now: datetime,
+    ) -> Dict[str, float]:
+        ages: Dict[str, float] = {}
+        for flag_name in ("flow_active", "stable", "corrections_allowed"):
+            parsed_ts = cls._parse_optional_timestamp(normalized_flags.get(f"{flag_name}_ts"))
+            if parsed_ts is None:
+                continue
+            if parsed_ts.tzinfo is None:
+                parsed_ts = parsed_ts.replace(tzinfo=now.tzinfo)
+            age_seconds = max(0.0, (now - parsed_ts).total_seconds())
+            ages[flag_name] = round(age_seconds, 3)
+        return ages
+
     def _build_correction_gating_state(
         self,
         *,
@@ -1559,11 +1579,17 @@ class ZoneAutomationService:
                 "missing_flags": missing_flags,
                 "stale_flags": [],
                 "flags": normalized_flags,
+                "flag_age_seconds": {},
             }
 
+        now = utcnow()
+        flag_age_seconds = self._collect_correction_flag_ages_seconds(
+            normalized_flags=normalized_flags,
+            now=now,
+        )
         stale_flags = self._collect_stale_correction_flags(
             normalized_flags=normalized_flags,
-            now=utcnow(),
+            now=now,
         )
         if stale_flags:
             return {
@@ -1572,6 +1598,7 @@ class ZoneAutomationService:
                 "missing_flags": [],
                 "stale_flags": stale_flags,
                 "flags": normalized_flags,
+                "flag_age_seconds": flag_age_seconds,
             }
 
         if not normalized_flags["flow_active"]:
@@ -1581,6 +1608,7 @@ class ZoneAutomationService:
                 "missing_flags": [],
                 "stale_flags": [],
                 "flags": normalized_flags,
+                "flag_age_seconds": flag_age_seconds,
             }
         if not normalized_flags["stable"]:
             return {
@@ -1589,6 +1617,7 @@ class ZoneAutomationService:
                 "missing_flags": [],
                 "stale_flags": [],
                 "flags": normalized_flags,
+                "flag_age_seconds": flag_age_seconds,
             }
         if not normalized_flags["corrections_allowed"]:
             return {
@@ -1597,6 +1626,7 @@ class ZoneAutomationService:
                 "missing_flags": [],
                 "stale_flags": [],
                 "flags": normalized_flags,
+                "flag_age_seconds": flag_age_seconds,
             }
         return {
             "can_run": True,
@@ -1604,6 +1634,7 @@ class ZoneAutomationService:
             "missing_flags": [],
             "stale_flags": [],
             "flags": normalized_flags,
+            "flag_age_seconds": flag_age_seconds,
         }
 
     @staticmethod
