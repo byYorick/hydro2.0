@@ -3350,6 +3350,21 @@ class SchedulerTaskExecutor:
                 payload_contract_version=contract_version or "v2",
             )
 
+        return await self._dispatch_diagnostics_workflow(
+            zone_id=zone_id,
+            payload=payload,
+            context=context,
+            decision=decision,
+        )
+
+    async def _dispatch_diagnostics_workflow(
+        self,
+        *,
+        zone_id: int,
+        payload: Dict[str, Any],
+        context: Dict[str, Any],
+        decision: DecisionOutcome,
+    ) -> Dict[str, Any]:
         if self._is_two_tank_startup_workflow(payload):
             return await self._execute_two_tank_startup_workflow(
                 zone_id=zone_id,
