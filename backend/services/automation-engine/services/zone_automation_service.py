@@ -4,6 +4,7 @@ Zone Automation Service - оркестрация обработки зоны.
 """
 from typing import Dict, Any, Optional, List
 import logging
+import os
 from datetime import datetime, timedelta
 import inspect
 from common.utils.time import utcnow
@@ -40,6 +41,17 @@ from actuator_registry import ActuatorRegistry
 
 logger = logging.getLogger(__name__)
 
+
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 # Метрики для отслеживания производительности
 ZONE_CHECKS = Counter("zone_checks_total", "Zone automation checks")
 CHECK_LAT = Histogram("zone_check_seconds", "Zone check duration seconds")
@@ -56,6 +68,7 @@ SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупрежде�
 COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений cooldown
 CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
 CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг алертов missing_flags
+CORRECTION_FLAGS_MAX_AGE_SECONDS = max(30, _env_int("AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300))
 
 
 class ZoneAutomationService:
@@ -1361,16 +1374,16 @@ class ZoneAutomationService:
                 "CORRECTION_SKIPPED_FLAGS_GATING",
                 {
                     "reason_code": reason_code,
+                    "stale_flags": gating_state.get("stale_flags") or [],
                     "correction_flags": gating_state["flags"],
                 },
             )
-            if reason_code == "flow_inactive":
-                await self._set_sensor_mode(
-                    zone_id=zone_id,
-                    nodes=nodes,
-                    activate=False,
-                    reason=reason_code,
-                )
+            await self._set_sensor_mode(
+                zone_id=zone_id,
+                nodes=nodes,
+                activate=False,
+                reason=reason_code,
+            )
             return
 
         await self._set_sensor_mode(
@@ -1442,6 +1455,38 @@ class ZoneAutomationService:
                 return False
         return None
 
+    @staticmethod
+    def _parse_optional_timestamp(raw: Any) -> Optional[datetime]:
+        if isinstance(raw, datetime):
+            return raw
+        if isinstance(raw, str) and raw.strip():
+            normalized = raw.strip().replace("Z", "+00:00")
+            try:
+                return datetime.fromisoformat(normalized)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _collect_stale_correction_flags(
+        cls,
+        *,
+        normalized_flags: Dict[str, Any],
+        now: datetime,
+    ) -> List[str]:
+        stale_flags: List[str] = []
+        for flag_name in ("flow_active", "stable", "corrections_allowed"):
+            raw_ts = normalized_flags.get(f"{flag_name}_ts")
+            parsed_ts = cls._parse_optional_timestamp(raw_ts)
+            if parsed_ts is None:
+                continue
+            if parsed_ts.tzinfo is None:
+                parsed_ts = parsed_ts.replace(tzinfo=now.tzinfo)
+            age_seconds = (now - parsed_ts).total_seconds()
+            if age_seconds > CORRECTION_FLAGS_MAX_AGE_SECONDS:
+                stale_flags.append(flag_name)
+        return stale_flags
+
     def _build_correction_gating_state(
         self,
         *,
@@ -1470,15 +1515,54 @@ class ZoneAutomationService:
                 "can_run": False,
                 "reason_code": "missing_flags",
                 "missing_flags": missing_flags,
+                "stale_flags": [],
                 "flags": normalized_flags,
             }
+
+        stale_flags = self._collect_stale_correction_flags(
+            normalized_flags=normalized_flags,
+            now=utcnow(),
+        )
+        if stale_flags:
+            return {
+                "can_run": False,
+                "reason_code": "stale_flags",
+                "missing_flags": [],
+                "stale_flags": stale_flags,
+                "flags": normalized_flags,
+            }
+
         if not normalized_flags["flow_active"]:
-            return {"can_run": False, "reason_code": "flow_inactive", "missing_flags": [], "flags": normalized_flags}
+            return {
+                "can_run": False,
+                "reason_code": "flow_inactive",
+                "missing_flags": [],
+                "stale_flags": [],
+                "flags": normalized_flags,
+            }
         if not normalized_flags["stable"]:
-            return {"can_run": False, "reason_code": "sensor_unstable", "missing_flags": [], "flags": normalized_flags}
+            return {
+                "can_run": False,
+                "reason_code": "sensor_unstable",
+                "missing_flags": [],
+                "stale_flags": [],
+                "flags": normalized_flags,
+            }
         if not normalized_flags["corrections_allowed"]:
-            return {"can_run": False, "reason_code": "corrections_not_allowed", "missing_flags": [], "flags": normalized_flags}
-        return {"can_run": True, "reason_code": "gating_passed", "missing_flags": [], "flags": normalized_flags}
+            return {
+                "can_run": False,
+                "reason_code": "corrections_not_allowed",
+                "missing_flags": [],
+                "stale_flags": [],
+                "flags": normalized_flags,
+            }
+        return {
+            "can_run": True,
+            "reason_code": "gating_passed",
+            "missing_flags": [],
+            "stale_flags": [],
+            "flags": normalized_flags,
+        }
 
     @staticmethod
     def _resolve_correction_sensor_nodes(nodes: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:

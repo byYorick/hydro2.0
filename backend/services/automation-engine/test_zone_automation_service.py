@@ -221,6 +221,93 @@ async def test_process_correction_controllers_skips_when_flags_block_corrections
 
 
 @pytest.mark.asyncio
+async def test_process_correction_controllers_skips_when_flags_stale_and_deactivates_sensor_mode():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    stale_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=26,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": True,
+                "corrections_allowed": True,
+                "flow_active_ts": stale_ts,
+                "stable_ts": stale_ts,
+                "corrections_allowed_ts": stale_ts,
+            },
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": True},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_not_awaited()
+    service.ec_controller.check_and_correct.assert_not_awaited()
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
+    stale_events = [
+        call.args[2]
+        for call in mock_event.await_args_list
+        if call.args[1] == "CORRECTION_SKIPPED_FLAGS_GATING"
+    ]
+    assert stale_events
+    assert stale_events[-1]["reason_code"] == "stale_flags"
+    assert set(stale_events[-1]["stale_flags"]) == {"flow_active", "stable", "corrections_allowed"}
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_sensor_unstable_deactivates_sensor_mode():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        await service._process_correction_controllers(
+            zone_id=27,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": False,
+                "corrections_allowed": True,
+                "flow_active_ts": datetime.now(timezone.utc).isoformat(),
+                "stable_ts": datetime.now(timezone.utc).isoformat(),
+                "corrections_allowed_ts": datetime.now(timezone.utc).isoformat(),
+            },
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": True},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
+
+
+@pytest.mark.asyncio
 async def test_process_zone_light_controller():
     """Test processing zone with light controller command."""
     zone_repo = Mock(spec=ZoneRepository)
