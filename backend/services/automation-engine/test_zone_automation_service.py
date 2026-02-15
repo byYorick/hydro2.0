@@ -307,6 +307,122 @@ async def test_process_correction_controllers_sensor_unstable_deactivates_sensor
     assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
 
 
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_missing_flags_events_are_throttled():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=33,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+        await service._process_correction_controllers(
+            zone_id=33,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    skip_events = [call for call in mock_event.await_args_list if call.args[1] == "CORRECTION_SKIPPED_MISSING_FLAGS"]
+    assert len(skip_events) == 1
+    state = service._ensure_zone_state(33)
+    assert state["suppressed_correction_skip_events"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_throttle_flushes_suppressed_counter_on_reason_change():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        # 1) missing_flags -> emit
+        await service._process_correction_controllers(
+            zone_id=34,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+        # 2) same reason quickly -> suppress
+        await service._process_correction_controllers(
+            zone_id=34,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+        # 3) different reason -> emit and include suppressed count
+        now_ts = datetime.now(timezone.utc).isoformat()
+        await service._process_correction_controllers(
+            zone_id=34,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": False,
+                "corrections_allowed": True,
+                "flow_active_ts": now_ts,
+                "stable_ts": now_ts,
+                "corrections_allowed_ts": now_ts,
+            },
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    gating_events = [
+        call.args[2]
+        for call in mock_event.await_args_list
+        if call.args[1] in {"CORRECTION_SKIPPED_MISSING_FLAGS", "CORRECTION_SKIPPED_FLAGS_GATING"}
+    ]
+    assert len(gating_events) == 2
+    assert gating_events[-1]["reason_code"] == "sensor_unstable"
+    assert gating_events[-1]["suppressed_events_since_last_emit"] >= 1
+
 @pytest.mark.asyncio
 async def test_process_zone_light_controller():
     """Test processing zone with light controller command."""

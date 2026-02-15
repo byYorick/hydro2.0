@@ -69,6 +69,7 @@ COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупр
 CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
 CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг алертов missing_flags
 CORRECTION_FLAGS_MAX_AGE_SECONDS = max(30, _env_int("AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300))
+CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(5, _env_int("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120))
 
 
 class ZoneAutomationService:
@@ -126,6 +127,9 @@ class ZoneAutomationService:
         #   'degraded_alert_active': bool,
         #   'last_missing_targets_report_at': datetime | None,
         #   'last_missing_correction_flags_report_at': datetime | None
+        #   'last_correction_skip_event_at': datetime | None
+        #   'last_correction_skip_reason': str | None
+        #   'suppressed_correction_skip_events': int
         # }
         self._zone_states: Dict[int, Dict[str, Any]] = {}
         # Ключ: (zone_id, controller_name), значение: datetime последнего cooldown skip report
@@ -385,6 +389,9 @@ class ZoneAutomationService:
         state.setdefault('degraded_alert_active', False)
         state.setdefault('last_missing_targets_report_at', None)
         state.setdefault('last_missing_correction_flags_report_at', None)
+        state.setdefault('last_correction_skip_event_at', None)
+        state.setdefault('last_correction_skip_reason', None)
+        state.setdefault('suppressed_correction_skip_events', 0)
         return state
     
     def _get_error_streak(self, zone_id: int) -> int:
@@ -1329,6 +1336,39 @@ class ZoneAutomationService:
                     cmd=recirculation_cmd.get("cmd"),
                 )
     
+    async def _emit_correction_skip_event_throttled(
+        self,
+        *,
+        zone_id: int,
+        event_type: str,
+        event_payload: Dict[str, Any],
+        reason_code: str,
+    ) -> None:
+        state = self._ensure_zone_state(zone_id)
+        now = utcnow()
+        last_reported = state.get("last_correction_skip_event_at")
+        last_reason = str(state.get("last_correction_skip_reason") or "")
+        same_reason = last_reason == str(reason_code or "")
+        within_throttle = (
+            isinstance(last_reported, datetime)
+            and (now - last_reported).total_seconds() < CORRECTION_SKIP_EVENT_THROTTLE_SECONDS
+        )
+
+        if same_reason and within_throttle:
+            state["suppressed_correction_skip_events"] = int(
+                state.get("suppressed_correction_skip_events") or 0
+            ) + 1
+            return
+
+        suppressed_count = int(state.get("suppressed_correction_skip_events") or 0)
+        payload = dict(event_payload)
+        if suppressed_count > 0:
+            payload["suppressed_events_since_last_emit"] = suppressed_count
+        await create_zone_event(zone_id, event_type, payload)
+        state["last_correction_skip_event_at"] = now
+        state["last_correction_skip_reason"] = str(reason_code or "")
+        state["suppressed_correction_skip_events"] = 0
+
     async def _process_correction_controllers(
         self,
         zone_id: int,
@@ -1349,14 +1389,15 @@ class ZoneAutomationService:
             correction_flags=correction_flags,
         )
         if gating_state["missing_flags"]:
-            await create_zone_event(
-                zone_id,
-                "CORRECTION_SKIPPED_MISSING_FLAGS",
-                {
+            await self._emit_correction_skip_event_throttled(
+                zone_id=zone_id,
+                event_type="CORRECTION_SKIPPED_MISSING_FLAGS",
+                event_payload={
                     "reason_code": "missing_flags",
                     "missing_flags": gating_state["missing_flags"],
                     "correction_flags": gating_state["flags"],
                 },
+                reason_code="missing_flags",
             )
             await self._emit_correction_missing_flags_signal(zone_id, gating_state, nodes)
             await self._set_sensor_mode(
@@ -1369,14 +1410,15 @@ class ZoneAutomationService:
 
         if not gating_state["can_run"]:
             reason_code = str(gating_state["reason_code"] or "correction_flags_blocked")
-            await create_zone_event(
-                zone_id,
-                "CORRECTION_SKIPPED_FLAGS_GATING",
-                {
+            await self._emit_correction_skip_event_throttled(
+                zone_id=zone_id,
+                event_type="CORRECTION_SKIPPED_FLAGS_GATING",
+                event_payload={
                     "reason_code": reason_code,
                     "stale_flags": gating_state.get("stale_flags") or [],
                     "correction_flags": gating_state["flags"],
                 },
+                reason_code=reason_code,
             )
             await self._set_sensor_mode(
                 zone_id=zone_id,
