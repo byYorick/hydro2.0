@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
+import scheduler_task_executor as ste
 from scheduler_task_executor import SchedulerTaskExecutor
 
 
@@ -805,6 +806,89 @@ async def test_execute_three_tank_missing_workflow_fails_payload_validation():
     assert result["mode"] == "diagnostics_invalid_payload"
     assert result["error_code"] == "invalid_payload_missing_workflow"
     command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_invalid_payload_contract_version_fails_payload_validation():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "cycle_start",
+                "payload_contract_version": "v9",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-3tank-bad-contract",
+                "correlation_id": "corr-cycle-3tank-bad-contract",
+            },
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_contract_version"
+    assert result["payload_contract_version"] == "v9"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_missing_workflow_legacy_v1_uses_cycle_start_fallback():
+    command_bus = _build_command_bus_mock()
+    fresh_sample_ts = datetime.utcnow()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [
+                {"node_type": "irrig", "online_count": 1},
+                {"node_type": "climate", "online_count": 1},
+                {"node_type": "light", "online_count": 1},
+            ]
+        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
+            return [
+                {
+                    "sensor_id": 117,
+                    "sensor_label": "Clean tank",
+                    "level": 0.99,
+                    "sample_ts": fresh_sample_ts,
+                }
+            ]
+        return []
+
+    with patch.object(ste, "AE_LEGACY_WORKFLOW_DEFAULT_ENABLED", True), \
+         patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "payload_contract_version": "v1",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-3tank-v1",
+                "correlation_id": "corr-cycle-3tank-v1",
+            },
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "three_tank_startup_ready"
+    assert result["workflow"] == "cycle_start"
 
 
 @pytest.mark.asyncio

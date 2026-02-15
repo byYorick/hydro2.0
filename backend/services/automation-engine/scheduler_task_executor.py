@@ -64,6 +64,7 @@ TELEMETRY_FRESHNESS_ENFORCE = _env_bool("AE_TELEMETRY_FRESHNESS_ENFORCE", True)
 TELEMETRY_FRESHNESS_MAX_AGE_SEC = max(30, _env_int("AE_TELEMETRY_FRESHNESS_MAX_AGE_SEC", 300))
 AUTO_LOGIC_DECISION_V1 = _env_bool("AUTO_LOGIC_DECISION_V1", True)
 AUTO_LOGIC_TANK_STATE_MACHINE_V1 = _env_bool("AUTO_LOGIC_TANK_STATE_MACHINE_V1", True)
+AE_LEGACY_WORKFLOW_DEFAULT_ENABLED = _env_bool("AE_LEGACY_WORKFLOW_DEFAULT_ENABLED", False)
 AUTO_LOGIC_CLIMATE_GUARDS_V1 = _env_bool("AUTO_LOGIC_CLIMATE_GUARDS_V1", True)
 AUTO_LOGIC_NEW_SENSORS_V1 = _env_bool("AUTO_LOGIC_NEW_SENSORS_V1", True)
 AUTO_LOGIC_EXTENDED_OUTCOME_V1 = _env_bool("AUTO_LOGIC_EXTENDED_OUTCOME_V1", True)
@@ -99,6 +100,7 @@ ERR_PREPARE_NPK_PH_TARGET_NOT_REACHED = "prepare_npk_ph_target_not_reached"
 ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED = "irrigation_recovery_attempts_exceeded"
 ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE = "diagnostics_service_unavailable"
 ERR_INVALID_PAYLOAD_MISSING_WORKFLOW = "invalid_payload_missing_workflow"
+ERR_INVALID_PAYLOAD_CONTRACT_VERSION = "invalid_payload_contract_version"
 
 REASON_REQUIRED_NODES_CHECKED = "required_nodes_checked"
 REASON_TANK_LEVEL_CHECKED = "tank_level_checked"
@@ -338,50 +340,69 @@ class SchedulerTaskExecutor:
             task_type == "diagnostics"
             and AUTO_LOGIC_TANK_STATE_MACHINE_V1
             and self._requires_explicit_workflow(payload)
-            and not self._extract_workflow(payload)
         ):
-            result = {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "diagnostics_invalid_payload",
-                "commands_total": 0,
-                "commands_failed": 0,
-                "action_required": False,
-                "decision": "fail",
-                "reason_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
-                "reason": "Для startup workflow требуется явный payload.workflow",
-                "error": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
-                "error_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
-            }
-        elif (
-            task_type == "diagnostics"
-            and AUTO_LOGIC_TANK_STATE_MACHINE_V1
-            and self._is_two_tank_startup_workflow(payload)
-        ):
-            result = await self._execute_two_tank_startup_workflow(
-                zone_id=zone_id,
-                payload=payload,
-                context=context,
-                decision=decision,
-            )
-        elif (
-            task_type == "diagnostics"
-            and AUTO_LOGIC_TANK_STATE_MACHINE_V1
-            and self._is_three_tank_startup_workflow(payload)
-        ):
-            result = await self._execute_three_tank_startup_workflow(
-                zone_id=zone_id,
-                payload=payload,
-                context=context,
-                decision=decision,
-            )
-        elif task_type == "diagnostics" and self._is_cycle_start_workflow(payload):
-            result = await self._execute_cycle_start_workflow(
-                zone_id=zone_id,
-                payload=payload,
-                context=context,
-                decision=decision,
-            )
+            contract_version = self._extract_payload_contract_version(payload)
+            if not self._is_supported_payload_contract_version(contract_version):
+                result = {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "diagnostics_invalid_payload",
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": False,
+                    "decision": "fail",
+                    "reason_code": ERR_INVALID_PAYLOAD_CONTRACT_VERSION,
+                    "reason": (
+                        "Неподдерживаемая версия payload_contract_version для diagnostics workflow: "
+                        f"{contract_version}"
+                    ),
+                    "error": ERR_INVALID_PAYLOAD_CONTRACT_VERSION,
+                    "error_code": ERR_INVALID_PAYLOAD_CONTRACT_VERSION,
+                    "payload_contract_version": contract_version,
+                }
+            elif not self._extract_workflow(payload):
+                result = {
+                    "success": False,
+                    "task_type": "diagnostics",
+                    "mode": "diagnostics_invalid_payload",
+                    "commands_total": 0,
+                    "commands_failed": 0,
+                    "action_required": False,
+                    "decision": "fail",
+                    "reason_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+                    "reason": "Для startup workflow требуется явный payload.workflow",
+                    "error": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+                    "error_code": ERR_INVALID_PAYLOAD_MISSING_WORKFLOW,
+                    "payload_contract_version": contract_version or "v2",
+                }
+            elif self._is_two_tank_startup_workflow(payload):
+                result = await self._execute_two_tank_startup_workflow(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    decision=decision,
+                )
+            elif self._is_three_tank_startup_workflow(payload):
+                result = await self._execute_three_tank_startup_workflow(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    decision=decision,
+                )
+            elif self._is_cycle_start_workflow(payload):
+                result = await self._execute_cycle_start_workflow(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    decision=decision,
+                )
+            else:
+                result = await self._execute_diagnostics(
+                    zone_id=zone_id,
+                    payload=payload,
+                    context=context,
+                    decision=decision,
+                )
         elif task_type == "diagnostics":
             result = await self._execute_diagnostics(
                 zone_id,
@@ -1369,6 +1390,22 @@ class SchedulerTaskExecutor:
         return merged
 
     @staticmethod
+    def _extract_payload_contract_version(payload: Dict[str, Any]) -> str:
+        execution = SchedulerTaskExecutor._extract_execution_config(payload)
+        raw_version = (
+            payload.get("payload_contract_version")
+            or execution.get("payload_contract_version")
+            or ""
+        )
+        return str(raw_version or "").strip().lower()
+
+    @staticmethod
+    def _is_supported_payload_contract_version(contract_version: str) -> bool:
+        if not contract_version:
+            return True
+        return contract_version in {"v1", "v2", "1", "2", "legacy"}
+
+    @staticmethod
     def _extract_workflow(payload: Dict[str, Any]) -> str:
         execution = SchedulerTaskExecutor._extract_execution_config(payload)
         raw_workflow = (
@@ -1377,7 +1414,20 @@ class SchedulerTaskExecutor:
             or execution.get("workflow")
             or ""
         )
-        return str(raw_workflow or "").strip().lower()
+        workflow = str(raw_workflow or "").strip().lower()
+        if workflow:
+            return workflow
+
+        contract_version = SchedulerTaskExecutor._extract_payload_contract_version(payload)
+        legacy_contract = contract_version in {"", "v1", "1", "legacy"}
+        if (
+            AE_LEGACY_WORKFLOW_DEFAULT_ENABLED
+            and legacy_contract
+            and SchedulerTaskExecutor._requires_explicit_workflow(payload)
+        ):
+            return "cycle_start"
+
+        return ""
 
     def _is_cycle_start_workflow(self, payload: Dict[str, Any]) -> bool:
         workflow = self._extract_workflow(payload)
