@@ -1,7 +1,7 @@
 """Tests for CommandTracker terminal status handling."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -128,7 +128,7 @@ async def test_confirm_command_internal_does_not_cancel_current_timeout_task():
         "zone_id": 1,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }
@@ -151,7 +151,7 @@ async def test_confirm_command_internal_suppresses_no_effect_alert_for_sensor_mo
         "zone_id": 22,
         "command": {"cmd": "deactivate_sensor_mode", "node_uid": "nd-test-ph-1", "channel": "system"},
         "command_type": "deactivate_sensor_mode",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "ACK",
         "context": {},
     }
@@ -172,7 +172,7 @@ async def test_check_timeout_local_timeout_clears_pending_state():
         "zone_id": 1,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }
@@ -209,7 +209,7 @@ async def test_confirm_command_status_timeout_persists_to_db_and_sends_laravel_a
         "zone_id": 7,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "ACK",
         "context": {},
     }
@@ -241,7 +241,7 @@ async def test_confirm_command_status_send_failed_persists_to_db_and_sends_larav
         "zone_id": 9,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-2", "channel": "pump1"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }

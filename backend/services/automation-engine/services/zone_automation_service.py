@@ -4,7 +4,6 @@ Zone Automation Service - оркестрация обработки зоны.
 """
 from typing import Dict, Any, Optional, List
 import logging
-import os
 from datetime import datetime, timedelta
 import inspect
 from common.utils.time import utcnow
@@ -15,7 +14,7 @@ from common.infra_alerts import (
     send_infra_exception_alert,
     send_infra_resolved_alert,
 )
-from common.db import create_zone_event
+from common.db import create_zone_event, fetch
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
 # from recipe_utils import calculate_current_phase, advance_phase  # DEPRECATED - legacy functions removed
@@ -24,6 +23,7 @@ from climate_controller import check_and_control_climate
 from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
 from health_monitor import calculate_zone_health, update_zone_health_in_db
 from correction_controller import CorrectionController, CorrectionType
+from config.settings import get_settings
 from repositories import (
     ZoneRepository, 
     TelemetryRepository, 
@@ -42,16 +42,6 @@ from actuator_registry import ActuatorRegistry
 logger = logging.getLogger(__name__)
 
 
-def _env_int(name: str, default: int) -> int:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    try:
-        return int(str(raw_value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
 # Метрики для отслеживания производительности
 ZONE_CHECKS = Counter("zone_checks_total", "Zone automation checks")
 CHECK_LAT = Histogram("zone_check_seconds", "Zone check duration seconds")
@@ -68,10 +58,42 @@ SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупрежде�
 COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120  # Троттлинг предупреждений cooldown
 CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120  # Троттлинг CB-алертов по контроллерам
 CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120  # Троттлинг алертов missing_flags
-CORRECTION_FLAGS_MAX_AGE_SECONDS = max(30, _env_int("AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300))
-CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(5, _env_int("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120))
-CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
+_AUTOMATION_SETTINGS = get_settings()
+CORRECTION_FLAGS_MAX_AGE_SECONDS = max(
+    30,
+    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300)),
+)
+CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS = max(
+    30,
+    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC", 120)),
+)
+CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(
+    5,
+    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120)),
+)
+CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = bool(
+    getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_REQUIRE_TS", True)
+)
 CORRECTION_REQUIRED_FLAG_NAMES = ("flow_active", "stable", "corrections_allowed")
+WORKFLOW_PHASE_EVENT_TYPE = "WORKFLOW_PHASE_UPDATED"
+WORKFLOW_PHASE_VALUES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
+WORKFLOW_CORRECTION_OPEN_PHASES = {"tank_filling", "tank_recirc"}
+WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES = {"tank_filling", "tank_recirc", "irrig_recirc"}
+WORKFLOW_EC_COMPONENTS_BY_PHASE = {
+    "tank_filling": ["npk"],
+    "tank_recirc": ["npk"],
+    "irrigating": ["calcium", "magnesium", "micro"],
+    "irrig_recirc": ["calcium", "magnesium", "micro"],
+}
+SENSOR_MODE_POLICY = {
+    # Sensor mode activation принадлежит workflow (SchedulerTaskExecutor).
+    "gating_passed": "noop",
+    "missing_flags": "noop",
+    "flow_inactive": "deactivate",
+    "sensor_unstable": "deactivate",
+    "corrections_not_allowed": "deactivate",
+    "stale_flags": "deactivate",
+}
 
 
 class ZoneAutomationService:
@@ -129,8 +151,10 @@ class ZoneAutomationService:
         #   'degraded_alert_active': bool,
         #   'last_missing_targets_report_at': datetime | None,
         #   'last_missing_correction_flags_report_at': datetime | None
+        #   'last_stale_correction_flags_report_at': datetime | None
         #   'last_correction_skip_event_at': datetime | None
         #   'last_correction_skip_reason': str | None
+        #   'last_correction_skip_signature': str | None
         #   'suppressed_correction_skip_events': int
         # }
         self._zone_states: Dict[int, Dict[str, Any]] = {}
@@ -206,6 +230,20 @@ class ZoneAutomationService:
                 return
             
             normalized_correction_flags = correction_flags if isinstance(correction_flags, dict) else {}
+            workflow_phase = await self._get_or_restore_workflow_phase(zone_id)
+            logger.info(
+                "Zone %s: starting processing cycle with workflow_phase=%s",
+                zone_id,
+                workflow_phase,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "is_degraded": is_degraded,
+                    "targets_keys": sorted(targets.keys()) if isinstance(targets, dict) else [],
+                    "telemetry_keys": sorted(telemetry.keys()) if isinstance(telemetry, dict) else [],
+                    "capabilities": capabilities,
+                },
+            )
             
             # Проверка уровня воды (safety check, всегда выполняется)
             water_level_ok, water_level = await check_water_level(zone_id)
@@ -262,6 +300,7 @@ class ZoneAutomationService:
                     targets,
                     telemetry,
                     capabilities,
+                    workflow_phase,
                     water_level_ok,
                     bindings,
                     actuators,
@@ -301,6 +340,7 @@ class ZoneAutomationService:
                     normalized_correction_flags,
                     nodes,
                     capabilities,
+                    workflow_phase,
                     water_level_ok,
                     bindings,
                     actuators,
@@ -391,9 +431,15 @@ class ZoneAutomationService:
         state.setdefault('degraded_alert_active', False)
         state.setdefault('last_missing_targets_report_at', None)
         state.setdefault('last_missing_correction_flags_report_at', None)
+        state.setdefault('last_stale_correction_flags_report_at', None)
         state.setdefault('last_correction_skip_event_at', None)
         state.setdefault('last_correction_skip_reason', None)
+        state.setdefault('last_correction_skip_signature', None)
         state.setdefault('suppressed_correction_skip_events', 0)
+        state.setdefault('workflow_phase', "idle")
+        state.setdefault('workflow_phase_updated_at', None)
+        state.setdefault('workflow_phase_source', None)
+        state.setdefault('workflow_phase_loaded', False)
         return state
     
     def _get_error_streak(self, zone_id: int) -> int:
@@ -403,6 +449,186 @@ class ZoneAutomationService:
     def _get_next_allowed_run_at(self, zone_id: int) -> Optional[datetime]:
         """Получить время следующего разрешенного запуска для зоны."""
         return self._get_zone_state(zone_id)['next_allowed_run_at']
+
+    @staticmethod
+    def _normalize_workflow_phase(raw: Any) -> str:
+        value = str(raw or "").strip().lower()
+        return value if value in WORKFLOW_PHASE_VALUES else "idle"
+
+    async def _restore_workflow_phase_from_events(self, zone_id: int) -> str:
+        try:
+            rows = await fetch(
+                """
+                SELECT details
+                FROM zone_events
+                WHERE zone_id = $1
+                  AND type = $2
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                zone_id,
+                WORKFLOW_PHASE_EVENT_TYPE,
+            )
+        except Exception:
+            logger.warning(
+                "Zone %s: failed to restore workflow_phase from zone_events",
+                zone_id,
+                exc_info=True,
+                extra={"zone_id": zone_id},
+            )
+            return "idle"
+
+        if not rows:
+            return "idle"
+
+        details = rows[0].get("details") if isinstance(rows[0], dict) else None
+        if not isinstance(details, dict):
+            return "idle"
+
+        return self._normalize_workflow_phase(details.get("workflow_phase"))
+
+    async def _get_or_restore_workflow_phase(self, zone_id: int) -> str:
+        state = self._get_zone_state(zone_id)
+        if state.get("workflow_phase_loaded") is True:
+            cached_phase = self._normalize_workflow_phase(state.get("workflow_phase"))
+            logger.debug(
+                "Zone %s: workflow_phase loaded from cache",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": cached_phase,
+                    "workflow_phase_source": state.get("workflow_phase_source"),
+                    "workflow_phase_updated_at": (
+                        state.get("workflow_phase_updated_at").isoformat()
+                        if state.get("workflow_phase_updated_at")
+                        else None
+                    ),
+                },
+            )
+            return cached_phase
+
+        restored_phase = await self._restore_workflow_phase_from_events(zone_id)
+        state["workflow_phase"] = restored_phase
+        state["workflow_phase_loaded"] = True
+        state["workflow_phase_source"] = "restore"
+        state["workflow_phase_updated_at"] = utcnow()
+        logger.info(
+            "Zone %s: workflow_phase restored from zone_events",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": restored_phase,
+                "workflow_phase_source": "restore",
+            },
+        )
+        return restored_phase
+
+    def _reset_zone_pid_state(self, zone_id: int) -> None:
+        had_ph_pid = zone_id in self.ph_controller._pid_by_zone
+        had_ec_pid = zone_id in self.ec_controller._pid_by_zone
+        self.ph_controller._pid_by_zone.pop(zone_id, None)
+        self.ec_controller._pid_by_zone.pop(zone_id, None)
+        self.ph_controller._last_pid_tick.pop(zone_id, None)
+        self.ec_controller._last_pid_tick.pop(zone_id, None)
+        logger.info(
+            "Zone %s: reset PID state on workflow transition",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "had_ph_pid": had_ph_pid,
+                "had_ec_pid": had_ec_pid,
+            },
+        )
+
+    def _sync_sensor_mode_cache_with_workflow_phase(
+        self,
+        *,
+        zone_id: int,
+        previous_phase: str,
+        normalized_phase: str,
+    ) -> None:
+        if normalized_phase == previous_phase:
+            return
+        if normalized_phase not in WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES:
+            return
+        previous_sensor_mode = self._correction_sensor_mode_state.pop(zone_id, None)
+        logger.info(
+            "Zone %s: reset correction sensor-mode cache on workflow transition",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "previous_workflow_phase": previous_phase,
+                "workflow_phase": normalized_phase,
+                "previous_sensor_mode_state": previous_sensor_mode,
+                "external_sensor_mode_phases": sorted(WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES),
+            },
+        )
+
+    async def update_workflow_phase(
+        self,
+        *,
+        zone_id: int,
+        workflow_phase: str,
+        workflow_stage: Optional[str] = None,
+        source: str = "scheduler",
+        reason_code: Optional[str] = None,
+        force_event: bool = False,
+    ) -> str:
+        state = self._get_zone_state(zone_id)
+        previous_phase = self._normalize_workflow_phase(state.get("workflow_phase"))
+        normalized_phase = self._normalize_workflow_phase(workflow_phase)
+        changed = previous_phase != normalized_phase
+
+        state["workflow_phase"] = normalized_phase
+        state["workflow_phase_loaded"] = True
+        state["workflow_phase_source"] = str(source or "scheduler")
+        state["workflow_phase_updated_at"] = utcnow()
+
+        # Переход в irrigation-контур должен сбрасывать накопленный PID-интеграл подготовки.
+        if normalized_phase == "irrigating" and previous_phase in {"tank_recirc", "ready"}:
+            self._reset_zone_pid_state(zone_id)
+        self._sync_sensor_mode_cache_with_workflow_phase(
+            zone_id=zone_id,
+            previous_phase=previous_phase,
+            normalized_phase=normalized_phase,
+        )
+
+        logger.info(
+            "Zone %s: workflow_phase update processed",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": normalized_phase,
+                "previous_workflow_phase": previous_phase,
+                "changed": changed,
+                "workflow_stage": workflow_stage,
+                "source": source,
+                "reason_code": reason_code,
+                "force_event": force_event,
+            },
+        )
+
+        if changed or force_event:
+            await create_zone_event(
+                zone_id,
+                WORKFLOW_PHASE_EVENT_TYPE,
+                {
+                    "workflow_phase": normalized_phase,
+                    "previous_workflow_phase": previous_phase,
+                    "workflow_stage": workflow_stage,
+                    "source": source,
+                    "reason_code": reason_code,
+                },
+            )
+        return normalized_phase
+
+    @staticmethod
+    def _resolve_allowed_ec_components(workflow_phase: str) -> Optional[List[str]]:
+        normalized_phase = ZoneAutomationService._normalize_workflow_phase(workflow_phase)
+        components = WORKFLOW_EC_COMPONENTS_BY_PHASE.get(normalized_phase)
+        if components is None:
+            return None
+        return list(components)
     
     def _should_process_zone(self, zone_id: int) -> bool:
         """
@@ -705,6 +931,69 @@ class ZoneAutomationService:
         )
         if alert_sent:
             state['last_missing_correction_flags_report_at'] = now
+
+    async def _emit_correction_stale_flags_signal(
+        self,
+        zone_id: int,
+        gating_state: Dict[str, Any],
+        nodes: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Инфра-алерт о пропуске коррекций из-за устаревших correction_flags."""
+        state = self._get_zone_state(zone_id)
+        now = utcnow()
+        last_reported = state.get("last_stale_correction_flags_report_at")
+        if isinstance(last_reported, datetime) and (
+            now - last_reported
+        ).total_seconds() < CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS:
+            return
+
+        stale_flags = list(gating_state.get("stale_flags") or [])
+        stale_flag_reasons = gating_state.get("stale_flag_reasons") if isinstance(gating_state.get("stale_flag_reasons"), dict) else {}
+        correction_flags = gating_state.get("flags") if isinstance(gating_state.get("flags"), dict) else {}
+        flag_age_seconds = gating_state.get("flag_age_seconds") if isinstance(gating_state.get("flag_age_seconds"), dict) else {}
+        timestamp_diagnostics = gating_state.get("timestamp_diagnostics") if isinstance(gating_state.get("timestamp_diagnostics"), dict) else {}
+        require_timestamps = bool(gating_state.get("require_timestamps"))
+        sensor_nodes = [node.get("node_uid") for node in self._resolve_correction_sensor_nodes(nodes)]
+
+        logger.warning(
+            "Zone %s: correction skipped, stale flags=%s, sensor_nodes=%s",
+            zone_id,
+            stale_flags,
+            sensor_nodes,
+            extra={
+                "zone_id": zone_id,
+                "stale_flags": stale_flags,
+                "stale_flag_reasons": stale_flag_reasons,
+                "sensor_nodes": sensor_nodes,
+                "flag_age_seconds": flag_age_seconds,
+                "timestamp_diagnostics": timestamp_diagnostics,
+                "require_timestamps": require_timestamps,
+                "correction_flags": correction_flags,
+            },
+        )
+
+        alert_sent = await send_infra_alert(
+            code="infra_correction_flags_stale",
+            alert_type="Correction Flags Stale",
+            message=f"Zone {zone_id} skipped correction due to stale sensor-mode flags",
+            severity="warning",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="correction_gating",
+            error_type="stale_flags",
+            details={
+                "stale_flags": stale_flags,
+                "stale_flag_reasons": stale_flag_reasons,
+                "flag_age_seconds": flag_age_seconds,
+                "timestamp_diagnostics": timestamp_diagnostics,
+                "require_timestamps": require_timestamps,
+                "correction_flags": correction_flags,
+                "sensor_nodes": sensor_nodes,
+                "throttle_seconds": CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS,
+            },
+        )
+        if alert_sent:
+            state["last_stale_correction_flags_report_at"] = now
 
     async def _emit_zone_data_unavailable_signal(self, zone_id: int) -> None:
         """Лог/ивент/алерт при недоступности данных зоны (DB circuit breaker open)."""
@@ -1166,6 +1455,84 @@ class ZoneAutomationService:
                 extra={"zone_id": zone_id},
             )
             await self._emit_controller_circuit_open_signal(zone_id, "phase_transition")
+
+    @staticmethod
+    def _append_correlation_id(details: Dict[str, Any], correlation_id: Optional[str]) -> Dict[str, Any]:
+        payload = dict(details)
+        if correlation_id:
+            payload["correlation_id"] = correlation_id
+        return payload
+
+    async def _publish_controller_action_with_event_integrity(
+        self,
+        *,
+        zone_id: int,
+        controller_name: str,
+        command: Dict[str, Any],
+    ) -> bool:
+        event_type = str(command.get("event_type") or "").strip()
+        event_details = command.get("event_details") if isinstance(command.get("event_details"), dict) else {}
+
+        try:
+            published = await self.command_bus.publish_controller_command(zone_id, command)
+        except CircuitBreakerOpenError:
+            if event_type:
+                await self._create_zone_event_safe(
+                    zone_id=zone_id,
+                    event_type=f"{event_type}_COMMAND_UNCONFIRMED",
+                    details={
+                        **event_details,
+                        "controller": controller_name,
+                        "cmd": command.get("cmd"),
+                        "node_uid": command.get("node_uid"),
+                        "channel": command.get("channel"),
+                        "reason": "publish_circuit_breaker_open",
+                    },
+                    signal_name=f"{controller_name}_command_unconfirmed",
+                )
+            await self._emit_controller_circuit_open_signal(
+                zone_id,
+                controller_name,
+                channel=command.get("channel"),
+                cmd=command.get("cmd"),
+            )
+            return False
+
+        correlation_id: Optional[str] = None
+        raw_cmd_id = command.get("cmd_id")
+        if isinstance(raw_cmd_id, str):
+            normalized_cmd_id = raw_cmd_id.strip()
+            if normalized_cmd_id:
+                correlation_id = normalized_cmd_id
+
+        if not published:
+            if event_type:
+                await self._create_zone_event_safe(
+                    zone_id=zone_id,
+                    event_type=f"{event_type}_COMMAND_REJECTED",
+                    details=self._append_correlation_id(
+                        {
+                            **event_details,
+                            "controller": controller_name,
+                            "cmd": command.get("cmd"),
+                            "node_uid": command.get("node_uid"),
+                            "channel": command.get("channel"),
+                            "reason": "publish_rejected",
+                        },
+                        correlation_id,
+                    ),
+                    signal_name=f"{controller_name}_command_rejected",
+                )
+            return False
+
+        if event_type:
+            await self._create_zone_event_safe(
+                zone_id=zone_id,
+                event_type=event_type,
+                details=self._append_correlation_id(event_details, correlation_id),
+                signal_name=f"{controller_name}_action_confirmed",
+            )
+        return True
     
     async def _process_light_controller(
         self,
@@ -1181,21 +1548,11 @@ class ZoneAutomationService:
         
         light_cmd = await check_and_control_lighting(zone_id, targets, bindings, current_time)
         if light_cmd:
-            if light_cmd.get('event_type'):
-                await create_zone_event(zone_id, light_cmd['event_type'], light_cmd.get('event_details', {}))
-            try:
-                await self.command_bus.publish_controller_command(zone_id, light_cmd)
-            except CircuitBreakerOpenError:
-                logger.warning(
-                    f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping light command",
-                    extra={"zone_id": zone_id}
-                )
-                await self._emit_controller_circuit_open_signal(
-                    zone_id,
-                    "light",
-                    channel=light_cmd.get("channel"),
-                    cmd=light_cmd.get("cmd"),
-                )
+            await self._publish_controller_action_with_event_integrity(
+                zone_id=zone_id,
+                controller_name="light",
+                command=light_cmd,
+            )
     
     async def _process_climate_controller(
         self,
@@ -1211,22 +1568,11 @@ class ZoneAutomationService:
         
         climate_commands = await check_and_control_climate(zone_id, targets, telemetry, bindings)
         for cmd in climate_commands:
-            if cmd.get('event_type'):
-                await create_zone_event(zone_id, cmd['event_type'], cmd.get('event_details', {}))
-            try:
-                await self.command_bus.publish_controller_command(zone_id, cmd)
-            except CircuitBreakerOpenError:
-                logger.warning(
-                    f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping climate command",
-                    extra={"zone_id": zone_id}
-                )
-                await self._emit_controller_circuit_open_signal(
-                    zone_id,
-                    "climate",
-                    channel=cmd.get("channel"),
-                    cmd=cmd.get("cmd"),
-                )
-                break  # Прерываем цикл при открытом circuit breaker
+            await self._publish_controller_action_with_event_integrity(
+                zone_id=zone_id,
+                controller_name="climate",
+                command=cmd,
+            )
     
     async def _process_irrigation_controller(
         self,
@@ -1234,6 +1580,7 @@ class ZoneAutomationService:
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
         capabilities: Dict[str, bool],
+        workflow_phase: str,
         water_level_ok: bool,
         bindings: Dict[str, Dict[str, Any]],
         actuators: Dict[str, Dict[str, Any]],
@@ -1243,7 +1590,19 @@ class ZoneAutomationService:
     ) -> None:
         """Обработка контроллера полива."""
         if not capabilities.get("irrigation_control", False):
+            logger.debug(
+                "Zone %s: irrigation controller skipped, capability disabled",
+                zone_id,
+                extra={"zone_id": zone_id, "workflow_phase": workflow_phase},
+            )
             return
+
+        logger.debug(
+            "Zone %s: evaluating irrigation command for workflow_phase=%s",
+            zone_id,
+            workflow_phase,
+            extra={"zone_id": zone_id, "workflow_phase": workflow_phase},
+        )
         
         irrigation_cmd = await check_and_control_irrigation(
             zone_id,
@@ -1254,45 +1613,78 @@ class ZoneAutomationService:
             current_time=current_time,
             time_scale=time_scale,
             sim_clock=sim_clock,
+            workflow_phase=workflow_phase,
+        )
+        if not irrigation_cmd:
+            logger.debug(
+                "Zone %s: irrigation controller produced no command (workflow_phase=%s)",
+                zone_id,
+                workflow_phase,
+                extra={"zone_id": zone_id, "workflow_phase": workflow_phase},
+            )
+            return
+
+        logger.info(
+            "Zone %s: irrigation command candidate prepared",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": workflow_phase,
+                "cmd": irrigation_cmd.get("cmd"),
+                "channel": irrigation_cmd.get("channel"),
+                "node_uid": irrigation_cmd.get("node_uid"),
+                "event_type": irrigation_cmd.get("event_type"),
+            },
         )
         
         # Проверка безопасности перед запуском насоса
-        if irrigation_cmd:
-            pump_channel = irrigation_cmd.get('channel', 'default')
-            can_run, error_msg = await can_run_pump(zone_id, pump_channel)
-            if not can_run:
-                logger.warning(f"Zone {zone_id}: Cannot run irrigation pump {pump_channel}: {error_msg}")
-                await send_infra_alert(
-                    code="infra_irrigation_pump_blocked",
-                    alert_type="Irrigation Pump Blocked",
-                    message=f"Zone {zone_id}: irrigation pump blocked by safety rules",
-                    severity="error",
-                    zone_id=zone_id,
-                    service="automation-engine",
-                    component="controller:irrigation",
-                    channel=pump_channel,
-                    cmd="run_pump",
-                    error_type="PumpSafetyBlocked",
-                    details={"reason": error_msg},
-                )
-                irrigation_cmd = None
-        
-        if irrigation_cmd:
-            if irrigation_cmd.get('event_type'):
-                await create_zone_event(zone_id, irrigation_cmd['event_type'], irrigation_cmd.get('event_details', {}))
-            try:
-                await self.command_bus.publish_controller_command(zone_id, irrigation_cmd)
-            except CircuitBreakerOpenError:
-                logger.warning(
-                    f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping irrigation command",
-                    extra={"zone_id": zone_id}
-                )
-                await self._emit_controller_circuit_open_signal(
-                    zone_id,
-                    "irrigation",
-                    channel=irrigation_cmd.get("channel"),
-                    cmd=irrigation_cmd.get("cmd"),
-                )
+        pump_channel = irrigation_cmd.get('channel', 'default')
+        can_run, error_msg = await can_run_pump(zone_id, pump_channel)
+        if not can_run:
+            logger.warning(
+                "Zone %s: Cannot run irrigation pump %s in workflow_phase=%s: %s",
+                zone_id,
+                pump_channel,
+                workflow_phase,
+                error_msg,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "channel": pump_channel,
+                    "cmd": irrigation_cmd.get("cmd"),
+                },
+            )
+            await send_infra_alert(
+                code="infra_irrigation_pump_blocked",
+                alert_type="Irrigation Pump Blocked",
+                message=f"Zone {zone_id}: irrigation pump blocked by safety rules",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="controller:irrigation",
+                channel=pump_channel,
+                cmd="run_pump",
+                error_type="PumpSafetyBlocked",
+                details={"reason": error_msg},
+            )
+            return
+
+        logger.info(
+            "Zone %s: publishing irrigation command",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": workflow_phase,
+                "cmd": irrigation_cmd.get("cmd"),
+                "channel": irrigation_cmd.get("channel"),
+                "node_uid": irrigation_cmd.get("node_uid"),
+            },
+        )
+        await self._publish_controller_action_with_event_integrity(
+            zone_id=zone_id,
+            controller_name="irrigation",
+            command=irrigation_cmd,
+        )
     
     async def _process_recirculation_controller(
         self,
@@ -1322,21 +1714,11 @@ class ZoneAutomationService:
             sim_clock=sim_clock,
         )
         if recirculation_cmd:
-            if recirculation_cmd.get('event_type'):
-                await create_zone_event(zone_id, recirculation_cmd['event_type'], recirculation_cmd.get('event_details', {}))
-            try:
-                await self.command_bus.publish_controller_command(zone_id, recirculation_cmd)
-            except CircuitBreakerOpenError:
-                logger.warning(
-                    f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping recirculation command",
-                    extra={"zone_id": zone_id}
-                )
-                await self._emit_controller_circuit_open_signal(
-                    zone_id,
-                    "recirculation",
-                    channel=recirculation_cmd.get("channel"),
-                    cmd=recirculation_cmd.get("cmd"),
-                )
+            await self._publish_controller_action_with_event_integrity(
+                zone_id=zone_id,
+                controller_name="recirculation",
+                command=recirculation_cmd,
+            )
     
     async def _emit_correction_skip_event_throttled(
         self,
@@ -1346,30 +1728,133 @@ class ZoneAutomationService:
         event_payload: Dict[str, Any],
         reason_code: str,
     ) -> None:
-        state = self._ensure_zone_state(zone_id)
+        state = self._get_zone_state(zone_id)
         now = utcnow()
         last_reported = state.get("last_correction_skip_event_at")
-        last_reason = str(state.get("last_correction_skip_reason") or "")
-        same_reason = last_reason == str(reason_code or "")
+        signature = self._build_correction_skip_signature(
+            event_type=event_type,
+            event_payload=event_payload,
+            reason_code=reason_code,
+        )
+        last_signature = str(state.get("last_correction_skip_signature") or "")
+        same_signature = last_signature == signature
         within_throttle = (
             isinstance(last_reported, datetime)
             and (now - last_reported).total_seconds() < CORRECTION_SKIP_EVENT_THROTTLE_SECONDS
         )
 
-        if same_reason and within_throttle:
+        if same_signature and within_throttle:
             state["suppressed_correction_skip_events"] = int(
                 state.get("suppressed_correction_skip_events") or 0
             ) + 1
+            logger.debug(
+                "Zone %s: correction skip event suppressed by throttle",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "event_type": event_type,
+                    "reason_code": reason_code,
+                    "signature": signature,
+                    "suppressed_correction_skip_events": state["suppressed_correction_skip_events"],
+                    "throttle_seconds": CORRECTION_SKIP_EVENT_THROTTLE_SECONDS,
+                },
+            )
             return
 
         suppressed_count = int(state.get("suppressed_correction_skip_events") or 0)
         payload = dict(event_payload)
         if suppressed_count > 0:
             payload["suppressed_events_since_last_emit"] = suppressed_count
+        logger.info(
+            "Zone %s: emitting correction skip event",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "event_type": event_type,
+                "reason_code": reason_code,
+                "signature": signature,
+                "suppressed_events_since_last_emit": suppressed_count,
+                "payload": payload,
+            },
+        )
         await create_zone_event(zone_id, event_type, payload)
         state["last_correction_skip_event_at"] = now
         state["last_correction_skip_reason"] = str(reason_code or "")
+        state["last_correction_skip_signature"] = signature
         state["suppressed_correction_skip_events"] = 0
+
+    @staticmethod
+    def _normalize_flag_signature_values(raw_values: Any) -> List[str]:
+        if not isinstance(raw_values, list):
+            return []
+        return sorted(str(item).strip().lower() for item in raw_values if str(item).strip())
+
+    @classmethod
+    def _build_correction_skip_signature(
+        cls,
+        *,
+        event_type: str,
+        event_payload: Dict[str, Any],
+        reason_code: str,
+    ) -> str:
+        payload = event_payload if isinstance(event_payload, dict) else {}
+        missing_flags = cls._normalize_flag_signature_values(payload.get("missing_flags"))
+        stale_flags = cls._normalize_flag_signature_values(payload.get("stale_flags"))
+        return "|".join(
+            [
+                str(event_type or "").strip().upper(),
+                str(reason_code or "").strip().lower(),
+                ",".join(missing_flags),
+                ",".join(stale_flags),
+            ]
+        )
+
+    @staticmethod
+    def _resolve_sensor_mode_action(reason_code: str, can_run: bool) -> str:
+        normalized_reason = str(reason_code or "").strip().lower()
+        default_action = "noop" if can_run else "deactivate"
+        return SENSOR_MODE_POLICY.get(normalized_reason, default_action)
+
+    async def _apply_sensor_mode_policy(
+        self,
+        *,
+        zone_id: int,
+        nodes: Dict[str, Dict[str, Any]],
+        reason_code: str,
+        can_run: bool,
+    ) -> None:
+        action = self._resolve_sensor_mode_action(reason_code, can_run)
+        logger.info(
+            "Zone %s: sensor mode policy resolved",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "reason_code": reason_code,
+                "can_run": can_run,
+                "action": action,
+            },
+        )
+        if action == "activate":
+            await self._set_sensor_mode(
+                zone_id=zone_id,
+                nodes=nodes,
+                activate=True,
+                reason=reason_code,
+            )
+            return
+        if action == "deactivate":
+            await self._set_sensor_mode(
+                zone_id=zone_id,
+                nodes=nodes,
+                activate=False,
+                reason=reason_code,
+            )
+            return
+        logger.debug(
+            "Zone %s: sensor mode policy noop",
+            zone_id,
+            extra={"zone_id": zone_id, "reason_code": reason_code, "can_run": can_run},
+        )
 
     async def _process_correction_controllers(
         self,
@@ -1380,17 +1865,59 @@ class ZoneAutomationService:
         correction_flags: Dict[str, Any],
         nodes: Dict[str, Dict[str, Any]],
         capabilities: Dict[str, bool],
+        workflow_phase: str,
         water_level_ok: bool,
         bindings: Dict[str, Dict[str, Any]],
         actuators: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллеров корректировки pH/EC."""
+        logger.debug(
+            "Zone %s: starting correction controllers evaluation",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": workflow_phase,
+                "ph_control_enabled": bool(capabilities.get("ph_control", False)),
+                "ec_control_enabled": bool(capabilities.get("ec_control", False)),
+                "correction_flags": correction_flags,
+            },
+        )
         gating_state = self._build_correction_gating_state(
             telemetry=telemetry,
             telemetry_timestamps=telemetry_timestamps,
             correction_flags=correction_flags,
+            workflow_phase=workflow_phase,
+        )
+        logger.info(
+            "Zone %s: correction gating evaluated",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "workflow_phase": workflow_phase,
+                "can_run": gating_state.get("can_run"),
+                "reason_code": gating_state.get("reason_code"),
+                "missing_flags": gating_state.get("missing_flags"),
+                "stale_flags": gating_state.get("stale_flags"),
+                "stale_flag_reasons": gating_state.get("stale_flag_reasons"),
+                "flag_age_seconds": gating_state.get("flag_age_seconds"),
+                "require_timestamps": gating_state.get("require_timestamps"),
+                "timestamp_diagnostics": gating_state.get("timestamp_diagnostics"),
+                "workflow_phase_override": gating_state.get("workflow_phase_override"),
+            },
         )
         if gating_state["missing_flags"]:
+            logger.warning(
+                "Zone %s: correction blocked by missing flags",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "missing_flags": gating_state["missing_flags"],
+                    "require_timestamps": gating_state.get("require_timestamps"),
+                    "timestamp_diagnostics": gating_state.get("timestamp_diagnostics"),
+                    "correction_flags": gating_state.get("flags"),
+                },
+            )
             await self._emit_correction_skip_event_throttled(
                 zone_id=zone_id,
                 event_type="CORRECTION_SKIPPED_MISSING_FLAGS",
@@ -1399,44 +1926,70 @@ class ZoneAutomationService:
                     "missing_flags": gating_state["missing_flags"],
                     "correction_flags": gating_state["flags"],
                     "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
+                    "require_timestamps": gating_state.get("require_timestamps"),
+                    "timestamp_diagnostics": gating_state.get("timestamp_diagnostics") or {},
+                    "workflow_phase": workflow_phase,
                 },
                 reason_code="missing_flags",
             )
             await self._emit_correction_missing_flags_signal(zone_id, gating_state, nodes)
-            await self._set_sensor_mode(
+            await self._apply_sensor_mode_policy(
                 zone_id=zone_id,
                 nodes=nodes,
-                activate=True,
-                reason="missing_flags",
+                reason_code="missing_flags",
+                can_run=False,
             )
             return
 
         if not gating_state["can_run"]:
             reason_code = str(gating_state["reason_code"] or "correction_flags_blocked")
+            logger.warning(
+                "Zone %s: correction blocked by gating",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "reason_code": reason_code,
+                    "stale_flags": gating_state.get("stale_flags") or [],
+                    "stale_flag_reasons": gating_state.get("stale_flag_reasons") or {},
+                    "missing_flags": gating_state.get("missing_flags") or [],
+                    "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
+                    "require_timestamps": gating_state.get("require_timestamps"),
+                    "timestamp_diagnostics": gating_state.get("timestamp_diagnostics") or {},
+                    "correction_flags": gating_state.get("flags"),
+                },
+            )
+            event_type = "CORRECTION_SKIPPED_STALE_FLAGS" if reason_code == "stale_flags" else "CORRECTION_SKIPPED_FLAGS_GATING"
             await self._emit_correction_skip_event_throttled(
                 zone_id=zone_id,
-                event_type="CORRECTION_SKIPPED_FLAGS_GATING",
+                event_type=event_type,
                 event_payload={
                     "reason_code": reason_code,
                     "stale_flags": gating_state.get("stale_flags") or [],
+                    "stale_flag_reasons": gating_state.get("stale_flag_reasons") or {},
                     "correction_flags": gating_state["flags"],
                     "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
+                    "require_timestamps": gating_state.get("require_timestamps"),
+                    "timestamp_diagnostics": gating_state.get("timestamp_diagnostics") or {},
+                    "workflow_phase": workflow_phase,
                 },
                 reason_code=reason_code,
             )
-            await self._set_sensor_mode(
+            if reason_code == "stale_flags":
+                await self._emit_correction_stale_flags_signal(zone_id, gating_state, nodes)
+            await self._apply_sensor_mode_policy(
                 zone_id=zone_id,
                 nodes=nodes,
-                activate=False,
-                reason=reason_code,
+                reason_code=reason_code,
+                can_run=False,
             )
             return
 
-        await self._set_sensor_mode(
+        await self._apply_sensor_mode_policy(
             zone_id=zone_id,
             nodes=nodes,
-            activate=True,
-            reason="correction_gating_passed",
+            reason_code="gating_passed",
+            can_run=True,
         )
         
         # pH Correction
@@ -1445,10 +1998,26 @@ class ZoneAutomationService:
                 zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok, actuators
             )
             if ph_cmd:
+                logger.info(
+                    "Zone %s: PH correction command prepared",
+                    zone_id,
+                    extra={
+                        "zone_id": zone_id,
+                        "workflow_phase": workflow_phase,
+                        "cmd": ph_cmd.get("cmd"),
+                        "channel": ph_cmd.get("channel"),
+                        "node_uid": ph_cmd.get("node_uid"),
+                    },
+                )
                 # Получаем PID для контекста
                 pid = self.ph_controller._pid_by_zone.get(zone_id)
                 try:
                     await self.ph_controller.apply_correction(ph_cmd, self.command_bus, pid)
+                    logger.info(
+                        "Zone %s: PH correction command applied",
+                        zone_id,
+                        extra={"zone_id": zone_id, "workflow_phase": workflow_phase},
+                    )
                 except CircuitBreakerOpenError:
                     logger.warning(
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping PH correction command",
@@ -1463,14 +2032,52 @@ class ZoneAutomationService:
         
         # EC Correction
         if capabilities.get("ec_control", False):
+            allowed_ec_components = self._resolve_allowed_ec_components(workflow_phase)
+            logger.debug(
+                "Zone %s: EC correction component policy resolved",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "allowed_ec_components": allowed_ec_components,
+                },
+            )
             ec_cmd = await self.ec_controller.check_and_correct(
-                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok, actuators
+                zone_id,
+                targets,
+                telemetry,
+                telemetry_timestamps,
+                nodes,
+                water_level_ok,
+                actuators,
+                allowed_ec_components=allowed_ec_components,
             )
             if ec_cmd:
+                logger.info(
+                    "Zone %s: EC correction command prepared",
+                    zone_id,
+                    extra={
+                        "zone_id": zone_id,
+                        "workflow_phase": workflow_phase,
+                        "cmd": ec_cmd.get("cmd"),
+                        "channel": ec_cmd.get("channel"),
+                        "node_uid": ec_cmd.get("node_uid"),
+                        "allowed_ec_components": allowed_ec_components,
+                    },
+                )
                 # Получаем PID для контекста
                 pid = self.ec_controller._pid_by_zone.get(zone_id)
                 try:
                     await self.ec_controller.apply_correction(ec_cmd, self.command_bus, pid)
+                    logger.info(
+                        "Zone %s: EC correction command applied",
+                        zone_id,
+                        extra={
+                            "zone_id": zone_id,
+                            "workflow_phase": workflow_phase,
+                            "allowed_ec_components": allowed_ec_components,
+                        },
+                    )
                 except CircuitBreakerOpenError:
                     logger.warning(
                         f"Zone {zone_id}: API Circuit Breaker is OPEN, skipping EC correction command",
@@ -1519,13 +2126,15 @@ class ZoneAutomationService:
         *,
         normalized_flags: Dict[str, Any],
         now: datetime,
+        require_timestamps: Optional[bool] = None,
     ) -> List[str]:
+        require_ts = CORRECTION_FLAGS_REQUIRE_TIMESTAMPS if require_timestamps is None else bool(require_timestamps)
         stale_flags: List[str] = []
         for flag_name in CORRECTION_REQUIRED_FLAG_NAMES:
             raw_ts = normalized_flags.get(f"{flag_name}_ts")
             parsed_ts = cls._parse_optional_timestamp(raw_ts)
             if parsed_ts is None:
-                if CORRECTION_FLAGS_REQUIRE_TIMESTAMPS:
+                if require_ts:
                     stale_flags.append(flag_name)
                 continue
             if parsed_ts.tzinfo is None:
@@ -1553,13 +2162,78 @@ class ZoneAutomationService:
             ages[flag_name] = round(age_seconds, 3)
         return ages
 
+    @classmethod
+    def _collect_correction_flag_timestamp_diagnostics(
+        cls,
+        *,
+        normalized_flags: Dict[str, Any],
+        now: datetime,
+    ) -> Dict[str, Dict[str, Any]]:
+        diagnostics: Dict[str, Dict[str, Any]] = {}
+        for flag_name in CORRECTION_REQUIRED_FLAG_NAMES:
+            raw_ts = normalized_flags.get(f"{flag_name}_ts")
+            has_timestamp = not (
+                raw_ts is None
+                or (isinstance(raw_ts, str) and not raw_ts.strip())
+            )
+            parsed_ts = cls._parse_optional_timestamp(raw_ts)
+            invalid_timestamp = bool(has_timestamp and parsed_ts is None)
+            age_seconds: Optional[float] = None
+            if parsed_ts is not None:
+                if parsed_ts.tzinfo is None:
+                    parsed_ts = parsed_ts.replace(tzinfo=now.tzinfo)
+                age_seconds = round(max(0.0, (now - parsed_ts).total_seconds()), 3)
+            diagnostics[flag_name] = {
+                "has_timestamp": has_timestamp,
+                "invalid_timestamp": invalid_timestamp,
+                "age_seconds": age_seconds,
+                "max_age_seconds": CORRECTION_FLAGS_MAX_AGE_SECONDS,
+            }
+        return diagnostics
+
+    @staticmethod
+    def _build_stale_flag_reasons(
+        *,
+        stale_flags: List[str],
+        timestamp_diagnostics: Dict[str, Dict[str, Any]],
+        require_timestamps: bool,
+    ) -> Dict[str, Dict[str, Any]]:
+        reasons: Dict[str, Dict[str, Any]] = {}
+        for flag_name in stale_flags:
+            diag = timestamp_diagnostics.get(flag_name) if isinstance(timestamp_diagnostics, dict) else {}
+            if not isinstance(diag, dict):
+                diag = {}
+
+            has_ts = bool(diag.get("has_timestamp"))
+            invalid_ts = bool(diag.get("invalid_timestamp"))
+            age_seconds = diag.get("age_seconds")
+            max_age_seconds = diag.get("max_age_seconds")
+
+            reason = "stale_by_age"
+            if invalid_ts:
+                reason = "invalid_timestamp"
+            elif require_timestamps and not has_ts:
+                reason = "missing_timestamp"
+
+            reasons[flag_name] = {
+                "reason": reason,
+                "has_timestamp": has_ts,
+                "invalid_timestamp": invalid_ts,
+                "age_seconds": age_seconds,
+                "max_age_seconds": max_age_seconds,
+            }
+        return reasons
+
     def _build_correction_gating_state(
         self,
         *,
         telemetry: Dict[str, Optional[float]],
         telemetry_timestamps: Dict[str, Any],
         correction_flags: Dict[str, Any],
+        workflow_phase: str = "idle",
     ) -> Dict[str, Any]:
+        normalized_workflow_phase = self._normalize_workflow_phase(workflow_phase)
+        workflow_phase_open = normalized_workflow_phase in WORKFLOW_CORRECTION_OPEN_PHASES
         flags = correction_flags if isinstance(correction_flags, dict) else {}
         flow_active_raw = flags.get("flow_active", telemetry.get("FLOW_ACTIVE"))
         stable_raw = flags.get("stable", telemetry.get("STABLE"))
@@ -1575,6 +2249,60 @@ class ZoneAutomationService:
             "stable_ts": flags.get("stable_ts", telemetry_timestamps.get("STABLE")),
             "corrections_allowed_ts": flags.get("corrections_allowed_ts", telemetry_timestamps.get("CORRECTIONS_ALLOWED")),
         }
+        now = utcnow()
+        require_timestamps = bool(CORRECTION_FLAGS_REQUIRE_TIMESTAMPS)
+        flag_age_seconds = self._collect_correction_flag_ages_seconds(
+            normalized_flags=normalized_flags,
+            now=now,
+        )
+        timestamp_diagnostics = self._collect_correction_flag_timestamp_diagnostics(
+            normalized_flags=normalized_flags,
+            now=now,
+        )
+        if workflow_phase_open:
+            stale_flags = self._collect_stale_correction_flags(
+                normalized_flags=normalized_flags,
+                now=now,
+                require_timestamps=False,
+            )
+            if stale_flags:
+                stale_flag_reasons = self._build_stale_flag_reasons(
+                    stale_flags=stale_flags,
+                    timestamp_diagnostics=timestamp_diagnostics,
+                    require_timestamps=False,
+                )
+                return {
+                    "can_run": False,
+                    "reason_code": "stale_flags",
+                    "missing_flags": [],
+                    "stale_flags": stale_flags,
+                    "stale_flag_reasons": stale_flag_reasons,
+                    "flags": normalized_flags,
+                    "flag_age_seconds": flag_age_seconds,
+                    "require_timestamps": False,
+                    "timestamp_diagnostics": timestamp_diagnostics,
+                }
+            logger.info(
+                "Zone correction gating overridden by workflow phase",
+                extra={
+                    "workflow_phase": normalized_workflow_phase,
+                    "open_phases": sorted(WORKFLOW_CORRECTION_OPEN_PHASES),
+                    "flags_snapshot": normalized_flags,
+                },
+            )
+            return {
+                "can_run": True,
+                "reason_code": "workflow_phase_open",
+                "missing_flags": [],
+                "stale_flags": [],
+                "stale_flag_reasons": {},
+                "flags": normalized_flags,
+                "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": False,
+                "timestamp_diagnostics": timestamp_diagnostics,
+                "workflow_phase_override": normalized_workflow_phase,
+            }
+
         missing_flags = [name for name in CORRECTION_REQUIRED_FLAG_NAMES if normalized_flags[name] is None]
         if missing_flags:
             return {
@@ -1582,27 +2310,34 @@ class ZoneAutomationService:
                 "reason_code": "missing_flags",
                 "missing_flags": missing_flags,
                 "stale_flags": [],
+                "stale_flag_reasons": {},
                 "flags": normalized_flags,
-                "flag_age_seconds": {},
+                "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": require_timestamps,
+                "timestamp_diagnostics": timestamp_diagnostics,
             }
 
-        now = utcnow()
-        flag_age_seconds = self._collect_correction_flag_ages_seconds(
-            normalized_flags=normalized_flags,
-            now=now,
-        )
         stale_flags = self._collect_stale_correction_flags(
             normalized_flags=normalized_flags,
             now=now,
+            require_timestamps=require_timestamps,
         )
         if stale_flags:
+            stale_flag_reasons = self._build_stale_flag_reasons(
+                stale_flags=stale_flags,
+                timestamp_diagnostics=timestamp_diagnostics,
+                require_timestamps=require_timestamps,
+            )
             return {
                 "can_run": False,
                 "reason_code": "stale_flags",
                 "missing_flags": [],
                 "stale_flags": stale_flags,
+                "stale_flag_reasons": stale_flag_reasons,
                 "flags": normalized_flags,
                 "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": require_timestamps,
+                "timestamp_diagnostics": timestamp_diagnostics,
             }
 
         if not normalized_flags["flow_active"]:
@@ -1611,8 +2346,11 @@ class ZoneAutomationService:
                 "reason_code": "flow_inactive",
                 "missing_flags": [],
                 "stale_flags": [],
+                "stale_flag_reasons": {},
                 "flags": normalized_flags,
                 "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": require_timestamps,
+                "timestamp_diagnostics": timestamp_diagnostics,
             }
         if not normalized_flags["stable"]:
             return {
@@ -1620,8 +2358,11 @@ class ZoneAutomationService:
                 "reason_code": "sensor_unstable",
                 "missing_flags": [],
                 "stale_flags": [],
+                "stale_flag_reasons": {},
                 "flags": normalized_flags,
                 "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": require_timestamps,
+                "timestamp_diagnostics": timestamp_diagnostics,
             }
         if not normalized_flags["corrections_allowed"]:
             return {
@@ -1629,16 +2370,22 @@ class ZoneAutomationService:
                 "reason_code": "corrections_not_allowed",
                 "missing_flags": [],
                 "stale_flags": [],
+                "stale_flag_reasons": {},
                 "flags": normalized_flags,
                 "flag_age_seconds": flag_age_seconds,
+                "require_timestamps": require_timestamps,
+                "timestamp_diagnostics": timestamp_diagnostics,
             }
         return {
             "can_run": True,
             "reason_code": "gating_passed",
             "missing_flags": [],
             "stale_flags": [],
+            "stale_flag_reasons": {},
             "flags": normalized_flags,
             "flag_age_seconds": flag_age_seconds,
+            "require_timestamps": require_timestamps,
+            "timestamp_diagnostics": timestamp_diagnostics,
         }
 
     @staticmethod
@@ -1670,9 +2417,24 @@ class ZoneAutomationService:
     ) -> None:
         previous_state = self._correction_sensor_mode_state.get(zone_id)
         if previous_state is not None and previous_state == activate:
+            logger.info(
+                "Zone %s: skip sensor mode command due to local debounce cache",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "activate": activate,
+                    "reason": reason,
+                    "cached_state": previous_state,
+                },
+            )
             return
         sensor_nodes = self._resolve_correction_sensor_nodes(nodes)
         if not sensor_nodes:
+            logger.info(
+                "Zone %s: no sensor nodes resolved for sensor mode command",
+                zone_id,
+                extra={"zone_id": zone_id, "activate": activate, "reason": reason},
+            )
             return
 
         cmd = "activate_sensor_mode" if activate else "deactivate_sensor_mode"
@@ -1703,6 +2465,17 @@ class ZoneAutomationService:
                 )
                 return
         self._correction_sensor_mode_state[zone_id] = activate
+        logger.info(
+            "Zone %s: sensor mode command batch completed",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "activate": activate,
+                "reason": reason,
+                "sensor_node_uids": [item.get("node_uid") for item in sensor_nodes],
+                "cached_state": self._correction_sensor_mode_state.get(zone_id),
+            },
+        )
     
     async def _update_zone_health(self, zone_id: int) -> None:
         """Обновление health score зоны."""

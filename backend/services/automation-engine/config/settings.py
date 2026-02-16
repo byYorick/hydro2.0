@@ -67,6 +67,14 @@ class AutomationSettings:
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
+    # Максимальный возраст correction flags для fail-closed gating (секунды)
+    AE_CORRECTION_FLAGS_MAX_AGE_SEC: int = int(os.getenv("AE_CORRECTION_FLAGS_MAX_AGE_SEC", "300"))
+    # Троттлинг zone-events при пропуске коррекций (секунды)
+    AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC: int = int(os.getenv("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", "120"))
+    # Троттлинг infra-alerts для stale correction flags (секунды)
+    AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC: int = int(os.getenv("AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC", "120"))
+    # Требовать timestamps для correction flags (1/0)
+    AE_CORRECTION_FLAGS_REQUIRE_TS: bool = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert

@@ -17,6 +17,7 @@ from prometheus_client import Gauge
 from typing import Optional, Dict, Any, Literal, Tuple, Coroutine
 
 from infrastructure import CommandBus
+from infrastructure.workflow_state_store import WorkflowStateStore
 from common.infra_alerts import send_infra_exception_alert, send_infra_alert
 from common.db import fetch, create_scheduler_log, create_zone_event
 from common.trace_context import extract_trace_id_from_headers
@@ -26,6 +27,28 @@ from scheduler_internal_enqueue import (
     SUPPORTED_SCHEDULER_TASK_TYPES,
     enqueue_internal_scheduler_task,
     parse_iso_datetime as parse_enqueue_iso_datetime,
+)
+from application.api_automation_state import (
+    build_timeline_label as policy_build_timeline_label,
+    derive_active_processes as policy_derive_active_processes,
+    derive_automation_state as policy_derive_automation_state,
+    estimate_completion_seconds as policy_estimate_completion_seconds,
+    estimate_progress_percent as policy_estimate_progress_percent,
+    extract_timeline_reason as policy_extract_timeline_reason,
+    resolve_state_started_at as policy_resolve_state_started_at,
+)
+from application.api_payload_parsing import (
+    coerce_datetime as policy_coerce_datetime,
+    extract_topology as policy_extract_topology,
+    extract_workflow as policy_extract_workflow,
+    to_optional_float as policy_to_optional_float,
+    to_optional_int as policy_to_optional_int,
+)
+from application.api_task_snapshot import (
+    is_task_active as policy_is_task_active,
+    pick_preferred_zone_task as policy_pick_preferred_zone_task,
+    sanitize_scheduler_task_snapshot as policy_sanitize_scheduler_task_snapshot,
+    task_sort_key as policy_task_sort_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,11 +74,11 @@ async def trace_middleware(request: Request, call_next):
         set_trace_id(trace_id)
     else:
         trace_id = set_trace_id()
-    request_started_at = datetime.utcnow()
+    request_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         response = await call_next(request)
     except Exception as exc:
-        duration_ms = max(0.0, (datetime.utcnow() - request_started_at).total_seconds() * 1000.0)
+        duration_ms = max(0.0, (datetime.now(timezone.utc).replace(tzinfo=None) - request_started_at).total_seconds() * 1000.0)
         logger.error(
             "Unhandled API exception: method=%s path=%s duration_ms=%.2f error=%s",
             request.method,
@@ -89,7 +112,7 @@ async def trace_middleware(request: Request, call_next):
             )
         raise
 
-    duration_ms = max(0.0, (datetime.utcnow() - request_started_at).total_seconds() * 1000.0)
+    duration_ms = max(0.0, (datetime.now(timezone.utc).replace(tzinfo=None) - request_started_at).total_seconds() * 1000.0)
     if trace_id:
         response.headers["X-Trace-Id"] = trace_id
 
@@ -156,6 +179,11 @@ _scheduler_bootstrap_leases: Dict[str, Dict[str, Any]] = {}
 _scheduler_bootstrap_lock = asyncio.Lock()
 _AE_TASK_RECOVERY_ENABLED = os.getenv("AE_TASK_RECOVERY_ENABLED", "1") == "1"
 _AE_TASK_RECOVERY_SCAN_LIMIT = max(10, int(os.getenv("AE_TASK_RECOVERY_SCAN_LIMIT", "500")))
+_AE_WORKFLOW_STATE_RECOVERY_ENABLED = os.getenv("AE_WORKFLOW_STATE_RECOVERY_ENABLED", "1") == "1"
+_AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = max(
+    60,
+    int(os.getenv("AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC", "1800")),
+)
 TASK_RECOVERY_SUCCESS_RATE = Gauge(
     "task_recovery_success_rate",
     "Share of startup recovery tasks finalized successfully",
@@ -167,6 +195,7 @@ COMMAND_EFFECT_CONFIRM_RATE = Gauge(
 )
 _command_effect_totals: Dict[str, int] = {}
 _command_effect_confirmed_totals: Dict[str, int] = {}
+_workflow_state_store = WorkflowStateStore()
 
 ERR_TASK_EXPIRED = "task_expired"
 ERR_TASK_DUE_DEADLINE_EXCEEDED = "task_due_deadline_exceeded"
@@ -606,106 +635,51 @@ def _normalize_cleanup_timestamp(raw_value: Any, fallback: datetime) -> datetime
 
 
 def _to_optional_int(raw_value: Any) -> Optional[int]:
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        return None
-    return value
+    return policy_to_optional_int(raw_value)
 
 
 def _to_optional_float(raw_value: Any) -> Optional[float]:
-    try:
-        value = float(raw_value)
-    except (TypeError, ValueError):
-        return None
-    if value != value:  # NaN
-        return None
-    return value
+    return policy_to_optional_float(raw_value)
 
 
 def _coerce_datetime(raw_value: Any) -> Optional[datetime]:
-    if isinstance(raw_value, datetime):
-        if raw_value.tzinfo is not None:
-            return raw_value.astimezone(timezone.utc).replace(tzinfo=None)
-        return raw_value
-
-    if isinstance(raw_value, str):
-        normalized = raw_value.strip()
-        if normalized == "":
-            return None
-        if normalized.endswith("Z"):
-            normalized = f"{normalized[:-1]}+00:00"
-        try:
-            parsed = datetime.fromisoformat(normalized)
-        except ValueError:
-            return None
-        if parsed.tzinfo is not None:
-            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
-        return parsed
-
-    return None
+    return policy_coerce_datetime(raw_value)
 
 
 def _extract_workflow(payload: Dict[str, Any]) -> str:
-    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
-    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
-    raw_workflow = payload.get("workflow") or payload.get("diagnostics_workflow") or execution.get("workflow") or ""
-    return str(raw_workflow).strip().lower()
+    return policy_extract_workflow(payload)
 
 
 def _extract_topology(payload: Dict[str, Any]) -> str:
-    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
-    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
-    raw_topology = payload.get("topology") or execution.get("topology") or ""
-    return str(raw_topology).strip().lower()
+    return policy_extract_topology(payload)
 
 
 def _is_task_active(task: Dict[str, Any]) -> bool:
-    status = str(task.get("status") or "").strip().lower()
-    return status in {"accepted", "running"}
+    return policy_is_task_active(task)
 
 
 def _task_sort_key(task: Dict[str, Any]) -> Tuple[int, datetime]:
-    active_rank = 1 if _is_task_active(task) else 0
-    timestamp = _coerce_datetime(task.get("updated_at")) or _coerce_datetime(task.get("created_at")) or datetime.utcnow()
-    return active_rank, timestamp
+    return policy_task_sort_key(
+        task,
+        is_task_active_fn=_is_task_active,
+        coerce_datetime_fn=_coerce_datetime,
+        now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )
 
 
 def _pick_preferred_zone_task(tasks: list[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not tasks:
-        return None
-    ordered = sorted(tasks, key=_task_sort_key, reverse=True)
-    return dict(ordered[0])
+    return policy_pick_preferred_zone_task(
+        tasks,
+        task_sort_key_fn=_task_sort_key,
+    )
 
 
 def _sanitize_scheduler_task_snapshot(raw_task: Dict[str, Any], fallback_task_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    task_id_raw = raw_task.get("task_id") or fallback_task_id
-    task_id = str(task_id_raw or "").strip()
-    zone_id = _to_optional_int(raw_task.get("zone_id"))
-    task_type = str(raw_task.get("task_type") or "").strip().lower()
-    status = str(raw_task.get("status") or "").strip().lower()
-    payload = raw_task.get("payload") if isinstance(raw_task.get("payload"), dict) else {}
-    result = raw_task.get("result") if isinstance(raw_task.get("result"), dict) else {}
-
-    if not task_id or zone_id is None or not task_type:
-        return None
-
-    return {
-        "task_id": task_id,
-        "zone_id": zone_id,
-        "task_type": task_type,
-        "status": status or "unknown",
-        "payload": payload,
-        "result": result,
-        "created_at": raw_task.get("created_at"),
-        "updated_at": raw_task.get("updated_at"),
-        "scheduled_for": raw_task.get("scheduled_for"),
-        "due_at": raw_task.get("due_at"),
-        "expires_at": raw_task.get("expires_at"),
-        "correlation_id": raw_task.get("correlation_id"),
-        "error": raw_task.get("error"),
-        "error_code": raw_task.get("error_code"),
-    }
+    return policy_sanitize_scheduler_task_snapshot(
+        raw_task,
+        to_optional_int_fn=_to_optional_int,
+        fallback_task_id=fallback_task_id,
+    )
 
 
 async def _load_latest_zone_task_from_db(zone_id: int) -> Optional[Dict[str, Any]]:
@@ -750,7 +724,7 @@ async def _load_latest_zone_task_from_db(zone_id: int) -> Optional[Dict[str, Any
 
 
 async def _load_latest_zone_task(zone_id: int) -> Optional[Dict[str, Any]]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     in_memory_candidates: list[Dict[str, Any]] = []
     async with _scheduler_tasks_lock:
         await _cleanup_scheduler_tasks_locked(now)
@@ -970,178 +944,75 @@ async def _load_zone_current_levels(zone_id: int) -> Dict[str, Any]:
 
 
 def _derive_automation_state(task: Optional[Dict[str, Any]]) -> str:
-    if not task:
-        return AUTOMATION_STATE_IDLE
-
-    status = str(task.get("status") or "").strip().lower()
-    task_type = str(task.get("task_type") or "").strip().lower()
-    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
-    result = task.get("result") if isinstance(task.get("result"), dict) else {}
-
-    workflow = _extract_workflow(payload)
-    mode = str(result.get("mode") or "").strip().lower()
-    reason_code = str(result.get("reason_code") or "").strip().lower()
-
-    if status in {"accepted", "running"}:
-        if task_type == "irrigation":
-            if "recovery" in workflow or "recovery" in mode:
-                return AUTOMATION_STATE_IRRIG_RECIRC
-            return AUTOMATION_STATE_IRRIGATING
-        if task_type == "diagnostics":
-            if workflow in {"prepare_recirculation", "prepare_recirculation_check"}:
-                return AUTOMATION_STATE_TANK_RECIRC
-            if workflow in {"irrigation_recovery", "irrigation_recovery_check"}:
-                return AUTOMATION_STATE_IRRIG_RECIRC
-            return AUTOMATION_STATE_TANK_FILLING
-
-    if status == "completed":
-        if task_type == "diagnostics":
-            if mode in {"two_tank_startup_completed", "two_tank_prepare_recirculation_completed"}:
-                return AUTOMATION_STATE_READY
-            if reason_code in {"prepare_targets_reached", "solution_fill_completed"}:
-                return AUTOMATION_STATE_READY
-        if task_type == "irrigation":
-            return AUTOMATION_STATE_READY
-
-    return AUTOMATION_STATE_IDLE
+    return policy_derive_automation_state(
+        task,
+        extract_workflow=_extract_workflow,
+        state_idle=AUTOMATION_STATE_IDLE,
+        state_tank_filling=AUTOMATION_STATE_TANK_FILLING,
+        state_tank_recirc=AUTOMATION_STATE_TANK_RECIRC,
+        state_ready=AUTOMATION_STATE_READY,
+        state_irrigating=AUTOMATION_STATE_IRRIGATING,
+        state_irrig_recirc=AUTOMATION_STATE_IRRIG_RECIRC,
+    )
 
 
 def _resolve_state_started_at(task: Optional[Dict[str, Any]], state: str) -> Optional[datetime]:
-    if not task:
-        return None
-    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
-    result = task.get("result") if isinstance(task.get("result"), dict) else {}
-
-    candidate_keys = []
-    if state == AUTOMATION_STATE_TANK_FILLING:
-        candidate_keys = ["clean_fill_started_at", "solution_fill_started_at", "started_at"]
-    elif state == AUTOMATION_STATE_TANK_RECIRC:
-        candidate_keys = ["prepare_recirculation_started_at", "started_at"]
-    elif state == AUTOMATION_STATE_IRRIG_RECIRC:
-        candidate_keys = ["irrigation_recovery_started_at", "started_at"]
-    elif state == AUTOMATION_STATE_IRRIGATING:
-        candidate_keys = ["started_at"]
-
-    for key in candidate_keys:
-        parsed = _coerce_datetime(payload.get(key))
-        if parsed is not None:
-            return parsed
-        parsed = _coerce_datetime(result.get(key))
-        if parsed is not None:
-            return parsed
-
-    return _coerce_datetime(task.get("created_at")) or _coerce_datetime(task.get("updated_at"))
+    return policy_resolve_state_started_at(
+        task,
+        state,
+        coerce_datetime=_coerce_datetime,
+        state_tank_filling=AUTOMATION_STATE_TANK_FILLING,
+        state_tank_recirc=AUTOMATION_STATE_TANK_RECIRC,
+        state_irrig_recirc=AUTOMATION_STATE_IRRIG_RECIRC,
+        state_irrigating=AUTOMATION_STATE_IRRIGATING,
+    )
 
 
 def _estimate_progress_percent(task: Optional[Dict[str, Any]], state: str) -> int:
-    if state == AUTOMATION_STATE_IDLE:
-        return 0
-    if state == AUTOMATION_STATE_READY:
-        return 100
-
-    payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
-    result = task.get("result") if isinstance(task, dict) and isinstance(task.get("result"), dict) else {}
-    explicit_progress = _to_optional_int(result.get("progress_percent"))
-    if explicit_progress is None:
-        explicit_progress = _to_optional_int(payload.get("progress_percent"))
-    if explicit_progress is not None:
-        return max(0, min(100, explicit_progress))
-
-    workflow = _extract_workflow(payload)
-    if state == AUTOMATION_STATE_TANK_FILLING:
-        if workflow == "clean_fill_check":
-            return 30
-        if workflow == "solution_fill_check":
-            return 60
-        return 20
-    if state == AUTOMATION_STATE_TANK_RECIRC:
-        return 80
-    if state == AUTOMATION_STATE_IRRIGATING:
-        return 55
-    if state == AUTOMATION_STATE_IRRIG_RECIRC:
-        return 75
-    return 0
+    return policy_estimate_progress_percent(
+        task,
+        state,
+        extract_workflow=_extract_workflow,
+        to_optional_int=_to_optional_int,
+        state_idle=AUTOMATION_STATE_IDLE,
+        state_ready=AUTOMATION_STATE_READY,
+        state_tank_filling=AUTOMATION_STATE_TANK_FILLING,
+        state_tank_recirc=AUTOMATION_STATE_TANK_RECIRC,
+        state_irrigating=AUTOMATION_STATE_IRRIGATING,
+        state_irrig_recirc=AUTOMATION_STATE_IRRIG_RECIRC,
+    )
 
 
 def _estimate_completion_seconds(task: Optional[Dict[str, Any]]) -> Optional[int]:
-    if not task:
-        return None
-
-    now = datetime.utcnow()
-    payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
-    result = task.get("result") if isinstance(task.get("result"), dict) else {}
-
-    candidates = [
-        payload.get("clean_fill_timeout_at"),
-        payload.get("solution_fill_timeout_at"),
-        payload.get("prepare_recirculation_timeout_at"),
-        payload.get("irrigation_recovery_timeout_at"),
-        result.get("next_due_at"),
-    ]
-    for candidate in candidates:
-        parsed = _coerce_datetime(candidate)
-        if parsed is None:
-            continue
-        delta = int((parsed - now).total_seconds())
-        if delta > 0:
-            return delta
-
-    due_at = _coerce_datetime(task.get("due_at"))
-    if due_at is not None:
-        delta = int((due_at - now).total_seconds())
-        if delta > 0:
-            return delta
-    return None
+    return policy_estimate_completion_seconds(
+        task,
+        now=datetime.now(timezone.utc).replace(tzinfo=None),
+        coerce_datetime=_coerce_datetime,
+    )
 
 
 def _derive_active_processes(task: Optional[Dict[str, Any]], state: str) -> Dict[str, bool]:
-    payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
-    workflow = _extract_workflow(payload)
-
-    pump_in = state in {AUTOMATION_STATE_TANK_FILLING, AUTOMATION_STATE_IRRIGATING}
-    circulation = state in {AUTOMATION_STATE_TANK_RECIRC, AUTOMATION_STATE_IRRIG_RECIRC}
-
-    if workflow in {"prepare_recirculation", "prepare_recirculation_check", "irrigation_recovery", "irrigation_recovery_check"}:
-        circulation = True
-        pump_in = False
-    if workflow in {"startup", "clean_fill_check", "solution_fill_check"}:
-        pump_in = True
-
-    ph_correction = state in {
-        AUTOMATION_STATE_TANK_FILLING,
-        AUTOMATION_STATE_TANK_RECIRC,
-        AUTOMATION_STATE_IRRIG_RECIRC,
-    }
-    ec_correction = state in {
-        AUTOMATION_STATE_TANK_FILLING,
-        AUTOMATION_STATE_TANK_RECIRC,
-    }
-
-    return {
-        "pump_in": pump_in,
-        "circulation_pump": circulation,
-        "ph_correction": ph_correction,
-        "ec_correction": ec_correction,
-    }
+    return policy_derive_active_processes(
+        task,
+        state,
+        extract_workflow=_extract_workflow,
+        state_tank_filling=AUTOMATION_STATE_TANK_FILLING,
+        state_tank_recirc=AUTOMATION_STATE_TANK_RECIRC,
+        state_irrigating=AUTOMATION_STATE_IRRIGATING,
+        state_irrig_recirc=AUTOMATION_STATE_IRRIG_RECIRC,
+    )
 
 
 def _extract_timeline_reason(payload: Dict[str, Any]) -> Optional[str]:
-    reason_code = payload.get("reason_code")
-    if isinstance(reason_code, str) and reason_code.strip():
-        return reason_code.strip()
-    result = payload.get("result")
-    if isinstance(result, dict):
-        nested_reason_code = result.get("reason_code")
-        if isinstance(nested_reason_code, str) and nested_reason_code.strip():
-            return nested_reason_code.strip()
-    return None
+    return policy_extract_timeline_reason(payload)
 
 
 def _build_timeline_label(event_type: str, reason_code: Optional[str]) -> str:
-    base = AUTOMATION_TIMELINE_EVENT_LABELS.get(event_type, event_type)
-    if isinstance(reason_code, str) and reason_code:
-        return f"{base} ({reason_code})"
-    return base
+    return policy_build_timeline_label(
+        event_type,
+        reason_code,
+        event_labels=AUTOMATION_TIMELINE_EVENT_LABELS,
+    )
 
 
 async def _load_automation_timeline(zone_id: int, limit: int = 24) -> list[Dict[str, Any]]:
@@ -1190,7 +1061,7 @@ async def _load_automation_timeline(zone_id: int, limit: int = 24) -> list[Dict[
             continue
         reason_code = _extract_timeline_reason(payload)
         created_at = row.get("created_at")
-        timestamp = created_at.isoformat() if isinstance(created_at, datetime) else datetime.utcnow().isoformat()
+        timestamp = created_at.isoformat() if isinstance(created_at, datetime) else datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         timeline.append(
             {
                 "event": event_type,
@@ -1256,7 +1127,7 @@ async def _scheduler_bootstrap_state() -> Tuple[str, str]:
 
 
 async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optional[Dict[str, Any]]:
-    threshold = datetime.utcnow() - timedelta(seconds=_SCHEDULER_DEDUPE_WINDOW_SEC)
+    threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=_SCHEDULER_DEDUPE_WINDOW_SEC)
     try:
         rows = await fetch(
             """
@@ -1297,11 +1168,11 @@ async def _create_scheduler_task(
     initial_error: Optional[str] = None,
     initial_error_code: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], bool]:
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     payload_fingerprint = _task_payload_fingerprint(req)
 
     async with _scheduler_tasks_lock:
-        await _cleanup_scheduler_tasks_locked(datetime.utcnow())
+        await _cleanup_scheduler_tasks_locked(datetime.now(timezone.utc).replace(tzinfo=None))
 
         existing_in_memory: Optional[Dict[str, Any]] = None
         for candidate in _scheduler_tasks.values():
@@ -1354,7 +1225,7 @@ async def _update_scheduler_task(
         if not task:
             return
         task["status"] = status
-        task["updated_at"] = datetime.utcnow().isoformat()
+        task["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         if result is not None:
             task["result"] = result
         if error is not None:
@@ -1471,7 +1342,7 @@ async def _recover_inflight_scheduler_tasks() -> Dict[str, int]:
     scanned = len(rows)
     inflight = 0
     recovered = 0
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     for row in rows:
         details = row.get("details") if isinstance(row.get("details"), dict) else {}
@@ -1585,6 +1456,620 @@ async def _recover_inflight_scheduler_tasks() -> Dict[str, int]:
         TASK_RECOVERY_SUCCESS_RATE.set(recovered / inflight)
 
     return {"scanned": scanned, "inflight": inflight, "recovered": recovered}
+
+
+def _normalize_recovery_phase(raw_phase: Any) -> str:
+    value = str(raw_phase or "").strip().lower()
+    if value in {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}:
+        return value
+    return "idle"
+
+
+def _is_valid_recovery_phase(raw_phase: Any) -> bool:
+    value = str(raw_phase or "").strip().lower()
+    return value in {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
+
+
+def _extract_recovery_execution_workflow(payload: Dict[str, Any]) -> str:
+    targets = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+    diagnostics_targets = targets.get("diagnostics") if isinstance(targets.get("diagnostics"), dict) else {}
+    execution = diagnostics_targets.get("execution") if isinstance(diagnostics_targets.get("execution"), dict) else {}
+    return str(execution.get("workflow") or "").strip().lower()
+
+
+def _extract_payload_workflow_stage(payload: Dict[str, Any]) -> Tuple[str, str]:
+    candidates = [
+        ("workflow_stage", payload.get("workflow_stage")),
+        ("workflow", payload.get("workflow")),
+        ("diagnostics_workflow", payload.get("diagnostics_workflow")),
+        ("targets.diagnostics.execution.workflow", _extract_recovery_execution_workflow(payload)),
+    ]
+    for source, raw_value in candidates:
+        value = str(raw_value or "").strip().lower()
+        if value:
+            return value, f"zone_workflow_state.payload.{source}"
+    return "", "zone_workflow_state.payload.workflow_stage"
+
+
+def _resolve_recovery_phase(
+    row: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Tuple[str, str, Optional[str]]:
+    raw_column_phase = row.get("workflow_phase_raw", row.get("workflow_phase"))
+    raw_payload_phase = payload.get("workflow_phase")
+    if _is_valid_recovery_phase(raw_column_phase):
+        return _normalize_recovery_phase(raw_column_phase), "zone_workflow_state.workflow_phase", None
+    if _is_valid_recovery_phase(raw_payload_phase):
+        return _normalize_recovery_phase(raw_payload_phase), "zone_workflow_state.payload.workflow_phase", None
+    if str(raw_column_phase or "").strip() or str(raw_payload_phase or "").strip():
+        return "idle", "zone_workflow_state.workflow_phase", "invalid_phase"
+    return "idle", "zone_workflow_state.workflow_phase", None
+
+
+def _resolve_workflow_for_recovery(
+    phase: str,
+    payload: Dict[str, Any],
+    *,
+    zone_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    payload_workflow, workflow_source = _extract_payload_workflow_stage(payload)
+    has_clean_timestamps = bool(
+        str(payload.get("clean_fill_started_at") or "").strip()
+        or str(payload.get("clean_fill_timeout_at") or "").strip()
+    )
+    has_solution_timestamps = bool(
+        str(payload.get("solution_fill_started_at") or "").strip()
+        or str(payload.get("solution_fill_timeout_at") or "").strip()
+    )
+
+    tank_filling_fallback = "solution_fill_check"
+    if has_clean_timestamps and not has_solution_timestamps:
+        tank_filling_fallback = "clean_fill_check"
+    elif has_solution_timestamps:
+        tank_filling_fallback = "solution_fill_check"
+
+    fallback = {
+        "tank_filling": tank_filling_fallback,
+        "tank_recirc": "prepare_recirculation_check",
+        "irrig_recirc": "irrigation_recovery_check",
+    }
+    allowed_workflows = {
+        "tank_filling": {"clean_fill_check", "solution_fill_check"},
+        "tank_recirc": {"prepare_recirculation_check"},
+        "irrig_recirc": {"irrigation_recovery_check"},
+    }
+
+    mapped = payload_workflow
+    if payload_workflow in {"startup", "cycle_start", "refill_check"}:
+        mapped = fallback.get(phase, "")
+    elif payload_workflow == "prepare_recirculation":
+        mapped = "prepare_recirculation_check"
+    elif payload_workflow == "irrigation_recovery":
+        mapped = "irrigation_recovery_check"
+
+    if mapped:
+        allowed = allowed_workflows.get(phase)
+        if allowed and mapped in allowed:
+            if payload_workflow and payload_workflow != mapped:
+                logger.info(
+                    "Recovery workflow canonicalized from coarse stage: zone_id=%s phase=%s raw_workflow=%s canonical_workflow=%s",
+                    zone_id,
+                    phase,
+                    payload_workflow,
+                    mapped,
+                )
+                return {
+                    "workflow": mapped,
+                    "workflow_source": workflow_source,
+                    "reason_code": "workflow_stage_canonicalized",
+                    "fallback_from": payload_workflow,
+                    "fallback_to": mapped,
+                }
+            return {
+                "workflow": mapped,
+                "workflow_source": workflow_source,
+                "reason_code": "workflow_from_payload",
+                "fallback_from": None,
+                "fallback_to": None,
+            }
+
+        logger.warning(
+            "Recovery workflow incompatible with phase, fallback will be used: zone_id=%s phase=%s payload_workflow=%s mapped_workflow=%s",
+            zone_id,
+            phase,
+            payload_workflow or None,
+            mapped,
+        )
+
+    phase_fallback = fallback.get(phase)
+    if phase_fallback:
+        if payload_workflow:
+            logger.info(
+                "Recovery workflow resolved via phase fallback: zone_id=%s phase=%s payload_workflow=%s fallback_workflow=%s",
+                zone_id,
+                phase,
+                payload_workflow,
+                phase_fallback,
+            )
+            return {
+                "workflow": phase_fallback,
+                "workflow_source": workflow_source,
+                "reason_code": "workflow_phase_fallback",
+                "fallback_from": mapped or payload_workflow,
+                "fallback_to": phase_fallback,
+            }
+        return {
+            "workflow": phase_fallback,
+            "workflow_source": workflow_source,
+            "reason_code": "workflow_missing_phase_fallback",
+            "fallback_from": "missing_workflow",
+            "fallback_to": phase_fallback,
+        }
+
+    if payload_workflow:
+        logger.warning(
+            "Recovery workflow unresolved for active phase: zone_id=%s phase=%s payload_workflow=%s",
+            zone_id,
+            phase,
+            payload_workflow,
+        )
+    return {
+        "workflow": None,
+        "workflow_source": workflow_source,
+        "reason_code": "workflow_unresolved",
+        "fallback_from": None,
+        "fallback_to": None,
+    }
+
+
+def _extract_recovery_correlation_id(payload: Dict[str, Any]) -> Optional[str]:
+    if isinstance(payload.get("recovery"), dict):
+        nested = str(payload.get("recovery", {}).get("correlation_id") or "").strip()
+        if nested:
+            return nested
+    correlation_id = str(payload.get("correlation_id") or "").strip()
+    return correlation_id or None
+
+
+def _log_workflow_recovery_action(
+    *,
+    zone_id: Optional[int],
+    workflow_phase_source: str,
+    workflow_phase_normalized: str,
+    workflow_selected: Optional[str],
+    scheduler_task_id_previous: Optional[str],
+    recovery_action: str,
+    reason_code: str,
+    state_age_sec: int,
+    correlation_id: Optional[str],
+    enqueue_id: Optional[str],
+    level: int = logging.INFO,
+    error_type: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    details: Dict[str, Any] = {
+        "component": "workflow_state_recovery",
+        "zone_id": zone_id,
+        "workflow_phase_source": workflow_phase_source,
+        "workflow_phase_normalized": workflow_phase_normalized,
+        "workflow_selected": workflow_selected,
+        "scheduler_task_id_previous": scheduler_task_id_previous,
+        "recovery_action": recovery_action,
+        "reason_code": reason_code,
+        "state_age_sec": state_age_sec,
+        "correlation_id": correlation_id,
+        "enqueue_id": enqueue_id,
+    }
+    if error_type:
+        details["error_type"] = error_type
+    if error_message:
+        details["error_message"] = error_message
+    if level >= logging.ERROR:
+        details["trace_id"] = get_trace_id()
+    logger.log(level, "Workflow state recovery action", extra=details)
+
+
+async def _send_workflow_recovery_alert_safe(
+    *,
+    error: Exception,
+    code: str,
+    alert_type: str,
+    zone_id: Optional[int],
+    details: Dict[str, Any],
+) -> None:
+    if zone_id is None:
+        return
+    try:
+        await send_infra_exception_alert(
+            error=error,
+            code=code,
+            alert_type=alert_type,
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="workflow_state_recovery",
+            error_type=type(error).__name__,
+            details=details,
+        )
+    except Exception as alert_exc:
+        logger.warning(
+            "Failed to send workflow recovery infra alert: zone_id=%s code=%s error=%s",
+            zone_id,
+            code,
+            alert_exc,
+            exc_info=True,
+        )
+
+
+def _coerce_utc_naive(value: Any) -> Optional[datetime]:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+async def _recover_zone_workflow_states() -> Dict[str, int]:
+    if not _AE_WORKFLOW_STATE_RECOVERY_ENABLED:
+        return {"active": 0, "recovered": 0, "stale_stopped": 0, "skipped": 0, "failed": 0}
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    recovered = 0
+    stale_stopped = 0
+    skipped = 0
+    failed = 0
+
+    try:
+        active_states = await _workflow_state_store.list_active()
+    except Exception:
+        logger.warning("Zone workflow state recovery scan failed", exc_info=True)
+        return {"active": 0, "recovered": 0, "stale_stopped": 0, "skipped": 0, "failed": 0}
+
+    for row in active_states:
+        zone_id: Optional[int] = None
+        phase_source = "zone_workflow_state.workflow_phase"
+        phase = "idle"
+        workflow: Optional[str] = None
+        age_sec = 0
+        enqueue_id: Optional[str] = None
+        previous_task_id = str(row.get("scheduler_task_id") or "").strip() or None
+        correlation_id: Optional[str] = None
+
+        try:
+            raw_zone_id = row.get("zone_id")
+            try:
+                zone_id = int(raw_zone_id)
+            except (TypeError, ValueError):
+                skipped += 1
+                logger.warning(
+                    "Workflow recovery skipped invalid row: invalid zone_id raw_zone_id=%r",
+                    raw_zone_id,
+                )
+                _log_workflow_recovery_action(
+                    zone_id=None,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=None,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="skip_invalid",
+                    reason_code="invalid_zone_id",
+                    state_age_sec=age_sec,
+                    correlation_id=None,
+                    enqueue_id=None,
+                    level=logging.WARNING,
+                )
+                continue
+
+            raw_payload = row.get("payload")
+            if not isinstance(raw_payload, dict):
+                skipped += 1
+                logger.warning(
+                    "Workflow recovery skipped invalid payload: zone_id=%s payload_type=%s",
+                    zone_id,
+                    type(raw_payload).__name__,
+                )
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=None,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="skip_invalid",
+                    reason_code="invalid_payload",
+                    state_age_sec=age_sec,
+                    correlation_id=None,
+                    enqueue_id=None,
+                    level=logging.WARNING,
+                )
+                continue
+
+            payload = dict(raw_payload)
+            correlation_id = _extract_recovery_correlation_id(payload)
+            phase, phase_source, phase_error = _resolve_recovery_phase(row, payload)
+            if phase_error is not None:
+                skipped += 1
+                logger.warning(
+                    "Workflow recovery skipped invalid phase: zone_id=%s raw_phase=%r payload_phase=%r",
+                    zone_id,
+                    row.get("workflow_phase_raw", row.get("workflow_phase")),
+                    payload.get("workflow_phase"),
+                )
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=None,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="skip_invalid",
+                    reason_code=phase_error,
+                    state_age_sec=age_sec,
+                    correlation_id=correlation_id,
+                    enqueue_id=None,
+                    level=logging.WARNING,
+                )
+                continue
+
+            updated_at = _coerce_utc_naive(row.get("updated_at")) or now
+            age_sec = max(0, int((now - updated_at).total_seconds()))
+
+            if phase in {"idle", "ready"}:
+                skipped += 1
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=None,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="skip_idle_ready",
+                    reason_code=f"phase_{phase}",
+                    state_age_sec=age_sec,
+                    correlation_id=correlation_id,
+                    enqueue_id=None,
+                )
+                continue
+
+            if age_sec > _AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC:
+                try:
+                    await _workflow_state_store.set(
+                        zone_id=zone_id,
+                        workflow_phase="idle",
+                        payload={**payload, "recovery": {"action": "stale_safety_stop", "age_sec": age_sec}},
+                        scheduler_task_id=None,
+                    )
+                    await create_zone_event(
+                        zone_id,
+                        "WORKFLOW_RECOVERY_STALE_STOPPED",
+                        {
+                            "previous_workflow_phase": phase,
+                            "age_sec": age_sec,
+                            "stale_timeout_sec": _AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC,
+                        },
+                    )
+                    stale_stopped += 1
+                    _log_workflow_recovery_action(
+                        zone_id=zone_id,
+                        workflow_phase_source=phase_source,
+                        workflow_phase_normalized=phase,
+                        workflow_selected=None,
+                        scheduler_task_id_previous=previous_task_id,
+                        recovery_action="stale_stop",
+                        reason_code="state_stale_timeout",
+                        state_age_sec=age_sec,
+                        correlation_id=correlation_id,
+                        enqueue_id=None,
+                    )
+                except Exception as exc:
+                    failed += 1
+                    logger.error(
+                        "Failed to stale-stop workflow state during recovery: zone_id=%s phase=%s error=%s",
+                        zone_id,
+                        phase,
+                        exc,
+                        exc_info=True,
+                    )
+                    _log_workflow_recovery_action(
+                        zone_id=zone_id,
+                        workflow_phase_source=phase_source,
+                        workflow_phase_normalized=phase,
+                        workflow_selected=None,
+                        scheduler_task_id_previous=previous_task_id,
+                        recovery_action="failed",
+                        reason_code="stale_stop_failed",
+                        state_age_sec=age_sec,
+                        correlation_id=correlation_id,
+                        enqueue_id=None,
+                        level=logging.ERROR,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                continue
+
+            workflow_resolution = _resolve_workflow_for_recovery(phase, payload, zone_id=zone_id)
+            workflow = str(workflow_resolution.get("workflow") or "").strip().lower() or None
+            reason_code = str(workflow_resolution.get("reason_code") or "").strip().lower() or "workflow_unresolved"
+            fallback_from = str(workflow_resolution.get("fallback_from") or "").strip().lower() or None
+            fallback_to = str(workflow_resolution.get("fallback_to") or "").strip().lower() or None
+
+            if not workflow:
+                skipped += 1
+                logger.warning(
+                    "Workflow recovery skipped: no continuation workflow resolved: zone_id=%s phase=%s workflow_source=%s",
+                    zone_id,
+                    phase,
+                    workflow_resolution.get("workflow_source"),
+                )
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=None,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="skip_invalid",
+                    reason_code=reason_code,
+                    state_age_sec=age_sec,
+                    correlation_id=correlation_id,
+                    enqueue_id=None,
+                    level=logging.WARNING,
+                )
+                continue
+
+            if fallback_from and fallback_to and fallback_from != fallback_to:
+                logger.warning(
+                    "Workflow recovery fallback applied: zone_id=%s phase=%s fallback_from=%s fallback_to=%s reason=%s",
+                    zone_id,
+                    phase,
+                    fallback_from,
+                    fallback_to,
+                    reason_code,
+                )
+                try:
+                    await create_zone_event(
+                        zone_id,
+                        "WORKFLOW_RECOVERY_WORKFLOW_FALLBACK",
+                        {
+                            "workflow_phase": phase,
+                            "fallback_from": fallback_from,
+                            "fallback_to": fallback_to,
+                            "reason_code": reason_code,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to persist workflow fallback event during recovery: zone_id=%s error=%s",
+                        zone_id,
+                        exc,
+                        exc_info=True,
+                    )
+
+            continuation_payload = dict(payload)
+            continuation_payload["workflow"] = workflow
+            continuation_payload["workflow_stage"] = workflow
+            continuation_payload["workflow_phase"] = phase
+            continuation_payload.setdefault("payload_contract_version", "v2")
+            continuation_payload["recovery"] = {
+                "source": "automation_engine_startup_recovery",
+                "workflow_phase": phase,
+                "workflow_phase_source": phase_source,
+                "state_age_sec": age_sec,
+                "previous_scheduler_task_id": previous_task_id,
+                "reason_code": reason_code,
+            }
+
+            try:
+                enqueue_result = await enqueue_internal_scheduler_task(
+                    zone_id=zone_id,
+                    task_type="diagnostics",
+                    payload=continuation_payload,
+                    scheduled_for=now.isoformat(),
+                    source="automation-engine:workflow-state-recovery",
+                )
+                enqueue_id = str(enqueue_result.get("enqueue_id") or "").strip() or None
+                correlation_id = correlation_id or (str(enqueue_result.get("correlation_id") or "").strip() or None)
+                await _workflow_state_store.set(
+                    zone_id=zone_id,
+                    workflow_phase=phase,
+                    payload=continuation_payload,
+                    scheduler_task_id=enqueue_id or "",
+                )
+                await create_zone_event(
+                    zone_id,
+                    "WORKFLOW_RECOVERY_ENQUEUED",
+                    {
+                        "workflow_phase": phase,
+                        "workflow": workflow,
+                        "enqueue_id": enqueue_id,
+                        "correlation_id": correlation_id,
+                        "state_age_sec": age_sec,
+                    },
+                )
+                recovered += 1
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=workflow,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="enqueue_continuation",
+                    reason_code=reason_code,
+                    state_age_sec=age_sec,
+                    correlation_id=correlation_id,
+                    enqueue_id=enqueue_id,
+                )
+            except Exception as exc:
+                failed += 1
+                logger.error(
+                    "Failed to enqueue workflow continuation during startup recovery: zone_id=%s phase=%s error=%s",
+                    zone_id,
+                    phase,
+                    exc,
+                    exc_info=True,
+                )
+                _log_workflow_recovery_action(
+                    zone_id=zone_id,
+                    workflow_phase_source=phase_source,
+                    workflow_phase_normalized=phase,
+                    workflow_selected=workflow,
+                    scheduler_task_id_previous=previous_task_id,
+                    recovery_action="failed",
+                    reason_code="enqueue_failed",
+                    state_age_sec=age_sec,
+                    correlation_id=correlation_id,
+                    enqueue_id=enqueue_id,
+                    level=logging.ERROR,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                await _send_workflow_recovery_alert_safe(
+                    error=exc,
+                    code="infra_workflow_state_recovery_enqueue_failed",
+                    alert_type="Workflow State Recovery Enqueue Failed",
+                    zone_id=zone_id,
+                    details={
+                        "workflow_phase": phase,
+                        "workflow": workflow,
+                    },
+                )
+        except Exception as exc:
+            failed += 1
+            logger.error(
+                "Unexpected workflow recovery failure for zone row: zone_id=%s error=%s",
+                zone_id,
+                exc,
+                exc_info=True,
+            )
+            _log_workflow_recovery_action(
+                zone_id=zone_id,
+                workflow_phase_source=phase_source,
+                workflow_phase_normalized=phase,
+                workflow_selected=workflow,
+                scheduler_task_id_previous=previous_task_id,
+                recovery_action="failed",
+                reason_code="recovery_exception",
+                state_age_sec=age_sec,
+                correlation_id=correlation_id,
+                enqueue_id=enqueue_id,
+                level=logging.ERROR,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+            await _send_workflow_recovery_alert_safe(
+                error=exc,
+                code="infra_workflow_state_recovery_row_failed",
+                alert_type="Workflow State Recovery Row Failed",
+                zone_id=zone_id,
+                details={
+                    "workflow_phase": phase,
+                    "scheduler_task_id_previous": previous_task_id,
+                },
+            )
+
+    return {
+        "active": len(active_states),
+        "recovered": recovered,
+        "stale_stopped": stale_stopped,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace_id: Optional[str]) -> None:
@@ -1710,7 +2195,7 @@ async def _validate_scheduler_dispatch_lease(request: Request) -> None:
     if not scheduler_id or not lease_id:
         raise HTTPException(status_code=403, detail="scheduler_bootstrap_required")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     async with _scheduler_bootstrap_lock:
         _cleanup_bootstrap_leases_locked(now)
         lease = _scheduler_bootstrap_leases.get(scheduler_id)
@@ -1726,7 +2211,7 @@ async def _validate_scheduler_dispatch_lease(request: Request) -> None:
 
 @app.post("/scheduler/bootstrap")
 async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     bootstrap_status, readiness_reason = await _scheduler_bootstrap_state()
     if not _is_scheduler_protocol_supported(req.protocol_version):
         bootstrap_status = "deny"
@@ -1778,7 +2263,7 @@ async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
 
 @app.post("/scheduler/bootstrap/heartbeat")
 async def scheduler_bootstrap_heartbeat(req: SchedulerBootstrapHeartbeatRequest = Body(...)):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     async with _scheduler_bootstrap_lock:
         _cleanup_bootstrap_leases_locked(now)
         lease = _scheduler_bootstrap_leases.get(req.scheduler_id)
@@ -1890,7 +2375,7 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
     if scheduled_for_dt is not None and due_at_dt < scheduled_for_dt:
         raise HTTPException(status_code=422, detail="due_at_must_be_gte_scheduled_for")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     terminal_status: Optional[str] = None
     terminal_result: Optional[Dict[str, Any]] = None
     if now > expires_at_dt:
@@ -1988,7 +2473,7 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
 async def scheduler_task_status(task_id: str):
     """Статус абстрактной задачи scheduler."""
     async with _scheduler_tasks_lock:
-        await _cleanup_scheduler_tasks_locked(datetime.utcnow())
+        await _cleanup_scheduler_tasks_locked(datetime.now(timezone.utc).replace(tzinfo=None))
         task = _scheduler_tasks.get(task_id)
     if task is None:
         persisted = await _load_scheduler_task_snapshot(task_id)
@@ -2007,7 +2492,7 @@ async def _build_zone_automation_state_payload(zone_id: int) -> Dict[str, Any]:
     payload = task.get("payload") if isinstance(task, dict) and isinstance(task.get("payload"), dict) else {}
     state = _derive_automation_state(task)
     state_started_at = _resolve_state_started_at(task, state)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     elapsed_sec = int((now - state_started_at).total_seconds()) if state_started_at is not None else 0
     progress_percent = _estimate_progress_percent(task, state)
 
@@ -2055,6 +2540,16 @@ async def run_scheduler_task_recovery_on_startup() -> None:
             "Recovered in-flight scheduler tasks after restart: recovered=%s scanned=%s",
             summary["recovered"],
             summary["scanned"],
+        )
+    workflow_summary = await _recover_zone_workflow_states()
+    if workflow_summary["active"] > 0:
+        logger.warning(
+            "Recovered workflow states after restart: active=%s recovered=%s stale_stopped=%s skipped=%s failed=%s",
+            workflow_summary["active"],
+            workflow_summary["recovered"],
+            workflow_summary["stale_stopped"],
+            workflow_summary["skipped"],
+            workflow_summary["failed"],
         )
 
 

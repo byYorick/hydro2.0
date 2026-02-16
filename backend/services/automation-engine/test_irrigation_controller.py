@@ -63,6 +63,63 @@ async def test_check_and_control_irrigation_interval_reached():
 
 
 @pytest.mark.asyncio
+async def test_check_and_control_irrigation_skips_when_workflow_phase_not_allowed():
+    targets = {
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
+    }
+    telemetry = {}
+    actuators = {
+        "irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}
+    }
+    last_irrigation_time = utcnow() - timedelta(hours=2)
+
+    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
+         patch("irrigation_controller.check_water_level") as mock_water_level:
+        mock_last_time.return_value = last_irrigation_time
+        mock_water_level.return_value = (True, 0.5)
+
+        cmd = await check_and_control_irrigation(
+            1,
+            targets,
+            telemetry,
+            {},
+            actuators,
+            workflow_phase="tank_filling",
+        )
+
+    assert cmd is None
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_irrigation_runs_when_workflow_phase_ready():
+    targets = {
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
+    }
+    telemetry = {}
+    actuators = {
+        "irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}
+    }
+    last_irrigation_time = utcnow() - timedelta(hours=2)
+
+    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
+         patch("irrigation_controller.check_water_level") as mock_water_level:
+        mock_last_time.return_value = last_irrigation_time
+        mock_water_level.return_value = (True, 0.5)
+
+        cmd = await check_and_control_irrigation(
+            1,
+            targets,
+            telemetry,
+            {},
+            actuators,
+            workflow_phase="ready",
+        )
+
+    assert cmd is not None
+    assert cmd["event_type"] == "IRRIGATION_STARTED"
+
+
+@pytest.mark.asyncio
 async def test_check_and_control_irrigation_interval_not_reached():
     """Test irrigation when interval is not reached."""
     targets = {
@@ -81,6 +138,57 @@ async def test_check_and_control_irrigation_interval_not_reached():
         
         # Не должен возвращать команду
         assert cmd is None
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_irrigation_bootstrap_first_run_without_history():
+    """Первый автополив должен запускаться без исторического IRRIGATION_STARTED."""
+    targets = {
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
+    }
+    telemetry = {}
+    actuators = {
+        "irrigation_pump": {"node_uid": "nd-irrig-bootstrap", "channel": "pump_irrigation"}
+    }
+
+    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
+         patch("irrigation_controller.check_water_level") as mock_water_level:
+        mock_last_time.return_value = None
+        mock_water_level.return_value = (True, 0.55)
+
+        cmd = await check_and_control_irrigation(1, targets, telemetry, {}, actuators)
+
+    assert cmd is not None
+    assert cmd["event_type"] == "IRRIGATION_STARTED"
+    assert cmd["event_details"]["bootstrap_first_irrigation"] is True
+    assert cmd["event_details"]["last_irrigation_time"] is None
+    assert cmd["event_details"]["elapsed_sec"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_irrigation_blocked_by_workflow_phase():
+    targets = {
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
+    }
+    telemetry = {}
+    actuators = {
+        "irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}
+    }
+
+    with patch("irrigation_controller.get_last_irrigation_time") as mock_last_time, \
+         patch("irrigation_controller.check_water_level") as mock_water_level:
+        mock_last_time.return_value = utcnow() - timedelta(hours=2)
+        mock_water_level.return_value = (True, 0.6)
+        cmd = await check_and_control_irrigation(
+            1,
+            targets,
+            telemetry,
+            {},
+            actuators,
+            workflow_phase="tank_filling",
+        )
+
+    assert cmd is None
 
 
 @pytest.mark.asyncio

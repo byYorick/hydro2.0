@@ -20,6 +20,41 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ---
 
+## 0. Актуализация 2026-02-16 (Automation-Engine P3/P4/P5)
+
+Зафиксированные изменения в `automation-engine`:
+
+1. **Event integrity для controller actions**
+   - action-события (`IRRIGATION_STARTED`, `RECIRCULATION_CYCLE`, и др.) создаются только после подтверждённого publish в `CommandBus`;
+   - для негативных веток используются `*_COMMAND_REJECTED` и `*_COMMAND_UNCONFIRMED`;
+   - в `event_details` прокидывается `correlation_id` (из `cmd_id`) для склейки с `command_audit`.
+
+2. **Persistence workflow phase**
+   - добавлен DB-store `infrastructure/workflow_state_store.py`;
+   - состояние по зоне хранится в таблице `zone_workflow_state` (phase/payload/scheduler_task_id/updated_at);
+   - `SchedulerTaskExecutor` синхронизирует `workflow_phase` при переходах workflow-stage.
+
+3. **Startup recovery in-flight workflow**
+   - на старте API выполняется scanner `zone_workflow_state`;
+   - stale записи переводятся в `idle` с событием `WORKFLOW_RECOVERY_STALE_STOPPED`;
+   - актуальные записи продолжаются через enqueue diagnostics с событием `WORKFLOW_RECOVERY_ENQUEUED`.
+
+4. **Safety defaults**
+   - `AE_ENFORCE_NODE_ZONE_ASSIGNMENT=1` и `AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY=1` включены по умолчанию в коде и `docker-compose.dev*`.
+
+5. **Decomposition step (P5.1)**
+   - публичный `scheduler_task_executor.py` оставлен как тонкий compatibility-coordinator без `exec(...)`;
+   - основная реализация перемещена в `application/scheduler_executor_impl.py`;
+   - выделены модульные границы:
+     - `application/workflow_router.py`
+     - `application/workflow_validator.py`
+     - `application/command_dispatch.py`
+     - `application/workflow_state_sync.py`
+     - `domain/workflows/{two_tank,three_tank,cycle_start}.py`
+     - `infrastructure/observability.py`
+
+---
+
 ## 1. Общая архитектура (обновлено)
 
 Python-сервисы образуют промежуточный слой между:
@@ -275,7 +310,9 @@ history-logger/
 - `POST /scheduler/bootstrap/heartbeat` — heartbeat от scheduler
 - `GET /scheduler/task/{task_id}` — получение статуса задачи
 - `POST /scheduler/internal/enqueue` — внутренний endpoint для постановки задач в очередь
-- `GET /health` — health check
+- `GET /zones/{zone_id}/automation-state` — агрегированный runtime-state workflow зоны
+- `GET /health/live` — liveness probe
+- `GET /health/ready` — readiness probe (CommandBus + DB + lease-store)
 
 **Зависимости:**
 - history-logger REST API (для публикации команд)
@@ -300,6 +337,11 @@ automation-engine/
    - Сравнение с targets из рецепта
    - Публикация команд корректировки при отклонении
 4. Повтор каждые 15 секунд
+
+**Дополнительно (P3/P4):**
+- action-события контроллеров фиксируются только после подтверждённого publish;
+- `workflow_phase` сохраняется в `zone_workflow_state` и восстанавливается после рестарта;
+- startup recovery продолжает in-flight workflow через self-enqueue diagnostics.
 
 ---
 

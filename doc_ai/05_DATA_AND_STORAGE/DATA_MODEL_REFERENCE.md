@@ -654,7 +654,39 @@ updated_at TIMESTAMP
 PK (zone_id)
 ```
 
-## 6.6. zone_automation_logic_profiles
+## 6.6. zone_workflow_state
+
+```
+zone_id FK → zones
+workflow_phase VARCHAR(50) NOT NULL DEFAULT 'idle'
+started_at TIMESTAMPTZ NULL
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+scheduler_task_id VARCHAR(100) NULL
+PK (zone_id)
+```
+
+Индексы:
+```
+zone_workflow_state_workflow_phase_idx (workflow_phase)
+zone_workflow_state_updated_at_idx (updated_at)
+zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
+```
+
+Назначение:
+- персистентное хранение доменной `workflow_phase` для зоны;
+- восстановление in-flight workflow после рестарта `automation-engine`;
+- связь continuation payload с последним scheduler-task (`scheduler_task_id`).
+
+Допустимые значения `workflow_phase`:
+- `idle`
+- `tank_filling`
+- `tank_recirc`
+- `ready`
+- `irrigating`
+- `irrig_recirc`
+
+## 6.7. zone_automation_logic_profiles
 
 ```
 id PK
@@ -984,6 +1016,7 @@ zone 1—N alerts
 zone 1—N zone_events
 zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
 zone 1—N commands
+zone 1—1 zone_workflow_state
 zone 1—N zone_simulations
 zone_simulation 1—N simulation_events
 zone_simulation 1—1 simulation_reports

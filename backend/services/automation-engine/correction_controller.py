@@ -8,6 +8,7 @@ from enum import Enum
 from datetime import datetime, timedelta, timezone
 import time
 import logging
+from uuid import uuid4
 from common.db import create_zone_event, create_ai_log, fetch
 from common.utils.time import utcnow
 from correction_cooldown import should_apply_correction, record_correction
@@ -19,6 +20,7 @@ from common.alerts import create_alert, AlertSource, AlertCode
 from common.infra_alerts import send_infra_alert
 from decision_context import DecisionContext
 from services.targets_accessor import get_ph_target, get_ec_target, get_nutrition_components
+from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,8 @@ class CorrectionController:
         telemetry_timestamps: Optional[Dict[str, Any]] = None,
         nodes: Dict[str, Dict[str, Any]] = None,
         water_level_ok: bool = True,
-        actuators: Optional[Dict[str, Dict[str, Any]]] = None
+        actuators: Optional[Dict[str, Dict[str, Any]]] = None,
+        allowed_ec_components: Optional[List[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Проверка и корректировка параметра (pH или EC).
@@ -81,7 +84,34 @@ class CorrectionController:
             target, target_min, target_max = get_ec_target(targets, zone_id=zone_id)
 
         if target is None or current is None:
+            logger.debug(
+                "Zone %s: %s correction skipped due to missing target/current",
+                zone_id,
+                self.metric_name,
+                extra={
+                    "zone_id": zone_id,
+                    "metric": self.metric_name,
+                    "current": current,
+                    "target": target,
+                },
+            )
             return None
+
+        logger.debug(
+            "Zone %s: evaluating %s correction",
+            zone_id,
+            self.metric_name,
+            extra={
+                "zone_id": zone_id,
+                "metric": self.metric_name,
+                "current": current,
+                "target": target,
+                "target_min": target_min,
+                "target_max": target_max,
+                "water_level_ok": water_level_ok,
+                "allowed_ec_components": allowed_ec_components,
+            },
+        )
         
         # КРИТИЧЕСКАЯ ПРОВЕРКА: проверяем свежесть данных телеметрии
         # Предотвращает дозирование на основе устаревших или недоступных данных (fail-closed)
@@ -205,6 +235,18 @@ class CorrectionController:
 
         if target_min is not None and target_max is not None:
             if target_min <= current_val <= target_max:
+                logger.debug(
+                    "Zone %s: %s correction skipped - value inside target range",
+                    zone_id,
+                    self.metric_name,
+                    extra={
+                        "zone_id": zone_id,
+                        "metric": self.metric_name,
+                        "current": current_val,
+                        "target_min": target_min,
+                        "target_max": target_max,
+                    },
+                )
                 return None
         
         diff = current_val - target_val
@@ -214,6 +256,17 @@ class CorrectionController:
         
         # Проверяем, превышает ли отклонение порог
         if abs(diff) <= pid.config.dead_zone:
+            logger.debug(
+                "Zone %s: %s correction skipped - diff within dead zone",
+                zone_id,
+                self.metric_name,
+                extra={
+                    "zone_id": zone_id,
+                    "metric": self.metric_name,
+                    "diff": diff,
+                    "dead_zone": pid.config.dead_zone,
+                },
+            )
             return None
         
         # Проверяем cooldown и анализ тренда
@@ -312,12 +365,20 @@ class CorrectionController:
                 total_ml=amount,
                 current_ec=current_val,
                 target_ec=target_val,
+                allowed_ec_components=allowed_ec_components,
             )
             if not batch_commands:
                 logger.warning(
                     "Zone %s: Unable to build EC component batch; skipping dosing",
                     zone_id,
-                    extra={"zone_id": zone_id},
+                    extra={
+                        "zone_id": zone_id,
+                        "allowed_ec_components": allowed_ec_components,
+                        "target_ec": target_val,
+                        "current_ec": current_val,
+                        "total_ml": amount,
+                        "available_actuator_roles": sorted(list((actuators or {}).keys())),
+                    },
                 )
                 await create_zone_event(
                     zone_id,
@@ -394,6 +455,12 @@ class CorrectionController:
         diff = command['event_details']['diff']
         correction_type = command['event_details']['correction_type']
         reason = command.get('reason', '')
+        correlation_id = str(
+            command.get("correlation_id")
+            or f"corr:correction:{zone_id}:{correction_type_str}:{uuid4().hex[:12]}"
+        )
+        command["correlation_id"] = correlation_id
+        published_cmd_ids: List[str] = []
         
         # Подготавливаем контекст для аудита
         context = DecisionContext(
@@ -413,6 +480,7 @@ class CorrectionController:
         if isinstance(batch_commands, list) and batch_commands:
             dose_delay_sec, ec_stop_tolerance = self._resolve_batch_dose_control(command)
             batch_aborted = False
+            successful_components: List[str] = []
             for idx, batch_cmd in enumerate(batch_commands):
                 published = await self._publish_controller_command_with_retry(
                     zone_id=zone_id,
@@ -423,18 +491,45 @@ class CorrectionController:
                 )
                 if not published:
                     batch_aborted = True
+                    failed_component = str(batch_cmd.get('component') or "")
+                    remaining_components = len(batch_commands) - idx - 1
+                    compensation_result = await self._trigger_ec_partial_batch_compensation(
+                        zone_id=zone_id,
+                        command=command,
+                        successful_components=successful_components,
+                        failed_component=failed_component,
+                    )
                     await create_zone_event(
                         zone_id,
                         'EC_COMPONENT_BATCH_ABORTED',
                         {
-                            'failed_component': batch_cmd.get('component'),
+                            'failed_component': failed_component,
                             'failed_channel': batch_cmd.get('channel'),
                             'failed_node_uid': batch_cmd.get('node_uid'),
-                            'remaining_components': len(batch_commands) - idx - 1,
+                            'remaining_components': remaining_components,
                             'reason': 'command_unconfirmed',
                         }
                     )
+                    await create_zone_event(
+                        zone_id,
+                        'EC_BATCH_PARTIAL_FAILURE',
+                        {
+                            'successful_components': successful_components,
+                            'failed_component': failed_component,
+                            'failed_channel': batch_cmd.get('channel'),
+                            'failed_node_uid': batch_cmd.get('node_uid'),
+                            'remaining_components': remaining_components,
+                            'status': 'degraded',
+                            'target_ec': target_val,
+                            'current_ec': current_val,
+                            'compensation': compensation_result,
+                        }
+                    )
                     break
+                cmd_id = str(batch_cmd.get("cmd_id") or "").strip()
+                if cmd_id:
+                    published_cmd_ids.append(cmd_id)
+                successful_components.append(str(batch_cmd.get("component") or ""))
                 is_last = idx >= len(batch_commands) - 1
                 if is_last or self.correction_type != CorrectionType.EC:
                     continue
@@ -493,6 +588,9 @@ class CorrectionController:
                     }
                 )
                 return
+            cmd_id = str(command.get("cmd_id") or "").strip()
+            if cmd_id:
+                published_cmd_ids.append(cmd_id)
         
         # Записываем информацию о корректировке
         await record_correction(zone_id, correction_type_str, {
@@ -502,12 +600,29 @@ class CorrectionController:
             "diff": diff,
             "reason": reason
         })
+
+        correction_event_details = dict(command.get("event_details") or {})
+        correction_event_details["correlation_id"] = correlation_id
+        correction_event_details["cmd_ids"] = published_cmd_ids
+        if published_cmd_ids:
+            correction_event_details["cmd_id"] = published_cmd_ids[-1]
+        logger.info(
+            "Zone %s: correction action event payload enriched with correlation/cmd ids",
+            zone_id,
+            extra={
+                "zone_id": zone_id,
+                "correction_type": correction_type_str,
+                "correlation_id": correlation_id,
+                "cmd_ids": published_cmd_ids,
+                "event_type": command.get("event_type"),
+            },
+        )
         
         # Создаем основное событие корректировки
         await create_zone_event(
             zone_id,
             command['event_type'],
-            command['event_details']
+            correction_event_details
         )
         
         # Создаем событие DOSING для совместимости
@@ -519,7 +634,10 @@ class CorrectionController:
                 'correction_type': correction_type,
                 f'current_{correction_type_str}': current_val,
                 f'target_{correction_type_str}': target_val,
-                'diff': diff
+                'diff': diff,
+                'correlation_id': correlation_id,
+                'cmd_ids': published_cmd_ids,
+                'cmd_id': published_cmd_ids[-1] if published_cmd_ids else None,
             }
         )
         
@@ -668,6 +786,68 @@ class CorrectionController:
 
         return False
 
+    async def _trigger_ec_partial_batch_compensation(
+        self,
+        *,
+        zone_id: int,
+        command: Dict[str, Any],
+        successful_components: List[str],
+        failed_component: str,
+    ) -> Dict[str, Any]:
+        payload = {
+            "workflow": "irrigation_recovery",
+            "payload_contract_version": "v2",
+            "source_reason": "ec_batch_partial_failure",
+            "ec_batch_partial_failure": {
+                "successful_components": successful_components,
+                "failed_component": failed_component,
+            },
+        }
+
+        try:
+            enqueue_result = await enqueue_internal_scheduler_task(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                payload=payload,
+                scheduled_for=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                source="automation-engine:ec-batch-partial-failure",
+            )
+            return {
+                "status": "degraded_recovery_enqueued",
+                "enqueue_id": enqueue_result.get("enqueue_id"),
+                "task_type": enqueue_result.get("task_type"),
+                "correlation_id": enqueue_result.get("correlation_id"),
+            }
+        except Exception as exc:
+            logger.warning(
+                "Zone %s: failed to enqueue EC partial batch compensation task: %s",
+                zone_id,
+                exc,
+                extra={"zone_id": zone_id},
+                exc_info=True,
+            )
+            await send_infra_alert(
+                code="infra_ec_batch_partial_failure_compensation_enqueue_failed",
+                alert_type="EC Batch Partial Failure Compensation Enqueue Failed",
+                message="Не удалось поставить recovery-задачу после partial EC batch failure",
+                severity="error",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="correction_controller",
+                error_type=type(exc).__name__,
+                details={
+                    "failed_component": failed_component,
+                    "successful_components": successful_components,
+                    "error": str(exc),
+                    "command_channel": command.get("channel"),
+                    "command_node_uid": command.get("node_uid"),
+                },
+            )
+            return {
+                "status": "degraded_recovery_enqueue_failed",
+                "error": str(exc),
+            }
+
     async def _wait_command_done(self, *, tracker, cmd_id: str, timeout_sec: float) -> Optional[bool]:
         try:
             return await tracker.wait_for_command_done(
@@ -807,11 +987,51 @@ class CorrectionController:
         total_ml: float,
         current_ec: float,
         target_ec: float,
+        allowed_ec_components: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         if not actuators or total_ml <= 0:
+            logger.debug(
+                "EC component batch skipped before build",
+                extra={
+                    "reason": "missing_actuators_or_zero_total_ml",
+                    "has_actuators": bool(actuators),
+                    "total_ml": total_ml,
+                    "allowed_ec_components": allowed_ec_components,
+                },
+            )
             return []
 
-        required_components = ["npk", "calcium", "magnesium", "micro"]
+        all_components = ["npk", "calcium", "magnesium", "micro"]
+        required_components = all_components
+        if allowed_ec_components is not None:
+            requested = {
+                str(component).strip().lower()
+                for component in allowed_ec_components
+                if str(component).strip()
+            }
+            required_components = [component for component in all_components if component in requested]
+            if not required_components:
+                logger.warning(
+                    "EC component batch skipped: policy filtered out all components",
+                    extra={
+                        "allowed_ec_components": allowed_ec_components,
+                        "requested_components": sorted(list(requested)),
+                        "all_components": all_components,
+                    },
+                )
+                return []
+
+        logger.debug(
+            "EC component batch policy resolved",
+            extra={
+                "allowed_ec_components": allowed_ec_components,
+                "required_components": required_components,
+                "total_ml": total_ml,
+                "current_ec": current_ec,
+                "target_ec": target_ec,
+            },
+        )
+
         role_map = {
             "npk": "ec_npk_pump",
             "calcium": "ec_calcium_pump",
@@ -824,6 +1044,14 @@ class CorrectionController:
             if role_map[component] not in actuators
         ]
         if missing_roles:
+            logger.warning(
+                "EC component batch skipped: required actuator roles missing",
+                extra={
+                    "required_components": required_components,
+                    "missing_roles": missing_roles,
+                    "available_roles": sorted(list((actuators or {}).keys())),
+                },
+            )
             return []
 
         component_actuators: Dict[str, Dict[str, Any]] = {
@@ -879,11 +1107,25 @@ class CorrectionController:
         nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
         components_cfg = get_nutrition_components(targets)
         if any(component not in components_cfg for component in required_components):
+            logger.warning(
+                "EC component batch skipped: nutrition config missing for required components",
+                extra={
+                    "required_components": required_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
+                },
+            )
             return []
         components_order = required_components
 
         ratios = self._resolve_ec_component_ratios(targets, components_order)
         if not ratios:
+            logger.warning(
+                "EC component batch skipped: invalid or empty component ratios",
+                extra={
+                    "components_order": components_order,
+                    "nutrition_mode_raw": nutrition.get("mode"),
+                },
+            )
             return []
 
         mode = self._resolve_nutrition_mode(nutrition)
@@ -907,6 +1149,10 @@ class CorrectionController:
 
         if mode == "dose_ml_l_only":
             if solution_volume_l is None or solution_volume_l <= 0:
+                logger.warning(
+                    "EC component batch skipped: dose_ml_l_only requires positive solution volume",
+                    extra={"solution_volume_l": solution_volume_l},
+                )
                 return []
             for component in components_order:
                 dose_ml_l = components_cfg.get(component, {}).get("dose_ml_per_l")
@@ -915,6 +1161,10 @@ class CorrectionController:
                 except (TypeError, ValueError):
                     dose_value = 0.0
                 if dose_value <= 0:
+                    logger.warning(
+                        "EC component batch skipped: invalid dose_ml_per_l for component",
+                        extra={"component": component, "dose_ml_per_l": dose_ml_l},
+                    )
                     return []
                 component_ml_map[component] = round(dose_value * solution_volume_l, 3)
 
@@ -922,6 +1172,15 @@ class CorrectionController:
             delta_ec = max(0.0, target_ec - current_ec)
             has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
             if delta_ec <= 0 or solution_volume_l is None or solution_volume_l <= 0 or not has_all_k:
+                logger.warning(
+                    "EC component batch skipped: delta_ec_by_k prerequisites not met",
+                    extra={
+                        "delta_ec": delta_ec,
+                        "solution_volume_l": solution_volume_l,
+                        "has_all_k": has_all_k,
+                        "k_values": k_values,
+                    },
+                )
                 return []
             for component in components_order:
                 ratio_pct = float(ratios.get(component, 0.0))
@@ -939,6 +1198,10 @@ class CorrectionController:
                 }
                 weighted_sum = sum(weighted.values())
                 if weighted_sum <= 0:
+                    logger.warning(
+                        "EC component batch skipped: weighted_sum <= 0 in ratio_ec_pid mode",
+                        extra={"weighted": weighted, "k_values": k_values, "ratios": ratios},
+                    )
                     return []
                 for component in components_order:
                     component_ml_map[component] = round(max(0.0, total_ml * (weighted[component] / weighted_sum)), 3)
@@ -954,6 +1217,15 @@ class CorrectionController:
                     component_ml_map[component] = component_ml
 
         if not component_ml_map:
+            logger.warning(
+                "EC component batch skipped: component_ml_map is empty after mode calculation",
+                extra={
+                    "mode": mode,
+                    "components_order": components_order,
+                    "total_ml": total_ml,
+                    "ratios": ratios,
+                },
+            )
             return []
 
         for component in components_order:
@@ -985,6 +1257,16 @@ class CorrectionController:
                 }
             )
 
+        logger.debug(
+            "EC component batch built",
+            extra={
+                "mode": mode,
+                "components_order": components_order,
+                "commands_count": len(commands),
+                "total_component_ml": round(sum(item["ml"] for item in commands), 3),
+                "component_ml_map": component_ml_map,
+            },
+        )
         return commands
 
     def _build_actuator_identity(self, actuator: Dict[str, Any]) -> str:

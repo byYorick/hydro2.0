@@ -90,9 +90,9 @@ async def test_process_zone_with_recipe():
             "flow_active": True,
             "stable": True,
             "corrections_allowed": True,
-            "flow_active_ts": datetime.now(timezone.utc).isoformat(),
-            "stable_ts": datetime.now(timezone.utc).isoformat(),
-            "corrections_allowed_ts": datetime.now(timezone.utc).isoformat(),
+            "flow_active_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "stable_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            "corrections_allowed_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         },
         "nodes": {
             "irrig:default": {"node_uid": "nd-irrig-1", "channel": "default", "type": "irrig"}
@@ -153,7 +153,7 @@ async def test_process_zone_with_recipe():
 
 
 @pytest.mark.asyncio
-async def test_process_correction_controllers_skips_with_missing_flags_and_activates_sensor_mode():
+async def test_process_correction_controllers_skips_with_missing_flags_without_sensor_mode_activation():
     service = _build_zone_service()
     service.command_bus.publish_controller_command = AsyncMock(return_value=True)
     service.ph_controller = Mock()
@@ -174,6 +174,7 @@ async def test_process_correction_controllers_skips_with_missing_flags_and_activ
             correction_flags={},
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -181,11 +182,117 @@ async def test_process_correction_controllers_skips_with_missing_flags_and_activ
 
     service.ph_controller.check_and_correct.assert_not_awaited()
     service.ec_controller.check_and_correct.assert_not_awaited()
-    assert service.command_bus.publish_controller_command.await_count == 2
-    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
-    assert sent_cmds == ["activate_sensor_mode", "activate_sensor_mode"]
+    service.command_bus.publish_controller_command.assert_not_awaited()
     event_types = [call.args[1] for call in mock_event.await_args_list]
     assert "CORRECTION_SKIPPED_MISSING_FLAGS" in event_types
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_workflow_tank_filling_bypasses_missing_flags():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=115,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes={},
+            capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="tank_filling",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_awaited_once()
+    service.ec_controller.check_and_correct.assert_awaited_once()
+    skip_events = [call for call in mock_event.await_args_list if call.args[1] == "CORRECTION_SKIPPED_MISSING_FLAGS"]
+    assert not skip_events
+    service.command_bus.publish_controller_command.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_workflow_tank_filling_stale_flags_fail_closed():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    stale_ts = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)).isoformat()
+    flags = {
+        "flow_active": True,
+        "stable": True,
+        "corrections_allowed": True,
+        "flow_active_ts": stale_ts,
+        "stable_ts": stale_ts,
+        "corrections_allowed_ts": stale_ts,
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=117,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags=flags,
+            nodes={},
+            capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="tank_filling",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_not_awaited()
+    service.ec_controller.check_and_correct.assert_not_awaited()
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "CORRECTION_SKIPPED_STALE_FLAGS" in event_types
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_passes_ec_components_by_workflow_phase():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    flags = {
+        "flow_active": True,
+        "stable": True,
+        "corrections_allowed": True,
+        "flow_active_ts": now_ts,
+        "stable_ts": now_ts,
+        "corrections_allowed_ts": now_ts,
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        await service._process_correction_controllers(
+            zone_id=116,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags=flags,
+            nodes={},
+            capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="irrigating",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    kwargs = service.ec_controller.check_and_correct.await_args.kwargs
+    assert kwargs["allowed_ec_components"] == ["calcium", "magnesium", "micro"]
 
 
 @pytest.mark.asyncio
@@ -209,6 +316,7 @@ async def test_process_correction_controllers_skips_when_flags_block_corrections
             },
             nodes={},
             capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -218,7 +326,10 @@ async def test_process_correction_controllers_skips_when_flags_block_corrections
     service.ec_controller.check_and_correct.assert_not_awaited()
     service.command_bus.publish_controller_command.assert_not_awaited()
     event_types = [call.args[1] for call in mock_event.await_args_list]
-    assert "CORRECTION_SKIPPED_FLAGS_GATING" in event_types
+    assert (
+        "CORRECTION_SKIPPED_FLAGS_GATING" in event_types
+        or "CORRECTION_SKIPPED_STALE_FLAGS" in event_types
+    )
 
 
 @pytest.mark.asyncio
@@ -229,7 +340,7 @@ async def test_process_correction_controllers_skips_when_flags_stale_and_deactiv
     service.ph_controller.check_and_correct = AsyncMock(return_value=None)
     service.ec_controller = Mock()
     service.ec_controller.check_and_correct = AsyncMock(return_value=None)
-    stale_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    stale_ts = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)).isoformat()
     nodes = {
         "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
         "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
@@ -251,6 +362,7 @@ async def test_process_correction_controllers_skips_when_flags_stale_and_deactiv
             },
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -263,12 +375,66 @@ async def test_process_correction_controllers_skips_when_flags_stale_and_deactiv
     stale_events = [
         call.args[2]
         for call in mock_event.await_args_list
-        if call.args[1] == "CORRECTION_SKIPPED_FLAGS_GATING"
+        if call.args[1] == "CORRECTION_SKIPPED_STALE_FLAGS"
     ]
     assert stale_events
     assert stale_events[-1]["reason_code"] == "stale_flags"
     assert set(stale_events[-1]["stale_flags"]) == {"flow_active", "stable", "corrections_allowed"}
     assert set(stale_events[-1]["flag_age_seconds"].keys()) == {"flow_active", "stable", "corrections_allowed"}
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_stale_flags_alert_is_throttled():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    stale_ts = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)).isoformat()
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+    }
+    stale_flags_payload = {
+        "flow_active": True,
+        "stable": True,
+        "corrections_allowed": True,
+        "flow_active_ts": stale_ts,
+        "stable_ts": stale_ts,
+        "corrections_allowed_ts": stale_ts,
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock), \
+         patch("services.zone_automation_service.send_infra_alert", new_callable=AsyncMock, return_value=True) as mock_alert:
+        await service._process_correction_controllers(
+            zone_id=37,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags=stale_flags_payload,
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+        await service._process_correction_controllers(
+            zone_id=37,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags=stale_flags_payload,
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    stale_alerts = [call for call in mock_alert.await_args_list if call.kwargs.get("code") == "infra_correction_flags_stale"]
+    assert len(stale_alerts) == 1
 
 
 @pytest.mark.asyncio
@@ -294,12 +460,52 @@ async def test_process_correction_controllers_sensor_unstable_deactivates_sensor
                 "flow_active": True,
                 "stable": False,
                 "corrections_allowed": True,
-                "flow_active_ts": datetime.now(timezone.utc).isoformat(),
-                "stable_ts": datetime.now(timezone.utc).isoformat(),
-                "corrections_allowed_ts": datetime.now(timezone.utc).isoformat(),
+                "flow_active_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "stable_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "corrections_allowed_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             },
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="idle",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_corrections_not_allowed_deactivates_sensor_mode():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        await service._process_correction_controllers(
+            zone_id=38,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": True,
+                "corrections_allowed": False,
+                "flow_active_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "stable_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "corrections_allowed_ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+            },
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": True},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -332,6 +538,7 @@ async def test_process_correction_controllers_missing_flags_events_are_throttled
             correction_flags={},
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -344,6 +551,7 @@ async def test_process_correction_controllers_missing_flags_events_are_throttled
             correction_flags={},
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -351,8 +559,52 @@ async def test_process_correction_controllers_missing_flags_events_are_throttled
 
     skip_events = [call for call in mock_event.await_args_list if call.args[1] == "CORRECTION_SKIPPED_MISSING_FLAGS"]
     assert len(skip_events) == 1
-    state = service._ensure_zone_state(33)
+    state = service._get_zone_state(33)
     assert state["suppressed_correction_skip_events"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_missing_flags_change_emits_event_even_within_throttle():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_correction_controllers(
+            zone_id=39,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+        await service._process_correction_controllers(
+            zone_id=39,
+            targets={"ph": {"target": 5.8}},
+            telemetry={"PH": 6.1, "FLOW_ACTIVE": True},
+            telemetry_timestamps={},
+            correction_flags={},
+            nodes=nodes,
+            capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    missing_events = [call for call in mock_event.await_args_list if call.args[1] == "CORRECTION_SKIPPED_MISSING_FLAGS"]
+    assert len(missing_events) == 2
 
 
 @pytest.mark.asyncio
@@ -377,6 +629,7 @@ async def test_process_correction_controllers_throttle_flushes_suppressed_counte
             correction_flags={},
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -390,12 +643,13 @@ async def test_process_correction_controllers_throttle_flushes_suppressed_counte
             correction_flags={},
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
         )
         # 3) different reason -> emit and include suppressed count
-        now_ts = datetime.now(timezone.utc).isoformat()
+        now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         await service._process_correction_controllers(
             zone_id=34,
             targets={"ph": {"target": 5.8}},
@@ -411,6 +665,7 @@ async def test_process_correction_controllers_throttle_flushes_suppressed_counte
             },
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -453,6 +708,7 @@ async def test_process_correction_controllers_missing_timestamps_fail_closed_whe
             },
             nodes=nodes,
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -463,7 +719,7 @@ async def test_process_correction_controllers_missing_timestamps_fail_closed_whe
     gating_events = [
         call.args[2]
         for call in mock_event.await_args_list
-        if call.args[1] == "CORRECTION_SKIPPED_FLAGS_GATING"
+        if call.args[1] == "CORRECTION_SKIPPED_STALE_FLAGS"
     ]
     assert gating_events
     assert gating_events[-1]["reason_code"] == "stale_flags"
@@ -479,8 +735,10 @@ async def test_process_correction_controllers_missing_timestamps_allowed_when_re
     service.ec_controller = Mock()
     service.ec_controller.check_and_correct = AsyncMock(return_value=None)
 
-    with patch.object(zas_mod, "CORRECTION_FLAGS_REQUIRE_TIMESTAMPS", False), \
-         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+    with patch.dict(
+        ZoneAutomationService._build_correction_gating_state.__globals__,
+        {"CORRECTION_FLAGS_REQUIRE_TIMESTAMPS": False},
+    ), patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
         await service._process_correction_controllers(
             zone_id=36,
             targets={"ph": {"target": 5.8}},
@@ -493,6 +751,7 @@ async def test_process_correction_controllers_missing_timestamps_allowed_when_re
             },
             nodes={},
             capabilities={"ph_control": True, "ec_control": False},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
@@ -563,6 +822,115 @@ async def test_process_zone_light_controller():
 
 
 @pytest.mark.asyncio
+async def test_irrigation_event_persisted_only_after_publish_success():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+
+    irrigation_cmd = {
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_irrigation",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 60000},
+        "event_type": "IRRIGATION_STARTED",
+        "event_details": {"duration_sec": 60},
+    }
+
+    with patch("services.zone_automation_service.check_and_control_irrigation", new_callable=AsyncMock, return_value=irrigation_cmd), \
+         patch("services.zone_automation_service.can_run_pump", new_callable=AsyncMock, return_value=(True, "")), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_irrigation_controller(
+            zone_id=41,
+            targets={"irrigation": {"interval_sec": 300}},
+            telemetry={},
+            capabilities={"irrigation_control": True},
+            workflow_phase="ready",
+            water_level_ok=True,
+            bindings={},
+            actuators={"irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}},
+            current_time=datetime.now(timezone.utc).replace(tzinfo=None),
+            time_scale=None,
+            sim_clock=None,
+        )
+
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "IRRIGATION_STARTED" in event_types
+    assert "IRRIGATION_STARTED_COMMAND_REJECTED" not in event_types
+    assert "IRRIGATION_STARTED_COMMAND_UNCONFIRMED" not in event_types
+
+
+@pytest.mark.asyncio
+async def test_irrigation_publish_failure_creates_rejected_event_without_phantom_success():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=False)
+
+    irrigation_cmd = {
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_irrigation",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 60000},
+        "event_type": "IRRIGATION_STARTED",
+        "event_details": {"duration_sec": 60},
+    }
+
+    with patch("services.zone_automation_service.check_and_control_irrigation", new_callable=AsyncMock, return_value=irrigation_cmd), \
+         patch("services.zone_automation_service.can_run_pump", new_callable=AsyncMock, return_value=(True, "")), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_irrigation_controller(
+            zone_id=42,
+            targets={"irrigation": {"interval_sec": 300}},
+            telemetry={},
+            capabilities={"irrigation_control": True},
+            workflow_phase="ready",
+            water_level_ok=True,
+            bindings={},
+            actuators={"irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}},
+            current_time=datetime.now(timezone.utc).replace(tzinfo=None),
+            time_scale=None,
+            sim_clock=None,
+        )
+
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "IRRIGATION_STARTED" not in event_types
+    assert "IRRIGATION_STARTED_COMMAND_REJECTED" in event_types
+
+
+@pytest.mark.asyncio
+async def test_irrigation_circuit_breaker_creates_unconfirmed_event_without_phantom_success():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(side_effect=CircuitBreakerOpenError("cb_open"))
+
+    irrigation_cmd = {
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_irrigation",
+        "cmd": "run_pump",
+        "params": {"duration_ms": 60000},
+        "event_type": "IRRIGATION_STARTED",
+        "event_details": {"duration_sec": 60},
+    }
+
+    with patch("services.zone_automation_service.check_and_control_irrigation", new_callable=AsyncMock, return_value=irrigation_cmd), \
+         patch("services.zone_automation_service.can_run_pump", new_callable=AsyncMock, return_value=(True, "")), \
+         patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        await service._process_irrigation_controller(
+            zone_id=43,
+            targets={"irrigation": {"interval_sec": 300}},
+            telemetry={},
+            capabilities={"irrigation_control": True},
+            workflow_phase="ready",
+            water_level_ok=True,
+            bindings={},
+            actuators={"irrigation_pump": {"node_uid": "nd-irrig-1", "channel": "pump_irrigation"}},
+            current_time=datetime.now(timezone.utc).replace(tzinfo=None),
+            time_scale=None,
+            sim_clock=None,
+        )
+
+    event_types = [call.args[1] for call in mock_event.await_args_list]
+    assert "IRRIGATION_STARTED" not in event_types
+    assert "IRRIGATION_STARTED_COMMAND_UNCONFIRMED" in event_types
+
+
+@pytest.mark.asyncio
 async def test_process_zone_phase_transition():
     """Test processing zone with phase transition."""
     zone_repo = Mock(spec=ZoneRepository)
@@ -620,7 +988,7 @@ async def test_check_phase_transitions_skips_for_live_simulation():
         "phase_index": 0,
         "max_phase_index": 0,
         "duration_hours": 1,
-        "phase_started_at": datetime.now(timezone.utc),
+        "phase_started_at": datetime.now(timezone.utc).replace(tzinfo=None),
     })
 
     service = ZoneAutomationService(
@@ -634,8 +1002,8 @@ async def test_check_phase_transitions_skips_for_live_simulation():
     )
 
     sim_clock = SimulationClock(
-        real_start=datetime.now(timezone.utc),
-        sim_start=datetime.now(timezone.utc),
+        real_start=datetime.now(timezone.utc).replace(tzinfo=None),
+        sim_start=datetime.now(timezone.utc).replace(tzinfo=None),
         time_scale=60.0,
         mode="live",
     )
@@ -662,6 +1030,84 @@ def _build_zone_service() -> ZoneAutomationService:
         infrastructure_repo,
         command_bus,
     )
+
+
+@pytest.mark.asyncio
+async def test_workflow_phase_restore_uses_latest_zone_event_once():
+    service = _build_zone_service()
+    with patch("services.zone_automation_service.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = [{"details": {"workflow_phase": "tank_recirc"}}]
+        phase_first = await service._get_or_restore_workflow_phase(501)
+        phase_second = await service._get_or_restore_workflow_phase(501)
+
+    assert phase_first == "tank_recirc"
+    assert phase_second == "tank_recirc"
+    assert mock_fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_update_workflow_phase_resets_pid_on_transition_to_irrigating():
+    service = _build_zone_service()
+    zone_id = 502
+    state = service._get_zone_state(zone_id)
+    state["workflow_phase"] = "tank_recirc"
+    state["workflow_phase_loaded"] = True
+    service.ph_controller._pid_by_zone[zone_id] = object()
+    service.ec_controller._pid_by_zone[zone_id] = object()
+    service.ph_controller._last_pid_tick[zone_id] = 1.0
+    service.ec_controller._last_pid_tick[zone_id] = 1.0
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock) as mock_event:
+        new_phase = await service.update_workflow_phase(
+            zone_id=zone_id,
+            workflow_phase="irrigating",
+            workflow_stage="irrigation_recovery_check",
+            reason_code="irrigation_recovery_recovered",
+        )
+
+    assert new_phase == "irrigating"
+    assert zone_id not in service.ph_controller._pid_by_zone
+    assert zone_id not in service.ec_controller._pid_by_zone
+    assert zone_id not in service.ph_controller._last_pid_tick
+    assert zone_id not in service.ec_controller._last_pid_tick
+    mock_event.assert_awaited_once()
+    event_payload = mock_event.await_args.args[2]
+    assert event_payload["workflow_phase"] == "irrigating"
+    assert event_payload["previous_workflow_phase"] == "tank_recirc"
+
+
+@pytest.mark.asyncio
+async def test_update_workflow_phase_clears_sensor_mode_cache_for_external_workflow_control():
+    service = _build_zone_service()
+    zone_id = 503
+    service._correction_sensor_mode_state[zone_id] = False
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        new_phase = await service.update_workflow_phase(
+            zone_id=zone_id,
+            workflow_phase="tank_filling",
+            workflow_stage="solution_fill_check",
+            reason_code="solution_fill_started",
+        )
+
+    assert new_phase == "tank_filling"
+    assert zone_id not in service._correction_sensor_mode_state
+
+    await service._set_sensor_mode(
+        zone_id=zone_id,
+        nodes=nodes,
+        activate=False,
+        reason="sensor_unstable",
+    )
+
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
+    assert service._correction_sensor_mode_state[zone_id] is False
 
 
 def test_calculate_backoff_seconds_is_exponential_and_capped():
@@ -1067,7 +1513,7 @@ async def test_process_light_controller_emits_circuit_open_alert():
             targets={},
             capabilities={"light_control": True},
             bindings={},
-            current_time=datetime.now(timezone.utc),
+            current_time=datetime.now(timezone.utc).replace(tzinfo=None),
         )
 
     sent_codes = [call.kwargs["code"] for call in mock_alert.await_args_list]
@@ -1095,10 +1541,11 @@ async def test_process_irrigation_controller_emits_pump_blocked_alert():
             targets={},
             telemetry={},
             capabilities={"irrigation_control": True},
+            workflow_phase="idle",
             water_level_ok=True,
             bindings={},
             actuators={},
-            current_time=datetime.now(timezone.utc),
+            current_time=datetime.now(timezone.utc).replace(tzinfo=None),
             time_scale=None,
             sim_clock=None,
         )

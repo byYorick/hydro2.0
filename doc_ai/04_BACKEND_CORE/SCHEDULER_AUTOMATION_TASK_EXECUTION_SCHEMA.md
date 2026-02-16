@@ -1,7 +1,7 @@
-# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.3)
+# Схема Scheduler -> Automation-Engine: аудит, целевая модель и план внедрения (v3.4)
 
-**Дата:** 2026-02-13  
-**Статус:** Актуализировано после внедрения decision/outcome v1 (AUTO_LOGIC_*)  
+**Дата:** 2026-02-16  
+**Статус:** Актуализировано после внедрения P3/P4 (event integrity, workflow persistence/recovery)  
 **Область:** `backend/services/scheduler`, `backend/services/automation-engine`, `backend/laravel`  
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -201,6 +201,14 @@ Breaking-change: обратная совместимость для старых
   - `SCHEDULE_TASK_EXECUTION_STARTED`
   - `SCHEDULE_TASK_EXECUTION_FINISHED`
   - `DIAGNOSTICS_SERVICE_UNAVAILABLE`
+  - `WORKFLOW_PHASE_UPDATED`
+  - `WORKFLOW_RECOVERY_ENQUEUED`
+  - `WORKFLOW_RECOVERY_STALE_STOPPED`
+
+- `automation-engine / zone_automation_service` (целостность action-событий):
+  - `*_COMMAND_REJECTED` — publish вернул `False`, действие не подтверждено
+  - `*_COMMAND_UNCONFIRMED` — publish не выполнен из-за circuit breaker
+  - action event (`IRRIGATION_STARTED`, `RECIRCULATION_CYCLE`, ...) создается только после подтвержденного publish
 
 Ограничения текущей реализации (после апдейта 2026-02-10):
 - task-события `event_id/event_seq` публикуются из `automation-engine`, но не все legacy события нормализованы;
@@ -215,6 +223,10 @@ Breaking-change: обратная совместимость для старых
   после чего reconcile доводит задачу до terminal `completed|failed|timeout|not_found`;
 - сценарий refill/tank-cycle реализован в `SchedulerTaskExecutor` (events: `CYCLE_START_*`, `TANK_*`, `SELF_TASK_ENQUEUED`);
   recovery/chaos сценарии lease-loss/restart покрыты docker-скриптами в `tests/e2e/scheduler/*`.
+- добавлен recovery `zone_workflow_state`:
+  - in-flight фазы workflow поднимаются при старте `automation-engine`;
+  - stale состояния переводятся в `idle` и фиксируются событием `WORKFLOW_RECOVERY_STALE_STOPPED`;
+  - валидные in-flight состояния продолжаются через enqueue diagnostics и событие `WORKFLOW_RECOVERY_ENQUEUED`.
 
 ## 2.5 Что уже соответствует целевой идее
 
@@ -458,6 +470,43 @@ Container-level chaos:
   - запуск `irrigation_recovery` с `reason_code=tank_to_tank_correction_started`
   - публикация события `IRRIGATION_ONLINE_CORRECTION_FAILED`.
 
+Persistence/recovery контракт (P4):
+- таблица `zone_workflow_state` хранит текущую доменную фазу зоны:
+  - `idle`, `tank_filling`, `tank_recirc`, `ready`, `irrigating`, `irrig_recirc`;
+- `SchedulerTaskExecutor` синхронизирует фазу при переходах workflow-stage и сохраняет payload continuation:
+  - `payload.workflow` — canonical workflow-stage для продолжения;
+  - `payload.workflow_stage` — явный alias того же значения;
+  - `payload.workflow_phase` — доменная фаза для координации с ZAS.
+- startup scanner в `automation-engine`:
+  - ищет `workflow_phase != idle`;
+  - для stale записей выполняет safety-stop (перевод в `idle`);
+  - для актуальных записей ставит continuation task через `/scheduler/internal/enqueue`;
+  - нормализует coarse workflow в check-stage без silent restart `startup`:
+    - `startup|cycle_start|refill_check` + `tank_filling` -> `clean_fill_check|solution_fill_check`;
+    - `prepare_recirculation` + `tank_recirc` -> `prepare_recirculation_check`;
+    - `irrigation_recovery` + `irrig_recirc` -> `irrigation_recovery_check`.
+- Recovery fail-safe поведение:
+  - битая запись одной зоны (`invalid_zone_id|invalid_payload|invalid_phase`) не останавливает recovery остальных зон;
+  - при fallback workflow публикуется warning + `WORKFLOW_RECOVERY_WORKFLOW_FALLBACK`
+    с полями `fallback_from`/`fallback_to`.
+- Structured logging recovery (`component=workflow_state_recovery`) для каждого обработанного состояния:
+  - `zone_id`
+  - `workflow_phase_source`
+  - `workflow_phase_normalized`
+  - `workflow_selected`
+  - `scheduler_task_id_previous`
+  - `recovery_action` (`enqueue_continuation|stale_stop|skip_invalid|skip_idle_ready|failed`)
+  - `reason_code`
+  - `state_age_sec`
+  - `correlation_id`
+  - `enqueue_id`
+  - при ошибках дополнительно: `error_type`, `error_message`, `trace_id`.
+
+Fail-closed для workflow-контракта:
+- unknown workflow для `two_tank|three_tank` -> `error_code=unsupported_workflow`;
+- missing workflow при обязательном contract-v2 payload -> `error_code=invalid_payload_missing_workflow`;
+- unsupported payload contract version -> `error_code=invalid_payload_contract_version`.
+
 Нормализованные коды outcome (актуально):
 - reason:
   - `already_running`
@@ -544,6 +593,9 @@ Container-level chaos:
   - `prepare_npk_ph_target_not_reached`
   - `irrigation_recovery_attempts_exceeded`
   - `diagnostics_service_unavailable`
+  - `unsupported_workflow`
+  - `invalid_payload_missing_workflow`
+  - `invalid_payload_contract_version`
 
 ---
 
@@ -611,6 +663,8 @@ Container-level chaos:
 | Event timeline | реализован базовый timeline + tank/refill events + SLA-render в ZoneAutomationTab + browser e2e UI-сценарий | расширить операторские пресеты при добавлении новых workflow | P2 |
 | Self-task enqueue | реализован (`/scheduler/internal/enqueue` + scheduler scan/dispatched) + anti-silent diagnostics | расширить сценарии ретраев/backoff | P2 |
 | Tank refill workflow | реализован в diagnostics workflow (`cycle_start/refill_check`) | расширить policy (retries/backoff/limits) | P2 |
+| Workflow phase persistence/recovery | реализовано: `zone_workflow_state` + startup scan (`WORKFLOW_RECOVERY_*`) | расширить мониторинг stale-state SLA | P2 |
+| Event integrity | реализовано: action events только после publish confirm (`*_COMMAND_REJECTED/*_COMMAND_UNCONFIRMED`) | расширить coverage для всех controller event types | P2 |
 
 ---
 
