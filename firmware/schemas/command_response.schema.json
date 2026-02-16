@@ -1,33 +1,41 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Command Response Schema",
-  "description": "Schema for command response messages from firmware nodes",
+  "title": "CommandResponse",
+  "description": "Единый контракт ответа на команду для всех сервисов",
   "type": "object",
   "required": ["cmd_id", "status", "ts"],
   "properties": {
     "cmd_id": {
       "type": "string",
-      "description": "Command ID (echo from command)"
+      "description": "Идентификатор команды, на которую приходит ответ",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
     },
     "status": {
       "type": "string",
-      "description": "Command execution status",
+      "description": "Статус выполнения команды",
       "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
-    },
-    "details": {
-      "description": "Execution details (optional): short text or structured object",
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "object"
-        }
-      ]
     },
     "ts": {
       "type": "integer",
-      "description": "UTC timestamp in milliseconds"
+      "description": "Unix timestamp ответа в миллисекундах",
+      "minimum": 0
+    },
+    "details": {
+      "type": "object",
+      "description": "Дополнительные детали ответа",
+      "additionalProperties": true
+    },
+    "error_code": {
+      "type": "string",
+      "description": "Код ошибки при status=ERROR",
+      "maxLength": 100
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Текст ошибки при status=ERROR",
+      "maxLength": 512
     }
   },
   "additionalProperties": false

@@ -35,7 +35,7 @@
   "cmd": "dose",
   "params": { "ml": 1.2 },
   "ts": 1737355112,
-  "sig": "deadbeef"
+  "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
 ```
 
@@ -47,7 +47,7 @@
 | `cmd` | string | Да | Тип команды (dose, run_pump, set_relay, set_pwm, test_sensor, restart) |
 | `params` | object | Да | Параметры команды (объект) |
 | `ts` | integer | Да | Unix timestamp создания команды в секундах |
-| `sig` | string | Да | HMAC подпись команды (hex) |
+| `sig` | string | Да | HMAC-SHA256 подпись команды (hex, 64 символа) |
 
 ### Примеры использования
 
@@ -60,7 +60,7 @@ from schemas import Command
 command = Command.create(
     cmd="dose",
     params={"ml": 1.2},
-    sig="deadbeef"
+    sig="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
 
 # Конвертация в JSON

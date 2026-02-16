@@ -10,8 +10,7 @@ from typing import Dict, Any, Optional
 def create_telemetry_fixture(
     metric_type: str = "PH",
     value: float = 6.5,
-    ts: Optional[float] = None,
-    channel: Optional[str] = None,
+    ts: Optional[int] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -20,25 +19,21 @@ def create_telemetry_fixture(
     Args:
         metric_type: Тип метрики
         value: Значение метрики
-        ts: Timestamp (если None, используется текущее время)
-        channel: Канал
-        **kwargs: Дополнительные поля (raw, stub, stable, etc.)
+        ts: Timestamp (если None, используется текущее время, секунды)
+        **kwargs: Дополнительные поля из MQTT контракта (unit, raw, stub, stable)
     
     Returns:
         Словарь с данными телеметрии
     """
     if ts is None:
-        ts = time.time()
+        ts = int(time.time())
     
     payload = {
         "metric_type": metric_type,
         "value": value,
         "ts": ts
     }
-    
-    if channel:
-        payload["channel"] = channel
-    
+
     payload.update(kwargs)
     return payload
 
@@ -129,32 +124,23 @@ FIXTURE_TELEMETRY_MINIMAL = create_telemetry_fixture()
 FIXTURE_TELEMETRY_FULL = create_telemetry_fixture(
     metric_type="PH",
     value=6.5,
-    channel="ph_sensor",
-    node_id="nd-ph-1",
+    unit="pH",
     raw=1465,
     stub=False,
-    stable=True,
-    tds=1200,
-    temperature=22.5,
-    state="active",
-    zone_uid="zn-1",
-    node_uid="nd-ph-1",
-    gh_uid="gh-1"
-    # error_code не включаем в full fixture, так как он опциональный
+    stable=True
 )
 
 FIXTURE_TELEMETRY_EC = create_telemetry_fixture(
     metric_type="EC",
     value=2.5,
-    channel="ec_sensor",
-    tds=1250
+    unit="mS/cm",
+    raw=1250
 )
 
 FIXTURE_TELEMETRY_TEMP = create_telemetry_fixture(
     metric_type="TEMPERATURE",
     value=22.5,
-    channel="temp_air",
-    temperature=22.5
+    unit="C"
 )
 
 FIXTURE_ERROR_SENSOR = create_error_fixture(

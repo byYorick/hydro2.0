@@ -70,7 +70,8 @@ class TestTelemetryProtocol:
         """Тест минимального payload телеметрии (только обязательные поля)."""
         payload = {
             "metric_type": "PH",
-            "value": 6.5
+            "value": 6.5,
+            "ts": 1737979200,
         }
         
         # Валидация через JSON-schema
@@ -91,21 +92,11 @@ class TestTelemetryProtocol:
         payload = {
             "metric_type": "PH",
             "value": 6.5,
-            "ts": 1737979200.5,
-            "channel": "ph_sensor",
-            "node_id": "nd-ph-1",
+            "ts": 1737979200,
+            "unit": "pH",
             "raw": 1465,
             "stub": False,
             "stable": True,
-            "tds": 1200,
-            "error_code": None,
-            "temperature": 22.5,
-            "state": "active",
-            "event": "calibration",
-            "health": {"status": "ok", "uptime": 3600},
-            "zone_uid": "zn-1",
-            "node_uid": "nd-ph-1",
-            "gh_uid": "gh-1"
         }
         
         # Валидация через JSON-schema
@@ -118,7 +109,6 @@ class TestTelemetryProtocol:
                 model = TelemetryPayloadModel(**payload)
                 assert model.metric_type == "PH"
                 assert model.value == 6.5
-                assert model.channel == "ph_sensor"
         except Exception:
             pass  # Пропускаем если модель недоступна
     
@@ -126,7 +116,8 @@ class TestTelemetryProtocol:
         """Тест невалидного metric_type (пустая строка)."""
         payload = {
             "metric_type": "",
-            "value": 6.5
+            "value": 6.5,
+            "ts": 1737979200,
         }
         
         # JSON-schema должна отклонить
@@ -148,6 +139,22 @@ class TestTelemetryProtocol:
         
         # Отсутствует value
         payload = {"metric_type": "PH"}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, telemetry_schema)
+
+        # Отсутствует ts
+        payload = {"metric_type": "PH", "value": 6.5}
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, telemetry_schema)
+
+    def test_telemetry_rejects_topic_duplicated_fields(self, telemetry_schema):
+        """node_id/channel не должны дублироваться в payload телеметрии."""
+        payload = {
+            "metric_type": "PH",
+            "value": 6.5,
+            "ts": 1737979200,
+            "channel": "ph_sensor",
+        }
         with pytest.raises(AssertionError):
             validate_against_schema(payload, telemetry_schema)
 
@@ -205,17 +212,17 @@ class TestCommandProtocol:
     def test_command_missing_required_fields(self, command_schema):
         """Тест отсутствия обязательных полей."""
         # Отсутствует cmd_id
-        payload = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
         
         # Отсутствует cmd
-        payload = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
 
         # Отсутствует params
-        payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "deadbeef"}
+        payload = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(payload, command_schema)
 
@@ -233,7 +240,7 @@ class TestCommandResponseProtocol:
         """Загружает схему command_response."""
         return load_schema(COMMAND_RESPONSE_SCHEMA)
     
-    def test_command_response_accepted(self, command_response_schema):
+    def test_command_response_ack(self, command_response_schema):
         """Тест ответа ACK."""
         payload = create_command_response_fixture(
             cmd_id="cmd-123",
@@ -261,11 +268,12 @@ class TestCommandResponseProtocol:
             assert response.status in ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
             assert response.ts > 0
     
-    def test_command_response_invalid_status(self, command_response_schema):
-        """Тест невалидного статуса."""
+    @pytest.mark.parametrize("invalid_status", ["INVALID_STATUS", "ACCEPTED", "FAILED"])
+    def test_command_response_invalid_status(self, command_response_schema, invalid_status):
+        """Тест невалидного или legacy статуса."""
         payload = create_command_response_fixture(
             cmd_id="cmd-123",
-            status="INVALID_STATUS"
+            status=invalid_status
         )
         
         # JSON-schema должна отклонить
@@ -406,7 +414,7 @@ class TestProtocolCompatibility:
         cmd = Command.create(
             cmd="dose",
             params={"ml": 1.2, "channel": "pump_a"},
-            sig="deadbeef"
+            sig="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         )
         
         # Конвертируем в JSON

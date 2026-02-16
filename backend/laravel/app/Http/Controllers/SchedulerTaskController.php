@@ -399,6 +399,48 @@ class SchedulerTaskController extends Controller
                 $commandEffectConfirmed = $this->normalizeOptionalBool($result['command_effect_confirmed'] ?? null);
             }
 
+            $executedSteps = is_array($details['executed_steps'] ?? null) ? $details['executed_steps'] : null;
+            if ($executedSteps === null && is_array($result['executed_steps'] ?? null)) {
+                $executedSteps = $result['executed_steps'];
+            }
+
+            $safetyFlags = is_array($details['safety_flags'] ?? null) ? $details['safety_flags'] : null;
+            if ($safetyFlags === null && is_array($result['safety_flags'] ?? null)) {
+                $safetyFlags = $result['safety_flags'];
+            }
+
+            $nextDueAt = is_string($details['next_due_at'] ?? null) ? $details['next_due_at'] : null;
+            if ($nextDueAt === null && is_string($result['next_due_at'] ?? null)) {
+                $nextDueAt = $result['next_due_at'];
+            }
+
+            $measurementsBeforeAfter = is_array($details['measurements_before_after'] ?? null)
+                ? $details['measurements_before_after']
+                : null;
+            if ($measurementsBeforeAfter === null && is_array($result['measurements_before_after'] ?? null)) {
+                $measurementsBeforeAfter = $result['measurements_before_after'];
+            }
+
+            $runMode = is_string($details['run_mode'] ?? null) ? $details['run_mode'] : null;
+            if ($runMode === null && is_string($result['run_mode'] ?? null)) {
+                $runMode = $result['run_mode'];
+            }
+
+            $retryAttempt = $this->normalizeOptionalInt($details['retry_attempt'] ?? null);
+            if ($retryAttempt === null) {
+                $retryAttempt = $this->normalizeOptionalInt($result['retry_attempt'] ?? null);
+            }
+
+            $retryMaxAttempts = $this->normalizeOptionalInt($details['retry_max_attempts'] ?? null);
+            if ($retryMaxAttempts === null) {
+                $retryMaxAttempts = $this->normalizeOptionalInt($result['retry_max_attempts'] ?? null);
+            }
+
+            $retryBackoffSec = $this->normalizeOptionalInt($details['retry_backoff_sec'] ?? null);
+            if ($retryBackoffSec === null) {
+                $retryBackoffSec = $this->normalizeOptionalInt($result['retry_backoff_sec'] ?? null);
+            }
+
             return [
                 'event_id' => (string) $eventIdRaw,
                 'event_seq' => $eventSeq,
@@ -419,6 +461,14 @@ class SchedulerTaskController extends Controller
                 'error_code' => $errorCode,
                 'command_submitted' => $commandSubmitted,
                 'command_effect_confirmed' => $commandEffectConfirmed,
+                'executed_steps' => $executedSteps,
+                'safety_flags' => $safetyFlags,
+                'next_due_at' => $nextDueAt,
+                'measurements_before_after' => $measurementsBeforeAfter,
+                'run_mode' => $runMode,
+                'retry_attempt' => $retryAttempt,
+                'retry_max_attempts' => $retryMaxAttempts,
+                'retry_backoff_sec' => $retryBackoffSec,
                 'terminal_status' => is_string($details['terminal_status'] ?? null) ? $details['terminal_status'] : null,
                 'details' => $details,
                 'source' => 'zone_events',
@@ -484,6 +534,48 @@ class SchedulerTaskController extends Controller
             $commandsFailed = (int) $result['commands_failed'];
         }
 
+        $executedSteps = is_array($raw['executed_steps'] ?? null) ? $raw['executed_steps'] : null;
+        if ($executedSteps === null && is_array($result['executed_steps'] ?? null)) {
+            $executedSteps = $result['executed_steps'];
+        }
+
+        $safetyFlags = is_array($raw['safety_flags'] ?? null) ? $raw['safety_flags'] : null;
+        if ($safetyFlags === null && is_array($result['safety_flags'] ?? null)) {
+            $safetyFlags = $result['safety_flags'];
+        }
+
+        $nextDueAt = is_string($raw['next_due_at'] ?? null) ? $raw['next_due_at'] : null;
+        if ($nextDueAt === null && is_string($result['next_due_at'] ?? null)) {
+            $nextDueAt = $result['next_due_at'];
+        }
+
+        $measurementsBeforeAfter = is_array($raw['measurements_before_after'] ?? null)
+            ? $raw['measurements_before_after']
+            : null;
+        if ($measurementsBeforeAfter === null && is_array($result['measurements_before_after'] ?? null)) {
+            $measurementsBeforeAfter = $result['measurements_before_after'];
+        }
+
+        $runMode = is_string($raw['run_mode'] ?? null) ? $raw['run_mode'] : null;
+        if ($runMode === null && is_string($result['run_mode'] ?? null)) {
+            $runMode = $result['run_mode'];
+        }
+
+        $retryAttempt = $this->normalizeOptionalInt($raw['retry_attempt'] ?? null);
+        if ($retryAttempt === null) {
+            $retryAttempt = $this->normalizeOptionalInt($result['retry_attempt'] ?? null);
+        }
+
+        $retryMaxAttempts = $this->normalizeOptionalInt($raw['retry_max_attempts'] ?? null);
+        if ($retryMaxAttempts === null) {
+            $retryMaxAttempts = $this->normalizeOptionalInt($result['retry_max_attempts'] ?? null);
+        }
+
+        $retryBackoffSec = $this->normalizeOptionalInt($raw['retry_backoff_sec'] ?? null);
+        if ($retryBackoffSec === null) {
+            $retryBackoffSec = $this->normalizeOptionalInt($result['retry_backoff_sec'] ?? null);
+        }
+
         return [
             'task_id' => (string) ($raw['task_id'] ?? $taskId),
             'zone_id' => isset($raw['zone_id']) ? (int) $raw['zone_id'] : null,
@@ -505,6 +597,14 @@ class SchedulerTaskController extends Controller
             'commands_total' => $commandsTotal,
             'commands_effect_confirmed' => $commandsEffectConfirmed,
             'commands_failed' => $commandsFailed,
+            'executed_steps' => $executedSteps,
+            'safety_flags' => $safetyFlags,
+            'next_due_at' => $nextDueAt,
+            'measurements_before_after' => $measurementsBeforeAfter,
+            'run_mode' => $runMode,
+            'retry_attempt' => $retryAttempt,
+            'retry_max_attempts' => $retryMaxAttempts,
+            'retry_backoff_sec' => $retryBackoffSec,
             'error' => is_string($raw['error'] ?? null) ? $raw['error'] : null,
             'error_code' => is_string($raw['error_code'] ?? null) ? $raw['error_code'] : null,
             'source' => $source,
@@ -555,6 +655,21 @@ class SchedulerTaskController extends Controller
             if ($normalized === 'false' || $normalized === '0') {
                 return false;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function normalizeOptionalInt($value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int) $value;
         }
 
         return null;

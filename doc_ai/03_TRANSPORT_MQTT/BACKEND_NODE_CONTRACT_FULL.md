@@ -380,8 +380,12 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Pump is in cooldown period",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "pump_in_cooldown",
+ "error_message": "Pump is in cooldown period",
+ "details": {
+  "cooldown_ms": 1200
+ }
 }
 ```
 
@@ -394,8 +398,9 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Command HMAC signature verification failed",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "invalid_signature",
+ "error_message": "Command HMAC signature verification failed"
 }
 ```
 
@@ -404,10 +409,14 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Command timestamp is outside acceptable range",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "timestamp_expired",
+ "error_message": "Command timestamp is outside acceptable range"
 }
 ```
+
+Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`.
+Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
 
 ## 11.4. Подтверждение авто-остановки наполнения (2-бака)
 

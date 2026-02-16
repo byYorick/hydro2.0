@@ -115,22 +115,22 @@ class TestCommandContracts:
     def test_command_invalid_missing_required_fields(self, command_schema):
         """Тест, что схема отклоняет отсутствие обязательных полей."""
         # Отсутствует cmd_id
-        invalid = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        invalid = {"cmd": "dose", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
         
         # Отсутствует cmd
-        invalid = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "deadbeef"}
+        invalid = {"cmd_id": "cmd-123", "params": {"ml": 1.2}, "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
         
         # Отсутствует ts
-        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "sig": "deadbeef"}
+        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "params": {"ml": 1.2}, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
 
         # Отсутствует params
-        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "deadbeef"}
+        invalid = {"cmd_id": "cmd-123", "cmd": "dose", "ts": 1234567890, "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
 
@@ -146,7 +146,7 @@ class TestCommandContracts:
             "cmd": "dose",
             "params": {"ml": 1.2},
             "ts": 1234567890,
-            "sig": "deadbeef"
+            "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         }
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, command_schema)
@@ -166,11 +166,12 @@ class TestCommandResponseContracts:
         fixture = load_json_file(fixture_file)
         validate_against_schema(fixture, command_response_schema)
     
-    def test_command_response_invalid_status(self, command_response_schema):
-        """Тест, что схема отклоняет невалидный статус."""
+    @pytest.mark.parametrize("invalid_status", ["INVALID_STATUS", "ACCEPTED", "FAILED"])
+    def test_command_response_invalid_status(self, command_response_schema, invalid_status):
+        """Тест, что схема отклоняет невалидный или legacy статус."""
         invalid = {
             "cmd_id": "cmd-123",
-            "status": "INVALID_STATUS",
+            "status": invalid_status,
             "ts": 1234567890
         }
         with pytest.raises(AssertionError):
@@ -222,6 +223,7 @@ class TestTelemetryContracts:
         # Проверяем обязательные поля
         assert "metric_type" in fixture
         assert "value" in fixture
+        assert "ts" in fixture
     
     def test_telemetry_missing_required_fields(self, telemetry_schema):
         """Тест, что схема отклоняет отсутствие обязательных полей."""
@@ -234,12 +236,29 @@ class TestTelemetryContracts:
         invalid = {"metric_type": "PH"}
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, telemetry_schema)
+
+        # Отсутствует ts
+        invalid = {"metric_type": "PH", "value": 6.5}
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, telemetry_schema)
     
     def test_telemetry_invalid_metric_type(self, telemetry_schema):
         """Тест, что схема отклоняет пустой metric_type."""
         invalid = {
             "metric_type": "",
-            "value": 6.5
+            "value": 6.5,
+            "ts": 1737979200
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, telemetry_schema)
+
+    def test_telemetry_rejects_topic_duplicated_fields(self, telemetry_schema):
+        """Поля node_id/channel должны передаваться только в топике, не в payload."""
+        invalid = {
+            "metric_type": "PH",
+            "value": 6.5,
+            "ts": 1737979200,
+            "node_id": "nd-ph-1",
         }
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, telemetry_schema)

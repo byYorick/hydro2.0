@@ -422,14 +422,18 @@ Backend никогда не остаётся "в неизвестности": п
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
-- `details` (string|object) — детали выполнения команды
+- `details` (object) — детали выполнения команды
+- `error_code` (string) — машинночитаемый код ошибки для `status=ERROR`
+- `error_message` (string) — человекочитаемое пояснение для `status=ERROR`
 
 **Пример успешного ответа:**
 ```json
 {
   "cmd_id": "cmd-591",
   "status": "DONE",
-  "details": "OK",
+  "details": {
+    "result": "ok"
+  },
   "ts": 1710003399123
 }
 ```
@@ -442,8 +446,9 @@ Backend никогда не остаётся "в неизвестности": п
 {
   "cmd_id": "cmd-591",
   "status": "ERROR",
-  "details": "Command HMAC signature verification failed",
-  "ts": 1710003399123
+  "ts": 1710003399123,
+  "error_code": "invalid_signature",
+  "error_message": "Command HMAC signature verification failed"
 }
 ```
 
@@ -478,6 +483,8 @@ Backend никогда не остаётся "в неизвестности": п
 - `INVALID` — команда невалидна (неверные параметры);
 - `BUSY` — узел занят, команда не может быть выполнена сейчас;
 - `NO_EFFECT` — команда не оказала эффекта (например, реле уже в нужном состоянии).
+
+Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
 
 ## 8.4. Расширенный payload для ошибок
 

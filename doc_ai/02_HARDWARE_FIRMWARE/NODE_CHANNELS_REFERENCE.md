@@ -41,7 +41,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 ```json
 {
  "value": 5.78,
- "metric": "PH",
+ "metric_type": "PH",
  "ts": 1737355600456
 }
 ```
@@ -56,7 +56,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 ```json
 {
  "value": 1.6,
- "metric": "EC",
+ "metric_type": "EC",
  "ts": 1737355600456
 }
 ```
@@ -322,8 +322,6 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "node_id": "nd-pump-1",
-  "channel": "pump_bus_current",
   "metric_type": "PUMP_CURRENT",
   "value": 220.5,
   "timestamp": 1710005555

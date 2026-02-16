@@ -58,6 +58,7 @@ python -m node_sim.cli multi --config multi.yaml
 - ✅ Обработка команд с дедупликацией по cmd_id
 - ✅ Отправка command_response (ACK быстро, DONE/ERROR после выполнения)
 - ✅ Мониторинг доставленных команд (cmd_id, тайминги, статистика)
+- ✅ Strict-валидация входящих `command`: только `{cmd_id, cmd, params, ts, sig}` и `sig` как 64-hex
 - ✅ Режимы отказов: delay, drop, duplicate, overcurrent, no_flow
 - ✅ Поддержка temp-топиков для preconfig режима
 

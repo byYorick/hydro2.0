@@ -147,8 +147,8 @@ class TelemetryPublisher:
             value = self._generate_simulated_value(channel)
             self.node.set_sensor_value(channel, value)
         
-        # Формируем payload в формате, который ожидает history-logger:
-        # metric_type (обязательное), value (обязательное), ts (seconds) (опционально)
+        # Формируем payload строго по runtime-схеме:
+        # metric_type (обязательное), value (обязательное), ts (seconds, обязательное)
         payload = {
             "metric_type": metric_type,
             "value": value,

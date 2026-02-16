@@ -80,6 +80,11 @@ services:
     - APP_ENV=testing
     - APP_DEBUG=true
     - APP_DEBUG_MODE=true
+    # Разделяем кеши bootstrap между e2e и dev, чтобы исключить перекрестный config cache
+    - APP_CONFIG_CACHE=/tmp/laravel-config-testing.php
+    - APP_SERVICES_CACHE=/tmp/laravel-services-testing.php
+    - APP_PACKAGES_CACHE=/tmp/laravel-packages-testing.php
+    - APP_EVENTS_CACHE=/tmp/laravel-events-testing.php
     - SESSION_DRIVER=file
     - CACHE_STORE=file
     - CACHE_DRIVER=file
@@ -188,7 +193,7 @@ services:
       mosquitto:
         condition: service_healthy
     ports:
-    - ${NODE_SIM_MANAGER_PORT:-9100}:9100
+    - ${NODE_SIM_MANAGER_PORT:-9101}:9100
     networks:
     - backend
   history-logger:

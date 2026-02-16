@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
 
 static const char *TAG = "test_node_multi";
 
@@ -998,6 +999,156 @@ static bool parse_command_topic(
     return true;
 }
 
+static bool is_hex_signature_64(const char *sig) {
+    size_t index;
+
+    if (!sig || strlen(sig) != 64) {
+        return false;
+    }
+
+    for (index = 0; index < 64; index++) {
+        unsigned char ch = (unsigned char)sig[index];
+        if (!isxdigit(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool has_only_canonical_command_fields(const cJSON *command_json) {
+    const cJSON *child;
+
+    if (!command_json) {
+        return false;
+    }
+
+    for (child = command_json->child; child; child = child->next) {
+        const char *key = child->string;
+        if (!key) {
+            continue;
+        }
+        if (
+            strcmp(key, "cmd_id") != 0 &&
+            strcmp(key, "cmd") != 0 &&
+            strcmp(key, "params") != 0 &&
+            strcmp(key, "ts") != 0 &&
+            strcmp(key, "sig") != 0
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool validate_command_payload_strict(
+    cJSON *command_json,
+    const char **out_error_code,
+    const char **out_error_message
+) {
+    cJSON *cmd_id_item;
+    cJSON *cmd_item;
+    cJSON *params_item;
+    cJSON *ts_item;
+    cJSON *sig_item;
+    double ts_raw;
+    int64_t ts_int;
+    const char *sig;
+
+    if (out_error_code) {
+        *out_error_code = "invalid_command_format";
+    }
+    if (out_error_message) {
+        *out_error_message = "Invalid command payload";
+    }
+
+    if (!command_json || !cJSON_IsObject(command_json)) {
+        if (out_error_message) {
+            *out_error_message = "Command payload must be JSON object";
+        }
+        return false;
+    }
+
+    if (!has_only_canonical_command_fields(command_json)) {
+        if (out_error_message) {
+            *out_error_message = "Unknown fields in command payload";
+        }
+        return false;
+    }
+
+    cmd_id_item = cJSON_GetObjectItem(command_json, "cmd_id");
+    cmd_item = cJSON_GetObjectItem(command_json, "cmd");
+    params_item = cJSON_GetObjectItem(command_json, "params");
+    ts_item = cJSON_GetObjectItem(command_json, "ts");
+    sig_item = cJSON_GetObjectItem(command_json, "sig");
+
+    if (!(cmd_id_item && cJSON_IsString(cmd_id_item) && cmd_id_item->valuestring && cmd_id_item->valuestring[0] != '\0')) {
+        if (out_error_message) {
+            *out_error_message = "Missing or invalid cmd_id";
+        }
+        return false;
+    }
+
+    if (!(cmd_item && cJSON_IsString(cmd_item) && cmd_item->valuestring && cmd_item->valuestring[0] != '\0')) {
+        if (out_error_message) {
+            *out_error_message = "Missing or invalid cmd";
+        }
+        return false;
+    }
+
+    if (!(params_item && cJSON_IsObject(params_item))) {
+        if (out_error_message) {
+            *out_error_message = "Missing or invalid params";
+        }
+        return false;
+    }
+
+    if (!(ts_item && cJSON_IsNumber(ts_item))) {
+        if (out_error_code) {
+            *out_error_code = "invalid_hmac_format";
+        }
+        if (out_error_message) {
+            *out_error_message = "Missing or invalid ts";
+        }
+        return false;
+    }
+
+    ts_raw = cJSON_GetNumberValue(ts_item);
+    ts_int = (int64_t)ts_raw;
+    if (ts_raw < 0 || (double)ts_int != ts_raw) {
+        if (out_error_code) {
+            *out_error_code = "invalid_hmac_format";
+        }
+        if (out_error_message) {
+            *out_error_message = "ts must be non-negative integer";
+        }
+        return false;
+    }
+
+    if (!(sig_item && cJSON_IsString(sig_item) && sig_item->valuestring)) {
+        if (out_error_code) {
+            *out_error_code = "invalid_hmac_format";
+        }
+        if (out_error_message) {
+            *out_error_message = "Missing or invalid sig";
+        }
+        return false;
+    }
+
+    sig = sig_item->valuestring;
+    if (!is_hex_signature_64(sig)) {
+        if (out_error_code) {
+            *out_error_code = "invalid_hmac_format";
+        }
+        if (out_error_message) {
+            *out_error_message = "sig must be 64-char hex string";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 static void publish_command_response(
     const char *node_uid,
     const char *channel,
@@ -1345,6 +1496,8 @@ static void command_callback(const char *topic, const char *channel, const char 
     cJSON *cmd_item;
     const char *cmd_id;
     const char *cmd_name;
+    const char *validation_error_code = NULL;
+    const char *validation_error_message = NULL;
     const virtual_node_t *node;
     pending_command_t job;
 
@@ -1405,19 +1558,27 @@ static void command_callback(const char *topic, const char *channel, const char 
     cmd_id_item = cJSON_GetObjectItem(command_json, "cmd_id");
     cmd_item = cJSON_GetObjectItem(command_json, "cmd");
     cmd_id = (cmd_id_item && cJSON_IsString(cmd_id_item) && cmd_id_item->valuestring) ? cmd_id_item->valuestring : "unknown";
-    cmd_name = (cmd_item && cJSON_IsString(cmd_item) && cmd_item->valuestring) ? cmd_item->valuestring : "";
-
-    if (cmd_name[0] == '\0') {
+    if (!validate_command_payload_strict(command_json, &validation_error_code, &validation_error_message)) {
         cJSON *details = cJSON_CreateObject();
         if (details) {
-            cJSON_AddStringToObject(details, "error", "missing_cmd");
-            publish_command_response(node_uid, topic_channel, cmd_id, "INVALID", details);
+            cJSON_AddStringToObject(
+                details,
+                "error_code",
+                validation_error_code ? validation_error_code : "invalid_command_format"
+            );
+            cJSON_AddStringToObject(
+                details,
+                "error_message",
+                validation_error_message ? validation_error_message : "Invalid command payload"
+            );
+            publish_command_response(node_uid, topic_channel, cmd_id, "ERROR", details);
             cJSON_Delete(details);
         }
-        ui_logf(node_uid, "cmd missing_cmd");
+        ui_logf(node_uid, "cmd invalid %s", validation_error_code ? validation_error_code : "invalid_payload");
         cJSON_Delete(command_json);
         return;
     }
+    cmd_name = (cmd_item && cJSON_IsString(cmd_item) && cmd_item->valuestring) ? cmd_item->valuestring : "";
 
     memset(&job, 0, sizeof(job));
     snprintf(job.node_uid, sizeof(job.node_uid), "%s", node_uid);

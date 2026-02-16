@@ -99,7 +99,7 @@ static esp_err_t pump_node_init_channel_callback(const char *channel_name, const
 /**
  * @brief Обработчик команды run_pump с командным автоматом
  * 
- * Состояния: ACCEPTED -> DONE/FAILED
+ * Состояния: ACK -> DONE/ERROR
  */
 static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {
     (void)user_ctx;
@@ -114,7 +114,7 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     
     cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
     if (!cJSON_IsNumber(duration_item)) {
-        *response = node_command_handler_create_response(cmd_id, "FAILED", "missing_duration", "duration_ms is required", NULL);
+        *response = node_command_handler_create_response(cmd_id, "ERROR", "missing_duration", "duration_ms is required", NULL);
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -131,7 +131,7 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     if (!pump_node_cmd_queue_push(&queued_cmd)) {
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             "pump_queue_full",
             "Pump queue is full",
             NULL
@@ -157,7 +157,7 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     }
     *response = node_command_handler_create_response(
         cmd_id,
-        "ACCEPTED",
+        "ACK",
         NULL,
         NULL,
         extra
@@ -408,7 +408,7 @@ static void pump_node_process_cmd_queue(void) {
         if (!pump_node_cmd_queue_push(&cmd)) {
             cJSON *response = node_command_handler_create_response(
                 cmd.cmd_id[0] ? cmd.cmd_id : NULL,
-                "FAILED",
+                "ERROR",
                 "pump_queue_full",
                 "Pump queue is full",
                 NULL
@@ -422,7 +422,7 @@ static void pump_node_process_cmd_queue(void) {
                 cJSON_Delete(response);
             }
             if (cmd.cmd_id[0]) {
-                node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+                node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
             }
         }
         if (s_cmd_retry_timer && cooldown_ms > 0) {
@@ -446,7 +446,7 @@ static void pump_node_process_cmd_queue(void) {
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "pump_driver", err, error_message);
         cJSON *response = node_command_handler_create_response(
             cmd.cmd_id[0] ? cmd.cmd_id : NULL,
-            "FAILED",
+            "ERROR",
             error_code,
             error_message,
             NULL
@@ -460,7 +460,7 @@ static void pump_node_process_cmd_queue(void) {
             cJSON_Delete(response);
         }
         if (cmd.cmd_id[0]) {
-            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
         }
         pump_node_signal_cmd_process();
         return;

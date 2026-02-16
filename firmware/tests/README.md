@@ -116,12 +116,14 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 {
   "cmd_id": "cmd-12345",
   "status": "DONE",
-  "details": "OK",
+  "details": {
+    "result": "ok"
+  },
   "ts": 1704067200123
 }
 ```
 
-`details` может быть как строкой, так и объектом с деталями выполнения:
+`details` передается объектом с деталями выполнения:
 
 ```json
 {

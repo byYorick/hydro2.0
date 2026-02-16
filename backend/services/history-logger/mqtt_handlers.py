@@ -163,10 +163,7 @@ def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
         return {}
     if isinstance(raw_details, dict):
         return dict(raw_details)
-    if isinstance(raw_details, str):
-        message = raw_details.strip()
-        return {"message": message} if message else {}
-    return {"raw_details": raw_details}
+    raise ValueError("'details' must be object when present")
 
 
 def _normalize_node_event_type(raw_event_code: Any) -> str:
@@ -1392,20 +1389,31 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         cmd_id = data.get("cmd_id")
         raw_status = data.get("status", "")
+        response_ts = data.get("ts")
 
         logger.info(
-            "[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id=%s, status=%s, topic=%s",
+            "[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id=%s, status=%s, ts=%s, topic=%s",
             cmd_id,
             raw_status,
+            response_ts,
             topic,
         )
         node_uid = _extract_node_uid(topic)
         channel = _extract_channel_from_topic(topic)
         gh_uid = _extract_gh_uid(topic)
 
-        if not cmd_id or not raw_status:
+        if (
+            not cmd_id
+            or not raw_status
+            or not isinstance(response_ts, int)
+            or response_ts < 0
+        ):
             logger.warning(
-                f"[COMMAND_RESPONSE] Missing cmd_id or status in payload: {data}"
+                "[COMMAND_RESPONSE] Missing or invalid required fields in payload: cmd_id=%s status=%s ts=%s payload=%s",
+                cmd_id,
+                raw_status,
+                response_ts,
+                data,
             )
             COMMAND_RESPONSE_ERROR.inc()
             return
@@ -1479,13 +1487,23 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
 
-        details = _normalize_command_response_details(data.get("details"))
+        try:
+            details = _normalize_command_response_details(data.get("details"))
+        except ValueError:
+            logger.warning(
+                "[COMMAND_RESPONSE] Invalid details type for cmd_id=%s: %s",
+                cmd_id,
+                type(data.get("details")).__name__,
+            )
+            COMMAND_RESPONSE_ERROR.inc()
+            return
         if "error_code" in data and data.get("error_code") is not None:
             details["error_code"] = data.get("error_code")
         if "error_message" in data and data.get("error_message") is not None:
             details["error_message"] = data.get("error_message")
         details.update({
             "raw_status": str(raw_status),
+            "response_ts": response_ts,
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,

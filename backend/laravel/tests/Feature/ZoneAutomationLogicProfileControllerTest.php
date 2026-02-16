@@ -114,7 +114,7 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_it_normalizes_legacy_targets_to_execution_and_drops_targets_from_storage(): void
+    public function test_it_rejects_legacy_targets_in_subsystems_payload(): void
     {
         $zone = Zone::factory()->create();
         $user = User::factory()->create(['role' => 'agronomist']);
@@ -148,11 +148,12 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
         $response = $this->actingAs($user)
             ->postJson("/api/zones/{$zone->id}/automation-logic-profile", $payload);
 
-        $response->assertOk()
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.ph.targets')
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.ec.targets')
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.irrigation.targets')
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.interval_minutes', 20);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'subsystems.ph.targets',
+                'subsystems.ec.targets',
+                'subsystems.irrigation.targets',
+            ]);
     }
 
     private function validSubsystemsPayload(): array

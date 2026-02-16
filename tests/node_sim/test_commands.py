@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 
 from node_sim.commands import CommandHandler, CommandStatus
 from node_sim.model import NodeModel, NodeType
@@ -50,3 +51,45 @@ def test_run_pump_applies_ec_change():
     assert dose_details["ec_before"] == pytest.approx(1.5)
     assert dose_details["ec_after"] == pytest.approx(1.6)
     assert node.get_sensor_value("ec_sensor") == pytest.approx(1.6)
+
+
+def test_validate_command_payload_invalid_sig_is_hmac_error():
+    node = _make_node(NodeType.PH)
+    handler = CommandHandler(node, mqtt_client=None)
+
+    payload = {
+        "cmd_id": "cmd-123",
+        "cmd": "dose",
+        "params": {"ml": 1.2},
+        "ts": 1737979200,
+        "sig": "deadbeef",
+    }
+
+    assert handler._validate_command_payload(payload) == ("invalid_hmac_format", "Invalid sig")
+
+
+def test_send_error_response_uses_unknown_cmd_id_when_missing():
+    published = []
+
+    class _DummyMqtt:
+        def publish_json(self, topic, payload, qos=1):
+            published.append((topic, payload, qos))
+
+    node = _make_node(NodeType.PH)
+    handler = CommandHandler(node, mqtt_client=_DummyMqtt())
+
+    asyncio.run(
+        handler._send_error_response(
+            "ph_sensor",
+            None,
+            "ERROR",
+            "Invalid command payload",
+            error_code="invalid_command_format",
+        )
+    )
+
+    assert len(published) == 1
+    _, payload, _ = published[0]
+    assert payload["cmd_id"] == "unknown"
+    assert payload["status"] == "ERROR"
+    assert payload["details"]["error_code"] == "invalid_command_format"

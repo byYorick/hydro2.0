@@ -377,7 +377,7 @@ static esp_err_t handle_exit_safe_mode(
     } else {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "exit_safe_mode_failed",
             "Failed to exit safe mode",
             NULL
@@ -409,7 +409,7 @@ static esp_err_t handle_get_diagnostics(
         );
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "diagnostics_not_available",
             "Diagnostics component not initialized",
             NULL
@@ -431,7 +431,7 @@ static esp_err_t handle_get_diagnostics(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "diagnostics_get_failed",
             "Failed to get diagnostics snapshot",
             NULL
@@ -444,7 +444,7 @@ static esp_err_t handle_get_diagnostics(
     if (diagnostics_json == NULL) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "memory_error",
             "Failed to allocate memory for diagnostics",
             NULL
@@ -458,7 +458,7 @@ static esp_err_t handle_get_diagnostics(
         cJSON_Delete(diagnostics_json);
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "memory_error",
             "Failed to allocate memory for system metrics",
             NULL
@@ -476,7 +476,7 @@ static esp_err_t handle_get_diagnostics(
         cJSON_Delete(diagnostics_json);
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "memory_error",
             "Failed to allocate memory for error metrics",
             NULL
@@ -493,7 +493,7 @@ static esp_err_t handle_get_diagnostics(
         cJSON_Delete(diagnostics_json);
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "memory_error",
             "Failed to allocate memory for MQTT metrics",
             NULL
@@ -511,7 +511,7 @@ static esp_err_t handle_get_diagnostics(
         cJSON_Delete(diagnostics_json);
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "memory_error",
             "Failed to allocate memory for Wi-Fi metrics",
             NULL

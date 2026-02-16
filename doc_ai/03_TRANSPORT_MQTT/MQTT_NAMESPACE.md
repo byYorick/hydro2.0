@@ -111,6 +111,18 @@ Payload (пример):
 
 > `status` является node-level сообщением и публикуется без сегмента `{channel}`.
 
+### 2.3.1. command_response
+
+Отправитель: **узел ESP32**  
+Получатель: **Python-сервис / Backend**
+
+```text
+hydro/{gh}/{zone}/{node}/{channel}/command_response
+```
+
+Канонические `status`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`.  
+Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+
 ### 2.4. event
 
 Отправитель: **узел ESP32 / Python-сервис** 
@@ -208,3 +220,10 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
  - отражены в `../10_AI_DEV_GUIDES/PYTHON_MQTT_SERVICE_AI_GUIDE.md` и `../10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`.
 
 MQTT-namespace — это **хребет системы 2.0**, поэтому изменения здесь должны происходить крайне аккуратно.
+
+## 7. Source Of Truth для runtime-схем
+
+- Источник схем: `backend/services/common/schemas`
+- Зеркало для прошивки: `firmware/schemas`
+- Проверка паритета: `./tools/check_runtime_schema_parity.sh`
+- Синхронизация зеркала: `./tools/sync_runtime_schemas.sh`

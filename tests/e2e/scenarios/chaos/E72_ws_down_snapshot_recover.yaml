@@ -15,9 +15,32 @@ actions:
     endpoint: /api/zones
     save: zones_response
 
+  - step: get_zone_id_by_uid
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: zn-test-1
+    save: zone_row
+    expected_rows: 1
+
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zone_row.0.zone_id}
+
+  - step: get_initial_last_event_id
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(id), 0) AS last_event_id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    save: baseline_event_row
+    expected_rows: 1
 
   # Получаем начальный snapshot - опционально, т.к. endpoint может не работать
   - step: get_initial_snapshot
@@ -28,8 +51,7 @@ actions:
 
   - step: set_initial_last_event_id
     type: set
-    initial_last_event_id: ${snapshot_before.data.last_event_id if snapshot_before else 0}
-    optional: true
+    initial_last_event_id: ${baseline_event_row.0.last_event_id}
 
   # Подключаемся к WebSocket
   - step: connect_websocket

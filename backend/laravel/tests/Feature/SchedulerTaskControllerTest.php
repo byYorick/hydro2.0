@@ -501,6 +501,12 @@ class SchedulerTaskControllerTest extends TestCase
                         'commands_total' => 1,
                         'commands_effect_confirmed' => 1,
                         'commands_failed' => 0,
+                        'executed_steps' => [
+                            ['step' => 'irrigation', 'status' => 'completed'],
+                        ],
+                        'safety_flags' => [],
+                        'next_due_at' => now()->addMinutes(10)->toIso8601String(),
+                        'run_mode' => 'run_full',
                     ],
                 ],
             ], 200),
@@ -516,6 +522,8 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('data.command_effect_confirmed', true)
             ->assertJsonPath('data.commands_total', 1)
             ->assertJsonPath('data.commands_effect_confirmed', 1)
-            ->assertJsonPath('data.commands_failed', 0);
+            ->assertJsonPath('data.commands_failed', 0)
+            ->assertJsonPath('data.executed_steps.0.step', 'irrigation')
+            ->assertJsonPath('data.run_mode', 'run_full');
     }
 }

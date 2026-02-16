@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_TERMINAL_COMMAND_STATUSES = {"ACK", "DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+_FINAL_COMMAND_STATUSES = {"DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+_NON_REPUBLISHABLE_COMMAND_STATUSES = _FINAL_COMMAND_STATUSES | {"ACK"}
 _REPUBLISH_ALLOWED_STATUSES = {"QUEUED", "SEND_FAILED"}
 
 
@@ -301,17 +302,19 @@ async def _ensure_command_for_publish(
             )
 
         cmd_status = _normalize_command_status(existing.get("status"))
-        if cmd_status in _TERMINAL_COMMAND_STATUSES:
+        if cmd_status in _NON_REPUBLISHABLE_COMMAND_STATUSES:
+            status_kind = "final" if cmd_status in _FINAL_COMMAND_STATUSES else "in_progress"
             logger.info(
-                "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
+                "[IDEMPOTENCY] Command %s already in non-republishable status '%s' (%s), skipping republish",
                 cmd_id,
                 cmd_status.lower(),
+                status_kind,
             )
             return {
                 "status": "ok",
                 "data": {
                     "command_id": cmd_id,
-                    "message": f"Command already in terminal status: {cmd_status.lower()}",
+                    "message": f"Command already in non-republishable status: {cmd_status.lower()} ({status_kind})",
                     "skipped": True,
                 },
             }

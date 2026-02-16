@@ -62,6 +62,11 @@ TASK_EXECUTE_CLOSED_LOOP_ENFORCE = _env_bool("AE_TASK_EXECUTE_CLOSED_LOOP", True
 TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC = max(1.0, _env_float("AE_TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC", 60.0))
 TELEMETRY_FRESHNESS_ENFORCE = _env_bool("AE_TELEMETRY_FRESHNESS_ENFORCE", True)
 TELEMETRY_FRESHNESS_MAX_AGE_SEC = max(30, _env_int("AE_TELEMETRY_FRESHNESS_MAX_AGE_SEC", 300))
+AUTO_LOGIC_DECISION_V1 = _env_bool("AUTO_LOGIC_DECISION_V1", True)
+AUTO_LOGIC_TANK_STATE_MACHINE_V1 = _env_bool("AUTO_LOGIC_TANK_STATE_MACHINE_V1", True)
+AUTO_LOGIC_CLIMATE_GUARDS_V1 = _env_bool("AUTO_LOGIC_CLIMATE_GUARDS_V1", True)
+AUTO_LOGIC_NEW_SENSORS_V1 = _env_bool("AUTO_LOGIC_NEW_SENSORS_V1", True)
+AUTO_LOGIC_EXTENDED_OUTCOME_V1 = _env_bool("AUTO_LOGIC_EXTENDED_OUTCOME_V1", True)
 
 
 ERR_COMMAND_PUBLISH_FAILED = "command_publish_failed"
@@ -137,6 +142,7 @@ class DecisionOutcome:
     decision: str
     reason_code: str
     reason: str
+    details: Optional[Dict[str, Any]] = None
 
 
 class SchedulerTaskExecutor:
@@ -195,45 +201,98 @@ class SchedulerTaskExecutor:
         )
 
         decision = self._decide_action(task_type=task_type, payload=payload)
-        if task_type == "ventilation":
+        if AUTO_LOGIC_CLIMATE_GUARDS_V1 and task_type == "ventilation":
             decision = await self._apply_ventilation_climate_guards(
                 zone_id=zone_id,
                 payload=payload,
                 decision=decision,
             )
+        decision_payload = {
+            "action_required": decision.action_required,
+            "decision": decision.decision,
+            "reason_code": decision.reason_code,
+            "reason": decision.reason,
+        }
+        if isinstance(decision.details, dict) and decision.details:
+            decision_payload["decision_details"] = decision.details
         await self._emit_task_event(
             zone_id=zone_id,
             task_type=task_type,
             context=context,
             event_type="DECISION_MADE",
-            payload={
-                "action_required": decision.action_required,
-                "decision": decision.decision,
-                "reason_code": decision.reason_code,
-                "reason": decision.reason,
-            },
+            payload=decision_payload,
         )
 
         if not decision.action_required:
+            retry_enqueue: Optional[Dict[str, Any]] = None
+            if decision.decision == "retry":
+                retry_enqueue = await self._enqueue_decision_retry(
+                    zone_id=zone_id,
+                    task_type=task_type,
+                    payload=payload,
+                    decision=decision,
+                    context=context,
+                )
+            success = decision.decision != "fail"
             result = {
-                "success": True,
+                "success": success,
                 "task_type": task_type,
-                "mode": "decision_skip",
+                "mode": f"decision_{decision.decision}",
                 "commands_total": 0,
                 "commands_failed": 0,
                 "action_required": False,
-                "decision": "skip",
+                "decision": decision.decision,
                 "reason_code": decision.reason_code,
                 "reason": decision.reason,
             }
-        elif task_type == "diagnostics" and self._is_two_tank_startup_workflow(payload):
+            if not success:
+                result["error"] = decision.reason_code
+                result["error_code"] = decision.reason_code
+            if isinstance(decision.details, dict) and decision.details:
+                result["decision_details"] = decision.details
+            if retry_enqueue is not None:
+                result["retry_enqueued"] = retry_enqueue
+            next_due_at = self._extract_next_due_at(decision=decision, result=result)
+            if isinstance(next_due_at, str) and next_due_at:
+                result["next_due_at"] = next_due_at
+            if decision.reason_code in {"low_water", "nodes_unavailable"}:
+                await send_infra_alert(
+                    code=f"infra_{task_type}_{decision.reason_code}",
+                    alert_type="Automation Decision Retry",
+                    message=(
+                        f"Задача {task_type} для зоны {zone_id} отложена: "
+                        f"{decision.reason_code} ({decision.decision})"
+                    ),
+                    severity="warning" if decision.decision == "retry" else "error",
+                    zone_id=zone_id,
+                    service="automation-engine",
+                    component="scheduler_task_executor",
+                    error_type=decision.reason_code,
+                    details={
+                        "task_type": task_type,
+                        "decision": decision.decision,
+                        "reason_code": decision.reason_code,
+                        "next_due_at": result.get("next_due_at"),
+                        "retry_attempt": result.get("retry_attempt"),
+                        "retry_max_attempts": result.get("retry_max_attempts"),
+                    },
+                )
+        elif (
+            task_type == "diagnostics"
+            and AUTO_LOGIC_TANK_STATE_MACHINE_V1
+            and self._is_two_tank_startup_workflow(payload)
+        ):
             result = await self._execute_two_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
                 context=context,
                 decision=decision,
             )
-        elif task_type == "diagnostics" and self._is_three_tank_startup_workflow(payload):
+        elif (
+            task_type == "diagnostics"
+            and AUTO_LOGIC_TANK_STATE_MACHINE_V1
+            and self._is_three_tank_startup_workflow(payload)
+        ):
             result = await self._execute_three_tank_startup_workflow(
                 zone_id=zone_id,
                 payload=payload,
@@ -276,6 +335,15 @@ class SchedulerTaskExecutor:
         result.setdefault("decision", decision.decision)
         result.setdefault("reason_code", decision.reason_code)
         result.setdefault("reason", decision.reason)
+        if isinstance(decision.details, dict) and decision.details:
+            result.setdefault("decision_details", decision.details)
+        if AUTO_LOGIC_EXTENDED_OUTCOME_V1:
+            result = self._ensure_extended_outcome(
+                task_type=task_type,
+                payload=payload,
+                decision=decision,
+                result=result,
+            )
 
         await self._emit_task_event(
             zone_id=zone_id,
@@ -307,6 +375,45 @@ class SchedulerTaskExecutor:
     def _decide_action(task_type: str, payload: Dict[str, Any]) -> DecisionOutcome:
         config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
         execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+
+        already_running = SchedulerTaskExecutor._extract_nested_bool(
+            payload,
+            ("already_running", "is_running", "operation_in_progress"),
+        )
+        if already_running is True:
+            return DecisionOutcome(
+                action_required=False,
+                decision="skip",
+                reason_code="already_running",
+                reason="Операция уже выполняется, повторный запуск не требуется",
+            )
+
+        outside_window = SchedulerTaskExecutor._extract_nested_bool(
+            payload,
+            ("outside_window", "is_outside_window"),
+        )
+        if outside_window is True:
+            return DecisionOutcome(
+                action_required=False,
+                decision="skip",
+                reason_code="outside_window",
+                reason="Задача вызвана вне допустимого окна выполнения",
+            )
+
+        safety_blocked = SchedulerTaskExecutor._extract_nested_bool(
+            payload,
+            ("safety_blocked", "blocked_by_safety"),
+        )
+        if safety_blocked is None:
+            safety = payload.get("safety") if isinstance(payload.get("safety"), dict) else {}
+            safety_blocked = SchedulerTaskExecutor._safe_bool(safety.get("blocked"))
+        if safety_blocked is True:
+            return DecisionOutcome(
+                action_required=False,
+                decision="skip",
+                reason_code="safety_blocked",
+                reason="Выполнение заблокировано safety-политикой",
+            )
 
         if execution.get("force_skip") is True:
             return DecisionOutcome(
@@ -340,6 +447,9 @@ class SchedulerTaskExecutor:
                 reason="Явно запрошен пропуск action_required=false",
             )
 
+        if task_type == "irrigation" and AUTO_LOGIC_DECISION_V1:
+            return SchedulerTaskExecutor._decide_irrigation_action(payload=payload)
+
         if task_type == "lighting":
             desired_state = payload.get("desired_state")
             current_state = payload.get("current_state")
@@ -357,6 +467,423 @@ class SchedulerTaskExecutor:
             reason_code=f"{task_type}_required",
             reason="Требуется выполнить задачу по расписанию",
         )
+
+    @staticmethod
+    def _safe_float(raw: Any) -> Optional[float]:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(value):
+            return None
+        return value
+
+    @staticmethod
+    def _safe_int(raw: Any) -> Optional[int]:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return value
+
+    @staticmethod
+    def _safe_bool(raw: Any) -> Optional[bool]:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, int):
+            if raw == 1:
+                return True
+            if raw == 0:
+                return False
+            return None
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return None
+
+    @staticmethod
+    def _extract_nested_metric(payload: Dict[str, Any], keys: Sequence[str]) -> Optional[float]:
+        sources: List[Dict[str, Any]] = []
+        for source_key in ("sensor_inputs", "sensors", "telemetry", "metrics"):
+            raw = payload.get(source_key)
+            if isinstance(raw, dict):
+                sources.append(raw)
+        sources.append(payload)
+
+        for source in sources:
+            for key in keys:
+                value = SchedulerTaskExecutor._safe_float(source.get(key))
+                if value is not None:
+                    return value
+        return None
+
+    @staticmethod
+    def _extract_nested_bool(payload: Dict[str, Any], keys: Sequence[str]) -> Optional[bool]:
+        sources: List[Dict[str, Any]] = []
+        for source_key in ("sensor_inputs", "safety", "telemetry", "metrics"):
+            raw = payload.get(source_key)
+            if isinstance(raw, dict):
+                sources.append(raw)
+        sources.append(payload)
+
+        for source in sources:
+            for key in keys:
+                value = SchedulerTaskExecutor._safe_bool(source.get(key))
+                if isinstance(value, bool):
+                    return value
+        return None
+
+    @staticmethod
+    def _extract_retry_attempt(payload: Dict[str, Any]) -> int:
+        for key in ("decision_retry_attempt", "retry_attempt", "attempt"):
+            parsed = SchedulerTaskExecutor._safe_int(payload.get(key))
+            if parsed is not None:
+                return max(0, parsed)
+        return 0
+
+    @staticmethod
+    def _decide_irrigation_action(payload: Dict[str, Any]) -> DecisionOutcome:
+        config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+        execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+        decision_cfg = execution.get("decision") if isinstance(execution.get("decision"), dict) else {}
+        safety_cfg = execution.get("safety") if isinstance(execution.get("safety"), dict) else {}
+
+        max_retry = max(
+            1,
+            SchedulerTaskExecutor._safe_int(
+                decision_cfg.get("max_retry")
+                if decision_cfg.get("max_retry") is not None
+                else execution.get("max_retry")
+            )
+            or 10,
+        )
+        backoff_sec = max(
+            10,
+            SchedulerTaskExecutor._safe_int(
+                decision_cfg.get("backoff_sec")
+                if decision_cfg.get("backoff_sec") is not None
+                else execution.get("backoff_sec")
+            )
+            or 60,
+        )
+        attempt = SchedulerTaskExecutor._extract_retry_attempt(payload)
+        next_due_at = (datetime.utcnow() + timedelta(seconds=backoff_sec)).isoformat()
+
+        low_water = SchedulerTaskExecutor._extract_nested_bool(
+            payload,
+            ("low_water", "is_low_water", "solution_low_water"),
+        )
+        if low_water is None:
+            low_water = SchedulerTaskExecutor._safe_bool(safety_cfg.get("low_water"))
+
+        nodes_unavailable = SchedulerTaskExecutor._extract_nested_bool(
+            payload,
+            ("nodes_unavailable", "required_nodes_unavailable"),
+        )
+        if nodes_unavailable is None:
+            nodes_unavailable = SchedulerTaskExecutor._safe_bool(safety_cfg.get("nodes_unavailable"))
+
+        if low_water is True:
+            decision = "retry" if attempt < max_retry else "fail"
+            return DecisionOutcome(
+                action_required=False,
+                decision=decision,
+                reason_code="low_water",
+                reason="Недостаточный уровень воды/раствора, запуск полива отложен",
+                details={
+                    "retry_attempt": attempt + 1,
+                    "retry_max_attempts": max_retry,
+                    "retry_backoff_sec": backoff_sec,
+                    "next_due_at": next_due_at,
+                    "safety_flags": ["low_water"],
+                },
+            )
+
+        if nodes_unavailable is True:
+            decision = "retry" if attempt < max_retry else "fail"
+            return DecisionOutcome(
+                action_required=False,
+                decision=decision,
+                reason_code="nodes_unavailable",
+                reason="Недоступны обязательные ноды полива, запуск отложен",
+                details={
+                    "retry_attempt": attempt + 1,
+                    "retry_max_attempts": max_retry,
+                    "retry_backoff_sec": backoff_sec,
+                    "next_due_at": next_due_at,
+                    "safety_flags": ["nodes_unavailable"],
+                },
+            )
+
+        if AUTO_LOGIC_NEW_SENSORS_V1:
+            soil_moisture_pct = SchedulerTaskExecutor._extract_nested_metric(
+                payload,
+                ("soil_moisture_pct", "soil_moisture", "substrate_moisture"),
+            )
+            soil_temp_c = SchedulerTaskExecutor._extract_nested_metric(
+                payload,
+                ("soil_temp_c", "soil_temperature", "substrate_temp_c"),
+            )
+            ambient_temp_c = SchedulerTaskExecutor._extract_nested_metric(
+                payload,
+                ("ambient_temp_c", "ambient_temp", "air_temp_c", "temp_air"),
+            )
+            moisture_target_pct = SchedulerTaskExecutor._safe_float(
+                decision_cfg.get("moisture_target_pct")
+            )
+            if moisture_target_pct is None:
+                moisture_target_pct = 80.0
+            moisture_tolerance_pct = SchedulerTaskExecutor._safe_float(
+                decision_cfg.get("moisture_tolerance_pct")
+            )
+            if moisture_tolerance_pct is None:
+                moisture_tolerance_pct = 10.0
+            reduced_ratio = SchedulerTaskExecutor._safe_float(
+                decision_cfg.get("reduced_run_ratio")
+            )
+            if reduced_ratio is None:
+                reduced_ratio = 0.30
+            high_temperature_c = SchedulerTaskExecutor._safe_float(
+                decision_cfg.get("high_temperature_c")
+            )
+            if high_temperature_c is None:
+                high_temperature_c = 30.0
+
+            lower_bound = moisture_target_pct - moisture_tolerance_pct
+            upper_bound = moisture_target_pct + moisture_tolerance_pct
+
+            if soil_moisture_pct is not None and lower_bound <= soil_moisture_pct <= upper_bound:
+                if ambient_temp_c is not None and ambient_temp_c >= high_temperature_c:
+                    return DecisionOutcome(
+                        action_required=True,
+                        decision="run",
+                        reason_code="irrigation_required",
+                        reason="Влажность в норме, но высокая температура требует сниженный полив",
+                        details={
+                            "run_mode": "run_reduced",
+                            "run_ratio": reduced_ratio,
+                            "sensor_snapshot": {
+                                "soil_moisture_pct": soil_moisture_pct,
+                                "soil_temp_c": soil_temp_c,
+                                "ambient_temp_c": ambient_temp_c,
+                            },
+                        },
+                    )
+                return DecisionOutcome(
+                    action_required=False,
+                    decision="skip",
+                    reason_code="target_already_met",
+                    reason="Влажность субстрата в норме, полив не требуется",
+                    details={
+                        "run_mode": "skip",
+                        "sensor_snapshot": {
+                            "soil_moisture_pct": soil_moisture_pct,
+                            "soil_temp_c": soil_temp_c,
+                            "ambient_temp_c": ambient_temp_c,
+                        },
+                    },
+                )
+
+            if soil_moisture_pct is not None and soil_moisture_pct < lower_bound:
+                return DecisionOutcome(
+                    action_required=True,
+                    decision="run",
+                    reason_code="irrigation_required",
+                    reason="Влажность ниже нормы, требуется полный цикл полива",
+                    details={
+                        "run_mode": "run_full",
+                        "sensor_snapshot": {
+                            "soil_moisture_pct": soil_moisture_pct,
+                            "soil_temp_c": soil_temp_c,
+                            "ambient_temp_c": ambient_temp_c,
+                        },
+                    },
+                )
+
+        return DecisionOutcome(
+            action_required=True,
+            decision="run",
+            reason_code="irrigation_required",
+            reason="Требуется выполнить задачу по расписанию",
+            details={"run_mode": "run_full"},
+        )
+
+    @staticmethod
+    def _extract_next_due_at(*, decision: DecisionOutcome, result: Dict[str, Any]) -> Optional[str]:
+        raw = result.get("next_due_at")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        if isinstance(result.get("next_check"), dict):
+            scheduled_for = result["next_check"].get("scheduled_for")
+            if isinstance(scheduled_for, str) and scheduled_for.strip():
+                return scheduled_for.strip()
+        if isinstance(decision.details, dict):
+            raw = decision.details.get("next_due_at")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+        return None
+
+    async def _enqueue_decision_retry(
+        self,
+        *,
+        zone_id: int,
+        task_type: str,
+        payload: Dict[str, Any],
+        decision: DecisionOutcome,
+        context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if decision.decision != "retry":
+            return None
+        if not isinstance(decision.details, dict):
+            return None
+
+        next_due_at = self._extract_next_due_at(decision=decision, result={})
+        if not next_due_at:
+            return None
+
+        retry_attempt = self._safe_int(decision.details.get("retry_attempt"))
+        retry_payload = dict(payload)
+        if retry_attempt is not None:
+            retry_payload["retry_attempt"] = max(0, retry_attempt)
+        retry_payload["decision_retry_reason_code"] = decision.reason_code
+
+        try:
+            enqueue_result = await enqueue_internal_scheduler_task(
+                zone_id=zone_id,
+                task_type=task_type,
+                payload=retry_payload,
+                scheduled_for=next_due_at,
+                correlation_id=context.get("correlation_id") or None,
+                source="automation-engine:decision-retry",
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Не удалось поставить retry-задачу scheduler: zone=%s task=%s reason=%s error=%s",
+                zone_id,
+                task_type,
+                decision.reason_code,
+                exc,
+            )
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "scheduled_for": next_due_at,
+            }
+        return enqueue_result
+
+    def _ensure_extended_outcome(
+        self,
+        *,
+        task_type: str,
+        payload: Dict[str, Any],
+        decision: DecisionOutcome,
+        result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        enriched = dict(result)
+
+        if not isinstance(enriched.get("executed_steps"), list):
+            step_name = str(
+                enriched.get("workflow")
+                or enriched.get("mode")
+                or task_type
+            ).strip() or task_type
+            decision_state = str(enriched.get("decision") or "").strip().lower()
+            if decision_state == "skip":
+                step_status = "skipped"
+            elif decision_state == "retry":
+                step_status = "retry_scheduled"
+            elif bool(enriched.get("success")):
+                step_status = "completed"
+            else:
+                step_status = "failed"
+            enriched["executed_steps"] = [{"step": step_name, "status": step_status}]
+
+        safety_flags: List[str] = []
+        raw_flags = enriched.get("safety_flags")
+        if isinstance(raw_flags, Sequence) and not isinstance(raw_flags, (str, bytes, bytearray)):
+            for item in raw_flags:
+                value = str(item).strip()
+                if value and value not in safety_flags:
+                    safety_flags.append(value)
+        if isinstance(decision.details, dict):
+            details_flags = decision.details.get("safety_flags")
+            if isinstance(details_flags, Sequence) and not isinstance(details_flags, (str, bytes, bytearray)):
+                for item in details_flags:
+                    value = str(item).strip()
+                    if value and value not in safety_flags:
+                        safety_flags.append(value)
+        reason_code = str(enriched.get("reason_code") or "").strip().lower()
+        if reason_code in {
+            "low_water",
+            "nodes_unavailable",
+            REASON_WIND_BLOCKED,
+            REASON_OUTSIDE_TEMP_BLOCKED,
+            "climate_external_nodes_unavailable",
+        } and reason_code not in safety_flags:
+            safety_flags.append(reason_code)
+        enriched["safety_flags"] = safety_flags
+
+        next_due_at = self._extract_next_due_at(decision=decision, result=enriched)
+        enriched["next_due_at"] = next_due_at
+
+        if isinstance(enriched.get("measurements_before_after"), dict):
+            measurements = enriched.get("measurements_before_after")
+        elif isinstance(decision.details, dict) and isinstance(decision.details.get("sensor_snapshot"), dict):
+            measurements = {
+                "before": decision.details.get("sensor_snapshot"),
+                "after": None,
+            }
+        elif isinstance(enriched.get("targets_state"), dict):
+            targets_state = enriched.get("targets_state") if isinstance(enriched.get("targets_state"), dict) else {}
+            ph_state = targets_state.get("ph") if isinstance(targets_state.get("ph"), dict) else {}
+            ec_state = targets_state.get("ec") if isinstance(targets_state.get("ec"), dict) else {}
+            measurements = {
+                "before": {
+                    "ph": ph_state.get("value"),
+                    "ec": ec_state.get("value"),
+                },
+                "after": None,
+            }
+        else:
+            measurements = {"before": None, "after": None}
+        enriched["measurements_before_after"] = measurements
+
+        if isinstance(decision.details, dict):
+            run_mode = decision.details.get("run_mode")
+            if isinstance(run_mode, str) and run_mode.strip():
+                enriched.setdefault("run_mode", run_mode.strip())
+            retry_attempt = self._safe_int(decision.details.get("retry_attempt"))
+            retry_max_attempts = self._safe_int(decision.details.get("retry_max_attempts"))
+            retry_backoff_sec = self._safe_int(decision.details.get("retry_backoff_sec"))
+            if retry_attempt is not None:
+                enriched.setdefault("retry_attempt", max(0, retry_attempt))
+            if retry_max_attempts is not None:
+                enriched.setdefault("retry_max_attempts", max(1, retry_max_attempts))
+            if retry_backoff_sec is not None:
+                enriched.setdefault("retry_backoff_sec", max(0, retry_backoff_sec))
+
+        if self._extract_topology(payload) == "two_tank_drip_substrate_trays":
+            orchestration = self._extract_two_tank_chemistry_orchestration(payload)
+            if orchestration:
+                enriched.setdefault("chemistry_orchestration", orchestration)
+
+        return enriched
+
+    @staticmethod
+    def _extract_two_tank_chemistry_orchestration(payload: Dict[str, Any]) -> Dict[str, Any]:
+        config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+        execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+        raw = execution.get("chemistry_orchestration")
+        if isinstance(raw, dict) and raw:
+            return raw
+        return {
+            "irrigation_online_sequence": ["ec", "ph"],
+            "prepare_sequence": ["npk", "ph"],
+            "irrigation_recovery_sequence": ["calcium", "magnesium", "micro", "ph"],
+        }
 
     async def _emit_task_event(
         self,
@@ -739,11 +1266,6 @@ class SchedulerTaskExecutor:
             payload.get("topology")
             or execution.get("topology")
             or diagnostics_execution.get("topology")
-            or (
-                execution.get("solution_prepare", {}).get("topology")
-                if isinstance(execution.get("solution_prepare"), dict)
-                else None
-            )
             or ""
         )
         return str(raw).strip().lower()
@@ -792,6 +1314,41 @@ class SchedulerTaskExecutor:
             return None
         return value
 
+    @staticmethod
+    def _with_decision_details(decision: DecisionOutcome, patch: Dict[str, Any]) -> DecisionOutcome:
+        merged: Dict[str, Any] = {}
+        if isinstance(decision.details, dict):
+            merged.update(decision.details)
+        for key, value in patch.items():
+            if key == "safety_flags":
+                existing = merged.get("safety_flags")
+                flags: List[str] = []
+                if isinstance(existing, Sequence) and not isinstance(existing, (str, bytes, bytearray)):
+                    for item in existing:
+                        normalized = str(item).strip()
+                        if normalized and normalized not in flags:
+                            flags.append(normalized)
+                if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+                    for item in value:
+                        normalized = str(item).strip()
+                        if normalized and normalized not in flags:
+                            flags.append(normalized)
+                merged["safety_flags"] = flags
+                continue
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                nested = dict(merged.get(key) if isinstance(merged.get(key), dict) else {})
+                nested.update(value)
+                merged[key] = nested
+            else:
+                merged[key] = value
+        return DecisionOutcome(
+            action_required=decision.action_required,
+            decision=decision.decision,
+            reason_code=decision.reason_code,
+            reason=decision.reason,
+            details=merged or None,
+        )
+
     async def _apply_ventilation_climate_guards(
         self,
         *,
@@ -821,6 +1378,7 @@ class SchedulerTaskExecutor:
             or external_guard.get("low_outside_temp_c")
             or external_guard.get("temp_min")
         )
+        fallback_reasons: List[str] = []
 
         if strong_wind_mps is not None:
             wind = await self._read_latest_metric(zone_id=zone_id, sensor_type="WIND_SPEED")
@@ -840,6 +1398,8 @@ class SchedulerTaskExecutor:
                         f"выше порога {strong_wind_mps:.2f} м/с"
                     ),
                 )
+            if not wind.get("has_value") or wind.get("is_stale") or wind_value is None:
+                fallback_reasons.append("wind_metric_unavailable")
 
         if low_outside_temp_c is not None:
             outside = await self._read_latest_metric(zone_id=zone_id, sensor_type="OUTSIDE_TEMP")
@@ -859,6 +1419,29 @@ class SchedulerTaskExecutor:
                         f"ниже порога {low_outside_temp_c:.2f}°C"
                     ),
                 )
+            if not outside.get("has_value") or outside.get("is_stale") or outside_temp is None:
+                fallback_reasons.append("outside_temp_metric_unavailable")
+
+        if fallback_reasons:
+            fallback_decision = DecisionOutcome(
+                action_required=decision.action_required,
+                decision=decision.decision,
+                reason_code="climate_external_nodes_unavailable",
+                reason="Внешние climate-метрики недоступны, применен fallback режим",
+                details=decision.details,
+            )
+            return self._with_decision_details(
+                fallback_decision,
+                {
+                    "safety_flags": ["climate_external_nodes_unavailable"],
+                    "fallback_source_reason_code": decision.reason_code,
+                    "fallback_source_reason": decision.reason,
+                    "climate_fallback": {
+                        "active": True,
+                        "reasons": fallback_reasons,
+                    },
+                },
+            )
 
         return decision
 

@@ -1,87 +1,57 @@
-# JSON Schemas для единого контракта команд
+# Runtime Schemas (Source Of Truth)
 
-Этот каталог содержит JSON схемы для единого контракта команд в системе.
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
-## Файлы
+Этот каталог — **единый источник истины** для runtime JSON-schema в пайплайне
+`ESP32 -> MQTT -> Python -> PostgreSQL -> Laravel -> Vue`.
 
-- `command.json` - Схема для команды (Command)
-- `command_response.json` - Схема для ответа на команду (CommandResponse)
-- `fixtures.py` - Тестовые fixtures для команд и ответов
-- `CONTRACT.md` - Полная документация единого контракта
-- `README.md` - Этот файл
+## Канонические статусы command_response
 
-## Использование
+Допустимы только:
 
-Эти схемы используются для:
-1. Валидации команд и ответов в Python сервисах
-2. Генерации документации
-3. Тестирования (fixtures)
-4. Обеспечения единообразия форматов между сервисами
+- `ACK`
+- `DONE`
+- `ERROR`
+- `INVALID`
+- `BUSY`
+- `NO_EFFECT`
 
-## Формат команды (Command)
+Legacy-статусы `ACCEPTED` и `FAILED` не поддерживаются.
 
-```json
-{
-  "cmd_id": "cmd-abc123",
-  "cmd": "dose",
-  "params": { "ml": 1.2 },
-  "ts": 1737355112,
-  "sig": "deadbeef"
-}
+## Источник и зеркало
+
+- Источник: `backend/services/common/schemas`
+- Зеркало: `firmware/schemas`
+
+Синхронизуемые runtime-схемы:
+
+- `command.schema.json`
+- `command_response.schema.json`
+- `telemetry.schema.json`
+- `status.schema.json`
+- `heartbeat.schema.json`
+- `error.schema.json`
+- `error_alert.schema.json`
+
+## Правило именования `error` схем
+
+- `error.schema.json` — каноническая схема payload для MQTT topic `.../error`.
+- `error_alert.schema.json` — алиас той же структуры для backend/alerts контекста.
+- Эти файлы должны оставаться синхронными.
+
+## Процесс синхронизации
+
+1. Правки делаются только в `backend/services/common/schemas`.
+2. После правок запускается:
+
+```bash
+./tools/sync_runtime_schemas.sh
 ```
 
-**Обязательные поля:**
-- `cmd_id` - уникальный идентификатор команды
-- `cmd` - тип команды
-- `params` - параметры команды (объект)
-- `ts` - timestamp создания (секунды)
-- `sig` - HMAC подпись
+3. Проверка паритета:
 
-## Формат ответа (CommandResponse)
-
-```json
-{
-  "cmd_id": "cmd-abc123",
-  "status": "DONE",
-  "ts": 1737355113000,
-  "details": {
-    "duration_ms": 1000
-  }
-}
+```bash
+./tools/check_runtime_schema_parity.sh
 ```
 
-**Обязательные поля:**
-- `cmd_id` - идентификатор команды
-- `status` - статус (ACK|DONE|ERROR|INVALID|BUSY|NO_EFFECT)
-- `ts` - timestamp ответа
-
-**Опциональные поля:**
-- `details` - дополнительные детали ответа
-
-## Статусы в БД
-
-State-machine статусов в базе данных:
-- `QUEUED` - команда поставлена в очередь
-- `SENT` - команда отправлена в MQTT
-- `ACK` - команда принята узлом
-- `DONE` - команда успешно выполнена
-- `NO_EFFECT` - команда выполнена без эффекта
-- `ERROR` - команда завершилась с ошибкой
-- `INVALID` - команда отклонена из-за параметров/валидации
-- `BUSY` - узел занят (временная недоступность)
-- `TIMEOUT` - команда не получила ответа в срок
-- `SEND_FAILED` - ошибка при отправке команды
-
-## Валидация
-
-Для валидации JSON по схемам можно использовать:
-
-```python
-import jsonschema
-import json
-
-with open('schemas/command.json') as f:
-    schema = json.load(f)
-    
-jsonschema.validate(instance=command_data, schema=schema)
-```
+CI падает при расхождении источника и зеркала.

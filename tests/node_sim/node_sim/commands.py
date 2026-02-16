@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+import re
 from typing import Dict, Any, Optional, Callable
 from functools import lru_cache
 from collections import OrderedDict
@@ -19,6 +20,7 @@ from .utils_time import current_timestamp_ms
 from .logging import get_logger
 
 logger = get_logger(__name__)
+_SIG_HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 @dataclass
@@ -248,18 +250,28 @@ class CommandHandler:
                 data = json.loads(payload.decode('utf-8'))
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.error(f"Failed to parse command JSON: {e}")
-                self._schedule_async(self._send_error_response(channel, None, "INVALID", "Invalid JSON"))
+                self._schedule_async(
+                    self._send_error_response(
+                        channel,
+                        None,
+                        "INVALID",
+                        "Invalid JSON",
+                        error_code="invalid_json",
+                    )
+                )
                 return
             
             validation_error = self._validate_command_payload(data)
             if validation_error:
-                logger.error(f"Command validation failed: {validation_error}")
+                error_code, error_message = validation_error
+                logger.error(f"Command validation failed: {error_code}: {error_message}")
                 self._schedule_async(
                     self._send_error_response(
                         channel,
                         data.get("cmd_id"),
-                        "INVALID",
-                        validation_error,
+                        "ERROR",
+                        error_message,
+                        error_code=error_code,
                     )
                 )
                 return
@@ -299,27 +311,29 @@ class CommandHandler:
             except:
                 pass
     
-    def _validate_command_payload(self, payload: Dict[str, Any]) -> Optional[str]:
+    def _validate_command_payload(self, payload: Dict[str, Any]) -> Optional[tuple[str, str]]:
         required_keys = {"cmd_id", "cmd", "params", "ts", "sig"}
         allowed_keys = set(required_keys)
         if not isinstance(payload, dict):
-            return "Command payload must be an object"
+            return ("invalid_command_format", "Command payload must be an object")
         missing = required_keys - set(payload.keys())
         if missing:
-            return f"Missing fields: {', '.join(sorted(missing))}"
+            return ("invalid_command_format", f"Missing fields: {', '.join(sorted(missing))}")
         extra = set(payload.keys()) - allowed_keys
         if extra:
-            return f"Unknown fields: {', '.join(sorted(extra))}"
+            return ("invalid_command_format", f"Unknown fields: {', '.join(sorted(extra))}")
         if not isinstance(payload.get("cmd_id"), str) or not payload.get("cmd_id"):
-            return "Invalid cmd_id"
+            return ("invalid_command_format", "Invalid cmd_id")
         if not isinstance(payload.get("cmd"), str) or not payload.get("cmd"):
-            return "Invalid cmd"
+            return ("invalid_command_format", "Invalid cmd")
         if not isinstance(payload.get("params"), dict):
-            return "Invalid params (must be object)"
-        if not isinstance(payload.get("ts"), int) or payload.get("ts", -1) < 0:
-            return "Invalid ts"
-        if not isinstance(payload.get("sig"), str) or not payload.get("sig"):
-            return "Invalid sig"
+            return ("invalid_command_format", "Invalid params (must be object)")
+        ts = payload.get("ts")
+        if type(ts) is not int or ts < 0:
+            return ("invalid_hmac_format", "Invalid ts")
+        sig = payload.get("sig")
+        if not isinstance(sig, str) or not _SIG_HEX64_RE.fullmatch(sig):
+            return ("invalid_hmac_format", "Invalid sig")
         return None
 
     async def _handle_command(
@@ -523,14 +537,19 @@ class CommandHandler:
         channel: str,
         cmd_id: Optional[str],
         status: str,
-        error: str
+        error: str,
+        error_code: Optional[str] = None,
     ):
         """Отправить ответ об ошибке."""
-        if cmd_id is None:
-            logger.warning("Cannot send error response: cmd_id is None")
-            return
-        
-        await self._send_response(channel, cmd_id, status, {"error_message": error})
+        if not cmd_id:
+            cmd_id = "unknown"
+            logger.warning("Error response uses fallback cmd_id=unknown")
+
+        details: Dict[str, Any] = {"error_message": error}
+        if error_code:
+            details["error_code"] = error_code
+
+        await self._send_response(channel, cmd_id, status, details)
     
     async def _send_cached_response(
         self,

@@ -105,7 +105,7 @@ class TestLaravelDown:
         
         async with httpx.AsyncClient(timeout=2.0) as client:
             try:
-                response = await client.get(f"{invalid_url}/api/health")
+                response = await client.get(f"{invalid_url}/api/system/health")
                 # Если получили ответ, проверяем статус
                 assert response.status_code >= 400
             except (httpx.ConnectError, httpx.TimeoutException):
@@ -119,8 +119,9 @@ class TestLaravelDown:
         async with httpx.AsyncClient(timeout=0.1) as client:
             try:
                 # Используем реальный URL, но с очень коротким таймаутом
-                response = await client.get(f"{laravel_url}/api/health")
-                # Если получили ответ, это нормально
+                response = await client.get(f"{laravel_url}/api/system/health")
+                # Если ответ пришёл быстрее таймаута, endpoint должен быть валидным
+                assert response.status_code in (200, 503)
             except (httpx.TimeoutException, httpx.ConnectError):
                 # Ожидаем таймаут или недоступность
                 pass
@@ -184,12 +185,13 @@ class TestBurstTelemetry:
         """Тест обработки большого количества телеметрии за короткое время."""
         # Симулируем burst телеметрии
         telemetry_messages = []
+        ts_base = int(time.time())
         for i in range(1000):
             telemetry_messages.append({
                 "metric_type": "PH",
                 "value": 6.5 + (i % 10) * 0.1,
-                "ts": time.time() + i * 0.001,
-                "node_id": f"nd-ph-{i % 10}"
+                # Контракт telemetry.schema.json требует integer ts (unix seconds)
+                "ts": ts_base + i,
             })
         
         # Проверяем, что все сообщения валидны
@@ -215,12 +217,12 @@ class TestBurstTelemetry:
         # Симулируем отправку большого количества сообщений в очередь
         # (в реальном коде это может быть Redis очередь)
         messages = []
+        ts_base = int(time.time())
         for i in range(100):
             messages.append({
                 "metric_type": "PH",
                 "value": 6.5,
-                "ts": time.time(),
-                "node_id": f"nd-ph-{i}"
+                "ts": ts_base + i,
             })
         
         # Проверяем, что все сообщения могут быть обработаны

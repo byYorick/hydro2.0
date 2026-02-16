@@ -236,7 +236,7 @@ static esp_err_t handle_set_relay(
     if (!climate_node_parse_state(state_item, &state)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid state",
             NULL
@@ -249,7 +249,7 @@ static esp_err_t handle_set_relay(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "relay_driver_failed",
             "Failed to set relay state",
             NULL
@@ -286,7 +286,7 @@ static esp_err_t handle_set_pwm(
     if (!cJSON_IsNumber(value_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid value (must be number)",
             NULL
@@ -313,7 +313,7 @@ static esp_err_t handle_set_pwm(
     if (duty_percent < 0.0f || duty_percent > 100.0f) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "PWM value must be between 0 and 100 (or 0-255)",
             NULL
@@ -325,7 +325,7 @@ static esp_err_t handle_set_pwm(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "pwm_failed",
             "Failed to set PWM duty",
             NULL
@@ -363,7 +363,7 @@ static esp_err_t handle_test_sensor(
         if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "i2c_not_initialized",
                 "I2C bus 1 is not initialized",
                 NULL
@@ -382,7 +382,7 @@ static esp_err_t handle_test_sensor(
             if (init_err != ESP_OK) {
                 *response = node_command_handler_create_response(
                     NULL,
-                    "FAILED",
+                    "ERROR",
                     "sensor_init_failed",
                     "Failed to initialize SHT3x sensor",
                     NULL
@@ -395,7 +395,7 @@ static esp_err_t handle_test_sensor(
         if (err != ESP_OK || !reading.valid) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "read_failed",
                 "Failed to read SHT3x sensor",
                 NULL
@@ -407,7 +407,7 @@ static esp_err_t handle_test_sensor(
         if (!isfinite(value)) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "invalid_value",
                 "Sensor returned invalid value",
                 NULL
@@ -446,7 +446,7 @@ static esp_err_t handle_test_sensor(
         if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "i2c_not_initialized",
                 "I2C bus 0 is not initialized",
                 NULL
@@ -459,7 +459,7 @@ static esp_err_t handle_test_sensor(
         if (err == ESP_ERR_NOT_FINISHED) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "sensor_not_ready",
                 "CO2 sensor data not ready",
                 NULL
@@ -470,7 +470,7 @@ static esp_err_t handle_test_sensor(
         if (err != ESP_OK || !reading.valid) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "sensor_stub",
                 "CO2 sensor returned invalid or stub values",
                 NULL
@@ -505,7 +505,7 @@ static esp_err_t handle_test_sensor(
 
     *response = node_command_handler_create_response(
         NULL,
-        "FAILED",
+        "ERROR",
         "invalid_channel",
         "Unknown sensor channel",
         NULL
