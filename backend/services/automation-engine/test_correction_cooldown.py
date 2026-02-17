@@ -165,6 +165,21 @@ async def test_should_apply_correction_critical_deviation():
 
 
 @pytest.mark.asyncio
+async def test_should_apply_correction_critical_deviation_ignores_improving_trend():
+    """Критическое отклонение должно обходить trend-based skip."""
+    with patch("correction_cooldown.is_in_cooldown") as mock_cooldown, \
+         patch("correction_cooldown.analyze_trend") as mock_trend:
+        mock_cooldown.return_value = False
+        mock_trend.return_value = (True, -0.5)
+
+        should, reason = await should_apply_correction(1, "ec", 1.8, 1.0, 0.8)
+
+        assert should is True
+        assert "критическое" in reason.lower() or "critical" in reason.lower()
+        mock_trend.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_should_apply_correction_improving_trend():
     """Тест should_apply_correction - тренд улучшается."""
     with patch("correction_cooldown.is_in_cooldown") as mock_cooldown, \

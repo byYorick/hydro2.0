@@ -714,23 +714,51 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     const hasSchedulerCompleted = rawTimeline.some(
       (item) => String(item?.event_type ?? '').trim().toUpperCase() === 'SCHEDULE_TASK_COMPLETED'
     )
-    if (!hasSchedulerCompleted) return rawTimeline
+    const filteredTimeline = hasSchedulerCompleted
+      ? rawTimeline.filter((item) => {
+          const eventType = String(item?.event_type ?? '').trim().toUpperCase()
+          if (eventType !== 'TASK_FINISHED' && eventType !== 'SCHEDULE_TASK_EXECUTION_FINISHED') {
+            return true
+          }
 
-    return rawTimeline.filter((item) => {
-      const eventType = String(item?.event_type ?? '').trim().toUpperCase()
-      if (eventType !== 'TASK_FINISHED' && eventType !== 'SCHEDULE_TASK_EXECUTION_FINISHED') {
-        return true
+          const itemTaskId = String(item?.task_id ?? task?.task_id ?? '').trim()
+          return !rawTimeline.some((candidate) => {
+            const candidateType = String(candidate?.event_type ?? '').trim().toUpperCase()
+            if (candidateType !== 'SCHEDULE_TASK_COMPLETED') return false
+            if (!itemTaskId) return true
+            const candidateTaskId = String(candidate?.task_id ?? task?.task_id ?? '').trim()
+            return candidateTaskId === '' || candidateTaskId === itemTaskId
+          })
+        })
+      : rawTimeline
+
+    const dedupedTimeline: SchedulerTaskTimelineItem[] = []
+    const seenSignatures = new Set<string>()
+    for (const item of filteredTimeline) {
+      const signature = [
+        String(item?.event_type ?? '').trim().toUpperCase(),
+        String(item?.at ?? '').trim(),
+        String(item?.task_id ?? task?.task_id ?? '').trim(),
+        String(item?.correlation_id ?? '').trim(),
+        String(item?.reason_code ?? '').trim().toLowerCase(),
+        String(item?.error_code ?? '').trim().toLowerCase(),
+        String(item?.decision ?? '').trim().toLowerCase(),
+        String(item?.run_mode ?? '').trim().toLowerCase(),
+        String(item?.node_uid ?? '').trim(),
+        String(item?.channel ?? '').trim(),
+        String(item?.cmd ?? '').trim(),
+        String(item?.status ?? '').trim().toLowerCase(),
+      ].join('|')
+
+      if (seenSignatures.has(signature)) {
+        continue
       }
 
-      const itemTaskId = String(item?.task_id ?? task?.task_id ?? '').trim()
-      return !rawTimeline.some((candidate) => {
-        const candidateType = String(candidate?.event_type ?? '').trim().toUpperCase()
-        if (candidateType !== 'SCHEDULE_TASK_COMPLETED') return false
-        if (!itemTaskId) return true
-        const candidateTaskId = String(candidate?.task_id ?? task?.task_id ?? '').trim()
-        return candidateTaskId === '' || candidateTaskId === itemTaskId
-      })
-    })
+      seenSignatures.add(signature)
+      dedupedTimeline.push(item)
+    }
+
+    return dedupedTimeline
   }
 
   function schedulerTaskDecisionLabel(decision: string | null | undefined): string {
@@ -795,10 +823,11 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       irrigation_recovery_degraded: 'Recovery-контур завершён в degraded tolerance',
       lighting_already_in_target_state: 'Свет уже в целевом состоянии',
     }
-    if (reasonMap[normalized]) return `${reasonMap[normalized]} (${normalized})`
-    if (normalized.endsWith('_not_required')) return `Действие не требуется (${normalized})`
-    if (normalized.endsWith('_required')) return `Действие требуется (${normalized})`
-    return reasonText ? `${reasonText} (${normalized})` : normalized
+    if (reasonMap[normalized]) return reasonMap[normalized]
+    if (normalized.endsWith('_not_required')) return 'Действие не требуется'
+    if (normalized.endsWith('_required')) return 'Действие требуется'
+    if (reasonText && String(reasonText).trim() !== '') return String(reasonText)
+    return 'Неизвестная причина'
   }
 
   function schedulerTaskErrorLabel(errorCode: string | null | undefined, errorText?: string | null): string {
@@ -811,10 +840,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       command_publish_failed: 'Ошибка отправки команды',
       command_send_failed: 'Команда не отправлена',
       command_timeout: 'Таймаут ожидания DONE от ноды',
-      command_error: 'Нода вернула ERROR',
-      command_invalid: 'Нода вернула INVALID',
-      command_busy: 'Нода вернула BUSY',
-      command_no_effect: 'Нода вернула NO_EFFECT',
+      command_error: 'Нода вернула ошибку',
+      command_invalid: 'Нода отклонила команду',
+      command_busy: 'Нода занята',
+      command_no_effect: 'Нода не подтвердила выполнение команды',
       command_tracker_unavailable: 'Невозможно подтвердить DONE: tracker недоступен',
       command_effect_not_confirmed: 'Нода не подтвердила DONE',
       mapping_not_found: 'Конфигурация команды не найдена',
@@ -839,8 +868,9 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       execution_exception: 'Исключение во время выполнения задачи',
       task_execution_failed: 'Задача завершилась с ошибкой',
     }
-    if (errorMap[normalized]) return `${errorMap[normalized]} (${normalized})`
-    return errorText ? `${errorText} (${normalized})` : normalized
+    if (errorMap[normalized]) return errorMap[normalized]
+    if (errorText && String(errorText).trim() !== '') return String(errorText)
+    return 'Неизвестная ошибка'
   }
 
   function normalizeOptionalBool(value: unknown): boolean | null {

@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from application.workflow_phase_policy import WORKFLOW_PHASE_VALUES, normalize_workflow_phase
 from infrastructure import CommandBus
 
 
@@ -65,7 +66,7 @@ def normalize_state_override(state: Dict[str, Any]) -> Dict[str, Any]:
     if error_streak < 0:
         raise HTTPException(status_code=400, detail="Field 'error_streak' must be >= 0")
 
-    return {
+    normalized_state = {
         "error_streak": error_streak,
         "next_allowed_run_at": parse_optional_datetime(state.get("next_allowed_run_at"), "next_allowed_run_at"),
         "last_backoff_reported_until": parse_optional_datetime(
@@ -76,6 +77,26 @@ def normalize_state_override(state: Dict[str, Any]) -> Dict[str, Any]:
             state.get("last_missing_targets_report_at"), "last_missing_targets_report_at"
         ),
     }
+
+    workflow_phase_key_present = "workflow_phase" in state
+    workflow_phase_raw = state.get("workflow_phase")
+    workflow_phase_normalized = normalize_workflow_phase(workflow_phase_raw, allowed_values=WORKFLOW_PHASE_VALUES)
+    workflow_phase_raw_normalized = str(workflow_phase_raw or "").strip().lower()
+    if workflow_phase_key_present and workflow_phase_raw_normalized and workflow_phase_normalized != workflow_phase_raw_normalized:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Field 'workflow_phase' must be one of: {', '.join(sorted(WORKFLOW_PHASE_VALUES))}",
+        )
+    if workflow_phase_key_present:
+        normalized_state["workflow_phase"] = workflow_phase_normalized
+        normalized_state["workflow_phase_loaded"] = True
+        normalized_state["workflow_phase_source"] = str(state.get("workflow_phase_source") or "test_hook").strip() or "test_hook"
+        normalized_state["workflow_phase_updated_at"] = (
+            parse_optional_datetime(state.get("workflow_phase_updated_at"), "workflow_phase_updated_at")
+            or datetime.utcnow()
+        )
+
+    return normalized_state
 
 
 async def handle_test_hook(

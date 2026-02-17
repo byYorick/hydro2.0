@@ -233,16 +233,16 @@ async def should_apply_correction(
             return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
         return False, "В cooldown периоде"
     
-    # Анализируем тренд
+    # Если отклонение очень большое (> 0.5), корректируем независимо от тренда
+    if abs(diff) > 0.5:
+        return True, f"Критическое отклонение ({abs(diff):.2f}), корректировка необходима"
+
+    # Анализируем тренд только для некритичных отклонений.
     metric_type = 'PH' if correction_type == 'ph' else 'EC'
     is_improving, trend_slope = await analyze_trend(zone_id, metric_type, current_value, target_value)
     
     if is_improving:
         return False, f"Тренд улучшается (наклон: {trend_slope:.3f}), корректировка не требуется"
-    
-    # Если отклонение очень большое (> 0.5), корректируем независимо от тренда
-    if abs(diff) > 0.5:
-        return True, f"Критическое отклонение ({abs(diff):.2f}), корректировка необходима"
     
     # Если отклонение среднее (0.2-0.5) и тренд не улучшается, корректируем
     if abs(diff) > 0.2:

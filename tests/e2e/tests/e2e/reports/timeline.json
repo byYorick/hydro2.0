@@ -1,133 +1,527 @@
 {
-  "test_suite": "E06_laravel_down_queue_recovery",
-  "generated_at": "2026-02-17T07:48:13.116007",
+  "test_suite": "E75_two_tank_fill_contract",
+  "generated_at": "2026-02-17T16:17:13.037339",
   "test_cases": [
     {
-      "name": "start_node_simulator",
+      "name": "set_test_context",
       "status": "passed",
-      "duration": 5.723523139953613,
+      "duration": 5.173683166503906e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "set_test_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:47:33.964692"
+      "timestamp": "2026-02-17T16:14:53.552903"
     },
     {
-      "name": "verify_laravel_running",
+      "name": "get_zone_row",
       "status": "passed",
-      "duration": 1.1309473514556885,
+      "duration": 0.003746509552001953,
       "error_message": null,
       "steps": [
         {
-          "name": "verify_laravel_running",
+          "name": "get_zone_row",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:47:35.095744"
+      "timestamp": "2026-02-17T16:14:53.556801"
     },
     {
-      "name": "stop_laravel",
+      "name": "set_zone_id",
       "status": "passed",
-      "duration": 4.4353485107421875,
+      "duration": 7.152557373046875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "stop_laravel",
+          "name": "set_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:47:39.531134"
+      "timestamp": "2026-02-17T16:14:53.557221"
     },
     {
-      "name": "node_publishes_errors_during_down",
+      "name": "resolve_irrigation_node",
       "status": "passed",
-      "duration": 5.006758689880371,
+      "duration": 0.002605915069580078,
       "error_message": null,
       "steps": [
         {
-          "name": "node_publishes_errors_during_down",
+          "name": "resolve_irrigation_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:47:44.538026"
+      "timestamp": "2026-02-17T16:14:53.560010"
     },
     {
-      "name": "restore_laravel",
+      "name": "set_irrigation_node_uid",
       "status": "passed",
-      "duration": 3.288618564605713,
+      "duration": 1.5020370483398438e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "restore_laravel",
+          "name": "set_irrigation_node_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:47:47.826675"
+      "timestamp": "2026-02-17T16:14:53.560336"
     },
     {
-      "name": "wait_queue_processing",
+      "name": "resolve_main_pump_channel",
       "status": "passed",
-      "duration": 15.011414766311646,
+      "duration": 0.0020503997802734375,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_queue_processing",
+          "name": "resolve_main_pump_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:48:02.838119"
+      "timestamp": "2026-02-17T16:14:53.562535"
     },
     {
-      "name": "all_errors_processed",
+      "name": "set_main_pump_channel",
       "status": "passed",
-      "duration": 0.00921487808227539,
+      "duration": 1.2636184692382812e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "all_errors_processed",
+          "name": "set_main_pump_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:48:02.847352"
+      "timestamp": "2026-02-17T16:14:53.562724"
     },
     {
-      "name": "errors_processed_via_queue",
+      "name": "ensure_water_contour_channel_config",
       "status": "passed",
-      "duration": 0.0005252361297607422,
+      "duration": 0.002927541732788086,
       "error_message": null,
       "steps": [
         {
-          "name": "errors_processed_via_queue",
+          "name": "ensure_water_contour_channel_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:48:02.847893"
+      "timestamp": "2026-02-17T16:14:53.565901"
     },
     {
-      "name": "queue_processed",
+      "name": "publish_irrigation_node_config",
       "status": "passed",
-      "duration": 0.0013031959533691406,
+      "duration": 2.0972604751586914,
       "error_message": null,
       "steps": [
         {
-          "name": "queue_processed",
+          "name": "publish_irrigation_node_config",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-17T07:48:02.849204"
+      "timestamp": "2026-02-17T16:14:55.663414"
+    },
+    {
+      "name": "wait_irrigation_node_online_after_config_publish",
+      "status": "passed",
+      "duration": 0.0022497177124023438,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_irrigation_node_online_after_config_publish",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:55.666198"
+    },
+    {
+      "name": "reset_test_node_runtime_state",
+      "status": "passed",
+      "duration": 0.1930232048034668,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_test_node_runtime_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:55.859846"
+    },
+    {
+      "name": "wait_level_switches_zero_after_reset",
+      "status": "passed",
+      "duration": 0.003997802734375,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_level_switches_zero_after_reset",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:55.864534"
+    },
+    {
+      "name": "reset_ae_state_override_to_idle_before_run",
+      "status": "passed",
+      "duration": 0.04886746406555176,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_ae_state_override_to_idle_before_run",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:55.914092"
+    },
+    {
+      "name": "capture_clean_start_ts",
+      "status": "passed",
+      "duration": 0.0017883777618408203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_clean_start_ts",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:55.916233"
+    },
+    {
+      "name": "open_main_pump_for_clean_fill",
+      "status": "passed",
+      "duration": 0.1955547332763672,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "open_main_pump_for_clean_fill",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:56.112591"
+    },
+    {
+      "name": "open_clean_fill_valve",
+      "status": "passed",
+      "duration": 0.17956781387329102,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "open_clean_fill_valve",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:56.295089"
+    },
+    {
+      "name": "wait_main_pump_done",
+      "status": "passed",
+      "duration": 0.020789146423339844,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_main_pump_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:56.316291"
+    },
+    {
+      "name": "wait_clean_fill_done",
+      "status": "passed",
+      "duration": 0.0029990673065185547,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_clean_fill_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:14:56.319568"
+    },
+    {
+      "name": "wait_clean_min_switch",
+      "status": "passed",
+      "duration": 15.698704481124878,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_clean_min_switch",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:12.018592"
+    },
+    {
+      "name": "wait_clean_max_switch",
+      "status": "passed",
+      "duration": 20.046599864959717,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_clean_max_switch",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:32.065657"
+    },
+    {
+      "name": "wait_clean_max_latched",
+      "status": "passed",
+      "duration": 15.014232158660889,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_clean_max_latched",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.079981"
+    },
+    {
+      "name": "verify_clean_max_latched",
+      "status": "passed",
+      "duration": 0.004282236099243164,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "verify_clean_max_latched",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.084657"
+    },
+    {
+      "name": "close_clean_fill_valve_before_solution",
+      "status": "passed",
+      "duration": 0.1401691436767578,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "close_clean_fill_valve_before_solution",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.225543"
+    },
+    {
+      "name": "capture_solution_start_ts",
+      "status": "passed",
+      "duration": 0.0012178421020507812,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_solution_start_ts",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.226946"
+    },
+    {
+      "name": "force_workflow_phase_tank_filling_for_solution_fill",
+      "status": "passed",
+      "duration": 0.0479888916015625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_workflow_phase_tank_filling_for_solution_fill",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.275786"
+    },
+    {
+      "name": "open_solution_supply_valve",
+      "status": "passed",
+      "duration": 0.1703014373779297,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "open_solution_supply_valve",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.446604"
+    },
+    {
+      "name": "open_solution_fill_valve",
+      "status": "passed",
+      "duration": 0.1953880786895752,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "open_solution_fill_valve",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.642649"
+    },
+    {
+      "name": "wait_solution_supply_done",
+      "status": "passed",
+      "duration": 0.003174304962158203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_supply_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.646257"
+    },
+    {
+      "name": "wait_solution_fill_done",
+      "status": "passed",
+      "duration": 0.0039746761322021484,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_fill_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:15:47.652162"
+    },
+    {
+      "name": "wait_solution_min_switch",
+      "status": "passed",
+      "duration": 14.43822693824768,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_min_switch",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:16:02.090946"
+    },
+    {
+      "name": "wait_solution_max_switch",
+      "status": "passed",
+      "duration": 50.16010522842407,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_max_switch",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:16:52.252012"
+    },
+    {
+      "name": "wait_solution_max_latched",
+      "status": "passed",
+      "duration": 20.01886010169983,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_solution_max_latched",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.271118"
+    },
+    {
+      "name": "verify_solution_max_latched",
+      "status": "passed",
+      "duration": 0.0017917156219482422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "verify_solution_max_latched",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.273291"
+    },
+    {
+      "name": "clean_min_delay_window",
+      "status": "passed",
+      "duration": 0.0001475811004638672,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "clean_min_delay_window",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.273457"
+    },
+    {
+      "name": "clean_max_delay_window",
+      "status": "passed",
+      "duration": 0.0005066394805908203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "clean_max_delay_window",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.273977"
+    },
+    {
+      "name": "solution_min_delay_window",
+      "status": "passed",
+      "duration": 9.131431579589844e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "solution_min_delay_window",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.274080"
+    },
+    {
+      "name": "solution_max_delay_window",
+      "status": "passed",
+      "duration": 7.62939453125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "solution_max_delay_window",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.274165"
+    },
+    {
+      "name": "no_no_effect_for_water_contour_commands",
+      "status": "passed",
+      "duration": 0.004033565521240234,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_no_effect_for_water_contour_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.278210"
+    },
+    {
+      "name": "no_missing_flags_skip_during_solution_fill_phase",
+      "status": "passed",
+      "duration": 0.020573854446411133,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_missing_flags_skip_during_solution_fill_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-17T16:17:12.298800"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E06_laravel_down_queue_recovery": {
+    "E75_two_tank_fill_contract": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 5
+        "zone_id": 5,
+        "zone_uid": "zn-test-1",
+        "node_id": 6,
+        "node_uid": "nd-ph-esp32una",
+        "irrigation_node_id": 1
       }
     }
   }

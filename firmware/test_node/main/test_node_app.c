@@ -47,13 +47,22 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 #define CLEAN_FILL_MIN_DELAY_SEC 10
-#define CLEAN_FILL_DELAY_SEC 120
+#define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
-#define SOLUTION_FILL_DELAY_SEC 300
+#define SOLUTION_FILL_DELAY_SEC 60
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
+#define PH_DRIFT_BIAS_PER_TICK 0.004f
+#define EC_DRIFT_BIAS_PER_TICK -0.006f
+#define PH_REACTION_BASE_DELTA 0.03f
+#define EC_REACTION_BASE_DELTA 0.05f
+#define PH_REACTION_NOMINAL_ML 8.0f
+#define EC_REACTION_NOMINAL_ML 12.0f
+#define CORRECTION_SETTLE_TICKS 4
 #define CONFIG_REPORT_RETRY_DELAY_MS 250
 #define CONFIG_REPORT_NODE_SPACING_MS 120
 #define MIN_VALID_UNIX_TS_SEC 1000000000LL
+#define COMMAND_DEDUP_WINDOW_SEC 180
+#define COMMAND_DEDUP_CACHE_SIZE 32
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -98,6 +107,7 @@ typedef struct {
     bool tank_fill_on;
     bool tank_drain_on;
     bool fan_on;
+    bool heater_on;
     bool light_on;
     bool ph_sensor_mode_active;
     bool ec_sensor_mode_active;
@@ -144,11 +154,19 @@ typedef struct {
 
 static const channel_def_t IRRIGATION_CHANNELS[] = {
     {.name = "pump_main", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "main_pump", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "drain_pump", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_clean_fill", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_clean_supply", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_solution_fill", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_solution_supply", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "valve_irrigation", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "air_temp_c", .type = "SENSOR", .metric = "TEMPERATURE", .is_actuator = false},
+    {.name = "air_rh", .type = "SENSOR", .metric = "HUMIDITY", .is_actuator = false},
+    {.name = "ph_sensor", .type = "SENSOR", .metric = "PH", .is_actuator = false},
+    {.name = "ec_sensor", .type = "SENSOR", .metric = "EC", .is_actuator = false},
+    {.name = "fan", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "heater", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "level_clean_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_clean_max", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
     {.name = "level_solution_min", .type = "SENSOR", .metric = "WATER_LEVEL_SWITCH", .is_actuator = false},
@@ -173,6 +191,8 @@ static const channel_def_t CLIMATE_CHANNELS[] = {
     {.name = "air_temp_c", .type = "SENSOR", .metric = "TEMPERATURE", .is_actuator = false},
     {.name = "air_rh", .type = "SENSOR", .metric = "HUMIDITY", .is_actuator = false},
     {.name = "fan_air", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "fan", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    {.name = "heater", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
 };
 
 static const channel_def_t LIGHT_CHANNELS[] = {
@@ -207,11 +227,18 @@ static bool s_wildcard_subscriptions_ready = false;
 static bool s_factory_reset_pending = false;
 static volatile bool s_config_report_on_connect_pending = false;
 
-static virtual_state_t s_virtual_state = {
+typedef struct {
+    char cmd_id[96];
+    int64_t seen_at_sec;
+} recent_cmd_id_entry_t;
+
+static recent_cmd_id_entry_t s_recent_cmd_ids[COMMAND_DEDUP_CACHE_SIZE] = {0};
+
+static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .flow_rate = 0.0f,
     .pump_bus_current = 150.0f,
-    .ph_value = 5.80f,
-    .ec_value = 1.70f,
+    .ph_value = 6.90f,
+    .ec_value = 0.60f,
     .water_level = 0.05f,
     .solution_level = 0.05f,
     .air_temp = 24.0f,
@@ -231,6 +258,42 @@ static virtual_state_t s_virtual_state = {
     .tank_fill_on = false,
     .tank_drain_on = false,
     .fan_on = false,
+    .heater_on = false,
+    .light_on = false,
+    .ph_sensor_mode_active = false,
+    .ec_sensor_mode_active = false,
+    .light_pwm = 0,
+    .irrigation_boost_ticks = 0,
+    .correction_boost_ticks = 0,
+    .clean_fill_started_at = 0,
+    .solution_fill_started_at = 0,
+};
+
+static virtual_state_t s_virtual_state = {
+    .flow_rate = 0.0f,
+    .pump_bus_current = 150.0f,
+    .ph_value = 6.90f,
+    .ec_value = 0.60f,
+    .water_level = 0.05f,
+    .solution_level = 0.05f,
+    .air_temp = 24.0f,
+    .air_humidity = 60.0f,
+    .light_level = 18000.0f,
+    .irrigation_on = false,
+    .main_pump_on = false,
+    .valve_clean_fill_on = false,
+    .valve_clean_supply_on = false,
+    .valve_solution_fill_on = false,
+    .valve_solution_supply_on = false,
+    .valve_irrigation_on = false,
+    .clean_fill_stage_active = false,
+    .clean_max_latched = false,
+    .solution_fill_stage_active = false,
+    .solution_max_latched = false,
+    .tank_fill_on = false,
+    .tank_drain_on = false,
+    .fan_on = false,
+    .heater_on = false,
     .light_on = false,
     .ph_sensor_mode_active = false,
     .ec_sensor_mode_active = false,
@@ -264,6 +327,10 @@ static int64_t get_uptime_seconds(void) {
     return esp_timer_get_time() / 1000000LL;
 }
 
+static void reset_virtual_state_runtime(void) {
+    s_virtual_state = DEFAULT_VIRTUAL_STATE;
+}
+
 static void maybe_calibrate_timestamp_offset_from_command_ts(int64_t command_ts_raw) {
     int64_t command_ts_sec = command_ts_raw;
     int64_t uptime_sec;
@@ -290,6 +357,37 @@ static void maybe_calibrate_timestamp_offset_from_command_ts(int64_t command_ts_
             (long long)s_timestamp_offset_sec
         );
     }
+}
+
+static bool is_duplicate_cmd_id(const char *cmd_id) {
+    int free_index = -1;
+    int oldest_index = 0;
+    int64_t now_sec = get_uptime_seconds();
+
+    if (!cmd_id || cmd_id[0] == '\0') {
+        return false;
+    }
+
+    for (int i = 0; i < COMMAND_DEDUP_CACHE_SIZE; i++) {
+        if (s_recent_cmd_ids[i].cmd_id[0] == '\0' ||
+            (now_sec - s_recent_cmd_ids[i].seen_at_sec) > COMMAND_DEDUP_WINDOW_SEC) {
+            if (free_index < 0) {
+                free_index = i;
+            }
+            continue;
+        }
+        if (strcmp(s_recent_cmd_ids[i].cmd_id, cmd_id) == 0) {
+            return true;
+        }
+        if (s_recent_cmd_ids[i].seen_at_sec < s_recent_cmd_ids[oldest_index].seen_at_sec) {
+            oldest_index = i;
+        }
+    }
+
+    int slot = (free_index >= 0) ? free_index : oldest_index;
+    snprintf(s_recent_cmd_ids[slot].cmd_id, sizeof(s_recent_cmd_ids[slot].cmd_id), "%s", cmd_id);
+    s_recent_cmd_ids[slot].seen_at_sec = now_sec;
+    return false;
 }
 
 static int64_t get_timestamp_seconds(void) {
@@ -478,6 +576,64 @@ static bool update_node_namespace(const char *node_uid, const char *gh_uid, cons
     return changed;
 }
 
+static void apply_namespace_to_all_virtual_nodes(const char *gh_uid, const char *zone_uid, const char *reason) {
+    size_t index;
+
+    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
+        return;
+    }
+
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        (void)update_node_namespace(VIRTUAL_NODES[index].node_uid, gh_uid, zone_uid, reason);
+    }
+}
+
+static bool restore_runtime_namespace_from_storage(const char *reason) {
+    char restored_gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char restored_zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    esp_err_t gh_err;
+    esp_err_t zone_err;
+
+    gh_err = config_storage_get_gh_uid(restored_gh_uid, sizeof(restored_gh_uid));
+    zone_err = config_storage_get_zone_uid(restored_zone_uid, sizeof(restored_zone_uid));
+    if (
+        gh_err != ESP_OK ||
+        zone_err != ESP_OK ||
+        restored_gh_uid[0] == '\0' ||
+        restored_zone_uid[0] == '\0'
+    ) {
+        snprintf(restored_gh_uid, sizeof(restored_gh_uid), "%s", PRECONFIG_GH_UID);
+        snprintf(restored_zone_uid, sizeof(restored_zone_uid), "%s", PRECONFIG_ZONE_UID);
+        ESP_LOGW(
+            TAG,
+            "Virtual restart fallback to preconfig namespace (gh_err=%s zone_err=%s)",
+            esp_err_to_name(gh_err),
+            esp_err_to_name(zone_err)
+        );
+    }
+
+    if (
+        restored_gh_uid[0] == '\0' ||
+        restored_zone_uid[0] == '\0' ||
+        strcmp(restored_gh_uid, PRECONFIG_GH_UID) == 0 ||
+        strcmp(restored_zone_uid, PRECONFIG_ZONE_UID) == 0
+    ) {
+        snprintf(restored_gh_uid, sizeof(restored_gh_uid), "%s", PRECONFIG_GH_UID);
+        snprintf(restored_zone_uid, sizeof(restored_zone_uid), "%s", PRECONFIG_ZONE_UID);
+    }
+
+    apply_namespace_to_all_virtual_nodes(restored_gh_uid, restored_zone_uid, reason);
+    ui_sync_all_virtual_nodes(false);
+    ESP_LOGI(
+        TAG,
+        "Virtual restart applied namespace: gh=%s zone=%s reason=%s",
+        restored_gh_uid,
+        restored_zone_uid,
+        reason ? reason : "unknown"
+    );
+    return true;
+}
+
 static bool parse_config_topic(
     const char *topic,
     char *out_gh_uid,
@@ -550,6 +706,25 @@ static float clamp_float(float value, float min_value, float max_value) {
         return max_value;
     }
     return value;
+}
+
+static float resolve_correction_reaction_scale(const pending_command_t *job, float nominal_ml) {
+    float commanded_ml = nominal_ml;
+    float scale;
+
+    if (!job || nominal_ml <= 0.0f) {
+        return 1.0f;
+    }
+
+    if (job->amount_present && job->amount_value > 0.0f) {
+        commanded_ml = job->amount_value;
+    } else if (job->duration_ms_present && job->duration_ms > 0) {
+        /* Fallback estimate when only duration_ms is provided. */
+        commanded_ml = ((float)job->duration_ms / 1000.0f);
+    }
+
+    scale = commanded_ml / nominal_ml;
+    return clamp_float(scale, 0.5f, 4.0f);
 }
 
 static int random_range_ms(int min_value, int max_value) {
@@ -686,13 +861,34 @@ static bool is_drain_channel(const char *channel) {
         && (
             strcmp(channel, "drain_main") == 0 ||
             strcmp(channel, "drain_valve") == 0 ||
+            strcmp(channel, "drain_pump") == 0 ||
             strcmp(channel, "drain") == 0
+        );
+}
+
+static bool is_ph_correction_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "pump_acid") == 0 ||
+            strcmp(channel, "pump_base") == 0
+        );
+}
+
+static bool is_ec_correction_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "pump_a") == 0 ||
+            strcmp(channel, "pump_b") == 0 ||
+            strcmp(channel, "pump_c") == 0 ||
+            strcmp(channel, "pump_d") == 0
         );
 }
 
 static void publish_all_config_reports(const char *reason);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
+static void apply_namespace_to_all_virtual_nodes(const char *gh_uid, const char *zone_uid, const char *reason);
+static bool restore_runtime_namespace_from_storage(const char *reason);
 static void persist_received_config_or_namespace(
     const char *node_uid,
     const char *config_payload,
@@ -916,7 +1112,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
     // Важно: не держим большой буфер на стеке, т.к. функция может вызываться из mqtt_task callback.
     // Выделяем буфер в heap на время публикации.
     char *payload_buf = NULL;
-    const size_t payload_buf_size = 2048;
+    const size_t payload_buf_size = 8192;
     bool node_preconfig_mode = false;
     cJSON *json;
     cJSON *channels;
@@ -1701,8 +1897,10 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             current_state = s_virtual_state.tank_fill_on;
         } else if (is_drain_channel(job->channel)) {
             current_state = s_virtual_state.tank_drain_on;
-        } else if (strcmp(job->channel, "fan_air") == 0) {
+        } else if (strcmp(job->channel, "fan_air") == 0 || strcmp(job->channel, "fan") == 0) {
             current_state = s_virtual_state.fan_on;
+        } else if (strcmp(job->channel, "heater") == 0) {
+            current_state = s_virtual_state.heater_on;
         } else if (strcmp(job->channel, "white_light") == 0) {
             current_state = s_virtual_state.light_on;
         } else {
@@ -1734,6 +1932,22 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             *status_out = "NO_EFFECT";
             return;
         }
+    }
+
+    if (is_ph_correction_channel(job->channel) && !s_virtual_state.ph_sensor_mode_active) {
+        cJSON_AddStringToObject(details, "error", "node_not_activated");
+        cJSON_AddStringToObject(details, "error_code", "node_not_activated");
+        cJSON_AddStringToObject(details, "error_message", "node is not activated");
+        *status_out = "ERROR";
+        return;
+    }
+
+    if (is_ec_correction_channel(job->channel) && !s_virtual_state.ec_sensor_mode_active) {
+        cJSON_AddStringToObject(details, "error", "node_not_activated");
+        cJSON_AddStringToObject(details, "error_code", "node_not_activated");
+        cJSON_AddStringToObject(details, "error_message", "node is not activated");
+        *status_out = "ERROR";
+        return;
     }
 
     if (strcmp(job->channel, "pump_irrigation") == 0) {
@@ -1810,12 +2024,20 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             handled = true;
         }
     } else if (strcmp(job->channel, "pump_acid") == 0) {
-        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - 0.03f, 4.8f, 7.2f);
-        s_virtual_state.correction_boost_ticks = 2;
+        float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
+        float delta = PH_REACTION_BASE_DELTA * scale;
+        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - delta, 4.8f, 7.2f);
+        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "delta_ph", -delta);
+        cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
         handled = true;
     } else if (strcmp(job->channel, "pump_base") == 0) {
-        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + 0.03f, 4.8f, 7.2f);
-        s_virtual_state.correction_boost_ticks = 2;
+        float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
+        float delta = PH_REACTION_BASE_DELTA * scale;
+        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + delta, 4.8f, 7.2f);
+        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "delta_ph", delta);
+        cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
         handled = true;
     } else if (
         strcmp(job->channel, "pump_a") == 0 ||
@@ -1823,12 +2045,21 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         strcmp(job->channel, "pump_c") == 0 ||
         strcmp(job->channel, "pump_d") == 0
     ) {
-        s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + 0.05f, 0.4f, 3.2f);
-        s_virtual_state.correction_boost_ticks = 2;
+        float scale = resolve_correction_reaction_scale(job, EC_REACTION_NOMINAL_ML);
+        float delta = EC_REACTION_BASE_DELTA * scale;
+        s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + delta, 0.4f, 3.2f);
+        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "delta_ec", delta);
+        cJSON_AddNumberToObject(details, "ec_after", s_virtual_state.ec_value);
         handled = true;
-    } else if (strcmp(job->channel, "fan_air") == 0) {
+    } else if (strcmp(job->channel, "fan_air") == 0 || strcmp(job->channel, "fan") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.fan_on = job->relay_state;
+            handled = true;
+        }
+    } else if (strcmp(job->channel, "heater") == 0) {
+        if (strcmp(job->cmd, "set_relay") == 0) {
+            s_virtual_state.heater_on = job->relay_state;
             handled = true;
         }
     } else if (strcmp(job->channel, "white_light") == 0) {
@@ -1851,7 +2082,24 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             handled = true;
         }
     } else if (strcmp(job->channel, "system") == 0) {
-        if (strcmp(job->cmd, "activate_sensor_mode") == 0) {
+        if (strcmp(job->cmd, "reset_state") == 0) {
+            reset_virtual_state_runtime();
+            cJSON_AddStringToObject(details, "note", "virtual_state_reset");
+            handled = true;
+        } else if (strcmp(job->cmd, "reset_binding") == 0) {
+            esp_err_t reset_err = config_storage_reset_namespace(PRECONFIG_GH_UID, PRECONFIG_ZONE_UID);
+            if (reset_err != ESP_OK) {
+                cJSON_AddStringToObject(details, "error", "binding_reset_failed");
+                cJSON_AddStringToObject(details, "error_code", "binding_reset_failed");
+                cJSON_AddStringToObject(details, "error_message", esp_err_to_name(reset_err));
+                *status_out = "ERROR";
+                return;
+            }
+            cJSON_AddStringToObject(details, "note", "binding_reset_pending_reboot");
+            cJSON_AddStringToObject(details, "gh_uid", PRECONFIG_GH_UID);
+            cJSON_AddStringToObject(details, "zone_uid", PRECONFIG_ZONE_UID);
+            handled = true;
+        } else if (strcmp(job->cmd, "activate_sensor_mode") == 0) {
             if (strstr(job->node_uid, "-ph-") != NULL) {
                 if (s_virtual_state.ph_sensor_mode_active) {
                     cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
@@ -1930,6 +2178,7 @@ static void execute_pending_command(const pending_command_t *job) {
     const virtual_node_t *node;
     cJSON *details;
     const char *final_status = "DONE";
+    bool trigger_hardware_reboot = false;
 
     if (!job) {
         return;
@@ -2004,10 +2253,13 @@ static void execute_pending_command(const pending_command_t *job) {
         publish_config_report_for_node(node);
         cJSON_AddStringToObject(details, "note", "config_report_published");
     } else if (job->kind == COMMAND_KIND_RESTART) {
-        publish_status_for_node(job->node_uid, "RESTARTING");
-        vTaskDelay(pdMS_TO_TICKS(450));
-        publish_status_for_node(job->node_uid, "ONLINE");
-        cJSON_AddStringToObject(details, "note", "virtual_restart_done");
+        size_t index;
+        for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+            publish_status_for_node(VIRTUAL_NODES[index].node_uid, "RESTARTING");
+        }
+        cJSON_AddStringToObject(details, "note", "hardware_reboot_scheduled");
+        cJSON_AddStringToObject(details, "scope", "device");
+        trigger_hardware_reboot = true;
     } else if (job->kind == COMMAND_KIND_ACTUATOR) {
         update_virtual_state_from_command(job, details, &final_status);
     } else {
@@ -2029,6 +2281,13 @@ static void execute_pending_command(const pending_command_t *job) {
     publish_command_response(job->node_uid, job->channel, job->cmd_id, final_status, details);
     ui_logf(job->node_uid, "cmd done %s/%s -> %s", job->channel, job->cmd, final_status);
     cJSON_Delete(details);
+
+    if (trigger_hardware_reboot && strcmp(final_status, "DONE") == 0) {
+        // Даем MQTT клиенту время отправить terminal response перед аппаратным reboot.
+        vTaskDelay(pdMS_TO_TICKS(350));
+        ESP_LOGW(CMD_TAG, "Hardware reboot requested by command: node=%s cmd=%s", job->node_uid, job->cmd);
+        esp_restart();
+    }
 }
 
 static void command_worker_task(void *pv_parameters) {
@@ -2071,6 +2330,8 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
         strcmp(cmd_name, "set_pwm") == 0 ||
         strcmp(cmd_name, "run_pump") == 0 ||
         strcmp(cmd_name, "dose") == 0 ||
+        strcmp(cmd_name, "reset_state") == 0 ||
+        strcmp(cmd_name, "reset_binding") == 0 ||
         strcmp(cmd_name, "activate_sensor_mode") == 0 ||
         strcmp(cmd_name, "deactivate_sensor_mode") == 0
     ) {
@@ -2155,6 +2416,11 @@ static void command_callback(const char *topic, const char *channel, const char 
     cmd_id_item = cJSON_GetObjectItem(command_json, "cmd_id");
     cmd_item = cJSON_GetObjectItem(command_json, "cmd");
     cmd_id = (cmd_id_item && cJSON_IsString(cmd_id_item) && cmd_id_item->valuestring) ? cmd_id_item->valuestring : "unknown";
+    if (is_duplicate_cmd_id(cmd_id)) {
+        ui_logf(node_uid, "cmd duplicate ignored");
+        cJSON_Delete(command_json);
+        return;
+    }
     if (!validate_command_payload_strict(command_json, &validation_error_code, &validation_error_message)) {
         cJSON *details = cJSON_CreateObject();
         if (details) {
@@ -2211,10 +2477,10 @@ static void command_callback(const char *topic, const char *channel, const char 
     ESP_LOGI(
         CMD_TAG,
         "Virtual command accepted: node=%s channel=%s cmd=%s cmd_id=%s",
-        node_uid,
-        channel ? channel : topic_channel,
-        cmd_name,
-        cmd_id
+        job.node_uid,
+        job.channel,
+        job.cmd,
+        job.cmd_id
     );
 }
 
@@ -2346,13 +2612,20 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 
 static void apply_passive_drift(void) {
     float drift = ((float)(s_telemetry_tick % 11) - 5.0f) * 0.002f;
+    float ph_drift = drift;
+    float ec_drift = drift * 4.0f;
     bool clean_fill_active = is_clean_fill_active();
     bool solution_fill_active = is_solution_fill_active();
     bool irrigation_active = is_irrigation_active();
     int64_t now_sec = get_timestamp_seconds();
 
-    s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + drift, 4.8f, 7.2f);
-    s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + (drift * 4.0f), 0.4f, 3.2f);
+    if (s_virtual_state.correction_boost_ticks == 0) {
+        ph_drift += PH_DRIFT_BIAS_PER_TICK;
+        ec_drift += EC_DRIFT_BIAS_PER_TICK;
+    }
+
+    s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + ph_drift, 4.8f, 7.2f);
+    s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + ec_drift, 0.4f, 3.2f);
 
     if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {
@@ -2407,6 +2680,10 @@ static void apply_passive_drift(void) {
     } else {
         s_virtual_state.air_temp = clamp_float(s_virtual_state.air_temp + 0.02f, 18.0f, 32.0f);
         s_virtual_state.air_humidity = clamp_float(s_virtual_state.air_humidity + 0.03f, 35.0f, 90.0f);
+    }
+    if (s_virtual_state.heater_on) {
+        s_virtual_state.air_temp = clamp_float(s_virtual_state.air_temp + 0.09f, 18.0f, 32.0f);
+        s_virtual_state.air_humidity = clamp_float(s_virtual_state.air_humidity - 0.04f, 35.0f, 90.0f);
     }
 
     if (s_virtual_state.light_on) {
@@ -2466,8 +2743,12 @@ static void publish_virtual_telemetry_batch(void) {
         resolve_solution_max_switch_value()
     );
 
-    publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
-    publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
+    if (s_virtual_state.ph_sensor_mode_active) {
+        publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
+    }
+    if (s_virtual_state.ec_sensor_mode_active) {
+        publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
+    }
 
     publish_telemetry_for_node("nd-test-climate-1", "air_temp_c", "TEMPERATURE", s_virtual_state.air_temp);
     publish_telemetry_for_node("nd-test-climate-1", "air_rh", "HUMIDITY", s_virtual_state.air_humidity);

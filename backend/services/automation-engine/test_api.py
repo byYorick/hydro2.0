@@ -1723,6 +1723,58 @@ def test_test_hook_set_state_normalizes_datetime_fields(client):
         api._zone_states_override.update(old_states)
 
 
+def test_test_hook_set_state_accepts_workflow_phase_override(client):
+    """set_state должен принимать workflow_phase override для fail-closed тестов."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        response = client.post("/test/hook", json={
+            "zone_id": 14,
+            "action": "set_state",
+            "state": {
+                "error_streak": 0,
+                "workflow_phase": "tank_filling",
+            },
+        })
+        assert response.status_code == 200
+
+        state = api._zone_states_override[14]
+        assert state["workflow_phase"] == "tank_filling"
+        assert state["workflow_phase_loaded"] is True
+        assert state["workflow_phase_source"] == "test_hook"
+        assert isinstance(state["workflow_phase_updated_at"], datetime)
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
+def test_test_hook_set_state_rejects_unknown_workflow_phase(client):
+    """set_state должен валидировать workflow_phase и отклонять неизвестные значения."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        response = client.post("/test/hook", json={
+            "zone_id": 15,
+            "action": "set_state",
+            "state": {
+                "workflow_phase": "unknown_phase",
+            },
+        })
+        assert response.status_code == 400
+        assert "workflow_phase" in response.json()["detail"]
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
 def test_test_hook_publish_command_success(client, mock_command_bus):
     """publish_command в test hook должен вызывать CommandBus и возвращать флаг published."""
     old_mode = api._test_mode

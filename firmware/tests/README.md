@@ -28,6 +28,15 @@ HIL/интеграционный тест таймингов command lifecycle:
 - ✅ Проверяет окно задержки `ACK -> terminal` относительно `sim_delay_ms`
 - ✅ Поддерживает форс terminal-статуса через `sim_status`
 
+## Граница ответственности набора firmware/tests
+
+Текущий набор `firmware/tests/*` проверяет совместимость протокола и таймингов command lifecycle
+(`telemetry/command_response/heartbeat/status`, а также `ACK -> terminal`), но не валидирует
+бизнес-процессы 2-бакового цикла (`startup/clean_fill/solution_fill/prepare_recirculation`).
+
+Проверка согласованности автоматики и `test_node` по 2 бакам вынесена в e2e-сценарий:
+- `tests/e2e/scenarios/automation_engine/E75_two_tank_fill_contract.yaml`
+
 ## Быстрый старт
 
 ```bash

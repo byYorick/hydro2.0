@@ -1478,6 +1478,90 @@ async def test_structured_retry_log_for_missing_cmd_id(caplog):
 
 
 @pytest.mark.asyncio
+async def test_retry_fails_closed_when_tracker_missing(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_command_retry")
+
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = None
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=12,
+        command_bus=command_bus,
+        controller_command={"cmd": "dose", "node_uid": "nd-2", "channel": "pump"},
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "command_tracker_unavailable")
+    assert getattr(record, "component", None) == "correction_command_retry"
+    assert getattr(record, "zone_id", None) == 12
+    assert getattr(record, "decision", None) == "fail_closed"
+    assert create_zone_event_fn.await_count >= 1
+    event_payload = create_zone_event_fn.await_args_list[0].args[2]
+    assert event_payload["reason"] == "command_tracker_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_retry_emits_terminal_error_details_from_tracker_outcome():
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=False)
+    command_bus.tracker.get_command_outcome = AsyncMock(
+        return_value={
+            "status": "ERROR",
+            "error_code": "node_not_activated",
+            "error_message": "node is not activated",
+        }
+    )
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+    controller_command = {"cmd": "dose", "node_uid": "nd-ph", "channel": "pump_acid", "cmd_id": "cmd-err-1"}
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=13,
+        command_bus=command_bus,
+        controller_command=controller_command,
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    event_payload = create_zone_event_fn.await_args_list[0].args[2]
+    assert event_payload["reason"] == "terminal_error"
+    assert event_payload["terminal_status"] == "ERROR"
+    assert event_payload["terminal_error_code"] == "node_not_activated"
+    assert event_payload["terminal_error_message"] == "node is not activated"
+
+    send_kwargs = send_infra_alert_fn.await_args.kwargs
+    assert send_kwargs["details"]["terminal_status"] == "ERROR"
+    assert send_kwargs["details"]["terminal_error_code"] == "node_not_activated"
+    assert send_kwargs["details"]["terminal_error_message"] == "node is not activated"
+
+
+@pytest.mark.asyncio
 async def test_structured_freshness_fail_closed_log(caplog):
     caplog.set_level(logging.WARNING, logger="correction_freshness")
     failure_count = {}

@@ -28,6 +28,56 @@ async def wait_command_done(*, tracker, cmd_id: str, timeout_sec: float) -> Opti
         return False
 
 
+async def get_command_outcome(*, tracker, cmd_id: str) -> Dict[str, Optional[str]]:
+    empty = {"status": None, "error_code": None, "error_message": None}
+    if not tracker or not cmd_id:
+        return empty
+
+    try:
+        fetch_outcome = getattr(tracker, "get_command_outcome", None)
+        if callable(fetch_outcome):
+            outcome = await fetch_outcome(cmd_id)
+            if isinstance(outcome, dict):
+                return {
+                    "status": str(outcome.get("status") or "").strip().upper() or None,
+                    "error_code": outcome.get("error_code"),
+                    "error_message": outcome.get("error_message"),
+                }
+    except Exception as exc:
+        logger.warning(
+            "Failed reading detailed command outcome for cmd_id=%s: %s",
+            cmd_id,
+            exc,
+            extra={
+                "component": "correction_command_retry",
+                "decision": "retry_or_fail",
+                "reason_code": "get_command_outcome_exception",
+                "cmd_id": cmd_id,
+            },
+        )
+
+    try:
+        status = await tracker._get_command_status_from_db(cmd_id)  # noqa: SLF001
+        return {
+            "status": str(status or "").strip().upper() or None,
+            "error_code": None,
+            "error_message": None,
+        }
+    except Exception as exc:
+        logger.warning(
+            "Failed reading fallback command status for cmd_id=%s: %s",
+            cmd_id,
+            exc,
+            extra={
+                "component": "correction_command_retry",
+                "decision": "retry_or_fail",
+                "reason_code": "get_command_status_exception",
+                "cmd_id": cmd_id,
+            },
+        )
+        return empty
+
+
 async def publish_controller_command_with_retry(
     *,
     zone_id: int,
@@ -47,6 +97,9 @@ async def publish_controller_command_with_retry(
 
     last_failure_reason = "unknown"
     last_cmd_id: Optional[str] = None
+    last_terminal_status: Optional[str] = None
+    last_terminal_error_code: Optional[str] = None
+    last_terminal_error_message: Optional[str] = None
 
     for attempt in range(1, max_attempts + 1):
         sent = await command_bus.publish_controller_command(zone_id, controller_command, context)
@@ -63,6 +116,12 @@ async def publish_controller_command_with_retry(
             )
             if wait_result is True:
                 return True
+
+            outcome = await get_command_outcome(tracker=tracker, cmd_id=str(cmd_id))
+            last_terminal_status = outcome.get("status")
+            last_terminal_error_code = outcome.get("error_code")
+            last_terminal_error_message = outcome.get("error_message")
+
             if wait_result is None:
                 last_failure_reason = f"ack_done_timeout_{timeout_sec}s"
                 try:
@@ -86,7 +145,10 @@ async def publish_controller_command_with_retry(
                         },
                     )
             else:
-                last_failure_reason = "command_failed_status"
+                if last_terminal_status:
+                    last_failure_reason = f"terminal_{str(last_terminal_status).lower()}"
+                else:
+                    last_failure_reason = "command_failed_status"
         elif tracker and not cmd_id:
             last_failure_reason = "cmd_id_missing_after_publish"
             logger.warning(
@@ -100,7 +162,17 @@ async def publish_controller_command_with_retry(
                 },
             )
         else:
-            return True
+            last_failure_reason = "command_tracker_unavailable"
+            logger.warning(
+                "Zone %s: correction command confirmation unavailable: command tracker is missing",
+                zone_id,
+                extra={
+                    "component": "correction_command_retry",
+                    "zone_id": zone_id,
+                    "decision": "fail_closed",
+                    "reason_code": "command_tracker_unavailable",
+                },
+            )
 
         await create_zone_event_fn(
             zone_id,
@@ -115,6 +187,9 @@ async def publish_controller_command_with_retry(
                 "channel": controller_command.get("channel"),
                 "component": controller_command.get("component"),
                 "reason": last_failure_reason,
+                "terminal_status": last_terminal_status,
+                "terminal_error_code": last_terminal_error_code,
+                "terminal_error_message": last_terminal_error_message,
             },
         )
 
@@ -139,6 +214,9 @@ async def publish_controller_command_with_retry(
             "max_attempts": max_attempts,
             "timeout_sec": timeout_sec,
             "reason": last_failure_reason,
+            "terminal_status": last_terminal_status,
+            "terminal_error_code": last_terminal_error_code,
+            "terminal_error_message": last_terminal_error_message,
             "component": controller_command.get("component"),
         },
     )

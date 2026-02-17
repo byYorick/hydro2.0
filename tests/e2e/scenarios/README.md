@@ -34,6 +34,7 @@
 - `commands/E10_command_happy.yaml` — команда → DONE + WS + zone_events
 - `alerts/E20_error_to_alert_realtime.yaml` — error → alert + dedup
 - `snapshot/E31_reconnect_replay_gap.yaml` — snapshot + replay
+- `automation_engine/E75_two_tank_fill_contract.yaml` — контракт 2-бакового контура (тайминги level switches на real test_node)
 
 ## Формат действий
 

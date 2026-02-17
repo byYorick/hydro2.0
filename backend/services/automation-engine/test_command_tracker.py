@@ -264,3 +264,37 @@ async def test_confirm_command_status_send_failed_persists_to_db_and_sends_larav
         None,
         "publish_failed",
     )
+
+
+@pytest.mark.asyncio
+async def test_get_command_outcome_returns_terminal_details():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    with patch(
+        "infrastructure.command_tracker.fetch",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "status": "error",
+                    "error_code": "node_not_activated",
+                    "error_message": "node is not activated",
+                    "ack_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "failed_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                }
+            ]
+        ),
+    ):
+        outcome = await tracker.get_command_outcome("cmd-1")
+
+    assert outcome is not None
+    assert outcome["status"] == "ERROR"
+    assert outcome["error_code"] == "node_not_activated"
+    assert outcome["error_message"] == "node is not activated"
+
+
+@pytest.mark.asyncio
+async def test_get_command_outcome_returns_none_when_not_found():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    with patch("infrastructure.command_tracker.fetch", new=AsyncMock(return_value=[])):
+        outcome = await tracker.get_command_outcome("missing-cmd")
+    assert outcome is None

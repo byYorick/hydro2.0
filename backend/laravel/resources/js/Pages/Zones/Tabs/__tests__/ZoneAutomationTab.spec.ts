@@ -420,7 +420,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.text()).toContain('Набор бака с чистой водой')
     expect(wrapper.text()).toContain('Набор бака с раствором')
     expect(wrapper.text()).toContain('Параллельная коррекция pH/EC')
-    expect(wrapper.text()).toContain('tank_level_checked')
+    expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
     expect(wrapper.text()).toContain('DONE подтвержден')
 
     const vm = wrapper.vm as any
@@ -456,6 +456,25 @@ describe('ZoneAutomationTab.vue', () => {
       ],
     })
     expect(dedupedTimeline.map((step: any) => step.event_type)).toEqual(['COMMAND_DISPATCHED', 'SCHEDULE_TASK_COMPLETED'])
+    const dedupedAccepted = vm.schedulerTaskTimelineItems({
+      task_id: 'st-timeline-accepted',
+      timeline: [
+        {
+          event_id: 'a1',
+          event_type: 'SCHEDULE_TASK_ACCEPTED',
+          task_id: 'st-timeline-accepted',
+          at: '2026-02-10T08:00:00Z',
+        },
+        {
+          event_id: 'a2',
+          event_type: 'SCHEDULE_TASK_ACCEPTED',
+          task_id: 'st-timeline-accepted',
+          at: '2026-02-10T08:00:00Z',
+        },
+      ],
+    })
+    expect(dedupedAccepted).toHaveLength(1)
+    expect(vm.schedulerTaskErrorLabel('command_invalid')).toBe('Нода отклонила команду')
 
     const noCommandsMeta = vm.schedulerTaskDoneMeta({
       status: 'completed',

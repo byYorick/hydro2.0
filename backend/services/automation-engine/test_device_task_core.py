@@ -71,3 +71,53 @@ async def test_execute_device_task_core_publishes_when_ready():
     )
     assert result["success"] is True
     publish_batch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_device_task_core_run_pump_filters_valve_channels():
+    mapping = SchedulerTaskMapping(task_type="irrigation", node_types=("irrig",), cmd="run_pump")
+    publish_batch = AsyncMock(return_value={"success": True})
+    result = await execute_device_task_core(
+        zone_id=1,
+        payload={"x": 1},
+        mapping=mapping,
+        context={"task_id": "st-1"},
+        decision=DecisionOutcome(action_required=True, decision="run", reason_code="ok", reason="ok"),
+        get_zone_nodes_fn=AsyncMock(
+            return_value=[
+                {"node_uid": "nd-1", "channel": "valve_solution_fill"},
+                {"node_uid": "nd-1", "channel": "pump_main"},
+            ]
+        ),
+        resolve_command_name_fn=lambda *_: "run_pump",
+        resolve_command_params_fn=lambda *_: {"duration_ms": 1000},
+        publish_batch_fn=publish_batch,
+        send_infra_alert_fn=AsyncMock(return_value=True),
+        err_mapping_not_found="mapping_not_found",
+        err_no_online_nodes="no_online_nodes",
+    )
+    assert result["success"] is True
+    publish_nodes = publish_batch.await_args.kwargs["nodes"]
+    assert publish_nodes == [{"node_uid": "nd-1", "channel": "pump_main"}]
+
+
+@pytest.mark.asyncio
+async def test_execute_device_task_core_run_pump_returns_no_nodes_when_only_valves():
+    mapping = SchedulerTaskMapping(task_type="irrigation", node_types=("irrig",), cmd="run_pump")
+    send_alert = AsyncMock(return_value=True)
+    result = await execute_device_task_core(
+        zone_id=1,
+        payload={},
+        mapping=mapping,
+        context={},
+        decision=DecisionOutcome(action_required=True, decision="run", reason_code="ok", reason="ok"),
+        get_zone_nodes_fn=AsyncMock(return_value=[{"node_uid": "nd-1", "channel": "valve_irrigation"}]),
+        resolve_command_name_fn=lambda *_: "run_pump",
+        resolve_command_params_fn=lambda *_: {"duration_ms": 1000},
+        publish_batch_fn=AsyncMock(return_value={"success": True}),
+        send_infra_alert_fn=send_alert,
+        err_mapping_not_found="mapping_not_found",
+        err_no_online_nodes="no_online_nodes",
+    )
+    assert result["error_code"] == "no_online_nodes"
+    send_alert.assert_awaited_once()
