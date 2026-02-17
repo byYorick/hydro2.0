@@ -452,7 +452,7 @@ actions:
       node_id: ${irrigation_node_id}
       solution_start_ts: ${solution_start_row.0.solution_start_ts}
     expected_rows: 1
-    timeout: 90.0
+    timeout: 15.0
     save: solution_min_hit
 
   - step: wait_solution_max_switch

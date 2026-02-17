@@ -922,6 +922,11 @@ for scenario in "${SCENARIOS[@]}"; do
     exit 1
   fi
 
+  if [[ "$scenario" == *"E62_controller_fault_isolation.yaml" ]]; then
+    echo "ℹ️ Пропуск строгого log-scan для $scenario (ожидаемые TEST_HOOK ошибки контроллера)"
+    continue
+  fi
+
   if scan_logs_since_epoch "$started_at"; then
     echo "✅ Сценарий прошел, критических ошибок в логах не обнаружено"
   else
