@@ -121,8 +121,14 @@ class E2ERunner:
         self.mqtt_executor: Optional[MQTTStepExecutor] = None
         self.waiting_executor: Optional[WaitingStepExecutor] = None
 
-        # Контекст для хранения переменных между шагами
-        self.context: Dict[str, Any] = {}
+        # Контекст для хранения переменных между шагами.
+        # TEST_NODE_* задаются сразу, чтобы сценарии могли подхватывать real-hardware UID.
+        self.context: Dict[str, Any] = {
+            "TEST_NODE_GH_UID": os.getenv("TEST_NODE_GH_UID", "gh-test-1"),
+            "TEST_NODE_ZONE_UID": os.getenv("TEST_NODE_ZONE_UID", "zn-test-1"),
+            "TEST_NODE_UID": os.getenv("TEST_NODE_UID", "nd-ph-esp32una"),
+            "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "esp32-test-001"),
+        }
         
         # Путь к docker-compose файлу для fault injection
         self.compose_file = config.get("compose_file") or os.getenv(
@@ -134,6 +140,8 @@ class E2ERunner:
         self._stopped_services: List[str] = []
         # Отмечаем, запускали ли инфраструктуру сами, чтобы корректно чистить
         self._infra_started_by_runner = False
+        # Режим реального железа: не управлять node-sim контейнером из сценариев.
+        self.real_hardware_mode = os.getenv("E2E_REAL_HARDWARE", "0") == "1"
 
     def _use_docker_cli(self) -> bool:
         """Use docker CLI instead of docker-compose (e.g., in container mode)."""
@@ -1601,6 +1609,9 @@ class E2ERunner:
             return
         # Simulator control (delegate to docker-compose node-sim service)
         if step_type == "start_simulator":
+            if self.real_hardware_mode:
+                logger.info("[REAL_HARDWARE] Skipping start_simulator (node-sim control disabled)")
+                return
             # При необходимости создаем временный конфиг node-sim и монтируем через NODE_SIM_CONFIG
             cfg_ref = raw.get("config_ref")
             if cfg_ref:
@@ -1619,6 +1630,9 @@ class E2ERunner:
             await self._fault_restore("node-sim")
             return
         if step_type == "stop_simulator":
+            if self.real_hardware_mode:
+                logger.info("[REAL_HARDWARE] Skipping stop_simulator (node-sim control disabled)")
+                return
             await self._fault_inject("node-sim", "stop", None)
             return
         
@@ -1627,9 +1641,12 @@ class E2ERunner:
             service = cfg.get("service")
             action = cfg.get("action", "stop")
             duration_s = cfg.get("duration_s", None)
-            
+
             if not service:
                 raise ValueError("fault.inject requires 'service' parameter")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping fault.inject for node-sim")
+                return
             
             await self._fault_inject(service, action, duration_s)
             return
@@ -1638,16 +1655,25 @@ class E2ERunner:
             service = cfg.get("service")
             if not service:
                 raise ValueError("fault.restore requires 'service' parameter")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping fault.restore for node-sim")
+                return
             await self._fault_restore(service)
             return
         
         # Legacy system control (deprecated, use fault.inject instead)
         if step_type == "system_stop":
             service = cfg.get("service")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping system_stop for node-sim")
+                return
             await self._fault_inject(service, "stop", None)
             return
         if step_type == "system_start":
             service = cfg.get("service")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping system_start for node-sim")
+                return
             await self._fault_restore(service)
             return
         

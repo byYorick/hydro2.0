@@ -479,11 +479,11 @@
           </section>
 
           <ul
-            v-if="schedulerTaskStatus.timeline && schedulerTaskStatus.timeline.length > 0"
+            v-if="schedulerTaskTimeline.length > 0"
             class="space-y-1 text-xs"
           >
             <li
-              v-for="(step, index) in schedulerTaskStatus.timeline"
+              v-for="(step, index) in schedulerTaskTimeline"
               :key="`${schedulerTaskStatus.task_id}-timeline-${step.event_id || index}`"
               class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
             >
@@ -679,6 +679,7 @@ const {
   schedulerTaskProcessStatusLabel,
   schedulerTaskTimelineStageLabel,
   schedulerTaskTimelineStepLabel,
+  schedulerTaskTimelineItems,
   schedulerTaskEventLabel,
   schedulerTaskDecisionLabel,
   schedulerTaskReasonLabel,
@@ -694,6 +695,7 @@ const processExpanded = ref(true)
 const processState = ref<AutomationStateType>('IDLE')
 const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
+const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
 const isProcessActive = computed(() => processState.value !== 'IDLE' && processState.value !== 'READY')
 
 function handleProcessStateChange(state: AutomationStateType): void {

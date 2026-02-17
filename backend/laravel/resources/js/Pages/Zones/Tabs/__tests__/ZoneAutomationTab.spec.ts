@@ -446,6 +446,16 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.schedulerTaskErrorLabel('prepare_npk_ph_target_not_reached')).toContain('NPK + pH')
     expect(vm.schedulerTaskErrorLabel('irrigation_recovery_attempts_exceeded')).toContain('Превышено число попыток')
     expect(vm.formatDateTime('2026-02-10T08:00:00')).toBe(vm.formatDateTime('2026-02-10T08:00:00Z'))
+    const dedupedTimeline = vm.schedulerTaskTimelineItems({
+      task_id: 'st-timeline',
+      timeline: [
+        { event_id: 'a', event_type: 'COMMAND_DISPATCHED', at: '2026-02-10T08:00:33Z' },
+        { event_id: 'b', event_type: 'TASK_FINISHED', at: '2026-02-10T08:00:34Z' },
+        { event_id: 'c', event_type: 'SCHEDULE_TASK_EXECUTION_FINISHED', at: '2026-02-10T08:00:34Z' },
+        { event_id: 'd', event_type: 'SCHEDULE_TASK_COMPLETED', at: '2026-02-10T08:01:33Z' },
+      ],
+    })
+    expect(dedupedTimeline.map((step: any) => step.event_type)).toEqual(['COMMAND_DISPATCHED', 'SCHEDULE_TASK_COMPLETED'])
 
     const noCommandsMeta = vm.schedulerTaskDoneMeta({
       status: 'completed',

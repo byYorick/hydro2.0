@@ -137,4 +137,55 @@ class ZoneEventMessageFormatterTest extends TestCase
             $message
         );
     }
+
+    public function test_format_water_level_low_contains_level_and_threshold(): void
+    {
+        $message = $this->formatter->format('WATER_LEVEL_LOW', [
+            'level' => 0.0,
+            'threshold' => 0.2,
+        ]);
+
+        $this->assertSame('Низкий уровень воды (уровень 0.0%, порог 20.0%)', $message);
+    }
+
+    public function test_format_alert_created_for_water_level_contains_context(): void
+    {
+        $message = $this->formatter->format('ALERT_CREATED', [
+            'alert_type' => 'WATER_LEVEL_LOW',
+            'level' => 0.1,
+            'threshold' => 0.2,
+        ]);
+
+        $this->assertSame('Создан алерт WATER_LEVEL_LOW (уровень 10.0%, порог 20.0%)', $message);
+    }
+
+    public function test_format_schedule_task_failed_contains_reason_and_identifiers(): void
+    {
+        $message = $this->formatter->format('SCHEDULE_TASK_FAILED', [
+            'task_type' => 'diagnostics',
+            'reason' => 'submit_failed',
+            'correlation_id' => 'ae:self:5:diagnostics:enq-123',
+        ]);
+
+        $this->assertSame(
+            'Scheduler: задача диагностики завершилась с ошибкой (причина: не удалось отправить задачу, корреляция: ae:self:5:diagnostics:enq-123)',
+            $message
+        );
+    }
+
+    public function test_format_self_task_dispatch_retry_scheduled_contains_retry_progress(): void
+    {
+        $message = $this->formatter->format('SELF_TASK_DISPATCH_RETRY_SCHEDULED', [
+            'task_type' => 'diagnostics',
+            'enqueue_id' => 'enq-e43ee29f9e59409299df78f65e8f9b1e',
+            'retry_count' => 2,
+            'max_attempts' => 3,
+            'next_retry_at' => '2026-02-17T07:59:06.869294',
+        ]);
+
+        $this->assertSame(
+            'Scheduler запланировал повторную отправку для внутренней задачи диагностики (enqueue_id: enq-e43ee29f9e59409299df78f65e8f9b1e, попытка 2/3, следующая попытка: 2026-02-17T07:59:06.869294)',
+            $message
+        );
+    }
 }

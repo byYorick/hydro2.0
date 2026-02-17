@@ -549,6 +549,46 @@ def _build_generic_task_schedules(
     return schedules
 
 
+def _subsystem_enabled_from_targets(targets: Dict[str, Any], subsystem_key: str) -> Optional[bool]:
+    if not isinstance(targets, dict):
+        return None
+    extensions = targets.get("extensions")
+    if not isinstance(extensions, dict):
+        return None
+    subsystems = extensions.get("subsystems")
+    if not isinstance(subsystems, dict):
+        return None
+    subsystem = subsystems.get(subsystem_key)
+    if not isinstance(subsystem, dict):
+        return None
+    enabled = subsystem.get("enabled")
+    if isinstance(enabled, bool):
+        return enabled
+    return None
+
+
+def _is_task_schedule_enabled(*, task_type: str, targets: Dict[str, Any], config: Dict[str, Any]) -> bool:
+    task_to_subsystem = {
+        "irrigation": "irrigation",
+        "lighting": "lighting",
+        "ventilation": "climate",
+        "diagnostics": "diagnostics",
+        "solution_change": "solution_change",
+    }
+    subsystem_key = task_to_subsystem.get(task_type)
+    if subsystem_key:
+        enabled = _subsystem_enabled_from_targets(targets, subsystem_key)
+        if enabled is False:
+            return False
+
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    if execution.get("force_skip") is True:
+        return False
+    if config.get("force_skip") is True:
+        return False
+    return True
+
+
 async def get_active_schedules() -> List[Dict[str, Any]]:
     """Fetch active schedules from effective targets (GrowCycle)."""
     zone_rows = await fetch(
@@ -630,14 +670,15 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
         # 1) Полив: explicit времена + interval
         irrigation = targets.get("irrigation", {}) if isinstance(targets.get("irrigation"), dict) else {}
         irrigation_schedule = targets.get("irrigation_schedule") or irrigation.get("schedule")
-        irrigation_schedules = _build_generic_task_schedules(
-            zone_id=zone_id,
-            task_type="irrigation",
-            config=irrigation,
-            schedule_spec=irrigation_schedule,
-            targets=targets,
-        )
-        schedules.extend(irrigation_schedules)
+        if _is_task_schedule_enabled(task_type="irrigation", targets=targets, config=irrigation):
+            irrigation_schedules = _build_generic_task_schedules(
+                zone_id=zone_id,
+                task_type="irrigation",
+                config=irrigation,
+                schedule_spec=irrigation_schedule,
+                targets=targets,
+            )
+            schedules.extend(irrigation_schedules)
 
         # 2) Свет: окно photoperiod или legacy schedule
         lighting = targets.get("lighting", {}) if isinstance(targets.get("lighting"), dict) else {}
@@ -649,34 +690,17 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
             or lighting.get("interval")
         )
 
-        if photoperiod_hours and start_time_str:
-            start_t = _parse_time_spec(str(start_time_str))
-            if start_t:
-                utc_today = utcnow().date()
-                end_time_dt = datetime.combine(utc_today, start_t) + timedelta(hours=float(photoperiod_hours))
-                schedule_item = {
-                    "zone_id": zone_id,
-                    "type": "lighting",
-                    "start_time": start_t,
-                    "end_time": end_time_dt.time(),
-                    "targets": targets,
-                    "config": lighting,
-                }
-                if lighting_interval_sec > 0:
-                    schedule_item["interval_sec"] = lighting_interval_sec
-                schedules.append(schedule_item)
-        else:
-            lighting_schedule = targets.get("lighting_schedule")
-            if isinstance(lighting_schedule, str) and "-" in lighting_schedule:
-                parts = lighting_schedule.split("-", 1)
-                start_t = _parse_time_spec(parts[0].strip())
-                end_t = _parse_time_spec(parts[1].strip())
-                if start_t and end_t:
+        if _is_task_schedule_enabled(task_type="lighting", targets=targets, config=lighting):
+            if photoperiod_hours and start_time_str:
+                start_t = _parse_time_spec(str(start_time_str))
+                if start_t:
+                    utc_today = utcnow().date()
+                    end_time_dt = datetime.combine(utc_today, start_t) + timedelta(hours=float(photoperiod_hours))
                     schedule_item = {
                         "zone_id": zone_id,
                         "type": "lighting",
                         "start_time": start_t,
-                        "end_time": end_t,
+                        "end_time": end_time_dt.time(),
                         "targets": targets,
                         "config": lighting,
                     }
@@ -684,15 +708,33 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
                         schedule_item["interval_sec"] = lighting_interval_sec
                     schedules.append(schedule_item)
             else:
-                schedules.extend(
-                    _build_generic_task_schedules(
-                        zone_id=zone_id,
-                        task_type="lighting",
-                        config=lighting,
-                        schedule_spec=lighting_schedule,
-                        targets=targets,
+                lighting_schedule = targets.get("lighting_schedule")
+                if isinstance(lighting_schedule, str) and "-" in lighting_schedule:
+                    parts = lighting_schedule.split("-", 1)
+                    start_t = _parse_time_spec(parts[0].strip())
+                    end_t = _parse_time_spec(parts[1].strip())
+                    if start_t and end_t:
+                        schedule_item = {
+                            "zone_id": zone_id,
+                            "type": "lighting",
+                            "start_time": start_t,
+                            "end_time": end_t,
+                            "targets": targets,
+                            "config": lighting,
+                        }
+                        if lighting_interval_sec > 0:
+                            schedule_item["interval_sec"] = lighting_interval_sec
+                        schedules.append(schedule_item)
+                else:
+                    schedules.extend(
+                        _build_generic_task_schedules(
+                            zone_id=zone_id,
+                            task_type="lighting",
+                            config=lighting,
+                            schedule_spec=lighting_schedule,
+                            targets=targets,
+                        )
                     )
-                )
 
         # 3) Generic abstract tasks
         generic_configs: List[Tuple[str, Dict[str, Any], Any]] = [
@@ -719,6 +761,8 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
         ]
 
         for task_type, config, schedule_spec in generic_configs:
+            if not _is_task_schedule_enabled(task_type=task_type, targets=targets, config=config):
+                continue
             schedule_source = schedule_spec if schedule_spec is not None else config
             schedules.extend(
                 _build_generic_task_schedules(

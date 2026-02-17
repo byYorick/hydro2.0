@@ -46,9 +46,11 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_TELEMETRY_FALLBACK 5632
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
+#define CLEAN_FILL_MIN_DELAY_SEC 10
 #define CLEAN_FILL_DELAY_SEC 120
+#define SOLUTION_FILL_MIN_DELAY_SEC 10
+#define SOLUTION_FILL_DELAY_SEC 300
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
-#define CLEAN_MAX_RELEASE_LEVEL 0.86f
 #define CONFIG_REPORT_RETRY_DELAY_MS 250
 #define CONFIG_REPORT_NODE_SPACING_MS 120
 #define MIN_VALID_UNIX_TS_SEC 1000000000LL
@@ -91,6 +93,8 @@ typedef struct {
     bool valve_irrigation_on;
     bool clean_fill_stage_active;
     bool clean_max_latched;
+    bool solution_fill_stage_active;
+    bool solution_max_latched;
     bool tank_fill_on;
     bool tank_drain_on;
     bool fan_on;
@@ -102,6 +106,7 @@ typedef struct {
     uint8_t irrigation_boost_ticks;
     uint8_t correction_boost_ticks;
     int64_t clean_fill_started_at;
+    int64_t solution_fill_started_at;
 } virtual_state_t;
 
 typedef enum {
@@ -207,8 +212,8 @@ static virtual_state_t s_virtual_state = {
     .pump_bus_current = 150.0f,
     .ph_value = 5.80f,
     .ec_value = 1.70f,
-    .water_level = 0.62f,
-    .solution_level = 0.58f,
+    .water_level = 0.05f,
+    .solution_level = 0.05f,
     .air_temp = 24.0f,
     .air_humidity = 60.0f,
     .light_level = 18000.0f,
@@ -221,6 +226,8 @@ static virtual_state_t s_virtual_state = {
     .valve_irrigation_on = false,
     .clean_fill_stage_active = false,
     .clean_max_latched = false,
+    .solution_fill_stage_active = false,
+    .solution_max_latched = false,
     .tank_fill_on = false,
     .tank_drain_on = false,
     .fan_on = false,
@@ -231,6 +238,7 @@ static virtual_state_t s_virtual_state = {
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
     .clean_fill_started_at = 0,
+    .solution_fill_started_at = 0,
 };
 
 static void ui_logf(const char *node_uid, const char *fmt, ...) {
@@ -567,6 +575,39 @@ static float resolve_clean_max_switch_value(void) {
     return level_switch_from_threshold(s_virtual_state.water_level, 0.90f, true);
 }
 
+static float resolve_clean_min_switch_value(void) {
+    if (s_virtual_state.clean_max_latched) {
+        return 1.0f;
+    }
+    if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
+        int64_t now_sec = get_timestamp_seconds();
+        if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_MIN_DELAY_SEC) {
+            return 1.0f;
+        }
+    }
+    return level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true);
+}
+
+static float resolve_solution_max_switch_value(void) {
+    if (s_virtual_state.solution_max_latched) {
+        return 1.0f;
+    }
+    return level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true);
+}
+
+static float resolve_solution_min_switch_value(void) {
+    if (s_virtual_state.solution_max_latched) {
+        return 1.0f;
+    }
+    if (s_virtual_state.solution_fill_stage_active && s_virtual_state.solution_fill_started_at > 0) {
+        int64_t now_sec = get_timestamp_seconds();
+        if ((now_sec - s_virtual_state.solution_fill_started_at) >= SOLUTION_FILL_MIN_DELAY_SEC) {
+            return 1.0f;
+        }
+    }
+    return level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true);
+}
+
 static bool is_clean_fill_active(void) {
     return s_virtual_state.tank_fill_on
         || (s_virtual_state.main_pump_on && s_virtual_state.valve_clean_fill_on);
@@ -611,6 +652,24 @@ static bool is_main_pump_channel(const char *channel) {
             strcmp(channel, "pump_main") == 0 ||
             strcmp(channel, "main_pump") == 0
         );
+}
+
+static bool is_fill_channel(const char *channel);
+static bool is_drain_channel(const char *channel);
+
+static bool is_water_contour_channel(const char *channel) {
+    if (!channel) {
+        return false;
+    }
+    return strcmp(channel, "pump_irrigation") == 0
+        || is_main_pump_channel(channel)
+        || strcmp(channel, "valve_clean_fill") == 0
+        || strcmp(channel, "valve_clean_supply") == 0
+        || strcmp(channel, "valve_solution_fill") == 0
+        || strcmp(channel, "valve_solution_supply") == 0
+        || strcmp(channel, "valve_irrigation") == 0
+        || is_fill_channel(channel)
+        || is_drain_channel(channel);
 }
 
 static bool is_fill_channel(const char *channel) {
@@ -1410,7 +1469,7 @@ static cJSON *build_sensor_probe_details(const char *channel) {
         cJSON_AddStringToObject(details, "unit", "ratio");
     } else if (strcmp(channel, "level_clean_min") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
-        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true));
+        cJSON_AddNumberToObject(details, "value", resolve_clean_min_switch_value());
         cJSON_AddStringToObject(details, "unit", "bool");
     } else if (strcmp(channel, "level_clean_max") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
@@ -1418,11 +1477,11 @@ static cJSON *build_sensor_probe_details(const char *channel) {
         cJSON_AddStringToObject(details, "unit", "bool");
     } else if (strcmp(channel, "level_solution_min") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
-        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true));
+        cJSON_AddNumberToObject(details, "value", resolve_solution_min_switch_value());
         cJSON_AddStringToObject(details, "unit", "bool");
     } else if (strcmp(channel, "level_solution_max") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "WATER_LEVEL_SWITCH");
-        cJSON_AddNumberToObject(details, "value", level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true));
+        cJSON_AddNumberToObject(details, "value", resolve_solution_max_switch_value());
         cJSON_AddStringToObject(details, "unit", "bool");
     } else if (strcmp(channel, "flow_present") == 0) {
         cJSON_AddStringToObject(details, "metric_type", "FLOW_RATE");
@@ -1574,6 +1633,7 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
 static void update_virtual_state_from_command(const pending_command_t *job, cJSON *details, const char **status_out) {
     const char *status = "DONE";
     bool handled = false;
+    bool was_solution_fill_active = is_solution_fill_active();
 
     if (!job || !status_out) {
         return;
@@ -1581,20 +1641,28 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
 
     if (job->sim_status_present) {
         if (strcmp(job->sim_status, "DONE") != 0) {
-            if (strcmp(job->sim_status, "NO_EFFECT") == 0) {
+            if (strcmp(job->sim_status, "NO_EFFECT") == 0 && is_water_contour_channel(job->channel)) {
+                cJSON_AddStringToObject(details, "note", "no_effect_overridden_for_water_contour");
+            } else if (strcmp(job->sim_status, "NO_EFFECT") == 0) {
                 cJSON_AddStringToObject(details, "note", "simulated_no_effect");
             } else {
                 cJSON_AddStringToObject(details, "error", "simulated_terminal_status");
                 cJSON_AddStringToObject(details, "error_code", job->sim_status);
             }
-            *status_out = job->sim_status;
-            return;
+            if (!(strcmp(job->sim_status, "NO_EFFECT") == 0 && is_water_contour_channel(job->channel))) {
+                *status_out = job->sim_status;
+                return;
+            }
         }
     }
     if (job->sim_no_effect) {
-        cJSON_AddStringToObject(details, "note", "sim_no_effect");
-        *status_out = "NO_EFFECT";
-        return;
+        if (is_water_contour_channel(job->channel)) {
+            cJSON_AddStringToObject(details, "note", "sim_no_effect_overridden_for_water_contour");
+        } else {
+            cJSON_AddStringToObject(details, "note", "sim_no_effect");
+            *status_out = "NO_EFFECT";
+            return;
+        }
     }
 
     if (strcmp(job->cmd, "set_relay") == 0 && !job->relay_state_present) {
@@ -1642,10 +1710,15 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         }
 
         if (has_state && current_state == job->relay_state) {
-            cJSON_AddStringToObject(details, "note", "already_in_requested_state");
-            *status_out = "NO_EFFECT";
-            return;
+            if (is_water_contour_channel(job->channel)) {
+                cJSON_AddStringToObject(details, "note", "already_in_requested_state_treated_as_done");
+            } else {
+                cJSON_AddStringToObject(details, "note", "already_in_requested_state");
+                *status_out = "NO_EFFECT";
+                return;
+            }
         }
+
     }
 
     if (strcmp(job->channel, "white_light") == 0 && strcmp(job->cmd, "set_pwm") == 0) {
@@ -1830,6 +1903,25 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
 
     s_virtual_state.water_level = clamp_float(s_virtual_state.water_level, 0.05f, 0.98f);
     s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level, 0.05f, 0.98f);
+
+    {
+        bool now_solution_fill_active = is_solution_fill_active();
+        if (!was_solution_fill_active && now_solution_fill_active) {
+            s_virtual_state.solution_fill_stage_active = true;
+            s_virtual_state.solution_fill_started_at = get_timestamp_seconds();
+            ui_logf(
+                job->node_uid,
+                "cmd delay solution_fill start %ds",
+                SOLUTION_FILL_DELAY_SEC
+            );
+        } else if (was_solution_fill_active && !now_solution_fill_active) {
+            if (s_virtual_state.solution_fill_stage_active && !s_virtual_state.solution_max_latched) {
+                ui_logf(job->node_uid, "cmd delay solution_fill cancel");
+            }
+            s_virtual_state.solution_fill_stage_active = false;
+            s_virtual_state.solution_fill_started_at = 0;
+        }
+    }
 
     *status_out = status;
 }
@@ -2275,6 +2367,19 @@ static void apply_passive_drift(void) {
             s_virtual_state.clean_fill_started_at = 0;
         }
     }
+    if (s_virtual_state.solution_fill_stage_active && s_virtual_state.solution_fill_started_at > 0) {
+        if ((now_sec - s_virtual_state.solution_fill_started_at) >= SOLUTION_FILL_DELAY_SEC) {
+            if (s_virtual_state.solution_level < CLEAN_MAX_LATCH_LEVEL) {
+                s_virtual_state.solution_level = CLEAN_MAX_LATCH_LEVEL;
+            }
+            if (!s_virtual_state.solution_max_latched) {
+                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay solution_fill done max=1");
+            }
+            s_virtual_state.solution_max_latched = true;
+            s_virtual_state.solution_fill_stage_active = false;
+            s_virtual_state.solution_fill_started_at = 0;
+        }
+    }
 
     if (clean_fill_active) {
         s_virtual_state.water_level = clamp_float(s_virtual_state.water_level + 0.003f, 0.05f, 0.88f);
@@ -2296,10 +2401,6 @@ static void apply_passive_drift(void) {
     if (s_virtual_state.tank_drain_on) {
         s_virtual_state.solution_level = clamp_float(s_virtual_state.solution_level - 0.008f, 0.05f, 0.98f);
     }
-    if (!clean_fill_active && s_virtual_state.water_level <= CLEAN_MAX_RELEASE_LEVEL) {
-        s_virtual_state.clean_max_latched = false;
-    }
-
     if (s_virtual_state.fan_on) {
         s_virtual_state.air_temp = clamp_float(s_virtual_state.air_temp - 0.05f, 18.0f, 32.0f);
         s_virtual_state.air_humidity = clamp_float(s_virtual_state.air_humidity - 0.08f, 35.0f, 90.0f);
@@ -2344,7 +2445,7 @@ static void publish_virtual_telemetry_batch(void) {
         "nd-test-irrig-1",
         "level_clean_min",
         "WATER_LEVEL_SWITCH",
-        level_switch_from_threshold(s_virtual_state.water_level, 0.18f, true)
+        resolve_clean_min_switch_value()
     );
     publish_telemetry_for_node(
         "nd-test-irrig-1",
@@ -2356,13 +2457,13 @@ static void publish_virtual_telemetry_batch(void) {
         "nd-test-irrig-1",
         "level_solution_min",
         "WATER_LEVEL_SWITCH",
-        level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true)
+        resolve_solution_min_switch_value()
     );
     publish_telemetry_for_node(
         "nd-test-irrig-1",
         "level_solution_max",
         "WATER_LEVEL_SWITCH",
-        level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true)
+        resolve_solution_max_switch_value()
     );
 
     publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);

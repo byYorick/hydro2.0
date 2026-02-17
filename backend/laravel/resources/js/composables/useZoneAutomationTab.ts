@@ -625,6 +625,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     if (normalized === 'TANK_REFILL_STARTED') return 'Запущено наполнение бака'
     if (normalized === 'TANK_REFILL_COMPLETED') return 'Наполнение бака завершено'
     if (normalized === 'TANK_REFILL_TIMEOUT') return 'Таймаут наполнения бака'
+    if (normalized === 'CLEAN_FILL_STARTED') return 'Запущено наполнение бака чистой воды'
+    if (normalized === 'CLEAN_FILL_COMPLETED') return 'Наполнение бака чистой воды завершено'
+    if (normalized === 'SOLUTION_FILL_STARTED') return 'Запущено наполнение бака раствора'
+    if (normalized === 'SOLUTION_FILL_COMPLETED') return 'Наполнение бака раствора завершено'
     if (normalized === 'SELF_TASK_ENQUEUED') return 'Запланирована отложенная проверка'
     if (normalized === 'SELF_TASK_DISPATCHED') return 'Отложенная задача отправлена'
     if (normalized === 'SELF_TASK_DISPATCH_FAILED') return 'Отложенная задача не отправлена'
@@ -673,17 +677,60 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
     const stageLabel = schedulerTaskTimelineStageLabel(step)
     if (stageLabel) {
+      const eventType = String(step.event_type ?? '').trim().toUpperCase()
+      const stagePrefix = stageLabel.replace('Этап: ', '')
+      const preferEventLabelForStage = new Set([
+        'COMMAND_DISPATCHED',
+        'CLEAN_FILL_STARTED',
+        'CLEAN_FILL_COMPLETED',
+        'SOLUTION_FILL_STARTED',
+        'SOLUTION_FILL_COMPLETED',
+        'TASK_FINISHED',
+        'SCHEDULE_TASK_COMPLETED',
+        'SCHEDULE_TASK_EXECUTION_FINISHED',
+      ])
+
+      if (preferEventLabelForStage.has(eventType)) {
+        return `${stagePrefix}: ${schedulerTaskEventLabel(step.event_type)}`
+      }
+
       if (step.reason_code) {
-        return `${stageLabel.replace('Этап: ', '')}: ${schedulerTaskReasonLabel(step.reason_code, step.reason)}`
+        return `${stagePrefix}: ${schedulerTaskReasonLabel(step.reason_code, step.reason)}`
       }
       if (step.error_code) {
-        return `${stageLabel.replace('Этап: ', '')}: ${schedulerTaskErrorLabel(step.error_code)}`
+        return `${stagePrefix}: ${schedulerTaskErrorLabel(step.error_code)}`
       }
       const eventLabel = schedulerTaskEventLabel(step.event_type)
-      return `${stageLabel.replace('Этап: ', '')}: ${eventLabel}`
+      return `${stagePrefix}: ${eventLabel}`
     }
 
     return schedulerTaskEventLabel(step.event_type)
+  }
+
+  function schedulerTaskTimelineItems(task: SchedulerTaskStatus | null | undefined): SchedulerTaskTimelineItem[] {
+    const rawTimeline = Array.isArray(task?.timeline) ? task.timeline : []
+    if (rawTimeline.length <= 1) return rawTimeline
+
+    const hasSchedulerCompleted = rawTimeline.some(
+      (item) => String(item?.event_type ?? '').trim().toUpperCase() === 'SCHEDULE_TASK_COMPLETED'
+    )
+    if (!hasSchedulerCompleted) return rawTimeline
+
+    return rawTimeline.filter((item) => {
+      const eventType = String(item?.event_type ?? '').trim().toUpperCase()
+      if (eventType !== 'TASK_FINISHED' && eventType !== 'SCHEDULE_TASK_EXECUTION_FINISHED') {
+        return true
+      }
+
+      const itemTaskId = String(item?.task_id ?? task?.task_id ?? '').trim()
+      return !rawTimeline.some((candidate) => {
+        const candidateType = String(candidate?.event_type ?? '').trim().toUpperCase()
+        if (candidateType !== 'SCHEDULE_TASK_COMPLETED') return false
+        if (!itemTaskId) return true
+        const candidateTaskId = String(candidate?.task_id ?? task?.task_id ?? '').trim()
+        return candidateTaskId === '' || candidateTaskId === itemTaskId
+      })
+    })
   }
 
   function schedulerTaskDecisionLabel(decision: string | null | undefined): string {
@@ -1615,6 +1662,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTaskEventLabel,
     schedulerTaskTimelineStageLabel,
     schedulerTaskTimelineStepLabel,
+    schedulerTaskTimelineItems,
     schedulerTaskDecisionLabel,
     schedulerTaskReasonLabel,
     schedulerTaskErrorLabel,

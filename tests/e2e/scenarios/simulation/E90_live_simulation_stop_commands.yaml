@@ -198,7 +198,7 @@ actions:
   - step: check_node_sim_session_running
     type: http_request
     method: GET
-    url: http://node-sim-manager:9100/sessions/${node_sim_session_id}
+    url: http://localhost:9101/sessions/${node_sim_session_id}
     capture_response: node_sim_session
 
   - step: wait_for_simulation_completion
@@ -217,7 +217,7 @@ actions:
   - step: check_node_sim_session_stopped
     type: http_request
     method: GET
-    url: http://node-sim-manager:9100/sessions/${node_sim_session_id}
+    url: http://localhost:9101/sessions/${node_sim_session_id}
     capture_response: node_sim_session_after
 
 assertions:
