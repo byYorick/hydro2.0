@@ -6,7 +6,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from common.infra_alerts import send_infra_alert
 from application.cycle_alerts import emit_cycle_alert as policy_emit_cycle_alert
 from application.two_tank_logging import log_two_tank_safety_guard as policy_log_two_tank_safety_guard
 from application.executor_constants import ERR_TWO_TANK_COMMAND_FAILED, REASON_CYCLE_REFILL_COMMAND_FAILED
@@ -33,7 +32,7 @@ async def bound_emit_cycle_alert(
         message=message,
         severity=severity,
         details=details,
-        send_infra_alert_fn=send_infra_alert,
+        send_infra_alert_fn=self.send_infra_alert_fn,
     )
 
 

@@ -46,7 +46,8 @@ void climate_node_publish_hello(void) {
 
 ### 2️⃣ History Logger получает node_hello
 
-**Python код:** `handle_node_hello()` в `main.py`
+**Python код:** `handle_node_hello()` в `mqtt_handlers.py`  
+Подписки на MQTT топики настраиваются в `app.py` (lifespan startup).
 
 **Действия:**
 1. Получает сообщение через MQTT подписку `hydro/node_hello`
@@ -232,7 +233,7 @@ lifecycle_state: ASSIGNED_TO_ZONE
 4. ✅ NodeController::update добавлена проверка всех токенов: `PY_API_TOKEN`, `PY_INGEST_TOKEN`, `HISTORY_LOGGER_API_TOKEN`
 
 **Файлы изменены:**
-- `backend/services/history-logger/main.py` - исправлена переменная токена
+- `backend/services/history-logger/mqtt_handlers.py` - исправлена переменная токена
 - `backend/laravel/routes/api.php` - добавлены service маршруты
 - `backend/laravel/app/Http/Controllers/NodeController.php` - улучшена проверка токенов
 
@@ -269,8 +270,8 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
-| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен для регистрации и обновления узлов |
-| `HISTORY_LOGGER_API_TOKEN` | Laravel → History Logger | Токен для публикации команд |
+| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен ingest-вызовов (register/service-update/lifecycle transition) |
+| `HISTORY_LOGGER_API_TOKEN` | History Logger (auth + ingest) | Основной токен для HTTP ingest-аутентификации и fallback для исходящих ingest-вызовов в Laravel |
 | `LARAVEL_API_URL` | History Logger | URL Laravel API (http://laravel) |
 | `CONFIG_REPORT_BUFFER_TTL_SEC` | History Logger | Сколько секунд хранить config_report, пришедший до регистрации (по умолчанию 120) |
 | `CONFIG_REPORT_BUFFER_MAX` | History Logger | Максимум буферизованных config_report (по умолчанию 128) |

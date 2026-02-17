@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
         context={"stage": "startup"},
     )
 
+    # Reset runtime state on each startup (important for tests/restarts).
+    state.shutdown_event.clear()
+    state.background_tasks.clear()
+
     if state.telemetry_queue is None:
         state.telemetry_queue = TelemetryQueue()
 
@@ -100,20 +104,23 @@ async def lifespan(app: FastAPI):
 
     s = get_settings()
     if state.background_tasks:
+        tasks_to_wait = list(state.background_tasks)
         logger.info(
-            f"Waiting for {len(state.background_tasks)} background tasks to complete..."
+            f"Waiting for {len(tasks_to_wait)} background tasks to complete..."
         )
         try:
             await asyncio.wait_for(
-                asyncio.gather(*state.background_tasks, return_exceptions=True),
+                asyncio.gather(*tasks_to_wait, return_exceptions=True),
                 timeout=s.shutdown_timeout_sec,
             )
             logger.info("All background tasks completed")
         except asyncio.TimeoutError:
             logger.warning("Timeout waiting for background tasks, forcing shutdown")
-            for task in state.background_tasks:
+            for task in tasks_to_wait:
                 if not task.done():
                     task.cancel()
+        finally:
+            state.background_tasks.clear()
 
     await asyncio.sleep(s.shutdown_wait_sec)
 

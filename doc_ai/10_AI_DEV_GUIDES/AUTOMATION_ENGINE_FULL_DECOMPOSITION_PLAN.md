@@ -2,7 +2,7 @@
 
 **Версия:** v1.0  
 **Дата:** 2026-02-16  
-**Статус:** В работе (D0 завершён, D1 частично, D2 существенно завершён, D3 в прогрессе)
+**Статус:** В работе (D0 завершён, D1 частично, D2 существенно завершён, D3 существенно завершён, D4 существенно завершён, D5 существенно завершён, D6 в прогрессе)
 
 Связанные документы:
 - `doc_ai/10_AI_DEV_GUIDES/AUTOMATION_ENGINE_AUDIT_PLAN.md`
@@ -50,7 +50,7 @@
 - `correction_controller.py`: 1494 строки (критично)
 - `irrigation_controller.py`: 341 строка (ок)
 
-### 3.1. Актуальный прогресс (2026-02-16, после шагов D0/D3)
+### 3.1. Актуальный прогресс (2026-02-17, после шагов D0/D6)
 
 - `scheduler_task_executor.py`: 59 строк (без изменений, целевой coordinator)
 - `application/scheduler_executor_impl.py`: **413** строк (было 4351)
@@ -101,11 +101,42 @@
 - `application/executor_bound_runtime_methods.py`: 90 строк
 - `application/executor_bound_phase_methods.py`: 122 строки
 - `application/api_automation_state.py`: 234 строки
+- `application/api_health.py`: 93 строки
 - `application/api_payload_parsing.py`: 70 строк
+- `application/api_recovery.py`: 858 строк
+- `application/api_runtime.py`: 233 строки
+- `application/api_scheduler_bootstrap.py`: 176 строк
+- `application/api_scheduler_routes.py`: 191 строка
+- `application/api_scheduler_execution.py`: 146 строк
+- `application/api_scheduler_store.py`: 255 строк
+- `application/api_scheduler_validation.py`: 39 строк
 - `application/api_task_snapshot.py`: 77 строк
-- `api.py`: 2859 строк
-- `services/zone_automation_service.py`: 2570 строк
-- `correction_controller.py`: 1494 строки
+- `application/api_test_hooks.py`: 269 строк
+- `application/api_contracts.py`: 64 строки
+- `application/api_internal_enqueue.py`: 48 строк
+- `application/api_zone_state.py`: 239 строк
+- `application/api_zone_state_payload.py`: 62 строки
+- `application/api_zone_task_loader.py`: 123 строки
+- `api.py`: 860 строк
+- `services/zone_automation_service.py`: **893** строки
+- `services/zone_correction_gating.py`: 335 строк
+- `services/zone_correction_signals.py`: 145 строк
+- `services/zone_correction_orchestrator.py`: 263 строки
+- `services/zone_skip_signals.py`: 154 строки
+- `services/zone_runtime_signals.py`: 153 строки
+- `services/zone_state_runtime.py`: 284 строки
+- `services/zone_process_cycle.py`: 223 строки
+- `services/zone_sensor_mode_orchestrator.py`: 162 строки
+- `services/zone_correction_skip_events.py`: 109 строк
+- `services/zone_housekeeping.py`: 119 строк
+- `services/zone_runtime_backoff.py`: 109 строк
+- `services/zone_controller_guardrails.py`: 276 строк
+- `services/zone_controller_execution.py`: 189 строк
+- `services/zone_controller_processors.py`: 217 строк
+- `correction_controller.py`: **900** строк
+- `correction_ec_batch.py`: 468 строк
+- `correction_command_retry.py`: 215 строк
+- `correction_freshness.py`: 136 строк
 - `domain/workflows/two_tank_core.py`: **133** строки (было 1017)
 - `domain/workflows/two_tank_startup_core.py`: 732 строки
 - `domain/workflows/two_tank_recovery_core.py`: 243 строки
@@ -122,7 +153,7 @@
 - `domain/policies/outcome_policy.py`: 40 строк
 - `domain/policies/outcome_enrichment_policy.py`: 101 строка
 
-### 3.2. Оперативный статус валидации (2026-02-16)
+### 3.2. Оперативный статус валидации (2026-02-17)
 
 - Основной decomposition regression-пакет зелёный:
   - `31 passed, 1 warning`
@@ -132,12 +163,12 @@
     `test_sensor_mode_dispatch.py`, `test_workflow_phase_sync_core.py`,
     `test_ventilation_climate_guards.py`, `test_two_tank_runtime_config.py`,
     `test_line_budget.py`.
-- Текущий warning:
-  - `PytestConfigWarning: Unknown config option: asyncio_mode`.
-- Ограничение окружения:
-  - `test_api.py` не выполняется локально в текущем окружении из-за отсутствующей зависимости `httpx`
-    (`ModuleNotFoundError: No module named 'httpx'`), поэтому API-декомпозиция валидируется
-    через regression-пакет + pyflakes до установки `httpx`.
+- Полный пакет `automation-engine` зелёный:
+  - `887 passed`
+  - запуск: `docker compose -f backend/docker-compose.dev.yml run --rm --build automation-engine pytest -q`
+- `pytest.ini` синхронизирован с текущим окружением:
+  - `asyncio_mode = auto`
+  - `asyncio_default_fixture_loop_scope = function`
 
 Сделано:
 1. D0: добавлен non-regression line-budget gate `backend/services/automation-engine/test_line_budget.py`.
@@ -526,6 +557,207 @@
    `_task_sort_key`,
    `_pick_preferred_zone_task`,
    `_sanitize_scheduler_task_snapshot`.
+67. D3 (частично): вынесен health/readiness helper-блок API:
+ - `backend/services/automation-engine/application/api_health.py`
+ - `api.py` переключён на thin wrappers в:
+   `_is_command_bus_ready`,
+   `_is_bootstrap_store_ready`,
+   `_is_db_ready`,
+   `_readiness_payload`.
+68. D3 (частично): вынесен test-hooks helper-блок API:
+ - `backend/services/automation-engine/application/api_test_hooks.py`
+ - `api.py` переключён на thin wrappers в:
+   `test_hook`,
+   `get_test_hook`,
+   `get_test_hook_for_zone`,
+   `get_zone_state_override`.
+69. D3 (частично): вынесен startup-recovery helper-блок API:
+ - `backend/services/automation-engine/application/api_recovery.py`
+ - `api.py` переключён на thin wrappers в:
+   `_recover_inflight_scheduler_tasks`,
+   `_recover_zone_workflow_states`.
+70. D3 (частично): вынесен scheduler-task execution helper-блок API:
+ - `backend/services/automation-engine/application/api_scheduler_execution.py`
+ - `api.py` переключён на thin wrapper в:
+   `_execute_scheduler_task`.
+71. D3 (частично): вынесен scheduler bootstrap/lease helper-блок API:
+ - `backend/services/automation-engine/application/api_scheduler_bootstrap.py`
+ - `api.py` переключён на thin wrappers в:
+   `_validate_scheduler_dispatch_lease`,
+   `scheduler_bootstrap`,
+   `scheduler_bootstrap_heartbeat`.
+72. D3 (частично): вынесен zone automation-state data-loading helper-блок API:
+ - `backend/services/automation-engine/application/api_zone_state.py`
+ - `api.py` переключён на thin wrappers в:
+   `_system_config_from_task_payload`,
+   `_load_zone_system_config`,
+   `_normalize_level_percent`,
+   `_load_zone_current_levels`,
+   `_load_automation_timeline`.
+73. D3 (частично): вынесен scheduler task store/idempotency helper-блок API:
+ - `backend/services/automation-engine/application/api_scheduler_store.py`
+ - `api.py` переключён на thin wrappers в:
+   `_cleanup_scheduler_tasks_locked`,
+   `_load_scheduler_task_by_correlation_id`,
+   `_create_scheduler_task`,
+   `_update_scheduler_task`,
+   `_scheduler_task_log_name`,
+   `_persist_scheduler_task_snapshot`,
+   `_load_scheduler_task_snapshot`.
+74. D3 (частично): вынесен scheduler routes helper-блок API:
+ - `backend/services/automation-engine/application/api_scheduler_routes.py`
+ - `api.py` переключён на thin wrappers в:
+   `scheduler_task`,
+   `scheduler_task_status`.
+75. D3 (частично): вынесен zone automation-state payload assembler:
+ - `backend/services/automation-engine/application/api_zone_state_payload.py`
+ - `api.py` переключён на thin вызов в:
+   `zone_automation_state`.
+76. D3 (частично): вынесен zone latest-task loader helper-блок API:
+ - `backend/services/automation-engine/application/api_zone_task_loader.py`
+ - `api.py` переключён на thin wrapper в:
+   `_load_latest_zone_task`.
+77. D3 (частично): вынесены middleware/runtime helper-блоки API:
+ - `backend/services/automation-engine/application/api_runtime.py`
+ - `api.py` переключён на thin wrappers в:
+   `trace_middleware`,
+   `_spawn_background_task`,
+   `_update_command_effect_confirm_rate`.
+78. D3 (частично): вынесены API contracts/validation/internal-enqueue helper-блоки:
+ - `backend/services/automation-engine/application/api_contracts.py`
+ - `backend/services/automation-engine/application/api_scheduler_validation.py`
+ - `backend/services/automation-engine/application/api_internal_enqueue.py`
+ - `api.py` переключён на thin wrappers в:
+   `_validate_scheduler_zone`,
+   `scheduler_internal_enqueue`.
+79. D4 (частично): вынесен correction gating helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_correction_gating.py`
+ - `ZoneAutomationService` переключён на thin wrapper в:
+   `_build_correction_gating_state`.
+80. D4 (частично): вынесен sensor-mode orchestrator helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_sensor_mode_orchestrator.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_resolve_sensor_mode_action`,
+   `_apply_sensor_mode_policy`,
+   `_resolve_correction_sensor_nodes`,
+   `_set_sensor_mode`.
+81. D4 (частично): вынесен throttled correction-skip events helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_correction_skip_events.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_emit_correction_skip_event_throttled`,
+   `_normalize_flag_signature_values`,
+   `_build_correction_skip_signature`.
+82. D4 (частично): вынесен housekeeping helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_housekeeping.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_update_zone_health`,
+   `_check_zone_deletion`,
+   `_check_pid_config_updates`.
+83. D4 (частично): вынесен runtime backoff/degraded-state helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_runtime_backoff.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_should_process_zone`,
+   `_is_degraded_mode`,
+   `_calculate_backoff_seconds`,
+   `_record_zone_error`,
+   `_reset_zone_error_streak`.
+84. D4 (частично): вынесен controller guardrails helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_controller_guardrails.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_emit_controller_circuit_open_signal`,
+   `_is_controller_in_cooldown`,
+   `_record_controller_failure`,
+   `_safe_process_controller`,
+   `_emit_controller_cooldown_skip_signal`.
+85. D4 (частично): вынесен controller execution helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_controller_execution.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_check_phase_transitions`,
+   `_append_correlation_id`,
+   `_publish_controller_action_with_event_integrity`.
+86. D4 (частично): вынесен controller processors helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_controller_processors.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_process_light_controller`,
+   `_process_climate_controller`,
+   `_process_irrigation_controller`,
+   `_process_recirculation_controller`.
+87. D4 (частично): вынесен correction gating signals helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_correction_signals.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_emit_correction_missing_flags_signal`,
+   `_emit_correction_stale_flags_signal`.
+88. D4 (частично): вынесен correction orchestration helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_correction_orchestrator.py`
+ - `ZoneAutomationService` переключён на thin wrapper в:
+   `_process_correction_controllers`.
+89. D4 (частично): вынесен skip-signals helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_skip_signals.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_emit_backoff_skip_signal`,
+   `_emit_missing_targets_signal`.
+90. D4 (частично): вынесен runtime-signals helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_runtime_signals.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_emit_zone_data_unavailable_signal`,
+   `_emit_degraded_mode_signal`,
+   `_emit_zone_recovered_signal`.
+91. D4 (частично): вынесен state/workflow runtime helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_state_runtime.py`
+ - `ZoneAutomationService` переключён на thin wrappers в:
+   `_normalize_workflow_phase`,
+   `_get_zone_state`,
+   `_save_zone_state`,
+   `_reset_zone_pid_state`,
+   `_sync_sensor_mode_cache`,
+   `_update_workflow_phase`,
+   `_resolve_allowed_ec_components`.
+92. D4 (частично): вынесен process-cycle orchestration helper-блок ZoneAutomationService:
+ - `backend/services/automation-engine/services/zone_process_cycle.py`
+ - `ZoneAutomationService` переключён на thin wrapper в:
+   `process_zone(...)`.
+ - достигнут целевой лимит D4: `zone_automation_service.py <= 900` (фактически 893 строки).
+93. D5 (частично): вынесен EC batch planning/calculation helper-блок CorrectionController:
+ - `backend/services/automation-engine/correction_ec_batch.py`
+ - `CorrectionController` переключён на thin wrappers в:
+   `_build_ec_component_batch`,
+   `_build_actuator_identity`,
+   `_resolve_ec_component_ratios`,
+   `_resolve_nutrition_mode`,
+   `_resolve_solution_volume_l`,
+   `_extract_nutrition_control`,
+   `_resolve_batch_dose_control`,
+   `_get_latest_ec_value`.
+94. D5 (частично): вынесен command retry/compensation helper-блок CorrectionController:
+ - `backend/services/automation-engine/correction_command_retry.py`
+ - `CorrectionController` переключён на thin wrappers в:
+   `_publish_controller_command_with_retry`,
+   `_trigger_ec_partial_batch_compensation`,
+   `_wait_command_done`.
+95. D5 (частично): вынесен freshness fail-closed helper-блок CorrectionController:
+ - `backend/services/automation-engine/correction_freshness.py`
+ - `CorrectionController` переключён на helper-вызов в `check_and_correct(...)`.
+ - достигнут целевой лимит D5: `correction_controller.py <= 900` (фактически 900 строк).
+ - валидация:
+   - `pytest -q test_correction_controller.py test_line_budget.py` -> `35 passed`;
+   - `pytest -q` (automation-engine) -> `887 passed`.
+96. D6 (частично): устранены silent fallback-ветки и унифицированы reason_code-поля в correction boundary logging:
+ - `backend/services/automation-engine/correction_controller.py`
+ - `backend/services/automation-engine/correction_command_retry.py`
+ - `backend/services/automation-engine/correction_freshness.py`
+ - добавлены structured skip/fail-логи с `component`, `zone_id`, `decision`, `reason_code` в ветках:
+   `invalid_target_or_current`, `cooldown_or_trend_policy_blocked`, `water_level_not_ok`,
+   `actuator_unavailable`, `pid_output_zero`, `freshness_check_failed`,
+   `telemetry_data_too_old`, `cmd_id_missing_after_publish`, `wait_command_done_exception`.
+97. D6 (частично): добавлены smoke-тесты structured logging для correction boundary-цепочек:
+ - `backend/services/automation-engine/test_correction_controller.py`
+ - добавлены тесты:
+   `test_structured_skip_log_for_water_level_guard`,
+   `test_structured_retry_log_for_missing_cmd_id`,
+   `test_structured_freshness_fail_closed_log`.
+ - валидация:
+   - `pytest -q test_correction_controller.py -k "structured_skip_log_for_water_level_guard or structured_retry_log_for_missing_cmd_id or structured_freshness_fail_closed_log"` -> `3 passed, 34 deselected`;
+   - `pytest -q` (automation-engine) -> `887 passed`.
 
 ## 4. Целевая структура (после полной декомпозиции)
 

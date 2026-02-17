@@ -24,6 +24,38 @@ def test_derive_workflow_phase_diagnostics_ready_mode():
     assert phase == WORKFLOW_PHASE_READY
 
 
+def test_derive_workflow_phase_diagnostics_failure_keeps_phase_unchanged():
+    phase = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "startup"},
+        result={
+            "mode": "two_tank_solution_fill_command_failed",
+            "success": False,
+            "action_required": True,
+            "decision": "run",
+            "reason_code": "cycle_start_refill_command_failed",
+        },
+    )
+
+    assert phase is None
+
+
+def test_derive_workflow_phase_diagnostics_recovery_completed_maps_to_irrigating():
+    phase = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "irrigation_recovery_check"},
+        result={
+            "mode": "two_tank_irrigation_recovery_completed",
+            "success": True,
+            "action_required": False,
+            "decision": "skip",
+            "reason_code": "irrigation_recovery_recovered",
+        },
+    )
+
+    assert phase == WORKFLOW_PHASE_IRRIGATING
+
+
 def test_derive_workflow_phase_irrigation_recovery_mode():
     phase = derive_workflow_phase(
         task_type="irrigation",

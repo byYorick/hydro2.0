@@ -1110,6 +1110,28 @@ async def test_update_workflow_phase_clears_sensor_mode_cache_for_external_workf
     assert service._correction_sensor_mode_state[zone_id] is False
 
 
+@pytest.mark.asyncio
+async def test_set_sensor_mode_does_not_update_cache_when_publish_not_confirmed():
+    service = _build_zone_service()
+    zone_id = 504
+    service.command_bus.publish_controller_command = AsyncMock(return_value=False)
+    nodes = {
+        "ph:ph_main": {"node_uid": "nd-ph-1", "type": "ph", "channel": "ph_main"},
+        "ec:ec_main": {"node_uid": "nd-ec-1", "type": "ec", "channel": "ec_main"},
+    }
+
+    await service._set_sensor_mode(
+        zone_id=zone_id,
+        nodes=nodes,
+        activate=False,
+        reason="sensor_unstable",
+    )
+
+    sent_cmds = [call.args[1]["cmd"] for call in service.command_bus.publish_controller_command.await_args_list]
+    assert sent_cmds == ["deactivate_sensor_mode", "deactivate_sensor_mode"]
+    assert zone_id not in service._correction_sensor_mode_state
+
+
 def test_calculate_backoff_seconds_is_exponential_and_capped():
     service = _build_zone_service()
 

@@ -33,6 +33,7 @@ from application.executor_init import (
     initialize_executor_components as policy_initialize_executor_components,
 )
 from application.executor_constants import *  # noqa: F403
+from application.executor_constants import _env_bool as policy_env_bool
 from application.executor_method_delegates import (
     sync_zone_workflow_phase_core as policy_delegate_sync_zone_workflow_phase_core,
 )
@@ -276,11 +277,14 @@ class SchedulerTaskExecutor:
             command_bus=command_bus,
             zone_service=zone_service,
             workflow_state_store=workflow_state_store,
-            workflow_state_persist_enabled=_env_bool("AE_WORKFLOW_STATE_PERSIST_ENABLED", True),
+            workflow_state_persist_enabled=policy_env_bool("AE_WORKFLOW_STATE_PERSIST_ENABLED", True),
             two_tank_topologies=TWO_TANK_TOPOLOGIES,
             three_tank_topologies=THREE_TANK_TOPOLOGIES,
             cycle_start_workflows=CYCLE_START_WORKFLOWS,
         )
+        self.fetch_fn = fetch
+        self.create_zone_event_fn = create_zone_event
+        self.send_infra_alert_fn = send_infra_alert
         self.enqueue_internal_scheduler_task_fn = enqueue_internal_scheduler_task
 
     _enqueue_two_tank_check = bound_enqueue_two_tank_check

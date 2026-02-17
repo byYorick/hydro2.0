@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from common.infra_alerts import send_infra_alert
 from application.executor_constants import REASON_OUTSIDE_TEMP_BLOCKED, REASON_WIND_BLOCKED
 from application.executor_small_delegates import (
     build_two_tank_runtime_payload as policy_delegate_build_two_tank_runtime_payload,
@@ -52,7 +51,7 @@ async def bound_execute_device_task_core(
         mapping=mapping,
         context=context,
         decision=decision,
-        send_infra_alert_fn=send_infra_alert,
+        send_infra_alert_fn=self.send_infra_alert_fn,
     )
 
 

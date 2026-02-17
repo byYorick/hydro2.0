@@ -1,280 +1,133 @@
 {
-  "test_suite": "E16_command_timeout_flow",
-  "generated_at": "2026-02-14T12:44:17.500641",
+  "test_suite": "E06_laravel_down_queue_recovery",
+  "generated_at": "2026-02-17T07:48:13.116007",
   "test_cases": [
     {
-      "name": "set_test_uids",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 1.52587890625e-05,
+      "duration": 5.723523139953613,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:06.852155"
+      "timestamp": "2026-02-17T07:47:33.964692"
     },
     {
-      "name": "fetch_node_id",
+      "name": "verify_laravel_running",
       "status": "passed",
-      "duration": 0.009644746780395508,
+      "duration": 1.1309473514556885,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_node_id",
+          "name": "verify_laravel_running",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:06.861908"
+      "timestamp": "2026-02-17T07:47:35.095744"
     },
     {
-      "name": "get_zones",
+      "name": "stop_laravel",
       "status": "passed",
-      "duration": 0.0714731216430664,
+      "duration": 4.4353485107421875,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "stop_laravel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:06.933480"
+      "timestamp": "2026-02-17T07:47:39.531134"
     },
     {
-      "name": "set_zone_id",
+      "name": "node_publishes_errors_during_down",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 5.006758689880371,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "node_publishes_errors_during_down",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:06.933631"
+      "timestamp": "2026-02-17T07:47:44.538026"
     },
     {
-      "name": "get_nodes",
+      "name": "restore_laravel",
       "status": "passed",
-      "duration": 0.07591676712036133,
+      "duration": 3.288618564605713,
       "error_message": null,
       "steps": [
         {
-          "name": "get_nodes",
+          "name": "restore_laravel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:07.009602"
+      "timestamp": "2026-02-17T07:47:47.826675"
     },
     {
-      "name": "set_node_id",
+      "name": "wait_queue_processing",
       "status": "passed",
-      "duration": 1.7404556274414062e-05,
+      "duration": 15.011414766311646,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id",
+          "name": "wait_queue_processing",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:07.010114"
+      "timestamp": "2026-02-17T07:48:02.838119"
     },
     {
-      "name": "subscribe_commands_channel",
+      "name": "all_errors_processed",
       "status": "passed",
-      "duration": 0.18459010124206543,
+      "duration": 0.00921487808227539,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_commands_channel",
+          "name": "all_errors_processed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:07.194831"
+      "timestamp": "2026-02-17T07:48:02.847352"
     },
     {
-      "name": "pause_node_sim",
+      "name": "errors_processed_via_queue",
       "status": "passed",
-      "duration": 0.037206411361694336,
+      "duration": 0.0005252361297607422,
       "error_message": null,
       "steps": [
         {
-          "name": "pause_node_sim",
+          "name": "errors_processed_via_queue",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:07.232110"
+      "timestamp": "2026-02-17T07:48:02.847893"
     },
     {
-      "name": "send_timeout_command",
+      "name": "queue_processed",
       "status": "passed",
-      "duration": 0.1704874038696289,
+      "duration": 0.0013031959533691406,
       "error_message": null,
       "steps": [
         {
-          "name": "send_timeout_command",
+          "name": "queue_processed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-14T12:44:07.402874"
-    },
-    {
-      "name": "extract_timeout_command_id",
-      "status": "passed",
-      "duration": 9.059906005859375e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "extract_timeout_command_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:07.402997"
-    },
-    {
-      "name": "wait_for_timeout_ws_event",
-      "status": "skipped",
-      "duration": 10.024555444717407,
-      "error_message": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated",
-      "steps": [
-        {
-          "name": "wait_for_timeout_ws_event",
-          "status": "skipped",
-          "error": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.427735"
-    },
-    {
-      "name": "check_timeout_db_status",
-      "status": "passed",
-      "duration": 0.013294219970703125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "check_timeout_db_status",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.441176"
-    },
-    {
-      "name": "resume_node_sim",
-      "status": "passed",
-      "duration": 0.05359983444213867,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "resume_node_sim",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.494877"
-    },
-    {
-      "name": "ws_timeout_event",
-      "status": "skipped",
-      "duration": 0.00010204315185546875,
-      "error_message": "Assertion condition is false: str(context.get('ws_timeout_event', {}).get('data', {}).get('commandId')) == str(context.get('timeout_command_id'))",
-      "steps": [
-        {
-          "name": "ws_timeout_event",
-          "status": "skipped",
-          "error": "Assertion condition is false: str(context.get('ws_timeout_event', {}).get('data', {}).get('commandId')) == str(context.get('timeout_command_id'))"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.495026"
-    },
-    {
-      "name": "db_timeout_status",
-      "status": "passed",
-      "duration": 0.0018188953399658203,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "db_timeout_status",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.496853"
-    },
-    {
-      "name": "no_stuck_commands",
-      "status": "passed",
-      "duration": 0.0032851696014404297,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "no_stuck_commands",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-14T12:44:17.500147"
+      "timestamp": "2026-02-17T07:48:02.849204"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E16_command_timeout_flow": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:07.098538"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"42575997-9a07-4d8f-9acd-a1b1a0394179\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":5,\"event_id\":1771073047000084885,\"server_ts\":1771073047000}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:07.302812"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"42575997-9a07-4d8f-9acd-a1b1a0394179\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":5,\"event_id\":1771073047000084886,\"server_ts\":1771073047000}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:07.391560"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"5e0b74ee-198e-4456-a97a-27a20164ae63\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":5,\"event_id\":1771073050000084888,\"server_ts\":1771073050000}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:10.707507"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"50afcda9-3d1a-4dfa-be8a-0685086dde74\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":5,\"event_id\":1771073050000084889,\"server_ts\":1771073050000}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:10.809805"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"27a6848a-a82a-4380-a079-dfd4ff60caa3\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":5,\"event_id\":1771073050000084890,\"server_ts\":1771073050000}",
-            "channel": "private-commands.5"
-          },
-          "timestamp": "2026-02-14T12:44:10.901480"
-        }
-      ],
+    "E06_laravel_down_queue_recovery": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 5,
-        "node_id": 25,
-        "test_zone_id": 5,
-        "test_node_id": 25,
-        "timeout_command_id": "42575997-9a07-4d8f-9acd-a1b1a0394179",
-        "ws_last_event_id": 1771073050000084890
+        "zone_id": 5
       }
     }
   }

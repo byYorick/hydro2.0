@@ -6,8 +6,6 @@ import logging
 from typing import Any, Dict, Optional, Sequence
 from uuid import uuid4
 
-from common.db import create_zone_event
-from common.infra_alerts import send_infra_alert
 from application.diagnostics_task_execution import execute_diagnostics_task as policy_execute_diagnostics_task
 from application.executor_constants import (
     CYCLE_START_WORKFLOWS,
@@ -26,7 +24,6 @@ from application.executor_small_delegates import (
 from application.task_events_persistence import persist_zone_event_safe as policy_persist_zone_event_safe
 from application.workflow_phase_policy import WORKFLOW_PHASE_EVENT_TYPE
 from domain.policies.outcome_enrichment_policy import ensure_extended_outcome as policy_ensure_extended_outcome
-from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 from application.decision_retry_enqueue import enqueue_decision_retry as policy_enqueue_decision_retry
 
 logger = logging.getLogger(__name__)
@@ -47,8 +44,8 @@ async def bound_create_zone_event_safe(
         payload=payload,
         task_type=task_type,
         context=context,
-        create_zone_event_fn=create_zone_event,
-        send_infra_alert_fn=send_infra_alert,
+        create_zone_event_fn=self.create_zone_event_fn,
+        send_infra_alert_fn=self.send_infra_alert_fn,
         log_warning=logger.warning,
     )
 
@@ -70,7 +67,7 @@ async def bound_sync_zone_workflow_phase_core(
         result=result,
         context=context,
         logger_obj=logger,
-        send_infra_alert_fn=send_infra_alert,
+        send_infra_alert_fn=self.send_infra_alert_fn,
     )
 
 
@@ -148,20 +145,23 @@ async def bound_enqueue_decision_retry(
     self,
     *,
     zone_id: int,
+    task_type: str,
     payload: Dict[str, Any],
     context: Dict[str, Any],
     decision: Any,
-    result: Dict[str, Any],
-) -> Dict[str, Any]:
+    result: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     return await policy_enqueue_decision_retry(
         zone_id=zone_id,
+        task_type=task_type,
         payload=payload,
         context=context,
         decision=decision,
-        result=result,
-        enqueue_task_fn=enqueue_internal_scheduler_task,
-        extract_retry_attempt_fn=self._extract_retry_attempt,
+        safe_int_fn=self._safe_int,
+        extract_next_due_at_fn=lambda d, r: self._extract_next_due_at(decision=d, result=r),
+        enqueue_task_fn=self.enqueue_internal_scheduler_task_fn,
         build_correlation_id_fn=self._build_decision_retry_correlation_id,
+        log_warning=logger.warning,
     )
 
 

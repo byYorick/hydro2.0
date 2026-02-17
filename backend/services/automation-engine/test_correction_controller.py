@@ -1,9 +1,12 @@
 """Tests for correction_controller."""
+import logging
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from types import SimpleNamespace
 from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
+from correction_command_retry import publish_controller_command_with_retry
+from correction_freshness import validate_freshness_or_skip
 
 
 class _PidZone:
@@ -1409,3 +1412,92 @@ async def test_ec_controller_apply_correction():
         
         # Проверяем, что был создан AI log
         mock_ai_log.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_structured_skip_log_for_water_level_guard(caplog):
+    controller = CorrectionController(CorrectionType.PH)
+    caplog.set_level(logging.WARNING, logger="correction_controller")
+
+    targets = {"ph": {"target": 6.5}}
+    telemetry = {"PH": 6.8}
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+
+    with patch("correction_controller.should_apply_correction", new_callable=AsyncMock, return_value=(True, "ok")), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
+        result = await controller.check_and_correct(
+            7,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes={},
+            water_level_ok=False,
+            actuators={"ph_acid_pump": {"node_uid": "nd-ph", "channel": "pump_acid", "role": "ph_acid_pump"}},
+        )
+
+    assert result is None
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "water_level_not_ok")
+    assert getattr(record, "component", None) == "correction_controller"
+    assert getattr(record, "zone_id", None) == 7
+    assert getattr(record, "decision", None) == "skip"
+
+
+@pytest.mark.asyncio
+async def test_structured_retry_log_for_missing_cmd_id(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_command_retry")
+
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=True)
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=11,
+        command_bus=command_bus,
+        controller_command={"cmd": "dose", "node_uid": "nd-1", "channel": "pump"},
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "cmd_id_missing_after_publish")
+    assert getattr(record, "component", None) == "correction_command_retry"
+    assert getattr(record, "zone_id", None) == 11
+    assert getattr(record, "decision", None) == "fail_closed"
+
+
+@pytest.mark.asyncio
+async def test_structured_freshness_fail_closed_log(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_freshness")
+    failure_count = {}
+
+    with patch("correction_freshness.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_freshness.create_alert", new_callable=AsyncMock):
+        ok = await validate_freshness_or_skip(
+            zone_id=5,
+            metric_name="PH",
+            target_key="ph",
+            correction_type="ph",
+            current=6.9,
+            target=6.5,
+            telemetry_timestamps=None,
+            freshness_check_failure_count=failure_count,
+            event_prefix="PH",
+        )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "freshness_check_failed")
+    assert getattr(record, "component", None) == "correction_freshness"
+    assert getattr(record, "zone_id", None) == 5
+    assert getattr(record, "decision", None) == "skip"

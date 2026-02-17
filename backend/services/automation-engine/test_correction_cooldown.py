@@ -116,6 +116,26 @@ async def test_analyze_trend_not_enough_data():
 
 
 @pytest.mark.asyncio
+async def test_analyze_trend_ignores_future_samples():
+    """Тест анализа тренда - future samples не должны учитываться."""
+    with patch("correction_cooldown.fetch") as mock_fetch:
+        now = utcnow()
+        mock_fetch.return_value = [
+            {"value": 6.1, "ts": now - timedelta(minutes=20)},
+            {"value": 6.2, "ts": now - timedelta(minutes=10)},
+            {"value": 6.3, "ts": now + timedelta(minutes=30)},
+        ]
+
+        is_improving, slope = await analyze_trend(1, "PH", 6.2, 6.5, hours=2)
+
+        assert is_improving is False
+        assert slope is None
+        call_args = mock_fetch.call_args[0]
+        assert "ts.ts <= $4" in call_args[0]
+        assert len(call_args) == 5
+
+
+@pytest.mark.asyncio
 async def test_should_apply_correction_in_cooldown():
     """Тест should_apply_correction - в cooldown периоде."""
     from datetime import datetime, timedelta

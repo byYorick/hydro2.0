@@ -134,7 +134,7 @@ async def check_and_control_irrigation(
     # Получаем время последнего полива.
     # Если события не было, разрешаем bootstrap первого автополива.
     last_irrigation_time = await get_last_irrigation_time(zone_id)
-    now = current_time or utcnow()
+    now = _to_utc(current_time or utcnow())
     bootstrap_first_irrigation = last_irrigation_time is None
     elapsed_sec: Optional[float] = None
     last_irrigation_time_iso: Optional[str] = None
@@ -291,7 +291,7 @@ async def check_and_control_recirculation(
     # Получаем время последней рециркуляции
     last_recirculation_time = await get_last_recirculation_time(zone_id)
     
-    now = current_time or utcnow()
+    now = _to_utc(current_time or utcnow())
     elapsed_min: Optional[float] = None
 
     if last_recirculation_time is not None:

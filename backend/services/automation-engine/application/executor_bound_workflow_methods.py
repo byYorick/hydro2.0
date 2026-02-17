@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from common.infra_alerts import send_infra_alert
 from application.diagnostics_execution import execute_diagnostics as policy_execute_diagnostics
 from application.executor_constants import (
     ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
@@ -138,7 +137,7 @@ async def bound_execute_diagnostics(
         reason_diagnostics_service_unavailable=REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
         err_diagnostics_service_unavailable=ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
         emit_task_event_fn=self._emit_task_event,
-        send_infra_alert_fn=send_infra_alert,
+        send_infra_alert_fn=self.send_infra_alert_fn,
     )
 
 

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent
 
 LINE_BUDGET = {
     "scheduler_task_executor.py": 200,
-    "application/scheduler_executor_impl.py": 4200,
+    "application/scheduler_executor_impl.py": 800,
     "application/task_events.py": 400,
     "application/task_events_persistence.py": 500,
     "application/task_context.py": 300,

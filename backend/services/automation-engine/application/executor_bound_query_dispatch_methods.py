@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
-from common.db import fetch
 from application.dispatch_merge import merge_command_dispatch_results as policy_merge_command_dispatch_results
 from application.executor_constants import (
     AE_TWOTANK_SAFETY_GUARDS_ENABLED,
@@ -38,7 +37,7 @@ from scheduler_internal_enqueue import parse_iso_datetime
 
 async def bound_get_zone_nodes(self, zone_id: int, node_types: Sequence[str]) -> List[Dict[str, Any]]:
     return await adapter_fetch_zone_nodes(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         zone_id=zone_id,
         node_types=node_types,
     )
@@ -52,7 +51,7 @@ async def bound_read_level_switch(
     threshold: float,
 ) -> Dict[str, Any]:
     return await adapter_read_level_switch(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         parse_iso_datetime=parse_iso_datetime,
         canonicalize_label=self._canonical_sensor_label,
         zone_id=zone_id,
@@ -64,7 +63,7 @@ async def bound_read_level_switch(
 
 async def bound_read_latest_metric(self, *, zone_id: int, sensor_type: str) -> Dict[str, Any]:
     return await adapter_read_latest_metric(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         parse_iso_datetime=parse_iso_datetime,
         zone_id=zone_id,
         sensor_type=sensor_type,
@@ -106,7 +105,7 @@ async def bound_find_zone_event_since(
     since: Optional[datetime],
 ) -> Optional[Dict[str, Any]]:
     return await adapter_find_zone_event_since(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         zone_id=zone_id,
         event_types=event_types,
         since=since,
@@ -121,7 +120,7 @@ async def bound_resolve_online_node_for_channel(
     node_types: Sequence[str],
 ) -> Optional[Dict[str, Any]]:
     return await adapter_resolve_online_node_for_channel(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         zone_id=zone_id,
         channel=channel,
         node_types=node_types,

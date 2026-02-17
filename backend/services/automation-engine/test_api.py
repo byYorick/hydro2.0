@@ -16,10 +16,11 @@ from api import app, set_command_bus
 from infrastructure.command_bus import CommandBus
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def client():
     """Create test client."""
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -65,6 +66,18 @@ def mock_api_fetch():
          patch("api.create_scheduler_log", new_callable=AsyncMock):
         mock_fetch.side_effect = _mock_fetch
         yield mock_fetch
+
+
+@pytest.fixture(autouse=True)
+def disable_scheduler_background_spawn():
+    """Keep API tests deterministic: do not execute fire-and-forget background tasks."""
+
+    def _drop_background_task(coro, **kwargs):
+        coro.close()
+        return Mock()
+
+    with patch("api._spawn_background_task", side_effect=_drop_background_task):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -478,12 +491,12 @@ async def test_scheduler_task_accepts_when_schedule_event_fails(client, mock_com
     headers = bootstrap_headers(client)
     payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:event-fail")
 
-    def _cancel_background_task(coro):
+    def _cancel_background_task(coro, **kwargs):
         coro.close()
         return Mock()
 
     with patch("api.create_zone_event", new=AsyncMock(side_effect=RuntimeError("event insert failed"))), \
-         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
+         patch("api._spawn_background_task", side_effect=_cancel_background_task) as mock_create_task:
         response = client.post("/scheduler/task", json=payload, headers=headers)
 
     assert response.status_code == 200
@@ -501,14 +514,14 @@ def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
         await asyncio.sleep(0.01)
         return {"success": True, "commands_sent": 1, "task_type": kwargs.get("task_type")}
 
-    def _cancel_background_task(coro):
+    def _cancel_background_task(coro, **kwargs):
         coro.close()
         return Mock()
 
     with patch("api.SchedulerTaskExecutor") as mock_executor_cls, \
          patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
          patch("api.create_zone_event", new_callable=AsyncMock), \
-         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
+         patch("api._spawn_background_task", side_effect=_cancel_background_task) as mock_create_task:
         mock_executor = mock_executor_cls.return_value
         mock_executor.execute = AsyncMock(side_effect=_execute)
         payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lifecycle")

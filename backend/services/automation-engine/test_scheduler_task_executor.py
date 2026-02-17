@@ -14,6 +14,12 @@ def disable_workflow_state_persistence_by_default(monkeypatch):
     monkeypatch.setenv("AE_WORKFLOW_STATE_PERSIST_ENABLED", "0")
 
 
+def test_workflow_state_persistence_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("AE_WORKFLOW_STATE_PERSIST_ENABLED", raising=False)
+    executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
+    assert executor.workflow_state_persist_enabled is True
+
+
 def test_resolve_workflow_stage_for_state_sync_maps_startup_mode_to_solution_fill_check():
     stage = SchedulerTaskExecutor._resolve_workflow_stage_for_state_sync(
         payload={"workflow": "startup"},

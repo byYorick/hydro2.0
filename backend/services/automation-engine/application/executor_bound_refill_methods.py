@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence
 
-from common.db import fetch
 from application.refill_command_resolver import resolve_refill_command as policy_resolve_refill_command
 from application.executor_constants import (
     CLEAN_TANK_FULL_THRESHOLD,
@@ -110,7 +109,7 @@ async def bound_check_required_nodes_online(
     required_types: Sequence[str],
 ) -> Dict[str, Any]:
     return await adapter_check_required_nodes_online(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         zone_id=zone_id,
         required_types=required_types,
     )
@@ -123,7 +122,7 @@ async def bound_read_clean_tank_level(
 ) -> Dict[str, Any]:
     threshold = self._resolve_clean_tank_threshold(payload)
     return await adapter_read_clean_tank_level(
-        fetch_fn=fetch,
+        fetch_fn=self.fetch_fn,
         parse_iso_datetime=parse_iso_datetime,
         zone_id=zone_id,
         threshold=threshold,
@@ -143,7 +142,7 @@ async def bound_resolve_refill_command(
         normalize_node_type_list_fn=self._normalize_node_type_list,
         normalize_text_list_fn=self._normalize_text_list,
         resolve_refill_node_fn=lambda **kwargs: adapter_resolve_refill_node(
-            fetch_fn=fetch,
+            fetch_fn=self.fetch_fn,
             **kwargs,
         ),
         resolve_refill_duration_ms_fn=self._resolve_refill_duration_ms,

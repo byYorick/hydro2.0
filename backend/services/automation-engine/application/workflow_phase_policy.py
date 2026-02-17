@@ -47,6 +47,11 @@ WORKFLOW_PHASE_ACTIVE_MODES = {
     "cycle_start_refill_in_progress": WORKFLOW_PHASE_TANK_FILLING,
 }
 
+WORKFLOW_PHASE_IRRIGATING_MODES = {
+    "two_tank_irrigation_recovery_completed",
+    "two_tank_irrigation_recovery_degraded",
+}
+
 WORKFLOW_STAGE_BY_DIAGNOSTICS_MODE = {
     "two_tank_clean_fill_in_progress": "clean_fill_check",
     "two_tank_solution_fill_in_progress": "solution_fill_check",
@@ -107,16 +112,10 @@ def derive_workflow_phase(
     reason_code = str(result.get("reason_code") or "").strip().lower()
 
     if normalized_task_type == "diagnostics":
-        if mode in WORKFLOW_PHASE_READY_MODES:
-            return WORKFLOW_PHASE_READY
-        if mode in WORKFLOW_PHASE_ACTIVE_MODES:
-            return WORKFLOW_PHASE_ACTIVE_MODES[mode]
-        if workflow in WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW:
-            return WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW[workflow]
-        if success:
+        if not success:
             if logger is not None:
                 logger.info(
-                    "Diagnostics workflow phase unchanged: no explicit phase mapping for mode/workflow",
+                    "Diagnostics workflow phase unchanged: terminal failure does not derive active phase",
                     extra={
                         "task_type": normalized_task_type,
                         "mode": mode or None,
@@ -128,7 +127,28 @@ def derive_workflow_phase(
                     },
                 )
             return None
-        return WORKFLOW_PHASE_IDLE
+        if mode in WORKFLOW_PHASE_READY_MODES:
+            return WORKFLOW_PHASE_READY
+        if mode in WORKFLOW_PHASE_IRRIGATING_MODES:
+            return WORKFLOW_PHASE_IRRIGATING
+        if mode in WORKFLOW_PHASE_ACTIVE_MODES:
+            return WORKFLOW_PHASE_ACTIVE_MODES[mode]
+        if workflow in WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW:
+            return WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW[workflow]
+        if logger is not None:
+            logger.info(
+                "Diagnostics workflow phase unchanged: no explicit phase mapping for mode/workflow",
+                extra={
+                    "task_type": normalized_task_type,
+                    "mode": mode or None,
+                    "workflow": workflow or None,
+                    "decision": decision or None,
+                    "reason_code": reason_code or None,
+                    "action_required": action_required,
+                    "success": success,
+                },
+            )
+        return None
 
     if normalized_task_type == "irrigation":
         if "irrigation_recovery" in workflow or "irrigation_recovery" in mode:
