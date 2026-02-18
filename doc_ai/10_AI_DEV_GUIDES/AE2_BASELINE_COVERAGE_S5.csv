@@ -1,0 +1,9 @@
+scope,module,statements,missed,coverage_pct,command,date_utc
+automation_engine,application.scheduler_executor_impl,163,0,100,"python -m pytest -q automation-engine/test_api.py automation-engine/test_scheduler_task_executor.py automation-engine/test_command_bus.py automation-engine/test_correction_controller.py automation-engine/test_zone_automation_service.py automation-engine/test_config_settings.py automation-engine/test_correction_bounds_policy.py --cov=application.scheduler_executor_impl --cov=infrastructure.command_bus --cov=correction_controller --cov=application.api_recovery --cov=infrastructure.workflow_state_store --cov=services.zone_runtime_backoff",2026-02-18
+automation_engine,infrastructure.command_bus,325,65,80,"python -m pytest ... --cov=infrastructure.command_bus",2026-02-18
+automation_engine,correction_controller,297,31,90,"python -m pytest ... --cov=correction_controller",2026-02-18
+automation_engine,application.api_recovery,261,63,76,"python -m pytest ... --cov=application.api_recovery",2026-02-18
+automation_engine,infrastructure.workflow_state_store,45,15,67,"python -m pytest ... --cov=infrastructure.workflow_state_store",2026-02-18
+automation_engine,services.zone_runtime_backoff,35,1,97,"python -m pytest ... --cov=services.zone_runtime_backoff",2026-02-18
+automation_engine,critical_modules_total,1126,175,84,"python -m pytest ... targeted critical coverage",2026-02-18
+scheduler,main.py (submit/poll focused profile),1221,962,21,"python -m pytest -q test_main.py -k submit_task_to_automation_engine_* or wait_task_completion_* --cov=main",2026-02-18
