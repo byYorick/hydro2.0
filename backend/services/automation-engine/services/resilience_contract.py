@@ -15,6 +15,7 @@ INFRA_CORRECTION_COMMAND_UNCONFIRMED = "infra_correction_command_unconfirmed"
 INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED = (
     "infra_ec_batch_partial_failure_compensation_enqueue_failed"
 )
+INFRA_CORRECTION_ANOMALY_BLOCK = "infra_correction_anomaly_block"
 INFRA_IRRIGATION_PUMP_BLOCKED = "infra_irrigation_pump_blocked"
 INFRA_ZONE_DELETION_CHECK_FAILED = "infra_zone_deletion_check_failed"
 INFRA_PID_CONFIG_UPDATE_CHECK_FAILED = "infra_pid_config_update_check_failed"

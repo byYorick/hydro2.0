@@ -24,6 +24,7 @@ from decision_context import DecisionContext
 from services.targets_accessor import get_ph_target, get_ec_target
 from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 from correction_freshness import validate_freshness_or_skip
+from services.resilience_contract import INFRA_CORRECTION_ANOMALY_BLOCK
 from services.correction_bounds_policy import (
     apply_target_rate_limit,
     resolve_bounds,
@@ -459,7 +460,7 @@ class CorrectionController:
                         },
                     )
                     await send_infra_alert(
-                        code="infra_correction_anomaly_block",
+                        code=INFRA_CORRECTION_ANOMALY_BLOCK,
                         message=(
                             f"Zone {zone_id}: {self.metric_name} dosing blocked due to no-effect streak"
                         ),

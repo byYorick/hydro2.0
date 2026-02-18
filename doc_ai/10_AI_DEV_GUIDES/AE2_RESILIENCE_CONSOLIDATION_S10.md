@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.6  
+**Версия:** v0.7  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -117,6 +117,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - применено в:
   - `zone_correction_orchestrator.py`,
   - `zone_automation_service.py` (`SENSOR_MODE_POLICY`).
+
+13. Correction anomaly alert contract alignment:
+- `correction_controller.py` переведен на `INFRA_CORRECTION_ANOMALY_BLOCK` из `resilience_contract`.
+- unit coverage:
+  - `test_correction_controller.py` проверяет код алерта в anomaly-block path.
 
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.

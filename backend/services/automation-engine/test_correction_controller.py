@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
 from correction_command_retry import publish_controller_command_with_retry
 from correction_freshness import validate_freshness_or_skip
-from services.resilience_contract import INFRA_CORRECTION_COMMAND_UNCONFIRMED
+from services.resilience_contract import (
+    INFRA_CORRECTION_ANOMALY_BLOCK,
+    INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+)
 
 
 class _PidZone:
@@ -514,7 +517,7 @@ async def test_ph_controller_no_effect_streak_activates_anomaly_block():
     with patch("correction_controller.get_settings", return_value=settings), \
          patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event, \
-         patch("correction_controller.send_infra_alert", new_callable=AsyncMock), \
+         patch("correction_controller.send_infra_alert", new_callable=AsyncMock) as mock_alert, \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=pid_stub):
         result = await controller.check_and_correct(
             zone_id=1,
@@ -531,6 +534,7 @@ async def test_ph_controller_no_effect_streak_activates_anomaly_block():
     event_types = [call.args[1] for call in mock_event.await_args_list if len(call.args) >= 2]
     assert "PH_DOSE_NO_EFFECT" in event_types
     assert "PH_DOSING_BLOCKED_ANOMALY" in event_types
+    assert mock_alert.await_args.kwargs["code"] == INFRA_CORRECTION_ANOMALY_BLOCK
 
 
 @pytest.mark.asyncio
