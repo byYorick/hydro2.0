@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict
 
+from services.resilience_contract import (
+    INFRA_ZONE_BACKOFF_SKIP,
+    INFRA_ZONE_DATA_UNAVAILABLE,
+    INFRA_ZONE_DEGRADED_MODE,
+    INFRA_ZONE_TARGETS_MISSING,
+)
 
 CreateZoneEventSafeFn = Callable[..., Awaitable[bool]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
@@ -39,7 +45,7 @@ async def emit_zone_data_unavailable_signal(
         signal_name="zone_data_unavailable",
     )
     await send_infra_alert_fn(
-        code="infra_zone_data_unavailable",
+        code=INFRA_ZONE_DATA_UNAVAILABLE,
         alert_type="Zone Data Unavailable",
         message=f"Zone {zone_id} data unavailable: DB circuit breaker open",
         severity="error",
@@ -84,7 +90,7 @@ async def emit_degraded_mode_signal(
     )
 
     alert_sent = await send_infra_alert_fn(
-        code="infra_zone_degraded_mode",
+        code=INFRA_ZONE_DEGRADED_MODE,
         alert_type="Zone Degraded Mode",
         message=f"Zone {zone_id} switched to degraded mode",
         severity="error",
@@ -130,10 +136,10 @@ async def emit_zone_recovered_signal(
         signal_name="zone_recovered",
     )
     for resolved_code in (
-        "infra_zone_degraded_mode",
-        "infra_zone_data_unavailable",
-        "infra_zone_backoff_skip",
-        "infra_zone_targets_missing",
+        INFRA_ZONE_DEGRADED_MODE,
+        INFRA_ZONE_DATA_UNAVAILABLE,
+        INFRA_ZONE_BACKOFF_SKIP,
+        INFRA_ZONE_TARGETS_MISSING,
     ):
         await send_infra_resolved_alert_fn(
             code=resolved_code,

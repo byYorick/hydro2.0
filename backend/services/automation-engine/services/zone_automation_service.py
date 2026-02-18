@@ -79,6 +79,11 @@ from services.zone_process_cycle import (
 from services.zone_node_recovery import (
     evaluate_required_nodes_recovery_gate as policy_evaluate_required_nodes_recovery_gate,
 )
+from services.resilience_contract import (
+    INFRA_ZONE_REQUIRED_NODES_OFFLINE,
+    REASON_REQUIRED_NODES_OFFLINE,
+    REASON_REQUIRED_NODES_RECOVERED,
+)
 from services.zone_housekeeping import (
     check_pid_config_updates as policy_check_pid_config_updates,
     check_zone_deletion as policy_check_zone_deletion,
@@ -656,13 +661,13 @@ class ZoneAutomationService:
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
                 "missing_types": sorted(missing_types),
-                "reason_code": "required_nodes_offline",
+                "reason_code": REASON_REQUIRED_NODES_OFFLINE,
                 "status": "frozen",
             },
             signal_name="zone_required_nodes_offline",
         )
         await send_infra_alert(
-            code="infra_zone_required_nodes_offline",
+            code=INFRA_ZONE_REQUIRED_NODES_OFFLINE,
             alert_type="Required Nodes Offline",
             message=f"Zone {zone_id} required nodes offline: {', '.join(sorted(missing_types))}",
             severity="error",
@@ -674,7 +679,7 @@ class ZoneAutomationService:
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
                 "missing_types": sorted(missing_types),
-                "reason_code": "required_nodes_offline",
+                "reason_code": REASON_REQUIRED_NODES_OFFLINE,
                 "status": "frozen",
             },
         )
@@ -694,13 +699,13 @@ class ZoneAutomationService:
                 "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
-                "reason_code": "required_nodes_recovered",
+                "reason_code": REASON_REQUIRED_NODES_RECOVERED,
                 "status": "ready",
             },
             signal_name="zone_required_nodes_recovered",
         )
         await send_infra_resolved_alert(
-            code="infra_zone_required_nodes_offline",
+            code=INFRA_ZONE_REQUIRED_NODES_OFFLINE,
             alert_type="Required Nodes Recovered",
             message=f"Zone {zone_id} required nodes recovered",
             zone_id=zone_id,
@@ -710,7 +715,7 @@ class ZoneAutomationService:
                 "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
-                "reason_code": "required_nodes_recovered",
+                "reason_code": REASON_REQUIRED_NODES_RECOVERED,
                 "status": "ready",
             },
         )

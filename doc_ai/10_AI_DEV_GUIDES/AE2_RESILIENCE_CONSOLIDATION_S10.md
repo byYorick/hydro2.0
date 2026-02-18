@@ -63,6 +63,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - новые поля в `zone_state_runtime.get_zone_state(...)`:
     `required_nodes_offline_*`, `last_required_nodes_offline_report_at`.
 
+6. Resilience contract consolidation (incremental):
+- `backend/services/automation-engine/services/resilience_contract.py`
+  - унифицированы базовые resilience infra-codes/reason-codes;
+  - применено в:
+    - `zone_runtime_signals.py`,
+    - `zone_skip_signals.py`,
+    - `zone_automation_service.py` (required nodes offline/recovered).
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.

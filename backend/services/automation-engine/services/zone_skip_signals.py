@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import (
+    INFRA_ZONE_BACKOFF_SKIP,
+    INFRA_ZONE_TARGETS_MISSING,
+)
 
 CreateZoneEventSafeFn = Callable[..., Awaitable[bool]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
@@ -67,7 +71,7 @@ async def emit_backoff_skip_signal(
         signal_name="backoff_skip",
     )
     alert_sent = await send_infra_alert_fn(
-        code="infra_zone_backoff_skip",
+        code=INFRA_ZONE_BACKOFF_SKIP,
         alert_type="Zone Backoff Skip",
         message=f"Zone {zone_id} skipped due to backoff",
         severity="warning",
@@ -128,7 +132,7 @@ async def emit_missing_targets_signal(
         signal_name="missing_targets",
     )
     alert_sent = await send_infra_alert_fn(
-        code="infra_zone_targets_missing",
+        code=INFRA_ZONE_TARGETS_MISSING,
         alert_type="Zone Targets Missing",
         message=f"Zone {zone_id} skipped: targets are missing or invalid",
         severity="warning",
