@@ -31,7 +31,7 @@ async def process_correction_controllers(
     actuators: Dict[str, Dict[str, Any]],
     ph_controller: Any,
     ec_controller: Any,
-    command_bus: Any,
+    command_gateway: Any,
     build_correction_gating_state_fn: BuildCorrectionGatingStateFn,
     emit_correction_skip_event_throttled_fn: EmitCorrectionSkipEventThrottledFn,
     emit_correction_missing_flags_signal_fn: EmitCorrectionMissingFlagsSignalFn,
@@ -191,7 +191,7 @@ async def process_correction_controllers(
             )
             pid = ph_controller._pid_by_zone.get(zone_id)
             try:
-                await ph_controller.apply_correction(ph_cmd, command_bus, pid)
+                await ph_controller.apply_correction(ph_cmd, command_gateway, pid)
                 logger.info(
                     "Zone %s: PH correction command applied",
                     zone_id,
@@ -247,7 +247,7 @@ async def process_correction_controllers(
             )
             pid = ec_controller._pid_by_zone.get(zone_id)
             try:
-                await ec_controller.apply_correction(ec_cmd, command_bus, pid)
+                await ec_controller.apply_correction(ec_cmd, command_gateway, pid)
                 logger.info(
                     "Zone %s: EC correction command applied",
                     zone_id,

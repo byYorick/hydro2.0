@@ -81,7 +81,8 @@ async def get_command_outcome(*, tracker, cmd_id: str) -> Dict[str, Optional[str
 async def publish_controller_command_with_retry(
     *,
     zone_id: int,
-    command_bus,
+    command_gateway=None,
+    command_bus=None,
     controller_command: Dict[str, Any],
     context,
     correction_type: str,
@@ -89,11 +90,25 @@ async def publish_controller_command_with_retry(
     create_zone_event_fn: Callable[[int, str, Dict[str, Any]], Awaitable[Any]],
     send_infra_alert_fn: Callable[..., Awaitable[Any]],
 ) -> bool:
+    publisher = command_gateway or command_bus
+    if publisher is None:
+        logger.warning(
+            "Zone %s: correction command publisher is unavailable",
+            zone_id,
+            extra={
+                "component": "correction_command_retry",
+                "zone_id": zone_id,
+                "decision": "fail_closed",
+                "reason_code": "command_publisher_unavailable",
+            },
+        )
+        return False
+
     settings = get_settings_fn()
     max_attempts = max(1, int(settings.CORRECTION_COMMAND_MAX_ATTEMPTS))
     timeout_sec = max(0.1, float(settings.CORRECTION_COMMAND_TIMEOUT_SEC))
     retry_delay_sec = max(0.0, float(settings.CORRECTION_COMMAND_RETRY_DELAY_SEC))
-    tracker = getattr(command_bus, "tracker", None)
+    tracker = getattr(publisher, "tracker", None)
 
     last_failure_reason = "unknown"
     last_cmd_id: Optional[str] = None
@@ -102,7 +117,7 @@ async def publish_controller_command_with_retry(
     last_terminal_error_message: Optional[str] = None
 
     for attempt in range(1, max_attempts + 1):
-        sent = await command_bus.publish_controller_command(zone_id, controller_command, context)
+        sent = await publisher.publish_controller_command(zone_id, controller_command, context)
         cmd_id = controller_command.get("cmd_id")
         last_cmd_id = str(cmd_id) if cmd_id else None
 

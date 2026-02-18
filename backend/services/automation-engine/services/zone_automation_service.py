@@ -27,6 +27,7 @@ from repositories import (
     InfrastructureRepository
 )
 from infrastructure.command_bus import CommandBus
+from infrastructure.command_gateway import CommandGateway
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from services.pid_state_manager import PidStateManager
 from prometheus_client import Histogram, Counter
@@ -182,6 +183,7 @@ class ZoneAutomationService:
         self.command_bus = command_bus
         self.pid_state_manager = pid_state_manager or PidStateManager()
         self.actuator_registry = ActuatorRegistry()
+        self.command_gateway = CommandGateway(command_bus)
 
         self.ph_controller = CorrectionController(CorrectionType.PH, self.pid_state_manager)
         self.ec_controller = CorrectionController(CorrectionType.EC, self.pid_state_manager)
@@ -602,7 +604,7 @@ class ZoneAutomationService:
             zone_id=zone_id,
             controller_name=controller_name,
             command=command,
-            command_bus=self.command_bus,
+            command_gateway=self.command_gateway,
             create_zone_event_safe_fn=self._create_zone_event_safe,
             emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
             append_correlation_id_fn=self._append_correlation_id,
@@ -799,7 +801,7 @@ class ZoneAutomationService:
             actuators=actuators,
             ph_controller=self.ph_controller,
             ec_controller=self.ec_controller,
-            command_bus=self.command_bus,
+            command_gateway=self.command_gateway,
             build_correction_gating_state_fn=self._build_correction_gating_state,
             emit_correction_skip_event_throttled_fn=self._emit_correction_skip_event_throttled,
             emit_correction_missing_flags_signal_fn=self._emit_correction_missing_flags_signal,
@@ -849,7 +851,7 @@ class ZoneAutomationService:
             nodes=nodes,
             activate=activate,
             reason=reason,
-            command_bus=self.command_bus,
+            command_gateway=self.command_gateway,
             correction_sensor_mode_state=self._correction_sensor_mode_state,
             emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
             logger=logger,

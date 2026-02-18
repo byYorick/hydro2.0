@@ -74,6 +74,7 @@ from repositories import (
 from repositories.laravel_api_repository import LaravelApiRepository
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
+from infrastructure.command_gateway import CommandGateway
 from config.settings import get_settings as get_automation_settings
 from error_handler import handle_automation_error, error_handler
 from exceptions import InvalidConfigurationError
@@ -317,7 +318,8 @@ async def publish_correction_command(
     """
     global _command_bus
     if _command_bus is not None:
-        return await _command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+        gateway = CommandGateway(_command_bus)
+        return await gateway.publish_command(zone_id, node_uid, channel, cmd, params)
     
     # Fallback: создаем временный CommandBus если глобальный не инициализирован
     from infrastructure import CommandBus
@@ -332,7 +334,8 @@ async def publish_correction_command(
     )
     await command_bus.start()
     try:
-        return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+        gateway = CommandGateway(command_bus)
+        return await gateway.publish_command(zone_id, node_uid, channel, cmd, params)
     finally:
         await command_bus.stop()
 

@@ -20,7 +20,6 @@ async def publish_batch(
     context: Dict[str, Any],
     decision: DecisionOutcome,
     accepted_terminal_statuses: Optional[Sequence[str]],
-    command_bus: Any,
     task_execute_closed_loop_enforce: bool,
     task_execute_closed_loop_timeout_sec: int,
     err_command_send_failed: str,
@@ -28,7 +27,27 @@ async def publish_batch(
     err_command_effect_not_confirmed: str,
     terminal_status_to_error_code_fn: TerminalStatusToErrorCodeFn,
     emit_task_event_fn: EmitTaskEventFn,
+    command_gateway: Any = None,
+    command_bus: Any = None,
 ) -> Dict[str, Any]:
+    publisher = command_gateway or command_bus
+    if publisher is None:
+        return {
+            "success": False,
+            "task_type": task_type,
+            "commands_total": 0,
+            "commands_submitted": 0,
+            "commands_effect_confirmed": 0,
+            "commands_failed": 0,
+            "command_submitted": False,
+            "command_effect_confirmed": False,
+            "command_statuses": [],
+            "cmd": cmd,
+            "params": params or {},
+            "error": err_command_tracker_unavailable,
+            "error_code": err_command_tracker_unavailable,
+        }
+
     accepted_statuses = {
         str(status).strip().upper()
         for status in (accepted_terminal_statuses or ("DONE",))
@@ -78,8 +97,8 @@ async def publish_batch(
         failure_error_code = err_command_send_failed
         cmd_id: Optional[str] = None
 
-        if task_execute_closed_loop_enforce and hasattr(command_bus, "publish_controller_command_closed_loop"):
-            closed_loop_result = await command_bus.publish_controller_command_closed_loop(
+        if task_execute_closed_loop_enforce and hasattr(publisher, "publish_controller_command_closed_loop"):
+            closed_loop_result = await publisher.publish_controller_command_closed_loop(
                 zone_id=zone_id,
                 command=controller_command,
                 context={
@@ -105,7 +124,7 @@ async def publish_batch(
             terminal_status = "TRACKER_UNAVAILABLE"
             failure_error_code = err_command_tracker_unavailable
         else:
-            submitted = await command_bus.publish_command(
+            submitted = await publisher.publish_command(
                 zone_id=zone_id,
                 node_uid=node_uid,
                 channel=channel,

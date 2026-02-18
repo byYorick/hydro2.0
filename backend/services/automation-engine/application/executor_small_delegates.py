@@ -70,6 +70,7 @@ async def publish_batch(
         context=context,
         decision=decision,
         accepted_terminal_statuses=accepted_terminal_statuses,
+        command_gateway=getattr(executor, "command_gateway", None),
         command_bus=executor.command_bus,
         task_execute_closed_loop_enforce=TASK_EXECUTE_CLOSED_LOOP_ENFORCE,
         task_execute_closed_loop_timeout_sec=TASK_EXECUTE_CLOSED_LOOP_TIMEOUT_SEC,

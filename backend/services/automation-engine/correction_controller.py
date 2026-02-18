@@ -497,7 +497,7 @@ class CorrectionController:
     async def apply_correction(
         self,
         command: Dict[str, Any],
-        command_bus,
+        command_gateway,
         pid: Optional[AdaptivePid] = None
     ) -> None:
         """
@@ -505,7 +505,7 @@ class CorrectionController:
         
         Args:
             command: Команда корректировки (результат check_and_correct)
-            command_bus: CommandBus для публикации команд
+            command_gateway: CommandGateway для публикации команд
             pid: Экземпляр PID для контекста (опционально)
         """
         zone_id = command['zone_id']
@@ -544,7 +544,7 @@ class CorrectionController:
             for idx, batch_cmd in enumerate(batch_commands):
                 published = await self._publish_controller_command_with_retry(
                     zone_id=zone_id,
-                    command_bus=command_bus,
+                    command_gateway=command_gateway,
                     controller_command=batch_cmd,
                     context=context,
                     correction_type=correction_type_str,
@@ -630,7 +630,7 @@ class CorrectionController:
         else:
             published = await self._publish_controller_command_with_retry(
                 zone_id=zone_id,
-                command_bus=command_bus,
+                command_gateway=command_gateway,
                 controller_command=command,
                 context=context,
                 correction_type=correction_type_str,
@@ -744,14 +744,14 @@ class CorrectionController:
         self,
         *,
         zone_id: int,
-        command_bus,
+        command_gateway,
         controller_command: Dict[str, Any],
         context: DecisionContext,
         correction_type: str,
     ) -> bool:
         return await publish_controller_command_with_retry(
             zone_id=zone_id,
-            command_bus=command_bus,
+            command_gateway=command_gateway,
             controller_command=controller_command,
             context=context,
             correction_type=correction_type,

@@ -112,7 +112,7 @@ async def publish_controller_action_with_event_integrity(
     zone_id: int,
     controller_name: str,
     command: Dict[str, Any],
-    command_bus: Any,
+    command_gateway: Any,
     create_zone_event_safe_fn: CreateZoneEventSafeFn,
     emit_controller_circuit_open_signal_fn: EmitControllerCircuitOpenSignalFn,
     append_correlation_id_fn: Callable[[Dict[str, Any], Optional[str]], Dict[str, Any]],
@@ -121,7 +121,7 @@ async def publish_controller_action_with_event_integrity(
     event_details = command.get("event_details") if isinstance(command.get("event_details"), dict) else {}
 
     try:
-        published = await command_bus.publish_controller_command(zone_id, command)
+        published = await command_gateway.publish_controller_command(zone_id, command)
     except CircuitBreakerOpenError:
         if event_type:
             await create_zone_event_safe_fn(

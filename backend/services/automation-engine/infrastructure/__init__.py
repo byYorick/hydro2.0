@@ -1,5 +1,6 @@
 """Infrastructure layer - external dependencies."""
 from .command_bus import CommandBus
+from .command_gateway import CommandGateway
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from .command_validator import CommandValidator
 from .command_tracker import CommandTracker
@@ -11,6 +12,7 @@ from .workflow_state_store import WorkflowStateStore
 
 __all__ = [
     'CommandBus',
+    'CommandGateway',
     'CircuitBreaker',
     'CircuitBreakerOpenError',
     'CommandValidator',

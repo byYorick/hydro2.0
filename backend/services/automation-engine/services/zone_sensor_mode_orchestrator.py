@@ -82,7 +82,7 @@ async def set_sensor_mode(
     nodes: Dict[str, Dict[str, Any]],
     activate: bool,
     reason: str,
-    command_bus: Any,
+    command_gateway: Any,
     correction_sensor_mode_state: Dict[int, bool],
     emit_controller_circuit_open_signal_fn: EmitControllerCircuitOpenSignalFn,
     logger: logging.Logger,
@@ -126,7 +126,7 @@ async def set_sensor_mode(
             "params": params,
         }
         try:
-            published = await command_bus.publish_controller_command(zone_id, command)
+            published = await command_gateway.publish_controller_command(zone_id, command)
         except CircuitBreakerOpenError:
             logger.warning(
                 "Zone %s: API Circuit Breaker is OPEN, skipping sensor mode command",

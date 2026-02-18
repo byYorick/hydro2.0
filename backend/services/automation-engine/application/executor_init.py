@@ -11,6 +11,7 @@ from application.workflow_validator import WorkflowValidator
 from domain.workflows.cycle_start import CycleStartWorkflow
 from domain.workflows.three_tank import ThreeTankWorkflow
 from domain.workflows.two_tank import TwoTankWorkflow
+from infrastructure.command_gateway import CommandGateway
 from infrastructure.workflow_state_store import WorkflowStateStore
 
 
@@ -26,6 +27,7 @@ def initialize_executor_components(
     cycle_start_workflows: Set[str],
 ) -> None:
     executor.command_bus = command_bus
+    executor.command_gateway = CommandGateway(command_bus)
     executor.zone_service = zone_service
     executor.workflow_state_store = workflow_state_store or WorkflowStateStore()
     executor.workflow_state_persist_enabled = workflow_state_persist_enabled
