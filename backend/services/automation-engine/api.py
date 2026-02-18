@@ -122,6 +122,9 @@ from application.api_scheduler_cutover import (
 from application.api_scheduler_integration import (
     build_scheduler_integration_contract_payload as policy_build_scheduler_integration_contract_payload,
 )
+from application.api_scheduler_observability import (
+    build_scheduler_observability_contract_payload as policy_build_scheduler_observability_contract_payload,
+)
 from application.api_internal_enqueue import (
     scheduler_internal_enqueue as policy_scheduler_internal_enqueue,
 )
@@ -747,6 +750,14 @@ async def scheduler_integration_contracts():
                 "daily_health_digest": _AE2_TIER2_DAILY_DIGEST_ENABLED,
             },
         ),
+    }
+
+
+@app.get("/scheduler/observability/contracts")
+async def scheduler_observability_contracts():
+    return {
+        "status": "ok",
+        "data": policy_build_scheduler_observability_contract_payload(),
     }
 
 

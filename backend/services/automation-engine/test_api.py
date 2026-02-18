@@ -385,6 +385,16 @@ def test_scheduler_integration_contracts_endpoint(client):
     assert integrations["daily_health_digest"]["enabled"] is False
 
 
+def test_scheduler_observability_contracts_endpoint(client):
+    response = client.get("/scheduler/observability/contracts")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["contract_version"] == "s11-observability-v1"
+    assert "scheduler_bootstrap_status_total{status,rollout_profile}" in data["required_metrics"]
+    assert "infra_scheduler_bootstrap_denied" in data["required_alert_codes"]
+    assert "SCHEDULE_TASK_FAILED" in data["required_events"]
+
+
 def test_scheduler_bootstrap_heartbeat_wait_when_automation_not_ready(client, mock_command_bus):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid

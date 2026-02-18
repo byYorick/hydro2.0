@@ -33,6 +33,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 7. Добавлен bootstrap deny-alert path:
 - при `bootstrap_status=deny` (например, `protocol_not_supported`) отправляется
   `infra_scheduler_bootstrap_denied`.
+8. Добавлен `GET /scheduler/observability/contracts`:
+- возвращает versioned required list для cutover observability
+  (метрики, alert codes, ключевые scheduler/workflow events).
 
 ## 3. Что не менялось
 1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.
@@ -45,6 +48,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. Проверено, что `GET /scheduler/cutover/state` возвращает согласованное состояние rollout/cutover флагов.
 4. Проверено, что `GET /scheduler/integration/contracts` возвращает ожидаемый versioned contract payload.
 5. Проверено, что protocol mismatch вызывает `bootstrap_status=deny` и infra-alert emit.
+6. Проверено, что `GET /scheduler/observability/contracts` возвращает expected required observability contract.
 
 ## 5. Следующие шаги S11
 1. Сформировать required observability list для cutover:
