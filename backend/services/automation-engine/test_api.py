@@ -395,6 +395,109 @@ def test_scheduler_observability_contracts_endpoint(client):
     assert "SCHEDULE_TASK_FAILED" in data["required_events"]
 
 
+def test_scheduler_observability_contracts_lists_are_unique(client):
+    response = client.get("/scheduler/observability/contracts")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert len(data["required_metrics"]) == len(set(data["required_metrics"]))
+    assert len(data["required_alert_codes"]) == len(set(data["required_alert_codes"]))
+    assert len(data["required_events"]) == len(set(data["required_events"]))
+
+
+def test_scheduler_cutover_contracts_follow_rollout_and_tier2_flags(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    old_rollout_profile = api._AE2_ROLLOUT_PROFILE
+    old_tier2_gdd = api._AE2_TIER2_GDD_ENABLED
+    old_tier2_approvals = api._AE2_TIER2_APPROVALS_ENABLED
+    old_tier2_digest = api._AE2_TIER2_DAILY_DIGEST_ENABLED
+
+    try:
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        set_command_bus(mock_command_bus, "gh-1")
+        api._AE2_ROLLOUT_PROFILE = "shadow-canary-full"
+        api._AE2_TIER2_GDD_ENABLED = True
+        api._AE2_TIER2_APPROVALS_ENABLED = True
+        api._AE2_TIER2_DAILY_DIGEST_ENABLED = False
+
+        bootstrap_response = client.post("/scheduler/bootstrap", json={
+            "scheduler_id": "scheduler-cutover-flags",
+            "scheduler_version": "test",
+            "protocol_version": "2.0",
+        })
+        assert bootstrap_response.status_code == 200
+        bootstrap_data = bootstrap_response.json()["data"]
+        assert bootstrap_data["bootstrap_status"] == "ready"
+        assert bootstrap_data["rollout_profile"] == "shadow-canary-full"
+        assert bootstrap_data["tier2_capabilities"] == {
+            "gdd_phase_transitions": True,
+            "mobile_approvals": True,
+            "daily_health_digest": False,
+        }
+
+        heartbeat_response = client.post("/scheduler/bootstrap/heartbeat", json={
+            "scheduler_id": "scheduler-cutover-flags",
+            "lease_id": bootstrap_data["lease_id"],
+        })
+        assert heartbeat_response.status_code == 200
+        heartbeat_data = heartbeat_response.json()["data"]
+        assert heartbeat_data["rollout_profile"] == "shadow-canary-full"
+        assert heartbeat_data["tier2_capabilities"] == bootstrap_data["tier2_capabilities"]
+
+        cutover_response = client.get("/scheduler/cutover/state")
+        assert cutover_response.status_code == 200
+        cutover_data = cutover_response.json()["data"]
+        assert cutover_data["rollout_profile"] == "shadow-canary-full"
+        assert cutover_data["tier2_capabilities"] == bootstrap_data["tier2_capabilities"]
+
+        integration_response = client.get("/scheduler/integration/contracts")
+        assert integration_response.status_code == 200
+        integration_data = integration_response.json()["data"]
+        assert integration_data["rollout_profile"] == "shadow-canary-full"
+        assert integration_data["integrations"]["gdd_phase_transitions"]["enabled"] is True
+        assert integration_data["integrations"]["mobile_approvals"]["enabled"] is True
+        assert integration_data["integrations"]["daily_health_digest"]["enabled"] is False
+    finally:
+        api._AE2_ROLLOUT_PROFILE = old_rollout_profile
+        api._AE2_TIER2_GDD_ENABLED = old_tier2_gdd
+        api._AE2_TIER2_APPROVALS_ENABLED = old_tier2_approvals
+        api._AE2_TIER2_DAILY_DIGEST_ENABLED = old_tier2_digest
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
+def test_scheduler_bootstrap_wait_then_ready_transition(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+
+    try:
+        set_command_bus(None, "")
+        wait_response = client.post("/scheduler/bootstrap", json={
+            "scheduler_id": "scheduler-cutover-transition",
+            "scheduler_version": "test",
+            "protocol_version": "2.0",
+        })
+        assert wait_response.status_code == 200
+        wait_data = wait_response.json()["data"]
+        assert wait_data["bootstrap_status"] == "wait"
+        assert wait_data["reason"] == "automation_not_ready"
+        assert "lease_id" not in wait_data
+
+        mock_command_bus.publish_command = AsyncMock(return_value=True)
+        set_command_bus(mock_command_bus, "gh-1")
+        ready_response = client.post("/scheduler/bootstrap", json={
+            "scheduler_id": "scheduler-cutover-transition",
+            "scheduler_version": "test",
+            "protocol_version": "2.0",
+        })
+        assert ready_response.status_code == 200
+        ready_data = ready_response.json()["data"]
+        assert ready_data["bootstrap_status"] == "ready"
+        assert "reason" not in ready_data
+        assert ready_data["lease_id"]
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
 def test_scheduler_bootstrap_heartbeat_wait_when_automation_not_ready(client, mock_command_bus):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid

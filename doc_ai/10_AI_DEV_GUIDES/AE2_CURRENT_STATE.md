@@ -7,8 +7,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S11` Observability + Integration + Cutover: COMPLETED.
-- Next: `S12` Acceptance (not started).
+- `S12` Acceptance: IN_PROGRESS.
+- Previous: `S11` Observability + Integration + Cutover: COMPLETED.
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
@@ -70,6 +70,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 39. S11 (increment 5): добавлен bootstrap deny infra-alert path (`infra_scheduler_bootstrap_denied`) для protocol mismatch.
 40. S11 (increment 6): добавлен `GET /scheduler/observability/contracts` (required observability contract list для cutover).
 41. S11 (increment 7): stage-gate закрыт, добавлен `AE2_STAGE_S11_FINAL_REPORT.md`, `S11` переведен в `COMPLETED`.
+42. S12 (increment 1): стартован acceptance-stage, добавлены `AE2_STAGE_S12_TASK.md` и `AE2_ACCEPTANCE_VALIDATION_S12.md`, расширены API acceptance тесты на cutover parity.
+43. S12 (increment 2): Docker acceptance baseline прогоны green (`test_api.py` 77 passed, `test_scheduler_task_executor.py + test_zone_node_recovery.py` 72 passed), parity/chaos local gates отмечены PASS.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -175,3 +177,5 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_FINAL_REPORT.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S12_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_ACCEPTANCE_VALIDATION_S12.md`
