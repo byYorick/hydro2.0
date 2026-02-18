@@ -1,0 +1,115 @@
+flowchart TB
+
+  %% ===================== CONTROL PLANE =====================
+  subgraph CP["Control Plane: Scheduler -> Automation API"]
+    CP0["POST /scheduler/bootstrap<br/>lease + heartbeat"]
+    CP1["POST /scheduler/task"]
+    CP2{"Проверки контракта:<br/>lease, zone, due/expires,<br/>idempotency fingerprint"}
+    CP3["Создать snapshot задачи:<br/>accepted/running/completed/failed/expired/rejected"]
+    CP4["Background execute_scheduler_task(task_id)"]
+    CP5["GET /scheduler/task/{id}<br/>чтение in-memory + DB snapshot"]
+    CP0 --> CP1 --> CP2
+    CP2 -- "ok" --> CP3 --> CP4 --> CP5
+    CP2 -- "reject/expired/conflict" --> CP3
+  end
+
+  %% ===================== EXECUTION PLANE =====================
+  subgraph EX["Execution Plane: SchedulerTaskExecutor"]
+    EX1["prepare inputs + task mapping"]
+    EX2["events: TASK_RECEIVED/TASK_STARTED"]
+    EX3["decision_policy -> DecisionOutcome(run/skip/retry/fail)"]
+    EX4{"action_required?"}
+    EX5["No-action:<br/>build result + optional enqueue retry<br/>+ decision infra alerts"]
+    EX6{"task_type=diagnostics?"}
+    EX7["Diagnostics path:<br/>workflow_validator -> workflow_router"]
+    EX8["Device path:<br/>resolve nodes + command mapping"]
+    EX9["publish_batch (closed-loop):<br/>DONE required; NO_EFFECT selective"]
+    EX10["Finalize:<br/>TASK_FINISHED + SCHEDULE_TASK_EXECUTION_FINISHED"]
+    EX11["Workflow sync:<br/>derive phase/stage -> zone_workflow_state + event"]
+    EX1 --> EX2 --> EX3 --> EX4
+    EX4 -- "нет" --> EX5 --> EX10 --> EX11
+    EX4 -- "да" --> EX6
+    EX6 -- "да" --> EX7 --> EX9 --> EX10 --> EX11
+    EX6 -- "нет" --> EX8 --> EX9 --> EX10 --> EX11
+  end
+
+  %% ===================== WORKFLOW STATE MACHINE =====================
+  subgraph WF["Workflow State Machine (persisted)"]
+    WF0["idle"]
+    WF1["tank_filling"]
+    WF2["tank_recirc"]
+    WF3["ready"]
+    WF4["irrigating"]
+    WF5["irrig_recirc"]
+    WF0 --> WF1 --> WF2 --> WF3 --> WF4 --> WF5 --> WF4
+    WF4 --> WF0
+    WF3 --> WF0
+  end
+
+  %% ===================== DIAGNOSTICS WORKFLOWS =====================
+  subgraph DG["Diagnostics Workflows"]
+    DG1["two_tank startup:<br/>startup -> clean_fill_check -> solution_fill_check -> prepare_recirculation_check"]
+    DG2["two_tank recovery:<br/>irrigation_recovery -> irrigation_recovery_check"]
+    DG3["cycle_start/refill_check:<br/>node online + tank level + freshness + self-task enqueue"]
+    DG4["three_tank:<br/>canonical adapter -> cycle_start"]
+    DG5["self-task enqueue loop:<br/>scheduled_for/expires_at bounded"]
+    DG1 --> DG5
+    DG2 --> DG5
+    DG3 --> DG5
+    DG4 --> DG3
+  end
+
+  %% ===================== RUNTIME ZONE LOOP =====================
+  subgraph RT["Runtime Zone Loop (main.py + process_zone)"]
+    RT1["Config fetch + cache fallback + validation"]
+    RT2["Active zones + prioritization + adaptive concurrency"]
+    RT3["process_zone(zone_id)"]
+    RT4{"backoff gate"}
+    RT5["Load data batch:<br/>targets/telemetry/nodes/capabilities/bindings"]
+    RT6{"degraded gate<br/>(error_streak threshold)"}
+    RT7["Controllers with guardrails:<br/>light -> climate -> irrigation -> recirculation"]
+    RT8["Correction orchestration:<br/>gating flags/freshness/workflow override<br/>sensor-mode policy + PID/cooldown/trend<br/>EC component batch + compensation"]
+    RT9["Health update + recovery/degraded signals"]
+    RT10["Error path:<br/>record_zone_error + backoff + infra/zone events"]
+    RT1 --> RT2 --> RT3 --> RT4
+    RT4 -- "skip" --> RT10
+    RT4 -- "run" --> RT5 --> RT6
+    RT6 -- "degraded" --> RT9
+    RT6 -- "normal" --> RT7 --> RT8 --> RT9
+  end
+
+  %% ===================== COMMAND & FEEDBACK PLANE =====================
+  subgraph CMD["Command Plane (единственная публикация)"]
+    CMD1["CommandBus validation:<br/>node-zone assignment<br/>channel compatibility<br/>command schema"]
+    CMD2["history-logger REST /commands"]
+    CMD3["MQTT broker"]
+    CMD4["ESP32 execute"]
+    CMD5["Status/Event ingestion -> DB(commands, zone_events, telemetry)"]
+    CMD6["CommandTracker polling:<br/>terminal statuses DONE/ERROR/INVALID/BUSY/NO_EFFECT/TIMEOUT/SEND_FAILED"]
+    CMD1 --> CMD2 --> CMD3 --> CMD4 --> CMD5 --> CMD6
+  end
+
+  %% ===================== STARTUP RECOVERY =====================
+  subgraph RC["Startup Recovery"]
+    RC1["Recover in-flight scheduler tasks<br/>-> finalize failed + recovery reason"]
+    RC2["Recover zone_workflow_state records"]
+    RC3{"stale state?"}
+    RC4["stale -> idle + WORKFLOW_RECOVERY_STALE_STOPPED"]
+    RC5["active -> enqueue diagnostics check<br/>+ WORKFLOW_RECOVERY_ENQUEUED"]
+    RC1 --> RC2 --> RC3
+    RC3 -- "yes" --> RC4
+    RC3 -- "no" --> RC5
+  end
+
+  %% ===================== CROSS-PLANE LINKS =====================
+  CP4 --> EX1
+  EX7 --> DG1
+  EX7 --> DG2
+  EX7 --> DG3
+  EX7 --> DG4
+  EX9 --> CMD1
+  RT7 --> CMD1
+  RT8 --> CMD1
+  EX11 --> WF0
+  WF3 --> RT8
+  RC5 --> CP1

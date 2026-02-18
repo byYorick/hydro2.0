@@ -490,6 +490,39 @@ class CommandTracker:
         except Exception as e:
             logger.debug(f"Failed to get command status from DB for {cmd_id}: {e}")
         return None
+
+    async def get_command_outcome(self, cmd_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Получить детализированный terminal outcome команды из таблицы commands.
+
+        Returns:
+            Dict со статусом и ошибкой либо None, если команда не найдена.
+        """
+        try:
+            rows = await fetch(
+                """
+                SELECT status, error_code, error_message, ack_at, failed_at, updated_at
+                FROM commands
+                WHERE cmd_id = $1
+                LIMIT 1
+                """,
+                cmd_id,
+            )
+            if not rows:
+                return None
+
+            row = rows[0]
+            return {
+                "status": str(row.get("status") or "").strip().upper() or None,
+                "error_code": row.get("error_code"),
+                "error_message": row.get("error_message"),
+                "ack_at": row.get("ack_at"),
+                "failed_at": row.get("failed_at"),
+                "updated_at": row.get("updated_at"),
+            }
+        except Exception as exc:
+            logger.debug("Failed to get command outcome from DB for %s: %s", cmd_id, exc)
+            return None
     
     async def _poll_command_statuses(self):
         """

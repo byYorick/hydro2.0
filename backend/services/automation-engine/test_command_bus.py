@@ -11,6 +11,23 @@ def mock_simulation_events():
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def disable_zone_guards_for_legacy_tests(monkeypatch):
+    monkeypatch.setenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "0")
+    monkeypatch.setenv("AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY", "0")
+
+
+def test_command_bus_zone_guards_enabled_by_default():
+    with patch.dict("os.environ", {}, clear=True):
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+        )
+    assert command_bus.enforce_node_zone_assignment is True
+    assert command_bus.enforce_command_channel_compatibility is True
+
+
 @pytest.mark.asyncio
 async def test_publish_command_success():
     """Test successful command publication via REST API."""
@@ -142,7 +159,8 @@ async def test_publish_command_request_error():
 @pytest.mark.asyncio
 async def test_publish_command_json_decode_error():
     """Test command publication with JSON decode error."""
-    with patch("httpx.AsyncClient") as mock_client_class:
+    with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[])), \
+         patch("httpx.AsyncClient") as mock_client_class:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json = Mock(side_effect=ValueError("Invalid JSON"))

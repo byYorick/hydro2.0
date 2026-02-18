@@ -52,7 +52,7 @@ async def enqueue_internal_scheduler_task(
     if normalized_task_type not in SUPPORTED_SCHEDULER_TASK_TYPES:
         raise ValueError(f"Unsupported task_type: {task_type}")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     scheduled_for_dt = parse_iso_datetime(scheduled_for)
     if scheduled_for is not None and scheduled_for_dt is None:
         raise ValueError("scheduled_for_invalid")

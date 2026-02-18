@@ -1,7 +1,7 @@
 """Tests for CommandTracker terminal status handling."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -128,7 +128,7 @@ async def test_confirm_command_internal_does_not_cancel_current_timeout_task():
         "zone_id": 1,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }
@@ -151,7 +151,7 @@ async def test_confirm_command_internal_suppresses_no_effect_alert_for_sensor_mo
         "zone_id": 22,
         "command": {"cmd": "deactivate_sensor_mode", "node_uid": "nd-test-ph-1", "channel": "system"},
         "command_type": "deactivate_sensor_mode",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "ACK",
         "context": {},
     }
@@ -172,7 +172,7 @@ async def test_check_timeout_local_timeout_clears_pending_state():
         "zone_id": 1,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }
@@ -209,7 +209,7 @@ async def test_confirm_command_status_timeout_persists_to_db_and_sends_laravel_a
         "zone_id": 7,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-1", "channel": "default"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "ACK",
         "context": {},
     }
@@ -241,7 +241,7 @@ async def test_confirm_command_status_send_failed_persists_to_db_and_sends_larav
         "zone_id": 9,
         "command": {"cmd": "run_pump", "node_uid": "nd-irrig-2", "channel": "pump1"},
         "command_type": "run_pump",
-        "sent_at": datetime.utcnow(),
+        "sent_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "status": "QUEUED",
         "context": {},
     }
@@ -264,3 +264,37 @@ async def test_confirm_command_status_send_failed_persists_to_db_and_sends_larav
         None,
         "publish_failed",
     )
+
+
+@pytest.mark.asyncio
+async def test_get_command_outcome_returns_terminal_details():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    with patch(
+        "infrastructure.command_tracker.fetch",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "status": "error",
+                    "error_code": "node_not_activated",
+                    "error_message": "node is not activated",
+                    "ack_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "failed_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                }
+            ]
+        ),
+    ):
+        outcome = await tracker.get_command_outcome("cmd-1")
+
+    assert outcome is not None
+    assert outcome["status"] == "ERROR"
+    assert outcome["error_code"] == "node_not_activated"
+    assert outcome["error_message"] == "node is not activated"
+
+
+@pytest.mark.asyncio
+async def test_get_command_outcome_returns_none_when_not_found():
+    tracker = CommandTracker(command_timeout=5, poll_interval=1)
+    with patch("infrastructure.command_tracker.fetch", new=AsyncMock(return_value=[])):
+        outcome = await tracker.get_command_outcome("missing-cmd")
+    assert outcome is None

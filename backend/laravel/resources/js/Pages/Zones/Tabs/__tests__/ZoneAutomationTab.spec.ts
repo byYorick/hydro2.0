@@ -420,7 +420,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.text()).toContain('Набор бака с чистой водой')
     expect(wrapper.text()).toContain('Набор бака с раствором')
     expect(wrapper.text()).toContain('Параллельная коррекция pH/EC')
-    expect(wrapper.text()).toContain('tank_level_checked')
+    expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
     expect(wrapper.text()).toContain('DONE подтвержден')
 
     const vm = wrapper.vm as any
@@ -446,6 +446,35 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.schedulerTaskErrorLabel('prepare_npk_ph_target_not_reached')).toContain('NPK + pH')
     expect(vm.schedulerTaskErrorLabel('irrigation_recovery_attempts_exceeded')).toContain('Превышено число попыток')
     expect(vm.formatDateTime('2026-02-10T08:00:00')).toBe(vm.formatDateTime('2026-02-10T08:00:00Z'))
+    const dedupedTimeline = vm.schedulerTaskTimelineItems({
+      task_id: 'st-timeline',
+      timeline: [
+        { event_id: 'a', event_type: 'COMMAND_DISPATCHED', at: '2026-02-10T08:00:33Z' },
+        { event_id: 'b', event_type: 'TASK_FINISHED', at: '2026-02-10T08:00:34Z' },
+        { event_id: 'c', event_type: 'SCHEDULE_TASK_EXECUTION_FINISHED', at: '2026-02-10T08:00:34Z' },
+        { event_id: 'd', event_type: 'SCHEDULE_TASK_COMPLETED', at: '2026-02-10T08:01:33Z' },
+      ],
+    })
+    expect(dedupedTimeline.map((step: any) => step.event_type)).toEqual(['COMMAND_DISPATCHED', 'SCHEDULE_TASK_COMPLETED'])
+    const dedupedAccepted = vm.schedulerTaskTimelineItems({
+      task_id: 'st-timeline-accepted',
+      timeline: [
+        {
+          event_id: 'a1',
+          event_type: 'SCHEDULE_TASK_ACCEPTED',
+          task_id: 'st-timeline-accepted',
+          at: '2026-02-10T08:00:00Z',
+        },
+        {
+          event_id: 'a2',
+          event_type: 'SCHEDULE_TASK_ACCEPTED',
+          task_id: 'st-timeline-accepted',
+          at: '2026-02-10T08:00:00Z',
+        },
+      ],
+    })
+    expect(dedupedAccepted).toHaveLength(1)
+    expect(vm.schedulerTaskErrorLabel('command_invalid')).toBe('Нода отклонила команду')
 
     const noCommandsMeta = vm.schedulerTaskDoneMeta({
       status: 'completed',

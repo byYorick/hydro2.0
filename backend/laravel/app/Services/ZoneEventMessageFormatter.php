@@ -30,6 +30,7 @@ class ZoneEventMessageFormatter
             'ALERT_CREATED' => $this->formatAlertCreated($payload),
             'ALERT_UPDATED' => $this->formatAlertUpdated($payload),
             'ALERT_RESOLVED' => $this->formatAlertResolved($payload),
+            'WATER_LEVEL_LOW' => $this->formatWaterLevelLow($payload),
             'CYCLE_CREATED' => $this->formatCycleCreated($payload),
             'CYCLE_STARTED' => $this->formatCycleStarted($payload),
             'CYCLE_PAUSED' => $this->formatCyclePaused($payload),
@@ -44,6 +45,8 @@ class ZoneEventMessageFormatter
             'PHASE_TRANSITION' => $this->formatPhaseTransition($payload),
             'RECIPE_PHASE_CHANGED' => $this->formatPhaseTransition($payload),
             'ZONE_COMMAND' => $this->formatZoneCommand($payload),
+            'SCHEDULE_TASK_FAILED' => $this->formatScheduleTaskFailed($payload),
+            'SELF_TASK_DISPATCH_RETRY_SCHEDULED' => $this->formatSelfTaskDispatchRetryScheduled($payload),
             default => $type ?: '',
         };
     }
@@ -103,6 +106,11 @@ class ZoneEventMessageFormatter
         $source = $this->toStringOrNull($details['source'] ?? null);
         if ($source !== null) {
             $parts[] = "источник {$source}";
+        }
+
+        $waterLevelContext = $this->formatWaterLevelContext($details);
+        if ($waterLevelContext !== null) {
+            $parts[] = $waterLevelContext;
         }
 
         $suffix = $parts !== [] ? ' ('.implode(', ', $parts).')' : '';
@@ -361,6 +369,99 @@ class ZoneEventMessageFormatter
         return "Команда зоны: {$command} (".implode(', ', $parts).')';
     }
 
+    private function formatWaterLevelLow(array $details): string
+    {
+        $context = $this->formatWaterLevelContext($details);
+        if ($context !== null) {
+            return "Низкий уровень воды ({$context})";
+        }
+
+        return 'Низкий уровень воды';
+    }
+
+    private function formatScheduleTaskFailed(array $details): string
+    {
+        $taskTypeRaw = $this->toStringOrNull($details['task_type'] ?? null);
+        $taskType = $this->formatTaskTypeLabel($taskTypeRaw);
+        $parts = [];
+
+        $reasonRaw = $this->toStringOrNull($details['reason_code'] ?? null)
+            ?? $this->toStringOrNull($details['reason'] ?? null);
+        $reason = $this->formatKnownErrorCode($reasonRaw);
+        if ($reason !== null) {
+            $parts[] = "причина: {$reason}";
+        }
+
+        $statusRaw = $this->toStringOrNull($details['status'] ?? null);
+        $status = $this->formatKnownStatus($statusRaw);
+        if ($status !== null) {
+            $parts[] = "статус: {$status}";
+        }
+
+        $errorCodeRaw = $this->toStringOrNull($details['error_code'] ?? null);
+        $errorCode = $this->formatKnownErrorCode($errorCodeRaw);
+        if ($errorCode !== null && $errorCodeRaw !== $reasonRaw) {
+            $parts[] = "код ошибки: {$errorCode}";
+        }
+
+        $errorRaw = $this->toStringOrNull($details['error'] ?? null);
+        $error = $this->formatKnownErrorCode($errorRaw);
+        if ($error !== null && $errorRaw !== $reasonRaw) {
+            $parts[] = "ошибка: {$error}";
+        }
+
+        $taskId = $this->toStringOrNull($details['task_id'] ?? null);
+        if ($taskId !== null) {
+            $parts[] = "ID задачи: {$taskId}";
+        }
+
+        $correlationId = $this->toStringOrNull($details['correlation_id'] ?? null);
+        if ($correlationId !== null) {
+            $parts[] = "корреляция: {$correlationId}";
+        }
+
+        if ($parts === []) {
+            return "Scheduler: задача {$taskType} завершилась с ошибкой";
+        }
+
+        return "Scheduler: задача {$taskType} завершилась с ошибкой (".implode(', ', $parts).')';
+    }
+
+    private function formatSelfTaskDispatchRetryScheduled(array $details): string
+    {
+        $taskTypeRaw = $this->toStringOrNull($details['task_type'] ?? null);
+        $taskType = $this->formatTaskTypeLabel($taskTypeRaw);
+        $parts = [];
+
+        $enqueueId = $this->toStringOrNull($details['enqueue_id'] ?? null);
+        if ($enqueueId !== null) {
+            $parts[] = "enqueue_id: {$enqueueId}";
+        }
+
+        $retryCount = isset($details['retry_count']) && is_numeric($details['retry_count'])
+            ? (int) $details['retry_count']
+            : null;
+        $maxAttempts = isset($details['max_attempts']) && is_numeric($details['max_attempts'])
+            ? (int) $details['max_attempts']
+            : null;
+        if ($retryCount !== null && $maxAttempts !== null) {
+            $parts[] = "попытка {$retryCount}/{$maxAttempts}";
+        } elseif ($retryCount !== null) {
+            $parts[] = "попытка {$retryCount}";
+        }
+
+        $nextRetryAt = $this->toStringOrNull($details['next_retry_at'] ?? null);
+        if ($nextRetryAt !== null) {
+            $parts[] = "следующая попытка: {$nextRetryAt}";
+        }
+
+        if ($parts === []) {
+            return "Scheduler запланировал повторную отправку для внутренней задачи {$taskType}";
+        }
+
+        return "Scheduler запланировал повторную отправку для внутренней задачи {$taskType} (".implode(', ', $parts).')';
+    }
+
     private function formatSubsystemsSummary(array $subsystems): ?string
     {
         $parts = [];
@@ -460,5 +561,87 @@ class ZoneEventMessageFormatter
         }
 
         return null;
+    }
+
+    private function formatWaterLevelContext(array $details): ?string
+    {
+        $level = $this->normalizeWaterLevelValue($details['level'] ?? null);
+        $threshold = $this->normalizeWaterLevelValue($details['threshold'] ?? null);
+
+        if ($level === null && $threshold === null) {
+            return null;
+        }
+
+        $parts = [];
+        if ($level !== null) {
+            $parts[] = "уровень {$level}";
+        }
+        if ($threshold !== null) {
+            $parts[] = "порог {$threshold}";
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function normalizeWaterLevelValue(mixed $value): ?string
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $numeric = (float) $value;
+        if ($numeric <= 1.0) {
+            $numeric *= 100.0;
+        }
+
+        return sprintf('%.1f%%', $numeric);
+    }
+
+    private function formatKnownErrorCode(?string $code): ?string
+    {
+        if ($code === null) {
+            return null;
+        }
+
+        return match ($code) {
+            'submit_failed' => 'не удалось отправить задачу',
+            'task_due_deadline_exceeded' => 'превышен дедлайн выполнения задачи',
+            'zone_not_found' => 'зона не найдена',
+            default => $code,
+        };
+    }
+
+    private function formatKnownStatus(?string $status): ?string
+    {
+        if ($status === null) {
+            return null;
+        }
+
+        return match ($status) {
+            'rejected' => 'отклонена',
+            'failed' => 'ошибка',
+            'expired' => 'просрочена',
+            'completed' => 'выполнена',
+            'accepted' => 'принята',
+            'running' => 'выполняется',
+            default => $status,
+        };
+    }
+
+    private function formatTaskTypeLabel(?string $taskType): string
+    {
+        if ($taskType === null) {
+            return 'неизвестного типа';
+        }
+
+        return match ($taskType) {
+            'diagnostics' => 'диагностики',
+            'lighting' => 'освещения',
+            'ventilation' => 'вентиляции',
+            'irrigation' => 'полива',
+            'solution_change' => 'смены раствора',
+            'mist' => 'тумана',
+            default => $taskType,
+        };
     }
 }

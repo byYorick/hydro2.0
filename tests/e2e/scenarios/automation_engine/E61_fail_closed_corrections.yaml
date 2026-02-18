@@ -35,9 +35,9 @@ actions:
 
   - step: set_test_uids
     type: set
-    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
-    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
-    test_node_uid: ${setup.node_sim.config.node.node_uid}
+    test_gh_uid: ${TEST_NODE_GH_UID}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: ${TEST_NODE_UID}
 
   # Получаем зону с UID zn-test-1 из seeder
   - step: get_automation_zone

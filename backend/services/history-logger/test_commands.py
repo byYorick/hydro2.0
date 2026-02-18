@@ -49,6 +49,9 @@ def mock_command_routes_db():
     async def _mock_fetch(query, *args):
         normalized = " ".join(str(query).split()).lower()
 
+        if "select status from commands where cmd_id = $1" in normalized:
+            return [{"status": "SENT"}]
+
         if "from nodes where uid = $1" in normalized and "zone_id = $2" not in normalized:
             node_uid = args[0]
             if node_uid in {"nd-irrig-1", "nd-relay-1", "nd-test"}:

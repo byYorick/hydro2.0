@@ -631,6 +631,24 @@ class CorrectionStateMachine:
         return success
 ```
 
+### 6.2. Политика partial EC batch failure (обновление 2026-02-16)
+
+Для EC-коррекции, где дозирование идет батчем по компонентам (`npk -> calcium -> magnesium -> micro`), действует fail-safe правило:
+
+1. Если компонент `N` завершился ошибкой после успешной дозировки предыдущих компонентов:
+   - batch немедленно прерывается;
+   - результат маркируется как `degraded`;
+   - фиксируется событие `EC_BATCH_PARTIAL_FAILURE` с деталями:
+     - `successful_components`
+     - `failed_component`
+     - `remaining_components`
+     - `target_ec` / `current_ec`
+     - `status=degraded`.
+2. Параллельно запускается компенсационный путь:
+   - enqueue diagnostics workflow (`irrigation_recovery`) для повторной оценки и выравнивания раствора;
+   - если enqueue недоступен — infra-alert `infra_ec_batch_partial_failure_compensation_enqueue_failed`.
+3. До завершения компенсационного пути запрещено трактовать partial batch как успешное достижение EC-target.
+
 ---
 
 ## 7. Изменения в прошивках нод

@@ -5,7 +5,53 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
+import scheduler_task_executor as ste
 from scheduler_task_executor import SchedulerTaskExecutor
+
+
+@pytest.fixture(autouse=True)
+def disable_workflow_state_persistence_by_default(monkeypatch):
+    monkeypatch.setenv("AE_WORKFLOW_STATE_PERSIST_ENABLED", "0")
+
+
+def test_workflow_state_persistence_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("AE_WORKFLOW_STATE_PERSIST_ENABLED", raising=False)
+    executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
+    assert executor.workflow_state_persist_enabled is True
+
+
+def test_resolve_workflow_stage_for_state_sync_maps_startup_mode_to_solution_fill_check():
+    stage = SchedulerTaskExecutor._resolve_workflow_stage_for_state_sync(
+        payload={"workflow": "startup"},
+        result={"mode": "two_tank_solution_fill_in_progress", "workflow": "startup"},
+        workflow_phase="tank_filling",
+    )
+    assert stage == "solution_fill_check"
+
+
+def test_resolve_workflow_stage_for_state_sync_maps_prepare_recirculation_to_check():
+    stage = SchedulerTaskExecutor._resolve_workflow_stage_for_state_sync(
+        payload={"workflow": "prepare_recirculation"},
+        result={"mode": "two_tank_prepare_recirculation_in_progress", "workflow": "prepare_recirculation"},
+        workflow_phase="tank_recirc",
+    )
+    assert stage == "prepare_recirculation_check"
+
+
+def test_build_workflow_state_payload_sets_workflow_stage_alias():
+    payload = {"config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}}
+    result = {"mode": "two_tank_solution_fill_in_progress", "reason_code": "solution_fill_in_progress"}
+
+    state_payload = SchedulerTaskExecutor._build_workflow_state_payload(
+        payload=payload,
+        result=result,
+        workflow_phase="tank_filling",
+        workflow_stage="solution_fill_check",
+    )
+
+    assert state_payload["workflow"] == "solution_fill_check"
+    assert state_payload["workflow_stage"] == "solution_fill_check"
+    assert state_payload["workflow_phase"] == "tank_filling"
 
 
 def _build_command_bus_mock(
@@ -67,6 +113,100 @@ async def test_execute_irrigation_success():
     assert "DECISION_MADE" in event_types
     assert "COMMAND_DISPATCHED" in event_types
     assert "TASK_FINISHED" in event_types
+
+
+@pytest.mark.asyncio
+async def test_execute_persists_zone_workflow_state_for_irrigation():
+    command_bus = _build_command_bus_mock()
+    workflow_state_store = Mock()
+    workflow_state_store.set = AsyncMock(return_value=None)
+
+    with patch.dict("os.environ", {"AE_WORKFLOW_STATE_PERSIST_ENABLED": "1"}), \
+         patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.return_value = [
+            {"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_a"},
+        ]
+        executor = SchedulerTaskExecutor(
+            command_bus=command_bus,
+            workflow_state_store=workflow_state_store,
+        )
+        await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload={"config": {"duration_sec": 5}},
+            task_context={"task_id": "st-1", "correlation_id": "corr-1"},
+        )
+
+    workflow_state_store.set.assert_awaited_once()
+    kwargs = workflow_state_store.set.await_args.kwargs
+    assert kwargs["zone_id"] == 1
+    assert kwargs["workflow_phase"] == "irrigating"
+    assert kwargs["scheduler_task_id"] == "st-1"
+    assert isinstance(kwargs["payload"], dict)
+    assert kwargs["payload"]["workflow_phase"] == "irrigating"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "expected_reason_code"),
+    [
+        ({"already_running": True}, "already_running"),
+        ({"outside_window": True}, "outside_window"),
+        ({"safety": {"blocked": True}}, "safety_blocked"),
+    ],
+)
+async def test_execute_irrigation_skip_does_not_persist_irrigating_phase(payload, expected_reason_code):
+    command_bus = _build_command_bus_mock()
+    workflow_state_store = Mock()
+    workflow_state_store.set = AsyncMock(return_value=None)
+
+    with patch.dict("os.environ", {"AE_WORKFLOW_STATE_PERSIST_ENABLED": "1"}), \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(
+            command_bus=command_bus,
+            workflow_state_store=workflow_state_store,
+        )
+        result = await executor.execute(
+            zone_id=1,
+            task_type="irrigation",
+            payload=payload,
+            task_context={"task_id": "st-irrig-skip", "correlation_id": "corr-irrig-skip"},
+        )
+
+    assert result["success"] is True
+    assert result["decision"] == "skip"
+    assert result["action_required"] is False
+    assert result["reason_code"] == expected_reason_code
+    workflow_state_store.set.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_diagnostics_zone_service_does_not_force_ready_phase():
+    command_bus = _build_command_bus_mock()
+    workflow_state_store = Mock()
+    workflow_state_store.set = AsyncMock(return_value=None)
+    zone_service = Mock()
+    zone_service.process_zone = AsyncMock(return_value=None)
+
+    with patch.dict("os.environ", {"AE_WORKFLOW_STATE_PERSIST_ENABLED": "1"}), \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(
+            command_bus=command_bus,
+            zone_service=zone_service,
+            workflow_state_store=workflow_state_store,
+        )
+        result = await executor.execute(
+            zone_id=1,
+            task_type="diagnostics",
+            payload={"workflow": "diagnostics"},
+            task_context={"task_id": "st-diag-zone-service", "correlation_id": "corr-diag-zone-service"},
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "zone_service"
+    assert result["decision"] == "run"
+    workflow_state_store.set.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -252,7 +392,7 @@ async def test_execute_ventilation_no_online_nodes_fails_with_alert():
 @pytest.mark.asyncio
 async def test_execute_ventilation_skips_when_wind_limit_exceeded():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -297,7 +437,7 @@ async def test_execute_ventilation_skips_when_wind_limit_exceeded():
 @pytest.mark.asyncio
 async def test_execute_ventilation_skips_when_outside_temperature_below_limit():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -659,7 +799,7 @@ async def test_execute_irrigation_command_failure_sets_error_code():
 @pytest.mark.asyncio
 async def test_execute_cycle_start_tank_already_full_skips_refill():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -709,7 +849,7 @@ async def test_execute_cycle_start_tank_already_full_skips_refill():
 @pytest.mark.asyncio
 async def test_execute_three_tank_cycle_start_uses_dedicated_state_machine_branch():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -756,10 +896,201 @@ async def test_execute_three_tank_cycle_start_uses_dedicated_state_machine_branc
     assert result["reason_code"] == "tank_refill_not_required"
 
 
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_unknown_workflow_fails_closed():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "unexpected_step",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-2tank-invalid",
+                "correlation_id": "corr-cycle-2tank-invalid",
+            },
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_unknown_workflow"
+    assert result["error_code"] == "unsupported_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_unknown_workflow_fails_closed():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "unexpected_step",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={"task_id": "st-cycle-3tank-invalid", "correlation_id": "corr-cycle-3tank-invalid"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "three_tank_unknown_workflow"
+    assert result["error_code"] == "unsupported_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_missing_workflow_fails_payload_validation():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={"task_id": "st-cycle-3tank-missing", "correlation_id": "corr-cycle-3tank-missing"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_missing_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_invalid_payload_contract_version_fails_payload_validation():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "cycle_start",
+                "payload_contract_version": "v9",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-3tank-bad-contract",
+                "correlation_id": "corr-cycle-3tank-bad-contract",
+            },
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_contract_version"
+    assert result["payload_contract_version"] == "v9"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_cycle_start_invalid_payload_contract_version_fails_without_topology():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "cycle_start",
+                "payload_contract_version": "v9",
+            },
+            task_context={
+                "task_id": "st-cycle-no-topology-bad-contract",
+                "correlation_id": "corr-cycle-no-topology-bad-contract",
+            },
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_contract_version"
+    assert result["payload_contract_version"] == "v9"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_three_tank_missing_workflow_legacy_v1_uses_cycle_start_fallback():
+    command_bus = _build_command_bus_mock()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [
+                {"node_type": "irrig", "online_count": 1},
+                {"node_type": "climate", "online_count": 1},
+                {"node_type": "light", "online_count": 1},
+            ]
+        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
+            return [
+                {
+                    "sensor_id": 117,
+                    "sensor_label": "Clean tank",
+                    "level": 0.99,
+                    "sample_ts": fresh_sample_ts,
+                }
+            ]
+        return []
+
+    with patch.object(ste, "AE_LEGACY_WORKFLOW_DEFAULT_ENABLED", True), \
+         patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "payload_contract_version": "v1",
+                "config": {
+                    "execution": {
+                        "topology": "three_tank_drip_substrate_trays",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-cycle-3tank-v1",
+                "correlation_id": "corr-cycle-3tank-v1",
+            },
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "three_tank_startup_ready"
+    assert result["workflow"] == "cycle_start"
+
+
 @pytest.mark.asyncio
 async def test_execute_cycle_start_dispatches_refill_and_enqueues_check():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -830,8 +1161,8 @@ async def test_execute_cycle_start_dispatches_refill_and_enqueues_check():
 @pytest.mark.asyncio
 async def test_execute_cycle_start_clamps_next_check_to_refill_timeout():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
-    refill_timeout_at = datetime.utcnow() + timedelta(seconds=20)
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+    refill_timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=20)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -895,8 +1226,8 @@ async def test_execute_cycle_start_clamps_next_check_to_refill_timeout():
 @pytest.mark.asyncio
 async def test_execute_refill_check_timeout_emits_alert_and_fails():
     command_bus = _build_command_bus_mock()
-    timeout_at = datetime.utcnow() - timedelta(seconds=5)
-    fresh_sample_ts = datetime.utcnow()
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1068,7 +1399,7 @@ async def test_execute_irrigation_two_tank_failure_starts_recovery_workflow():
 @pytest.mark.asyncio
 async def test_execute_cycle_start_stale_tank_telemetry_fails_safe():
     command_bus = _build_command_bus_mock()
-    stale_sample_ts = datetime.utcnow() - timedelta(seconds=1200)
+    stale_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1200)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1118,7 +1449,7 @@ async def test_execute_cycle_start_stale_tank_telemetry_fails_safe():
 @pytest.mark.asyncio
 async def test_execute_cycle_start_stale_tank_telemetry_fails_safe_with_timezone_aware_sample():
     command_bus = _build_command_bus_mock()
-    stale_sample_ts = datetime.now(timezone.utc) - timedelta(seconds=1200)
+    stale_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1200)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1209,7 +1540,7 @@ async def test_execute_cycle_start_without_tank_telemetry_fails_with_unavailable
 @pytest.mark.asyncio
 async def test_execute_two_tank_startup_starts_clean_fill_and_enqueues_check():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1282,7 +1613,7 @@ async def test_execute_two_tank_startup_accepts_no_effect_for_start_command():
         command_effect_confirmed=False,
         terminal_status="NO_EFFECT",
     )
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1347,7 +1678,7 @@ async def test_execute_two_tank_startup_accepts_no_effect_for_start_command():
 @pytest.mark.asyncio
 async def test_execute_two_tank_startup_matches_sensor_label_by_canonical_form():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1459,7 +1790,7 @@ async def test_execute_two_tank_startup_unavailable_level_includes_expected_and_
 @pytest.mark.asyncio
 async def test_read_level_switch_uses_telemetry_samples_fallback_source():
     executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1491,8 +1822,8 @@ async def test_read_level_switch_uses_telemetry_samples_fallback_source():
 @pytest.mark.asyncio
 async def test_execute_two_tank_clean_fill_check_event_transitions_to_solution_fill():
     command_bus = _build_command_bus_mock()
-    clean_started_at = datetime.utcnow() - timedelta(seconds=60)
-    clean_timeout_at = datetime.utcnow() + timedelta(seconds=300)
+    clean_started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
+    clean_timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1503,7 +1834,7 @@ async def test_execute_two_tank_clean_fill_check_event_transitions_to_solution_f
                 {
                     "id": 9001,
                     "type": "CLEAN_FILL_COMPLETED",
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
                     "details": {"source": "node_event"},
                 }
             ]
@@ -1554,10 +1885,82 @@ async def test_execute_two_tank_clean_fill_check_event_transitions_to_solution_f
 
 
 @pytest.mark.asyncio
+async def test_execute_two_tank_solution_fill_start_sends_sensor_mode_activation():
+    command_bus = _build_command_bus_mock()
+    clean_started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
+    clean_timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from zone_events" in normalized and "type = any($2::text[])" in normalized:
+            return [
+                {
+                    "id": 9001,
+                    "type": "CLEAN_FILL_COMPLETED",
+                    "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "details": {"source": "node_event"},
+                }
+            ]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            node_types = [str(item).lower() for item in (args[2] if len(args) > 2 else [])]
+            if channel in {"valve_clean_fill", "valve_clean_supply", "valve_solution_fill", "pump_main"}:
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": channel}]
+            if channel == "system" and "ph" in node_types:
+                return [{"node_uid": "nd-ph-1", "node_type": "ph", "channel": "system"}]
+            if channel == "system" and "ec" in node_types:
+                return [{"node_uid": "nd-ec-1", "node_type": "ec", "channel": "system"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-solution-sensor-mode",
+            "scheduled_for": "2026-02-13T10:02:00",
+            "expires_at": "2026-02-13T10:32:00",
+            "correlation_id": "ae:self:28:diagnostics:enq-solution-sensor-mode",
+            "status": "pending",
+            "zone_id": 28,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "clean_fill_check",
+                "clean_fill_started_at": clean_started_at.isoformat(),
+                "clean_fill_timeout_at": clean_timeout_at.isoformat(),
+                "clean_fill_cycle": 1,
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-clean-check-sensor-mode", "correlation_id": "corr-clean-check-sensor-mode"},
+        )
+
+    assert result["success"] is True
+    sent_cmds = [
+        call.kwargs["command"]["cmd"]
+        for call in command_bus.publish_controller_command_closed_loop.await_args_list
+    ]
+    assert sent_cmds.count("activate_sensor_mode") == 2
+    assert command_bus.publish_controller_command_closed_loop.await_count == 6
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_two_tank_solution_fill_timeout_fails_and_stops_commands():
     command_bus = _build_command_bus_mock()
-    stale_timeout = datetime.utcnow() - timedelta(seconds=5)
-    fresh_sample_ts = datetime.utcnow()
+    stale_timeout = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1611,6 +2014,69 @@ async def test_execute_two_tank_solution_fill_timeout_fails_and_stops_commands()
 
 
 @pytest.mark.asyncio
+async def test_execute_two_tank_solution_fill_timeout_sends_sensor_mode_deactivation():
+    command_bus = _build_command_bus_mock()
+    stale_timeout = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "from zone_events" in normalized and "type = any($2::text[])" in normalized:
+            return []
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 202,
+                    "sensor_label": "level_solution_max",
+                    "level": 0.0,
+                    "sample_ts": fresh_sample_ts,
+                }
+            ]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            node_types = [str(item).lower() for item in (args[2] if len(args) > 2 else [])]
+            if channel in {"pump_main", "valve_solution_fill", "valve_clean_supply"}:
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": channel}]
+            if channel == "system" and "ph" in node_types:
+                return [{"node_uid": "nd-ph-1", "node_type": "ph", "channel": "system"}]
+            if channel == "system" and "ec" in node_types:
+                return [{"node_uid": "nd-ec-1", "node_type": "ec", "channel": "system"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "solution_fill_check",
+                "solution_fill_started_at": (stale_timeout - timedelta(seconds=30)).isoformat(),
+                "solution_fill_timeout_at": stale_timeout.isoformat(),
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-solution-timeout-deactivate", "correlation_id": "corr-solution-timeout-deactivate"},
+        )
+
+    assert result["success"] is False
+    sent_cmds = [
+        call.kwargs["command"]["cmd"]
+        for call in command_bus.publish_controller_command_closed_loop.await_args_list
+    ]
+    assert sent_cmds.count("deactivate_sensor_mode") == 2
+    assert command_bus.publish_controller_command_closed_loop.await_count == 5
+
+
+@pytest.mark.asyncio
 async def test_execute_two_tank_prepare_recirculation_starts_and_enqueues_check():
     command_bus = _build_command_bus_mock()
 
@@ -1659,9 +2125,9 @@ async def test_execute_two_tank_prepare_recirculation_starts_and_enqueues_check(
 @pytest.mark.asyncio
 async def test_execute_two_tank_prepare_recirculation_check_reaches_targets():
     command_bus = _build_command_bus_mock()
-    started_at = datetime.utcnow() - timedelta(seconds=120)
-    timeout_at = datetime.utcnow() + timedelta(seconds=300)
-    sample_ts = datetime.utcnow()
+    started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120)
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1714,9 +2180,9 @@ async def test_execute_two_tank_prepare_recirculation_check_reaches_targets():
 @pytest.mark.asyncio
 async def test_execute_two_tank_prepare_recirculation_uses_npk_ratio_target_ec():
     command_bus = _build_command_bus_mock()
-    started_at = datetime.utcnow() - timedelta(seconds=120)
-    timeout_at = datetime.utcnow() + timedelta(seconds=300)
-    sample_ts = datetime.utcnow()
+    started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120)
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1773,9 +2239,9 @@ async def test_execute_two_tank_prepare_recirculation_uses_npk_ratio_target_ec()
 @pytest.mark.asyncio
 async def test_execute_two_tank_prepare_recirculation_prefers_explicit_prepare_ec_override():
     command_bus = _build_command_bus_mock()
-    started_at = datetime.utcnow() - timedelta(seconds=120)
-    timeout_at = datetime.utcnow() + timedelta(seconds=300)
-    sample_ts = datetime.utcnow()
+    started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120)
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1833,8 +2299,8 @@ async def test_execute_two_tank_prepare_recirculation_prefers_explicit_prepare_e
 @pytest.mark.asyncio
 async def test_execute_two_tank_irrigation_recovery_check_attempts_exceeded():
     command_bus = _build_command_bus_mock()
-    timeout_at = datetime.utcnow() - timedelta(seconds=5)
-    sample_ts = datetime.utcnow()
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1889,7 +2355,7 @@ async def test_execute_two_tank_irrigation_recovery_check_attempts_exceeded():
 @pytest.mark.asyncio
 async def test_execute_two_tank_startup_compensates_stop_when_enqueue_fails():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.utcnow()
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1953,8 +2419,8 @@ async def test_execute_two_tank_clean_fill_timeout_blocks_retry_when_stop_not_co
     command_bus.publish_command = AsyncMock(return_value=True)
     command_bus.publish_controller_command_closed_loop = AsyncMock(side_effect=_closed_loop_side_effect)
 
-    stale_timeout = datetime.utcnow() - timedelta(seconds=5)
-    fresh_sample_ts = datetime.utcnow()
+    stale_timeout = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -2021,8 +2487,8 @@ async def test_execute_two_tank_irrigation_recovery_timeout_blocks_restart_when_
     command_bus.publish_command = AsyncMock(return_value=True)
     command_bus.publish_controller_command_closed_loop = AsyncMock(side_effect=_closed_loop_side_effect)
 
-    timeout_at = datetime.utcnow() - timedelta(seconds=5)
-    sample_ts = datetime.utcnow()
+    timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()

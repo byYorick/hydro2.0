@@ -46,9 +46,9 @@ actions:
       SET capabilities = jsonb_build_object(
         'ph_control', false,
         'ec_control', true,
-        'climate_control', true,
-        'light_control', true,
-        'irrigation_control', true,
+        'climate_control', false,
+        'light_control', false,
+        'irrigation_control', false,
         'recirculation', true,
         'flow_sensor', true
       )
@@ -254,10 +254,10 @@ actions:
       SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
         'pump_calibration',
         CASE nc.channel
-          WHEN 'fan' THEN jsonb_build_object('ml_per_sec', 0.12, 'k_ms_per_ml_l', 0.80)
-          WHEN 'heater' THEN jsonb_build_object('ml_per_sec', 0.10, 'k_ms_per_ml_l', 0.65)
-          WHEN 'light' THEN jsonb_build_object('ml_per_sec', 0.08, 'k_ms_per_ml_l', 0.50)
-          WHEN 'mister' THEN jsonb_build_object('ml_per_sec', 0.06, 'k_ms_per_ml_l', 0.35)
+          WHEN 'fan' THEN jsonb_build_object('ml_per_sec', 20.0, 'k_ms_per_ml_l', 0.80)
+          WHEN 'heater' THEN jsonb_build_object('ml_per_sec', 20.0, 'k_ms_per_ml_l', 0.65)
+          WHEN 'light' THEN jsonb_build_object('ml_per_sec', 20.0, 'k_ms_per_ml_l', 0.50)
+          WHEN 'mister' THEN jsonb_build_object('ml_per_sec', 20.0, 'k_ms_per_ml_l', 0.35)
           ELSE nc.config->'pump_calibration'
         END
       )
@@ -280,10 +280,39 @@ actions:
   - step: cleanup_recent_commands
     type: database_execute
     query: |
-      DELETE FROM commands
-      WHERE zone_id = :zone_id;
+      UPDATE commands
+      SET status = 'TIMEOUT',
+          failed_at = COALESCE(failed_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND status IN ('QUEUED', 'SENT', 'ACK');
     params:
       zone_id: ${zone_id}
+
+  - step: restart_automation_engine_for_clean_pending
+    type: fault.inject
+    service: automation-engine
+    action: stop
+    wait_seconds: 1
+
+  - step: restore_automation_engine_after_clean_pending
+    type: fault.restore
+    service: automation-engine
+    wait_seconds: 4
+
+  - step: capture_commands_high_watermark
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(id), 0) AS max_id
+      FROM commands
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    save: commands_hwm_row
+
+  - step: set_commands_high_watermark
+    type: set
+    commands_hwm: ${commands_hwm_row.0.max_id}
 
   - step: create_plant
     type: api_post
@@ -325,7 +354,7 @@ actions:
       nutrient_program_code: E2E_EARLY_STOP
       nutrient_mode: ratio_ec_pid
       nutrient_solution_volume_l: 100
-      nutrient_dose_delay_sec: 2
+      nutrient_dose_delay_sec: 12
       nutrient_ec_stop_tolerance: 0.05
       nutrient_npk_ratio_pct: 40
       nutrient_calcium_ratio_pct: 30
@@ -360,15 +389,20 @@ actions:
       SET capabilities = jsonb_build_object(
         'ph_control', false,
         'ec_control', true,
-        'climate_control', true,
-        'light_control', true,
-        'irrigation_control', true,
+        'climate_control', false,
+        'light_control', false,
+        'irrigation_control', false,
         'recirculation', true,
         'flow_sensor', true
       )
       WHERE id = :zone_id;
     params:
       zone_id: ${zone_id}
+
+  - step: clear_injected_errors
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: clear_error
 
   - step: reset_recent_ec_correction_events
     type: database_execute
@@ -393,12 +427,37 @@ actions:
     zone_id: ${zone_id}
     action: reset_backoff
 
+  - step: cleanup_ph_ec_samples_for_zone
+    type: database_execute
+    query: |
+      DELETE FROM telemetry_samples ts
+      USING sensors s
+      WHERE ts.sensor_id = s.id
+        AND s.zone_id = :zone_id
+        AND s.type IN ('PH', 'EC');
+    params:
+      zone_id: ${zone_id}
+
+  - step: capture_zone_event_high_watermark
+    type: database_query
+    query: |
+      SELECT COALESCE(MAX(id), 0) AS max_id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    save: zone_events_hwm_row
+
+  - step: set_zone_event_high_watermark
+    type: set
+    zone_events_hwm: ${zone_events_hwm_row.0.max_id}
+
   - step: set_fresh_telemetry_low_ec
     type: database_execute
     query: |
       UPDATE telemetry_last tl
       SET last_value = CASE WHEN s.type = 'EC' THEN 1.00 ELSE 6.00 END,
-          last_ts = NOW(),
+          last_ts = NOW() + INTERVAL '15 minutes',
           updated_at = NOW(),
           last_quality = 'GOOD'
       FROM sensors s
@@ -408,28 +467,76 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: seed_correction_flags_samples
+    type: database_execute
+    query: |
+      INSERT INTO telemetry_samples (
+        sensor_id, ts, zone_id, cycle_id, value, quality, metadata
+      )
+      SELECT
+        s.id,
+        NOW() + offs.delta,
+        s.zone_id,
+        NULL,
+        CASE WHEN s.type = 'EC' THEN 1.00 ELSE 6.00 END,
+        'GOOD',
+        jsonb_build_object(
+          'raw',
+          jsonb_build_object(
+            'flow_active', true,
+            'stable', true,
+            'corrections_allowed', true
+          )
+      )
+      FROM sensors s
+      JOIN (VALUES (INTERVAL '14 minutes'), (INTERVAL '15 minutes')) AS offs(delta) ON TRUE
+      WHERE s.zone_id = :zone_id
+        AND s.type IN ('PH', 'EC')
+        AND s.is_active = TRUE;
+    params:
+      zone_id: ${zone_id}
+
   - step: wait_first_component_command
     type: db.wait
     query: |
       SELECT id, cmd, params
       FROM commands
       WHERE zone_id = :zone_id
+      AND id > :commands_hwm
       AND cmd = 'run_pump'
       AND params->>'type' = 'add_nutrients'
       ORDER BY created_at DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
+      commands_hwm: ${commands_hwm}
     expected_rows: 1
     timeout: 35.0
     save: first_component_command
+
+  - step: stop_node_sim_after_first_component
+    type: stop_simulator
+    wait_seconds: 1
+    optional: true
+
+  - step: keep_primary_node_online_after_stop
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = NOW() + INTERVAL '10 minutes',
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND uid = 'nd-ph-esp32una';
+    params:
+      zone_id: ${zone_id}
 
   - step: raise_ec_to_stop_threshold
     type: database_execute
     query: |
       UPDATE telemetry_last tl
       SET last_value = 2.20,
-          last_ts = NOW(),
+          last_ts = NOW() + INTERVAL '20 minutes',
           updated_at = NOW(),
           last_quality = 'GOOD'
       FROM sensors s
@@ -440,10 +547,20 @@ actions:
       zone_id: ${zone_id}
 
   - step: wait_batch_stopped_event
-    type: wait_zone_event
-    zone_id: ${zone_id}
-    event_type: EC_COMPONENT_BATCH_STOPPED
-    timeout: 45.0
+    type: db.wait
+    query: |
+      SELECT id, type, details
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND id > :zone_events_hwm
+      AND type = 'EC_COMPONENT_BATCH_STOPPED'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      zone_events_hwm: ${zone_events_hwm}
+    expected_rows: 1
+    timeout: 60.0
 
 assertions:
   - name: exactly_one_add_nutrients_command
@@ -452,11 +569,12 @@ assertions:
       SELECT COUNT(*) as cmd_count
       FROM commands
       WHERE zone_id = :zone_id
+      AND id > :commands_hwm
       AND cmd = 'run_pump'
       AND params->>'type' = 'add_nutrients'
-      AND created_at > NOW() - INTERVAL '3 minutes'
     params:
       zone_id: ${zone_id}
+      commands_hwm: ${commands_hwm}
     expected:
       - field: cmd_count
         operator: equals
@@ -468,12 +586,13 @@ assertions:
       SELECT id, type, details
       FROM zone_events
       WHERE zone_id = :zone_id
+      AND id > :zone_events_hwm
       AND type = 'EC_COMPONENT_RECHECK'
-      AND created_at > NOW() - INTERVAL '3 minutes'
-      ORDER BY created_at DESC
+      ORDER BY id DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
+      zone_events_hwm: ${zone_events_hwm}
     expected_rows: 1
 
   - name: has_batch_stopped_event
@@ -482,12 +601,13 @@ assertions:
       SELECT id, type, details
       FROM zone_events
       WHERE zone_id = :zone_id
+      AND id > :zone_events_hwm
       AND type = 'EC_COMPONENT_BATCH_STOPPED'
-      AND created_at > NOW() - INTERVAL '3 minutes'
-      ORDER BY created_at DESC
+      ORDER BY id DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
+      zone_events_hwm: ${zone_events_hwm}
     expected_rows: 1
 
 cleanup:

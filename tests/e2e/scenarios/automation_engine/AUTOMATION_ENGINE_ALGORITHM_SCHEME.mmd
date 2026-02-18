@@ -1,0 +1,77 @@
+flowchart LR
+  subgraph A["A. Непрерывный контур автоматизации зон (main.py)"]
+    A1["Старт сервиса: MQTT, CircuitBreaker, CommandTracker, CommandBus, FastAPI"]
+    A2["Получение config из Laravel API<br/>+ валидация + cache fallback"]
+    A3["Получение активных зон + приоритизация"]
+    A4["Адаптивная конкурентность<br/>(расчёт max_concurrent)"]
+    A5["Параллельный process_zone(zone_id)"]
+    A6{"Зона в backoff?"}
+    A7["ZONE_SKIPPED_BACKOFF + infra alert"]
+    A8["Загрузка grow_cycle/targets/telemetry/nodes/capabilities/bindings"]
+    A9{"DB/API circuit open?"}
+    A10["record_zone_error + ZONE_DATA_UNAVAILABLE"]
+    A11["restore workflow_phase из zone_events<br/>(если нет в runtime state)"]
+    A12{"degraded mode?<br/>(error_streak>=3)"}
+    A13["Только health-проверки + degraded signal"]
+    A14["Контроллеры: light -> climate -> irrigation -> recirculation -> correction -> health"]
+    A15["safe_process_controller:<br/>cooldown 60s, CONTROLLER_FAILED, infra alerts"]
+    A16["Успех цикла: reset error_streak + ZONE_RECOVERED"]
+    A1-->A2-->A3-->A4-->A5-->A6
+    A6--"да"-->A7
+    A6--"нет"-->A8-->A9
+    A9--"да"-->A10
+    A9--"нет"-->A11-->A12
+    A12--"да"-->A13-->A16
+    A12--"нет"-->A14-->A15-->A16
+  end
+
+  subgraph B["B. Контур scheduler/API задач (api.py + SchedulerTaskExecutor)"]
+    B1["POST /scheduler/task<br/>lease check + дедуп + due/expires gates"]
+    B2["Task accepted -> background execute_scheduler_task()"]
+    B3["SchedulerTaskExecutor.execute():<br/>TASK_RECEIVED -> TASK_STARTED -> DECISION_MADE"]
+    B4{"decision_policy<br/>(run/skip/retry/fail)"}
+    B5["No-action ветка:<br/>skip/retry enqueue + decision alerts"]
+    B6["Action ветка:<br/>device task или diagnostics workflow"]
+    B7["publish_batch closed-loop:<br/>успех только DONE<br/>(для части команд разрешён NO_EFFECT)"]
+    B8["TASK_FINISHED + SCHEDULE_TASK_EXECUTION_FINISHED"]
+    B9["sync workflow_phase:<br/>zone_workflow_state + WORKFLOW_PHASE_UPDATED"]
+    B1-->B2-->B3-->B4
+    B4--"skip/retry/fail"-->B5-->B8-->B9
+    B4--"run"-->B6-->B7-->B8-->B9
+  end
+
+  subgraph C["C. Diagnostics workflow (two_tank / three_tank / cycle_start)"]
+    C1["workflow_validator:<br/>payload_contract_version + explicit workflow"]
+    C2["workflow_router:<br/>topology -> two_tank / three_tank / cycle_start"]
+    C3["two_tank startup:<br/>startup -> clean_fill_check -> solution_fill_check -> prepare_recirculation_check"]
+    C4["two_tank recovery:<br/>irrigation_recovery -> irrigation_recovery_check"]
+    C5["cycle_start/refill_check:<br/>nodes online + level/freshness + refill self-task"]
+    C6["three_tank -> адаптер к cycle_start"]
+    C7["Фазы: idle <-> tank_filling <-> tank_recirc <-> ready <-> irrigating <-> irrig_recirc"]
+    C1-->C2
+    C2-->C3-->C7
+    C2-->C4-->C7
+    C2-->C5-->C7
+    C2-->C6-->C7
+  end
+
+  subgraph D["D. Контур коррекций pH/EC в process_zone"]
+    D1["correction_gating:<br/>flow_active/stable/corrections_allowed + freshness flags"]
+    D2{"can_run correction?"}
+    D3["SKIP events + throttled infra alerts<br/>+ sensor_mode policy (activate/deactivate/noop)"]
+    D4["PID + cooldown/trend + target range check"]
+    D5["EC batch dosing (npk/calcium/magnesium/micro)<br/>+ partial-failure compensation enqueue"]
+    D6["publish_controller_command_with_retry<br/>и проверка terminal status"]
+    D1-->D2
+    D2--"нет"-->D3
+    D2--"да"-->D4-->D5-->D6
+  end
+
+  E1["CommandBus (automation-engine)"]
+  E2["history-logger REST /commands<br/>ЕДИНСТВЕННАЯ публикация в MQTT"]
+  E3["MQTT -> ESP32 -> status -> DB(commands/zone_events)"]
+  E1-->E2-->E3
+
+  A14-->E1
+  B7-->E1
+  D6-->E1

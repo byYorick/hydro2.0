@@ -77,12 +77,12 @@ class CommandBus:
         self.api_circuit_breaker = api_circuit_breaker
         self._zone_gh_uid_cache: Dict[int, str] = {}
         if enforce_node_zone_assignment is None:
-            raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "0")).strip().lower()
+            raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "1")).strip().lower()
             self.enforce_node_zone_assignment = raw_guard in _TRUE_VALUES
         else:
             self.enforce_node_zone_assignment = bool(enforce_node_zone_assignment)
         if enforce_command_channel_compatibility is None:
-            raw_guard = str(os.getenv("AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY", "0")).strip().lower()
+            raw_guard = str(os.getenv("AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY", "1")).strip().lower()
             self.enforce_command_channel_compatibility = raw_guard in _TRUE_VALUES
         else:
             self.enforce_command_channel_compatibility = bool(enforce_command_channel_compatibility)

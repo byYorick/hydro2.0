@@ -28,6 +28,10 @@ def test_automation_settings_defaults():
     # MAX_CONCURRENT_ZONES по умолчанию 50 из env или может быть переопределено
     assert settings.MAX_CONCURRENT_ZONES >= 5
     assert settings.PH_CORRECTION_THRESHOLD == 0.2
+    assert settings.AE_CORRECTION_FLAGS_MAX_AGE_SEC == 300
+    assert settings.AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC == 120
+    assert settings.AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC == 120
+    assert settings.AE_CORRECTION_FLAGS_REQUIRE_TS is True
     
     # Восстанавливаем переменную окружения
     if old_max_concurrent_zones is not None:

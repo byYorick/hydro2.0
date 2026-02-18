@@ -126,7 +126,8 @@ async def analyze_trend(
         - is_improving: True если значение приближается к цели
         - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
     """
-    cutoff_time = _now_naive_utc() - timedelta(hours=hours)
+    analysis_now = _now_naive_utc()
+    cutoff_time = analysis_now - timedelta(hours=hours)
     
     normalized_metric = (metric_type or "").upper()
     rows = await fetch(
@@ -137,18 +138,27 @@ async def analyze_trend(
         WHERE ts.zone_id = $1
           AND s.type = $2
           AND ts.ts >= $3
+          AND ts.ts <= $4
         ORDER BY ts.ts ASC
         """,
         zone_id,
         normalized_metric,
         cutoff_time,
+        analysis_now,
     )
     
     if not rows or len(rows) < MIN_TREND_POINTS:
         # Недостаточно данных для анализа тренда
         return False, None
     
-    values = [float(row["value"]) for row in rows if row["value"] is not None]
+    values = []
+    for row in rows:
+        sample_ts = _to_naive_utc(row["ts"])
+        if sample_ts is None or sample_ts > analysis_now:
+            continue
+        if row["value"] is not None:
+            values.append(float(row["value"]))
+
     if len(values) < MIN_TREND_POINTS:
         return False, None
     
@@ -223,16 +233,16 @@ async def should_apply_correction(
             return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
         return False, "В cooldown периоде"
     
-    # Анализируем тренд
+    # Если отклонение очень большое (> 0.5), корректируем независимо от тренда
+    if abs(diff) > 0.5:
+        return True, f"Критическое отклонение ({abs(diff):.2f}), корректировка необходима"
+
+    # Анализируем тренд только для некритичных отклонений.
     metric_type = 'PH' if correction_type == 'ph' else 'EC'
     is_improving, trend_slope = await analyze_trend(zone_id, metric_type, current_value, target_value)
     
     if is_improving:
         return False, f"Тренд улучшается (наклон: {trend_slope:.3f}), корректировка не требуется"
-    
-    # Если отклонение очень большое (> 0.5), корректируем независимо от тренда
-    if abs(diff) > 0.5:
-        return True, f"Критическое отклонение ({abs(diff):.2f}), корректировка необходима"
     
     # Если отклонение среднее (0.2-0.5) и тренд не улучшается, корректируем
     if abs(diff) > 0.2:

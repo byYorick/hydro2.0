@@ -2,7 +2,7 @@
 Irrigation Controller - управление поливом и рециркуляцией.
 Согласно ZONE_CONTROLLER_FULL.md раздел 6
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
@@ -10,6 +10,16 @@ from common.water_flow import check_water_level
 from alerts_manager import ensure_alert
 from services.targets_accessor import get_irrigation_params
 from common.simulation_clock import SimulationClock
+
+
+_IRRIGATION_ALLOWED_WORKFLOW_PHASES: Set[str] = {"idle", "ready", "irrigating"}
+
+
+def _normalize_workflow_phase(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    value = str(raw).strip().lower()
+    return value or None
 
 
 def _to_utc(value: datetime) -> datetime:
@@ -72,6 +82,7 @@ async def check_and_control_irrigation(
     current_time: Optional[datetime] = None,
     time_scale: Optional[float] = None,
     sim_clock: Optional[SimulationClock] = None,
+    workflow_phase: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление поливом зоны.
@@ -87,6 +98,10 @@ async def check_and_control_irrigation(
     Returns:
         Команда для запуска полива или None
     """
+    normalized_workflow_phase = _normalize_workflow_phase(workflow_phase)
+    if normalized_workflow_phase not in (None, *_IRRIGATION_ALLOWED_WORKFLOW_PHASES):
+        return None
+
     # Получаем параметры полива из targets
     irrigation_interval_sec, irrigation_duration_sec, _ = get_irrigation_params(
         targets,
@@ -116,27 +131,27 @@ async def check_and_control_irrigation(
         })
         return None
     
-    # Получаем время последнего полива
+    # Получаем время последнего полива.
+    # Если события не было, разрешаем bootstrap первого автополива.
     last_irrigation_time = await get_last_irrigation_time(zone_id)
-    
-    if last_irrigation_time is None:
-        # Если полива еще не было, можно запустить сразу (или подождать интервал)
-        # Для безопасности ждем хотя бы половину интервала
-        return None
-    
-    # Проверяем, прошло ли достаточно времени
-    now = current_time or utcnow()
-    last_irrigation_time = _to_utc(last_irrigation_time)
+    now = _to_utc(current_time or utcnow())
+    bootstrap_first_irrigation = last_irrigation_time is None
+    elapsed_sec: Optional[float] = None
+    last_irrigation_time_iso: Optional[str] = None
 
-    if sim_clock:
-        last_irrigation_sim = sim_clock.to_sim_time(last_irrigation_time)
-        elapsed_sec = (now - last_irrigation_sim).total_seconds()
-    else:
-        elapsed_sec = (now - last_irrigation_time).total_seconds()
-    
-    if elapsed_sec < irrigation_interval_sec:
-        # Еще не прошло достаточно времени
-        return None
+    if last_irrigation_time is not None:
+        last_irrigation_time = _to_utc(last_irrigation_time)
+        last_irrigation_time_iso = last_irrigation_time.isoformat()
+
+        if sim_clock:
+            last_irrigation_sim = sim_clock.to_sim_time(last_irrigation_time)
+            elapsed_sec = (now - last_irrigation_sim).total_seconds()
+        else:
+            elapsed_sec = (now - last_irrigation_time).total_seconds()
+
+        if elapsed_sec < irrigation_interval_sec:
+            # Еще не прошло достаточно времени
+            return None
     
     # Проверяем уровень воды
     water_level_ok, water_level = await check_water_level(zone_id)
@@ -165,8 +180,10 @@ async def check_and_control_irrigation(
             'duration_sec': duration_sec_value,
             'duration_ms': duration_ms_scaled,
             'time_scale': time_scale,
-            'last_irrigation_time': last_irrigation_time.isoformat(),
-            'elapsed_sec': elapsed_sec
+            'last_irrigation_time': last_irrigation_time_iso,
+            'elapsed_sec': elapsed_sec,
+            'bootstrap_first_irrigation': bootstrap_first_irrigation,
+            'workflow_phase': normalized_workflow_phase,
         }
     }
 
@@ -274,7 +291,7 @@ async def check_and_control_recirculation(
     # Получаем время последней рециркуляции
     last_recirculation_time = await get_last_recirculation_time(zone_id)
     
-    now = current_time or utcnow()
+    now = _to_utc(current_time or utcnow())
     elapsed_min: Optional[float] = None
 
     if last_recirculation_time is not None:

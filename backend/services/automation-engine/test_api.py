@@ -1,5 +1,6 @@
 """Tests for automation-engine REST API."""
 import asyncio
+import logging
 import pytest
 import sys
 import os
@@ -15,10 +16,11 @@ from api import app, set_command_bus
 from infrastructure.command_bus import CommandBus
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def client():
     """Create test client."""
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture
@@ -67,6 +69,18 @@ def mock_api_fetch():
 
 
 @pytest.fixture(autouse=True)
+def disable_scheduler_background_spawn():
+    """Keep API tests deterministic: do not execute fire-and-forget background tasks."""
+
+    def _drop_background_task(coro, **kwargs):
+        coro.close()
+        return Mock()
+
+    with patch("api._spawn_background_task", side_effect=_drop_background_task):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def reset_scheduler_task_state():
     api._scheduler_tasks.clear()
     yield
@@ -100,7 +114,7 @@ def bootstrap_headers(client: TestClient, scheduler_id: str = "scheduler-test") 
 
 
 def scheduler_task_payload(**overrides) -> dict:
-    base_scheduled_for = (datetime.utcnow() + timedelta(minutes=5)).replace(microsecond=0)
+    base_scheduled_for = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5)).replace(microsecond=0)
     base_due_at = base_scheduled_for + timedelta(seconds=15)
     base_expires_at = base_scheduled_for + timedelta(minutes=2)
 
@@ -198,7 +212,7 @@ def test_zone_automation_state_returns_idle_without_active_tasks(client):
 
 
 def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
-    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0).isoformat()
     api._scheduler_tasks["st-panel-1"] = {
         "task_id": "st-panel-1",
         "zone_id": 1,
@@ -477,12 +491,12 @@ async def test_scheduler_task_accepts_when_schedule_event_fails(client, mock_com
     headers = bootstrap_headers(client)
     payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:event-fail")
 
-    def _cancel_background_task(coro):
+    def _cancel_background_task(coro, **kwargs):
         coro.close()
         return Mock()
 
     with patch("api.create_zone_event", new=AsyncMock(side_effect=RuntimeError("event insert failed"))), \
-         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
+         patch("api._spawn_background_task", side_effect=_cancel_background_task) as mock_create_task:
         response = client.post("/scheduler/task", json=payload, headers=headers)
 
     assert response.status_code == 200
@@ -500,14 +514,14 @@ def test_scheduler_task_lifecycle_persists_snapshots(client, mock_command_bus):
         await asyncio.sleep(0.01)
         return {"success": True, "commands_sent": 1, "task_type": kwargs.get("task_type")}
 
-    def _cancel_background_task(coro):
+    def _cancel_background_task(coro, **kwargs):
         coro.close()
         return Mock()
 
     with patch("api.SchedulerTaskExecutor") as mock_executor_cls, \
          patch("api.create_scheduler_log", new_callable=AsyncMock) as mock_scheduler_log, \
          patch("api.create_zone_event", new_callable=AsyncMock), \
-         patch("api.asyncio.create_task", side_effect=_cancel_background_task) as mock_create_task:
+         patch("api._spawn_background_task", side_effect=_cancel_background_task) as mock_create_task:
         mock_executor = mock_executor_cls.return_value
         mock_executor.execute = AsyncMock(side_effect=_execute)
         payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lifecycle")
@@ -589,7 +603,7 @@ def test_scheduler_task_rejects_expired_lease(client, mock_command_bus):
     scheduler_id = "scheduler-lease-expired"
     headers = bootstrap_headers(client, scheduler_id=scheduler_id)
 
-    api._scheduler_bootstrap_leases[scheduler_id]["expires_at"] = datetime.utcnow() - timedelta(seconds=1)
+    api._scheduler_bootstrap_leases[scheduler_id]["expires_at"] = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=1)
 
     payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:lease-expired")
     response = client.post("/scheduler/task", json=payload, headers=headers)
@@ -619,7 +633,7 @@ def test_scheduler_task_requires_due_at_and_expires_at(client, mock_command_bus)
 def test_scheduler_task_deadline_fast_fail_rejected(client, mock_command_bus):
     set_command_bus(mock_command_bus, "gh-1")
     headers = bootstrap_headers(client)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0)
 
     payload = scheduler_task_payload(
         correlation_id="sch:z1:diagnostics:late-due",
@@ -643,7 +657,7 @@ def test_scheduler_task_deadline_fast_fail_rejected(client, mock_command_bus):
 def test_scheduler_task_deadline_fast_fail_expired(client, mock_command_bus):
     set_command_bus(mock_command_bus, "gh-1")
     headers = bootstrap_headers(client)
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0)
 
     payload = scheduler_task_payload(
         correlation_id="sch:z1:diagnostics:expired",
@@ -961,7 +975,7 @@ async def test_scheduler_task_concurrent_submit_with_housekeeping_no_loop_errors
 
         async def _housekeeping_loop():
             while not stop_housekeeping.is_set():
-                await api._cleanup_scheduler_tasks_locked(datetime.utcnow())
+                await api._cleanup_scheduler_tasks_locked(datetime.now(timezone.utc).replace(tzinfo=None))
                 await asyncio.sleep(0)
 
         housekeeping_task = asyncio.create_task(_housekeeping_loop())
@@ -1200,6 +1214,368 @@ async def test_recover_inflight_scheduler_tasks_continues_when_zone_event_publis
         api._AE_TASK_RECOVERY_ENABLED = old_enabled
 
 
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_enqueues_continuation_for_active_phase():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 1,
+            "workflow_phase": "tank_filling",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120),
+            "payload": {
+                "workflow": "solution_fill_check",
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-1",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock) as mock_state_set, \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-1", "task_type": "diagnostics", "correlation_id": "corr-enq-1"}), \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        assert summary["stale_stopped"] == 0
+        mock_state_set.assert_awaited_once()
+        kwargs = mock_state_set.await_args.kwargs
+        assert kwargs["zone_id"] == 1
+        assert kwargs["workflow_phase"] == "tank_filling"
+        assert kwargs["scheduler_task_id"] == "enq-1"
+        event_types = [call.args[1] for call in mock_zone_event.await_args_list]
+        assert "WORKFLOW_RECOVERY_ENQUEUED" in event_types
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_canonicalizes_startup_to_check_phase():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 7,
+            "workflow_phase": "tank_filling",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=90),
+            "payload": {
+                "workflow": "startup",
+                "clean_fill_started_at": (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=180)).isoformat(),
+                "clean_fill_timeout_at": (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)).isoformat(),
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-7",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock) as mock_state_set, \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-7", "task_type": "diagnostics", "correlation_id": "corr-enq-7"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        assert mock_enqueue.await_count == 1
+        enqueue_payload = mock_enqueue.await_args.kwargs["payload"]
+        assert enqueue_payload["workflow"] == "clean_fill_check"
+        persisted_payload = mock_state_set.await_args.kwargs["payload"]
+        assert persisted_payload["workflow"] == "clean_fill_check"
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_canonicalizes_prepare_recirculation_to_check_phase():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 8,
+            "workflow_phase": "tank_recirc",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120),
+            "payload": {
+                "workflow": "prepare_recirculation",
+                "prepare_recirculation_started_at": (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=300)).isoformat(),
+                "prepare_recirculation_timeout_at": (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)).isoformat(),
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-8",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock) as mock_state_set, \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-8", "task_type": "diagnostics", "correlation_id": "corr-enq-8"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        assert mock_enqueue.await_count == 1
+        enqueue_payload = mock_enqueue.await_args.kwargs["payload"]
+        assert enqueue_payload["workflow"] == "prepare_recirculation_check"
+        persisted_payload = mock_state_set.await_args.kwargs["payload"]
+        assert persisted_payload["workflow"] == "prepare_recirculation_check"
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_marks_stale_state_idle():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 60
+    try:
+        stale_state = {
+            "zone_id": 2,
+            "workflow_phase": "tank_recirc",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=3600),
+            "payload": {"workflow": "prepare_recirculation_check"},
+            "scheduler_task_id": "st-old-2",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[stale_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock) as mock_state_set, \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 0
+        assert summary["stale_stopped"] == 1
+        mock_enqueue.assert_not_awaited()
+        mock_state_set.assert_awaited_once()
+        kwargs = mock_state_set.await_args.kwargs
+        assert kwargs["zone_id"] == 2
+        assert kwargs["workflow_phase"] == "idle"
+        assert kwargs["scheduler_task_id"] is None
+        event_types = [call.args[1] for call in mock_zone_event.await_args_list]
+        assert "WORKFLOW_RECOVERY_STALE_STOPPED" in event_types
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_canonicalizes_irrigation_recovery_to_check_phase():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 18,
+            "workflow_phase": "irrig_recirc",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=45),
+            "payload": {
+                "workflow": "irrigation_recovery",
+                "irrigation_recovery_started_at": (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=120)).isoformat(),
+                "irrigation_recovery_timeout_at": (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)).isoformat(),
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-18",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock) as mock_state_set, \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-18", "task_type": "diagnostics", "correlation_id": "corr-enq-18"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        assert mock_enqueue.await_count == 1
+        enqueue_payload = mock_enqueue.await_args.kwargs["payload"]
+        assert enqueue_payload["workflow"] == "irrigation_recovery_check"
+        assert enqueue_payload["workflow_stage"] == "irrigation_recovery_check"
+        persisted_payload = mock_state_set.await_args.kwargs["payload"]
+        assert persisted_payload["workflow"] == "irrigation_recovery_check"
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_missing_workflow_uses_phase_fallback_without_startup_restart():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 19,
+            "workflow_phase": "tank_filling",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=70),
+            "payload": {
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-19",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock), \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-19", "task_type": "diagnostics", "correlation_id": "corr-enq-19"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        enqueue_payload = mock_enqueue.await_args.kwargs["payload"]
+        assert enqueue_payload["workflow"] == "solution_fill_check"
+        assert enqueue_payload["workflow"] != "startup"
+        fallback_calls = [call for call in mock_zone_event.await_args_list if call.args[1] == "WORKFLOW_RECOVERY_WORKFLOW_FALLBACK"]
+        assert len(fallback_calls) == 1
+        fallback_payload = fallback_calls[0].args[2]
+        assert fallback_payload["fallback_from"] == "missing_workflow"
+        assert fallback_payload["fallback_to"] == "solution_fill_check"
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_emits_fallback_event_for_incompatible_workflow():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_state = {
+            "zone_id": 20,
+            "workflow_phase": "tank_recirc",
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=50),
+            "payload": {
+                "workflow": "clean_fill_check",
+                "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+            },
+            "scheduler_task_id": "st-old-20",
+        }
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=[active_state]), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock), \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-20", "task_type": "diagnostics", "correlation_id": "corr-enq-20"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock) as mock_zone_event:
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 1
+        assert summary["recovered"] == 1
+        enqueue_payload = mock_enqueue.await_args.kwargs["payload"]
+        assert enqueue_payload["workflow"] == "prepare_recirculation_check"
+        fallback_calls = [call for call in mock_zone_event.await_args_list if call.args[1] == "WORKFLOW_RECOVERY_WORKFLOW_FALLBACK"]
+        assert len(fallback_calls) == 1
+        fallback_payload = fallback_calls[0].args[2]
+        assert fallback_payload["fallback_from"] == "clean_fill_check"
+        assert fallback_payload["fallback_to"] == "prepare_recirculation_check"
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_continues_after_invalid_row_and_logs_structured_actions(caplog):
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    caplog.set_level(logging.INFO, logger="api")
+    try:
+        active_states = [
+            {
+                "zone_id": "invalid-zone",
+                "workflow_phase": "tank_filling",
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=40),
+                "payload": {"workflow": "solution_fill_check"},
+                "scheduler_task_id": "st-invalid-row",
+            },
+            {
+                "zone_id": 21,
+                "workflow_phase": "tank_recirc",
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=30),
+                "payload": {
+                    "workflow": "prepare_recirculation_check",
+                    "correlation_id": "corr-zone-21",
+                },
+                "scheduler_task_id": "st-old-21",
+            },
+        ]
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=active_states), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock), \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-21", "task_type": "diagnostics", "correlation_id": "corr-enq-21"}) as mock_enqueue, \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 2
+        assert summary["recovered"] == 1
+        assert summary["skipped"] == 1
+        assert summary["failed"] == 0
+        mock_enqueue.assert_awaited_once()
+        assert mock_enqueue.await_args.kwargs["zone_id"] == 21
+
+        recovery_records = [record for record in caplog.records if getattr(record, "component", None) == "workflow_state_recovery"]
+        assert any(
+            getattr(record, "recovery_action", None) == "skip_invalid"
+            and getattr(record, "reason_code", None) == "invalid_zone_id"
+            for record in recovery_records
+        )
+        assert any(
+            getattr(record, "recovery_action", None) == "enqueue_continuation"
+            and getattr(record, "zone_id", None) == 21
+            and getattr(record, "workflow_selected", None) == "prepare_recirculation_check"
+            for record in recovery_records
+        )
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_continues_when_alert_publish_fails():
+    old_enabled = api._AE_WORKFLOW_STATE_RECOVERY_ENABLED
+    old_stale_timeout = api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC
+    api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = True
+    api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = 1800
+    try:
+        active_states = [
+            {
+                "zone_id": 31,
+                "workflow_phase": "tank_recirc",
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=30),
+                "payload": {"workflow": "prepare_recirculation_check"},
+                "scheduler_task_id": "st-old-31",
+            },
+            {
+                "zone_id": 32,
+                "workflow_phase": "tank_recirc",
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=25),
+                "payload": {"workflow": "prepare_recirculation_check"},
+                "scheduler_task_id": "st-old-32",
+            },
+        ]
+        enqueue_results = [
+            RuntimeError("enqueue unavailable"),
+            {"enqueue_id": "enq-32", "task_type": "diagnostics", "correlation_id": "corr-enq-32"},
+        ]
+
+        with patch.object(api._workflow_state_store, "list_active", new_callable=AsyncMock, return_value=active_states), \
+             patch.object(api._workflow_state_store, "set", new_callable=AsyncMock), \
+             patch("api.enqueue_internal_scheduler_task", new_callable=AsyncMock, side_effect=enqueue_results) as mock_enqueue, \
+             patch("api.send_infra_exception_alert", new_callable=AsyncMock, side_effect=RuntimeError("alert unavailable")), \
+             patch("api.create_zone_event", new_callable=AsyncMock):
+            summary = await api._recover_zone_workflow_states()
+
+        assert summary["active"] == 2
+        assert summary["failed"] == 1
+        assert summary["recovered"] == 1
+        assert mock_enqueue.await_count == 2
+        assert mock_enqueue.await_args_list[1].kwargs["zone_id"] == 32
+    finally:
+        api._AE_WORKFLOW_STATE_RECOVERY_ENABLED = old_enabled
+        api._AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC = old_stale_timeout
+
+
 def test_scheduler_task_status_triggers_cleanup_and_memory_limit(client):
     """Status endpoint должен выполнять cleanup TTL и ограничение размера in-memory кэша."""
     old_ttl = api._SCHEDULER_TASK_TTL_SECONDS
@@ -1230,8 +1606,8 @@ def test_scheduler_task_status_triggers_cleanup_and_memory_limit(client):
                 "zone_id": 1,
                 "task_type": "diagnostics",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             },
         })
 
@@ -1341,6 +1717,58 @@ def test_test_hook_set_state_normalizes_datetime_fields(client):
         assert isinstance(state["next_allowed_run_at"], datetime)
         assert state["next_allowed_run_at"].isoformat().startswith("2099-01-01T00:00:00")
         assert state["degraded_alert_active"] is False
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
+def test_test_hook_set_state_accepts_workflow_phase_override(client):
+    """set_state должен принимать workflow_phase override для fail-closed тестов."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        response = client.post("/test/hook", json={
+            "zone_id": 14,
+            "action": "set_state",
+            "state": {
+                "error_streak": 0,
+                "workflow_phase": "tank_filling",
+            },
+        })
+        assert response.status_code == 200
+
+        state = api._zone_states_override[14]
+        assert state["workflow_phase"] == "tank_filling"
+        assert state["workflow_phase_loaded"] is True
+        assert state["workflow_phase_source"] == "test_hook"
+        assert isinstance(state["workflow_phase_updated_at"], datetime)
+    finally:
+        api._test_mode = old_mode
+        api._zone_states_override.clear()
+        api._zone_states_override.update(old_states)
+
+
+def test_test_hook_set_state_rejects_unknown_workflow_phase(client):
+    """set_state должен валидировать workflow_phase и отклонять неизвестные значения."""
+    old_mode = api._test_mode
+    old_states = dict(api._zone_states_override)
+    try:
+        api._test_mode = True
+        api._zone_states_override.clear()
+
+        response = client.post("/test/hook", json={
+            "zone_id": 15,
+            "action": "set_state",
+            "state": {
+                "workflow_phase": "unknown_phase",
+            },
+        })
+        assert response.status_code == 400
+        assert "workflow_phase" in response.json()["detail"]
     finally:
         api._test_mode = old_mode
         api._zone_states_override.clear()

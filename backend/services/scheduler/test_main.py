@@ -298,6 +298,50 @@ async def test_get_active_schedules_builds_abstract_tasks():
 
 
 @pytest.mark.asyncio
+async def test_get_active_schedules_skips_disabled_climate_and_lighting_subsystems():
+    repositories_module = types.ModuleType("repositories")
+    laravel_module = types.ModuleType("repositories.laravel_api_repository")
+
+    class DummyLaravelApiRepository:
+        pass
+
+    laravel_module.LaravelApiRepository = DummyLaravelApiRepository
+    sys.modules["repositories"] = repositories_module
+    sys.modules["repositories.laravel_api_repository"] = laravel_module
+
+    with patch("main.fetch") as mock_fetch, \
+         patch("repositories.laravel_api_repository.LaravelApiRepository") as mock_api_cls:
+        mock_fetch.return_value = [{"zone_id": 28}]
+        mock_api = AsyncMock()
+        mock_api.get_effective_targets_batch.return_value = {
+            28: {
+                "zone_id": 28,
+                "targets": {
+                    "irrigation": {"interval_sec": 1200, "duration_sec": 20},
+                    "lighting": {"photoperiod_hours": 18, "start_time": "06:00", "interval_sec": 1800},
+                    "ventilation": {"interval_sec": 900},
+                    "diagnostics": {"interval_sec": 1800},
+                    "extensions": {
+                        "subsystems": {
+                            "climate": {"enabled": False},
+                            "lighting": {"enabled": False},
+                        }
+                    },
+                },
+            }
+        }
+        mock_api_cls.return_value = mock_api
+
+        schedules = await get_active_schedules()
+
+    types_seen = {entry["type"] for entry in schedules}
+    assert "irrigation" in types_seen
+    assert "diagnostics" in types_seen
+    assert "lighting" not in types_seen
+    assert "ventilation" not in types_seen
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_ready_and_heartbeat_flow():
     bootstrap_response = Mock()
     bootstrap_response.status_code = 200

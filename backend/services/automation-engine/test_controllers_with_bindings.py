@@ -197,12 +197,12 @@ async def test_check_and_control_irrigation_with_bindings():
     with patch("irrigation_controller.get_last_irrigation_time", new_callable=AsyncMock) as mock_last_time, \
          patch("irrigation_controller.check_water_level", new_callable=AsyncMock) as mock_water_level:
         # Последний полив был 2 часа назад (больше интервала)
-        mock_last_time.return_value = datetime.now(timezone.utc).replace(hour=10, minute=0)
+        mock_last_time.return_value = datetime.now(timezone.utc).replace(tzinfo=None).replace(hour=10, minute=0)
         mock_water_level.return_value = (True, 50.0)  # water_level_ok = True
         
         # Мокаем текущее время
         with patch("irrigation_controller.utcnow") as mock_now:
-            mock_now.return_value = datetime.now(timezone.utc).replace(hour=12, minute=0)
+            mock_now.return_value = datetime.now(timezone.utc).replace(tzinfo=None).replace(hour=12, minute=0)
             
             result = await check_and_control_irrigation(1, targets, telemetry, bindings)
             

@@ -1,9 +1,12 @@
 """Tests for correction_controller."""
+import logging
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from types import SimpleNamespace
 from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
+from correction_command_retry import publish_controller_command_with_retry
+from correction_freshness import validate_freshness_or_skip
 
 
 class _PidZone:
@@ -45,7 +48,7 @@ async def test_ph_controller_check_and_correct_no_target():
     telemetry = {"PH": 6.5}
     nodes = {}
     
-    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
     result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
@@ -58,7 +61,7 @@ async def test_ph_controller_check_and_correct_no_current():
     telemetry = {}
     nodes = {}
     
-    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
     result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
@@ -71,7 +74,7 @@ async def test_ph_controller_check_and_correct_small_diff():
     telemetry = {"PH": 6.4}  # diff = 0.1, меньше порога 0.2
     nodes = {}
     
-    telemetry_ts = {"PH": datetime.now(timezone.utc)}
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
     result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
     assert result is None
 
@@ -93,7 +96,7 @@ async def test_ph_controller_check_and_correct_cooldown():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (False, "В cooldown периоде")
         with patch("correction_controller.create_zone_event") as mock_event:
-            telemetry_ts = {"PH": datetime.now(timezone.utc)}
+            telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
             result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
             
             assert result is None
@@ -124,7 +127,7 @@ async def test_ph_controller_check_and_correct_low_ph():
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
-        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
@@ -157,7 +160,7 @@ async def test_ph_controller_check_and_correct_high_ph():
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
-        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
@@ -189,7 +192,7 @@ async def test_ph_controller_check_and_correct_no_water():
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
-        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=False, actuators=actuators)
         
         assert result is None  # Не должно быть корректировки при низком уровне воды
@@ -206,7 +209,7 @@ async def test_ph_controller_check_and_correct_no_nodes():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True)
         
         assert result is None
@@ -230,7 +233,7 @@ async def test_ph_controller_does_not_fallback_to_nodes_without_actuator_binding
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"PH": datetime.now(timezone.utc)}
+        telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -276,7 +279,7 @@ async def test_ec_controller_check_and_correct_low_ec():
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
         
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         assert result is not None
@@ -291,6 +294,98 @@ async def test_ec_controller_check_and_correct_low_ec():
         assert doses["magnesium"] == pytest.approx(6.0, abs=0.01)
         assert doses["micro"] == pytest.approx(3.0, abs=0.01)
         assert result['event_type'] == 'EC_DOSING'
+
+
+@pytest.mark.asyncio
+async def test_ec_controller_check_and_correct_filters_components_to_npk_only():
+    controller = CorrectionController(CorrectionType.EC)
+    targets = {
+        "ec": {"target": 1.8},
+        "nutrition": {
+            "mode": "ratio_ec_pid",
+            "components": {
+                "npk": {"ratio_pct": 50},
+                "calcium": {"ratio_pct": 20},
+                "magnesium": {"ratio_pct": 20},
+                "micro": {"ratio_pct": 10},
+            },
+        },
+    }
+    telemetry = {"EC": 1.5}
+    actuators = {
+        "ec_npk_pump": {"node_uid": "nd-ec-a", "channel": "pump_a", "role": "ec_npk_pump", "ml_per_sec": 1.2},
+        "ec_calcium_pump": {"node_uid": "nd-ec-b", "channel": "pump_b", "role": "ec_calcium_pump", "ml_per_sec": 1.1},
+        "ec_magnesium_pump": {"node_uid": "nd-ec-c", "channel": "pump_c", "role": "ec_magnesium_pump", "ml_per_sec": 1.0},
+        "ec_micro_pump": {"node_uid": "nd-ec-d", "channel": "pump_d", "role": "ec_micro_pump", "ml_per_sec": 0.9},
+    }
+
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
+        result = await controller.check_and_correct(
+            1,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+            allowed_ec_components=["npk"],
+        )
+
+    assert result is not None
+    components = [item["component"] for item in result["batch_commands"]]
+    assert components == ["npk"]
+
+
+@pytest.mark.asyncio
+async def test_ec_controller_check_and_correct_filters_components_to_calmgmicro():
+    controller = CorrectionController(CorrectionType.EC)
+    targets = {
+        "ec": {"target": 1.8},
+        "nutrition": {
+            "mode": "ratio_ec_pid",
+            "components": {
+                "npk": {"ratio_pct": 50},
+                "calcium": {"ratio_pct": 20},
+                "magnesium": {"ratio_pct": 20},
+                "micro": {"ratio_pct": 10},
+            },
+        },
+    }
+    telemetry = {"EC": 1.5}
+    actuators = {
+        "ec_npk_pump": {"node_uid": "nd-ec-a", "channel": "pump_a", "role": "ec_npk_pump", "ml_per_sec": 1.2},
+        "ec_calcium_pump": {"node_uid": "nd-ec-b", "channel": "pump_b", "role": "ec_calcium_pump", "ml_per_sec": 1.1},
+        "ec_magnesium_pump": {"node_uid": "nd-ec-c", "channel": "pump_c", "role": "ec_magnesium_pump", "ml_per_sec": 1.0},
+        "ec_micro_pump": {"node_uid": "nd-ec-d", "channel": "pump_d", "role": "ec_micro_pump", "ml_per_sec": 0.9},
+    }
+
+    with patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
+        result = await controller.check_and_correct(
+            1,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+            allowed_ec_components=["calcium", "magnesium", "micro"],
+        )
+
+    assert result is not None
+    components = [item["component"] for item in result["batch_commands"]]
+    assert components == ["calcium", "magnesium", "micro"]
 
 
 @pytest.mark.asyncio
@@ -311,7 +406,7 @@ async def test_ec_controller_check_and_correct_high_ec():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(1, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators)
         
         # Для dilute актюатор не выбирается, команда не отправляется
@@ -344,7 +439,7 @@ async def test_ec_controller_requires_all_four_component_pumps():
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -386,7 +481,7 @@ async def test_ec_controller_rejects_duplicate_physical_pumps_for_different_comp
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event, \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -455,7 +550,7 @@ async def test_ec_controller_splits_dose_for_four_component_feeding():
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
 
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -507,7 +602,7 @@ async def test_ec_controller_delta_ec_by_k_mode_uses_solution_volume():
          patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -556,7 +651,7 @@ async def test_ec_controller_ratio_mode_with_k_weighting():
          patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -604,7 +699,7 @@ async def test_ec_controller_delta_ec_by_k_mode_requires_full_k_profile():
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -646,7 +741,7 @@ async def test_ec_controller_invalid_nutrition_mode_is_skipped():
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -688,7 +783,7 @@ async def test_ec_controller_ratio_mode_requires_valid_ml_per_sec_for_each_pump(
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -731,7 +826,7 @@ async def test_ec_controller_dose_ml_l_only_requires_all_component_doses():
          patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
          patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(30.0)):
         mock_should.return_value = (True, "Корректировка необходима")
-        telemetry_ts = {"EC": datetime.now(timezone.utc)}
+        telemetry_ts = {"EC": datetime.now(timezone.utc).replace(tzinfo=None)}
         result = await controller.check_and_correct(
             1,
             targets,
@@ -909,15 +1004,18 @@ async def test_apply_correction_batch_aborts_when_command_unconfirmed_after_retr
     with patch("correction_controller.record_correction", new_callable=AsyncMock) as mock_record, \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
          patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch("correction_controller.enqueue_internal_scheduler_task", new_callable=AsyncMock, return_value={"enqueue_id": "enq-ec-recovery", "task_type": "diagnostics", "correlation_id": "corr-ec-recovery"}) as mock_enqueue, \
          patch("correction_controller.send_infra_alert", new_callable=AsyncMock), \
          patch("correction_controller.fetch", new_callable=AsyncMock, return_value=[]):
         await controller.apply_correction(command, command_bus)
 
     assert command_bus.publish_controller_command.await_count == 2
+    mock_enqueue.assert_awaited_once()
     command_bus.tracker.confirm_command_status.assert_awaited()
     assert mock_record.await_count == 0
     events = [call.args[1] for call in mock_zone_event.await_args_list if len(call.args) >= 2]
     assert "EC_COMPONENT_BATCH_ABORTED" in events
+    assert "EC_BATCH_PARTIAL_FAILURE" in events
 
 
 @pytest.mark.asyncio
@@ -1014,6 +1112,122 @@ async def test_apply_correction_single_command_fails_closed_when_tracker_active_
     assert mock_record.await_count == 0
     events = [call.args[1] for call in mock_zone_event.await_args_list if len(call.args) >= 2]
     assert "CORRECTION_ABORTED_COMMAND_FAILURE" in events
+
+
+@pytest.mark.asyncio
+async def test_apply_correction_enriches_single_command_events_with_correlation_and_cmd_id():
+    controller = CorrectionController(CorrectionType.PH)
+    command = {
+        'node_uid': 'nd-ph-1',
+        'channel': 'pump_acid',
+        'cmd': 'dose',
+        'params': {'ml': 3.0, 'type': 'add_acid'},
+        'event_type': 'PH_CORRECTED',
+        'event_details': {
+            'correction_type': 'add_acid',
+            'current_ph': 6.8,
+            'target_ph': 6.5,
+            'diff': 0.3,
+            'ml': 3.0,
+        },
+        'zone_id': 1,
+        'correction_type_str': 'ph',
+        'current_value': 6.8,
+        'target_value': 6.5,
+        'reason': 'Корректировка необходима',
+    }
+
+    from infrastructure.command_bus import CommandBus
+    command_bus = Mock(spec=CommandBus)
+
+    async def _publish(zone_id, payload, context):
+        payload["cmd_id"] = "cmd-ph-success-1"
+        return True
+
+    command_bus.publish_controller_command = AsyncMock(side_effect=_publish)
+
+    with patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch("correction_controller.fetch", new_callable=AsyncMock, return_value=[]):
+        await controller.apply_correction(command, command_bus)
+
+    primary_payload = None
+    dosing_payload = None
+    for call in mock_zone_event.await_args_list:
+        if len(call.args) < 3:
+            continue
+        event_type = call.args[1]
+        payload = call.args[2]
+        if event_type == "PH_CORRECTED":
+            primary_payload = payload
+        if event_type == "DOSING":
+            dosing_payload = payload
+
+    assert isinstance(primary_payload, dict)
+    assert isinstance(dosing_payload, dict)
+    assert primary_payload["cmd_id"] == "cmd-ph-success-1"
+    assert primary_payload["cmd_ids"] == ["cmd-ph-success-1"]
+    assert isinstance(primary_payload.get("correlation_id"), str) and primary_payload["correlation_id"]
+    assert dosing_payload["cmd_id"] == "cmd-ph-success-1"
+    assert dosing_payload["cmd_ids"] == ["cmd-ph-success-1"]
+    assert dosing_payload["correlation_id"] == primary_payload["correlation_id"]
+
+
+@pytest.mark.asyncio
+async def test_apply_correction_enriches_batch_events_with_cmd_ids_and_correlation():
+    controller = CorrectionController(CorrectionType.EC)
+    command = {
+        "zone_id": 1,
+        "correction_type_str": "ec",
+        "current_value": 1.6,
+        "target_value": 2.0,
+        "reason": "Корректировка необходима",
+        "event_type": "EC_DOSING",
+        "event_details": {"diff": -0.4, "correction_type": "add_nutrients", "ml": 30.0},
+        "nutrition_control": {"dose_delay_sec": 0.0, "ec_stop_tolerance": 0.05},
+        "batch_commands": [
+            {"node_uid": "nd-ec-a", "channel": "pump_a", "cmd": "run_pump", "params": {"ml": 15.0}, "component": "npk"},
+            {"node_uid": "nd-ec-b", "channel": "pump_b", "cmd": "run_pump", "params": {"ml": 9.0}, "component": "calcium"},
+        ],
+    }
+
+    from infrastructure.command_bus import CommandBus
+    command_bus = Mock(spec=CommandBus)
+    cmd_seq = iter(["cmd-ec-success-1", "cmd-ec-success-2"])
+
+    async def _publish(zone_id, payload, context):
+        payload["cmd_id"] = next(cmd_seq)
+        return True
+
+    command_bus.publish_controller_command = AsyncMock(side_effect=_publish)
+
+    with patch("correction_controller.record_correction", new_callable=AsyncMock), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
+         patch("correction_controller.create_ai_log", new_callable=AsyncMock), \
+         patch("correction_controller.fetch", new_callable=AsyncMock, return_value=[]):
+        await controller.apply_correction(command, command_bus)
+
+    primary_payload = None
+    dosing_payload = None
+    for call in mock_zone_event.await_args_list:
+        if len(call.args) < 3:
+            continue
+        event_type = call.args[1]
+        payload = call.args[2]
+        if event_type == "EC_DOSING":
+            primary_payload = payload
+        if event_type == "DOSING":
+            dosing_payload = payload
+
+    assert isinstance(primary_payload, dict)
+    assert isinstance(dosing_payload, dict)
+    assert primary_payload["cmd_id"] == "cmd-ec-success-2"
+    assert primary_payload["cmd_ids"] == ["cmd-ec-success-1", "cmd-ec-success-2"]
+    assert isinstance(primary_payload.get("correlation_id"), str) and primary_payload["correlation_id"]
+    assert dosing_payload["cmd_id"] == "cmd-ec-success-2"
+    assert dosing_payload["cmd_ids"] == ["cmd-ec-success-1", "cmd-ec-success-2"]
+    assert dosing_payload["correlation_id"] == primary_payload["correlation_id"]
 
 
 @pytest.mark.asyncio
@@ -1198,3 +1412,176 @@ async def test_ec_controller_apply_correction():
         
         # Проверяем, что был создан AI log
         mock_ai_log.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_structured_skip_log_for_water_level_guard(caplog):
+    controller = CorrectionController(CorrectionType.PH)
+    caplog.set_level(logging.WARNING, logger="correction_controller")
+
+    targets = {"ph": {"target": 6.5}}
+    telemetry = {"PH": 6.8}
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+
+    with patch("correction_controller.should_apply_correction", new_callable=AsyncMock, return_value=(True, "ok")), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
+        result = await controller.check_and_correct(
+            7,
+            targets,
+            telemetry,
+            telemetry_ts,
+            nodes={},
+            water_level_ok=False,
+            actuators={"ph_acid_pump": {"node_uid": "nd-ph", "channel": "pump_acid", "role": "ph_acid_pump"}},
+        )
+
+    assert result is None
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "water_level_not_ok")
+    assert getattr(record, "component", None) == "correction_controller"
+    assert getattr(record, "zone_id", None) == 7
+    assert getattr(record, "decision", None) == "skip"
+
+
+@pytest.mark.asyncio
+async def test_structured_retry_log_for_missing_cmd_id(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_command_retry")
+
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=True)
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=11,
+        command_bus=command_bus,
+        controller_command={"cmd": "dose", "node_uid": "nd-1", "channel": "pump"},
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "cmd_id_missing_after_publish")
+    assert getattr(record, "component", None) == "correction_command_retry"
+    assert getattr(record, "zone_id", None) == 11
+    assert getattr(record, "decision", None) == "fail_closed"
+
+
+@pytest.mark.asyncio
+async def test_retry_fails_closed_when_tracker_missing(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_command_retry")
+
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = None
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=12,
+        command_bus=command_bus,
+        controller_command={"cmd": "dose", "node_uid": "nd-2", "channel": "pump"},
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "command_tracker_unavailable")
+    assert getattr(record, "component", None) == "correction_command_retry"
+    assert getattr(record, "zone_id", None) == 12
+    assert getattr(record, "decision", None) == "fail_closed"
+    assert create_zone_event_fn.await_count >= 1
+    event_payload = create_zone_event_fn.await_args_list[0].args[2]
+    assert event_payload["reason"] == "command_tracker_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_retry_emits_terminal_error_details_from_tracker_outcome():
+    command_bus = Mock()
+    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=False)
+    command_bus.tracker.get_command_outcome = AsyncMock(
+        return_value={
+            "status": "ERROR",
+            "error_code": "node_not_activated",
+            "error_message": "node is not activated",
+        }
+    )
+
+    settings = SimpleNamespace(
+        CORRECTION_COMMAND_MAX_ATTEMPTS=1,
+        CORRECTION_COMMAND_TIMEOUT_SEC=1.0,
+        CORRECTION_COMMAND_RETRY_DELAY_SEC=0.0,
+    )
+    create_zone_event_fn = AsyncMock()
+    send_infra_alert_fn = AsyncMock()
+    controller_command = {"cmd": "dose", "node_uid": "nd-ph", "channel": "pump_acid", "cmd_id": "cmd-err-1"}
+
+    ok = await publish_controller_command_with_retry(
+        zone_id=13,
+        command_bus=command_bus,
+        controller_command=controller_command,
+        context=SimpleNamespace(),
+        correction_type="ph",
+        get_settings_fn=lambda: settings,
+        create_zone_event_fn=create_zone_event_fn,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+
+    assert ok is False
+    event_payload = create_zone_event_fn.await_args_list[0].args[2]
+    assert event_payload["reason"] == "terminal_error"
+    assert event_payload["terminal_status"] == "ERROR"
+    assert event_payload["terminal_error_code"] == "node_not_activated"
+    assert event_payload["terminal_error_message"] == "node is not activated"
+
+    send_kwargs = send_infra_alert_fn.await_args.kwargs
+    assert send_kwargs["details"]["terminal_status"] == "ERROR"
+    assert send_kwargs["details"]["terminal_error_code"] == "node_not_activated"
+    assert send_kwargs["details"]["terminal_error_message"] == "node is not activated"
+
+
+@pytest.mark.asyncio
+async def test_structured_freshness_fail_closed_log(caplog):
+    caplog.set_level(logging.WARNING, logger="correction_freshness")
+    failure_count = {}
+
+    with patch("correction_freshness.create_zone_event", new_callable=AsyncMock), \
+         patch("correction_freshness.create_alert", new_callable=AsyncMock):
+        ok = await validate_freshness_or_skip(
+            zone_id=5,
+            metric_name="PH",
+            target_key="ph",
+            correction_type="ph",
+            current=6.9,
+            target=6.5,
+            telemetry_timestamps=None,
+            freshness_check_failure_count=failure_count,
+            event_prefix="PH",
+        )
+
+    assert ok is False
+    record = next(r for r in caplog.records if getattr(r, "reason_code", None) == "freshness_check_failed")
+    assert getattr(record, "component", None) == "correction_freshness"
+    assert getattr(record, "zone_id", None) == 5
+    assert getattr(record, "decision", None) == "skip"
