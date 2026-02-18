@@ -93,6 +93,9 @@ from application.api_scheduler_routes import (
     get_scheduler_task_status as policy_get_scheduler_task_status,
     submit_scheduler_task as policy_submit_scheduler_task,
 )
+from application.api_scheduler_security import (
+    validate_scheduler_security_baseline as policy_validate_scheduler_security_baseline,
+)
 from application.api_zone_state_payload import (
     build_zone_automation_state_payload as policy_build_zone_automation_state_payload,
 )
@@ -179,6 +182,14 @@ _SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC = max(10, int(os.getenv("SCHEDULER_BOOTSTRAP_
 _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC", "5")))
 _SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC", "30")))
 _SCHEDULER_BOOTSTRAP_ENFORCE = os.getenv("SCHEDULER_BOOTSTRAP_ENFORCE", "1") == "1"
+_AE_SCHEDULER_SECURITY_BASELINE_ENFORCE = _env_true("AE_SCHEDULER_SECURITY_BASELINE_ENFORCE", "1")
+_AE_SCHEDULER_REQUIRE_TRACE_ID = _env_true("AE_SCHEDULER_REQUIRE_TRACE_ID", "1")
+_AE_SCHEDULER_API_TOKEN = str(
+    os.getenv("SCHEDULER_API_TOKEN")
+    or os.getenv("PY_INGEST_TOKEN")
+    or os.getenv("PY_API_TOKEN")
+    or ""
+).strip()
 _scheduler_bootstrap_leases: Dict[str, Dict[str, Any]] = {}
 _scheduler_bootstrap_lock = asyncio.Lock()
 _AE_TASK_RECOVERY_ENABLED = os.getenv("AE_TASK_RECOVERY_ENABLED", "1") == "1"
@@ -620,6 +631,16 @@ async def _validate_scheduler_dispatch_lease(request: Request) -> None:
     )
 
 
+async def _validate_scheduler_security_baseline(request: Request) -> None:
+    policy_validate_scheduler_security_baseline(
+        headers=request.headers,
+        enforce=_AE_SCHEDULER_SECURITY_BASELINE_ENFORCE,
+        scheduler_api_token=_AE_SCHEDULER_API_TOKEN,
+        require_trace_id=_AE_SCHEDULER_REQUIRE_TRACE_ID,
+        extract_trace_id_from_headers_fn=extract_trace_id_from_headers,
+    )
+
+
 @app.post("/scheduler/bootstrap")
 async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
     return await policy_build_scheduler_bootstrap_response(
@@ -670,6 +691,7 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
         command_bus=_command_bus,
         scheduler_task_types=_SCHEDULER_TASK_TYPES,
         validate_scheduler_dispatch_lease_fn=_validate_scheduler_dispatch_lease,
+        validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
         validate_scheduler_zone_fn=_validate_scheduler_zone,
         parse_iso_datetime_fn=_parse_iso_datetime,
         require_iso_datetime_fn=_require_iso_datetime,

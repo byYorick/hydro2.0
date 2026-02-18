@@ -33,6 +33,7 @@ async def submit_scheduler_task(
     command_bus: Any,
     scheduler_task_types: Set[str],
     validate_scheduler_dispatch_lease_fn: Callable[[Any], Awaitable[None]],
+    validate_scheduler_security_baseline_fn: Callable[[Any], Awaitable[None]],
     validate_scheduler_zone_fn: Callable[[int], Awaitable[None]],
     parse_iso_datetime_fn: Callable[[Optional[str]], Optional[datetime]],
     require_iso_datetime_fn: Callable[[Optional[str], str], datetime],
@@ -51,6 +52,7 @@ async def submit_scheduler_task(
         raise HTTPException(status_code=422, detail=f"Unsupported task_type: {req.task_type}")
 
     await validate_scheduler_dispatch_lease_fn(request)
+    await validate_scheduler_security_baseline_fn(request)
     await validate_scheduler_zone_fn(req.zone_id)
 
     scheduled_for_dt: Optional[datetime] = None

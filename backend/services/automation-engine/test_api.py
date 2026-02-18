@@ -97,7 +97,13 @@ def reset_bootstrap_state():
     api._SCHEDULER_BOOTSTRAP_ENFORCE = old_enforce
 
 
-def bootstrap_headers(client: TestClient, scheduler_id: str = "scheduler-test") -> dict:
+def bootstrap_headers(
+    client: TestClient,
+    scheduler_id: str = "scheduler-test",
+    *,
+    auth_token: str = "dev-token-12345",
+    trace_id: str = "trace-test-scheduler",
+) -> dict:
     response = client.post("/scheduler/bootstrap", json={
         "scheduler_id": scheduler_id,
         "scheduler_version": "test",
@@ -107,10 +113,15 @@ def bootstrap_headers(client: TestClient, scheduler_id: str = "scheduler-test") 
     data = response.json()["data"]
     assert data["bootstrap_status"] == "ready"
     lease_id = data["lease_id"]
-    return {
+    headers = {
         "X-Scheduler-Id": scheduler_id,
         "X-Scheduler-Lease-Id": lease_id,
     }
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    if trace_id:
+        headers["X-Trace-Id"] = trace_id
+    return headers
 
 
 def scheduler_task_payload(**overrides) -> dict:
@@ -586,6 +597,41 @@ def test_scheduler_task_requires_bootstrap_headers(client, mock_command_bus):
     assert "scheduler_bootstrap_required" in response.json()["detail"]
 
 
+def test_scheduler_task_requires_authorization_header(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:no-auth")
+    headers = bootstrap_headers(client)
+    headers.pop("Authorization", None)
+
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "unauthorized"
+
+
+def test_scheduler_task_rejects_invalid_authorization_token(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:bad-auth")
+    headers = bootstrap_headers(client, auth_token="wrong-token")
+
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "unauthorized"
+
+
+def test_scheduler_task_requires_trace_header(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:no-trace")
+    headers = bootstrap_headers(client)
+    headers.pop("X-Trace-Id", None)
+
+    response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "missing_trace_id"
+
+
 def test_scheduler_task_rejects_lease_mismatch(client, mock_command_bus):
     set_command_bus(mock_command_bus, "gh-1")
     headers = bootstrap_headers(client, scheduler_id="scheduler-lease-mismatch")
@@ -969,6 +1015,8 @@ async def test_scheduler_task_concurrent_submit_with_housekeeping_no_loop_errors
         headers = {
             "X-Scheduler-Id": "scheduler-concurrent",
             "X-Scheduler-Lease-Id": lease_id,
+            "Authorization": "Bearer dev-token-12345",
+            "X-Trace-Id": "trace-test-concurrent",
         }
 
         stop_housekeeping = asyncio.Event()

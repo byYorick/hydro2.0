@@ -97,6 +97,12 @@ SCHEDULER_EXPIRES_AFTER_SEC = max(SCHEDULER_DUE_GRACE_SEC + 1, int(os.getenv("SC
 SCHEDULER_ID = os.getenv("SCHEDULER_ID", socket.gethostname() or "scheduler-1")
 SCHEDULER_VERSION = os.getenv("SCHEDULER_VERSION", "3.0.0")
 SCHEDULER_PROTOCOL_VERSION = os.getenv("SCHEDULER_PROTOCOL_VERSION", "2.0")
+SCHEDULER_API_TOKEN = str(
+    os.getenv("SCHEDULER_API_TOKEN")
+    or os.getenv("PY_INGEST_TOKEN")
+    or os.getenv("PY_API_TOKEN")
+    or ""
+).strip()
 SCHEDULER_MAIN_TICK_SEC = max(1.0, float(os.getenv("SCHEDULER_MAIN_TICK_SEC", "5")))
 SCHEDULER_DISPATCH_INTERVAL_SEC = max(1.0, float(os.getenv("SCHEDULER_DISPATCH_INTERVAL_SEC", "60")))
 SCHEDULER_LEADER_ELECTION_ENABLED = os.getenv("SCHEDULER_LEADER_ELECTION", "0").strip().lower() in {
@@ -981,7 +987,11 @@ def _parse_iso_datetime_utc(value: Optional[str]) -> Optional[datetime]:
 
 
 def _scheduler_headers() -> Dict[str, str]:
+    if not get_trace_id():
+        set_trace_id()
     headers = inject_trace_id_header()
+    if SCHEDULER_API_TOKEN:
+        headers["Authorization"] = f"Bearer {SCHEDULER_API_TOKEN}"
     headers["X-Scheduler-Id"] = SCHEDULER_ID
     if _bootstrap_lease_id:
         headers["X-Scheduler-Lease-Id"] = _bootstrap_lease_id
