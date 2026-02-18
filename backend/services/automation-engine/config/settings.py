@@ -103,6 +103,12 @@ class AutomationSettings:
     AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES", "30"))
     AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA", "0.03"))
     AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", "0.03"))
+    # S10 runtime-state snapshot persistence (crash-recovery)
+    AE_RUNTIME_STATE_PERSIST_ENABLED: bool = os.getenv("AE_RUNTIME_STATE_PERSIST_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_RUNTIME_STATE_SNAPSHOT_PATH: str = os.getenv(
+        "AE_RUNTIME_STATE_SNAPSHOT_PATH",
+        "/tmp/ae_runtime_state_snapshot.json",
+    )
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert

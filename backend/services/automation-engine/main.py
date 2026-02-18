@@ -21,6 +21,7 @@ from infrastructure.command_validator import CommandValidator
 from infrastructure.command_tracker import CommandTracker
 from infrastructure.command_audit import CommandAudit
 from infrastructure.system_health import SystemHealthMonitor
+from infrastructure.runtime_state_store import RuntimeStateStore
 from services.pid_state_manager import PidStateManager
 from utils.logging_context import set_trace_id, set_zone_id
 from utils.system_state_logger import log_system_state
@@ -106,6 +107,7 @@ _shutdown_event = asyncio.Event()
 _zone_service: Optional[ZoneAutomationService] = None
 _command_tracker: Optional[CommandTracker] = None
 _command_bus: Optional[CommandBus] = None
+_runtime_state_restored: bool = False
 _last_db_circuit_open_alert_at: Optional[datetime] = None
 _DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
 _last_health_unhealthy_alert_at: Optional[datetime] = None
@@ -118,6 +120,58 @@ _last_missing_gh_uid_alert_at: Optional[datetime] = None
 _MISSING_GH_UID_ALERT_THROTTLE_SECONDS = 300
 _last_config_fetch_error_alert_at: Dict[str, datetime] = {}
 _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS = 180
+
+
+def _restore_zone_runtime_state_snapshot(
+    zone_service: Optional[ZoneAutomationService],
+    automation_settings: Any,
+) -> bool:
+    if zone_service is None:
+        return False
+    if not bool(getattr(automation_settings, "AE_RUNTIME_STATE_PERSIST_ENABLED", True)):
+        return False
+
+    snapshot_path = str(getattr(automation_settings, "AE_RUNTIME_STATE_SNAPSHOT_PATH", "")).strip()
+    if not snapshot_path:
+        return False
+
+    snapshot = RuntimeStateStore(snapshot_path).load()
+    if not isinstance(snapshot, dict):
+        return False
+
+    zone_service.restore_runtime_state(snapshot.get("zone_service"))
+    logger.info(
+        "Runtime snapshot restored",
+        extra={
+            "snapshot_path": snapshot_path,
+            "schema_version": snapshot.get("schema_version"),
+            "saved_at": snapshot.get("saved_at"),
+        },
+    )
+    return True
+
+
+def _save_zone_runtime_state_snapshot(
+    zone_service: Optional[ZoneAutomationService],
+    automation_settings: Any,
+) -> bool:
+    if zone_service is None:
+        return False
+    if not bool(getattr(automation_settings, "AE_RUNTIME_STATE_PERSIST_ENABLED", True)):
+        return False
+
+    snapshot_path = str(getattr(automation_settings, "AE_RUNTIME_STATE_SNAPSHOT_PATH", "")).strip()
+    if not snapshot_path:
+        return False
+
+    payload = {
+        "saved_at": utcnow().isoformat(),
+        "zone_service": zone_service.export_runtime_state(),
+    }
+    saved = RuntimeStateStore(snapshot_path).save(payload)
+    if saved:
+        logger.info("Runtime snapshot saved", extra={"snapshot_path": snapshot_path})
+    return saved
 
 
 def _should_emit_db_circuit_open_alert(now: datetime) -> bool:
@@ -1044,6 +1098,12 @@ async def main():
                             set_zone_service(_zone_service, loop_id=id(asyncio.get_running_loop()))
                         except ImportError:
                             logger.warning("API module not available, scheduler task executor fallback is disabled")
+                    global _runtime_state_restored
+                    if _zone_service is not None and not _runtime_state_restored:
+                        _runtime_state_restored = _restore_zone_runtime_state_snapshot(
+                            _zone_service,
+                            automation_settings,
+                        )
                     
                     # Get active zones with recipes через Circuit Breaker
                     try:
@@ -1208,6 +1268,10 @@ async def main():
                 logger.warning("Timeout saving PID state")
             except Exception as e:
                 logger.error(f"Error saving PID state: {e}", exc_info=True)
+            try:
+                _save_zone_runtime_state_snapshot(_zone_service, automation_settings)
+            except Exception as e:
+                logger.warning("Failed to save runtime snapshot: %s", e, exc_info=True)
         
         # 3. Останавливаем polling статусов команд
         if _command_tracker:

@@ -10,8 +10,11 @@ from main import (
     _extract_gh_uid_from_config,
     _should_emit_db_circuit_open_alert,
     _should_emit_config_fetch_error_alert,
+    _restore_zone_runtime_state_snapshot,
+    _save_zone_runtime_state_snapshot,
 )
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 
 
 @pytest.mark.asyncio
@@ -162,6 +165,30 @@ async def test_check_and_correct_zone_ph_correction():
         await check_and_correct_zone(1, mqtt, "gh-1", {}, zone_repo, telemetry_repo, node_repo, recipe_repo)
         # Should call process_zone
         mock_process.assert_called_once_with(1)
+
+
+def test_runtime_snapshot_save_and_restore(tmp_path):
+    class _ZoneServiceStub:
+        def __init__(self):
+            self.payload = {"ok": True}
+            self.restored = None
+
+        def export_runtime_state(self):
+            return self.payload
+
+        def restore_runtime_state(self, raw_state):
+            self.restored = raw_state
+
+    zone_service = _ZoneServiceStub()
+    settings = SimpleNamespace(
+        AE_RUNTIME_STATE_PERSIST_ENABLED=True,
+        AE_RUNTIME_STATE_SNAPSHOT_PATH=str(tmp_path / "ae_runtime_state.json"),
+    )
+
+    assert _save_zone_runtime_state_snapshot(zone_service, settings) is True
+    zone_service.restored = None
+    assert _restore_zone_runtime_state_snapshot(zone_service, settings) is True
+    assert zone_service.restored == zone_service.payload
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,8 @@ def test_automation_settings_defaults():
     assert settings.AE_EQUIPMENT_ANOMALY_GUARD_ENABLED is True
     assert settings.AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD == 3
     assert settings.AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES == 30
+    assert settings.AE_RUNTIME_STATE_PERSIST_ENABLED is True
+    assert settings.AE_RUNTIME_STATE_SNAPSHOT_PATH == "/tmp/ae_runtime_state_snapshot.json"
     
     # Восстанавливаем переменную окружения
     if old_max_concurrent_zones is not None:

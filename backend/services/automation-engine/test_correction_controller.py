@@ -1859,3 +1859,32 @@ async def test_structured_freshness_fail_closed_log(caplog):
     assert getattr(record, "component", None) == "correction_freshness"
     assert getattr(record, "zone_id", None) == 5
     assert getattr(record, "decision", None) == "skip"
+
+
+def test_correction_controller_runtime_state_roundtrip():
+    controller = CorrectionController(CorrectionType.PH)
+    now = time.monotonic()
+    controller._last_target_by_zone[1] = 6.3
+    controller._freshness_check_failure_count[1] = 2
+    controller._no_effect_streak_by_zone[1] = 1
+    controller._anomaly_blocked_until_by_zone[1] = now + 120.0
+    controller._pending_effect_window_by_zone[1] = {
+        "baseline_value": 6.5,
+        "target_value": 6.3,
+        "expected_direction": -1,
+        "correction_type": "add_acid",
+        "window_started_at": now,
+        "window_deadline_at": now + 90.0,
+        "window_sec": 180,
+        "correlation_id": "corr-test-1",
+    }
+
+    snapshot = controller.export_runtime_state()
+    restored = CorrectionController(CorrectionType.PH)
+    restored.restore_runtime_state(snapshot)
+
+    assert restored._last_target_by_zone[1] == pytest.approx(6.3, abs=0.001)
+    assert restored._freshness_check_failure_count[1] == 2
+    assert restored._no_effect_streak_by_zone[1] == 1
+    assert 1 in restored._anomaly_blocked_until_by_zone
+    assert 1 in restored._pending_effect_window_by_zone

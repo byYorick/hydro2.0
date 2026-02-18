@@ -7,8 +7,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S9` Correction/Policy Hardening: COMPLETED.
-- Next: `S10` Resilience Consolidation.
+- `S10` Resilience Consolidation: IN_PROGRESS.
+- Previous: `S9` Correction/Policy Hardening: COMPLETED.
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
@@ -41,10 +41,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 12. S8: deprecated `main.publish_correction_command()` использует gateway-path.
 13. S9: proactive correction (EWMA/slope) включен для pH/EC внутри dead-zone с cooldown gate и structured events.
 14. S9: anomaly guard `dose -> no_effect xN` добавлен с auto-block dosing (`status=degraded`) и kill-free rollback через env-flags.
+15. S10 (increment 1): runtime-state crash snapshot (`AE_RUNTIME_STATE_*`) добавлен для `_zone_states` + correction runtime maps с restore на startup/shutdown.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
-2. Неполный crash-recovery runtime maps (`_zone_states`, cooldown/alert-throttle caches, target-history maps, proactive/anomaly pending maps) до внедрения unified serialization contracts.
+2. Crash-recovery runtime maps частично закрыт snapshot-механизмом; остается унификация cross-process reconcile/acceptance для auto-recovery offline нод.
 
 ## 6. Flaky tests / проблемы
 - На момент обновления: не зафиксировано.
@@ -99,3 +100,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/test_correction_cooldown.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S09_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_CORRECTION_POLICY_HARDENING_S9.md`
+- `backend/services/automation-engine/infrastructure/runtime_state_store.py`
+- `backend/services/automation-engine/test_runtime_state_store.py`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_RESILIENCE_CONSOLIDATION_S10.md`

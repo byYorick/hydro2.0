@@ -198,6 +198,114 @@ class ZoneAutomationService:
         """Сохранить состояние всех PID контроллеров."""
         await self.ph_controller.save_all_states()
         await self.ec_controller.save_all_states()
+
+    @staticmethod
+    def _serialize_dt(value: Any) -> Optional[str]:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return None
+
+    @staticmethod
+    def _deserialize_dt(value: Any) -> Optional[datetime]:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    def export_runtime_state(self) -> Dict[str, Any]:
+        zone_states: Dict[str, Any] = {}
+        for zone_id, state in self._zone_states.items():
+            if not isinstance(state, dict):
+                continue
+            serialized_state = dict(state)
+            for key, raw_value in list(serialized_state.items()):
+                if isinstance(raw_value, datetime):
+                    serialized_state[key] = raw_value.isoformat()
+            zone_states[str(zone_id)] = serialized_state
+
+        def _serialize_controller_map(raw: Dict[tuple[int, str], datetime]) -> Dict[str, str]:
+            payload: Dict[str, str] = {}
+            for (zone_id, controller_name), dt_value in raw.items():
+                if isinstance(dt_value, datetime):
+                    payload[f"{int(zone_id)}::{str(controller_name)}"] = dt_value.isoformat()
+            return payload
+
+        return {
+            "zone_states": zone_states,
+            "controller_failures": _serialize_controller_map(self._controller_failures),
+            "controller_cooldown_reported_at": _serialize_controller_map(self._controller_cooldown_reported_at),
+            "controller_circuit_open_reported_at": _serialize_controller_map(self._controller_circuit_open_reported_at),
+            "correction_sensor_mode_state": {
+                str(zone_id): bool(value)
+                for zone_id, value in self._correction_sensor_mode_state.items()
+            },
+            "ph_controller": self.ph_controller.export_runtime_state(),
+            "ec_controller": self.ec_controller.export_runtime_state(),
+        }
+
+    def restore_runtime_state(self, raw_state: Optional[Dict[str, Any]]) -> None:
+        state = raw_state or {}
+
+        zone_states: Dict[int, Dict[str, Any]] = {}
+        raw_zone_states = state.get("zone_states")
+        if isinstance(raw_zone_states, dict):
+            for key, payload in raw_zone_states.items():
+                if not isinstance(payload, dict):
+                    continue
+                try:
+                    zone_id = int(key)
+                except (TypeError, ValueError):
+                    continue
+                normalized = dict(payload)
+                for field in (
+                    "next_allowed_run_at",
+                    "last_backoff_reported_until",
+                    "last_missing_targets_report_at",
+                    "last_missing_correction_flags_report_at",
+                    "last_stale_correction_flags_report_at",
+                    "last_correction_skip_event_at",
+                    "workflow_phase_updated_at",
+                ):
+                    normalized[field] = self._deserialize_dt(normalized.get(field))
+                zone_states[zone_id] = normalized
+        self._zone_states = zone_states
+
+        def _deserialize_controller_map(raw: Any) -> Dict[tuple[int, str], datetime]:
+            result: Dict[tuple[int, str], datetime] = {}
+            if not isinstance(raw, dict):
+                return result
+            for key, value in raw.items():
+                if not isinstance(key, str) or "::" not in key:
+                    continue
+                zone_part, controller_name = key.split("::", 1)
+                dt_value = self._deserialize_dt(value)
+                if dt_value is None:
+                    continue
+                try:
+                    zone_id = int(zone_part)
+                except (TypeError, ValueError):
+                    continue
+                result[(zone_id, controller_name)] = dt_value
+            return result
+
+        self._controller_failures = _deserialize_controller_map(state.get("controller_failures"))
+        self._controller_cooldown_reported_at = _deserialize_controller_map(state.get("controller_cooldown_reported_at"))
+        self._controller_circuit_open_reported_at = _deserialize_controller_map(state.get("controller_circuit_open_reported_at"))
+
+        raw_sensor_mode = state.get("correction_sensor_mode_state")
+        sensor_mode: Dict[int, bool] = {}
+        if isinstance(raw_sensor_mode, dict):
+            for key, value in raw_sensor_mode.items():
+                try:
+                    sensor_mode[int(key)] = bool(value)
+                except (TypeError, ValueError):
+                    continue
+        self._correction_sensor_mode_state = sensor_mode
+
+        self.ph_controller.restore_runtime_state(state.get("ph_controller"))
+        self.ec_controller.restore_runtime_state(state.get("ec_controller"))
     
     async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] = None) -> None:
         await policy_process_zone_cycle(

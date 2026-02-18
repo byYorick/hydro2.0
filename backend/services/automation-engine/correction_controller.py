@@ -207,6 +207,107 @@ class CorrectionController:
             "block_until_monotonic": block_until,
             "pending": pending,
         }
+
+    @staticmethod
+    def _normalize_int_key_map(raw: Any, *, value_cast) -> Dict[int, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        result: Dict[int, Any] = {}
+        for key, value in raw.items():
+            try:
+                zone_id = int(key)
+                result[zone_id] = value_cast(value)
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    def export_runtime_state(self) -> Dict[str, Any]:
+        now_mono = time.monotonic()
+        pending_effect: Dict[str, Any] = {}
+        for zone_id, payload in (self._pending_effect_window_by_zone or {}).items():
+            if not isinstance(payload, dict):
+                continue
+            deadline = float(payload.get("window_deadline_at") or 0.0)
+            remaining = max(0.0, deadline - now_mono)
+            pending_effect[str(zone_id)] = {
+                "baseline_value": payload.get("baseline_value"),
+                "target_value": payload.get("target_value"),
+                "expected_direction": payload.get("expected_direction"),
+                "correction_type": payload.get("correction_type"),
+                "correlation_id": payload.get("correlation_id"),
+                "window_sec": payload.get("window_sec"),
+                "remaining_sec": remaining,
+            }
+
+        anomaly_block: Dict[str, Any] = {}
+        for zone_id, blocked_until in (self._anomaly_blocked_until_by_zone or {}).items():
+            remaining = max(0.0, float(blocked_until) - now_mono)
+            anomaly_block[str(zone_id)] = {"remaining_sec": remaining}
+
+        return {
+            "last_target_by_zone": {str(k): float(v) for k, v in self._last_target_by_zone.items()},
+            "freshness_check_failure_count": {str(k): int(v) for k, v in self._freshness_check_failure_count.items()},
+            "no_effect_streak_by_zone": {str(k): int(v) for k, v in self._no_effect_streak_by_zone.items()},
+            "pending_effect_window_by_zone": pending_effect,
+            "anomaly_blocked_by_zone": anomaly_block,
+        }
+
+    def restore_runtime_state(self, raw_state: Optional[Dict[str, Any]]) -> None:
+        state = raw_state or {}
+        now_mono = time.monotonic()
+
+        self._last_target_by_zone = self._normalize_int_key_map(
+            state.get("last_target_by_zone"),
+            value_cast=lambda value: float(value),
+        )
+        self._last_target_ts_by_zone = {zone_id: now_mono for zone_id in self._last_target_by_zone}
+        self._freshness_check_failure_count = self._normalize_int_key_map(
+            state.get("freshness_check_failure_count"),
+            value_cast=lambda value: int(value),
+        )
+        self._no_effect_streak_by_zone = self._normalize_int_key_map(
+            state.get("no_effect_streak_by_zone"),
+            value_cast=lambda value: int(value),
+        )
+
+        pending_effect: Dict[int, Dict[str, Any]] = {}
+        pending_raw = state.get("pending_effect_window_by_zone")
+        if isinstance(pending_raw, dict):
+            for key, payload in pending_raw.items():
+                if not isinstance(payload, dict):
+                    continue
+                try:
+                    zone_id = int(key)
+                    remaining_sec = max(0.0, float(payload.get("remaining_sec") or 0.0))
+                    window_sec = max(30, int(payload.get("window_sec") or 180))
+                    pending_effect[zone_id] = {
+                        "baseline_value": float(payload.get("baseline_value") or 0.0),
+                        "target_value": float(payload.get("target_value") or 0.0),
+                        "expected_direction": int(payload.get("expected_direction") or 1),
+                        "correction_type": str(payload.get("correction_type") or ""),
+                        "correlation_id": str(payload.get("correlation_id") or ""),
+                        "window_started_at": now_mono,
+                        "window_deadline_at": now_mono + remaining_sec,
+                        "window_sec": window_sec,
+                    }
+                except (TypeError, ValueError):
+                    continue
+        self._pending_effect_window_by_zone = pending_effect
+
+        anomaly_blocks: Dict[int, float] = {}
+        blocks_raw = state.get("anomaly_blocked_by_zone")
+        if isinstance(blocks_raw, dict):
+            for key, payload in blocks_raw.items():
+                try:
+                    zone_id = int(key)
+                    if isinstance(payload, dict):
+                        remaining_sec = max(0.0, float(payload.get("remaining_sec") or 0.0))
+                    else:
+                        remaining_sec = max(0.0, float(payload))
+                    anomaly_blocks[zone_id] = now_mono + remaining_sec
+                except (TypeError, ValueError):
+                    continue
+        self._anomaly_blocked_until_by_zone = anomaly_blocks
     
     async def check_and_correct(
         self,

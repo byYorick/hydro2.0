@@ -1048,6 +1048,29 @@ def _build_zone_service() -> ZoneAutomationService:
     )
 
 
+def test_zone_automation_service_runtime_state_roundtrip():
+    service = _build_zone_service()
+    zone_id = 900
+    state = service._get_zone_state(zone_id)
+    state["error_streak"] = 3
+    state["next_allowed_run_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+    state["workflow_phase"] = "tank_recirc"
+    service._controller_failures[(zone_id, "climate")] = datetime.now(timezone.utc).replace(tzinfo=None)
+    service._correction_sensor_mode_state[zone_id] = True
+    service.ph_controller._last_target_by_zone[zone_id] = 6.2
+
+    snapshot = service.export_runtime_state()
+    restored = _build_zone_service()
+    restored.restore_runtime_state(snapshot)
+
+    restored_state = restored._get_zone_state(zone_id)
+    assert restored_state["error_streak"] == 3
+    assert restored_state["workflow_phase"] == "tank_recirc"
+    assert (zone_id, "climate") in restored._controller_failures
+    assert restored._correction_sensor_mode_state[zone_id] is True
+    assert restored.ph_controller._last_target_by_zone[zone_id] == pytest.approx(6.2, abs=0.001)
+
+
 @pytest.mark.asyncio
 async def test_workflow_phase_restore_uses_latest_zone_event_once():
     service = _build_zone_service()
