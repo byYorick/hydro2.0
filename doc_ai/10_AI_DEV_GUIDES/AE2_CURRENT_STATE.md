@@ -63,6 +63,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 33. S10 (increment 19): scheduler execution error/reason/mode constants (`task_*`, `command_bus_*`, `execution_exception`) выровнены через `resilience_contract` в API-layer paths.
 34. S10 (increment 20): добавлены counters для scheduler resiliency (`decision_retry_enqueue_total`, `scheduler_dedupe_decisions_total`) + финальный stage report.
 35. S11 (increment 1): bootstrap rollout/integration contract расширен (`rollout_profile`, `tier2_capabilities`) + метрика `scheduler_bootstrap_status_total`.
+36. S11 (increment 2): bootstrap `status/reason` literals выровнены по contract constants в API/bootstrap paths.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.

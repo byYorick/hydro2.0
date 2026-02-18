@@ -23,6 +23,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `AE2_TIER2_GDD_ENABLED`;
 - `AE2_TIER2_APPROVALS_ENABLED`;
 - `AE2_TIER2_DAILY_DIGEST_ENABLED`.
+4. Bootstrap contract literals (`status/reason`) нормализованы через `resilience_contract` constants.
 
 ## 3. Что не менялось
 1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.

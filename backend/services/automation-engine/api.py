@@ -129,6 +129,8 @@ from application.api_scheduler_helpers import (
     task_payload_matches as policy_task_payload_matches,
 )
 from services.resilience_contract import (
+    SCHEDULER_BOOTSTRAP_STATUS_READY,
+    SCHEDULER_BOOTSTRAP_STATUS_WAIT,
     SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH,
     SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE,
     SCHEDULER_ERR_EXECUTION_EXCEPTION,
@@ -136,6 +138,7 @@ from services.resilience_contract import (
     SCHEDULER_ERR_TASK_EXECUTION_FAILED,
     SCHEDULER_ERR_TASK_EXPIRED,
     SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH,
+    SCHEDULER_STATUS_ACCEPTED,
 )
 
 logger = logging.getLogger(__name__)
@@ -495,19 +498,19 @@ async def _scheduler_bootstrap_state() -> Tuple[str, str]:
         loop_mismatch_code=ERR_COMMAND_BUS_LOOP_MISMATCH,
     )
     if not command_bus_ready:
-        return "wait", command_bus_reason
+        return SCHEDULER_BOOTSTRAP_STATUS_WAIT, command_bus_reason
 
     db_ready, db_reason = await policy_is_db_ready(fetch_fn=fetch, logger=logger)
     if not db_ready:
-        return "wait", db_reason
+        return SCHEDULER_BOOTSTRAP_STATUS_WAIT, db_reason
 
     bootstrap_store_ready, bootstrap_store_reason = policy_is_bootstrap_store_ready(
         scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
         scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
     )
     if not bootstrap_store_ready:
-        return "wait", bootstrap_store_reason
-    return "ready", "ok"
+        return SCHEDULER_BOOTSTRAP_STATUS_WAIT, bootstrap_store_reason
+    return SCHEDULER_BOOTSTRAP_STATUS_READY, "ok"
 
 
 async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optional[Dict[str, Any]]:
@@ -522,7 +525,7 @@ async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optiona
 async def _create_scheduler_task(
     req: SchedulerTaskRequest,
     *,
-    initial_status: str = "accepted",
+    initial_status: str = SCHEDULER_STATUS_ACCEPTED,
     initial_result: Optional[Dict[str, Any]] = None,
     initial_error: Optional[str] = None,
     initial_error_code: Optional[str] = None,

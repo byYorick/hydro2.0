@@ -32,6 +32,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `AE2_TIER2_GDD_ENABLED`;
 - `AE2_TIER2_APPROVALS_ENABLED`;
 - `AE2_TIER2_DAILY_DIGEST_ENABLED`.
+4. Bootstrap status/reason literals переведены на contract constants в `resilience_contract`.
 
 ## 4. Остаток S11 (open)
 1. Нормализовать cutover observability dashboard contract (required metrics/events list).
@@ -40,4 +41,3 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 5. Тесты текущего инкремента
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py test_scheduler_task_executor.py`
-

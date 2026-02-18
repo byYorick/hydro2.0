@@ -8,6 +8,12 @@ from typing import Any, Awaitable, Callable, Dict, Tuple
 from fastapi import HTTPException
 from prometheus_client import Counter
 from services.resilience_contract import (
+    SCHEDULER_BOOTSTRAP_REASON_AUTOMATION_NOT_READY,
+    SCHEDULER_BOOTSTRAP_REASON_LEASE_NOT_FOUND,
+    SCHEDULER_BOOTSTRAP_REASON_PROTOCOL_NOT_SUPPORTED,
+    SCHEDULER_BOOTSTRAP_STATUS_DENY,
+    SCHEDULER_BOOTSTRAP_STATUS_READY,
+    SCHEDULER_BOOTSTRAP_STATUS_WAIT,
     SCHEDULER_BOOTSTRAP_REQUIRED,
     SCHEDULER_LEASE_EXPIRED,
     SCHEDULER_LEASE_MISMATCH,
@@ -71,8 +77,8 @@ async def build_scheduler_bootstrap_response(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     bootstrap_status, readiness_reason = await scheduler_bootstrap_state_fn()
     if not is_scheduler_protocol_supported_fn(req.protocol_version):
-        bootstrap_status = "deny"
-        readiness_reason = "protocol_not_supported"
+        bootstrap_status = SCHEDULER_BOOTSTRAP_STATUS_DENY
+        readiness_reason = SCHEDULER_BOOTSTRAP_REASON_PROTOCOL_NOT_SUPPORTED
 
     response_payload: Dict[str, Any] = {
         "bootstrap_status": bootstrap_status,
@@ -84,13 +90,17 @@ async def build_scheduler_bootstrap_response(
         "tier2_capabilities": dict(tier2_capabilities),
         "server_time": now.isoformat(),
     }
-    if bootstrap_status != "ready":
-        response_payload["reason"] = "automation_not_ready" if bootstrap_status == "wait" else readiness_reason
+    if bootstrap_status != SCHEDULER_BOOTSTRAP_STATUS_READY:
+        response_payload["reason"] = (
+            SCHEDULER_BOOTSTRAP_REASON_AUTOMATION_NOT_READY
+            if bootstrap_status == SCHEDULER_BOOTSTRAP_STATUS_WAIT
+            else readiness_reason
+        )
         response_payload["readiness_reason"] = readiness_reason
 
     async with scheduler_bootstrap_lock:
         cleanup_bootstrap_leases_locked_fn(now)
-        if bootstrap_status == "ready":
+        if bootstrap_status == SCHEDULER_BOOTSTRAP_STATUS_READY:
             current = scheduler_bootstrap_leases.get(req.scheduler_id)
             lease_id = (
                 str(current.get("lease_id"))
@@ -149,8 +159,8 @@ async def build_scheduler_bootstrap_heartbeat_response(
             return {
                 "status": "ok",
                 "data": {
-                    "bootstrap_status": "wait",
-                    "reason": "lease_not_found",
+                    "bootstrap_status": SCHEDULER_BOOTSTRAP_STATUS_WAIT,
+                    "reason": SCHEDULER_BOOTSTRAP_REASON_LEASE_NOT_FOUND,
                     "poll_interval_sec": scheduler_bootstrap_poll_interval_sec,
                     "rollout_profile": rollout_profile,
                     "tier2_capabilities": dict(tier2_capabilities),
@@ -158,13 +168,13 @@ async def build_scheduler_bootstrap_heartbeat_response(
                 },
             }
         bootstrap_status, readiness_reason = await scheduler_bootstrap_state_fn()
-        if bootstrap_status != "ready":
+        if bootstrap_status != SCHEDULER_BOOTSTRAP_STATUS_READY:
             scheduler_bootstrap_leases.pop(req.scheduler_id, None)
             return {
                 "status": "ok",
                 "data": {
-                    "bootstrap_status": "wait",
-                    "reason": "automation_not_ready",
+                    "bootstrap_status": SCHEDULER_BOOTSTRAP_STATUS_WAIT,
+                    "reason": SCHEDULER_BOOTSTRAP_REASON_AUTOMATION_NOT_READY,
                     "readiness_reason": readiness_reason,
                     "poll_interval_sec": scheduler_bootstrap_poll_interval_sec,
                     "rollout_profile": rollout_profile,
@@ -176,7 +186,7 @@ async def build_scheduler_bootstrap_heartbeat_response(
         lease["last_heartbeat_at"] = now
         lease["expires_at"] = now + timedelta(seconds=scheduler_bootstrap_lease_ttl_sec)
         response_payload = {
-            "bootstrap_status": "ready",
+            "bootstrap_status": SCHEDULER_BOOTSTRAP_STATUS_READY,
             "lease_id": req.lease_id,
             "lease_ttl_sec": scheduler_bootstrap_lease_ttl_sec,
             "lease_expires_at": lease["expires_at"].isoformat(),
