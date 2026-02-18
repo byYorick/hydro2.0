@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.9  
+**Версия:** v1.0  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -146,6 +146,15 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `domain/workflows/cycle_start_core.py`,
   - `error_handler.py` (`infra_unknown_error` через контрактную константу).
 
+16. CommandBus contract alignment:
+- `resilience_contract.py` расширен кодами `infra_command_*` для:
+  - node-zone validation/mismatch,
+  - channel type validation/mismatch,
+  - publish failure paths (send/timeout/decode),
+  - closed-loop terminal status mapping.
+- применено в:
+  - `infrastructure/command_bus.py` (включая `_emit_publish_failure_alert` и `_emit_closed_loop_failure_alert`).
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -155,6 +164,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. `pytest -q test_zone_automation_service.py test_correction_controller.py test_main.py test_config_settings.py` -> `119 passed`.
 2. `pytest test_workflow_phase_sync_core.py test_device_task_core.py test_task_events_persistence.py test_diagnostics_execution.py test_scheduler_task_executor.py test_api.py` -> `150 passed`.
 3. `pytest test_cycle_start_refill_policy.py test_error_handler.py test_scheduler_task_executor.py test_api.py` -> `152 passed`.
+4. `pytest test_command_bus.py test_scheduler_task_executor.py test_api.py` -> `161 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).

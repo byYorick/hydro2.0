@@ -18,6 +18,22 @@ from .command_audit import CommandAudit
 from utils.logging_context import get_trace_id
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from decision_context import ContextLike, normalize_context
+from services.resilience_contract import (
+    INFRA_COMMAND_BUSY,
+    INFRA_COMMAND_CHANNEL_TYPE_VALIDATION_FAILED,
+    INFRA_COMMAND_EFFECT_NOT_CONFIRMED,
+    INFRA_COMMAND_FAILED,
+    INFRA_COMMAND_INVALID,
+    INFRA_COMMAND_INVALID_CHANNEL_TYPE,
+    INFRA_COMMAND_NO_EFFECT,
+    INFRA_COMMAND_NODE_ZONE_MISMATCH,
+    INFRA_COMMAND_NODE_ZONE_VALIDATION_FAILED,
+    INFRA_COMMAND_PUBLISH_RESPONSE_DECODE_ERROR,
+    INFRA_COMMAND_SEND_FAILED,
+    INFRA_COMMAND_TIMEOUT,
+    INFRA_COMMAND_TRACKER_UNAVAILABLE,
+    INFRA_UNKNOWN_ERROR,
+)
 
 logger = logging.getLogger(__name__)
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -121,7 +137,7 @@ class CommandBus:
             )
             await send_infra_exception_alert(
                 error=exc,
-                code="infra_command_node_zone_validation_failed",
+                code=INFRA_COMMAND_NODE_ZONE_VALIDATION_FAILED,
                 alert_type="Command Node-Zone Validation Failed",
                 severity="critical",
                 zone_id=zone_id,
@@ -149,7 +165,7 @@ class CommandBus:
             except Exception:
                 logger.warning("Zone %s: failed to create COMMAND_ZONE_NODE_MISMATCH event", zone_id, exc_info=True)
             await send_infra_alert(
-                code="infra_command_node_zone_mismatch",
+                code=INFRA_COMMAND_NODE_ZONE_MISMATCH,
                 alert_type="Command Node-Zone Mismatch",
                 message=f"Команда {cmd} отклонена: node_uid={node_uid} не найден",
                 severity="critical",
@@ -186,7 +202,7 @@ class CommandBus:
             except Exception:
                 logger.warning("Zone %s: failed to create COMMAND_ZONE_NODE_MISMATCH event", zone_id, exc_info=True)
             await send_infra_alert(
-                code="infra_command_node_zone_mismatch",
+                code=INFRA_COMMAND_NODE_ZONE_MISMATCH,
                 alert_type="Command Node-Zone Mismatch",
                 message=(
                     f"Команда {cmd} отклонена: node_uid={node_uid} закреплен за zone_id={actual_zone_id}, "
@@ -306,7 +322,7 @@ class CommandBus:
             )
             await send_infra_exception_alert(
                 error=exc,
-                code="infra_command_channel_type_validation_failed",
+                code=INFRA_COMMAND_CHANNEL_TYPE_VALIDATION_FAILED,
                 alert_type="Command Channel Type Validation Failed",
                 severity="critical",
                 zone_id=zone_id,
@@ -378,7 +394,7 @@ class CommandBus:
             },
         )
         await send_infra_alert(
-            code="infra_command_invalid_channel_type",
+            code=INFRA_COMMAND_INVALID_CHANNEL_TYPE,
             alert_type="Command Channel Type Mismatch",
             message=f"Команда {cmd} отклонена: несовместимый тип канала {channel}",
             severity="warning",
@@ -436,7 +452,7 @@ class CommandBus:
         error_type: Optional[str],
         http_status: Optional[int] = None,
     ) -> None:
-        severity = "critical" if code in {"infra_command_send_failed", "infra_command_timeout"} else "error"
+        severity = "critical" if code in {INFRA_COMMAND_SEND_FAILED, INFRA_COMMAND_TIMEOUT} else "error"
         await send_infra_alert(
             code=code,
             alert_type="Command Publish Failed",
@@ -468,15 +484,15 @@ class CommandBus:
     ) -> None:
         status = str(terminal_status or "").strip().upper() or "UNKNOWN"
         code_map = {
-            "SEND_FAILED": ("infra_command_send_failed", "critical"),
-            "TRACKER_UNAVAILABLE": ("infra_command_tracker_unavailable", "error"),
-            "TIMEOUT": ("infra_command_timeout", "critical"),
-            "ERROR": ("infra_command_failed", "error"),
-            "INVALID": ("infra_command_invalid", "error"),
-            "BUSY": ("infra_command_busy", "warning"),
-            "NO_EFFECT": ("infra_command_no_effect", "warning"),
+            "SEND_FAILED": (INFRA_COMMAND_SEND_FAILED, "critical"),
+            "TRACKER_UNAVAILABLE": (INFRA_COMMAND_TRACKER_UNAVAILABLE, "error"),
+            "TIMEOUT": (INFRA_COMMAND_TIMEOUT, "critical"),
+            "ERROR": (INFRA_COMMAND_FAILED, "error"),
+            "INVALID": (INFRA_COMMAND_INVALID, "error"),
+            "BUSY": (INFRA_COMMAND_BUSY, "warning"),
+            "NO_EFFECT": (INFRA_COMMAND_NO_EFFECT, "warning"),
         }
-        code, severity = code_map.get(status, ("infra_command_effect_not_confirmed", "error"))
+        code, severity = code_map.get(status, (INFRA_COMMAND_EFFECT_NOT_CONFIRMED, "error"))
         await send_infra_alert(
             code=code,
             alert_type="Command Closed-Loop Not Confirmed",
@@ -670,7 +686,7 @@ class CommandBus:
                         },
                     )
                     await self._emit_publish_failure_alert(
-                        code="infra_command_publish_response_decode_error",
+                        code=INFRA_COMMAND_PUBLISH_RESPONSE_DECODE_ERROR,
                         zone_id=zone_id,
                         node_uid=node_uid,
                         channel=channel,
@@ -706,7 +722,7 @@ class CommandBus:
                     },
                 )
                 await self._emit_publish_failure_alert(
-                    code="infra_command_send_failed",
+                    code=INFRA_COMMAND_SEND_FAILED,
                     zone_id=zone_id,
                     node_uid=node_uid,
                     channel=channel,
@@ -736,7 +752,7 @@ class CommandBus:
                 },
             )
             await self._emit_publish_failure_alert(
-                code="infra_command_timeout",
+                code=INFRA_COMMAND_TIMEOUT,
                 zone_id=zone_id,
                 node_uid=node_uid,
                 channel=channel,
@@ -764,7 +780,7 @@ class CommandBus:
                 },
             )
             await self._emit_publish_failure_alert(
-                code="infra_command_send_failed",
+                code=INFRA_COMMAND_SEND_FAILED,
                 zone_id=zone_id,
                 node_uid=node_uid,
                 channel=channel,
@@ -793,7 +809,7 @@ class CommandBus:
             )
             await send_infra_exception_alert(
                 error=e,
-                code="infra_unknown_error",
+                code=INFRA_UNKNOWN_ERROR,
                 alert_type="Command Publish Unexpected Error",
                 severity="error",
                 zone_id=zone_id,
