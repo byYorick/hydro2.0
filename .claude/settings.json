@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Read(//home/georgiy/esp/hydro/hydro2.0/**)"
+    ]
+  }
+}

@@ -44,6 +44,29 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Паттерны задач
 - Примеры использования
 
+### Планы и rollout
+
+#### [AI_AGENT_EXECUTION_PLAN_V2.md](AI_AGENT_EXECUTION_PLAN_V2.md)
+**Операционный план выполнения задач ИИ-агентов**
+- Последовательность этапов исполнения
+- Контрольные точки и результаты
+
+#### [AUTOMATION_LOGIC_AI_AGENT_PLAN.md](AUTOMATION_LOGIC_AI_AGENT_PLAN.md)
+**План работ по automation-логике**
+- Разделение ответственности scheduler/automation-engine
+- Этапы внедрения и критерии готовности
+
+#### [ACCESS_CONTROL_ENFORCE_ROLLOUT.md](ACCESS_CONTROL_ENFORCE_ROLLOUT.md)
+**План rollout для access control**
+- Порядок включения enforcement
+- Риски и обратимость
+
+#### [AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md](AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md)
+**Мастер-план AE2 (эволюционное развитие automation-engine)**
+- Целевая архитектура отказоустойчивого AE2
+- Пошаговый roadmap для ИИ-ассистентов (куда смотреть/что делать/что на выходе)
+- Модель расширяемых topology/workflow плагинов
+
 ### Специализированные гайды
 
 #### [BACKEND_LARAVEL_PG_AI_GUIDE.md](BACKEND_LARAVEL_PG_AI_GUIDE.md)
@@ -63,12 +86,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Структура топиков
 - Форматы сообщений
 - Работа с MQTT
-
-#### [ZONE_CONTROLLERS_AI_GUIDE.md](ZONE_CONTROLLERS_AI_GUIDE.md)
-**Гайд по контроллерам зон**
-- Архитектура контроллеров
-- Реализация контроллеров
-- Тестирование
 
 #### [PYTHON_MQTT_SERVICE_AI_GUIDE.md](PYTHON_MQTT_SERVICE_AI_GUIDE.md)
 **Гайд по Python MQTT сервисам**
