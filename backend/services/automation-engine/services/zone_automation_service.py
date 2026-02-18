@@ -282,6 +282,8 @@ class ZoneAutomationService:
                     "last_missing_correction_flags_report_at",
                     "last_stale_correction_flags_report_at",
                     "last_correction_skip_event_at",
+                    "required_nodes_offline_since",
+                    "last_required_nodes_offline_report_at",
                     "workflow_phase_updated_at",
                 ):
                     normalized[field] = self._deserialize_dt(normalized.get(field))

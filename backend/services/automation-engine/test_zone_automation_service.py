@@ -1156,6 +1156,53 @@ async def test_required_nodes_offline_restart_parity_reconciles_after_restore():
 
 
 @pytest.mark.asyncio
+async def test_required_nodes_offline_restart_parity_preserves_throttle_for_long_offline_window():
+    service = _build_zone_service()
+    zone_id = 904
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {}, "missing_types": ["ph"]}
+    )
+    service._emit_required_nodes_offline_signal = AsyncMock()
+    service._emit_required_nodes_recovered_signal = AsyncMock()
+
+    first_gate = await service._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True},
+    )
+    assert first_gate is False
+    service._emit_required_nodes_offline_signal.assert_awaited_once()
+
+    snapshot = service.export_runtime_state()
+    restored = _build_zone_service()
+    restored.restore_runtime_state(snapshot)
+    restored._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {}, "missing_types": ["ph"]}
+    )
+    restored._emit_required_nodes_offline_signal = AsyncMock()
+    restored._emit_required_nodes_recovered_signal = AsyncMock()
+
+    # Immediately after restart and with unchanged missing set, offline alert should stay throttled.
+    second_gate = await restored._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True},
+    )
+    assert second_gate is False
+    restored._emit_required_nodes_offline_signal.assert_not_awaited()
+
+    # Simulate long offline window after restart: throttle elapsed -> re-emit offline signal.
+    restored_state = restored._get_zone_state(zone_id)
+    restored_state["last_required_nodes_offline_report_at"] = (
+        datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+    )
+    third_gate = await restored._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True},
+    )
+    assert third_gate is False
+    restored._emit_required_nodes_offline_signal.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_required_nodes_recovery_gate_blocks_cycle_when_missing_nodes():
     service = _build_zone_service()
     service._check_required_nodes_online = AsyncMock(

@@ -43,6 +43,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 13. `command_bus` validation/publish/closed-loop infra-alert codes выровнены по `resilience_contract`.
 14. `main.py` и `recipe_repository.py` infra-alert codes выровнены по `resilience_contract`; literal `code=\"infra_*\"` устранены в production paths.
 15. dynamic `decision_alerts` infra-code pattern выровнен через `resilience_contract.build_decision_alert_code()` с unit coverage.
+16. расширен restart parity для offline required-nodes окна: throttle continuity сохраняется после restore runtime-state.
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.
