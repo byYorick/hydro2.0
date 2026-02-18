@@ -1203,6 +1203,41 @@ async def test_required_nodes_offline_restart_parity_preserves_throttle_for_long
 
 
 @pytest.mark.asyncio
+async def test_required_nodes_offline_restart_parity_reemits_when_missing_set_changes():
+    service = _build_zone_service()
+    zone_id = 905
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ec", "ph"], "online_counts": {"ec": 1}, "missing_types": ["ph"]}
+    )
+    service._emit_required_nodes_offline_signal = AsyncMock()
+    service._emit_required_nodes_recovered_signal = AsyncMock()
+
+    first_gate = await service._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True, "ec_control": True},
+    )
+    assert first_gate is False
+    service._emit_required_nodes_offline_signal.assert_awaited_once()
+
+    snapshot = service.export_runtime_state()
+    restored = _build_zone_service()
+    restored.restore_runtime_state(snapshot)
+    restored._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ec", "ph"], "online_counts": {}, "missing_types": ["ec", "ph"]}
+    )
+    restored._emit_required_nodes_offline_signal = AsyncMock()
+    restored._emit_required_nodes_recovered_signal = AsyncMock()
+
+    # Missing set changed after restart: should re-emit immediately, despite throttle window.
+    second_gate = await restored._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True, "ec_control": True},
+    )
+    assert second_gate is False
+    restored._emit_required_nodes_offline_signal.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_required_nodes_recovery_gate_blocks_cycle_when_missing_nodes():
     service = _build_zone_service()
     service._check_required_nodes_online = AsyncMock(

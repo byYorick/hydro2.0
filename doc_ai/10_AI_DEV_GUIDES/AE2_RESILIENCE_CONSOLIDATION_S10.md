@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v1.3  
+**Версия:** v1.4  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -176,6 +176,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `test_required_nodes_offline_restart_parity_preserves_throttle_for_long_offline_window`
   - сценарий: offline -> snapshot/restore -> offline unchanged (throttled) -> long offline elapsed (re-emit).
 
+20. Offline-window restart parity + missing-set delta:
+- добавлен acceptance тест:
+  - `test_required_nodes_offline_restart_parity_reemits_when_missing_set_changes`
+  - сценарий: offline (`missing=["ph"]`) -> snapshot/restore -> offline (`missing=["ph","ec"]`) -> immediate re-emit внутри throttle окна.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -189,6 +194,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 5. `pytest test_main.py test_repositories.py test_api.py` -> `100 passed`.
 6. `pytest test_decision_alerts.py test_scheduler_task_executor.py test_api.py` -> `140 passed`.
 7. `pytest test_zone_automation_service.py test_main.py test_scheduler_task_executor.py` -> `131 passed`.
+8. `pytest test_zone_automation_service.py` -> `52 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).
