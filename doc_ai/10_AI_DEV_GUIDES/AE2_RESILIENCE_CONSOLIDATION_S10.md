@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.3  
+**Версия:** v0.4  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -86,13 +86,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - missing-set change (немедленный re-emit),
   - process-cycle freeze path (контроллеры не запускаются, error_streak/backoff растёт).
 
+9. Retry/Unconfirmed resilience contract alignment:
+- `correction_command_retry.py` переведен на `resilience_contract` для infra-alert codes:
+  - `infra_correction_command_unconfirmed`,
+  - `infra_ec_batch_partial_failure_compensation_enqueue_failed`.
+- unit coverage:
+  - `test_correction_controller.py` проверяет contract-code в terminal-error retry path.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
 3. `CommandBus`/publish-path не модифицировались.
 
 ## 4. Тесты
-1. `pytest -q test_runtime_state_store.py test_zone_node_recovery.py test_main.py test_zone_automation_service.py test_correction_controller.py test_config_settings.py` -> `124 passed`.
+1. `pytest -q test_correction_controller.py test_zone_node_recovery.py test_zone_automation_service.py test_main.py test_config_settings.py` -> `123 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).

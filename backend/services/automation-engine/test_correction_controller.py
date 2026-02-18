@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from correction_controller import CorrectionController, CorrectionType
 from correction_command_retry import publish_controller_command_with_retry
 from correction_freshness import validate_freshness_or_skip
+from services.resilience_contract import INFRA_CORRECTION_COMMAND_UNCONFIRMED
 
 
 class _PidZone:
@@ -1830,6 +1831,7 @@ async def test_retry_emits_terminal_error_details_from_tracker_outcome():
     assert event_payload["terminal_error_message"] == "node is not activated"
 
     send_kwargs = send_infra_alert_fn.await_args.kwargs
+    assert send_kwargs["code"] == INFRA_CORRECTION_COMMAND_UNCONFIRMED
     assert send_kwargs["details"]["terminal_status"] == "ERROR"
     assert send_kwargs["details"]["terminal_error_code"] == "node_not_activated"
     assert send_kwargs["details"]["terminal_error_message"] == "node is not activated"

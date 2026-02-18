@@ -11,6 +11,10 @@ INFRA_CONTROLLER_COOLDOWN_SKIP = "infra_controller_cooldown_skip"
 INFRA_CONTROLLER_FAILED = "infra_controller_failed"
 INFRA_CORRECTION_FLAGS_MISSING = "infra_correction_flags_missing"
 INFRA_CORRECTION_FLAGS_STALE = "infra_correction_flags_stale"
+INFRA_CORRECTION_COMMAND_UNCONFIRMED = "infra_correction_command_unconfirmed"
+INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED = (
+    "infra_ec_batch_partial_failure_compensation_enqueue_failed"
+)
 
 # Reason codes
 REASON_REQUIRED_NODES_OFFLINE = "required_nodes_offline"

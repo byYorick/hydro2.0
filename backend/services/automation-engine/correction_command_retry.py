@@ -3,6 +3,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from services.resilience_contract import (
+    INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+    INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -212,7 +217,7 @@ async def publish_controller_command_with_retry(
             await asyncio.sleep(retry_delay_sec)
 
     await send_infra_alert_fn(
-        code="infra_correction_command_unconfirmed",
+        code=INFRA_CORRECTION_COMMAND_UNCONFIRMED,
         alert_type="Correction Command Unconfirmed",
         message=f"Команда коррекции не подтверждена после {max_attempts} попыток",
         severity="critical",
@@ -286,7 +291,7 @@ async def trigger_ec_partial_batch_compensation(
             exc_info=True,
         )
         await send_infra_alert_fn(
-            code="infra_ec_batch_partial_failure_compensation_enqueue_failed",
+            code=INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED,
             alert_type="EC Batch Partial Failure Compensation Enqueue Failed",
             message="Не удалось поставить recovery-задачу после partial EC batch failure",
             severity="error",
