@@ -35,6 +35,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 4. Bootstrap status/reason literals переведены на contract constants в `resilience_contract`.
 5. Добавлен endpoint `GET /scheduler/cutover/state` для rollout/cutover introspection.
 6. Добавлен endpoint `GET /scheduler/integration/contracts` для явного Tier2 integration contract snapshot.
+7. Добавлен infra-alert path для `bootstrap_status=deny` (`protocol_not_supported`) в scheduler bootstrap.
 
 ## 4. Остаток S11 (open)
 1. Нормализовать cutover observability dashboard contract (required metrics/events list).

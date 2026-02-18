@@ -73,6 +73,8 @@ async def build_scheduler_bootstrap_response(
     cleanup_bootstrap_leases_locked_fn: Callable[[datetime], None],
     new_scheduler_lease_id_fn: Callable[[], str],
     create_scheduler_log_fn: Callable[[str, str, Dict[str, Any]], Awaitable[Any]],
+    send_infra_alert_fn: Callable[..., Awaitable[Any]],
+    logger: Any,
 ) -> Dict[str, Any]:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     bootstrap_status, readiness_reason = await scheduler_bootstrap_state_fn()
@@ -131,6 +133,27 @@ async def build_scheduler_bootstrap_response(
             "response": response_payload,
         },
     )
+    if bootstrap_status == SCHEDULER_BOOTSTRAP_STATUS_DENY:
+        try:
+            await send_infra_alert_fn(
+                code="infra_scheduler_bootstrap_denied",
+                alert_type="Scheduler Bootstrap Denied",
+                message="Scheduler bootstrap denied due to unsupported protocol",
+                severity="warning",
+                zone_id=None,
+                service="automation-engine",
+                component="scheduler_bootstrap",
+                error_type=str(readiness_reason or "unknown"),
+                details={
+                    "scheduler_id": req.scheduler_id,
+                    "scheduler_version": req.scheduler_version,
+                    "protocol_version": req.protocol_version,
+                    "readiness_reason": readiness_reason,
+                    "rollout_profile": rollout_profile,
+                },
+            )
+        except Exception:
+            logger.warning("Failed to send scheduler bootstrap deny alert", exc_info=True)
     SCHEDULER_BOOTSTRAP_STATUS_TOTAL.labels(
         status=str(response_payload.get("bootstrap_status") or "unknown"),
         rollout_profile=rollout_profile,

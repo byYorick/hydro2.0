@@ -66,6 +66,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 36. S11 (increment 2): bootstrap `status/reason` literals выровнены по contract constants в API/bootstrap paths.
 37. S11 (increment 3): добавлен `GET /scheduler/cutover/state` для read-only introspection rollout/cutover состояния.
 38. S11 (increment 4): добавлен `GET /scheduler/integration/contracts` (versioned Tier2 integration contract snapshot).
+39. S11 (increment 5): добавлен bootstrap deny infra-alert path (`infra_scheduler_bootstrap_denied`) для protocol mismatch.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.

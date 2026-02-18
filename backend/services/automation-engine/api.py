@@ -688,6 +688,8 @@ async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
         cleanup_bootstrap_leases_locked_fn=_cleanup_bootstrap_leases_locked,
         new_scheduler_lease_id_fn=_new_scheduler_lease_id,
         create_scheduler_log_fn=create_scheduler_log,
+        send_infra_alert_fn=send_infra_alert,
+        logger=logger,
     )
 
 

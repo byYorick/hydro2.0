@@ -30,6 +30,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 6. Добавлен `GET /scheduler/integration/contracts`:
 - возвращает versioned integration contract (`s11-v1`) и сигналы Tier2 интеграций;
 - используется как machine-checkable snapshot для integration/cutover QA.
+7. Добавлен bootstrap deny-alert path:
+- при `bootstrap_status=deny` (например, `protocol_not_supported`) отправляется
+  `infra_scheduler_bootstrap_denied`.
 
 ## 3. Что не менялось
 1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.
@@ -41,6 +44,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. Проверено, что bootstrap/heartbeat возвращают rollout-capabilities без изменения статусов `ready/wait/deny`.
 3. Проверено, что `GET /scheduler/cutover/state` возвращает согласованное состояние rollout/cutover флагов.
 4. Проверено, что `GET /scheduler/integration/contracts` возвращает ожидаемый versioned contract payload.
+5. Проверено, что protocol mismatch вызывает `bootstrap_status=deny` и infra-alert emit.
 
 ## 5. Следующие шаги S11
 1. Сформировать required observability list для cutover:

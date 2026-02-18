@@ -299,6 +299,28 @@ def test_scheduler_bootstrap_wait_when_db_not_ready(client, mock_command_bus):
         set_command_bus(old_command_bus, old_gh_uid)
 
 
+def test_scheduler_bootstrap_protocol_mismatch_emits_deny_alert(client, mock_command_bus):
+    old_command_bus = api._command_bus
+    old_gh_uid = api._gh_uid
+    try:
+        set_command_bus(mock_command_bus, "gh-1")
+        with patch("api.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+            response = client.post("/scheduler/bootstrap", json={
+                "scheduler_id": "scheduler-proto-mismatch",
+                "scheduler_version": "test",
+                "protocol_version": "1.0",
+            })
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["bootstrap_status"] == "deny"
+        assert data["reason"] == "protocol_not_supported"
+        mock_alert.assert_awaited_once()
+        assert mock_alert.await_args.kwargs["code"] == "infra_scheduler_bootstrap_denied"
+    finally:
+        set_command_bus(old_command_bus, old_gh_uid)
+
+
 def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     mock_command_bus.publish_command = AsyncMock(return_value=True)
     set_command_bus(mock_command_bus, "gh-1")
