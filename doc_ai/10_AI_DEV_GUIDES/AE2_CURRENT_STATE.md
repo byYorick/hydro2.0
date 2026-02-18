@@ -7,8 +7,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S11` Observability + Integration + Cutover: IN_PROGRESS.
-- Previous: `S10` Resilience Consolidation: COMPLETED.
+- `S11` Observability + Integration + Cutover: COMPLETED.
+- Next: `S12` Acceptance (not started).
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
@@ -21,6 +21,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `S8` CommandGateway Migration: COMPLETED.
 - `S9` Correction/Policy Hardening: COMPLETED.
 - `S10` Resilience Consolidation: COMPLETED.
+- `S11` Observability + Integration + Cutover: COMPLETED.
 
 ## 3. Открытые решения/ADR
 1. Scheduler monolith split ADR (S8/S9) — OPEN.
@@ -68,6 +69,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 38. S11 (increment 4): добавлен `GET /scheduler/integration/contracts` (versioned Tier2 integration contract snapshot).
 39. S11 (increment 5): добавлен bootstrap deny infra-alert path (`infra_scheduler_bootstrap_denied`) для protocol mismatch.
 40. S11 (increment 6): добавлен `GET /scheduler/observability/contracts` (required observability contract list для cutover).
+41. S11 (increment 7): stage-gate закрыт, добавлен `AE2_STAGE_S11_FINAL_REPORT.md`, `S11` переведен в `COMPLETED`.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -172,3 +174,4 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_FINAL_REPORT.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_FINAL_REPORT.md`

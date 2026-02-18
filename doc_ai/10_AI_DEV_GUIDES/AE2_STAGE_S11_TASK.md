@@ -3,7 +3,7 @@
 
 **Версия:** v0.1  
 **Дата:** 2026-02-18  
-**Статус:** IN_PROGRESS  
+**Статус:** COMPLETED  
 **Роль:** AI-INTEGRATION + AI-RELIABILITY + AI-QA  
 **Режим:** implementation
 
@@ -39,9 +39,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 8. Добавлен endpoint `GET /scheduler/observability/contracts` с required list метрик/alerts/events для cutover QA.
 
 ## 4. Остаток S11 (open)
-1. Нормализовать cutover observability dashboard contract (required metrics/events list).
-2. Подготовить integration contract для Tier2 signals (GDD transitions, approvals, digest) с feature-gated rollout.
-3. Подготовить S11 final report и gate на переход к `S12`.
+1. Нет открытых подпунктов stage.
 
 ## 5. Тесты текущего инкремента
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py test_scheduler_task_executor.py`
+
+## 6. Критерий продолжения
+- Переход к `S12` после фиксации stage-gate и чтения `AE2_STAGE_S11_FINAL_REPORT.md`.

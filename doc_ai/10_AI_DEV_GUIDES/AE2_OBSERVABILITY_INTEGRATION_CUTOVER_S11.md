@@ -1,9 +1,9 @@
 # AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md
 # AE2 S11: Observability + Integration + Cutover
 
-**Версия:** v0.1  
+**Версия:** v1.0  
 **Дата:** 2026-02-18  
-**Статус:** IN_PROGRESS
+**Статус:** COMPLETED
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -50,12 +50,5 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 5. Проверено, что protocol mismatch вызывает `bootstrap_status=deny` и infra-alert emit.
 6. Проверено, что `GET /scheduler/observability/contracts` возвращает expected required observability contract.
 
-## 5. Следующие шаги S11
-1. Сформировать required observability list для cutover:
-- метрики;
-- zone-events;
-- infra-alert correlation.
-2. Описать Tier2 integration contract:
-- GDD transitions;
-- approval signals;
-- daily digest summary.
+## 5. Следующие шаги
+1. Перенос в `S12`: load/chaos/parity acceptance для full cutover decision.
