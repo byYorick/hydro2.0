@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
+from services.correction_bounds_policy import extract_bounds_overrides
 
 
 BuildCorrectionGatingStateFn = Callable[..., Dict[str, Any]]
@@ -40,6 +41,7 @@ async def process_correction_controllers(
     emit_controller_circuit_open_signal_fn: EmitControllerCircuitOpenSignalFn,
     logger: Any,
 ) -> None:
+    bounds_overrides = extract_bounds_overrides(targets)
     logger.debug(
         "Zone %s: starting correction controllers evaluation",
         zone_id,
@@ -49,6 +51,7 @@ async def process_correction_controllers(
             "ph_control_enabled": bool(capabilities.get("ph_control", False)),
             "ec_control_enabled": bool(capabilities.get("ec_control", False)),
             "correction_flags": correction_flags,
+            "bounds_overrides": bounds_overrides,
         },
     )
     gating_state = build_correction_gating_state_fn(
@@ -165,7 +168,14 @@ async def process_correction_controllers(
 
     if capabilities.get("ph_control", False):
         ph_cmd = await ph_controller.check_and_correct(
-            zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok, actuators
+            zone_id,
+            targets,
+            telemetry,
+            telemetry_timestamps,
+            nodes,
+            water_level_ok,
+            actuators,
+            bounds_overrides=bounds_overrides,
         )
         if ph_cmd:
             logger.info(
@@ -219,6 +229,7 @@ async def process_correction_controllers(
             nodes,
             water_level_ok,
             actuators,
+            bounds_overrides=bounds_overrides,
             allowed_ec_components=allowed_ec_components,
         )
         if ec_cmd:

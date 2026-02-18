@@ -32,6 +32,10 @@ def test_automation_settings_defaults():
     assert settings.AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC == 120
     assert settings.AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC == 120
     assert settings.AE_CORRECTION_FLAGS_REQUIRE_TS is True
+    assert settings.AE_SAFETY_BOUNDS_ENABLED is True
+    assert settings.AE_SAFETY_BOUNDS_KILL_SWITCH is False
+    assert settings.AE_SAFETY_PH_HARD_PCT == 20.0
+    assert settings.AE_SAFETY_EC_HARD_PCT == 20.0
     
     # Восстанавливаем переменную окружения
     if old_max_concurrent_zones is not None:

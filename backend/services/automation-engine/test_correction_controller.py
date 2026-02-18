@@ -1,5 +1,6 @@
 """Tests for correction_controller."""
 import logging
+import time
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from types import SimpleNamespace
@@ -38,6 +39,26 @@ class _PidStub:
 
     def get_zone(self):
         return self._zone
+
+
+def _configure_confirmed_command_bus(command_bus: Mock, cmd_ids: list[str] | None = None) -> None:
+    """Configure command bus mock for successful publish+confirmation path."""
+    seq = iter(cmd_ids or [])
+    publish_count = 0
+
+    async def _publish(zone_id, payload, context):
+        nonlocal publish_count
+        publish_count += 1
+        if cmd_ids is not None:
+            payload["cmd_id"] = next(seq)
+        else:
+            payload["cmd_id"] = payload.get("cmd_id") or f"cmd-test-{publish_count}"
+        return True
+
+    command_bus.publish_controller_command = AsyncMock(side_effect=_publish)
+    command_bus.tracker = Mock()
+    command_bus.tracker.wait_for_command_done = AsyncMock(return_value=True)
+    command_bus.tracker.confirm_command_status = AsyncMock(return_value=None)
 
 
 @pytest.mark.asyncio
@@ -245,6 +266,136 @@ async def test_ph_controller_does_not_fallback_to_nodes_without_actuator_binding
         )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_skips_when_target_violates_abs_bounds():
+    controller = CorrectionController(CorrectionType.PH)
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+
+    with patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event:
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 7.1}},
+            telemetry={"PH": 6.5},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators={},
+            bounds_overrides={"ph": {"abs_min": 5.2, "abs_max": 6.8}},
+        )
+
+    assert result is None
+    event_types = [call.args[1] for call in mock_event.await_args_list if len(call.args) >= 2]
+    assert "PH_CORRECTION_SKIPPED_BOUNDS" in event_types
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_skips_when_hard_pct_is_violated():
+    controller = CorrectionController(CorrectionType.PH)
+    controller._last_target_by_zone[1] = 6.0
+    controller._last_target_ts_by_zone[1] = time.monotonic() - 60.0
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+
+    with patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event:
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 6.9}},
+            telemetry={"PH": 6.5},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators={},
+            bounds_overrides={"ph": {"hard_pct": 10, "abs_min": 5.0, "abs_max": 8.0}},
+        )
+
+    assert result is None
+    assert any(
+        call.args[1] == "PH_CORRECTION_SKIPPED_BOUNDS"
+        and call.args[2].get("reason_code") == "target_hard_pct_violation"
+        for call in mock_event.await_args_list
+        if len(call.args) >= 3
+    )
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_clamps_target_by_max_delta_per_min():
+    controller = CorrectionController(CorrectionType.PH)
+    controller._last_target_by_zone[1] = 6.0
+    controller._last_target_ts_by_zone[1] = time.monotonic() - 60.0
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-1",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump",
+        },
+    }
+
+    with patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 6.8}},
+            telemetry={"PH": 6.4},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+            bounds_overrides={"ph": {"hard_pct": 50, "max_delta_per_min": 0.1, "abs_min": 5.0, "abs_max": 8.0}},
+        )
+
+    assert result is not None
+    assert result["target_value"] == pytest.approx(6.1, abs=0.01)
+    assert result["event_details"]["target_rate_limited"] is True
+    assert any(
+        call.args[1] == "PH_TARGET_CLAMPED_RATE_LIMIT"
+        for call in mock_event.await_args_list
+        if len(call.args) >= 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_kill_switch_disables_safety_bounds():
+    controller = CorrectionController(CorrectionType.PH)
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-1",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump",
+        },
+    }
+    settings = SimpleNamespace(
+        AE_SAFETY_BOUNDS_ENABLED=True,
+        AE_SAFETY_BOUNDS_KILL_SWITCH=True,
+        MAIN_LOOP_SLEEP_SECONDS=15,
+    )
+
+    with patch("correction_controller.get_settings", return_value=settings), \
+         patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.should_apply_correction") as mock_should, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
+        mock_should.return_value = (True, "Корректировка необходима")
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 7.2}},
+            telemetry={"PH": 7.6},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+            bounds_overrides={"ph": {"abs_min": 5.2, "abs_max": 6.8}},
+        )
+
+    assert result is not None
+    assert result["event_details"]["safety_bounds_active"] is False
 
 
 @pytest.mark.asyncio
@@ -886,7 +1037,7 @@ async def test_apply_correction_publishes_all_batch_commands():
 
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
 
     with patch("correction_controller.record_correction"), \
          patch("correction_controller.create_zone_event"), \
@@ -919,7 +1070,7 @@ async def test_apply_correction_stops_batch_when_ec_target_reached():
 
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
 
     ec_after_first_dose = [{"last_value": 1.98}]
     with patch("correction_controller.record_correction"), \
@@ -953,7 +1104,7 @@ async def test_apply_correction_waits_between_component_doses_and_rechecks_ec():
 
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
 
     with patch("correction_controller.record_correction"), \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
@@ -1139,12 +1290,7 @@ async def test_apply_correction_enriches_single_command_events_with_correlation_
 
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-
-    async def _publish(zone_id, payload, context):
-        payload["cmd_id"] = "cmd-ph-success-1"
-        return True
-
-    command_bus.publish_controller_command = AsyncMock(side_effect=_publish)
+    _configure_confirmed_command_bus(command_bus, ["cmd-ph-success-1"])
 
     with patch("correction_controller.record_correction", new_callable=AsyncMock), \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
@@ -1194,13 +1340,7 @@ async def test_apply_correction_enriches_batch_events_with_cmd_ids_and_correlati
 
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    cmd_seq = iter(["cmd-ec-success-1", "cmd-ec-success-2"])
-
-    async def _publish(zone_id, payload, context):
-        payload["cmd_id"] = next(cmd_seq)
-        return True
-
-    command_bus.publish_controller_command = AsyncMock(side_effect=_publish)
+    _configure_confirmed_command_bus(command_bus, ["cmd-ec-success-1", "cmd-ec-success-2"])
 
     with patch("correction_controller.record_correction", new_callable=AsyncMock), \
          patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_zone_event, \
@@ -1259,7 +1399,7 @@ async def test_ph_controller_apply_correction():
     
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
     
     with patch("correction_controller.record_correction") as mock_record, \
          patch("correction_controller.create_zone_event") as mock_event, \
@@ -1309,7 +1449,7 @@ async def test_ph_controller_apply_correction_high_ph_detected():
     
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
     
     with patch("correction_controller.record_correction"), \
          patch("correction_controller.create_zone_event") as mock_event, \
@@ -1351,7 +1491,7 @@ async def test_ph_controller_apply_correction_low_ph_detected():
     
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
     
     with patch("correction_controller.record_correction"), \
          patch("correction_controller.create_zone_event") as mock_event, \
@@ -1393,7 +1533,7 @@ async def test_ec_controller_apply_correction():
     
     from infrastructure.command_bus import CommandBus
     command_bus = Mock(spec=CommandBus)
-    command_bus.publish_controller_command = AsyncMock(return_value=True)
+    _configure_confirmed_command_bus(command_bus)
     
     with patch("correction_controller.record_correction") as mock_record, \
          patch("correction_controller.create_zone_event") as mock_event, \

@@ -279,7 +279,18 @@ async def test_process_correction_controllers_passes_ec_components_by_workflow_p
     with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
         await service._process_correction_controllers(
             zone_id=116,
-            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            targets={
+                "ph": {"target": 5.8},
+                "ec": {"target": 1.6},
+                "diagnostics": {
+                    "execution": {
+                        "bounds": {
+                            "ph": {"hard_pct": 18},
+                            "ec": {"max_delta_per_min": 0.11},
+                        },
+                    },
+                },
+            },
             telemetry={"PH": 6.1, "EC": 1.1},
             telemetry_timestamps={},
             correction_flags=flags,
@@ -293,6 +304,11 @@ async def test_process_correction_controllers_passes_ec_components_by_workflow_p
 
     kwargs = service.ec_controller.check_and_correct.await_args.kwargs
     assert kwargs["allowed_ec_components"] == ["calcium", "magnesium", "micro"]
+    assert kwargs["bounds_overrides"]["ph"]["hard_pct"] == 18
+    assert kwargs["bounds_overrides"]["ec"]["max_delta_per_min"] == 0.11
+
+    ph_kwargs = service.ph_controller.check_and_correct.await_args.kwargs
+    assert ph_kwargs["bounds_overrides"]["ph"]["hard_pct"] == 18
 
 
 @pytest.mark.asyncio

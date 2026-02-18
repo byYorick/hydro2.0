@@ -19,6 +19,11 @@ from decision_context import DecisionContext
 from services.targets_accessor import get_ph_target, get_ec_target
 from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 from correction_freshness import validate_freshness_or_skip
+from services.correction_bounds_policy import (
+    apply_target_rate_limit,
+    resolve_bounds,
+    validate_target_with_bounds,
+)
 from correction_ec_batch import (
     build_ec_component_batch,
     build_actuator_identity,
@@ -59,6 +64,8 @@ class CorrectionController:
         self.event_prefix = correction_type.value.upper()
         self._pid_by_zone: Dict[int, AdaptivePid] = {}
         self._last_pid_tick: Dict[int, float] = {}
+        self._last_target_by_zone: Dict[int, float] = {}
+        self._last_target_ts_by_zone: Dict[int, float] = {}
         self.pid_state_manager = pid_state_manager or PidStateManager()
         # Счетчик подряд пропусков проверки свежести по зонам
         self._freshness_check_failure_count: Dict[int, int] = {}
@@ -97,6 +104,7 @@ class CorrectionController:
         nodes: Dict[str, Dict[str, Any]] = None,
         water_level_ok: bool = True,
         actuators: Optional[Dict[str, Dict[str, Any]]] = None,
+        bounds_overrides: Optional[Dict[str, Any]] = None,
         allowed_ec_components: Optional[List[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -147,6 +155,7 @@ class CorrectionController:
                 "target_max": target_max,
                 "water_level_ok": water_level_ok,
                 "allowed_ec_components": allowed_ec_components,
+                "bounds_overrides": bounds_overrides,
             },
         )
         
@@ -176,6 +185,88 @@ class CorrectionController:
                 error=str(e),
             )
             return None
+
+        target_original_val = target_val
+        settings = get_settings()
+        safety_enabled = bool(getattr(settings, "AE_SAFETY_BOUNDS_ENABLED", True))
+        safety_kill_switch = bool(getattr(settings, "AE_SAFETY_BOUNDS_KILL_SWITCH", False))
+        safety_active = safety_enabled and not safety_kill_switch
+        bounds_context: Dict[str, Any] = {}
+        rate_limit_result: Dict[str, Any] = {"clamped": False, "target": target_val}
+
+        if safety_active:
+            bounds_context = resolve_bounds(
+                metric=target_key,
+                targets=targets,
+                bounds_overrides=bounds_overrides,
+                settings=settings,
+            )
+            previous_target = self._last_target_by_zone.get(zone_id)
+            previous_target_ts = self._last_target_ts_by_zone.get(zone_id)
+            now_target_ts = time.monotonic()
+            elapsed_seconds = (
+                None
+                if previous_target_ts is None
+                else max(0.0, now_target_ts - previous_target_ts)
+            )
+
+            bounds_validation = validate_target_with_bounds(
+                metric=target_key,
+                target=target_val,
+                bounds=bounds_context,
+                previous_target=previous_target,
+            )
+            if not bool(bounds_validation.get("valid")):
+                reason_code = str(bounds_validation.get("reason_code") or "bounds_validation_failed")
+                self._log_skip(
+                    zone_id=zone_id,
+                    reason_code=reason_code,
+                    target=target_val,
+                    current=current_val,
+                    bounds=bounds_context,
+                    validation=bounds_validation.get("details"),
+                )
+                await create_zone_event(
+                    zone_id,
+                    f"{self.event_prefix}_CORRECTION_SKIPPED_BOUNDS",
+                    {
+                        "metric": target_key,
+                        "reason_code": reason_code,
+                        "target": target_val,
+                        "current": current_val,
+                        "bounds": bounds_context,
+                        "validation": bounds_validation.get("details") or {},
+                    },
+                )
+                return None
+
+            rate_limit_result = apply_target_rate_limit(
+                target=target_val,
+                bounds=bounds_context,
+                previous_target=previous_target,
+                elapsed_seconds=elapsed_seconds,
+            )
+            target_val = float(rate_limit_result.get("target", target_val))
+            if bool(rate_limit_result.get("clamped")):
+                await create_zone_event(
+                    zone_id,
+                    f"{self.event_prefix}_TARGET_CLAMPED_RATE_LIMIT",
+                    {
+                        "metric": target_key,
+                        "requested_target": target_original_val,
+                        "effective_target": target_val,
+                        "previous_target": previous_target,
+                        "allowed_delta": rate_limit_result.get("allowed_delta"),
+                        "elapsed_seconds": rate_limit_result.get("elapsed_seconds"),
+                        "reason_code": str(rate_limit_result.get("reason_code") or "max_delta_per_min_clamped"),
+                    },
+                )
+
+            self._last_target_by_zone[zone_id] = target_val
+            self._last_target_ts_by_zone[zone_id] = now_target_ts
+        else:
+            self._last_target_by_zone[zone_id] = target_val
+            self._last_target_ts_by_zone[zone_id] = time.monotonic()
 
         if target_min is not None and target_max is not None:
             if target_min <= current_val <= target_max:
@@ -360,11 +451,14 @@ class CorrectionController:
                 'correction_type': correction_type,
                 f'current_{target_key}': current_val,
                 f'target_{target_key}': target_val,
+                f'target_{target_key}_original': target_original_val,
                 'diff': diff,
                 'ml': amount,
                 'binding_role': actuator.get('role'),
                 'pid_zone': pid.get_zone().value,
-                'pid_dt_seconds': dt_seconds
+                'pid_dt_seconds': dt_seconds,
+                'safety_bounds_active': safety_active,
+                'target_rate_limited': bool(rate_limit_result.get("clamped")),
             },
             'zone_id': zone_id,
             'correction_type_str': target_key,
@@ -390,6 +484,13 @@ class CorrectionController:
                 }
                 for item in batch_commands
             ]
+        if bounds_context:
+            command["event_details"]["bounds"] = {
+                "hard_pct": bounds_context.get("hard_pct"),
+                "abs_min": bounds_context.get("abs_min"),
+                "abs_max": bounds_context.get("abs_max"),
+                "max_delta_per_min": bounds_context.get("max_delta_per_min"),
+            }
 
         return command
     

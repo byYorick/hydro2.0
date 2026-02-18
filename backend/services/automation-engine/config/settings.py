@@ -75,6 +75,19 @@ class AutomationSettings:
     AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC: int = int(os.getenv("AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC", "120"))
     # Требовать timestamps для correction flags (1/0)
     AE_CORRECTION_FLAGS_REQUIRE_TS: bool = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
+    # Safety bounds guard (S3): enabled by default, with emergency kill-switch
+    AE_SAFETY_BOUNDS_ENABLED: bool = os.getenv("AE_SAFETY_BOUNDS_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_SAFETY_BOUNDS_KILL_SWITCH: bool = os.getenv("AE_SAFETY_BOUNDS_KILL_SWITCH", "0").strip().lower() in {"1", "true", "yes", "on"}
+    # pH safety defaults
+    AE_SAFETY_PH_HARD_PCT: float = float(os.getenv("AE_SAFETY_PH_HARD_PCT", "20"))
+    AE_SAFETY_PH_ABS_MIN: float = float(os.getenv("AE_SAFETY_PH_ABS_MIN", "5.2"))
+    AE_SAFETY_PH_ABS_MAX: float = float(os.getenv("AE_SAFETY_PH_ABS_MAX", "6.8"))
+    AE_SAFETY_PH_MAX_DELTA_PER_MIN: float = float(os.getenv("AE_SAFETY_PH_MAX_DELTA_PER_MIN", "0.15"))
+    # EC safety defaults
+    AE_SAFETY_EC_HARD_PCT: float = float(os.getenv("AE_SAFETY_EC_HARD_PCT", "20"))
+    AE_SAFETY_EC_ABS_MIN: float = float(os.getenv("AE_SAFETY_EC_ABS_MIN", "0.6"))
+    AE_SAFETY_EC_ABS_MAX: float = float(os.getenv("AE_SAFETY_EC_ABS_MAX", "2.8"))
+    AE_SAFETY_EC_MAX_DELTA_PER_MIN: float = float(os.getenv("AE_SAFETY_EC_MAX_DELTA_PER_MIN", "0.2"))
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert
