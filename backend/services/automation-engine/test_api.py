@@ -351,6 +351,18 @@ def test_scheduler_cutover_state_endpoint(client):
     assert ingress["require_trace_id"] is True
 
 
+def test_scheduler_integration_contracts_endpoint(client):
+    response = client.get("/scheduler/integration/contracts")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["contract_version"] == "s11-v1"
+    assert data["rollout_profile"] == "canary-first"
+    integrations = data["integrations"]
+    assert integrations["gdd_phase_transitions"]["enabled"] is False
+    assert integrations["mobile_approvals"]["enabled"] is False
+    assert integrations["daily_health_digest"]["enabled"] is False
+
+
 def test_scheduler_bootstrap_heartbeat_wait_when_automation_not_ready(client, mock_command_bus):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid

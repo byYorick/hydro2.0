@@ -27,6 +27,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 5. Добавлен `GET /scheduler/cutover/state`:
 - возвращает rollout profile, Tier2 capability flags и ingress cutover параметры;
 - используется как read-only observability/control-plane snapshot для canary/cutover.
+6. Добавлен `GET /scheduler/integration/contracts`:
+- возвращает versioned integration contract (`s11-v1`) и сигналы Tier2 интеграций;
+- используется как machine-checkable snapshot для integration/cutover QA.
 
 ## 3. Что не менялось
 1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.
@@ -37,6 +40,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. `pytest test_api.py test_scheduler_task_executor.py` -> green.
 2. Проверено, что bootstrap/heartbeat возвращают rollout-capabilities без изменения статусов `ready/wait/deny`.
 3. Проверено, что `GET /scheduler/cutover/state` возвращает согласованное состояние rollout/cutover флагов.
+4. Проверено, что `GET /scheduler/integration/contracts` возвращает ожидаемый versioned contract payload.
 
 ## 5. Следующие шаги S11
 1. Сформировать required observability list для cutover:
