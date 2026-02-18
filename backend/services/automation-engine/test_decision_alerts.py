@@ -6,6 +6,7 @@ import pytest
 
 from domain.models.decision_models import DecisionOutcome
 from application.decision_alerts import emit_decision_alert, should_emit_decision_alert
+from services.resilience_contract import build_decision_alert_code
 
 
 def test_should_emit_decision_alert_for_known_reason_codes():
@@ -34,3 +35,7 @@ async def test_emit_decision_alert_builds_expected_payload():
     kwargs = send_infra_alert_fn.await_args.kwargs
     assert kwargs["code"] == "infra_diagnostics_low_water"
     assert kwargs["severity"] == "warning"
+
+
+def test_build_decision_alert_code_normalizes_tokens():
+    assert build_decision_alert_code("Diagnostics Task", "LOW/WATER!") == "infra_diagnostics_task_low_water"

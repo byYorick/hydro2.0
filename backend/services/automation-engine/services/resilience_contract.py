@@ -1,5 +1,9 @@
 """Unified resilience contract constants (S10 incremental consolidation)."""
 
+from __future__ import annotations
+
+import re
+
 # Infra alert codes
 INFRA_ZONE_BACKOFF_SKIP = "infra_zone_backoff_skip"
 INFRA_ZONE_TARGETS_MISSING = "infra_zone_targets_missing"
@@ -69,3 +73,19 @@ REASON_REQUIRED_NODES_RECOVERED = "required_nodes_recovered"
 REASON_CORRECTION_MISSING_FLAGS = "missing_flags"
 REASON_CORRECTION_STALE_FLAGS = "stale_flags"
 REASON_CORRECTION_GATING_PASSED = "gating_passed"
+
+_NON_ALNUM_UNDERSCORE = re.compile(r"[^a-z0-9_]+")
+
+
+def normalize_resilience_token(value: object, *, fallback: str = "unknown") -> str:
+    token = str(value or "").strip().lower()
+    token = _NON_ALNUM_UNDERSCORE.sub("_", token).strip("_")
+    return token or fallback
+
+
+def build_decision_alert_code(task_type: object, reason_code: object) -> str:
+    return (
+        f"infra_"
+        f"{normalize_resilience_token(task_type)}_"
+        f"{normalize_resilience_token(reason_code)}"
+    )

@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v1.1  
+**Версия:** v1.2  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -162,6 +162,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `repositories/recipe_repository.py` (`infra_correction_flags_telemetry_samples_missing`).
 - итог: в production code `automation-engine` больше нет фиксированных literal `code="infra_*"`; остался только динамический `decision_alerts` код-шаблон.
 
+18. Decision-alert contract-builder alignment:
+- добавлен `build_decision_alert_code(task_type, reason_code)` в `services/resilience_contract.py` с нормализацией токенов.
+- `application/decision_alerts.py` переведен с inline format на contract-builder.
+- unit coverage:
+  - `test_decision_alerts.py` дополнен проверкой нормализации токенов.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -173,6 +179,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. `pytest test_cycle_start_refill_policy.py test_error_handler.py test_scheduler_task_executor.py test_api.py` -> `152 passed`.
 4. `pytest test_command_bus.py test_scheduler_task_executor.py test_api.py` -> `161 passed`.
 5. `pytest test_main.py test_repositories.py test_api.py` -> `100 passed`.
+6. `pytest test_decision_alerts.py test_scheduler_task_executor.py test_api.py` -> `140 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).

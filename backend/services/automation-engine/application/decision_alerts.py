@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict
 
 from domain.models.decision_models import DecisionOutcome
+from services.resilience_contract import build_decision_alert_code
 
 SendInfraAlertFn = Callable[..., Awaitable[Any]]
 
@@ -24,7 +25,7 @@ async def emit_decision_alert(
     send_infra_alert_fn: SendInfraAlertFn,
 ) -> None:
     await send_infra_alert_fn(
-        code=f"infra_{task_type}_{decision.reason_code}",
+        code=build_decision_alert_code(task_type, decision.reason_code),
         alert_type="Automation Decision Retry",
         message=(
             f"Задача {task_type} для зоны {zone_id} отложена: "
