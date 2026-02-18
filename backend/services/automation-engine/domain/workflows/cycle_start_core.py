@@ -367,7 +367,7 @@ async def execute_cycle_start_workflow_core(
     if next_check_at > refill_timeout_at:
         next_check_at = refill_timeout_at
     try:
-        enqueue_result = await enqueue_internal_scheduler_task(
+        enqueue_result = await self.enqueue_internal_scheduler_task_fn(
             zone_id=zone_id,
             task_type="diagnostics",
             payload=next_payload,

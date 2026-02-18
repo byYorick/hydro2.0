@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
 import scheduler_task_executor as ste
+from application import scheduler_executor_impl as executor_impl
 from scheduler_task_executor import SchedulerTaskExecutor
 
 
@@ -18,6 +19,43 @@ def test_workflow_state_persistence_enabled_by_default(monkeypatch):
     monkeypatch.delenv("AE_WORKFLOW_STATE_PERSIST_ENABLED", raising=False)
     executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
     assert executor.workflow_state_persist_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_scheduler_executor_uses_module_bindings_without_impl_monkey_patch():
+    command_bus = _build_command_bus_mock()
+    executor = SchedulerTaskExecutor(command_bus=command_bus)
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+        await executor._get_zone_nodes(22, ["irrig"])
+
+    assert mock_fetch.await_count >= 1
+    assert executor_impl.fetch is not mock_fetch
+
+
+def test_scheduler_executor_accepts_explicit_runtime_bindings():
+    command_bus = _build_command_bus_mock()
+    custom_fetch = AsyncMock()
+    custom_event = AsyncMock()
+    custom_alert = AsyncMock()
+    custom_enqueue = AsyncMock()
+    runtime_bindings = ste.SchedulerExecutorRuntimeBindings(
+        fetch_fn=custom_fetch,
+        create_zone_event_fn=custom_event,
+        send_infra_alert_fn=custom_alert,
+        enqueue_internal_scheduler_task_fn=custom_enqueue,
+    )
+
+    executor = SchedulerTaskExecutor(
+        command_bus=command_bus,
+        runtime_bindings=runtime_bindings,
+    )
+
+    assert executor.fetch_fn is custom_fetch
+    assert executor.create_zone_event_fn is custom_event
+    assert executor.send_infra_alert_fn is custom_alert
+    assert executor.enqueue_internal_scheduler_task_fn is custom_enqueue
 
 
 def test_resolve_workflow_stage_for_state_sync_maps_startup_mode_to_solution_fill_check():

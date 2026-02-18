@@ -335,6 +335,10 @@ def set_zone_service(zone_service: Any, loop_id: Optional[int] = None) -> None:
     _zone_service_loop_id = loop_id
 
 
+def _build_scheduler_task_executor(*, command_bus: CommandBus, zone_service: Optional[Any]) -> SchedulerTaskExecutor:
+    return SchedulerTaskExecutor(command_bus=command_bus, zone_service=zone_service)
+
+
 def _is_loop_affinity_mismatch(assigned_loop_id: Optional[int]) -> bool:
     if assigned_loop_id is None:
         return False
@@ -611,7 +615,7 @@ async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace
         normalize_failed_execution_result_fn=_normalize_failed_execution_result,
         build_execution_terminal_result_fn=_build_execution_terminal_result,
         send_infra_exception_alert_fn=send_infra_exception_alert,
-        scheduler_task_executor_cls=SchedulerTaskExecutor,
+        scheduler_task_executor_factory=_build_scheduler_task_executor,
         set_trace_id_fn=set_trace_id,
         logger=logger,
         err_command_bus_unavailable=ERR_COMMAND_BUS_UNAVAILABLE,

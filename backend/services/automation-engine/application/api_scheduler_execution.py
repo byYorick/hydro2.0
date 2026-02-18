@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 
 async def execute_scheduler_task(
@@ -21,7 +21,7 @@ async def execute_scheduler_task(
     normalize_failed_execution_result_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
     build_execution_terminal_result_fn: Callable[..., Dict[str, Any]],
     send_infra_exception_alert_fn: Callable[..., Awaitable[Any]],
-    scheduler_task_executor_cls: Type[Any],
+    scheduler_task_executor_factory: Callable[..., Any],
     set_trace_id_fn: Callable[[Optional[str]], Any],
     logger: logging.Logger,
     err_command_bus_unavailable: str,
@@ -83,7 +83,10 @@ async def execute_scheduler_task(
                 return
             selected_zone_service = None
 
-        executor = scheduler_task_executor_cls(command_bus=command_bus, zone_service=selected_zone_service)
+        executor = scheduler_task_executor_factory(
+            command_bus=command_bus,
+            zone_service=selected_zone_service,
+        )
         result = await executor.execute(
             zone_id=req.zone_id,
             task_type=req.task_type,
