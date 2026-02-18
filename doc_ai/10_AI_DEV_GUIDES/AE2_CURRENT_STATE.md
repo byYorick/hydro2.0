@@ -46,6 +46,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 17. S10 (increment 3): введен базовый `resilience_contract` для унификации infra/reason codes в runtime/backoff/recovery signals.
 18. S10 (increment 4): `resilience_contract` расширен на controller guardrails и correction-gating alerts; offline-recovery acceptance coverage расширен.
 19. S10 (increment 5): retry/unconfirmed correction-command paths переведены на `resilience_contract` infra-codes.
+20. S10 (increment 6): housekeeping/irrigation/event-write infra-codes переведены на `resilience_contract`; добавлен restart-parity тест offline-recovery state.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.

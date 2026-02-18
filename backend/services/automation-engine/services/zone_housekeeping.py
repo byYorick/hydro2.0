@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+from services.resilience_contract import (
+    INFRA_PID_CONFIG_UPDATE_CHECK_FAILED,
+    INFRA_ZONE_DELETION_CHECK_FAILED,
+)
+
 
 async def update_zone_health(
     *,
@@ -50,7 +55,7 @@ async def check_zone_deletion(
         logger.warning("Failed to check zone deletion for zone %s: %s", zone_id, e, exc_info=True)
         await send_infra_exception_alert_fn(
             error=e,
-            code="infra_zone_deletion_check_failed",
+            code=INFRA_ZONE_DELETION_CHECK_FAILED,
             alert_type="Zone Deletion Check Failed",
             severity="warning",
             zone_id=zone_id,
@@ -102,7 +107,7 @@ async def check_pid_config_updates(
         logger.warning("Failed to check PID config updates for zone %s: %s", zone_id, e, exc_info=True)
         await send_infra_exception_alert_fn(
             error=e,
-            code="infra_pid_config_update_check_failed",
+            code=INFRA_PID_CONFIG_UPDATE_CHECK_FAILED,
             alert_type="PID Config Update Check Failed",
             severity="warning",
             zone_id=zone_id,

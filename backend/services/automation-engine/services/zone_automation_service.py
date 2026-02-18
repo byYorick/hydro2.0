@@ -81,6 +81,7 @@ from services.zone_node_recovery import (
 )
 from services.resilience_contract import (
     INFRA_ZONE_REQUIRED_NODES_OFFLINE,
+    INFRA_ZONE_EVENT_WRITE_FAILED,
     REASON_REQUIRED_NODES_OFFLINE,
     REASON_REQUIRED_NODES_RECOVERED,
 )
@@ -512,7 +513,7 @@ class ZoneAutomationService:
             )
             await send_infra_exception_alert(
                 error=event_error,
-                code="infra_zone_event_write_failed",
+                code=INFRA_ZONE_EVENT_WRITE_FAILED,
                 alert_type="Zone Event Write Failed",
                 severity="error",
                 zone_id=zone_id,

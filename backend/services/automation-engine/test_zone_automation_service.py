@@ -1121,6 +1121,41 @@ def test_zone_automation_service_runtime_state_roundtrip():
 
 
 @pytest.mark.asyncio
+async def test_required_nodes_offline_restart_parity_reconciles_after_restore():
+    service = _build_zone_service()
+    zone_id = 903
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {}, "missing_types": ["ph"]}
+    )
+    service._emit_required_nodes_offline_signal = AsyncMock()
+    service._emit_required_nodes_recovered_signal = AsyncMock()
+
+    first_gate = await service._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True},
+    )
+    assert first_gate is False
+    assert service._get_zone_state(zone_id)["required_nodes_offline_active"] is True
+
+    snapshot = service.export_runtime_state()
+    restored = _build_zone_service()
+    restored.restore_runtime_state(snapshot)
+    restored._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {"ph": 1}, "missing_types": []}
+    )
+    restored._emit_required_nodes_offline_signal = AsyncMock()
+    restored._emit_required_nodes_recovered_signal = AsyncMock()
+
+    second_gate = await restored._evaluate_required_nodes_recovery_gate(
+        zone_id=zone_id,
+        capabilities={"ph_control": True},
+    )
+    assert second_gate is True
+    assert restored._get_zone_state(zone_id)["required_nodes_offline_active"] is False
+    restored._emit_required_nodes_recovered_signal.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_required_nodes_recovery_gate_blocks_cycle_when_missing_nodes():
     service = _build_zone_service()
     service._check_required_nodes_online = AsyncMock(

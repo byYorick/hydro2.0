@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import INFRA_IRRIGATION_PUMP_BLOCKED
+
 
 PublishControllerActionFn = Callable[..., Awaitable[bool]]
 CheckAndControlLightingFn = Callable[..., Awaitable[Optional[Dict[str, Any]]]]
@@ -142,7 +144,7 @@ async def process_irrigation_controller(
             },
         )
         await send_infra_alert_fn(
-            code="infra_irrigation_pump_blocked",
+            code=INFRA_IRRIGATION_PUMP_BLOCKED,
             alert_type="Irrigation Pump Blocked",
             message=f"Zone {zone_id}: irrigation pump blocked by safety rules",
             severity="error",
