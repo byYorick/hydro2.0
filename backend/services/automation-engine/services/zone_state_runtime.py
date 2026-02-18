@@ -57,6 +57,11 @@ def get_zone_state(
     state.setdefault("workflow_phase_updated_at", None)
     state.setdefault("workflow_phase_source", None)
     state.setdefault("workflow_phase_loaded", False)
+    state.setdefault("required_nodes_offline_active", False)
+    state.setdefault("required_nodes_offline_missing_types", [])
+    state.setdefault("required_nodes_offline_required_types", [])
+    state.setdefault("required_nodes_offline_since", None)
+    state.setdefault("last_required_nodes_offline_report_at", None)
     return state
 
 

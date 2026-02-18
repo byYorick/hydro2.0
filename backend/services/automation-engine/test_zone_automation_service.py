@@ -139,6 +139,13 @@ async def test_process_zone_with_recipe():
             infrastructure_repo,
             command_bus,
         )
+        service._check_required_nodes_online = AsyncMock(
+            return_value={
+                "required_types": ["ph", "ec", "climate", "light", "irrig"],
+                "online_counts": {"ph": 1, "ec": 1, "climate": 1, "light": 1, "irrig": 1},
+                "missing_types": [],
+            }
+        )
         # Заменяем реальные контроллеры на моки
         service.ph_controller = mock_ph_controller
         service.ec_controller = mock_ec_controller
@@ -827,8 +834,15 @@ async def test_process_zone_light_controller():
             'event_details': {}
         }) as mock_light, \
          patch("services.zone_automation_service.create_zone_event") as mock_event:
-        
+
         service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus)
+        service._check_required_nodes_online = AsyncMock(
+            return_value={
+                "required_types": ["light"],
+                "online_counts": {"light": 1},
+                "missing_types": [],
+            }
+        )
         await service.process_zone(1)
         
         # Проверяем, что команда была отправлена
@@ -1069,6 +1083,47 @@ def test_zone_automation_service_runtime_state_roundtrip():
     assert (zone_id, "climate") in restored._controller_failures
     assert restored._correction_sensor_mode_state[zone_id] is True
     assert restored.ph_controller._last_target_by_zone[zone_id] == pytest.approx(6.2, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_required_nodes_recovery_gate_blocks_cycle_when_missing_nodes():
+    service = _build_zone_service()
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph", "ec"], "online_counts": {"ec": 1}, "missing_types": ["ph"]}
+    )
+    service._emit_required_nodes_offline_signal = AsyncMock()
+    service._emit_required_nodes_recovered_signal = AsyncMock()
+
+    can_run = await service._evaluate_required_nodes_recovery_gate(
+        zone_id=901,
+        capabilities={"ph_control": True, "ec_control": True},
+    )
+
+    assert can_run is False
+    service._emit_required_nodes_offline_signal.assert_awaited_once()
+    service._emit_required_nodes_recovered_signal.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_required_nodes_recovery_gate_emits_recovered_on_online_restore():
+    service = _build_zone_service()
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {"ph": 1}, "missing_types": []}
+    )
+    service._emit_required_nodes_offline_signal = AsyncMock()
+    service._emit_required_nodes_recovered_signal = AsyncMock()
+    state = service._get_zone_state(902)
+    state["required_nodes_offline_active"] = True
+    state["required_nodes_offline_missing_types"] = ["ph"]
+    state["required_nodes_offline_required_types"] = ["ph"]
+
+    can_run = await service._evaluate_required_nodes_recovery_gate(
+        zone_id=902,
+        capabilities={"ph_control": True},
+    )
+
+    assert can_run is True
+    service._emit_required_nodes_recovered_signal.assert_awaited_once()
 
 
 @pytest.mark.asyncio

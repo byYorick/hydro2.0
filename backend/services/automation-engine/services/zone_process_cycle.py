@@ -30,6 +30,7 @@ async def process_zone_cycle(
     process_irrigation_controller_fn: Callable[..., Awaitable[None]],
     process_recirculation_controller_fn: Callable[..., Awaitable[None]],
     process_correction_controllers_fn: Callable[..., Awaitable[None]],
+    evaluate_required_nodes_recovery_gate_fn: Callable[[int, Dict[str, Any]], Awaitable[bool]],
     update_zone_health_fn: Callable[[int], Awaitable[None]],
     emit_missing_targets_signal_fn: Callable[[int, Optional[Dict[str, Any]]], Awaitable[None]],
     emit_degraded_mode_signal_fn: Callable[[int], Awaitable[None]],
@@ -85,6 +86,10 @@ async def process_zone_cycle(
             return
 
         normalized_correction_flags = correction_flags if isinstance(correction_flags, dict) else {}
+        required_nodes_ready = await evaluate_required_nodes_recovery_gate_fn(zone_id, capabilities)
+        if not required_nodes_ready:
+            record_zone_error_fn(zone_id)
+            return
         workflow_phase = await get_or_restore_workflow_phase_fn(zone_id)
         logger.info(
             "Zone %s: starting processing cycle with workflow_phase=%s",

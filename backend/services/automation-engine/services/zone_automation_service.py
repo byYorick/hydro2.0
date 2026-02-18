@@ -76,10 +76,16 @@ from services.zone_state_runtime import (
 from services.zone_process_cycle import (
     process_zone_cycle as policy_process_zone_cycle,
 )
+from services.zone_node_recovery import (
+    evaluate_required_nodes_recovery_gate as policy_evaluate_required_nodes_recovery_gate,
+)
 from services.zone_housekeeping import (
     check_pid_config_updates as policy_check_pid_config_updates,
     check_zone_deletion as policy_check_zone_deletion,
     update_zone_health as policy_update_zone_health,
+)
+from infrastructure.node_query_adapter import (
+    check_required_nodes_online,
 )
 from services.zone_runtime_backoff import (
     calculate_backoff_seconds as policy_calculate_backoff_seconds,
@@ -123,6 +129,7 @@ SKIP_REPORT_THROTTLE_SECONDS = 120
 COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120
 CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
 CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120
+REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS = 120
 _AUTOMATION_SETTINGS = get_settings()
 CORRECTION_FLAGS_MAX_AGE_SECONDS = max(
     30,
@@ -330,6 +337,7 @@ class ZoneAutomationService:
             process_irrigation_controller_fn=self._process_irrigation_controller,
             process_recirculation_controller_fn=self._process_recirculation_controller,
             process_correction_controllers_fn=self._process_correction_controllers,
+            evaluate_required_nodes_recovery_gate_fn=self._evaluate_required_nodes_recovery_gate,
             update_zone_health_fn=self._update_zone_health,
             emit_missing_targets_signal_fn=self._emit_missing_targets_signal,
             emit_degraded_mode_signal_fn=self._emit_degraded_mode_signal,
@@ -606,6 +614,121 @@ class ZoneAutomationService:
             previous_error_streak=previous_error_streak,
             create_zone_event_safe_fn=self._create_zone_event_safe,
             send_infra_resolved_alert_fn=send_infra_resolved_alert,
+            logger=logger,
+        )
+
+    async def _check_required_nodes_online(
+        self,
+        zone_id: int,
+        required_types: List[str],
+    ) -> Dict[str, Any]:
+        try:
+            return await check_required_nodes_online(
+                fetch_fn=fetch,
+                zone_id=zone_id,
+                required_types=required_types,
+            )
+        except Exception:
+            logger.warning(
+                "Zone %s: required-node online check failed; allowing cycle to continue",
+                zone_id,
+                exc_info=True,
+                extra={"zone_id": zone_id, "required_types": required_types},
+            )
+            return {
+                "required_types": list(required_types or []),
+                "online_counts": {},
+                "missing_types": [],
+            }
+
+    async def _emit_required_nodes_offline_signal(
+        self,
+        *,
+        zone_id: int,
+        required_types: List[str],
+        online_counts: Dict[str, Any],
+        missing_types: List[str],
+    ) -> None:
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type="ZONE_REQUIRED_NODES_OFFLINE",
+            details={
+                "required_types": sorted(required_types),
+                "online_counts": online_counts,
+                "missing_types": sorted(missing_types),
+                "reason_code": "required_nodes_offline",
+                "status": "frozen",
+            },
+            signal_name="zone_required_nodes_offline",
+        )
+        await send_infra_alert(
+            code="infra_zone_required_nodes_offline",
+            alert_type="Required Nodes Offline",
+            message=f"Zone {zone_id} required nodes offline: {', '.join(sorted(missing_types))}",
+            severity="error",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_node_recovery",
+            error_type="RequiredNodesOffline",
+            details={
+                "required_types": sorted(required_types),
+                "online_counts": online_counts,
+                "missing_types": sorted(missing_types),
+                "reason_code": "required_nodes_offline",
+                "status": "frozen",
+            },
+        )
+
+    async def _emit_required_nodes_recovered_signal(
+        self,
+        *,
+        zone_id: int,
+        previous_missing_types: List[str],
+        required_types: List[str],
+        online_counts: Dict[str, Any],
+    ) -> None:
+        await self._create_zone_event_safe(
+            zone_id=zone_id,
+            event_type="ZONE_REQUIRED_NODES_RECOVERED",
+            details={
+                "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
+                "required_types": sorted(required_types),
+                "online_counts": online_counts,
+                "reason_code": "required_nodes_recovered",
+                "status": "ready",
+            },
+            signal_name="zone_required_nodes_recovered",
+        )
+        await send_infra_resolved_alert(
+            code="infra_zone_required_nodes_offline",
+            alert_type="Required Nodes Recovered",
+            message=f"Zone {zone_id} required nodes recovered",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_node_recovery",
+            details={
+                "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
+                "required_types": sorted(required_types),
+                "online_counts": online_counts,
+                "reason_code": "required_nodes_recovered",
+                "status": "ready",
+            },
+        )
+
+    async def _evaluate_required_nodes_recovery_gate(
+        self,
+        zone_id: int,
+        capabilities: Dict[str, Any],
+    ) -> bool:
+        return await policy_evaluate_required_nodes_recovery_gate(
+            zone_id=zone_id,
+            capabilities=capabilities,
+            zone_state=self._get_zone_state(zone_id),
+            check_required_nodes_online_fn=self._check_required_nodes_online,
+            emit_required_nodes_offline_signal_fn=self._emit_required_nodes_offline_signal,
+            emit_required_nodes_recovered_signal_fn=self._emit_required_nodes_recovered_signal,
+            utcnow_fn=utcnow,
+            throttle_seconds=REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS,
             logger=logger,
         )
 
