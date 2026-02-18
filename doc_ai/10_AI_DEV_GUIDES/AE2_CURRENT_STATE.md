@@ -7,8 +7,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S8` CommandGateway Migration: COMPLETED.
-- Next: `S9` Correction/Policy Hardening.
+- `S9` Correction/Policy Hardening: COMPLETED.
+- Next: `S10` Resilience Consolidation.
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
@@ -19,6 +19,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `S6` State Serialization Audit: COMPLETED.
 - `S7` DI/Wiring: COMPLETED.
 - `S8` CommandGateway Migration: COMPLETED.
+- `S9` Correction/Policy Hardening: COMPLETED.
 
 ## 3. Открытые решения/ADR
 1. Scheduler monolith split ADR (S8/S9) — OPEN.
@@ -38,10 +39,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 10. S8: введен `CommandGateway` как единая runtime publish-точка для scheduler/correction/controller action paths.
 11. S8: correction, sensor-mode и scheduler batch dispatch переведены на `CommandGateway` без изменения внешних контрактов.
 12. S8: deprecated `main.publish_correction_command()` использует gateway-path.
+13. S9: proactive correction (EWMA/slope) включен для pH/EC внутри dead-zone с cooldown gate и structured events.
+14. S9: anomaly guard `dose -> no_effect xN` добавлен с auto-block dosing (`status=degraded`) и kill-free rollback через env-flags.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
-2. Неполный crash-recovery runtime maps (`_zone_states`, cooldown/alert-throttle caches, target-history maps) до внедрения unified serialization contracts.
+2. Неполный crash-recovery runtime maps (`_zone_states`, cooldown/alert-throttle caches, target-history maps, proactive/anomaly pending maps) до внедрения unified serialization contracts.
 
 ## 6. Flaky tests / проблемы
 - На момент обновления: не зафиксировано.
@@ -92,3 +95,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/services/zone_sensor_mode_orchestrator.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S08_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_COMMAND_GATEWAY_MIGRATION_S8.md`
+- `backend/services/automation-engine/correction_cooldown.py`
+- `backend/services/automation-engine/test_correction_cooldown.py`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S09_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_CORRECTION_POLICY_HARDENING_S9.md`

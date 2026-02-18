@@ -399,6 +399,140 @@ async def test_ph_controller_kill_switch_disables_safety_bounds():
 
 
 @pytest.mark.asyncio
+async def test_ph_controller_proactive_mode_triggers_inside_dead_zone():
+    controller = CorrectionController(CorrectionType.PH)
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+    pid_stub = _PidStub(3.0)
+    pid_stub.config.dead_zone = 0.2
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-1",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump",
+        },
+    }
+
+    with patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.analyze_proactive_correction_signal", new_callable=AsyncMock) as mock_proactive, \
+         patch("correction_controller.should_apply_proactive_correction", new_callable=AsyncMock, return_value=(True, "ok")), \
+         patch("correction_controller.should_apply_correction", new_callable=AsyncMock) as mock_regular_policy, \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=pid_stub):
+        mock_proactive.return_value = {
+            "should_correct": True,
+            "reason_code": "proactive_predicted_target_escape",
+            "predicted_diff": 0.35,
+            "predicted_value": 6.85,
+            "predicted_deviation": 0.35,
+            "slope_per_min": 0.02,
+            "horizon_minutes": 20,
+            "samples_count": 6,
+        }
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 6.5}},
+            telemetry={"PH": 6.55},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+        )
+
+    assert result is not None
+    assert result["event_details"]["proactive_mode"] is True
+    assert result["event_details"]["proactive"]["reason_code"] == "proactive_predicted_target_escape"
+    mock_regular_policy.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_skips_when_anomaly_block_is_active():
+    controller = CorrectionController(CorrectionType.PH)
+    controller._anomaly_blocked_until_by_zone[1] = time.monotonic() + 120.0
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+    actuators = {
+        "ph_acid_pump": {
+            "node_uid": "nd-ph-1",
+            "channel": "pump_acid",
+            "role": "ph_acid_pump",
+        },
+    }
+
+    with patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.should_apply_correction", new_callable=AsyncMock, return_value=(True, "ok")), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=_PidStub(3.0)):
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 6.5}},
+            telemetry={"PH": 6.9},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators=actuators,
+        )
+
+    assert result is None
+    assert any(
+        call.args[1] == "PH_CORRECTION_SKIPPED_ANOMALY"
+        for call in mock_event.await_args_list
+        if len(call.args) >= 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_ph_controller_no_effect_streak_activates_anomaly_block():
+    controller = CorrectionController(CorrectionType.PH)
+    pid_stub = _PidStub(3.0)
+    pid_stub.config.dead_zone = 0.2
+    controller._pending_effect_window_by_zone[1] = {
+        "baseline_value": 6.50,
+        "target_value": 6.40,
+        "expected_direction": 1,
+        "correction_type": "add_base",
+        "window_deadline_at": time.monotonic() - 1.0,
+        "window_sec": 180,
+        "correlation_id": "corr-test-no-effect",
+    }
+    telemetry_ts = {"PH": datetime.now(timezone.utc).replace(tzinfo=None)}
+    settings = SimpleNamespace(
+        AE_SAFETY_BOUNDS_ENABLED=True,
+        AE_SAFETY_BOUNDS_KILL_SWITCH=False,
+        AE_PROACTIVE_CORRECTION_ENABLED=False,
+        AE_EQUIPMENT_ANOMALY_GUARD_ENABLED=True,
+        AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC=180,
+        AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD=1,
+        AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES=15,
+        AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA=0.03,
+        AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA=0.03,
+        AE_SAFETY_PH_HARD_PCT=20.0,
+        AE_SAFETY_PH_ABS_MIN=5.2,
+        AE_SAFETY_PH_ABS_MAX=6.8,
+        AE_SAFETY_PH_MAX_DELTA_PER_MIN=0.2,
+    )
+
+    with patch("correction_controller.get_settings", return_value=settings), \
+         patch("correction_controller.validate_freshness_or_skip", new_callable=AsyncMock, return_value=True), \
+         patch("correction_controller.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("correction_controller.send_infra_alert", new_callable=AsyncMock), \
+         patch.object(controller, "_get_pid", new_callable=AsyncMock, return_value=pid_stub):
+        result = await controller.check_and_correct(
+            zone_id=1,
+            targets={"ph": {"target": 6.5}},
+            telemetry={"PH": 6.49},
+            telemetry_timestamps=telemetry_ts,
+            nodes={},
+            water_level_ok=True,
+            actuators={},
+        )
+
+    assert result is None
+    assert 1 in controller._anomaly_blocked_until_by_zone
+    event_types = [call.args[1] for call in mock_event.await_args_list if len(call.args) >= 2]
+    assert "PH_DOSE_NO_EFFECT" in event_types
+    assert "PH_DOSING_BLOCKED_ANOMALY" in event_types
+
+
+@pytest.mark.asyncio
 async def test_ec_controller_check_and_correct_low_ec():
     """Test EC controller when EC is too low (add nutrients)."""
     controller = CorrectionController(CorrectionType.EC)

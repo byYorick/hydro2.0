@@ -9,7 +9,12 @@ import time
 import logging
 from uuid import uuid4
 from common.db import create_zone_event, create_ai_log, fetch
-from correction_cooldown import should_apply_correction, record_correction
+from correction_cooldown import (
+    analyze_proactive_correction_signal,
+    should_apply_correction,
+    should_apply_proactive_correction,
+    record_correction,
+)
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
 from services.pid_config_service import get_config, invalidate_cache
@@ -69,6 +74,10 @@ class CorrectionController:
         self.pid_state_manager = pid_state_manager or PidStateManager()
         # Счетчик подряд пропусков проверки свежести по зонам
         self._freshness_check_failure_count: Dict[int, int] = {}
+        # S9: anomaly guard runtime-state (per-zone per metric-controller instance)
+        self._pending_effect_window_by_zone: Dict[int, Dict[str, Any]] = {}
+        self._no_effect_streak_by_zone: Dict[int, int] = {}
+        self._anomaly_blocked_until_by_zone: Dict[int, float] = {}
 
     def _log_skip(
         self,
@@ -94,6 +103,110 @@ class CorrectionController:
             reason_code,
             extra=payload,
         )
+
+    def _is_anomaly_guard_enabled(self, settings: Any) -> bool:
+        return bool(getattr(settings, "AE_EQUIPMENT_ANOMALY_GUARD_ENABLED", True))
+
+    def _resolve_anomaly_min_delta(self, settings: Any) -> float:
+        if self.correction_type == CorrectionType.PH:
+            return max(0.0, float(getattr(settings, "AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA", 0.03)))
+        return max(0.0, float(getattr(settings, "AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", 0.03)))
+
+    def _resolve_anomaly_block_until(self, zone_id: int) -> Optional[float]:
+        blocked_until = self._anomaly_blocked_until_by_zone.get(zone_id)
+        if blocked_until is None:
+            return None
+        now_mono = time.monotonic()
+        if blocked_until <= now_mono:
+            self._anomaly_blocked_until_by_zone.pop(zone_id, None)
+            self._no_effect_streak_by_zone.pop(zone_id, None)
+            return None
+        return blocked_until
+
+    def _register_pending_effect_window(
+        self,
+        *,
+        zone_id: int,
+        baseline_value: float,
+        target_value: float,
+        correction_type: str,
+        settings: Any,
+        correlation_id: str,
+    ) -> None:
+        if not self._is_anomaly_guard_enabled(settings):
+            return
+        expected_direction = -1 if correction_type in {"add_acid", "dilute"} else 1
+        window_sec = max(30, int(getattr(settings, "AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC", 180)))
+        now_mono = time.monotonic()
+        self._pending_effect_window_by_zone[zone_id] = {
+            "baseline_value": float(baseline_value),
+            "target_value": float(target_value),
+            "expected_direction": expected_direction,
+            "correction_type": correction_type,
+            "window_started_at": now_mono,
+            "window_deadline_at": now_mono + float(window_sec),
+            "window_sec": window_sec,
+            "correlation_id": correlation_id,
+        }
+
+    def _evaluate_pending_effect_window(
+        self,
+        *,
+        zone_id: int,
+        current_value: float,
+        settings: Any,
+    ) -> Optional[Dict[str, Any]]:
+        if not self._is_anomaly_guard_enabled(settings):
+            self._pending_effect_window_by_zone.pop(zone_id, None)
+            return None
+
+        pending = self._pending_effect_window_by_zone.get(zone_id)
+        if not pending:
+            return None
+
+        now_mono = time.monotonic()
+        deadline_at = float(pending.get("window_deadline_at") or 0.0)
+        if now_mono < deadline_at:
+            return None
+
+        baseline_value = float(pending.get("baseline_value") or 0.0)
+        expected_direction = int(pending.get("expected_direction") or 1)
+        min_delta = self._resolve_anomaly_min_delta(settings)
+        observed_delta = float(current_value) - baseline_value
+        effect_ok = observed_delta >= min_delta if expected_direction > 0 else observed_delta <= -min_delta
+        self._pending_effect_window_by_zone.pop(zone_id, None)
+
+        if effect_ok:
+            previous_streak = int(self._no_effect_streak_by_zone.get(zone_id, 0))
+            self._no_effect_streak_by_zone[zone_id] = 0
+            return {
+                "state": "effect_confirmed",
+                "observed_delta": observed_delta,
+                "min_delta": min_delta,
+                "previous_streak": previous_streak,
+                "pending": pending,
+            }
+
+        next_streak = int(self._no_effect_streak_by_zone.get(zone_id, 0)) + 1
+        self._no_effect_streak_by_zone[zone_id] = next_streak
+        streak_threshold = max(1, int(getattr(settings, "AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD", 3)))
+        block_minutes = max(1, int(getattr(settings, "AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES", 30)))
+        block_activated = next_streak >= streak_threshold
+        block_until = None
+        if block_activated:
+            block_until = now_mono + block_minutes * 60.0
+            self._anomaly_blocked_until_by_zone[zone_id] = block_until
+
+        return {
+            "state": "no_effect_detected",
+            "observed_delta": observed_delta,
+            "min_delta": min_delta,
+            "streak": next_streak,
+            "streak_threshold": streak_threshold,
+            "block_activated": block_activated,
+            "block_until_monotonic": block_until,
+            "pending": pending,
+        }
     
     async def check_and_correct(
         self,
@@ -188,6 +301,80 @@ class CorrectionController:
 
         target_original_val = target_val
         settings = get_settings()
+        pending_eval = self._evaluate_pending_effect_window(
+            zone_id=zone_id,
+            current_value=current_val,
+            settings=settings,
+        )
+        if pending_eval:
+            pending = dict(pending_eval.get("pending") or {})
+            if pending_eval.get("state") == "effect_confirmed":
+                await create_zone_event(
+                    zone_id,
+                    f"{self.event_prefix}_DOSE_EFFECT_CONFIRMED",
+                    {
+                        "metric": target_key,
+                        "reason_code": "dose_effect_confirmed",
+                        "observed_delta": pending_eval.get("observed_delta"),
+                        "min_effect_delta": pending_eval.get("min_delta"),
+                        "previous_streak": pending_eval.get("previous_streak"),
+                        "correction_type": pending.get("correction_type"),
+                        "correlation_id": pending.get("correlation_id"),
+                    },
+                )
+            elif pending_eval.get("state") == "no_effect_detected":
+                await create_zone_event(
+                    zone_id,
+                    f"{self.event_prefix}_DOSE_NO_EFFECT",
+                    {
+                        "metric": target_key,
+                        "reason_code": "dose_no_effect",
+                        "observed_delta": pending_eval.get("observed_delta"),
+                        "min_effect_delta": pending_eval.get("min_delta"),
+                        "streak": pending_eval.get("streak"),
+                        "streak_threshold": pending_eval.get("streak_threshold"),
+                        "correction_type": pending.get("correction_type"),
+                        "correlation_id": pending.get("correlation_id"),
+                    },
+                )
+                if bool(pending_eval.get("block_activated")):
+                    block_until = pending_eval.get("block_until_monotonic")
+                    block_for_sec = max(
+                        0,
+                        int(float(block_until or time.monotonic()) - time.monotonic()),
+                    )
+                    await create_zone_event(
+                        zone_id,
+                        f"{self.event_prefix}_DOSING_BLOCKED_ANOMALY",
+                        {
+                            "metric": target_key,
+                            "reason_code": "equipment_anomaly_no_effect_streak",
+                            "streak": pending_eval.get("streak"),
+                            "streak_threshold": pending_eval.get("streak_threshold"),
+                            "block_for_seconds": block_for_sec,
+                            "status": "degraded",
+                            "correction_type": pending.get("correction_type"),
+                            "correlation_id": pending.get("correlation_id"),
+                        },
+                    )
+                    await send_infra_alert(
+                        code="infra_correction_anomaly_block",
+                        message=(
+                            f"Zone {zone_id}: {self.metric_name} dosing blocked due to no-effect streak"
+                        ),
+                        zone_id=zone_id,
+                        severity="warning",
+                        service="automation-engine",
+                        component="correction_controller",
+                        details={
+                            "metric": self.metric_name,
+                            "streak": pending_eval.get("streak"),
+                            "streak_threshold": pending_eval.get("streak_threshold"),
+                            "block_for_seconds": block_for_sec,
+                            "reason_code": "equipment_anomaly_no_effect_streak",
+                        },
+                    )
+
         safety_enabled = bool(getattr(settings, "AE_SAFETY_BOUNDS_ENABLED", True))
         safety_kill_switch = bool(getattr(settings, "AE_SAFETY_BOUNDS_KILL_SWITCH", False))
         safety_active = safety_enabled and not safety_kill_switch
@@ -287,54 +474,134 @@ class CorrectionController:
         diff = current_val - target_val
 
         pid = await self._get_pid(zone_id, target_val)
-        
-        # Проверяем, превышает ли отклонение порог
+        proactive_mode = False
+        proactive_payload: Dict[str, Any] = {}
+
         if abs(diff) <= pid.config.dead_zone:
-            logger.debug(
-                "Zone %s: %s correction skipped - diff within dead zone",
-                zone_id,
-                self.metric_name,
-                extra={
-                    "zone_id": zone_id,
-                    "metric": self.metric_name,
-                    "diff": diff,
-                    "dead_zone": pid.config.dead_zone,
-                },
-            )
-            return None
-        
-        # Проверяем cooldown и анализ тренда
-        should_correct, reason = await should_apply_correction(
-            zone_id, target_key, current_val, target_val, diff
-        )
-        
-        if not should_correct:
-            self._log_skip(
+            proactive_payload = await analyze_proactive_correction_signal(
                 zone_id=zone_id,
-                reason_code="cooldown_or_trend_policy_blocked",
-                level="info",
-                reason=reason,
-                diff=diff,
+                metric_type=self.metric_name,
+                current_value=current_val,
+                target_value=target_val,
+                dead_zone=pid.config.dead_zone,
+                settings=settings,
             )
-            # Создаем событие о пропуске корректировки
+            if not bool(proactive_payload.get("should_correct")):
+                logger.debug(
+                    "Zone %s: %s correction skipped - diff within dead zone",
+                    zone_id,
+                    self.metric_name,
+                    extra={
+                        "zone_id": zone_id,
+                        "metric": self.metric_name,
+                        "diff": diff,
+                        "dead_zone": pid.config.dead_zone,
+                        "proactive_reason_code": proactive_payload.get("reason_code"),
+                    },
+                )
+                return None
+
+            projected_diff = float(proactive_payload.get("predicted_diff") or diff)
+            proactive_allowed, proactive_reason = await should_apply_proactive_correction(
+                zone_id=zone_id,
+                correction_type=target_key,
+                projected_diff=projected_diff,
+            )
+            if not proactive_allowed:
+                self._log_skip(
+                    zone_id=zone_id,
+                    reason_code="proactive_policy_blocked",
+                    level="info",
+                    diff=diff,
+                    projected_diff=projected_diff,
+                    reason=proactive_reason,
+                )
+                await create_zone_event(
+                    zone_id,
+                    f"{self.event_prefix}_CORRECTION_SKIPPED",
+                    {
+                        f"current_{target_key}": current_val,
+                        f"target_{target_key}": target_val,
+                        "diff": diff,
+                        "reason": proactive_reason,
+                        "reason_code": "proactive_policy_blocked",
+                        "proactive": proactive_payload,
+                    },
+                )
+                return None
+
+            proactive_mode = True
             await create_zone_event(
                 zone_id,
-                f'{self.event_prefix}_CORRECTION_SKIPPED',
+                f"{self.event_prefix}_PROACTIVE_CORRECTION_TRIGGERED",
                 {
-                    f'current_{target_key}': current_val,
-                    f'target_{target_key}': target_val,
-                    'diff': diff,
-                    'reason': reason
-                }
+                    "metric": target_key,
+                    "reason_code": str(proactive_payload.get("reason_code") or "proactive_triggered"),
+                    "diff": diff,
+                    "predicted_diff": proactive_payload.get("predicted_diff"),
+                    "predicted_value": proactive_payload.get("predicted_value"),
+                    "predicted_deviation": proactive_payload.get("predicted_deviation"),
+                    "slope_per_min": proactive_payload.get("slope_per_min"),
+                    "horizon_minutes": proactive_payload.get("horizon_minutes"),
+                    "samples_count": proactive_payload.get("samples_count"),
+                },
             )
-            return None
-        
+            reason = "Proactive correction triggered (predicted target escape)"
+        else:
+            # Проверяем cooldown и анализ тренда
+            should_correct, reason = await should_apply_correction(
+                zone_id, target_key, current_val, target_val, diff
+            )
+
+            if not should_correct:
+                self._log_skip(
+                    zone_id=zone_id,
+                    reason_code="cooldown_or_trend_policy_blocked",
+                    level="info",
+                    reason=reason,
+                    diff=diff,
+                )
+                # Создаем событие о пропуске корректировки
+                await create_zone_event(
+                    zone_id,
+                    f'{self.event_prefix}_CORRECTION_SKIPPED',
+                    {
+                        f'current_{target_key}': current_val,
+                        f'target_{target_key}': target_val,
+                        'diff': diff,
+                        'reason': reason
+                    }
+                )
+                return None
+
         # Проверяем уровень воды перед дозированием
         if not water_level_ok:
             self._log_skip(zone_id=zone_id, reason_code="water_level_not_ok")
             return None
-        
-        correction_type = self._determine_correction_type(diff)
+
+        correction_type_diff = float(proactive_payload.get("predicted_diff") or diff)
+        correction_type = self._determine_correction_type(correction_type_diff)
+        blocked_until = self._resolve_anomaly_block_until(zone_id)
+        if blocked_until is not None:
+            block_remaining_sec = max(0, int(blocked_until - time.monotonic()))
+            self._log_skip(
+                zone_id=zone_id,
+                reason_code="equipment_anomaly_block_active",
+                correction_type=correction_type,
+                block_remaining_sec=block_remaining_sec,
+            )
+            await create_zone_event(
+                zone_id,
+                f"{self.event_prefix}_CORRECTION_SKIPPED_ANOMALY",
+                {
+                    "metric": target_key,
+                    "reason_code": "equipment_anomaly_block_active",
+                    "block_remaining_sec": block_remaining_sec,
+                    "correction_type": correction_type,
+                    "status": "degraded",
+                },
+            )
+            return None
 
         # Находим actuator для корректировки
         actuator = self._select_actuator(
@@ -459,6 +726,7 @@ class CorrectionController:
                 'pid_dt_seconds': dt_seconds,
                 'safety_bounds_active': safety_active,
                 'target_rate_limited': bool(rate_limit_result.get("clamped")),
+                'proactive_mode': proactive_mode,
             },
             'zone_id': zone_id,
             'correction_type_str': target_key,
@@ -490,6 +758,16 @@ class CorrectionController:
                 "abs_min": bounds_context.get("abs_min"),
                 "abs_max": bounds_context.get("abs_max"),
                 "max_delta_per_min": bounds_context.get("max_delta_per_min"),
+            }
+        if proactive_mode:
+            command["event_details"]["proactive"] = {
+                "reason_code": proactive_payload.get("reason_code"),
+                "slope_per_min": proactive_payload.get("slope_per_min"),
+                "predicted_diff": proactive_payload.get("predicted_diff"),
+                "predicted_value": proactive_payload.get("predicted_value"),
+                "predicted_deviation": proactive_payload.get("predicted_deviation"),
+                "horizon_minutes": proactive_payload.get("horizon_minutes"),
+                "samples_count": proactive_payload.get("samples_count"),
             }
 
         return command
@@ -739,6 +1017,16 @@ class CorrectionController:
                 'correction': correction_type
             }
         )
+
+        if correction_type in {"add_acid", "add_base", "add_nutrients", "dilute"}:
+            self._register_pending_effect_window(
+                zone_id=zone_id,
+                baseline_value=current_val,
+                target_value=target_val,
+                correction_type=correction_type,
+                settings=get_settings(),
+                correlation_id=correlation_id,
+            )
 
     async def _publish_controller_command_with_retry(
         self,

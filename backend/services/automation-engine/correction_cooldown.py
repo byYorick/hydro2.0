@@ -7,7 +7,7 @@ Correction Cooldown Manager - предотвращение лавины корр
 - Тренд изменения параметра (улучшается/ухудшается)
 - Cooldown период (10 минут по умолчанию)
 """
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
 from common.db import fetch, execute
@@ -258,6 +258,166 @@ async def should_apply_correction(
     
     # Отклонение небольшое (< 0.2), не корректируем
     return False, f"Отклонение {abs(diff):.2f} в пределах допустимого диапазона"
+
+
+def _resolve_min_slope_per_min(metric_type: str, settings: Any) -> float:
+    metric = str(metric_type or "").upper()
+    if metric == "PH":
+        return float(getattr(settings, "AE_PROACTIVE_PH_MIN_SLOPE_PER_MIN", 0.003))
+    return float(getattr(settings, "AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN", 0.005))
+
+
+def _build_ewma(values: list[float], alpha: float) -> list[float]:
+    alpha = max(0.01, min(0.99, float(alpha)))
+    ewma: list[float] = []
+    for value in values:
+        if not ewma:
+            ewma.append(value)
+            continue
+        ewma.append(alpha * value + (1.0 - alpha) * ewma[-1])
+    return ewma
+
+
+def _linear_slope_per_min(series: list[float], points_ts: list[datetime]) -> Optional[float]:
+    if len(series) < 2 or len(series) != len(points_ts):
+        return None
+    first_ts = points_ts[0]
+    x = [max(0.0, (_to_naive_utc(ts) - first_ts).total_seconds() / 60.0) for ts in points_ts]
+    y = [float(v) for v in series]
+    n = len(y)
+    x_mean = sum(x) / n
+    y_mean = sum(y) / n
+    numerator = sum((x[i] - x_mean) * (y[i] - y_mean) for i in range(n))
+    denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+async def analyze_proactive_correction_signal(
+    zone_id: int,
+    metric_type: str,
+    current_value: float,
+    target_value: float,
+    dead_zone: float,
+    settings: Any,
+) -> Dict[str, Any]:
+    """
+    S9: сигнал proactive-correction (EWMA + slope).
+    Возвращает решение, нужно ли запускать коррекцию внутри dead-zone.
+    """
+    if not bool(getattr(settings, "AE_PROACTIVE_CORRECTION_ENABLED", True)):
+        return {"should_correct": False, "reason_code": "proactive_disabled"}
+
+    window_minutes = max(5, int(getattr(settings, "AE_PROACTIVE_WINDOW_MINUTES", 45)))
+    horizon_minutes = max(1, int(getattr(settings, "AE_PROACTIVE_HORIZON_MINUTES", 20)))
+    min_points = max(3, int(getattr(settings, "AE_PROACTIVE_MIN_POINTS", 4)))
+    alpha = float(getattr(settings, "AE_PROACTIVE_EWMA_ALPHA", 0.35))
+    slope_threshold = max(0.0, _resolve_min_slope_per_min(metric_type, settings))
+    metric = str(metric_type or "").upper()
+
+    analysis_now = _now_naive_utc()
+    cutoff_time = analysis_now - timedelta(minutes=window_minutes)
+
+    rows = await fetch(
+        """
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = $2
+          AND ts.ts >= $3
+          AND ts.ts <= $4
+        ORDER BY ts.ts ASC
+        """,
+        zone_id,
+        metric,
+        cutoff_time,
+        analysis_now,
+    )
+
+    points: list[tuple[datetime, float]] = []
+    for row in rows or []:
+        sample_ts = _to_naive_utc(row.get("ts"))
+        sample_val = row.get("value")
+        if sample_ts is None or sample_val is None or sample_ts > analysis_now:
+            continue
+        try:
+            points.append((sample_ts, float(sample_val)))
+        except (TypeError, ValueError):
+            continue
+    points.append((analysis_now, float(current_value)))
+
+    if len(points) < min_points:
+        return {
+            "should_correct": False,
+            "reason_code": "proactive_insufficient_data",
+            "samples_count": len(points),
+        }
+
+    values = [value for _, value in points]
+    points_ts = [ts for ts, _ in points]
+    ewma_values = _build_ewma(values, alpha)
+    slope_per_min = _linear_slope_per_min(ewma_values, points_ts)
+    if slope_per_min is None:
+        return {"should_correct": False, "reason_code": "proactive_slope_unavailable"}
+
+    if abs(slope_per_min) < slope_threshold:
+        return {
+            "should_correct": False,
+            "reason_code": "proactive_slope_below_threshold",
+            "slope_per_min": slope_per_min,
+            "slope_threshold": slope_threshold,
+        }
+
+    current_error = float(current_value) - float(target_value)
+    predicted_value = float(current_value) + slope_per_min * float(horizon_minutes)
+    predicted_error = predicted_value - float(target_value)
+    current_deviation = abs(current_error)
+    predicted_deviation = abs(predicted_error)
+
+    if predicted_deviation <= max(0.0, float(dead_zone)):
+        return {
+            "should_correct": False,
+            "reason_code": "proactive_predicted_in_dead_zone",
+            "slope_per_min": slope_per_min,
+            "predicted_deviation": predicted_deviation,
+        }
+
+    if predicted_deviation <= current_deviation:
+        return {
+            "should_correct": False,
+            "reason_code": "proactive_trend_not_worsening",
+            "slope_per_min": slope_per_min,
+            "predicted_deviation": predicted_deviation,
+            "current_deviation": current_deviation,
+        }
+
+    return {
+        "should_correct": True,
+        "reason_code": "proactive_predicted_target_escape",
+        "slope_per_min": slope_per_min,
+        "predicted_value": predicted_value,
+        "predicted_diff": predicted_error,
+        "predicted_deviation": predicted_deviation,
+        "current_deviation": current_deviation,
+        "horizon_minutes": horizon_minutes,
+        "samples_count": len(points),
+    }
+
+
+async def should_apply_proactive_correction(
+    zone_id: int,
+    correction_type: str,
+    projected_diff: float,
+    cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES,
+) -> Tuple[bool, str]:
+    """Cooldown gate для proactive-correction внутри dead-zone."""
+    if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
+        return False, "Proactive correction blocked by cooldown"
+    if abs(float(projected_diff)) <= 0.2:
+        return False, "Proactive correction skipped: projected diff too small"
+    return True, "Proactive correction allowed"
 
 
 async def record_correction(zone_id: int, correction_type: str, details: Dict) -> None:

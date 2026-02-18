@@ -88,6 +88,21 @@ class AutomationSettings:
     AE_SAFETY_EC_ABS_MIN: float = float(os.getenv("AE_SAFETY_EC_ABS_MIN", "0.6"))
     AE_SAFETY_EC_ABS_MAX: float = float(os.getenv("AE_SAFETY_EC_ABS_MAX", "2.8"))
     AE_SAFETY_EC_MAX_DELTA_PER_MIN: float = float(os.getenv("AE_SAFETY_EC_MAX_DELTA_PER_MIN", "0.2"))
+    # S9 proactive correction (EWMA/slope)
+    AE_PROACTIVE_CORRECTION_ENABLED: bool = os.getenv("AE_PROACTIVE_CORRECTION_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_PROACTIVE_EWMA_ALPHA: float = float(os.getenv("AE_PROACTIVE_EWMA_ALPHA", "0.35"))
+    AE_PROACTIVE_WINDOW_MINUTES: int = int(os.getenv("AE_PROACTIVE_WINDOW_MINUTES", "45"))
+    AE_PROACTIVE_HORIZON_MINUTES: int = int(os.getenv("AE_PROACTIVE_HORIZON_MINUTES", "20"))
+    AE_PROACTIVE_MIN_POINTS: int = int(os.getenv("AE_PROACTIVE_MIN_POINTS", "4"))
+    AE_PROACTIVE_PH_MIN_SLOPE_PER_MIN: float = float(os.getenv("AE_PROACTIVE_PH_MIN_SLOPE_PER_MIN", "0.003"))
+    AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN: float = float(os.getenv("AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN", "0.005"))
+    # S9 equipment anomaly guard: dose -> no_effect xN windows
+    AE_EQUIPMENT_ANOMALY_GUARD_ENABLED: bool = os.getenv("AE_EQUIPMENT_ANOMALY_GUARD_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC", "180"))
+    AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD", "3"))
+    AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES", "30"))
+    AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA", "0.03"))
+    AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", "0.03"))
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert

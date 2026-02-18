@@ -36,6 +36,13 @@ def test_automation_settings_defaults():
     assert settings.AE_SAFETY_BOUNDS_KILL_SWITCH is False
     assert settings.AE_SAFETY_PH_HARD_PCT == 20.0
     assert settings.AE_SAFETY_EC_HARD_PCT == 20.0
+    assert settings.AE_PROACTIVE_CORRECTION_ENABLED is True
+    assert settings.AE_PROACTIVE_EWMA_ALPHA == 0.35
+    assert settings.AE_PROACTIVE_WINDOW_MINUTES == 45
+    assert settings.AE_PROACTIVE_HORIZON_MINUTES == 20
+    assert settings.AE_EQUIPMENT_ANOMALY_GUARD_ENABLED is True
+    assert settings.AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD == 3
+    assert settings.AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES == 30
     
     # Восстанавливаем переменную окружения
     if old_max_concurrent_zones is not None:
