@@ -23,3 +23,6 @@ INFRA_ZONE_EVENT_WRITE_FAILED = "infra_zone_event_write_failed"
 # Reason codes
 REASON_REQUIRED_NODES_OFFLINE = "required_nodes_offline"
 REASON_REQUIRED_NODES_RECOVERED = "required_nodes_recovered"
+REASON_CORRECTION_MISSING_FLAGS = "missing_flags"
+REASON_CORRECTION_STALE_FLAGS = "stale_flags"
+REASON_CORRECTION_GATING_PASSED = "gating_passed"

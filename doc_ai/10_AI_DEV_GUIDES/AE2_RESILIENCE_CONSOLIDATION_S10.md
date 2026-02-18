@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.5  
+**Версия:** v0.6  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -109,13 +109,22 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `required_nodes_offline` state сохраняется в snapshot,
   - после `restore_runtime_state(...)` корректно выполняется reconcile через recovered-сигнал.
 
+12. Correction-gating reason-code contract alignment:
+- `resilience_contract.py` расширен reason-кодами:
+  - `missing_flags`,
+  - `stale_flags`,
+  - `gating_passed`.
+- применено в:
+  - `zone_correction_orchestrator.py`,
+  - `zone_automation_service.py` (`SENSOR_MODE_POLICY`).
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
 3. `CommandBus`/publish-path не модифицировались.
 
 ## 4. Тесты
-1. `pytest -q test_zone_automation_service.py test_zone_node_recovery.py test_correction_controller.py test_main.py test_config_settings.py` -> `124 passed`.
+1. `pytest -q test_zone_automation_service.py test_correction_controller.py test_main.py test_config_settings.py` -> `119 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).

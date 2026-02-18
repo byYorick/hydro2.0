@@ -36,6 +36,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 6. `correction_command_retry` выровнен по `resilience_contract` кодам infra-alert для retry/unconfirmed путей.
 7. `zone_housekeeping`/`zone_controller_processors` и event-write path выровнены по `resilience_contract` кодам.
 8. Добавлен restart-parity acceptance кейс для offline required-nodes recovery state.
+9. `correction gating` reason-коды выровнены по `resilience_contract` (`missing_flags/stale_flags/gating_passed`).
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.

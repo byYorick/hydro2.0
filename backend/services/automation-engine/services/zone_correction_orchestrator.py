@@ -6,6 +6,11 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from services.correction_bounds_policy import extract_bounds_overrides
+from services.resilience_contract import (
+    REASON_CORRECTION_GATING_PASSED,
+    REASON_CORRECTION_MISSING_FLAGS,
+    REASON_CORRECTION_STALE_FLAGS,
+)
 
 
 BuildCorrectionGatingStateFn = Callable[..., Dict[str, Any]]
@@ -94,7 +99,7 @@ async def process_correction_controllers(
             zone_id=zone_id,
             event_type="CORRECTION_SKIPPED_MISSING_FLAGS",
             event_payload={
-                "reason_code": "missing_flags",
+                "reason_code": REASON_CORRECTION_MISSING_FLAGS,
                 "missing_flags": gating_state["missing_flags"],
                 "correction_flags": gating_state["flags"],
                 "flag_age_seconds": gating_state.get("flag_age_seconds") or {},
@@ -102,13 +107,13 @@ async def process_correction_controllers(
                 "timestamp_diagnostics": gating_state.get("timestamp_diagnostics") or {},
                 "workflow_phase": workflow_phase,
             },
-            reason_code="missing_flags",
+            reason_code=REASON_CORRECTION_MISSING_FLAGS,
         )
         await emit_correction_missing_flags_signal_fn(zone_id, gating_state, nodes)
         await apply_sensor_mode_policy_fn(
             zone_id=zone_id,
             nodes=nodes,
-            reason_code="missing_flags",
+            reason_code=REASON_CORRECTION_MISSING_FLAGS,
             can_run=False,
         )
         return
@@ -132,7 +137,7 @@ async def process_correction_controllers(
             },
         )
         event_type = (
-            "CORRECTION_SKIPPED_STALE_FLAGS" if reason_code == "stale_flags" else "CORRECTION_SKIPPED_FLAGS_GATING"
+            "CORRECTION_SKIPPED_STALE_FLAGS" if reason_code == REASON_CORRECTION_STALE_FLAGS else "CORRECTION_SKIPPED_FLAGS_GATING"
         )
         await emit_correction_skip_event_throttled_fn(
             zone_id=zone_id,
@@ -149,7 +154,7 @@ async def process_correction_controllers(
             },
             reason_code=reason_code,
         )
-        if reason_code == "stale_flags":
+        if reason_code == REASON_CORRECTION_STALE_FLAGS:
             await emit_correction_stale_flags_signal_fn(zone_id, gating_state, nodes)
         await apply_sensor_mode_policy_fn(
             zone_id=zone_id,
@@ -162,7 +167,7 @@ async def process_correction_controllers(
     await apply_sensor_mode_policy_fn(
         zone_id=zone_id,
         nodes=nodes,
-        reason_code="gating_passed",
+        reason_code=REASON_CORRECTION_GATING_PASSED,
         can_run=True,
     )
 

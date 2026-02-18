@@ -82,6 +82,9 @@ from services.zone_node_recovery import (
 from services.resilience_contract import (
     INFRA_ZONE_REQUIRED_NODES_OFFLINE,
     INFRA_ZONE_EVENT_WRITE_FAILED,
+    REASON_CORRECTION_GATING_PASSED,
+    REASON_CORRECTION_MISSING_FLAGS,
+    REASON_CORRECTION_STALE_FLAGS,
     REASON_REQUIRED_NODES_OFFLINE,
     REASON_REQUIRED_NODES_RECOVERED,
 )
@@ -164,12 +167,12 @@ WORKFLOW_EC_COMPONENTS_BY_PHASE = {
     "irrig_recirc": ["calcium", "magnesium", "micro"],
 }
 SENSOR_MODE_POLICY = {
-    "gating_passed": "noop",
-    "missing_flags": "noop",
+    REASON_CORRECTION_GATING_PASSED: "noop",
+    REASON_CORRECTION_MISSING_FLAGS: "noop",
     "flow_inactive": "deactivate",
     "sensor_unstable": "deactivate",
     "corrections_not_allowed": "deactivate",
-    "stale_flags": "deactivate",
+    REASON_CORRECTION_STALE_FLAGS: "deactivate",
 }
 
 
