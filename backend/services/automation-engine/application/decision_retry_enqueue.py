@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from domain.models.decision_models import DecisionOutcome
+from services.resilience_contract import (
+    SCHEDULER_RETRY_REASON_PAYLOAD_KEY,
+    SCHEDULER_RETRY_SOURCE,
+    SCHEDULER_RETRY_STATUS_FAILED,
+)
 
 SafeIntFn = Callable[[Any], Optional[int]]
 ExtractNextDueAtFn = Callable[[DecisionOutcome, Dict[str, Any]], Optional[str]]
@@ -39,7 +44,7 @@ async def enqueue_decision_retry(
     retry_payload = dict(payload)
     if retry_attempt is not None:
         retry_payload["retry_attempt"] = max(0, retry_attempt)
-    retry_payload["decision_retry_reason_code"] = decision.reason_code
+    retry_payload[SCHEDULER_RETRY_REASON_PAYLOAD_KEY] = decision.reason_code
     context_correlation_id = str(context.get("correlation_id") or "").strip() or None
     root_parent_correlation_id = str(retry_payload.get("parent_correlation_id") or "").strip() or None
     parent_correlation_id = root_parent_correlation_id or context_correlation_id
@@ -61,7 +66,7 @@ async def enqueue_decision_retry(
             payload=retry_payload,
             scheduled_for=next_due_at,
             correlation_id=retry_correlation_id,
-            source="automation-engine:decision-retry",
+            source=SCHEDULER_RETRY_SOURCE,
         )
     except ValueError as exc:
         log_warning(
@@ -72,7 +77,7 @@ async def enqueue_decision_retry(
             exc,
         )
         return {
-            "status": "failed",
+            "status": SCHEDULER_RETRY_STATUS_FAILED,
             "error": str(exc),
             "scheduled_for": next_due_at,
         }

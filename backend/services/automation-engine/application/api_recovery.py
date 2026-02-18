@@ -11,6 +11,7 @@ from services.resilience_contract import (
     INFRA_SCHEDULER_TASK_RECOVERY_PERSIST_FAILED,
     INFRA_WORKFLOW_STATE_RECOVERY_ENQUEUE_FAILED,
     INFRA_WORKFLOW_STATE_RECOVERY_ROW_FAILED,
+    SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
 )
 
 
@@ -89,12 +90,12 @@ async def recover_inflight_scheduler_tasks(
             continue
 
         recovery_result = build_execution_terminal_result_fn(
-            error_code="task_recovered_after_restart",
+            error_code=SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
             reason="Automation-engine перезапущен: in-flight задача финализирована recovery-политикой",
             mode="startup_recovery_finalize",
             action_required=True,
             decision="fail",
-            reason_code="task_recovered_after_restart",
+            reason_code=SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
         )
 
         recovered_task = {
@@ -111,8 +112,8 @@ async def recover_inflight_scheduler_tasks(
             "payload_fingerprint": details.get("payload_fingerprint") if isinstance(details, dict) else None,
             "payload": details.get("payload") if isinstance(details.get("payload"), dict) else {},
             "result": recovery_result,
-            "error": "task_recovered_after_restart",
-            "error_code": "task_recovered_after_restart",
+            "error": SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
+            "error_code": SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
         }
 
         if not recovered_task["created_at"]:
@@ -151,7 +152,7 @@ async def recover_inflight_scheduler_tasks(
                     "task_id": task_id,
                     "task_type": task_type,
                     "status": "failed",
-                    "error_code": "task_recovered_after_restart",
+                    "error_code": SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
                     "source": "automation_engine_startup_recovery",
                 },
             )

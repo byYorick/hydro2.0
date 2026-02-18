@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v1.4  
+**Версия:** v1.5  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -181,6 +181,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `test_required_nodes_offline_restart_parity_reemits_when_missing_set_changes`
   - сценарий: offline (`missing=["ph"]`) -> snapshot/restore -> offline (`missing=["ph","ec"]`) -> immediate re-emit внутри throttle окна.
 
+21. Scheduler execution contract alignment (retry/bootstrap/recovery):
+- `resilience_contract.py` расширен константами:
+  - scheduler bootstrap details: `scheduler_bootstrap_required`, `scheduler_lease_*`,
+  - scheduler modes: `deadline_rejected`, `execution_failed`,
+  - scheduler recovery marker: `task_recovered_after_restart`,
+  - scheduler retry contract: `source`, `payload reason key`, `failed status`.
+- применено в:
+  - `application/decision_retry_enqueue.py`,
+  - `application/api_scheduler_bootstrap.py`,
+  - `application/api_scheduler_helpers.py`,
+  - `application/api_recovery.py`.
+- unit coverage:
+  - `test_decision_retry_enqueue.py` проверяет `source` и retry payload reason key из контракта.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -195,6 +209,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 6. `pytest test_decision_alerts.py test_scheduler_task_executor.py test_api.py` -> `140 passed`.
 7. `pytest test_zone_automation_service.py test_main.py test_scheduler_task_executor.py` -> `131 passed`.
 8. `pytest test_zone_automation_service.py` -> `52 passed`.
+9. `pytest test_decision_retry_enqueue.py test_api.py test_scheduler_task_executor.py` -> `139 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).

@@ -8,6 +8,11 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+from services.resilience_contract import (
+    SCHEDULER_MODE_DEADLINE_REJECTED,
+    SCHEDULER_MODE_EXECUTION_FAILED,
+)
+
 
 def new_scheduler_task_id() -> str:
     return f"st-{uuid4().hex}"
@@ -71,7 +76,7 @@ def build_deadline_terminal_result(
 
     return {
         "success": False,
-        "mode": "deadline_rejected",
+        "mode": SCHEDULER_MODE_DEADLINE_REJECTED,
         "action_required": False,
         "decision": "skip",
         "reason_code": reason_code,
@@ -152,7 +157,7 @@ def normalize_failed_execution_result(
     normalized["decision"] = decision
     normalized["reason_code"] = reason_code
     normalized["reason"] = reason
-    normalized.setdefault("mode", "execution_failed")
+    normalized.setdefault("mode", SCHEDULER_MODE_EXECUTION_FAILED)
     normalized["success"] = False
     return normalized
 

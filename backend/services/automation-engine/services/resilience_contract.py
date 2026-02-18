@@ -74,6 +74,18 @@ REASON_CORRECTION_MISSING_FLAGS = "missing_flags"
 REASON_CORRECTION_STALE_FLAGS = "stale_flags"
 REASON_CORRECTION_GATING_PASSED = "gating_passed"
 
+# Scheduler execution contract
+SCHEDULER_BOOTSTRAP_REQUIRED = "scheduler_bootstrap_required"
+SCHEDULER_LEASE_NOT_FOUND = "scheduler_lease_not_found"
+SCHEDULER_LEASE_MISMATCH = "scheduler_lease_mismatch"
+SCHEDULER_LEASE_EXPIRED = "scheduler_lease_expired"
+SCHEDULER_MODE_DEADLINE_REJECTED = "deadline_rejected"
+SCHEDULER_MODE_EXECUTION_FAILED = "execution_failed"
+SCHEDULER_TASK_RECOVERED_AFTER_RESTART = "task_recovered_after_restart"
+SCHEDULER_RETRY_SOURCE = "automation-engine:decision-retry"
+SCHEDULER_RETRY_REASON_PAYLOAD_KEY = "decision_retry_reason_code"
+SCHEDULER_RETRY_STATUS_FAILED = "failed"
+
 _NON_ALNUM_UNDERSCORE = re.compile(r"[^a-z0-9_]+")
 
 

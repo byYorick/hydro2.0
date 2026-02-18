@@ -45,6 +45,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 15. dynamic `decision_alerts` infra-code pattern выровнен через `resilience_contract.build_decision_alert_code()` с unit coverage.
 16. расширен restart parity для offline required-nodes окна: throttle continuity сохраняется после restore runtime-state.
 17. добавлен restart parity acceptance кейс для missing-set delta: при изменении missing list сигнал re-emit не блокируется throttle после restore.
+18. scheduler retry/bootstrap/recovery execution paths выровнены по contract constants (mode/detail/source/payload-key).
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.
