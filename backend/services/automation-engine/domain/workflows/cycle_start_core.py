@@ -6,6 +6,14 @@ This module is imported lazily from SchedulerTaskExecutor to keep startup import
 from __future__ import annotations
 
 from application.scheduler_executor_impl import *  # noqa: F401,F403
+from services.resilience_contract import (
+    INFRA_CYCLE_START_ENQUEUE_FAILED,
+    INFRA_CYCLE_START_NODES_UNAVAILABLE,
+    INFRA_CYCLE_START_REFILL_COMMAND_FAILED,
+    INFRA_CYCLE_START_TANK_LEVEL_STALE,
+    INFRA_CYCLE_START_TANK_LEVEL_UNAVAILABLE,
+    INFRA_TANK_REFILL_TIMEOUT,
+)
 
 
 async def execute_cycle_start_workflow_core(
@@ -59,7 +67,7 @@ async def execute_cycle_start_workflow_core(
         error = ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_nodes_unavailable",
+            code=INFRA_CYCLE_START_NODES_UNAVAILABLE,
             message=f"Старт цикла заблокирован: нет online-нод ({', '.join(missing_types)})",
             severity="error",
             details={
@@ -107,7 +115,7 @@ async def execute_cycle_start_workflow_core(
         error = ERR_CYCLE_TANK_LEVEL_UNAVAILABLE
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_tank_level_unavailable",
+            code=INFRA_CYCLE_START_TANK_LEVEL_UNAVAILABLE,
             message="Старт цикла невозможен: нет валидной телеметрии уровня бака чистой воды",
             severity="error",
             details={
@@ -153,7 +161,7 @@ async def execute_cycle_start_workflow_core(
         )
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_tank_level_stale",
+            code=INFRA_CYCLE_START_TANK_LEVEL_STALE,
             message="Старт цикла заблокирован: телеметрия уровня бака устарела",
             severity="error",
             details={
@@ -234,7 +242,7 @@ async def execute_cycle_start_workflow_core(
         )
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_tank_refill_timeout",
+            code=INFRA_TANK_REFILL_TIMEOUT,
             message="Таймаут наполнения бака чистой воды",
             severity="critical",
             details={
@@ -270,7 +278,7 @@ async def execute_cycle_start_workflow_core(
         error = ERR_CYCLE_REFILL_NODE_NOT_FOUND
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_refill_command_failed",
+            code=INFRA_CYCLE_START_REFILL_COMMAND_FAILED,
             message="Невозможно запустить refill: не найден online-узел для наполнения бака",
             severity="error",
             details={"workflow": workflow, "error_code": error},
@@ -309,7 +317,7 @@ async def execute_cycle_start_workflow_core(
         error_code = str(publish_result.get("error_code") or ERR_COMMAND_PUBLISH_FAILED)
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_refill_command_failed",
+            code=INFRA_CYCLE_START_REFILL_COMMAND_FAILED,
             message=f"Не удалось отправить refill-команду ({error_code})",
             severity="error",
             details={
@@ -379,7 +387,7 @@ async def execute_cycle_start_workflow_core(
         error = ERR_CYCLE_SELF_TASK_ENQUEUE_FAILED
         await self._emit_cycle_alert(
             zone_id=zone_id,
-            code="infra_cycle_start_enqueue_failed",
+            code=INFRA_CYCLE_START_ENQUEUE_FAILED,
             message=f"Refill запущен, но self-task не поставлен: {exc}",
             severity="error",
             details={

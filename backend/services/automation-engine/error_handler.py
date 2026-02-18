@@ -9,6 +9,7 @@ from functools import wraps
 from prometheus_client import Counter
 from common.service_logs import send_service_log
 from common.infra_alerts import send_infra_exception_alert
+from services.resilience_contract import INFRA_UNKNOWN_ERROR
 
 from exceptions import (
     AutomationError,
@@ -51,7 +52,7 @@ def _emit_infra_error_alert(
     loop.create_task(
         send_infra_exception_alert(
             error=error,
-            code="infra_unknown_error",
+            code=INFRA_UNKNOWN_ERROR,
             alert_type="Automation Error",
             severity="error",
             zone_id=zone_id,

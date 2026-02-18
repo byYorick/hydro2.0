@@ -39,6 +39,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 9. `correction gating` reason-коды выровнены по `resilience_contract` (`missing_flags/stale_flags/gating_passed`).
 10. `correction anomaly block` infra-alert code выровнен по `resilience_contract`.
 11. `application/*` infra-alert literal codes выровнены по `resilience_contract` для API/runtime/recovery/scheduler/device-task/diagnostics/task-event persistence путей.
+12. `cycle_start` workflow и `error_handler` unknown-error alert выровнены по `resilience_contract`.
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.

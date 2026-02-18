@@ -32,6 +32,12 @@ INFRA_TASK_NO_ONLINE_NODES = "infra_task_no_online_nodes"
 INFRA_UNKNOWN_ERROR = "infra_unknown_error"
 INFRA_DIAGNOSTICS_SERVICE_UNAVAILABLE = "infra_diagnostics_service_unavailable"
 INFRA_SCHEDULER_TASK_EVENT_PERSIST_FAILED = "infra_scheduler_task_event_persist_failed"
+INFRA_CYCLE_START_NODES_UNAVAILABLE = "infra_cycle_start_nodes_unavailable"
+INFRA_CYCLE_START_TANK_LEVEL_UNAVAILABLE = "infra_cycle_start_tank_level_unavailable"
+INFRA_CYCLE_START_TANK_LEVEL_STALE = "infra_cycle_start_tank_level_stale"
+INFRA_TANK_REFILL_TIMEOUT = "infra_tank_refill_timeout"
+INFRA_CYCLE_START_REFILL_COMMAND_FAILED = "infra_cycle_start_refill_command_failed"
+INFRA_CYCLE_START_ENQUEUE_FAILED = "infra_cycle_start_enqueue_failed"
 
 # Reason codes
 REASON_REQUIRED_NODES_OFFLINE = "required_nodes_offline"
