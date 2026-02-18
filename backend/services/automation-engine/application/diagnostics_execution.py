@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict
 
 from domain.models.decision_models import DecisionOutcome
+from services.resilience_contract import INFRA_DIAGNOSTICS_SERVICE_UNAVAILABLE
 
 EmitTaskEventFn = Callable[..., Awaitable[None]]
 SendInfraAlertFn = Callable[..., Awaitable[Any]]
@@ -70,7 +71,7 @@ async def execute_diagnostics(
             },
         )
         await send_infra_alert_fn(
-            code="infra_diagnostics_service_unavailable",
+            code=INFRA_DIAGNOSTICS_SERVICE_UNAVAILABLE,
             alert_type="Diagnostics Service Unavailable",
             message="Diagnostics задача не выполнена: ZoneAutomationService недоступен",
             severity="error",
@@ -115,7 +116,7 @@ async def execute_diagnostics(
             },
         )
         await send_infra_alert_fn(
-            code="infra_diagnostics_service_unavailable",
+            code=INFRA_DIAGNOSTICS_SERVICE_UNAVAILABLE,
             alert_type="Diagnostics Service Unavailable",
             message=f"Diagnostics задача завершилась ошибкой zone_service: {exc}",
             severity="error",

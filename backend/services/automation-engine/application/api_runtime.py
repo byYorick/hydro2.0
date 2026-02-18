@@ -7,6 +7,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import (
+    INFRA_AUTOMATION_API_HTTP_5XX,
+    INFRA_AUTOMATION_API_UNHANDLED_EXCEPTION,
+    INFRA_AUTOMATION_BACKGROUND_TASK_CRASHED,
+)
+
 
 async def process_trace_request(
     request: Any,
@@ -45,7 +51,7 @@ async def process_trace_request(
         try:
             await send_infra_exception_alert_fn(
                 error=exc,
-                code="infra_automation_api_unhandled_exception",
+                code=INFRA_AUTOMATION_API_UNHANDLED_EXCEPTION,
                 alert_type="Automation API Unhandled Exception",
                 severity="error",
                 zone_id=None,
@@ -88,7 +94,7 @@ async def process_trace_request(
     if response.status_code >= 500:
         try:
             await send_infra_alert_fn(
-                code="infra_automation_api_http_5xx",
+                code=INFRA_AUTOMATION_API_HTTP_5XX,
                 alert_type="Automation API HTTP 5xx",
                 message=(
                     f"Automation API вернул HTTP {response.status_code} "
@@ -157,7 +163,7 @@ def spawn_background_task(
         async def _send_alert() -> None:
             await send_infra_exception_alert_fn(
                 error=exc,
-                code="infra_automation_background_task_crashed",
+                code=INFRA_AUTOMATION_BACKGROUND_TASK_CRASHED,
                 alert_type="Automation Background Task Crashed",
                 severity="error",
                 zone_id=zone_id,

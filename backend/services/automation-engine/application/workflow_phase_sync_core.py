@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict
 
+from services.resilience_contract import INFRA_ZONE_WORKFLOW_STATE_PERSIST_FAILED
+
 DeriveWorkflowPhaseFn = Callable[..., str | None]
 ExtractWorkflowHintFn = Callable[[Dict[str, Any], Dict[str, Any]], str]
 NormalizeWorkflowPhaseFn = Callable[[Any], str]
@@ -113,7 +115,7 @@ async def sync_zone_workflow_phase_core(
             persist_failed = True
             try:
                 await send_infra_alert_fn(
-                    code="infra_zone_workflow_state_persist_failed",
+                    code=INFRA_ZONE_WORKFLOW_STATE_PERSIST_FAILED,
                     alert_type="Zone Workflow State Persist Failed",
                     message="Не удалось обновить zone_workflow_state",
                     severity="error",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import INFRA_SCHEDULER_TASK_EVENT_PERSIST_FAILED
+
 CreateZoneEventFn = Callable[[int, str, Dict[str, Any]], Awaitable[Any]]
 SendInfraAlertFn = Callable[..., Awaitable[Any]]
 LogWarningFn = Callable[..., Any]
@@ -36,7 +38,7 @@ async def persist_zone_event_safe(
             exc_info=True,
         )
         await send_infra_alert_fn(
-            code="infra_scheduler_task_event_persist_failed",
+            code=INFRA_SCHEDULER_TASK_EVENT_PERSIST_FAILED,
             alert_type="Scheduler Task Event Persist Failed",
             message=f"Не удалось сохранить zone_event {event_type} для scheduler-task",
             severity="error",

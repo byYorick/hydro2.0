@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable, Dict, Sequence
 
 from config.scheduler_task_mapping import SchedulerTaskMapping
 from domain.models.decision_models import DecisionOutcome
+from services.resilience_contract import INFRA_TASK_NO_ONLINE_NODES
 
 GetZoneNodesFn = Callable[[int, Sequence[str]], Awaitable[Sequence[Dict[str, Any]]]]
 ResolveCommandNameFn = Callable[[Dict[str, Any], SchedulerTaskMapping], str | None]
@@ -55,7 +56,7 @@ async def execute_device_task_core(
     nodes = await get_zone_nodes_fn(zone_id, mapping.node_types)
     if not nodes:
         await send_infra_alert_fn(
-            code="infra_task_no_online_nodes",
+            code=INFRA_TASK_NO_ONLINE_NODES,
             alert_type="Scheduler Task No Online Nodes",
             message=f"Задача {mapping.task_type} не выполнена: нет online-нод целевых типов",
             severity="warning",
@@ -86,7 +87,7 @@ async def execute_device_task_core(
     nodes = _filter_nodes_for_command(nodes, cmd)
     if not nodes:
         await send_infra_alert_fn(
-            code="infra_task_no_online_nodes",
+            code=INFRA_TASK_NO_ONLINE_NODES,
             alert_type="Scheduler Task No Online Nodes",
             message=f"Задача {mapping.task_type} не выполнена: нет online-нод целевых типов",
             severity="warning",

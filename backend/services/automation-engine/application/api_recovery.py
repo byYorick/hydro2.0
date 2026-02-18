@@ -6,6 +6,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
+from services.resilience_contract import (
+    INFRA_SCHEDULER_TASK_RECOVERY_EVENT_FAILED,
+    INFRA_SCHEDULER_TASK_RECOVERY_PERSIST_FAILED,
+    INFRA_WORKFLOW_STATE_RECOVERY_ENQUEUE_FAILED,
+    INFRA_WORKFLOW_STATE_RECOVERY_ROW_FAILED,
+)
+
 
 RecoverySummary = Dict[str, int]
 
@@ -126,7 +133,7 @@ async def recover_inflight_scheduler_tasks(
             )
             await send_infra_exception_alert_fn(
                 error=exc,
-                code="infra_scheduler_task_recovery_persist_failed",
+                code=INFRA_SCHEDULER_TASK_RECOVERY_PERSIST_FAILED,
                 alert_type="Scheduler Task Recovery Persist Failed",
                 severity="error",
                 zone_id=int(zone_id),
@@ -158,7 +165,7 @@ async def recover_inflight_scheduler_tasks(
             )
             await send_infra_exception_alert_fn(
                 error=exc,
-                code="infra_scheduler_task_recovery_event_failed",
+                code=INFRA_SCHEDULER_TASK_RECOVERY_EVENT_FAILED,
                 alert_type="Scheduler Task Recovery Event Failed",
                 severity="error",
                 zone_id=int(zone_id),
@@ -795,7 +802,7 @@ async def recover_zone_workflow_states(
                 )
                 await _send_workflow_recovery_alert_safe(
                     error=exc,
-                    code="infra_workflow_state_recovery_enqueue_failed",
+                    code=INFRA_WORKFLOW_STATE_RECOVERY_ENQUEUE_FAILED,
                     alert_type="Workflow State Recovery Enqueue Failed",
                     zone_id=zone_id,
                     details={
@@ -832,7 +839,7 @@ async def recover_zone_workflow_states(
             )
             await _send_workflow_recovery_alert_safe(
                 error=exc,
-                code="infra_workflow_state_recovery_row_failed",
+                code=INFRA_WORKFLOW_STATE_RECOVERY_ROW_FAILED,
                 alert_type="Workflow State Recovery Row Failed",
                 zone_id=zone_id,
                 details={

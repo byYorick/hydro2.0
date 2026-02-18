@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import INFRA_UNKNOWN_ERROR
+
 
 async def execute_scheduler_task(
     task_id: str,
@@ -135,7 +137,7 @@ async def execute_scheduler_task(
         )
         await send_infra_exception_alert_fn(
             error=exc,
-            code="infra_unknown_error",
+            code=INFRA_UNKNOWN_ERROR,
             alert_type="Automation Scheduler Task Execution Error",
             severity="error",
             zone_id=req.zone_id,

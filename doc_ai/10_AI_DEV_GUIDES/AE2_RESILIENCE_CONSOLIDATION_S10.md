@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.7  
+**Версия:** v0.8  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -123,6 +123,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - unit coverage:
   - `test_correction_controller.py` проверяет код алерта в anomaly-block path.
 
+14. Application-layer infra code contract alignment:
+- `resilience_contract.py` расширен кодами для API/runtime/recovery/scheduler/device-task/diagnostics/task-event persistence paths.
+- литералы `code="infra_*"` заменены на константы контракта в:
+  - `application/api_runtime.py`,
+  - `application/api_recovery.py`,
+  - `application/api_scheduler_execution.py`,
+  - `application/workflow_phase_sync_core.py`,
+  - `application/device_task_core.py`,
+  - `application/diagnostics_execution.py`,
+  - `application/task_events_persistence.py`.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -130,6 +141,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 4. Тесты
 1. `pytest -q test_zone_automation_service.py test_correction_controller.py test_main.py test_config_settings.py` -> `119 passed`.
+2. `pytest test_workflow_phase_sync_core.py test_device_task_core.py test_task_events_persistence.py test_diagnostics_execution.py test_scheduler_task_executor.py test_api.py` -> `150 passed`.
 
 ## 5. Следующие шаги S10
 1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).
