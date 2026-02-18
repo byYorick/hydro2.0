@@ -6,9 +6,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException
+from prometheus_client import Counter
 from services.resilience_contract import (
     SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH,
     SCHEDULER_STATUS_ACCEPTED,
+)
+
+SCHEDULER_DEDUPE_DECISIONS_TOTAL = Counter(
+    "scheduler_dedupe_decisions_total",
+    "Scheduler dedupe/idempotency decisions",
+    ["outcome"],
 )
 
 
@@ -194,7 +201,9 @@ async def create_scheduler_task(
 
         if existing is not None:
             if not task_payload_matches_fn(req, existing, payload_fingerprint):
+                SCHEDULER_DEDUPE_DECISIONS_TOTAL.labels(outcome="payload_mismatch").inc()
                 raise HTTPException(status_code=409, detail=SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH)
+            SCHEDULER_DEDUPE_DECISIONS_TOTAL.labels(outcome="duplicate").inc()
             return dict(existing), True
 
         task = {
@@ -215,6 +224,7 @@ async def create_scheduler_task(
             "error_code": initial_error_code,
         }
         scheduler_tasks[task["task_id"]] = task
+        SCHEDULER_DEDUPE_DECISIONS_TOTAL.labels(outcome="new").inc()
 
     await persist_scheduler_task_snapshot_fn(task)
     return task, False

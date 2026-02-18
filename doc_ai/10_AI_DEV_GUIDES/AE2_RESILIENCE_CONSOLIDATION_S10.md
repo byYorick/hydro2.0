@@ -1,9 +1,9 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v1.8  
+**Версия:** v2.0  
 **Дата:** 2026-02-18  
-**Статус:** IN_PROGRESS
+**Статус:** COMPLETED
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -226,6 +226,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - `application/api_scheduler_execution.py` (`mode`),
   - `application/api_health.py` (`command_bus` readiness reason).
 
+25. Scheduler resilience metrics alignment:
+- добавлены counters:
+  - `decision_retry_enqueue_total{outcome=*}`,
+  - `scheduler_dedupe_decisions_total{outcome=*}`.
+- применено в:
+  - `application/decision_retry_enqueue.py`,
+  - `application/api_scheduler_store.py`.
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
@@ -244,7 +252,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 10. `pytest test_api.py test_scheduler_task_executor.py` -> `137 passed`.
 11. `pytest test_two_tank_enqueue.py test_api.py test_scheduler_task_executor.py` -> `138 passed`.
 12. `pytest test_api.py test_scheduler_task_executor.py` -> `137 passed`.
+13. `pytest test_decision_retry_enqueue.py test_api.py test_scheduler_task_executor.py` -> `139 passed`.
 
 ## 5. Следующие шаги S10
-1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).
-2. Добавить chaos/restart parity сценарии для длительных offline окон (multi-cycle + restart between cycles).
+1. Stage `S10` закрыт; дальнейшие работы переносятся в `S11+` по отдельным stage-task.

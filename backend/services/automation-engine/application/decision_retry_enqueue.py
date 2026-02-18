@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from prometheus_client import Counter
+
 from domain.models.decision_models import DecisionOutcome
 from services.resilience_contract import (
     SCHEDULER_RETRY_REASON_PAYLOAD_KEY,
@@ -16,6 +18,12 @@ ExtractNextDueAtFn = Callable[[DecisionOutcome, Dict[str, Any]], Optional[str]]
 BuildCorrelationIdFn = Callable[..., str]
 EnqueueTaskFn = Callable[..., Awaitable[Dict[str, Any]]]
 LogWarningFn = Callable[..., Any]
+
+DECISION_RETRY_ENQUEUE_TOTAL = Counter(
+    "decision_retry_enqueue_total",
+    "Decision retry enqueue outcomes",
+    ["outcome"],
+)
 
 
 async def enqueue_decision_retry(
@@ -32,12 +40,15 @@ async def enqueue_decision_retry(
     log_warning: LogWarningFn,
 ) -> Optional[Dict[str, Any]]:
     if decision.decision != "retry":
+        DECISION_RETRY_ENQUEUE_TOTAL.labels(outcome="not_retry").inc()
         return None
     if not isinstance(decision.details, dict):
+        DECISION_RETRY_ENQUEUE_TOTAL.labels(outcome="missing_details").inc()
         return None
 
     next_due_at = extract_next_due_at_fn(decision, {})
     if not next_due_at:
+        DECISION_RETRY_ENQUEUE_TOTAL.labels(outcome="missing_next_due_at").inc()
         return None
 
     retry_attempt = safe_int_fn(decision.details.get("retry_attempt"))
@@ -60,7 +71,7 @@ async def enqueue_decision_retry(
     )
 
     try:
-        return await enqueue_task_fn(
+        result = await enqueue_task_fn(
             zone_id=zone_id,
             task_type=task_type,
             payload=retry_payload,
@@ -68,7 +79,10 @@ async def enqueue_decision_retry(
             correlation_id=retry_correlation_id,
             source=SCHEDULER_RETRY_SOURCE,
         )
+        DECISION_RETRY_ENQUEUE_TOTAL.labels(outcome="queued").inc()
+        return result
     except ValueError as exc:
+        DECISION_RETRY_ENQUEUE_TOTAL.labels(outcome="enqueue_failed").inc()
         log_warning(
             "Не удалось поставить retry-задачу scheduler: zone=%s task=%s reason=%s error=%s",
             zone_id,

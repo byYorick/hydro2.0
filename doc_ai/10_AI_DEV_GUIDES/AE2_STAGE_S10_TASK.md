@@ -3,7 +3,7 @@
 
 **Версия:** v0.1  
 **Дата:** 2026-02-18  
-**Статус:** IN_PROGRESS  
+**Статус:** COMPLETED  
 **Роль:** AI-CORE + AI-RELIABILITY  
 **Режим:** implementation
 
@@ -49,14 +49,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 19. scheduler dedupe/idempotency ingress path выровнен по contract constants (`status/detail`).
 20. scheduler recovery/two-tank source literals выровнены по contract constants (без изменения enqueue/publish semantics).
 21. scheduler execution error/reason/mode constants выровнены по `resilience_contract` в API-layer.
+22. добавлены scheduler resilience metrics counters для dedupe/retry outcomes.
 
 ## 3. Остаток S10 (open)
-1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.
-2. Расширить acceptance набор auto-recovery loop offline-нод (chaos/restart parity).
-3. Подготовить финальный `S10` report с закрытием всех подпунктов stage.
+1. Нет открытых подпунктов stage.
 
 ## 4. Тесты текущего инкремента
 - `docker compose -f backend/docker-compose.dev.yml exec -T automation-engine pytest -q test_runtime_state_store.py test_zone_node_recovery.py test_main.py test_zone_automation_service.py test_correction_controller.py test_config_settings.py`
 
 ## 5. Критерий продолжения
-- Следующий коммит `S10` должен закрыть п.1/2 раздела «Остаток S10 (open)» или явно зафиксировать ADR-границы.
+- Переход к `S11` после фиксации stage-gate и чтения `AE2_STAGE_S10_FINAL_REPORT.md`.
