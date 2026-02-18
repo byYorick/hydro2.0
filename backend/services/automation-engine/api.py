@@ -128,6 +128,15 @@ from application.api_scheduler_helpers import (
     task_payload_fingerprint as policy_task_payload_fingerprint,
     task_payload_matches as policy_task_payload_matches,
 )
+from services.resilience_contract import (
+    SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH,
+    SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE,
+    SCHEDULER_ERR_EXECUTION_EXCEPTION,
+    SCHEDULER_ERR_TASK_DUE_DEADLINE_EXCEEDED,
+    SCHEDULER_ERR_TASK_EXECUTION_FAILED,
+    SCHEDULER_ERR_TASK_EXPIRED,
+    SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -212,13 +221,13 @@ _command_effect_totals: Dict[str, int] = {}
 _command_effect_confirmed_totals: Dict[str, int] = {}
 _workflow_state_store = WorkflowStateStore()
 
-ERR_TASK_EXPIRED = "task_expired"
-ERR_TASK_DUE_DEADLINE_EXCEEDED = "task_due_deadline_exceeded"
-ERR_COMMAND_BUS_UNAVAILABLE = "command_bus_unavailable"
-ERR_COMMAND_BUS_LOOP_MISMATCH = "command_bus_loop_mismatch"
-ERR_ZONE_SERVICE_LOOP_MISMATCH = "zone_service_loop_mismatch"
-ERR_TASK_EXECUTION_FAILED = "task_execution_failed"
-ERR_EXECUTION_EXCEPTION = "execution_exception"
+ERR_TASK_EXPIRED = SCHEDULER_ERR_TASK_EXPIRED
+ERR_TASK_DUE_DEADLINE_EXCEEDED = SCHEDULER_ERR_TASK_DUE_DEADLINE_EXCEEDED
+ERR_COMMAND_BUS_UNAVAILABLE = SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE
+ERR_COMMAND_BUS_LOOP_MISMATCH = SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH
+ERR_ZONE_SERVICE_LOOP_MISMATCH = SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH
+ERR_TASK_EXECUTION_FAILED = SCHEDULER_ERR_TASK_EXECUTION_FAILED
+ERR_EXECUTION_EXCEPTION = SCHEDULER_ERR_EXECUTION_EXCEPTION
 
 # Test hooks для детерминированных ошибок (только в test mode)
 _test_mode = os.getenv("AE_TEST_MODE", "0") == "1"

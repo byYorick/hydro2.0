@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from services.resilience_contract import INFRA_UNKNOWN_ERROR
+from services.resilience_contract import INFRA_UNKNOWN_ERROR, SCHEDULER_MODE_EXECUTION_EXCEPTION
 
 
 async def execute_scheduler_task(
@@ -122,7 +122,7 @@ async def execute_scheduler_task(
         failure_result = build_execution_terminal_result_fn(
             error_code=err_execution_exception,
             reason="Во время исполнения scheduler-task произошло необработанное исключение",
-            mode="execution_exception",
+            mode=SCHEDULER_MODE_EXECUTION_EXCEPTION,
             extra={
                 "exception_type": type(exc).__name__,
                 "exception_message": str(exc),

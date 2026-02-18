@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
+from services.resilience_contract import SCHEDULER_REASON_COMMAND_BUS_UNAVAILABLE
+
 
 ReadinessPair = Tuple[bool, str]
 
@@ -17,7 +19,7 @@ def is_command_bus_ready(
     loop_mismatch_code: str,
 ) -> ReadinessPair:
     if command_bus is None:
-        return False, "command_bus_unavailable"
+        return False, SCHEDULER_REASON_COMMAND_BUS_UNAVAILABLE
     if is_loop_affinity_mismatch_fn(command_bus_loop_id):
         return False, loop_mismatch_code
     return True, "ok"
