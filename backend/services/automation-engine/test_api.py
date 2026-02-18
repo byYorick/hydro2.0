@@ -311,6 +311,12 @@ def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     assert bootstrap_response.status_code == 200
     bootstrap_data = bootstrap_response.json()["data"]
     assert bootstrap_data["bootstrap_status"] == "ready"
+    assert bootstrap_data["rollout_profile"] == "canary-first"
+    assert bootstrap_data["tier2_capabilities"] == {
+        "gdd_phase_transitions": False,
+        "mobile_approvals": False,
+        "daily_health_digest": False,
+    }
     lease_id = bootstrap_data["lease_id"]
 
     heartbeat_response = client.post("/scheduler/bootstrap/heartbeat", json={
@@ -320,6 +326,12 @@ def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     assert heartbeat_response.status_code == 200
     heartbeat_data = heartbeat_response.json()["data"]
     assert heartbeat_data["bootstrap_status"] == "ready"
+    assert heartbeat_data["rollout_profile"] == "canary-first"
+    assert heartbeat_data["tier2_capabilities"] == {
+        "gdd_phase_transitions": False,
+        "mobile_approvals": False,
+        "daily_health_digest": False,
+    }
     assert heartbeat_data["lease_id"] == lease_id
 
 

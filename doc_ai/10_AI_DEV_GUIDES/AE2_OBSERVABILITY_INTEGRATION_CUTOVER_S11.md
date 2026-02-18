@@ -1,0 +1,44 @@
+# AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md
+# AE2 S11: Observability + Integration + Cutover
+
+**Версия:** v0.1  
+**Дата:** 2026-02-18  
+**Статус:** IN_PROGRESS
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+## 1. Scope инкремента
+1. Зафиксировать bootstrap cutover-contract для scheduler.
+2. Добавить минимально необходимую observability для bootstrap rollout-контуров.
+3. Не менять publish pipeline и не вводить breaking changes.
+
+## 2. Реализовано
+1. Bootstrap contract (additive):
+- `rollout_profile`;
+- `tier2_capabilities`.
+2. Bootstrap observability metric:
+- `scheduler_bootstrap_status_total{status,rollout_profile}`.
+3. Runtime rollout flags:
+- `AE2_ROLLOUT_PROFILE` (default `canary-first`);
+- `AE2_TIER2_GDD_ENABLED`;
+- `AE2_TIER2_APPROVALS_ENABLED`;
+- `AE2_TIER2_DAILY_DIGEST_ENABLED`.
+
+## 3. Что не менялось
+1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.
+2. Existing auth/lease semantics scheduler ingress не менялись.
+3. Existing task execution semantics не менялись.
+
+## 4. Верификация
+1. `pytest test_api.py test_scheduler_task_executor.py` -> green.
+2. Проверено, что bootstrap/heartbeat возвращают rollout-capabilities без изменения статусов `ready/wait/deny`.
+
+## 5. Следующие шаги S11
+1. Сформировать required observability list для cutover:
+- метрики;
+- zone-events;
+- infra-alert correlation.
+2. Описать Tier2 integration contract:
+- GDD transitions;
+- approval signals;
+- daily digest summary.

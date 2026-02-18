@@ -7,8 +7,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S10` Resilience Consolidation: COMPLETED.
-- Next: `S11` (not started).
+- `S11` Observability + Integration + Cutover: IN_PROGRESS.
+- Previous: `S10` Resilience Consolidation: COMPLETED.
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
@@ -62,6 +62,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 32. S10 (increment 18): scheduler source/mode literals для recovery/two-tank enqueue выровнены по contract constants.
 33. S10 (increment 19): scheduler execution error/reason/mode constants (`task_*`, `command_bus_*`, `execution_exception`) выровнены через `resilience_contract` в API-layer paths.
 34. S10 (increment 20): добавлены counters для scheduler resiliency (`decision_retry_enqueue_total`, `scheduler_dedupe_decisions_total`) + финальный stage report.
+35. S11 (increment 1): bootstrap rollout/integration contract расширен (`rollout_profile`, `tier2_capabilities`) + метрика `scheduler_bootstrap_status_total`.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -157,6 +158,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/application/api_scheduler_store.py`
 - `backend/services/automation-engine/application/decision_retry_enqueue.py`
 - `backend/services/automation-engine/test_decision_retry_enqueue.py`
+- `backend/services/automation-engine/application/api_scheduler_bootstrap.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_RESILIENCE_CONSOLIDATION_S10.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_FINAL_REPORT.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md`

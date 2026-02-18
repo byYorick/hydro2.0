@@ -6,11 +6,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from fastapi import HTTPException
+from prometheus_client import Counter
 from services.resilience_contract import (
     SCHEDULER_BOOTSTRAP_REQUIRED,
     SCHEDULER_LEASE_EXPIRED,
     SCHEDULER_LEASE_MISMATCH,
     SCHEDULER_LEASE_NOT_FOUND,
+)
+
+SCHEDULER_BOOTSTRAP_STATUS_TOTAL = Counter(
+    "scheduler_bootstrap_status_total",
+    "Scheduler bootstrap status responses",
+    ["status", "rollout_profile"],
 )
 
 
@@ -53,6 +60,8 @@ async def build_scheduler_bootstrap_response(
     scheduler_bootstrap_poll_interval_sec: int,
     scheduler_bootstrap_task_timeout_sec: int,
     scheduler_dedupe_window_sec: int,
+    rollout_profile: str,
+    tier2_capabilities: Dict[str, bool],
     scheduler_bootstrap_lock: Any,
     scheduler_bootstrap_leases: Dict[str, Dict[str, Any]],
     cleanup_bootstrap_leases_locked_fn: Callable[[datetime], None],
@@ -71,6 +80,8 @@ async def build_scheduler_bootstrap_response(
         "poll_interval_sec": scheduler_bootstrap_poll_interval_sec,
         "task_timeout_sec": scheduler_bootstrap_task_timeout_sec,
         "dedupe_window_sec": scheduler_dedupe_window_sec,
+        "rollout_profile": rollout_profile,
+        "tier2_capabilities": dict(tier2_capabilities),
         "server_time": now.isoformat(),
     }
     if bootstrap_status != "ready":
@@ -110,6 +121,10 @@ async def build_scheduler_bootstrap_response(
             "response": response_payload,
         },
     )
+    SCHEDULER_BOOTSTRAP_STATUS_TOTAL.labels(
+        status=str(response_payload.get("bootstrap_status") or "unknown"),
+        rollout_profile=rollout_profile,
+    ).inc()
     return {"status": "ok", "data": response_payload}
 
 
@@ -119,6 +134,8 @@ async def build_scheduler_bootstrap_heartbeat_response(
     scheduler_bootstrap_state_fn: Callable[[], Awaitable[Tuple[str, str]]],
     scheduler_bootstrap_lease_ttl_sec: int,
     scheduler_bootstrap_poll_interval_sec: int,
+    rollout_profile: str,
+    tier2_capabilities: Dict[str, bool],
     scheduler_bootstrap_lock: Any,
     scheduler_bootstrap_leases: Dict[str, Dict[str, Any]],
     cleanup_bootstrap_leases_locked_fn: Callable[[datetime], None],
@@ -135,6 +152,8 @@ async def build_scheduler_bootstrap_heartbeat_response(
                     "bootstrap_status": "wait",
                     "reason": "lease_not_found",
                     "poll_interval_sec": scheduler_bootstrap_poll_interval_sec,
+                    "rollout_profile": rollout_profile,
+                    "tier2_capabilities": dict(tier2_capabilities),
                     "server_time": now.isoformat(),
                 },
             }
@@ -148,6 +167,8 @@ async def build_scheduler_bootstrap_heartbeat_response(
                     "reason": "automation_not_ready",
                     "readiness_reason": readiness_reason,
                     "poll_interval_sec": scheduler_bootstrap_poll_interval_sec,
+                    "rollout_profile": rollout_profile,
+                    "tier2_capabilities": dict(tier2_capabilities),
                     "server_time": now.isoformat(),
                 },
             }
@@ -159,6 +180,8 @@ async def build_scheduler_bootstrap_heartbeat_response(
             "lease_id": req.lease_id,
             "lease_ttl_sec": scheduler_bootstrap_lease_ttl_sec,
             "lease_expires_at": lease["expires_at"].isoformat(),
+            "rollout_profile": rollout_profile,
+            "tier2_capabilities": dict(tier2_capabilities),
             "server_time": now.isoformat(),
         }
 
@@ -172,6 +195,10 @@ async def build_scheduler_bootstrap_heartbeat_response(
             "response": response_payload,
         },
     )
+    SCHEDULER_BOOTSTRAP_STATUS_TOTAL.labels(
+        status=str(response_payload.get("bootstrap_status") or "unknown"),
+        rollout_profile=rollout_profile,
+    ).inc()
     return {"status": "ok", "data": response_payload}
 
 

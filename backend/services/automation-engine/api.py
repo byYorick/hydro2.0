@@ -191,6 +191,10 @@ _SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC = max(10, int(os.getenv("SCHEDULER_BOOTSTRAP_
 _SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC", "5")))
 _SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC = max(1, int(os.getenv("SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC", "30")))
 _SCHEDULER_BOOTSTRAP_ENFORCE = os.getenv("SCHEDULER_BOOTSTRAP_ENFORCE", "1") == "1"
+_AE2_ROLLOUT_PROFILE = str(os.getenv("AE2_ROLLOUT_PROFILE", "canary-first")).strip().lower() or "canary-first"
+_AE2_TIER2_GDD_ENABLED = _env_true("AE2_TIER2_GDD_ENABLED", "0")
+_AE2_TIER2_APPROVALS_ENABLED = _env_true("AE2_TIER2_APPROVALS_ENABLED", "0")
+_AE2_TIER2_DAILY_DIGEST_ENABLED = _env_true("AE2_TIER2_DAILY_DIGEST_ENABLED", "0")
 _AE_SCHEDULER_SECURITY_BASELINE_ENFORCE = _env_true("AE_SCHEDULER_SECURITY_BASELINE_ENFORCE", "1")
 _AE_SCHEDULER_REQUIRE_TRACE_ID = _env_true("AE_SCHEDULER_REQUIRE_TRACE_ID", "1")
 _AE_SCHEDULER_API_TOKEN = str(
@@ -664,6 +668,12 @@ async def scheduler_bootstrap(req: SchedulerBootstrapRequest = Body(...)):
         scheduler_bootstrap_poll_interval_sec=_SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
         scheduler_bootstrap_task_timeout_sec=_SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC,
         scheduler_dedupe_window_sec=_SCHEDULER_DEDUPE_WINDOW_SEC,
+        rollout_profile=_AE2_ROLLOUT_PROFILE,
+        tier2_capabilities={
+            "gdd_phase_transitions": _AE2_TIER2_GDD_ENABLED,
+            "mobile_approvals": _AE2_TIER2_APPROVALS_ENABLED,
+            "daily_health_digest": _AE2_TIER2_DAILY_DIGEST_ENABLED,
+        },
         scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
         scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
         cleanup_bootstrap_leases_locked_fn=_cleanup_bootstrap_leases_locked,
@@ -679,6 +689,12 @@ async def scheduler_bootstrap_heartbeat(req: SchedulerBootstrapHeartbeatRequest 
         scheduler_bootstrap_state_fn=_scheduler_bootstrap_state,
         scheduler_bootstrap_lease_ttl_sec=_SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC,
         scheduler_bootstrap_poll_interval_sec=_SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
+        rollout_profile=_AE2_ROLLOUT_PROFILE,
+        tier2_capabilities={
+            "gdd_phase_transitions": _AE2_TIER2_GDD_ENABLED,
+            "mobile_approvals": _AE2_TIER2_APPROVALS_ENABLED,
+            "daily_health_digest": _AE2_TIER2_DAILY_DIGEST_ENABLED,
+        },
         scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
         scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
         cleanup_bootstrap_leases_locked_fn=_cleanup_bootstrap_leases_locked,
