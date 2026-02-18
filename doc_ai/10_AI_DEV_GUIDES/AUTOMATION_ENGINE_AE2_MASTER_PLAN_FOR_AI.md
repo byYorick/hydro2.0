@@ -1,23 +1,26 @@
 # AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md
 # AE2: мастер-план для ИИ-ассистентов (эволюционное развитие)
 
-**Версия:** v1.5  
+**Версия:** v1.9  
 **Дата:** 2026-02-18  
-**Статус:** REVIEWED_AFTER_DEEP_CODE_CRITIQUE_AND_EXECUTION_GAP_HARDENING  
+**Статус:** REVIEWED_FOR_AI_EXECUTION_MODE_STAGE_HARDENING_AND_AUTONOMY_SCOPE  
 **Область:** `backend/services/automation-engine*`, `backend/services/scheduler`, `backend/laravel`, `tests/e2e`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
 Breaking-change: Big Bang rewrite отменен; AE2 внедряется эволюционно поверх текущего automation-engine с feature-flag cutover.
 
-## Что изменено в v1.5
+## Что изменено в v1.9
 
-1. Скорректировано описание реальных активов: `WorkflowRouter` зафиксирован как `route_diagnostics`-router, а не универсальный topology-dispatch.
-2. В P0 добавлен обязательный аудит двух God Object: `scheduler_task_executor/scheduler_executor_impl` и `api.py` (крупный orchestration surface).
-3. Single-writer уточнен до исполняемой механики: `CommandGateway` + `per-zone lock` + `scheduler-gating` + explicit fallback mode.
-4. Safety-priority закреплен: bounds/rate-limit enforcement относится к P2 как safety-critical минимум, а не к поздней фазе.
-5. Зафиксирован техдолг monkey-patch в `scheduler_task_executor.py` и обязательная миграция на DI wiring в P1.5.
-6. Уточнены topology/shadow/replay-state части: strict topology после DB-gate, fan-out/compare для shadow, crash-safe PID checkpointing.
-7. Добавлены CI-верифицируемые критерии P0 и стратегия retirement feature flags.
+1. План переведен в `S-only` режим исполнения для ИИ: канонические этапы только `S1..S12`.
+2. Раздел 7 переписан в self-contained формат: обязательные stage-task файлы, gate-верификация и роли по этапам.
+3. Добавлен обязательный `AE2_CURRENT_STATE.md` как межсессионный источник прогресса.
+4. Добавлены machine-checkable guard rails (`AE2_INVARIANTS.py`) для CI.
+5. Зафиксированы конкретные call sites миграции на `CommandGateway` и требование отдельного плана миграции тестов.
+6. Safety этап разделен на исследование (`S2`) и реализацию (`S3`).
+7. Hardened security явно помечен как `DEFERRED` до отдельного запроса/threat-model.
+8. Добавлен baseline масштаба системы и целевой профиль «посадил и забыл».
+9. Добавлен tiered backlog автономности (Tier 1/2/3) с привязкой к `S9..S12`.
+10. Зафиксирован отдельный техдолг `scheduler/main.py` и phased split план.
 
 ---
 
@@ -58,7 +61,9 @@ AE2 реализуется как **формализация и расширен
 
 1. Сначала in-place эволюция в `backend/services/automation-engine/`.
 2. Затем опциональное выделение `automation-engine-v2` только после достижения паритета.
-3. Переход через `shadow (отдельный деплой) -> canary -> full`, без остановки эксплуатации.
+3. Переход выполняется через один из режимов:
+   - `shadow -> canary -> full` (если оправдано по риску/ресурсам);
+   - `canary-first -> full` для малого масштаба при ограниченной команде.
 
 ## 1.2. Что это меняет практически
 
@@ -70,8 +75,41 @@ AE2 реализуется как **формализация и расширен
 
 ## 1.3. Gate до начала реализации
 
-Перед любыми изменениями обязателен завершенный P0-аудит.
-Если P0 не завершен, реализация фич кроме диагностики/метрик запрещена.
+Перед любыми изменениями обязателен Stage-gate:
+1. `S1` (минимальный blocking audit) — обязателен до реализации фич.
+2. `S5` (baseline/coverage) — обязателен до release-gates.
+
+## 1.4. Rewrite Exit-Criteria (анти-догма)
+
+Эволюционный путь является default, но не безусловным.
+После `S2` допускается controlled pivot на selective rewrite, если одновременно выполняются условия:
+1. Ownership-map показывает критическую связанность без безопасного декомпозиционного пути.
+2. Стоимость эволюции (оценка по этапам) выше стоимости ограниченного rewrite выбранного bounded context.
+3. Есть план миграции без нарушения защищенного пайплайна `Scheduler -> AE -> History-Logger -> MQTT -> ESP32`.
+4. Pivot утвержден отдельным ADR с rollback-стратегией.
+
+## 1.5. Фактический масштаб и зрелость системы (baseline)
+
+Текущий масштаб (оценка по коду и структуре репозитория):
+1. Firmware (ESP32, C++): ~24.6k LOC, 7 типов нод.
+2. Python-сервисы: ~54k LOC, 11 сервисов (`automation-engine`, `scheduler`, `history-logger`, `mqtt-bridge`, `digital-twin` и др.).
+3. Laravel backend (PHP): ~85k LOC.
+4. Frontend (Vue/JS/TS): ~92k LOC.
+5. Тесты: ~16.5k LOC в automation-engine + Laravel/e2e.
+6. Общий порядок масштаба: ~270k LOC.
+
+Оценка зрелости автоматизации:
+1. Layer 1-2 (базовая эксплуатация): работает стабильно.
+2. Частичная автономность: ~60-65% (есть recovery/degraded/tracking, но неполные).
+3. Layer 3-5 (предиктивность/полная автономность): в основном отсутствует и требует отдельного roadmap.
+
+## 1.6. Целевой профиль «Посадил и забыл»
+
+Для AE2 целевой профиль определяется поэтапно:
+1. Сначала закрываем safety и crash/recovery фундамент (`S1..S6`).
+2. Затем добавляем минимальный автономный контур (Tier 1) без отдельной ML-платформы.
+3. После стабилизации вводим комфортный уровень автономности (Tier 2).
+4. Только затем — расширенная автономность (Tier 3: weather/adaptive/cv).
 
 ---
 
@@ -185,29 +223,38 @@ backend/services/automation-engine/
 ## 3.7. Явный техдолг: SchedulerTaskExecutor God Object pattern
 
 Текущее состояние:
-1. `SchedulerTaskExecutor` остается центром orchestration-логики.
-2. Логика разнесена по множеству `executor_bound_*` модулей, но ownership и границы домена остаются размытыми (monolith-in-files).
-3. Дополнительно зафиксирован второй God Object: `backend/services/automation-engine/api.py` (крупный orchestration surface, ~2859 строк, stage decomposition в прогрессе).
-4. Масштаб декомпозиции выше ожидаемого: большое количество bound/delegate helper-модулей усложняет сопровождение и изменение контракта.
+1. `scheduler_task_executor.py` — thin wrapper/re-export слой, а не основной носитель доменной сложности.
+2. Реальный orchestration debt сосредоточен в `application/scheduler_executor_impl.py` + множестве `executor_bound_*` модулей.
+3. Ownership и границы домена в bound-паттерне остаются размытыми (monolith-in-files).
+4. Второй God Object: `backend/services/automation-engine/api.py` (крупный orchestration surface, ~861 строка, stage decomposition в прогрессе).
+5. Реальная сложность выше количества строк: высокая скрытая связанность через bound/delegate назначения и policy-модули.
+6. Смежный риск: `zone_automation_service.py` содержит крупный runtime-state surface и должен декомпозироваться синхронно с executor/API.
+7. Отдельный блокирующий техдолг: `backend/services/scheduler/main.py` (крупный монолитный orchestration surface, >2k LOC) ограничивает рост к autonomous orchestration.
 
-Обязательный deliverable в P0:
-1. Инвентаризация `executor_bound_*` с ownership-map (модуль -> ответственность -> owner-слой).
-2. Целевая декомпозиция минимум на 6 интерфейсов:
+Обязательный deliverable-пакет до завершения `S7`:
+1. В `S1`:
+   - инвентаризация `executor_bound_*` с ownership-map (модуль -> ответственность -> owner-слой);
+   - инвентаризация `api.py` по ownership-map и декомпозиционным кандидатам.
+   - инвентаризация `scheduler/main.py` с картой extraction-кандидатов (`ingress`, `planning`, `dispatch`, `polling/reconciliation`).
+2. В `S4/S7`:
+   - целевая декомпозиция минимум на 6 интерфейсов:
    - `IWorkflowExecutor`
    - `IDiagnosticsExecutor`
    - `IRefillExecutor`
    - `ICommandGateway`
    - `IWorkflowStateCoordinator`
    - `ITaskOutcomeAssembler`
-3. Инвентаризация `api.py` по ownership-map и декомпозиционным кандидатам.
-4. ADR по реструктуризации coordinator/API и точек миграции с decision-complete выбором:
+3. В `S7`:
+   - ADR по реструктуризации coordinator/API и точек миграции с decision-complete выбором:
    - либо доменная декомпозиция с DI boundaries;
    - либо явно утвержденный `monolith-in-files` со строгими ограничениями роста.
+   - ADR по декомпозиции `scheduler/main.py` с фазовым планом без остановки текущего расписания.
 
 Критерий выхода:
 1. Coordinator содержит только orchestration-flow.
 2. Domain/policy логика удалена из coordinator (остаются только вызовы интерфейсов).
 3. Для `api.py` выделены отдельные bounded handlers; orchestration и transport-код не смешиваются.
+4. Для `scheduler/main.py` утвержден и запущен phased split-план, достаточный для подключения autonomous orchestrator без роста монолита.
 
 ## 3.8. Полная карта путей публикации команд
 
@@ -240,6 +287,28 @@ backend/services/automation-engine/
 3. Любой прямой обход `CommandGateway` считается нарушением архитектурного контракта.
 4. Арбитраж выполняется под `per-zone lock` для устранения гонок между concurrent путями.
 
+## 3.9. Дизайн `CommandGateway` (implementation baseline)
+
+Расположение и роль:
+1. Файл: `backend/services/automation-engine/infrastructure/command_gateway.py`.
+2. Роль: единственная точка pre-dispatch решения перед `CommandBus`.
+
+Минимальный интерфейс:
+1. `acquire_zone_slot(zone_id, correlation_id) -> ZoneDispatchLease`.
+2. `evaluate_dispatch(intent, zone_runtime_state, orchestration_state) -> DispatchDecision`.
+3. `publish_via_bus(decision, command_payload) -> DispatchResult`.
+4. `release_zone_slot(lease) -> None`.
+
+Интеграция:
+1. `CommandGateway` вызывает существующий `CommandBus` как transport-adapter, не дублируя transport-логику.
+2. `SchedulerTaskExecutor` и continuous loop публикуют side-effect только через gateway API.
+3. Решение «активна scheduler-task orchestration или нет» берется из явного orchestration state provider (не из скрытых module-level переменных).
+
+Lock registry:
+1. Single-instance baseline: in-process `dict[int, asyncio.Lock]` + lease timeout.
+2. Multi-worker/scale-out: distributed lock (PostgreSQL advisory lock или Redis lock по ADR).
+3. При падении воркера lease освобождается по timeout/heartbeat, чтобы избежать вечной блокировки зоны.
+
 ---
 
 ## 4. Модель расширения логики (ключ для похожих “двух баков”)
@@ -253,16 +322,13 @@ backend/services/automation-engine/
 
 ## 4.2. Контракт плагина (lifecycle-aware)
 
-Минимальный обязательный контракт:
+MVP (для ИИ-исполнения) — strategy-first контракт:
 
-1. `initialize(deps: PluginDependencies) -> None`
-2. `topology_id() -> str`
-3. `supports(task_type, workflow, context) -> bool`
-4. `execute(context) -> Result`
-5. `fail_forward(context, error) -> RecoveryAction`
-6. `checkpoint() -> Dict[str, Any]`
-7. `restore(state: Dict[str, Any]) -> None`
-8. `health() -> Dict[str, Any]`
+1. `supports(task_type, workflow, context) -> bool`
+2. `execute(context) -> Result`
+3. `health() -> Dict[str, Any]`
+
+Full lifecycle plugin framework (`initialize/checkpoint/restore/fail_forward`) — `DEFERRED` до подтвержденной потребности.
 
 `PluginDependencies` (минимум):
 1. `CommandGateway`
@@ -295,6 +361,21 @@ backend/services/automation-engine/
    - минимум 1 e2e сценарий;
    - parity-сравнение с базовым `two_tank_base` на одинаковом входе.
 
+## 4.4. Регистрация и discovery плагинов
+
+1. Для MVP используется простой strategy registry (без тяжелого plugin framework).
+2. Источники discovery:
+   - встроенные плагины (кодовая регистрация);
+   - конфигурационные entries (feature-flag gated).
+3. DI-container в MVP управляет только `health()` и wiring зависимостей.
+4. Для каждого plugin-entry фиксируются:
+   - `plugin_id`;
+   - `topology_id`;
+   - версия контракта;
+   - флаг включения;
+   - owner.
+5. Ошибка регистрации или несовместимость версии контракта блокирует запуск strategy-path и создает infra-alert.
+
 ---
 
 ## 5. Контракт scheduler <-> AE2 v2 (to-be)
@@ -306,7 +387,8 @@ backend/services/automation-engine/
 3. Разделяем:
    - `business_status` (owner: AE2),
    - `transport_status` (owner: scheduler).
-4. Вводим `topology` как временно optional поле только до завершения topology strict-gate.
+4. `topology` трактуется как greenfield cross-service feature (Laravel schema + scheduler read-path + AE dispatch), а не как локальное расширение одного сервиса.
+5. Временная optional-фаза допускается только как короткое migration-window с явной датой завершения.
 
 ## 5.2. Минимальная форма payload (черновой to-be)
 
@@ -346,7 +428,16 @@ backend/services/automation-engine/
 }
 ```
 
-Транспортные security headers (обязательные):
+Транспортные security headers:
+
+Baseline profile (default):
+
+```http
+Authorization: Bearer <service-token>
+X-Trace-Id: <trace-id>
+```
+
+Hardened profile (по threat-model):
 
 ```http
 Authorization: Bearer <service-token>
@@ -363,22 +454,32 @@ X-Trace-Id: <trace-id>
 
 ## 5.4. Security и anti-replay требования к контракту
 
+Профили безопасности:
+1. `Baseline (default для internal Docker perimeter)`:
+   - обязательны `Authorization` + `X-Trace-Id`;
+   - `X-Sent-At` рекомендуется, но не блокирует запрос при отсутствии;
+   - фокус на service-to-service auth, audit и rate-limit.
+2. `Hardened (включается по threat-model или внешнему периметру)`:
+   - обязательны `X-Request-Nonce` + `X-Sent-At`;
+   - активируется replay-window и persistent nonce-store;
+   - отказ по replay/auth является blocking.
+   - статус: `DEFERRED` (не реализовывать без явного запроса).
+
+Базовые требования (всегда):
 1. Все internal вызовы подписываются сервисным токеном через HTTP `Authorization` header.
-2. Для каждого запроса обязательны `X-Request-Nonce` + `X-Sent-At`.
-3. AE2 обязан отклонять replay-запросы по `nonce/idempotency_key` в окне TTL.
-4. Ошибки аутентификации и replay должны идти в audit и infra-alert.
-5. Расширяем существующую auth-модель, а не заменяем её:
+2. Ошибки аутентификации всегда пишутся в audit и infra-alert.
+3. Расширяем существующую auth-модель, а не заменяем её:
    - используем текущие `HISTORY_LOGGER_API_TOKEN` / `PY_INGEST_TOKEN`;
    - сохраняем `X-Trace-Id` и текущую trace-связку.
-6. Это internal perimeter hardening: без message-level signing в payload и без усложнения бизнес-контракта.
-7. Nonce-store должен быть persistent:
-   - таблица PostgreSQL `ae_request_nonces` через Laravel migration;
-   - cleanup TTL через плановый Laravel scheduled command.
-8. Replay-window по умолчанию:
+
+Hardened replay требования (условно-обязательные):
+1. AE2 отклоняет replay-запросы по `nonce/idempotency_key` в окне TTL.
+2. Replay-window по умолчанию:
    - `X-Sent-At` допустим в окне `[-60s; +15s]` относительно времени AE2;
    - расширение окна требует ADR и security-review.
+3. Nonce-store хранится в PostgreSQL с TTL-cleanup через Laravel scheduled command.
 
-Минимальная спецификация nonce-store:
+Минимальная спецификация nonce-store (для Hardened profile):
 
 ```sql
 CREATE TABLE ae_request_nonces (
@@ -392,7 +493,15 @@ CREATE TABLE ae_request_nonces (
 
 CREATE INDEX idx_ae_request_nonces_expires_at
     ON ae_request_nonces (expires_at);
+
+CREATE INDEX idx_ae_request_nonces_scheduler_created
+    ON ae_request_nonces (scheduler_id, created_at DESC);
 ```
+
+Laravel migration contract (для Hardened profile):
+1. Имя миграции по шаблону: `*_create_ae_request_nonces_table.php`.
+2. Миграция должна включать оба индекса (`expires_at`, `scheduler_id+created_at`).
+3. Down-миграция обязана удалять индексы и таблицу в обратном порядке.
 
 Правила cleanup:
 1. Cleanup запускается по расписанию (не реже 1 раза в минуту в runtime profile).
@@ -403,16 +512,21 @@ CREATE INDEX idx_ae_request_nonces_expires_at
 1. `duplicate nonce` в активном окне TTL -> `409 replay_detected`.
 2. `stale X-Sent-At` (вне replay-window) -> `422 sent_at_out_of_window`.
 3. `missing/invalid Authorization` -> `401 unauthorized`.
-4. `missing X-Request-Nonce` или `missing X-Sent-At` -> `422 invalid_security_headers`.
+4. В Hardened profile: `missing X-Request-Nonce` или `missing X-Sent-At` -> `422 invalid_security_headers`.
 
 ## 5.5. Семантика поля `topology`
 
-1. `task_type` отвечает на вопрос «что делать», `topology` отвечает на вопрос «как именно выполнять для физической конфигурации».
-2. `topology` хранится в zone-конфиге backend (источник истины: Laravel).
-3. Scheduler читает `topology` через backend API вместе с effective-targets контекстом.
-4. Миграция topology выполняется как 3-компонентный gate (Laravel schema/data -> scheduler read-path -> AE2 strict contract).
-5. После завершения DB/data-миграции `topology` становится обязательным полем контракта.
-6. Отсутствие `topology` после strict-gate:
+1. As-is: в текущем runtime поле `topology` отсутствует, поэтому внедрение считается новой cross-service capability.
+2. `task_type` отвечает на вопрос «что делать», `topology` отвечает на вопрос «как именно выполнять для физической конфигурации».
+3. `topology` хранится в zone-конфиге backend (источник истины: Laravel).
+4. Scheduler читает `topology` через backend API вместе с effective-targets контекстом.
+5. Миграция topology выполняется как 3-компонентный gate:
+   - Laravel schema/data;
+   - scheduler read-path;
+   - AE2 strict dispatch.
+6. Optional-режим ограничен migration-window и не считается steady-state режимом.
+7. После завершения DB/data-миграции `topology` становится обязательным полем контракта.
+8. Отсутствие `topology` после strict-gate:
    - `422 missing_topology`;
    - audit + infra-alert;
    - без silent fallback.
@@ -455,6 +569,11 @@ CREATE INDEX idx_ae_request_nonces_expires_at
 Расширенный путь (опциональный):
 1. PostgreSQL outbox вводится только если gap-analysis показывает окно потери между AE и history-logger.
 2. Решение об outbox фиксируется отдельным ADR с оценкой дублирования относительно `commands`/`CommandTracker`.
+
+Обязательные требования к dedupe-реализации:
+1. Dedupe-store должен поддерживать pre-publish reserve/check (PostgreSQL или Redis с durable fallback).
+2. Операция `check + reserve + publish decision` должна быть атомарной на уровне зоны/ключа (без race между конкурентными воркерами).
+3. Cleanup dedupe-key выполняется TTL-политикой с метриками эффективности (`dedupe_hits`, `dedupe_false_miss`, `dedupe_reserve_conflicts`).
 
 ## 6.3. Command delivery semantics (обязательные)
 
@@ -528,7 +647,7 @@ actuator_types:
    - alerting на `link_lost`: `<=30s`;
    - duplicate side-effect rate: `0` для дозирующих команд.
 4. Error budget и алерт-пороги фиксируются в `AE2_TEST_MATRIX.md`.
-5. До завершения P0 baseline и P9 приемки кандидатные числа не используются как release-gate.
+5. До завершения `S5` baseline и `S12` приемки кандидатные числа не используются как release-gate.
 
 ## 6.7. Retention guardrails
 
@@ -538,7 +657,7 @@ actuator_types:
    - `max_days = 365`
 2. Значения вне диапазона отклоняются backend-валидацией.
 3. Очистка логов выполняется планово с dry-run отчетом.
-4. Для расследований поддерживается `legal_hold` флаг на период инцидента.
+4. `legal_hold` не входит в MVP и рассматривается как post-MVP/enterprise extension.
 5. Ответственный за cleanup:
    - Laravel scheduled command/cron;
    - таблицы минимум: `zone_events`, `scheduler_logs`, `command_audit`, `commands` (по утвержденной retention policy).
@@ -547,7 +666,7 @@ actuator_types:
 
 1. Internal endpoints защищены service-to-service auth.
 2. Все входы в AE2 валидируются по схеме и размеру payload.
-3. Включить replay-protection по `nonce/idempotency_key`.
+3. Replay-protection по `nonce` включается в Hardened profile; для baseline обязателен `idempotency` и audit.
 4. Secrets хранятся только в env/secret-store, не в коде.
 5. Security-события пишутся в audit и алертятся.
 
@@ -570,14 +689,27 @@ actuator_types:
    - freeze окно переключения;
    - дофинализация pending задач;
    - запрет двойного исполнения на границе cutover.
-4. Parity validation:
-   - dual-run (shadow) с сравнением AE1 vs AE2 решений;
-   - отклонения выше порога блокируют canary/full rollout.
+4. Parity validation (по выбранному cutover-профилю):
+   - `shadow profile`: dual-run с сравнением AE1 vs AE2 решений;
+   - `canary-first profile`: parity через canary KPI/decision drift thresholds;
+   - отклонения выше порога блокируют full rollout.
 5. Runtime-state migration (обязательная):
    - `_zone_states`;
    - `_controller_failures` и cooldown maps;
    - `_correction_sensor_mode_state`;
-   - runtime flags, влияющие на decision/retry/degraded.
+   - `_pid_by_zone`;
+   - `_last_pid_tick`;
+   - `_freshness_check_failure_count`;
+   - runtime flags, влияющие на decision/retry/degraded;
+   - глобальные throttle/circuit-breaker alert state из `main.py`.
+
+Минимальный инвентарь распределенного in-memory state:
+1. `zone_automation_service.py`:
+   - `_zone_states`, `_controller_failures`, `_correction_sensor_mode_state`.
+2. `correction_controller.py`:
+   - `_pid_by_zone`, `_last_pid_tick`, `_freshness_check_failure_count`.
+3. `main.py`:
+   - глобальные переменные троттлинга/circuit-breaker alert.
 
 Минимальный алгоритм transfer-state:
 1. Считать последний стабильный PID snapshot зоны.
@@ -595,6 +727,10 @@ Persistent store policy:
 2. Redis (опционально) — только для transient TTL-state и ускоряющих кешей.
 3. Отсутствие Redis не должно приводить к потере корректности исполнения.
 4. Crash-recovery обязателен для неплановых рестартов (OOM/SIGKILL/container restart), не только для graceful shutdown.
+5. Recovery тестируется отдельно для сценариев:
+   - crash в середине PID-дозирования;
+   - crash во время transition workflow phase;
+   - crash в период cooldown/block window.
 
 ## 6.10. Тестовая зрелость и coverage gate
 
@@ -614,18 +750,23 @@ Persistent store policy:
 ## 6.11. Обязательные тестовые сценарии AE2
 
 1. Replay/security:
-   - duplicate nonce;
-   - stale `X-Sent-At`;
+   - duplicate nonce (для Hardened profile);
+   - stale `X-Sent-At` (для Hardened profile);
    - invalid/missing auth headers.
 2. Command dedupe:
    - повтор с тем же `idempotency_key` не дает side-effect;
    - повтор с новым ключом без нового snapshot блокируется.
 3. Recovery:
-   - restart с восстановлением workflow/PID/runtime state.
+   - restart с восстановлением workflow/PID/runtime state;
+   - crash во время PID-дозирования;
+   - crash во время transition workflow phase.
 4. Single-writer:
-   - отсутствие конфликтов при активном continuous loop и scheduler task.
+   - отсутствие конфликтов при активном continuous loop и scheduler task;
+   - конкурентные loop + scheduler task для одной зоны под нагрузкой.
 5. Safety:
    - config-driven safe-state transitions по причинам деградации.
+6. Network partition:
+   - деградация канала AE -> history-logger с проверкой hold-last-safe-state и корректного recovery.
 
 ## 6.12. Управление feature flags и retirement
 
@@ -638,316 +779,270 @@ Persistent store policy:
 ## 6.13. Владение phase transitions (stub-policy)
 
 1. `check_phase_transitions` (disabled stub) фиксируется как явный архитектурный выбор, а не «забытый код».
-2. P0 обязан принять решение:
+2. `S1` обязан принять решение:
    - либо phase transitions полностью owned Laravel (`GrowCyclePhase`) и stub удаляется;
    - либо stub восстанавливается как поддерживаемый runtime path с тестами и owner.
-3. Двусмысленный статус (stub есть, но ответственность не определена) не допускается после P0 gate.
+3. Двусмысленный статус (stub есть, но ответственность не определена) не допускается после `S1` gate.
+4. `S8` не может быть начат до фиксации этого решения, так как оно определяет объем runtime state machine в AE2.
+
+## 6.14. Redis-vs-PostgreSQL стратегия состояния
+
+1. PostgreSQL обязателен для durable state:
+   - workflow phase/state;
+   - PID snapshots;
+   - dedupe decisions, требующие auditability.
+2. Redis допускается только для transient TTL-state:
+   - lock tokens;
+   - short-lived dedupe reservations;
+   - fast cooldown/freshness caches.
+3. Недоступность Redis не должна ломать correctness:
+   - fallback на PostgreSQL path;
+   - деградация только по latency, не по safety.
+4. Решение по Redis фиксируется отдельным ADR в `S4`:
+   - какие ключи/TTL;
+   - policy fallback;
+   - требования к локальной разработке без Redis.
+
+## 6.15. Observability и shadow-correlation
+
+1. Метрики AE2 интегрируются в текущие Grafana dashboards без потери AE1 графиков.
+2. Для shadow режима обязателен trace correlation AE1 vs AE2:
+   - единый `trace_id/correlation_id`;
+   - diff-код причины расхождения;
+   - owner сравнения и SLA обработки divergence.
+3. Пороги alerting мигрируются поэтапно:
+   - baseline AE1;
+   - canary thresholds для AE2;
+   - финальные пороги после parity-gate.
+
+## 6.16. Rollback playbook (обязательный минимум)
+
+1. Триггеры отката:
+   - breach по duplicate side-effect;
+   - breach по safety bounds;
+   - parity divergence выше порога;
+   - критические replay/auth ошибки.
+2. Последовательность отката:
+   - freeze новых task ingress;
+   - переключение feature flags (`AE2_ENABLED` и связанный набор) на legacy-safe;
+   - завершение/маркировка in-flight задач;
+   - возврат traffic на AE1 path.
+3. Состояние и данные при откате:
+   - PID/workflow state rollback strategy;
+   - правила работы с миграциями БД (forward-only или controlled rollback);
+   - обязательный post-rollback consistency check.
+
+## 6.17. Фичи автономности для «посадил и забыл» (tiered backlog)
+
+Tier 1 (минимум для режима «без ночных ручных дежурств», 4-6 недель после `S6`):
+1. Trend-based proactive correction:
+   - EWMA/slope-анализ по последним измерениям `pH/EC` (окно по умолчанию: 20 точек);
+   - ранняя коррекция при `slope > threshold`, до выхода за target.
+2. Equipment anomaly detection:
+   - правило `dose sent -> no expected metric movement` в 3 последовательных окнах;
+   - действие: `alarm + block dosing + zone degrade`.
+3. Auto-recovery loop:
+   - при offline ноде: 3 retry с backoff;
+   - если восстановление не произошло за 30 минут: freeze зоны + alert.
+4. Safety bounds enforcement (обязательный foundation):
+   - `hard_pct`, `abs_min/abs_max`, `max_delta_per_min` (реализация в `S3`).
+
+Tier 2 (комфортная автономность, 4-6 недель после Tier 1):
+1. GDD-based phase transitions:
+   - гибридное правило перехода фазы: по времени и/или по накопленному GDD (настраиваемо в рецепте).
+2. Mobile approvals/notifications:
+   - Telegram/push уведомления для критичных событий и resume-approve сценариев.
+3. Daily health digest:
+   - суточный summary по зонам (uptime, время в target, drift, equipment status).
+
+Tier 3 (расширенная автономность, 8-12 недель, опционально):
+1. Weather integration (pre-cool/pre-heat и корректировка climate policy).
+2. Adaptive recipe optimization на основе истории коррекций и стабильности контуров.
+3. Computer vision (вне ядра AE2, отдельный трек с камерным/ML pipeline).
+
+Технические границы внедрения:
+1. Tier 1 делается преимущественно in-place в текущих модулях (`correction_controller.py`, `zone_automation_service.py`, `zone_runtime_backoff.py`) без обязательного выделения нового сервиса.
+2. Tier 2/3 не блокируют go-live AE2 core и выполняются feature-flag gated.
+3. Все tier-фичи обязаны сохранять совместимость с существующим pipeline и owner-моделью статусов.
 
 ---
 
-## 7. План работ для ИИ-ассистентов (пошагово)
+## 7. План работ для ИИ-ассистентов (S-only)
 
-Ниже обязательный формат: в каждом этапе указано, **куда смотреть**, **что делать**, **что на выходе**.
+`P*` нумерация больше не используется в задачах исполнения.
+Канонический формат — только `S1..S12`.
 
-## 7.0. Рекомендуемая последовательность (Hybrid Track)
+### 7.1. Последовательность Stage
 
-1. P0: baseline + аудит уже существующей декомпозиции.
-2. P1: consolidation текущих helper-модулей + minimal contract v2 draft.
-3. P1.5: Dependency Injection Container + service boundaries для executor/plugin слоев.
-4. P2: safety-critical bounds/rate-limit/freshness/security headers в текущем AE.
-5. P4: variant-profile расширяемость для `two_tank` (без heavy SDK).
-6. P5: коррекционные policy-улучшения.
-7. P3: single-writer orchestration target + migration from dual writers (после P5).
-8. P6: resilience hardening (safe-state + dedupe + optional outbox by ADR).
-9. P7: observability/SLO после baseline.
-10. P8: интеграция и cutover.
-11. P9: нагрузочные/chaos и приемка.
+1. `S1` Baseline Audit (минимальный blocking).
+2. `S2` Safety Research (исследование, без production-кода).
+3. `S3` Safety Implementation.
+4. `S4` Contract + Security Baseline.
+5. `S5` Baseline Metrics/Coverage.
+6. `S6` State Serialization Audit.
+7. `S7` DI/Wiring.
+8. `S8` CommandGateway Migration.
+9. `S9` Correction/Policy Hardening.
+10. `S10` Resilience Consolidation.
+11. `S11` Observability + Integration + Cutover.
+12. `S12` Load/Chaos/Acceptance.
 
-### P0. Baseline и заморозка контуров
+### 7.2. Роли по Stage
 
-**Куда смотреть:**
-- `doc_ai/SYSTEM_ARCH_FULL.md`
-- `doc_ai/ARCHITECTURE_FLOWS.md`
-- `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
-- `backend/services/automation-engine/*`
-- `backend/services/scheduler/main.py`
+| Stage | Роль | Режим |
+|------|------|-------|
+| S1 | AI-ARCH | read-only audit |
+| S2 | AI-ARCH | read-only research |
+| S3 | AI-CORE | implementation |
+| S4 | AI-ARCH + AI-SEC | contract/spec + limited code |
+| S5 | AI-QA + AI-ARCH | metrics/coverage baseline |
+| S6 | AI-ARCH | read-only audit |
+| S7 | AI-CORE | implementation |
+| S8 | AI-CORE + AI-RELIABILITY | migration implementation |
+| S9 | AI-CORE | implementation |
+| S10 | AI-RELIABILITY | implementation |
+| S11 | AI-INTEGRATION + AI-QA | integration/cutover |
+| S12 | AI-QA | validation/release |
 
-**Что делать:**
-1. Зафиксировать as-is карту потоков AE/scheduler/history-logger и всех путей публикации команд.
-2. Составить реестр инвариантов, которые нельзя ломать.
-3. Подготовить список legacy-поведения, которое в AE2 удаляется.
-4. Зафиксировать Mermaid-карту потоков команд с ownership и policy арбитражем.
-5. Зафиксировать диаграмму state machine workflow фаз (как контракт восстановления после рестарта).
-6. Извлечь Core plugin-контракт из `workflow_router`/`domain.workflows`.
-7. Снять baseline-метрики текущей системы (latency, recovery, error-rate, duplicate-rate) и оформить CSV (`p50/p95/p99`).
-8. Зафиксировать baseline по тестам и coverage (объем, pass-rate, критические модули).
-9. Явно зафиксировать техдолг `SchedulerTaskExecutor + executor_bound_*` как обязательный ADR-документ и декомпозиционную карту.
-10. Зафиксировать `api.py` как второй крупный orchestration техдолг и карту разбиения.
-11. Зафиксировать monkey-patch wiring в `scheduler_task_executor.py` как обязательный техдолг к устранению через DI.
-12. Провести инвентаризацию существующего retry-контура (`correction_command_retry.py`) и исключить планируемое дублирование retry-слоев.
-13. Зафиксировать решение по `check_phase_transitions` (Laravel-only или поддерживаемый runtime path).
-14. Подготовить CI-артефакты baseline:
-   - dashboard snapshot;
-   - baseline metrics export file;
-   - checksum/hash экспортированного baseline файла.
-15. Принять раннее архитектурное решение по shadow fan-out/comparator (источник fan-out, owner diff-comparison, хранилище diff-логов).
+### 7.3. Формат self-contained задачи (обязательный для каждого Stage)
 
-**Что на выходе:**
-1. `doc_ai/10_AI_DEV_GUIDES/AE2_P0_BASELINE_AUDIT.md`
-2. Таблица инвариантов и breaking-points.
-3. Mermaid карта путей публикации команд с owner/policy.
-4. State machine diagram фаз workflow (as-is/to-be).
-5. Чек-лист миграции со старого AE на AE2.
-6. Черновик `PLUGIN_CORE_CONTRACT_FROM_EXISTING.md`.
-7. `AE1_BASELINE_METRICS.md` + baseline CSV (`p50/p95/p99`).
-8. `AE1_TEST_BASELINE_REPORT.md` + coverage baseline report.
-9. `SCHEDULER_TASK_EXECUTOR_RESTRUCTURE_ADR.md`.
-10. `AE2_API_P0_DECOMPOSITION_AUDIT.md`.
-11. `AE2_FLAG_REGISTRY_AND_RETIREMENT_PLAN.md`.
-12. `AE2_P0_BASELINE_CHECKSUM.txt`.
+Для каждого stage создается отдельный файл:
+`doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S<NN>_TASK.md`
 
-Gate P0:
-1. P0 считается завершенным только при наличии всех артефактов выше.
-2. P1+ реализация блокируется при незакрытом P0 gate.
-3. P0 gate CI-верифицируем:
-   - baseline test/coverage job `green`;
-   - baseline metrics export присутствует и проходит checksum-проверку;
-   - dashboard snapshot приложен и валиден по timestamp/traceability.
+Минимальная структура:
+1. `Входной контекст (что прочитать)`.
+2. `Конкретные файлы для изменения`.
+3. `Файлы, которые запрещено менять`.
+4. `Тесты для проверки`.
+5. `Критерий завершения`.
+6. `Роль и режим (read-only / implementation)`.
 
-### P1. Консолидация + минимальный контракт scheduler
+### 7.4. Верификация gate предыдущего Stage (обязательная)
 
-**Куда смотреть:**
-- `doc_ai/04_BACKEND_CORE/SCHEDULER_AUTOMATION_TASK_EXECUTION_SCHEMA.md`
-- `backend/services/scheduler/main.py`
-- `backend/services/automation-engine/api.py`
-- `backend/laravel/app/Http/Controllers/SchedulerTaskController.php`
+Перед стартом любого `S(n)` исполнитель обязан:
+1. Проверить наличие артефактов `S(n-1)` в `doc_ai/10_AI_DEV_GUIDES/`.
+2. Проверить checklist gate предыдущего Stage.
+3. Зафиксировать результат в `AE2_CURRENT_STATE.md`.
 
-**Что делать:**
-1. Провести consolidation существующих helper-модулей по логическим пакетам.
-2. Спроектировать минимальный `contract v2` (request/response/status/outcome/errors) без лишнего payload-overhead.
-3. Определить idempotency, дедлайны, retry semantics.
-4. Добавить security-контур на headers (`Authorization`, `X-Request-Nonce`, `X-Sent-At`).
-5. Спроектировать dedupe-ключи и replay-window для текущего `CommandBus`.
-6. Специфицировать persistent nonce-store (`ae_request_nonces`) и TTL cleanup стратегию.
-7. Провести gap-analysis: нужен ли отдельный outbox поверх `CommandTracker`.
-8. Зафиксировать topology migration plan как cross-service gate без бессрочного fallback-периода.
+Пример gate `S1 -> S2`:
+1. `[ ]` существует `AE2_STAGE_S01_TASK.md`.
+2. `[ ]` существует `AE2_P0A_MIN_BLOCKING_AUDIT.md`.
+3. `[ ]` в аудите есть `Invariants`, `Command Flow Map`, `Ownership Map`.
+4. `[ ]` базовые тесты automation-engine проходят.
 
-**Что на выходе:**
-1. `doc_ai/04_BACKEND_CORE/SCHEDULER_AUTOMATION_TASK_EXECUTION_SCHEMA_V2.md`
-2. Расширение существующих contract tests (`backend/services/automation-engine/tests/e2e/test_scheduler_payload_contract.py`)
-   + negative/replay сценарии.
-3. Consolidation plan (`AE2_CONSOLIDATION_PLAN.md`) с маппингом старых/новых модулей.
-4. Migration note для scheduler и backend.
-5. ADR `COMMAND_DELIVERY_GAP_ANALYSIS.md` (outbox required / not required).
-6. Спека nonce-storage (`AE_REQUEST_NONCES_SPEC.md`) + migration/cleanup plan.
-7. SQL schema draft для `ae_request_nonces` (PK + TTL index + replay semantics).
+### 7.5. CURRENT_STATE (обязательный артефакт между сессиями)
 
-### P1.5. Dependency Injection Container
+Поддерживать файл:
+`doc_ai/10_AI_DEV_GUIDES/AE2_CURRENT_STATE.md`
 
-**Куда смотреть:**
-- `backend/services/automation-engine/application/scheduler_executor_impl.py`
-- `backend/services/automation-engine/scheduler_task_executor.py`
-- `backend/services/automation-engine/application/workflow_router.py`
-- `backend/services/automation-engine/domain/workflows/*`
+Минимум:
+1. `Текущий Stage`.
+2. `Завершенные Stage`.
+3. `Открытые решения/ADR`.
+4. `Известные проблемы/flaky tests`.
+5. `Кумулятивный список измененных файлов`.
 
-**Что делать:**
-1. Ввести DI-контейнер для wiring executor/policies/plugins без ручного monkey-patching.
-2. Зафиксировать lifecycle для зависимостей (`init`, `health`, `shutdown`).
-3. Разделить runtime wiring и business policies.
-4. Подготовить plugin-ready dependency graph через `PluginDependencies`.
+### 7.6. Machine Guard Rails (обязательные CI-инварианты)
 
-**Что на выходе:**
-1. `AE2_DI_CONTAINER_SPEC.md`.
-2. Dependency map executor/plugin слоев.
-3. План миграции ручного wiring на container-based wiring.
-4. Unit тесты на корректность dependency resolution и lifecycle hooks.
-5. План удаления monkey-patch wiring (`_impl.* = *_proxy`) из runtime пути.
+В CI добавить проверку `AE2_INVARIANTS.py` (или эквивалент shell-check), минимум:
+1. Команды к history-logger отправляются только из `infrastructure/command_bus.py`.
+2. Нет прямой MQTT-публикации из automation-engine runtime-кода.
+3. Все feature flags зарегистрированы в `application/executor_constants.py`.
+4. В Python-сервисах нет ручного SQL DDL (`CREATE/ALTER/DROP TABLE`).
 
-### P2. Каркас AE2-режима (in-place)
+### 7.7. Конкретные call sites для миграции на CommandGateway (S8)
 
-**Куда смотреть:**
-- `backend/services/automation-engine/` (для reuse только идей, не копипасты)
-- `backend/services/scheduler/README.md`
-- `backend/docker-compose.dev.yml`
+Обязательные точки миграции:
+1. `services/zone_controller_processors.py`:
+   - `process_climate_controller()`
+   - `process_irrigation_controller()`
+   - `process_light_controller()`
+   - `process_recirculation_controller()`
+2. `correction_controller.py`:
+   - `check_and_correct()` и связанные publish-path.
+3. `correction_command_retry.py`:
+   - `publish_controller_command_with_retry()`
+   - `trigger_ec_partial_batch_compensation()`
+4. `application/command_publish_batch.py`:
+   - `publish_batch()`.
+5. `application/command_dispatch.py`:
+   - все прямые вызовы `CommandBus`.
 
-**Что делать:**
-1. Добавить AE2-mode в текущий `backend/services/automation-engine/` через feature flags.
-2. Внедрить bounds (`hard_pct`, `abs_min`, `abs_max`) в коррекционный контур как safety-critical enforcement.
-3. Внедрить `max_delta_per_min`.
-4. Перевести freshness на per-signal config поверх существующей реализации.
-5. Добавить middleware для header-based security и replay window.
-6. Переиспользовать существующий `application/executor_constants.py` для feature-flag wiring, без параллельной системы флагов.
-7. Зафиксировать и запустить flag retirement schedule для существующих AE-флагов.
+Для `S8` обязателен отдельный план миграции тестов:
+1. список тестов, которые должны быть адаптированы;
+2. стратегия совместимости (`adapter shim` или полный cutover);
+3. подтверждение, что regression suite не деградировал.
 
-**Что на выходе:**
-1. AE2-mode в текущем сервисе с переключателем (`AE2_ENABLED`) и compare-режимом для shadow-deployment.
-2. Реальные улучшения safety/коррекции без смены архитектурного ядра.
-3. Unit + integration тесты на bounds/freshness/security.
-4. Flag registry с owner/remove_by и матрицей поддерживаемых комбинаций.
+### 7.8. Stage Cards (кратко)
 
-### P4. Variant profiles для `two_tank` и похожих сценариев
+`S1` Baseline Audit:
+1. Выход: `AE2_P0A_MIN_BLOCKING_AUDIT.md`, `AE2_SAFETY_HOTFIX_BACKLOG.md`.
+2. Режим: read-only.
 
-**Куда смотреть:**
-- `backend/services/automation-engine/domain/workflows/*`
-- `tests/e2e/scenarios/automation_engine/E75_two_tank_fill_contract.yaml`
-- `tests/e2e/scenarios/automation_engine/E66_fail_closed_corrections.yaml`
+`S2` Safety Research:
+1. Выход: `AE2_SAFETY_RESEARCH_S2.md` (где именно внедрять bounds/freshness/rate-limit).
+2. Режим: read-only.
 
-**Что делать:**
-1. Рефакторинг текущего `two_tank` workflow в минимальный plugin-контракт без потери поведения.
-2. Добавить variant-profile шаблон для следующей похожей `two_tank` логики.
-3. Избежать создания параллельного framework-ядра, использовать текущий routing слой.
+`S3` Safety Implementation:
+1. Изменять: `correction_controller.py`, `zone_automation_service.py`, `config/settings`.
+2. Не менять: `command_bus.py`, `main.py` (кроме согласованного crash-mitigation).
+3. Выход: зелёные тесты + новые tests на `hard_pct/abs_min/abs_max/max_delta_per_min`.
 
-**Что на выходе:**
-1. `domain/workflows/*` + variant profiles.
-2. Минимальный routing update в текущем workflow-router.
-3. Набор unit-тестов на plugin API.
-4. Спека `VARIANT_PROFILE_SPEC.md`.
+`S4` Contract + Security Baseline:
+1. Baseline security: `Authorization` + `X-Trace-Id`.
+2. Hardened security: `DEFERRED`, не реализовывать без явного запроса.
 
-### P5. Контроль параметров и коррекция к целям
+`S5` Baseline Metrics/Coverage:
+1. Baseline CSV (`p50/p95/p99`) + coverage report + фиксация gate-метрик.
 
-**Куда смотреть:**
-- `backend/services/automation-engine/correction_controller.py`
-- `backend/services/automation-engine/services/zone_correction_*`
-- `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md`
+`S6` State Serialization Audit:
+1. Инвентарь runtime-state + `serialize()/deserialize()` contracts.
 
-**Что делать:**
-1. Вынести pH/EC control в отдельные policy-модули AE2 из текущего `CorrectionController`.
-2. Уточнить policy-интерпретацию bounds/rate-limit, уже внедренных в P2.
-3. Сделать fail-safe логику при stale telemetry/flags.
-4. Добавить policy-тесты на anti-windup и дозирование в стресс-сценариях.
+`S7` DI/Wiring:
+1. Manual composition root baseline + удаление monkey-patch пути.
 
-**Что на выходе:**
-1. `domain/policies/ph_policy.py`, `ec_policy.py`, `bounds_policy.py`.
-2. Contract тесты на границы и решение `run/skip/retry/fail`.
-3. e2e сценарии на коррекцию и safety stop.
-4. Матрица тестов `pct vs absolute bounds`.
+`S8` CommandGateway Migration:
+1. Спецификация миграции call sites + phased split для `scheduler/main.py`.
+2. Cutover обязательных publish-path через `CommandGateway`.
+3. Regression suite обязателен без снижения pass-rate.
 
-### P3. Single-writer orchestration migration (после P5)
+`S9` Correction/Policy Hardening:
+1. Extraction policy/state machine без регрессий дозирования.
+2. Реализовать Trend-based proactive correction (EWMA/slope) для `pH/EC`.
+3. Реализовать Equipment anomaly detection (`dose -> no_effect x3`) с авто-блокировкой дозирования и деградацией зоны.
 
-**Куда смотреть:**
-- `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md`
-- `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`
-- `tests/e2e/scenarios/automation_engine/E75_two_tank_fill_contract.yaml`
-- `backend/services/automation-engine/services/zone_automation_service.py`
-- `backend/services/automation-engine/application/scheduler_executor_impl.py`
+`S10` Resilience Consolidation:
+1. dedupe/retry/backoff/circuit-breaker слой в согласованной архитектуре.
+2. Реализовать auto-recovery loop для offline нод с retry/backoff/freeze и state reconcile.
+3. Довести crash-recovery для runtime-state (`_zone_states`, PID, cooldown maps) до проверяемого состояния.
 
-**Что делать:**
-1. Формализовать существующие workflow phases/stages как canonical state machine.
-2. Ввести `CommandGateway` как единую точку арбитража side-effect dispatch.
-3. Перевести steady-state на single writer (scheduler-driven).
-4. Ограничить continuous loop до monitoring/gating роли.
-5. Добавить deterministic recovery после рестарта.
-6. Реализовать per-zone lock и scheduler-gating для устранения dual-writer гонок.
+`S11` Observability + Integration + Cutover:
+1. default: `canary-first -> full`;
+2. optional: `shadow -> canary -> full` по ADR/risk-review.
+3. Tier 2 integrations:
+   - GDD-based phase transitions (в связке с recipe/backend контрактом);
+   - mobile push/telegram approvals;
+   - daily health digest.
 
-**Что на выходе:**
-1. `domain/state_machine/*` в AE2.
-2. Расширение `workflow_state_store` под режим single-writer.
-3. Спека `SINGLE_WRITER_ORCHESTRATION_RULES.md`.
-4. Integration тесты: restart + continue from checkpoint + отсутствие dual-writer конфликтов.
-5. Negative tests: concurrent loop/task dispatch не приводит к двойной публикации.
+`S12` Acceptance:
+1. load/chaos/parity/SLO gates;
+2. go-live только после полного release checklist.
+3. Tier 3 planning gate:
+   - weather integration;
+   - adaptive recipe optimization;
+   - computer vision трек (отдельный ADR и scope).
 
-### P6. Сетевой resilience (и optional outbox)
+### 7.9. Tier roadmap для «посадил и забыл»
 
-**Куда смотреть:**
-- `backend/services/automation-engine/infrastructure/command_bus.py`
-- `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md`
-- `tests/e2e/scenarios/chaos/E70_mqtt_down_recovery.yaml`
-
-**Что делать:**
-1. Реализовать dedupe-слой команд поверх текущего `CommandBus`.
-2. Уточнить и унифицировать retry/backoff/circuit-breaker политику с учетом уже существующего `correction_command_retry.py`.
-3. Добавить режим `hold_last_safe_state` при link-loss.
-4. Реализовать и подключить `Safe State Matrix`.
-5. Если ADR из P1 требует outbox — внедрить PostgreSQL outbox.
-
-**Что на выходе:**
-1. `CommandBus` dedupe/idempotency patch + тесты.
-2. Chaos-тесты: history-logger down, mqtt down, ae2 restart.
-3. Метрики по очереди и recovery.
-4. Инвариант-тесты на отсутствие повторного side-effect.
-5. Опционально: outbox implementation + migration (если outbox утвержден ADR).
-6. ADR/документ по retry layering (кто отвечает за retry: CorrectionController vs CommandBus) без двойного retry-контура.
-
-### P7. Observability, audit, alerting
-
-**Куда смотреть:**
-- `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `backend/services/automation-engine/infrastructure/observability.py`
-- `backend/laravel` API для zone events/scheduler logs
-
-**Что делать:**
-1. Стандартизовать события AE2 (event_id, seq, trace_id, correlation_id).
-2. Обеспечить полный audit trail решений и команд.
-3. Реализовать retention policy (90 дней, настройка через frontend).
-4. Внедрить guardrails retention и `legal_hold`.
-5. Реализовать cleanup как Laravel scheduled command:
-   - батч-удаление/архивирование;
-   - dry-run режим;
-   - отчет по очистке.
-
-**Что на выходе:**
-1. Спека `AE2_EVENT_TAXONOMY.md`.
-2. Миграции/индексы для хранения и очистки.
-3. E2E проверка отображения timeline в UI.
-4. Документ `RETENTION_AND_LEGAL_HOLD_POLICY.md`.
-5. Runbook для cleanup (`scope`, `batch size`, `rollback strategy`, `legal_hold exclusions`).
-
-### P8. Интеграция scheduler/backend/frontend с минимальными правками
-
-**Куда смотреть:**
-- `backend/services/scheduler/main.py`
-- `backend/laravel/routes/api.php`
-- `backend/laravel/app/Http/Controllers/*`
-- `doc_ai/07_FRONTEND/*`
-
-**Что делать:**
-1. Переключить scheduler на contract v2.
-2. Добавить/минимально расширить backend DTO для новых полей outcome/bounds.
-3. Протащить настройки hard-limits и retention из frontend.
-4. Реализовать cutover режимы: `shadow (separate deployment) -> canary -> full`.
-5. Зафиксировать rollback и обработку in-flight задач при переключении.
-6. Специфицировать shadow fan-out/comparison pipeline:
-   - источник fan-out (scheduler или proxy);
-   - read-only DB доступ shadow;
-   - место хранения diff-логов и owner сравнения.
-
-**Что на выходе:**
-1. Рабочий сквозной контракт `frontend -> backend -> scheduler -> AE2`.
-2. Feature flag для cutover (`AE2_ENABLED`).
-3. E2E сценарии для новых полей в API/UI.
-4. Документ `AE2_CUTOVER_AND_ROLLBACK_RUNBOOK.md`.
-5. Формальное определение shadow-mode:
-   - отдельный `ae2-shadow` deployment;
-   - без записи в `commands/zone_events/zone_workflow_state`;
-   - только diff-лог решений AE1 vs AE2;
-   - обязательный comparator с KPI parity.
-
-### P9. Нагрузочные, chaos, приемка
-
-**Куда смотреть:**
-- `tests/e2e/scheduler/*.sh`
-- `tests/e2e/scenarios/automation_engine/*.yaml`
-- `tests/e2e/scenarios/chaos/*.yaml`
-
-**Что делать:**
-1. Добавить матрицу тестов под текущий и x2 масштаб.
-2. Прогнать restart/failover/packet-loss сценарии.
-3. Подготовить release checklist и rollback plan.
-4. Проверить достижение SLO (p95/p99 latency, RTO, alerting SLA).
-5. Выполнить parity-анализ AE1 vs AE2 на одинаковом наборе задач/телеметрии.
-6. Подтвердить KPI `duplicate side-effect rate = 0` для дозирующих команд.
-
-**Что на выходе:**
-1. `doc_ai/10_AI_DEV_GUIDES/AE2_TEST_MATRIX.md`
-2. Протокол приемки с метриками стабильности.
-3. Go-live чеклист.
-4. Отчет по SLO/error-budget.
-5. Отчет `AE1_AE2_PARITY_REPORT.md` + diff-лог отклонений.
-6. Release gate sheet:
-   - parity within threshold;
-   - duplicate side-effect KPI passed;
-   - canary rollback drill passed;
-   - SLO gate использует только baseline-утвержденные значения (не кандидатные).
+1. Tier 1 (4-6 недель после `S6`): `S9 + S10`
+   - proactive correction, anomaly detection, auto-recovery;
+   - mandatory safety bounds уже должны быть закрыты в `S3`.
+2. Tier 2 (4-6 недель после Tier 1): `S11`
+   - GDD transitions, mobile approvals, daily digest.
+3. Tier 3 (8-12 недель, отдельный budget): post-`S12`
+   - weather, adaptive optimization, computer vision.
+4. Rule:
+   - Tier 2/3 не стартуют, пока Tier 1 не прошел acceptance на реальных зонах.
 
 ---
 
@@ -997,14 +1092,22 @@ Gate P0:
    - alerts.
 9. Ретеншн логов 90 дней (настраиваемо с фронта) работает автоматически.
 10. Для дозирующих команд подтверждено отсутствие duplicate side-effect.
-11. Cutover `shadow (separate deployment) -> canary -> full` и rollback проверены на стенде.
+11. Выбранный cutover-профиль (`canary-first` или `shadow -> canary -> full`) и rollback проверены на стенде.
+12. Для Tier 1 подтверждено:
+   - proactive correction снижает поздние коррекции по выходу за target;
+   - anomaly detection корректно блокирует неэффективное дозирование;
+   - auto-recovery восстанавливает/замораживает зону по регламенту без silent-failure.
+13. Для Tier 2 (если включен в релиз) подтверждено:
+   - GDD/time phase transitions работают по настройке рецепта;
+   - critical alerts доступны в mobile channel;
+   - daily health digest формируется автоматически.
 
 ---
 
 ## 10. Шаблон задачи для любого ИИ-ассистента (обязательный)
 
 ```markdown
-# Задача: <P0..P9 + короткое название>
+# Задача: <S1..S12 + короткое название>
 
 ## Роль
 Ты <AI-ARCH|AI-CORE|AI-PLUGIN|AI-RELIABILITY|AI-INTEGRATION|AI-SEC|AI-QA>.
@@ -1012,6 +1115,12 @@ Gate P0:
 ## Куда смотреть
 - <список .md>
 - <список файлов кода>
+
+## Конкретные файлы для изменения
+- <список файлов>
+
+## Файлы, которые ЗАПРЕЩЕНО менять
+- <список файлов>
 
 ## Что делать
 1. ...
@@ -1027,56 +1136,299 @@ Gate P0:
 1. Измененные/новые файлы: ...
 2. Тесты: ...
 3. Обновленная документация: ...
-4. Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+4. Обновление `AE2_CURRENT_STATE.md`.
+5. Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 ```
 
 ---
 
 ## 11. Реалистичный старт (первые 2 недели)
 
-Первые 2 недели — только обязательный минимум с низким миграционным риском:
+Реалистичный 2-недельный план для малой команды:
 
-1. P0 полностью:
-   - baseline-аудит;
-   - инварианты;
-   - Mermaid карта потоков команд;
-   - state machine diagram;
-   - baseline CSV (`p50/p95/p99`);
-   - baseline test/coverage report.
-2. P1 + P1.5:
-   - contract v2 draft;
-   - security headers (`Authorization`, `X-Request-Nonce`, `X-Sent-At`);
-   - dedupe/replay policy;
-   - DI container spec + dependency map.
-3. Sprint-1 implementation (ограниченный объем P2):
-   - bounds (`hard_pct`, `abs_min`, `abs_max`) в коррекционном контуре как safety-critical;
-   - `max_delta_per_min`;
-   - telemetry freshness из конфигурации per-signal;
-   - без single-writer enforcement в этом спринте.
+1. Неделя 1 (обязательный минимум):
+   - закрыть `S1` в минимальном объеме (invariants + command map + ownership map);
+   - выполнить `S2` для dedupe/state/shadow unknowns;
+   - запустить `S3 safety-hotfix track`:
+     - bounds (`hard_pct`, `abs_min`, `abs_max`);
+     - `max_delta_per_min`;
+     - per-signal freshness;
+     - быстрый crash-mitigation для `_zone_states`.
+2. Неделя 2:
+   - `S4` (contract/security baseline: `Authorization` + `X-Trace-Id`, hardened headers только по threat-model);
+   - старт `S5` метрик/coverage в параллель;
+   - старт `S6` state serialization inventory.
+3. За пределами 2 недель:
+   - `S7` DI container implementation;
+   - `S8/S10/S11+` после закрытия gate по baseline и spike-результатам.
+4. Ближайший практический горизонт после core-hardening (следующие 4-6 недель):
+   - Tier 1 автономности через `S9 + S10`:
+     - proactive correction;
+     - anomaly detection;
+     - auto-recovery loop.
 
-Фазы P3+ запускаются только после подтверждения P0 gate, baseline-отчетов и согласования ADR по outbox.
+Условие перехода к `S8+`:
+1. `S1` закрыт.
+2. Safety-hotfix из `S3` внедрены и протестированы.
+3. Решения `S2` и baseline `S5` готовы для release-gate.
 
 ---
 
-## 12. Пересмотренный приоритет фаз
+## 12. Пересмотренный приоритет фаз (через Stage-порядок)
 
-| Фаза | Приоритет | Обоснование |
+| Stage | Приоритет | Обоснование |
 |------|-----------|-------------|
-| P0 | Критический | Без формального baseline/gate реализация AE2 небезопасна и нерепродуцируема. |
-| P1 | Критический | Contract v2 + security/replay — фундамент межсервисной корректности. |
-| P1.5 | Высокий | DI-container нужен для управляемой декомпозиции и plugin lifecycle. |
-| P2 | Высокий | Bounds/freshness напрямую влияют на safety корректировок. |
-| P5 | Высокий | Политики коррекции влияют на здоровье растений и риск передозировки. |
-| P3 | Средний | Single-writer выполняется после консолидации/политик, иначе высокий риск регрессий. |
-| P4 | Средний | Plugin/variant расширяемость зависит от стабилизированных интерфейсов. |
-| P6 | Средний | Resilience наращивается после базовой корректности контрактов и policy слоев. |
-| P7 | Низкий | Observability/retention усиливаются после стабилизации ядра исполнения. |
-| P8 | Низкий | Cutover выполняется только после прохождения parity и reliability gates. |
-| P9 | Низкий | Нагрузочная и chaos приемка завершают цикл перед full rollout. |
+| S1 | Критический | Минимальный blocking аудит нужен для безопасного старта изменений. |
+| S2 | Критический | Spike и rewrite-exit проверка нужны до существенных инвестиций в реализацию. |
+| S3 | Критический | Safety-hotfix (bounds/freshness/state mitigation) нельзя откладывать. |
+| S4 | Высокий | Contract/security baseline нужен для стабильного межсервисного поведения. |
+| S5 | Высокий | Baseline метрики/coverage обязательны до release-gate. |
+| S6 | Высокий | Без serialization contracts crash-recovery неполный. |
+| S7 | Средний | DI нужен для системной декомпозиции, но не должен блокировать safety минимум. |
+| S8 | Средний | Миграция single-writer через CommandGateway и закрытие dual-writer рисков. |
+| S9 | Высокий | Включает Tier 1 proactive correction и anomaly detection для режима «посадил и забыл». |
+| S10 | Высокий | Включает Tier 1 auto-recovery; критично для ночной/безоператорной эксплуатации. |
+| S11 | Средний | Tier 2 integrations (GDD/mobile/digest) после стабилизации ядра и Tier 1. |
+| S12 | Низкий | Финальная нагрузочная/chaos приемка перед full rollout. |
 
 ---
 
-## 13. Допущения и defaults для текущей ревизии
+## 13. Матрица ключевых рисков исполнения
+
+| Риск | Вероятность | Влияние | Митигация |
+|------|-------------|---------|-----------|
+| S1/S5 задерживают проект | Высокая | Критическое | Минимизация S1 + parallel S5 + неблокируемый S3 safety-hotfix track |
+| Tier 1 автономности откладывается из-за refactor-only фокуса | Средняя | Высокое | Зафиксировать обязательный delivery `S9+S10` с отдельными acceptance KPI |
+| Скрытая связанность bound/delegate методов | Высокая | Высокое | Расширенный inventory + decision-complete ADR |
+| Неполное crash-recovery состояния | Средняя | Критическое | S6 serialization contracts + recovery tests |
+| Race condition в dedupe reserve/check | Средняя | Высокое | S2 spike + атомарный pre-publish arbitration |
+| Сложность shadow deployment/comparator | Средняя | Среднее | Ранний архитектурный выбор в S1/S2 |
+| Ошибка миграции PID-state | Низкая | Критическое | warm-start window + safety stop + rollback trigger |
+
+---
+
+## 14. Единая схема команд и каналов AE и нод
+
+### 14.1. Архитектура публикации команд
+
+```
+┌─────────────┐    ┌────────────────────┐    ┌────────────────┐    ┌───────┐    ┌─────────┐
+│  Scheduler  │───▶│  Automation-Engine │───▶│ History-Logger │───▶│ MQTT  │───▶│ ESP32   │
+│   (tasks)   │    │   (decisions)      │    │  (single-writer)│    │broker │    │  Node   │
+└─────────────┘    └────────────────────┘    └────────────────┘    └───────┘    └─────────┘
+       │                    │                        │
+       │                    │                        │
+       ▼                    ▼                        ▼
+   task_commands      controller_commands      MQTT publish
+   (schedule)          (corrections)           (QoS=1)
+```
+
+**Правило**: Единственная точка публикации команд в MQTT — `history-logger`. Прямая публикация из Laravel/Scheduler/Automation-Engine запрещена.
+
+### 14.2. Типы каналов
+
+| Тип | Назначение | `message_type` | Примеры каналов |
+|-----|------------|----------------|-----------------|
+| **SENSOR** | Телеметрия с датчиков | `telemetry` | `ph_main`, `ec_main`, `temp_air`, `humidity`, `water_level` |
+| **ACTUATOR** | Управление исполнительными устройствами | `command` / `command_response` | `pump_acid`, `pump_base`, `pump_irrigation`, `fan_air`, `heater_air`, `white_light` |
+| **SYSTEM** | Системные команды ноде | `command` (channel=`system`) | `system` (для `activate_sensor_mode`, `deactivate_sensor_mode`) |
+| **VIRTUAL** | Вычисляемые метрики (без прямой публикации) | — | internal state, derived metrics |
+
+### 14.3. Реестр команд
+
+#### 14.3.1. Актуаторные команды (`_ACTUATOR_COMMANDS`)
+
+| Команда | Параметры | Совместимые каналы | Описание |
+|---------|-----------|-------------------|----------|
+| `set_relay` | `state: bool` | ACTUATOR | Вкл/выкл реле |
+| `set_pwm` | `value: int (0-255)` | ACTUATOR | PWM-управление (вентиляторы) |
+| `run_pump` | `duration_ms: int`, `ml: float` (opt) | ACTUATOR (pump_*) | Запуск насоса на время/объём |
+| `dose` | `ml: float`, `ttl_ms: int` | ACTUATOR (pump_acid, pump_base, pump_a/b/c/d) | Точное дозирование |
+| `light_on` | `channel: str` | ACTUATOR (white_light, uv_light) | Включить свет |
+| `light_off` | `channel: str` | ACTUATOR (white_light, uv_light) | Выключить свет |
+
+#### 14.3.2. Системные команды (`_SYSTEM_MODE_COMMANDS`)
+
+| Команда | Параметры | Канал | Ноды | Описание |
+|---------|-----------|-------|------|----------|
+| `activate_sensor_mode` | — | `system` | pH/EC nodes | Активировать режим калибровки датчика |
+| `deactivate_sensor_mode` | — | `system` | pH/EC nodes | Деактивировать режим калибровки |
+
+**Правило совместимости**: Команды `activate_sensor_mode`/`deactivate_sensor_mode` работают **только** на канале `system` для pH/EC нод. Актуаторные команды **запрещены** на канале `system`.
+
+### 14.3.3. Команды ответа (`command_response`)
+
+**Терминальные статусы** (`_TERMINAL_COMMAND_STATUSES`):
+
+| Статус | Семантика | Источник |
+|--------|-----------|----------|
+| `DONE` | Успешное выполнение | Node |
+| `ERROR` | Ошибка выполнения | Node |
+| `INVALID` | Невалидные параметры/несовместимость | Node |
+| `BUSY` | Устройство занято | Node |
+| `NO_EFFECT` | Команда не изменила состояние | Node |
+| `TIMEOUT` | Истёк срок выполнения | Node |
+| `SEND_FAILED` | Ошибка публикации (backend) | AE / History-Logger |
+
+**Legacy-статусы `ACCEPTED` и `FAILED` запрещены.**
+
+### 14.4. Реестр каналов по типам нод
+
+#### 14.4.1. pH-нода (ph_node)
+
+| Канал | Тип | `metric_type` | Единицы | Команды |
+|-------|-----|---------------|---------|----------|
+| `ph_main` | SENSOR | `PH` | pH | — |
+| `temp_ph` | SENSOR | `TEMPERATURE` | °C | — |
+| `pump_acid` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `pump_base` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `system` | SYSTEM | — | — | `activate_sensor_mode`, `deactivate_sensor_mode` |
+
+#### 14.4.2. EC-нода (ec_node)
+
+| Канал | Тип | `metric_type` | Единицы | Команды |
+|-------|-----|---------------|---------|----------|
+| `ec_main` | SENSOR | `EC` | µS/cm | — |
+| `temp_ec` | SENSOR | `TEMPERATURE` | °C | — |
+| `pump_a` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `pump_b` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `pump_c` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `pump_d` | ACTUATOR | — | ml | `dose`, `run_pump`, `set_relay` |
+| `system` | SYSTEM | — | — | `activate_sensor_mode`, `deactivate_sensor_mode` |
+
+#### 14.4.3. Climate-нода (climate_node)
+
+| Канал | Тип | `metric_type` | Единицы | Команды |
+|-------|-----|---------------|---------|----------|
+| `temp_air` | SENSOR | `TEMPERATURE` | °C | — |
+| `humidity` | SENSOR | `HUMIDITY` | % | — |
+| `co2` | SENSOR | `CO2` | ppm | — |
+| `fan_air` | ACTUATOR | — | — | `set_pwm`, `set_relay` |
+| `heater_air` | ACTUATOR | — | — | `set_relay` |
+
+#### 14.4.4. Irrigation-нода (irrig_node)
+
+| Канал | Тип | `metric_type` | Единицы | Команды |
+|-------|-----|---------------|---------|----------|
+| `water_level` | SENSOR | `WATER_LEVEL` | cm | — |
+| `pump_irrigation` | ACTUATOR | — | ml/L | `run_pump`, `set_relay` |
+| `valve_irrigation` | ACTUATOR | — | — | `set_relay` |
+
+#### 14.4.5. Lighting-нода (light_node)
+
+| Канал | Тип | `metric_type` | Единицы | Команды |
+|-------|-----|---------------|---------|----------|
+| `white_light` | ACTUATOR | — | — | `light_on`, `light_off`, `set_pwm` |
+| `uv_light` | ACTUATOR | — | — | `light_on`, `light_off` |
+
+### 14.5. Роли актуаторов (ActuatorRegistry.ROLE_ALIASES)
+
+Система маппинга ролей на конкретные каналы для абстракции доменной логики:
+
+| Роль | Алиасы | Разрешение → канал |
+|------|--------|-------------------|
+| `irrigation_pump` | `main_pump`, `pump_irrigation`, `pump`, `irrig` | `pump_irrigation` |
+| `ph_acid_pump` | `acid_pump`, `pump_acid` | `pump_acid` |
+| `ph_base_pump` | `base_pump`, `pump_base` | `pump_base` |
+| `ec_npk_pump` | `npk_pump`, `pump_npk` | `pump_a` (или b/c/d по конфигу) |
+| `main_fan` | `fan`, `ventilation` | `fan_air` |
+| `heater` | `heating` | `heater_air` |
+| `main_light` | `light`, `grow_light` | `white_light` |
+
+### 14.6. MQTT-топики
+
+#### 14.6.1. Формат топиков
+
+```
+hydro/{gh}/{zone}/{node}/{channel}/{message_type}
+```
+
+| Сегмент | Пример | Описание |
+|---------|--------|----------|
+| `{gh}` | `gh-1` | Greenhouse UID |
+| `{zone}` | `zn-1` | Zone UID или `zn-temp` для PRECONFIG |
+| `{node}` | `nd-ph-1` | Node UID |
+| `{channel}` | `pump_acid`, `system` | Канал связи |
+| `{message_type}` | `telemetry`, `command`, `command_response`, `status` | Тип сообщения |
+
+#### 14.6.2. Примеры топиков
+
+| Направление | Топик |
+|-------------|-------|
+| Телеметрия pH | `hydro/gh-1/zn-1/nd-ph-1/ph_main/telemetry` |
+| Команда дозирования | `hydro/gh-1/zn-1/nd-ph-1/pump_acid/command` |
+| Ответ на команду | `hydro/gh-1/zn-1/nd-ph-1/pump_acid/command_response` |
+| Системная команда | `hydro/gh-1/zn-1/nd-ph-1/system/command` |
+| Статус ноды | `hydro/gh-1/zn-1/nd-ph-1/status` |
+
+### 14.7. Валидация совместимости команд и каналов
+
+```python
+# В command_bus.py
+_ACTUATOR_COMMANDS = {"set_relay", "set_pwm", "run_pump", "dose", "light_on", "light_off"}
+_SYSTEM_MODE_COMMANDS = {"activate_sensor_mode", "deactivate_sensor_mode"}
+
+def verify_command_channel_compatibility(channel: str, cmd: str) -> Tuple[bool, Optional[str]]:
+    # Системные команды — только на канале 'system'
+    if cmd in _SYSTEM_MODE_COMMANDS:
+        if channel != "system":
+            return False, "sensor_mode_requires_system_channel"
+        return True, None
+    
+    # Актуаторные команды запрещены на 'system'
+    if cmd in _ACTUATOR_COMMANDS:
+        if channel == "system":
+            return False, "actuator_command_on_system_channel"
+    
+    return True, None
+```
+
+### 14.8. Правила расширения для AE2
+
+1. **Новые команды**: Добавлять только через обновление `_ACTUATOR_COMMANDS` / `_SYSTEM_MODE_COMMANDS` в `command_bus.py` и документирование в данном разделе.
+
+2. **Новые каналы**: Регистрировать в `NODE_CHANNELS_REFERENCE.md` с указанием `metric_type` и единиц измерения.
+
+3. **Новые типы нод**: Создавать полный реестр каналов по аналогии с разделом 14.4.
+
+4. **Новые роли актуаторов**: Добавлять в `ActuatorRegistry.ROLE_ALIASES` с правилами разрешения.
+
+5. **Обратная совместимость**: Любые изменения требуют строки `Compatible-With` в PR/коммите.
+
+### 14.9. Gap-анализ для AE2
+
+| Текущее состояние | Требование AE2 | Действие |
+|-------------------|----------------|----------|
+| Команды в `_ACTUATOR_COMMANDS` (hardcoded) | Динамический реестр команд | S11: Schema registry |
+| Каналы в `NODE_CHANNELS_REFERENCE.md` | Автоматический парсинг | S11: Schema generation |
+| Валидация в `command_bus.py` | Централизованный validator | S2: pre-publish dedupe spike + S8 rollout |
+| Роли в `ActuatorRegistry` | Zone-specific resolution | S8: Zone controller arbitration |
+
+---
+
+## 15. Appendix: Legacy P->S Mapping (read-only)
+
+Эта таблица нужна только для обратной совместимости со старыми обсуждениями.
+В новых задачах использовать только `S1..S12`.
+
+| Legacy | S-Stage |
+|--------|---------|
+| P0a | S1 |
+| P0.5 | S2 |
+| P2 | S3 |
+| P1 | S4 |
+| P0b | S5 |
+| P1.3 | S6 |
+| P1.5 | S7 |
+| P3 | S8 |
+| P5 | S9 |
+| P6 | S10 |
+| P4/P7/P8 | S11 |
+| P9 | S12 |
+
+---
+
+## 16. Допущения и defaults для текущей ревизии
 
 1. Правки текущей итерации ограничены одним документом:
    - `doc_ai/10_AI_DEV_GUIDES/AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md`.
