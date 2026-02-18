@@ -11,6 +11,9 @@ from services.resilience_contract import (
     INFRA_SCHEDULER_TASK_RECOVERY_PERSIST_FAILED,
     INFRA_WORKFLOW_STATE_RECOVERY_ENQUEUE_FAILED,
     INFRA_WORKFLOW_STATE_RECOVERY_ROW_FAILED,
+    SCHEDULER_MODE_STARTUP_RECOVERY_FINALIZE,
+    SCHEDULER_RECOVERY_SOURCE_STARTUP,
+    SCHEDULER_SOURCE_WORKFLOW_STATE_RECOVERY,
     SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
 )
 
@@ -92,7 +95,7 @@ async def recover_inflight_scheduler_tasks(
         recovery_result = build_execution_terminal_result_fn(
             error_code=SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
             reason="Automation-engine перезапущен: in-flight задача финализирована recovery-политикой",
-            mode="startup_recovery_finalize",
+            mode=SCHEDULER_MODE_STARTUP_RECOVERY_FINALIZE,
             action_required=True,
             decision="fail",
             reason_code=SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
@@ -153,7 +156,7 @@ async def recover_inflight_scheduler_tasks(
                     "task_type": task_type,
                     "status": "failed",
                     "error_code": SCHEDULER_TASK_RECOVERED_AFTER_RESTART,
-                    "source": "automation_engine_startup_recovery",
+                    "source": SCHEDULER_RECOVERY_SOURCE_STARTUP,
                 },
             )
         except Exception as exc:
@@ -722,7 +725,7 @@ async def recover_zone_workflow_states(
             continuation_payload["workflow_phase"] = phase
             continuation_payload.setdefault("payload_contract_version", "v2")
             continuation_payload["recovery"] = {
-                "source": "automation_engine_startup_recovery",
+                "source": SCHEDULER_RECOVERY_SOURCE_STARTUP,
                 "workflow_phase": phase,
                 "workflow_phase_source": phase_source,
                 "state_age_sec": age_sec,
@@ -736,7 +739,7 @@ async def recover_zone_workflow_states(
                     task_type="diagnostics",
                     payload=continuation_payload,
                     scheduled_for=now.isoformat(),
-                    source="automation-engine:workflow-state-recovery",
+                    source=SCHEDULER_SOURCE_WORKFLOW_STATE_RECOVERY,
                 )
                 enqueue_id = str(enqueue_result.get("enqueue_id") or "").strip() or None
                 correlation_id = correlation_id or (str(enqueue_result.get("correlation_id") or "").strip() or None)

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from application.two_tank_enqueue import enqueue_two_tank_check
+from services.resilience_contract import SCHEDULER_SOURCE_TWO_TANK_STARTUP
 
 
 @pytest.mark.asyncio
@@ -28,3 +29,4 @@ async def test_enqueue_two_tank_check_clamps_scheduled_for_to_timeout():
     kwargs = enqueue_task.await_args.kwargs
     assert kwargs["scheduled_for"] == timeout_at.isoformat()
     assert kwargs["expires_at"] == timeout_at.isoformat()
+    assert kwargs["source"] == SCHEDULER_SOURCE_TWO_TANK_STARTUP

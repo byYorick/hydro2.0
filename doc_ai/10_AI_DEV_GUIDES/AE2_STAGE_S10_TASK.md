@@ -47,6 +47,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 17. добавлен restart parity acceptance кейс для missing-set delta: при изменении missing list сигнал re-emit не блокируется throttle после restore.
 18. scheduler retry/bootstrap/recovery execution paths выровнены по contract constants (mode/detail/source/payload-key).
 19. scheduler dedupe/idempotency ingress path выровнен по contract constants (`status/detail`).
+20. scheduler recovery/two-tank source literals выровнены по contract constants (без изменения enqueue/publish semantics).
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.

@@ -86,9 +86,13 @@ SCHEDULER_STATUS_REJECTED = "rejected"
 SCHEDULER_MODE_DEADLINE_REJECTED = "deadline_rejected"
 SCHEDULER_MODE_EXECUTION_FAILED = "execution_failed"
 SCHEDULER_TASK_RECOVERED_AFTER_RESTART = "task_recovered_after_restart"
+SCHEDULER_MODE_STARTUP_RECOVERY_FINALIZE = "startup_recovery_finalize"
 SCHEDULER_RETRY_SOURCE = "automation-engine:decision-retry"
 SCHEDULER_RETRY_REASON_PAYLOAD_KEY = "decision_retry_reason_code"
 SCHEDULER_RETRY_STATUS_FAILED = "failed"
+SCHEDULER_SOURCE_WORKFLOW_STATE_RECOVERY = "automation-engine:workflow-state-recovery"
+SCHEDULER_SOURCE_TWO_TANK_STARTUP = "automation-engine:two-tank-startup"
+SCHEDULER_RECOVERY_SOURCE_STARTUP = "automation_engine_startup_recovery"
 
 _NON_ALNUM_UNDERSCORE = re.compile(r"[^a-z0-9_]+")
 

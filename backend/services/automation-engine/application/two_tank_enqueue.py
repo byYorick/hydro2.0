@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import SCHEDULER_SOURCE_TWO_TANK_STARTUP
+
 BuildTwoTankCheckPayloadFn = Callable[..., Dict[str, Any]]
 EnqueueTaskFn = Callable[..., Awaitable[Dict[str, Any]]]
 
@@ -38,7 +40,7 @@ async def enqueue_two_tank_check(
         payload=next_payload,
         scheduled_for=next_check_at.isoformat(),
         expires_at=phase_timeout_at.isoformat(),
-        source="automation-engine:two-tank-startup",
+        source=SCHEDULER_SOURCE_TWO_TANK_STARTUP,
     )
 
 
