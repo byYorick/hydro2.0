@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException
+from services.resilience_contract import (
+    SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH,
+    SCHEDULER_STATUS_ACCEPTED,
+)
 
 
 def scheduler_task_log_name(task_id: str) -> str:
@@ -165,7 +169,7 @@ async def create_scheduler_task(
     task_payload_matches_fn: Callable[[Any, Dict[str, Any], str], bool],
     new_scheduler_task_id_fn: Callable[[], str],
     persist_scheduler_task_snapshot_fn: Callable[[Dict[str, Any]], Awaitable[None]],
-    initial_status: str = "accepted",
+    initial_status: str = SCHEDULER_STATUS_ACCEPTED,
     initial_result: Optional[Dict[str, Any]] = None,
     initial_error: Optional[str] = None,
     initial_error_code: Optional[str] = None,
@@ -190,7 +194,7 @@ async def create_scheduler_task(
 
         if existing is not None:
             if not task_payload_matches_fn(req, existing, payload_fingerprint):
-                raise HTTPException(status_code=409, detail="idempotency_payload_mismatch")
+                raise HTTPException(status_code=409, detail=SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH)
             return dict(existing), True
 
         task = {

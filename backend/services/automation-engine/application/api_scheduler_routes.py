@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Set
 
 from fastapi import HTTPException
+from services.resilience_contract import (
+    SCHEDULER_STATUS_ACCEPTED,
+    SCHEDULER_STATUS_EXPIRED,
+    SCHEDULER_STATUS_REJECTED,
+)
 
 
 def task_public_payload(task: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,7 +77,7 @@ async def submit_scheduler_task(
     terminal_status: Optional[str] = None
     terminal_result: Optional[Dict[str, Any]] = None
     if now > expires_at_dt:
-        terminal_status = "expired"
+        terminal_status = SCHEDULER_STATUS_EXPIRED
         terminal_result = build_deadline_terminal_result_fn(
             status=terminal_status,
             now=now,
@@ -80,7 +85,7 @@ async def submit_scheduler_task(
             expires_at=expires_at_dt,
         )
     elif now > due_at_dt:
-        terminal_status = "rejected"
+        terminal_status = SCHEDULER_STATUS_REJECTED
         terminal_result = build_deadline_terminal_result_fn(
             status=terminal_status,
             now=now,
@@ -90,7 +95,7 @@ async def submit_scheduler_task(
 
     task, is_duplicate = await create_scheduler_task_fn(
         req,
-        initial_status=terminal_status or "accepted",
+        initial_status=terminal_status or SCHEDULER_STATUS_ACCEPTED,
         initial_result=terminal_result if terminal_status else None,
         initial_error=str(terminal_result.get("error")) if terminal_status and terminal_result else None,
         initial_error_code=str(terminal_result.get("error_code")) if terminal_status and terminal_result else None,
