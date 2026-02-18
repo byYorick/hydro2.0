@@ -1,7 +1,7 @@
 # AE2_RESILIENCE_CONSOLIDATION_S10.md
 # AE2 S10: Resilience Consolidation (Increment 1)
 
-**Версия:** v0.2  
+**Версия:** v0.3  
 **Дата:** 2026-02-18  
 **Статус:** IN_PROGRESS
 
@@ -71,14 +71,29 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
     - `zone_skip_signals.py`,
     - `zone_automation_service.py` (required nodes offline/recovered).
 
+7. Resilience contract consolidation (extended):
+- `resilience_contract.py` расширен кодами:
+  - controller guardrails (`infra_controller_*`);
+  - correction-gating alerts (`infra_correction_flags_*`).
+- применено в:
+  - `zone_controller_guardrails.py`,
+  - `zone_correction_signals.py`,
+  - `zone_node_recovery.py` (reason-code contract).
+
+8. Acceptance coverage for offline recovery:
+- добавлены кейсы:
+  - repeated offline throttling (без повторного сигнала в throttle window),
+  - missing-set change (немедленный re-emit),
+  - process-cycle freeze path (контроллеры не запускаются, error_streak/backoff растёт).
+
 ## 3. Что не менялось
 1. Pipeline `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` не изменялся.
 2. Внешние REST/MQTT/DB контракты не менялись.
 3. `CommandBus`/publish-path не модифицировались.
 
 ## 4. Тесты
-1. `pytest -q test_runtime_state_store.py test_zone_node_recovery.py test_main.py test_zone_automation_service.py test_correction_controller.py test_config_settings.py` -> `121 passed`.
+1. `pytest -q test_runtime_state_store.py test_zone_node_recovery.py test_main.py test_zone_automation_service.py test_correction_controller.py test_config_settings.py` -> `124 passed`.
 
 ## 5. Следующие шаги S10
-1. Consolidate dedupe/retry/backoff/circuit-breaker policy и событийные коды в единый resilience contract.
-2. Расширить acceptance coverage offline recovery (chaos/restart parity и длительные offline окна).
+1. Consolidate dedupe/retry/backoff/circuit-breaker policy в единый contract за пределами zone-runtime (scheduler-task execution paths).
+2. Добавить chaos/restart parity сценарии для длительных offline окон (multi-cycle + restart between cycles).

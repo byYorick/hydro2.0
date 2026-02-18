@@ -44,6 +44,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 15. S10 (increment 1): runtime-state crash snapshot (`AE_RUNTIME_STATE_*`) добавлен для `_zone_states` + correction runtime maps с restore на startup/shutdown.
 16. S10 (increment 2): required-nodes offline recovery gate добавлен в zone-cycle (freeze + backoff + recovered reconcile signals).
 17. S10 (increment 3): введен базовый `resilience_contract` для унификации infra/reason codes в runtime/backoff/recovery signals.
+18. S10 (increment 4): `resilience_contract` расширен на controller guardrails и correction-gating alerts; offline-recovery acceptance coverage расширен.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -107,5 +108,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/services/zone_node_recovery.py`
 - `backend/services/automation-engine/test_zone_node_recovery.py`
 - `backend/services/automation-engine/services/resilience_contract.py`
+- `backend/services/automation-engine/services/zone_controller_guardrails.py`
+- `backend/services/automation-engine/services/zone_correction_signals.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_RESILIENCE_CONSOLIDATION_S10.md`

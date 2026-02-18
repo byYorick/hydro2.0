@@ -160,6 +160,41 @@ async def test_process_zone_with_recipe():
 
 
 @pytest.mark.asyncio
+async def test_process_zone_skips_controllers_when_required_nodes_offline():
+    service = _build_zone_service()
+    zone_id = 77
+    service.grow_cycle_repo.get_active_grow_cycle = AsyncMock(
+        return_value={"targets": {"light": {"enabled": True}}}
+    )
+    service.recipe_repo.get_zone_data_batch = AsyncMock(
+        return_value={
+            "telemetry": {},
+            "telemetry_timestamps": {},
+            "correction_flags": {},
+            "nodes": {},
+            "capabilities": {
+                "ph_control": True,
+                "ec_control": False,
+                "climate_control": False,
+                "light_control": False,
+                "irrigation_control": False,
+                "recirculation": False,
+            },
+        }
+    )
+    service.infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
+    service._check_required_nodes_online = AsyncMock(
+        return_value={"required_types": ["ph"], "online_counts": {}, "missing_types": ["ph"]}
+    )
+    service._safe_process_controller = AsyncMock()
+
+    await service.process_zone(zone_id)
+
+    assert service._safe_process_controller.await_count == 0
+    assert service._get_zone_state(zone_id)["error_streak"] == 1
+
+
+@pytest.mark.asyncio
 async def test_process_correction_controllers_skips_with_missing_flags_without_sensor_mode_activation():
     service = _build_zone_service()
     service.command_bus.publish_controller_command = AsyncMock(return_value=True)

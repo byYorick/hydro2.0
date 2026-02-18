@@ -653,6 +653,7 @@ class ZoneAutomationService:
         required_types: List[str],
         online_counts: Dict[str, Any],
         missing_types: List[str],
+        reason_code: str = REASON_REQUIRED_NODES_OFFLINE,
     ) -> None:
         await self._create_zone_event_safe(
             zone_id=zone_id,
@@ -661,7 +662,7 @@ class ZoneAutomationService:
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
                 "missing_types": sorted(missing_types),
-                "reason_code": REASON_REQUIRED_NODES_OFFLINE,
+                "reason_code": reason_code,
                 "status": "frozen",
             },
             signal_name="zone_required_nodes_offline",
@@ -679,7 +680,7 @@ class ZoneAutomationService:
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
                 "missing_types": sorted(missing_types),
-                "reason_code": REASON_REQUIRED_NODES_OFFLINE,
+                "reason_code": reason_code,
                 "status": "frozen",
             },
         )
@@ -691,6 +692,7 @@ class ZoneAutomationService:
         previous_missing_types: List[str],
         required_types: List[str],
         online_counts: Dict[str, Any],
+        reason_code: str = REASON_REQUIRED_NODES_RECOVERED,
     ) -> None:
         await self._create_zone_event_safe(
             zone_id=zone_id,
@@ -699,7 +701,7 @@ class ZoneAutomationService:
                 "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
-                "reason_code": REASON_REQUIRED_NODES_RECOVERED,
+                "reason_code": reason_code,
                 "status": "ready",
             },
             signal_name="zone_required_nodes_recovered",
@@ -715,7 +717,7 @@ class ZoneAutomationService:
                 "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
                 "required_types": sorted(required_types),
                 "online_counts": online_counts,
-                "reason_code": REASON_REQUIRED_NODES_RECOVERED,
+                "reason_code": reason_code,
                 "status": "ready",
             },
         )

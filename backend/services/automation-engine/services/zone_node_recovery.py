@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, List
 
+from services.resilience_contract import (
+    REASON_REQUIRED_NODES_OFFLINE,
+    REASON_REQUIRED_NODES_RECOVERED,
+)
 
 CheckRequiredNodesOnlineFn = Callable[[int, List[str]], Awaitable[Dict[str, Any]]]
 EmitRequiredNodesOfflineSignalFn = Callable[..., Awaitable[None]]
@@ -77,6 +81,7 @@ async def evaluate_required_nodes_recovery_gate(
                 required_types=required_types,
                 online_counts=online_counts,
                 missing_types=sorted(missing_types),
+                reason_code=REASON_REQUIRED_NODES_OFFLINE,
             )
             zone_state["last_required_nodes_offline_report_at"] = now
         else:
@@ -93,6 +98,7 @@ async def evaluate_required_nodes_recovery_gate(
             previous_missing_types=zone_state.get("required_nodes_offline_missing_types") or [],
             required_types=zone_state.get("required_nodes_offline_required_types") or required_types,
             online_counts=online_counts,
+            reason_code=REASON_REQUIRED_NODES_RECOVERED,
         )
         zone_state["required_nodes_offline_active"] = False
         zone_state["required_nodes_offline_missing_types"] = []

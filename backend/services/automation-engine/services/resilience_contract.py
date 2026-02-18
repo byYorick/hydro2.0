@@ -6,6 +6,11 @@ INFRA_ZONE_TARGETS_MISSING = "infra_zone_targets_missing"
 INFRA_ZONE_DATA_UNAVAILABLE = "infra_zone_data_unavailable"
 INFRA_ZONE_DEGRADED_MODE = "infra_zone_degraded_mode"
 INFRA_ZONE_REQUIRED_NODES_OFFLINE = "infra_zone_required_nodes_offline"
+INFRA_CONTROLLER_COMMAND_SKIPPED_CIRCUIT_OPEN = "infra_controller_command_skipped_circuit_open"
+INFRA_CONTROLLER_COOLDOWN_SKIP = "infra_controller_cooldown_skip"
+INFRA_CONTROLLER_FAILED = "infra_controller_failed"
+INFRA_CORRECTION_FLAGS_MISSING = "infra_correction_flags_missing"
+INFRA_CORRECTION_FLAGS_STALE = "infra_correction_flags_stale"
 
 # Reason codes
 REASON_REQUIRED_NODES_OFFLINE = "required_nodes_offline"

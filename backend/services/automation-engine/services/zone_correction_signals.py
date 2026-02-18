@@ -5,6 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, List
 
+from services.resilience_contract import (
+    INFRA_CORRECTION_FLAGS_MISSING,
+    INFRA_CORRECTION_FLAGS_STALE,
+)
 
 ResolveCorrectionSensorNodesFn = Callable[[Dict[str, Dict[str, Any]]], List[Dict[str, Any]]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
@@ -48,7 +52,7 @@ async def emit_correction_missing_flags_signal(
     )
 
     alert_sent = await send_infra_alert_fn(
-        code="infra_correction_flags_missing",
+        code=INFRA_CORRECTION_FLAGS_MISSING,
         alert_type="Correction Flags Missing",
         message=f"Zone {zone_id} skipped correction due to missing sensor-mode flags",
         severity="warning",
@@ -116,7 +120,7 @@ async def emit_correction_stale_flags_signal(
     )
 
     alert_sent = await send_infra_alert_fn(
-        code="infra_correction_flags_stale",
+        code=INFRA_CORRECTION_FLAGS_STALE,
         alert_type="Correction Flags Stale",
         message=f"Zone {zone_id} skipped correction due to stale sensor-mode flags",
         severity="warning",

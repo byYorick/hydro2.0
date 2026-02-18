@@ -30,10 +30,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - fail-closed/freeze при `missing required node types`;
 - throttled offline сигнал + recovered reconcile сигнал;
 - интеграция в `process_zone_cycle` до controller execution.
+5. Расширен `resilience_contract`:
+- unified infra/reason codes для runtime/backoff/recovery/guardrails;
+- подключено в `zone_runtime_signals`, `zone_skip_signals`, `zone_controller_guardrails`, `zone_correction_signals`, `zone_node_recovery`.
 
 ## 3. Остаток S10 (open)
 1. Дополнить dedupe/retry/backoff/circuit-breaker слой единым контрактом/метриками.
-2. Расширить acceptance набор auto-recovery loop offline-нод (добавить сквозные regression-кейсы).
+2. Расширить acceptance набор auto-recovery loop offline-нод (chaos/restart parity).
 3. Подготовить финальный `S10` report с закрытием всех подпунктов stage.
 
 ## 4. Тесты текущего инкремента

@@ -6,6 +6,11 @@ import inspect
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from services.resilience_contract import (
+    INFRA_CONTROLLER_COMMAND_SKIPPED_CIRCUIT_OPEN,
+    INFRA_CONTROLLER_COOLDOWN_SKIP,
+    INFRA_CONTROLLER_FAILED,
+)
 
 UtcNowFn = Callable[[], datetime]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
@@ -35,7 +40,7 @@ async def emit_controller_circuit_open_signal(
         return
 
     alert_sent = await send_infra_alert_fn(
-        code="infra_controller_command_skipped_circuit_open",
+        code=INFRA_CONTROLLER_COMMAND_SKIPPED_CIRCUIT_OPEN,
         alert_type="Controller Command Skipped (Circuit Open)",
         message=f"Zone {zone_id} controller '{controller_name}' skipped command due to open API circuit breaker",
         severity="error",
@@ -172,7 +177,7 @@ async def safe_process_controller(
 
         await send_infra_exception_alert_fn(
             error=error,
-            code="infra_controller_failed",
+            code=INFRA_CONTROLLER_FAILED,
             alert_type="Controller Failed",
             severity="error",
             zone_id=zone_id,
@@ -242,7 +247,7 @@ async def emit_controller_cooldown_skip_signal(
     )
 
     alert_sent = await send_infra_alert_fn(
-        code="infra_controller_cooldown_skip",
+        code=INFRA_CONTROLLER_COOLDOWN_SKIP,
         alert_type="Controller Cooldown Skip",
         message=f"Zone {zone_id} controller '{controller_name}' skipped due to cooldown",
         severity="warning",
