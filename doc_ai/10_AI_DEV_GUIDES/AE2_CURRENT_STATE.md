@@ -7,12 +7,14 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Текущий Stage
-- `S3` Safety implementation: COMPLETED.
+- `S4` Contract + Security Baseline: COMPLETED.
+- Next: `S5` Baseline Metrics/Coverage.
 
 ## 2. Завершенные Stage
 - `S1` Baseline Audit: COMPLETED.
 - Mini-`S2` Safety Research Gate: COMPLETED.
 - `S3` Safety Bounds + Rate Limit + Fail-Closed Audit: COMPLETED.
+- `S4` Contract + Security Baseline: COMPLETED.
 
 ## 3. Открытые решения/ADR
 1. `CommandGateway` migration ADR (S8) — OPEN.
@@ -22,6 +24,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. `check_phase_transitions` owner: AE simulation-only path.
 2. Safety bounds source: hybrid (override -> targets -> defaults).
 3. Safety rollout mode: on by default + kill-switch.
+4. Scheduler ingress baseline security (`/scheduler/task`): required `Authorization + X-Trace-Id`.
+5. Hardened scheduler security (`X-Request-Nonce`, `X-Sent-At`) остается `DEFERRED`.
 
 ## 5. Известные риски
 1. Dual-writer publish risk до полной миграции на `CommandGateway`.
@@ -45,3 +49,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/test_zone_automation_service.py`
 - `backend/services/automation-engine/test_config_settings.py`
 - `backend/docker-compose.dev.yml`
+- `backend/services/automation-engine/application/api_scheduler_security.py`
+- `backend/services/automation-engine/application/api_scheduler_routes.py`
+- `backend/services/automation-engine/api.py`
+- `backend/services/automation-engine/test_api.py`
+- `backend/services/scheduler/main.py`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S04_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_CONTRACT_SECURITY_BASELINE_S4.md`
