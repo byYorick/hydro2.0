@@ -12,6 +12,7 @@ from common.utils.time import utcnow
 from infrastructure.circuit_breaker import CircuitBreaker
 from repositories.laravel_api_repository import LaravelApiRepository
 from common.effective_targets import parse_effective_targets
+from services.resilience_contract import INFRA_CORRECTION_FLAGS_TELEMETRY_SAMPLES_MISSING
 
 logger = logging.getLogger(__name__)
 MISSING_TELEMETRY_SAMPLES_REPORT_THROTTLE_SECONDS = 300
@@ -106,7 +107,7 @@ class RecipeRepository:
             if not is_active:
                 return
             resolved_sent = await send_infra_resolved_alert(
-                code="infra_correction_flags_telemetry_samples_missing",
+                code=INFRA_CORRECTION_FLAGS_TELEMETRY_SAMPLES_MISSING,
                 alert_type="Correction Flags Telemetry Missing",
                 message=f"Zone {zone_id}: telemetry_samples for correction flags restored",
                 zone_id=zone_id,
@@ -159,7 +160,7 @@ class RecipeRepository:
             )
 
         alert_sent = await send_infra_alert(
-            code="infra_correction_flags_telemetry_samples_missing",
+            code=INFRA_CORRECTION_FLAGS_TELEMETRY_SAMPLES_MISSING,
             alert_type="Correction Flags Telemetry Missing",
             message=f"Zone {zone_id}: telemetry_samples missing for PH/EC, correction flags degraded",
             severity="error",

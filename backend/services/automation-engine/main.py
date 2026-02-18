@@ -73,6 +73,18 @@ from repositories import (
     InfrastructureRepository
 )
 from repositories.laravel_api_repository import LaravelApiRepository
+from services.resilience_contract import (
+    INFRA_API_CIRCUIT_OPEN_NO_CACHE,
+    INFRA_AUTOMATION_LOOP_ERROR,
+    INFRA_CONFIG_FETCH_FAILED,
+    INFRA_CONFIG_FETCH_UNAVAILABLE,
+    INFRA_CONFIG_MISSING_GREENHOUSE_UID,
+    INFRA_DB_CIRCUIT_OPEN,
+    INFRA_HEALTH_CHECK_FAILED,
+    INFRA_SYSTEM_UNHEALTHY,
+    INFRA_ZONE_FAILURE_RATE_HIGH,
+    INFRA_ZONE_PROCESSING_FAILED,
+)
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
 from infrastructure.command_gateway import CommandGateway
@@ -268,7 +280,7 @@ async def _emit_config_fetch_failure_alert(
     payload_details["throttle_seconds"] = _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS
 
     await send_infra_alert(
-        code="infra_config_fetch_failed",
+        code=INFRA_CONFIG_FETCH_FAILED,
         alert_type="Config Fetch Failed",
         message=message,
         severity="error",
@@ -528,7 +540,7 @@ async def process_zones_parallel(
                         await asyncio.wait_for(
                             send_infra_exception_alert(
                                 error=e,
-                                code="infra_zone_processing_failed",
+                                code=INFRA_ZONE_PROCESSING_FAILED,
                                 alert_type="Zone Processing Failed",
                                 severity="error",
                                 zone_id=zone_id,
@@ -580,7 +592,7 @@ async def process_zones_parallel(
             try:
                 await asyncio.wait_for(
                     send_infra_alert(
-                        code="infra_zone_failure_rate_high",
+                        code=INFRA_ZONE_FAILURE_RATE_HIGH,
                         alert_type="Zone Failure Rate High",
                         message=f"Высокая доля ошибок обработки зон: {failure_rate:.1%}",
                         severity=severity,
@@ -900,7 +912,7 @@ async def main():
                     now = utcnow()
                     if _should_emit_health_unhealthy_alert(now):
                         await send_infra_alert(
-                            code="infra_system_unhealthy",
+                            code=INFRA_SYSTEM_UNHEALTHY,
                             alert_type="System Health Degraded",
                             message=f"Automation system health is '{health['status']}'",
                             severity="error",
@@ -919,7 +931,7 @@ async def main():
                 if _should_emit_health_check_failed_alert(now):
                     await send_infra_exception_alert(
                         error=e,
-                        code="infra_health_check_failed",
+                        code=INFRA_HEALTH_CHECK_FAILED,
                         alert_type="Health Check Failed",
                         severity="error",
                         zone_id=None,
@@ -967,7 +979,7 @@ async def main():
                                 logger.warning("API Circuit Breaker is OPEN, no cached config available")
                                 if _should_emit_config_unavailable_alert(utcnow()):
                                     await send_infra_alert(
-                                        code="infra_api_circuit_open_no_cache",
+                                        code=INFRA_API_CIRCUIT_OPEN_NO_CACHE,
                                         alert_type="API Circuit Open Without Cache",
                                         message="API circuit breaker is open and no cached config is available",
                                         severity="critical",
@@ -991,7 +1003,7 @@ async def main():
                                 logger.warning("Config fetch returned None, sleeping before retry")
                                 if _should_emit_config_unavailable_alert(utcnow()):
                                     await send_infra_alert(
-                                        code="infra_config_fetch_unavailable",
+                                        code=INFRA_CONFIG_FETCH_UNAVAILABLE,
                                         alert_type="Config Unavailable",
                                         message="Config fetch returned empty response and no cached config is available",
                                         severity="error",
@@ -1024,7 +1036,7 @@ async def main():
                         logger.warning("No greenhouse UID found in config, sleeping before retry")
                         if _should_emit_missing_gh_uid_alert(utcnow()):
                             await send_infra_alert(
-                                code="infra_config_missing_greenhouse_uid",
+                                code=INFRA_CONFIG_MISSING_GREENHOUSE_UID,
                                 alert_type="Config Missing Greenhouse UID",
                                 message="Config does not contain greenhouse UID",
                                 severity="error",
@@ -1116,7 +1128,7 @@ async def main():
                         now = utcnow()
                         if _should_emit_db_circuit_open_alert(now):
                             await send_infra_alert(
-                                code="infra_db_circuit_open",
+                                code=INFRA_DB_CIRCUIT_OPEN,
                                 alert_type="Database Circuit Breaker Open",
                                 message="Database circuit breaker is OPEN, zone processing is skipped",
                                 severity="critical",
@@ -1196,7 +1208,7 @@ async def main():
                     handle_automation_error(e, {"action": "main_loop"})
                     await send_infra_exception_alert(
                         error=e,
-                        code="infra_automation_loop_error",
+                        code=INFRA_AUTOMATION_LOOP_ERROR,
                         alert_type="Automation Loop Error",
                         severity="error",
                         zone_id=None,

@@ -52,6 +52,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 23. S10 (increment 9): `application/*` infra-alert literal codes переведены на `resilience_contract` (api runtime/recovery, scheduler execution, workflow-state sync, device-task, diagnostics, task-event persistence).
 24. S10 (increment 10): `cycle_start` workflow alerts и `error_handler` unknown-error alert переведены на `resilience_contract`.
 25. S10 (increment 11): `infrastructure/command_bus.py` infra-alert codes переведены на `resilience_contract` (validation/publish/closed-loop paths).
+26. S10 (increment 12): `main.py` и `repositories/recipe_repository.py` infra-alert codes переведены на `resilience_contract`; в прод-коде остался только динамический `decision_alerts` pattern.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -127,5 +128,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/domain/workflows/cycle_start_core.py`
 - `backend/services/automation-engine/error_handler.py`
 - `backend/services/automation-engine/infrastructure/command_bus.py`
+- `backend/services/automation-engine/main.py`
+- `backend/services/automation-engine/repositories/recipe_repository.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_RESILIENCE_CONSOLIDATION_S10.md`
