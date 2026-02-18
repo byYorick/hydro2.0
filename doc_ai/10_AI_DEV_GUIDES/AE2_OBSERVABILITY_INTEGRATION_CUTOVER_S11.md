@@ -24,6 +24,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `AE2_TIER2_APPROVALS_ENABLED`;
 - `AE2_TIER2_DAILY_DIGEST_ENABLED`.
 4. Bootstrap contract literals (`status/reason`) нормализованы через `resilience_contract` constants.
+5. Добавлен `GET /scheduler/cutover/state`:
+- возвращает rollout profile, Tier2 capability flags и ingress cutover параметры;
+- используется как read-only observability/control-plane snapshot для canary/cutover.
 
 ## 3. Что не менялось
 1. `Scheduler -> AE -> History-Logger -> MQTT -> ESP32` path не менялся.
@@ -33,6 +36,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 4. Верификация
 1. `pytest test_api.py test_scheduler_task_executor.py` -> green.
 2. Проверено, что bootstrap/heartbeat возвращают rollout-capabilities без изменения статусов `ready/wait/deny`.
+3. Проверено, что `GET /scheduler/cutover/state` возвращает согласованное состояние rollout/cutover флагов.
 
 ## 5. Следующие шаги S11
 1. Сформировать required observability list для cutover:

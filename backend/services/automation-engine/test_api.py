@@ -335,6 +335,22 @@ def test_scheduler_bootstrap_and_heartbeat_success(client, mock_command_bus):
     assert heartbeat_data["lease_id"] == lease_id
 
 
+def test_scheduler_cutover_state_endpoint(client):
+    response = client.get("/scheduler/cutover/state")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["rollout_profile"] == "canary-first"
+    assert data["tier2_capabilities"] == {
+        "gdd_phase_transitions": False,
+        "mobile_approvals": False,
+        "daily_health_digest": False,
+    }
+    ingress = data["scheduler_ingress"]
+    assert ingress["bootstrap_enforce"] is True
+    assert ingress["security_baseline_enforce"] is True
+    assert ingress["require_trace_id"] is True
+
+
 def test_scheduler_bootstrap_heartbeat_wait_when_automation_not_ready(client, mock_command_bus):
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid

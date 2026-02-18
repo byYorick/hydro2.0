@@ -116,6 +116,9 @@ from application.api_contracts import (
 from application.api_scheduler_validation import (
     validate_scheduler_zone as policy_validate_scheduler_zone,
 )
+from application.api_scheduler_cutover import (
+    build_scheduler_cutover_state_payload as policy_build_scheduler_cutover_state_payload,
+)
 from application.api_internal_enqueue import (
     scheduler_internal_enqueue as policy_scheduler_internal_enqueue,
 )
@@ -703,6 +706,28 @@ async def scheduler_bootstrap_heartbeat(req: SchedulerBootstrapHeartbeatRequest 
         cleanup_bootstrap_leases_locked_fn=_cleanup_bootstrap_leases_locked,
         create_scheduler_log_fn=create_scheduler_log,
     )
+
+
+@app.get("/scheduler/cutover/state")
+async def scheduler_cutover_state():
+    return {
+        "status": "ok",
+        "data": policy_build_scheduler_cutover_state_payload(
+            rollout_profile=_AE2_ROLLOUT_PROFILE,
+            tier2_capabilities={
+                "gdd_phase_transitions": _AE2_TIER2_GDD_ENABLED,
+                "mobile_approvals": _AE2_TIER2_APPROVALS_ENABLED,
+                "daily_health_digest": _AE2_TIER2_DAILY_DIGEST_ENABLED,
+            },
+            scheduler_bootstrap_enforce=_SCHEDULER_BOOTSTRAP_ENFORCE,
+            scheduler_security_baseline_enforce=_AE_SCHEDULER_SECURITY_BASELINE_ENFORCE,
+            scheduler_require_trace_id=_AE_SCHEDULER_REQUIRE_TRACE_ID,
+            scheduler_dedupe_window_sec=_SCHEDULER_DEDUPE_WINDOW_SEC,
+            scheduler_bootstrap_lease_ttl_sec=_SCHEDULER_BOOTSTRAP_LEASE_TTL_SEC,
+            scheduler_bootstrap_poll_interval_sec=_SCHEDULER_BOOTSTRAP_POLL_INTERVAL_SEC,
+            scheduler_bootstrap_task_timeout_sec=_SCHEDULER_BOOTSTRAP_TASK_TIMEOUT_SEC,
+        ),
+    }
 
 
 @app.post("/scheduler/internal/enqueue")

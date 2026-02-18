@@ -33,6 +33,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `AE2_TIER2_APPROVALS_ENABLED`;
 - `AE2_TIER2_DAILY_DIGEST_ENABLED`.
 4. Bootstrap status/reason literals переведены на contract constants в `resilience_contract`.
+5. Добавлен endpoint `GET /scheduler/cutover/state` для rollout/cutover introspection.
 
 ## 4. Остаток S11 (open)
 1. Нормализовать cutover observability dashboard contract (required metrics/events list).
