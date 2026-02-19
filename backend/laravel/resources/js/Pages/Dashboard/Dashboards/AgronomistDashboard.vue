@@ -360,10 +360,10 @@
                 {{ zone.name }}
               </div>
               <div
-                v-if="(zone as any).crop"
+                v-if="zone.crop"
                 class="text-xs text-[color:var(--text-muted)] mt-1"
               >
-                {{ (zone as any).crop }}
+                {{ zone.crop }}
               </div>
             </div>
             <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
@@ -371,11 +371,11 @@
             </Badge>
           </div>
           <div
-            v-if="(zone as any).issues && (zone as any).issues.length > 0"
+            v-if="zone.issues && zone.issues.length > 0"
             class="text-xs text-[color:var(--accent-red)] mt-2"
           >
             <div
-              v-for="issue in (zone as any).issues"
+              v-for="issue in zone.issues"
               :key="issue"
             >
               • {{ issue }}
@@ -444,7 +444,7 @@ const zonesByCrop = computed(() => {
   
   props.dashboard.zones.forEach(zone => {
     // Используем новую модель: activeGrowCycle -> recipeRevision -> recipe
-    const cropName = (zone as any).activeGrowCycle?.recipeRevision?.recipe?.name 
+    const cropName = zone.activeGrowCycle?.recipeRevision?.recipe?.name
       || 'Без рецепта'
     
     if (!grouped.has(cropName)) {
@@ -592,7 +592,7 @@ const activeRecipes = computed(() => {
   // Рецепты считаются активными, если они применены к зонам через activeGrowCycle
   return props.dashboard.recipes.slice(0, 6).map(recipe => {
     const zonesWithRecipe = props.dashboard.zones?.filter(z =>
-      (z as any).activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
+      z.activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
     ) || []
     
     // Вычисляем информацию о фазах из зон
@@ -608,11 +608,11 @@ const activeRecipes = computed(() => {
       let currentPhaseIndex = 0
       let startedAt: Date | null = null
       
-      if ((firstZone as any).activeGrowCycle?.currentPhase) {
-        currentPhaseIndex = (firstZone as any).activeGrowCycle.currentPhase.phase_index ?? 0
-        startedAt = (firstZone as any).activeGrowCycle.phase_started_at
-          ? new Date((firstZone as any).activeGrowCycle.phase_started_at)
-          : ((firstZone as any).activeGrowCycle.started_at ? new Date((firstZone as any).activeGrowCycle.started_at) : null)
+      if (firstZone.activeGrowCycle?.currentPhase) {
+        currentPhaseIndex = firstZone.activeGrowCycle.currentPhase.phase_index ?? 0
+        startedAt = firstZone.activeGrowCycle.phase_started_at
+          ? new Date(firstZone.activeGrowCycle.phase_started_at)
+          : (firstZone.activeGrowCycle.started_at ? new Date(firstZone.activeGrowCycle.started_at) : null)
       }
       
       const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)
@@ -625,13 +625,13 @@ const activeRecipes = computed(() => {
           phaseProgress = calculateProgressFromDuration(
             startedAt,
             null,
-            (currentPhaseData as any).duration_days
+            currentPhaseData.duration_days
           ) ?? 0
-          
+
           // Вычисляем время до следующей фазы
           const durationHours = normalizeDurationHours(
             null,
-            (currentPhaseData as any).duration_days
+            currentPhaseData.duration_days
           )
           if (durationHours) {
             const nextPhaseStart = new Date(startedAt.getTime() + durationHours * 60 * 60 * 1000)

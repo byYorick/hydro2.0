@@ -9,11 +9,18 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote')->hourly();
 
 // Retention политики: очистка старых raw данных (ежедневно в 2:00)
+// ВНИМАНИЕ: Python telemetry-aggregator (сервис) также выполняет cleanup согласно
+// RETENTION_SAMPLES_DAYS=90. Текущий дефолт --days=30 здесь означает, что реальная
+// retention для telemetry_samples — 30 дней (более агрессивная политика побеждает).
+// Если нужно изменить, синхронизировать с RETENTION_SAMPLES_DAYS в docker-compose.
 Schedule::command('telemetry:cleanup-raw --days=30')
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
 
 // Агрегация данных: каждые 15 минут
+// ВНИМАНИЕ: Python telemetry-aggregator (сервис) выполняет ту же агрегацию в фоне.
+// Оба используют ON CONFLICT (1m - DO UPDATE SET, Laravel - DO NOTHING), данные не дублируются.
+// При наличии Python-сервиса эта команда избыточна, но безопасна.
 Schedule::command('telemetry:aggregate')
     ->everyFifteenMinutes()
     ->description('Агрегация телеметрии в таблицы 1m, 1h, daily');

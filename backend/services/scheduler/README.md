@@ -2,6 +2,21 @@
 
 Планировщик расписаний зоны (planner-only режим).
 
+## Текущее устройство (после split)
+
+`main.py` выполняет роль backward-compatible facade/composition root.  
+Основная логика вынесена в слои:
+
+- `app/bootstrap_sync.py` — bootstrap/heartbeat lifecycle
+- `app/leader_election.py` — leader election
+- `app/dispatch_service.py` — dispatch/submit path
+- `app/reconcile_service.py` — task polling/reconciliation/recovery
+- `app/internal_enqueue_service.py` — internal enqueue recovery
+- `domain/planning_engine.py` — planning/catchup/window orchestration
+- `app/runtime_loop.py` — runtime loop
+- `app/runtime_state.py` — unified runtime state dataclass
+- `infrastructure/*` — transport/repository adapters
+
 ## Роль сервиса
 
 `Scheduler` больше не отправляет device-level команды и не выполняет safety/аварийный контроль.

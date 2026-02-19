@@ -43,9 +43,20 @@ export interface RecipePhase {
   phase_index: number
   name: string
   duration_hours: number
+  duration_days?: number
   phase_started_at?: string | null
   phase_ends_at?: string | null
   targets?: RecipePhaseTargets
+  // Flat API fields (alternative to nested targets)
+  ph_min?: number | null
+  ph_max?: number | null
+  ec_min?: number | null
+  ec_max?: number | null
+  temp_air_target?: number | null
+  humidity_target?: number | null
+  lighting_photoperiod_hours?: number | null
+  irrigation_interval_sec?: number | null
+  irrigation_duration_sec?: number | null
   nutrient_program_code?: string | null
   nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null
   nutrient_npk_ratio_pct?: number | string | null
@@ -78,6 +89,7 @@ export interface Recipe {
   phases_count?: number
   latest_published_revision_id?: number | null
   latest_draft_revision_id?: number | null
+  draft_revision_id?: number | null
   plants?: Array<{ id: number; name: string }>
   created_at?: string
   updated_at?: string

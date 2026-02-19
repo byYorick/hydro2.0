@@ -50,7 +50,7 @@ async def load_zone_system_config(
     try:
         rows = await fetch_fn(
             """
-            SELECT config
+            SELECT settings
             FROM zones
             WHERE id = $1
             LIMIT 1
@@ -63,8 +63,11 @@ async def load_zone_system_config(
     if not rows:
         return task_config
 
-    zone_config = rows[0].get("config") if isinstance(rows[0].get("config"), dict) else {}
-    automation = zone_config.get("automation") if isinstance(zone_config.get("automation"), dict) else {}
+    zone_settings = rows[0].get("settings") if isinstance(rows[0].get("settings"), dict) else {}
+    legacy_config = zone_settings.get("config") if isinstance(zone_settings.get("config"), dict) else {}
+    automation = zone_settings.get("automation") if isinstance(zone_settings.get("automation"), dict) else {}
+    if not automation:
+        automation = legacy_config.get("automation") if isinstance(legacy_config.get("automation"), dict) else {}
     two_tank = automation.get("two_tank") if isinstance(automation.get("two_tank"), dict) else {}
 
     tanks_count = two_tank.get("tanks_count")
@@ -109,18 +112,31 @@ async def load_zone_current_levels(
     fetch_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
     levels = {
-        "clean_tank_percent": None,
-        "solution_tank_percent": None,
+        "clean_tank_level_percent": None,
+        "nutrient_tank_level_percent": None,
     }
 
     try:
         rows = await fetch_fn(
             """
-            SELECT channel, payload_json, created_at
+            SELECT
+                COALESCE(
+                    payload_json->>'channel',
+                    payload_json->'details'->>'channel',
+                    payload_json->'metric'->>'channel',
+                    ''
+                ) AS channel,
+                payload_json,
+                created_at
             FROM zone_events
             WHERE zone_id = $1
               AND type IN ('telemetry', 'status')
-              AND channel IN ('lvl_clean', 'lvl_solution')
+              AND COALESCE(
+                    payload_json->>'channel',
+                    payload_json->'details'->>'channel',
+                    payload_json->'metric'->>'channel',
+                    ''
+              ) IN ('lvl_clean', 'lvl_solution')
             ORDER BY created_at DESC, id DESC
             LIMIT 200
             """,
@@ -136,6 +152,8 @@ async def load_zone_current_levels(
         raw_level = None
         if "value" in payload:
             raw_level = payload.get("value")
+        elif isinstance(payload.get("details"), dict):
+            raw_level = payload["details"].get("value")
         elif isinstance(payload.get("metric"), dict):
             raw_level = payload["metric"].get("value")
         elif isinstance(payload.get("telemetry"), dict):
@@ -145,12 +163,12 @@ async def load_zone_current_levels(
         if level is None:
             continue
 
-        if channel == "lvl_clean" and levels["clean_tank_percent"] is None:
-            levels["clean_tank_percent"] = level
-        elif channel == "lvl_solution" and levels["solution_tank_percent"] is None:
-            levels["solution_tank_percent"] = level
+        if channel == "lvl_clean" and levels["clean_tank_level_percent"] is None:
+            levels["clean_tank_level_percent"] = level
+        elif channel == "lvl_solution" and levels["nutrient_tank_level_percent"] is None:
+            levels["nutrient_tank_level_percent"] = level
 
-        if levels["clean_tank_percent"] is not None and levels["solution_tank_percent"] is not None:
+        if levels["clean_tank_level_percent"] is not None and levels["nutrient_tank_level_percent"] is not None:
             break
 
     return levels

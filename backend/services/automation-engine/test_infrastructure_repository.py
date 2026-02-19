@@ -57,6 +57,7 @@ async def test_get_zone_bindings_by_role():
         assert result["vent"]["node_uid"] == "nd-climate-1"
         assert result["vent"]["node_channel_id"] == 101
         assert result["vent"]["channel"] == "fan_A"
+        assert result["vent"]["zone_id"] == 5
         assert result["heater"]["node_uid"] == "nd-climate-1"
         assert result["main_pump"]["node_uid"] == "nd-irrig-1"
         mock_fetch.assert_called_once()
@@ -113,7 +114,9 @@ async def test_get_zones_bindings_batch():
         assert 7 in result  # Zone without bindings should have empty dict
         assert "vent" in result[5]
         assert result[5]["vent"]["node_channel_id"] == 201
+        assert result[5]["vent"]["zone_id"] == 5
         assert "main_pump" in result[6]
+        assert result[6]["main_pump"]["zone_id"] == 6
         assert result[7] == {}  # Empty dict for zone without bindings
 
 
@@ -190,6 +193,7 @@ async def test_get_zone_bindings_by_role_with_circuit_breaker():
         result = await repo.get_zone_bindings_by_role(5)
         
         assert "vent" in result
+        assert result["vent"]["zone_id"] == 5
         mock_call.assert_called_once()
 
 

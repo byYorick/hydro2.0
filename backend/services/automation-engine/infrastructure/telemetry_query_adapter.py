@@ -330,7 +330,7 @@ async def find_zone_event_since(
 
     rows = await fetch_fn(
         """
-        SELECT id, type, created_at, details
+        SELECT id, type, created_at, payload_json AS details
         FROM zone_events
         WHERE zone_id = $1
           AND type = ANY($2::text[])

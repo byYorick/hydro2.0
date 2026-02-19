@@ -37,7 +37,7 @@ class ActuatorRegistry:
         Построить карту ролей -> actuator binding.
 
         Args:
-            zone_id: ID зоны (для логирования — пока не используется)
+            zone_id: ID зоны (используется для fail-closed фильтрации binding по zone_id)
             bindings: полученные из InfrastructureRepository bindings по роли
             nodes: не используется (оставлен для совместимости сигнатуры)
             hardware_profile: зарезервировано для будущей привязки
@@ -45,7 +45,7 @@ class ActuatorRegistry:
         resolved: Dict[str, Dict[str, Any]] = {}
 
         for role, aliases in self.ROLE_ALIASES.items():
-            binding = self._pick_from_bindings(aliases, bindings)
+            binding = self._pick_from_bindings(zone_id=zone_id, aliases=aliases, bindings=bindings)
             if binding:
                 resolved[role] = binding
 
@@ -53,6 +53,7 @@ class ActuatorRegistry:
 
     def _pick_from_bindings(
         self,
+        zone_id: int,
         aliases: List[str],
         bindings: Dict[str, Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
@@ -60,6 +61,8 @@ class ActuatorRegistry:
         for alias in aliases:
             if alias in bindings:
                 info = bindings[alias]
+                if not self._is_binding_zone_compatible(zone_id=zone_id, binding=info):
+                    continue
                 return {
                     "node_id": info.get("node_id"),
                     "node_uid": info.get("node_uid"),
@@ -68,8 +71,24 @@ class ActuatorRegistry:
                     "asset_type": info.get("asset_type"),
                     "direction": info.get("direction"),
                     "role": alias,
+                    "zone_id": info.get("zone_id"),
                     "ml_per_sec": info.get("ml_per_sec"),
                     "k_ms_per_ml_l": info.get("k_ms_per_ml_l"),
                     "pump_calibration": info.get("pump_calibration"),
                 }
         return None
+
+    @staticmethod
+    def _is_binding_zone_compatible(zone_id: int, binding: Dict[str, Any]) -> bool:
+        """
+        Fail-closed фильтр:
+        - если zone_id в binding отсутствует -> сохраняем backward compatibility;
+        - если zone_id присутствует -> должен совпадать с requested zone_id.
+        """
+        binding_zone_id = binding.get("zone_id")
+        if binding_zone_id is None:
+            return True
+        try:
+            return int(binding_zone_id) == int(zone_id)
+        except (TypeError, ValueError):
+            return False

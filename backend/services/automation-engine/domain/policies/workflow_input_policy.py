@@ -52,11 +52,6 @@ def extract_workflow(
     workflow = str(raw_workflow or "").strip().lower()
     if workflow:
         return workflow
-
-    contract_version = extract_payload_contract_version(payload)
-    legacy_contract = contract_version in {"", "v1", "1", "legacy"}
-    if legacy_workflow_default_enabled and legacy_contract and requires_explicit_workflow(payload):
-        return "cycle_start"
     return ""
 
 

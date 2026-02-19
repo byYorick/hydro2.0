@@ -62,6 +62,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class _DotDict(dict):
+    """Dictionary wrapper with attribute access used in condition eval."""
+
+    def __getattr__(self, key):
+        return self.get(key)
+
+
+class _ConditionEvalContext(dict):
+    """Eval context that returns None for unknown variables."""
+
+    def __missing__(self, key):
+        return None
+
+
 class E2ERunner:
     """Раннер для выполнения E2E тестов из YAML сценариев."""
     
@@ -777,6 +791,82 @@ class E2ERunner:
                 return None
         
         return value
+
+    def _wrap_condition_value(self, value: Any) -> Any:
+        """Wrap nested dict/list values for JS-like dot access in conditions."""
+        if isinstance(value, dict):
+            return _DotDict({k: self._wrap_condition_value(v) for k, v in value.items()})
+        if isinstance(value, list):
+            return [self._wrap_condition_value(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self._wrap_condition_value(v) for v in value)
+        return value
+
+    @staticmethod
+    def _safe_len(value: Any) -> int:
+        try:
+            return len(value)
+        except Exception:
+            return 0
+
+    def _normalize_condition_expression(self, condition_expr: str) -> str:
+        """Normalize JS-like expressions from YAML into Python expressions."""
+        expr = condition_expr.strip()
+
+        if expr.startswith("${") and expr.endswith("}"):
+            expr = expr[2:-1].strip()
+
+        expr = re.sub(r"([A-Za-z_][A-Za-z0-9_.\[\]]*)\.length\b", r"safe_len(\1)", expr)
+        expr = expr.replace("&&", " and ").replace("||", " or ")
+        expr = re.sub(r"(?<![=!<>])!(?!=)", " not ", expr)
+        expr = re.sub(r"\bnull\b", "None", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\btrue\b", "True", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bfalse\b", "False", expr, flags=re.IGNORECASE)
+
+        return expr
+
+    def _evaluate_action_condition(self, condition: Any) -> bool:
+        """Evaluate action-level condition."""
+        if condition is None:
+            return True
+        if isinstance(condition, bool):
+            return condition
+        if isinstance(condition, (int, float)):
+            return bool(condition)
+
+        expr = self._normalize_condition_expression(str(condition))
+        if not expr:
+            return False
+
+        eval_context = _ConditionEvalContext(
+            {
+                "context": self.context,
+                "len": self._safe_len,
+                "safe_len": self._safe_len,
+                "str": str,
+                "int": int,
+                "float": float,
+                "bool": bool,
+                "any": any,
+                "all": all,
+                "sum": sum,
+                "max": max,
+                "min": min,
+                "abs": abs,
+                "True": True,
+                "False": False,
+                "None": None,
+            }
+        )
+
+        for key, value in self.context.items():
+            if isinstance(key, str) and key.isidentifier():
+                eval_context[key] = self._wrap_condition_value(value)
+
+        try:
+            return bool(eval(expr, {"__builtins__": {}}, eval_context))
+        except Exception as e:
+            raise ValueError(f"Failed to evaluate action condition '{condition}': {e}") from e
     
     async def _ensure_test_zone_and_node(self):
         """
@@ -1449,12 +1539,26 @@ class E2ERunner:
             step_type = action.get("type")
             wait_seconds = float(action.get("wait_seconds", 0) or 0)
             optional = bool(action.get("optional", False))
+            condition = action.get("condition")
 
-            action_cfg = {k: v for k, v in action.items() if k not in ("step", "name", "type", "wait_seconds", "config_ref")}
+            action_cfg = {k: v for k, v in action.items() if k not in ("step", "name", "type", "wait_seconds", "config_ref", "condition")}
             action_cfg = self._resolve_variables(action_cfg)
 
             step_start_time = time.time()
             try:
+                if condition is not None:
+                    should_run = self._evaluate_action_condition(condition)
+                    if not should_run:
+                        duration = time.time() - step_start_time
+                        self.reporter.add_test_case(
+                            name=step_name,
+                            status="skipped",
+                            duration=duration,
+                            error_message=f"Condition is false: {condition}",
+                            steps=[{"name": step_name, "status": "skipped"}]
+                        )
+                        continue
+
                 await self._execute_action_step(step_type, action_cfg, action)
 
                 if wait_seconds > 0:

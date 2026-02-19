@@ -28,6 +28,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: AE2 invariants
+        run: ../../tools/testing/check_ae2_invariants.sh
+      - name: Scheduler split invariants
+        run: ../../tools/testing/check_scheduler_split_invariants.sh
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -286,9 +290,42 @@ jobs:
           path: backend/laravel/playwright-report
           retention-days: 7
 
+  automation-engine-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install automation-engine deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/services/automation-engine/requirements.txt
+      - name: Automation-engine smoke tests
+        env:
+          PYTHONPATH: backend/services
+        run: |
+          mkdir -p test-results
+          pytest -q \
+            backend/services/automation-engine/test_actuator_registry.py \
+            backend/services/automation-engine/test_infrastructure_repository.py \
+            backend/services/automation-engine/test_command_bus.py \
+            backend/services/automation-engine/test_scheduler_task_executor.py \
+            --junitxml=test-results/automation-engine-smoke.xml
+      - name: Upload automation-engine smoke JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-engine-smoke-junit
+          path: test-results/automation-engine-smoke.xml
+          retention-days: 7
+
   scheduler-chaos:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: [build-and-test, automation-engine-smoke]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

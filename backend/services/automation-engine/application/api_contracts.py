@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SchedulerTaskRequest(BaseModel):
@@ -24,6 +24,33 @@ class SchedulerTaskRequest(BaseModel):
     due_at: str = Field(..., description="ISO datetime when task must be started")
     expires_at: str = Field(..., description="ISO datetime when task should be rejected")
     correlation_id: str = Field(..., min_length=8, max_length=128, description="Mandatory idempotency correlation ID")
+
+    @staticmethod
+    def _extract_execution_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+        config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+        execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+        return execution
+
+    @model_validator(mode="after")
+    def _validate_diagnostics_payload_contract(self) -> "SchedulerTaskRequest":
+        if self.task_type != "diagnostics":
+            return self
+
+        payload = self.payload if isinstance(self.payload, dict) else {}
+        execution = self._extract_execution_payload(payload)
+        topology = str(payload.get("topology") or execution.get("topology") or "").strip().lower()
+        workflow = str(
+            payload.get("workflow")
+            or payload.get("diagnostics_workflow")
+            or execution.get("workflow")
+            or ""
+        ).strip().lower()
+
+        if not topology:
+            raise ValueError("missing_topology")
+        if not workflow:
+            raise ValueError("missing_workflow")
+        return self
 
 
 class SchedulerBootstrapRequest(BaseModel):

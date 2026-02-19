@@ -85,6 +85,7 @@ export interface Device {
   config?: DeviceConfig
   zone?: Zone
   zone_id?: number
+  pending_zone_id?: number | null
   channels?: DeviceChannel[]
   last_seen_at?: string
   created_at?: string

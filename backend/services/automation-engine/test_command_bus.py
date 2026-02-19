@@ -157,6 +157,32 @@ async def test_publish_command_request_error():
 
 
 @pytest.mark.asyncio
+async def test_publish_command_duplicate_no_effect_skips_second_publish():
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-dup-1"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+        )
+        first = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 15000})
+        second = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 15000})
+
+        assert first is True
+        assert second is True
+        mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_publish_command_json_decode_error():
     """Test command publication with JSON decode error."""
     with patch("infrastructure.command_bus.fetch", new=AsyncMock(return_value=[])), \
@@ -211,6 +237,58 @@ async def test_publish_controller_command():
         result = await command_bus.publish_controller_command(1, command)
         
         assert result is True
+        mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_duplicate_reuses_existing_cmd_id():
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        tracker = AsyncMock()
+
+        async def _track_command(zone_id, command, context, cmd_id=None):
+            return str(cmd_id or "cmd-track-fallback")
+
+        tracker.track_command = AsyncMock(side_effect=_track_command)
+        tracker.confirm_command_status = AsyncMock(return_value=None)
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+
+        first_command = {
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "cmd": "run_pump",
+            "params": {"duration_ms": 60000},
+        }
+        second_command = {
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "cmd": "run_pump",
+            "params": {"duration_ms": 60000},
+        }
+
+        first = await command_bus.publish_controller_command(1, first_command)
+        second = await command_bus.publish_controller_command(1, second_command)
+
+        assert first is True
+        assert second is True
+        assert "cmd_id" in first_command
+        assert second_command.get("cmd_id") == first_command.get("cmd_id")
+        assert tracker.track_command.await_count == 1
         mock_client.post.assert_called_once()
 
 
@@ -699,9 +777,9 @@ async def test_publish_controller_command_closed_loop_ignores_stale_cmd_id_when_
         }
         result = await command_bus.publish_controller_command_closed_loop(1, command, timeout_sec=1)
 
-    assert result["command_submitted"] is True
+    assert result["command_submitted"] is False
     assert result["command_effect_confirmed"] is False
-    assert result["terminal_status"] == "TRACKER_UNAVAILABLE"
+    assert result["terminal_status"] == "SEND_FAILED"
     assert result["cmd_id"] is None
     assert "cmd_id" not in command
     tracker.wait_for_command_done.assert_not_awaited()

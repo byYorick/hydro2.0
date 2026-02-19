@@ -381,6 +381,22 @@ import ThemeToggle from '@/Components/ThemeToggle.vue'
 import { useApi } from '@/composables/useApi'
 import { useSimpleModal } from '@/composables/useModal'
 import { logger } from '@/utils/logger'
+import type { User } from '@/types'
+
+interface DashboardData {
+  alertsCount?: number
+  zonesCount?: number
+  devicesCount?: number
+  zonesByStatus?: Record<string, number>
+  nodesByStatus?: Record<string, number>
+  [key: string]: unknown
+}
+
+interface PageProps {
+  auth?: { user?: User }
+  dashboard?: DashboardData
+  [key: string]: unknown
+}
 
 const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useSimpleModal()
 
@@ -395,7 +411,7 @@ const {
   wsConnectionDetails
 } = useSystemStatus()
 
-const page = usePage()
+const page = usePage<PageProps>()
 const { api } = useApi()
 
 // Real-time метрики
@@ -423,7 +439,7 @@ let metricsInterval: ReturnType<typeof setInterval> | null = null
 // Загрузка метрик (только алерты, данные dashboard приходят через props)
 async function loadMetrics() {
   // Проверяем, авторизован ли пользователь
-  const user = (page.props.auth as any)?.user
+  const user = page.props.auth?.user
   if (!user) {
     // Если пользователь не авторизован, не делаем запросы
     isUnauthenticated = true
@@ -440,18 +456,18 @@ async function loadMetrics() {
   }
   
   // Используем данные из props, если они доступны (предпочтительно)
-  const dashboardData = page.props.dashboard as any
+  const dashboardData = page.props.dashboard
   if (dashboardData?.alertsCount !== undefined) {
     metrics.value.alertsCount = dashboardData.alertsCount
     return
   }
   
   // Проверяем аутентификацию перед запросом
-  const currentUser = (page.props.auth as any)?.user
+  const currentUser = page.props.auth?.user
   if (!currentUser || isUnauthenticated) {
     return
   }
-  
+
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
@@ -503,7 +519,7 @@ async function loadMetrics() {
 }
 
 // Обновление метрик из props (если доступны)
-const dashboardData = computed(() => page.props.dashboard as any)
+const dashboardData = computed(() => page.props.dashboard)
 watch(dashboardData, (data) => {
   if (data) {
     metrics.value.zonesCount = data.zonesCount || null
@@ -530,7 +546,7 @@ let unsubscribeMetrics: (() => void) | null = null
 
 onMounted(() => {
   // Проверяем аутентификацию перед началом загрузки метрик
-  const user = (page.props.auth as any)?.user
+  const user = page.props.auth?.user
   if (!user) {
     // Если пользователь не авторизован, не запускаем загрузку метрик
     isUnauthenticated = true
@@ -547,7 +563,7 @@ onMounted(() => {
   // Запускаем интервал только после успешной загрузки метрик
   metricsInterval = setInterval(() => {
       // Проверяем аутентификацию перед каждым запросом
-      const currentUser = (page.props.auth as any)?.user
+      const currentUser = page.props.auth?.user
       if (!currentUser || isUnauthenticated) {
         if (metricsInterval) {
           clearInterval(metricsInterval)
@@ -563,7 +579,7 @@ onMounted(() => {
   // Подписываемся на глобальные события для обновления метрик
   unsubscribeMetrics = subscribeToGlobalEvents(() => {
     // Обновляем метрики при получении событий только если авторизован
-    const currentUser = (page.props.auth as any)?.user
+    const currentUser = page.props.auth?.user
     if (currentUser && !isUnauthenticated) {
       loadMetrics()
     }

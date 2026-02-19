@@ -360,6 +360,17 @@ def set_zone_service(zone_service: Any, loop_id: Optional[int] = None) -> None:
     _zone_service_loop_id = loop_id
 
 
+async def is_scheduler_single_writer_active() -> bool:
+    """Проверить, активна ли scheduler lease для single-writer арбитража."""
+    if not _SCHEDULER_BOOTSTRAP_ENFORCE:
+        return False
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with _scheduler_bootstrap_lock:
+        _cleanup_bootstrap_leases_locked(now)
+        return bool(_scheduler_bootstrap_leases)
+
+
 def _build_scheduler_task_executor(*, command_bus: CommandBus, zone_service: Optional[Any]) -> SchedulerTaskExecutor:
     return SchedulerTaskExecutor(command_bus=command_bus, zone_service=zone_service)
 

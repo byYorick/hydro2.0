@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any, Dict, Optional
 
 from decision_context import ContextLike
@@ -11,21 +12,32 @@ from decision_context import ContextLike
 class CommandGateway:
     """Serialized per-zone gateway over CommandBus publish methods."""
 
+    # Общий per-loop lock registry для всех инстансов gateway внутри процесса.
+    _registry_guard = threading.Lock()
+    _zone_locks_by_loop: Dict[int, Dict[int, asyncio.Lock]] = {}
+
     def __init__(self, command_bus: Any, *, enable_zone_lock: bool = True) -> None:
         self._command_bus = command_bus
         self._enable_zone_lock = bool(enable_zone_lock)
-        self._zone_locks: Dict[int, asyncio.Lock] = {}
 
     @property
     def tracker(self) -> Any:
         return getattr(self._command_bus, "tracker", None)
 
-    def _get_zone_lock(self, zone_id: int) -> asyncio.Lock:
-        lock = self._zone_locks.get(zone_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._zone_locks[zone_id] = lock
-        return lock
+    @classmethod
+    def _get_zone_lock(cls, zone_id: int) -> asyncio.Lock:
+        loop_id = id(asyncio.get_running_loop())
+        with cls._registry_guard:
+            loop_locks = cls._zone_locks_by_loop.get(loop_id)
+            if loop_locks is None:
+                loop_locks = {}
+                cls._zone_locks_by_loop[loop_id] = loop_locks
+
+            lock = loop_locks.get(zone_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                loop_locks[zone_id] = lock
+            return lock
 
     async def _run_serialized(self, zone_id: int, publish_coro: Any) -> Any:
         if not self._enable_zone_lock:

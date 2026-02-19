@@ -3,11 +3,16 @@ Command Bus - централизованная публикация команд
 Интегрирован с валидацией команд и отслеживанием выполнения.
 Все общение с нодами происходит через history-logger.
 """
-from typing import Optional, Dict, Any, Tuple
+import asyncio
+import hashlib
+import json
 import logging
-import httpx
 import os
+import time
+from typing import Optional, Dict, Any, Tuple
+import httpx
 from common.mqtt import MqttClient
+from common.commands import new_command_id
 from common.db import create_zone_event, fetch
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.simulation_events import record_simulation_event
@@ -41,12 +46,28 @@ _DEFAULT_CLOSED_LOOP_TIMEOUT_SEC = max(1.0, float(os.getenv("AE_COMMAND_CLOSED_L
 _TERMINAL_COMMAND_STATUSES = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
 _ACTUATOR_COMMANDS = {"set_relay", "set_pwm", "run_pump", "dose", "light_on", "light_off"}
 _SYSTEM_MODE_COMMANDS = {"activate_sensor_mode", "deactivate_sensor_mode"}
+_DEFAULT_COMMAND_DEDUPE_TTL_SEC = max(10, int(os.getenv("AE_COMMAND_DEDUPE_TTL_SEC", "3600")))
+_MAX_COMMAND_DEDUPE_ENTRIES = max(1000, int(os.getenv("AE_COMMAND_DEDUPE_MAX_ENTRIES", "50000")))
 
 # Метрики для отслеживания ошибок публикации
 REST_PUBLISH_ERRORS = Counter("rest_command_errors_total", "REST command publish errors", ["error_type"])
 COMMANDS_SENT = Counter("automation_commands_sent_total", "Commands sent by automation", ["zone_id", "metric"])
 COMMAND_VALIDATION_FAILED = Counter("command_validation_failed_total", "Failed command validations", ["zone_id", "reason"])
 COMMAND_REST_LATENCY = Histogram("command_rest_latency_seconds", "REST command publish latency", buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0])
+COMMAND_DEDUPE_DECISIONS = Counter(
+    "command_dedupe_decisions_total",
+    "Command dedupe decisions before publish",
+    ["outcome"],
+)
+COMMAND_DEDUPE_HITS = Counter(
+    "command_dedupe_hits_total",
+    "Command dedupe hits (duplicate decisions)",
+    ["outcome"],
+)
+COMMAND_DEDUPE_RESERVE_CONFLICTS = Counter(
+    "command_dedupe_reserve_conflicts_total",
+    "Command dedupe reserve conflicts",
+)
 
 
 class CommandBus:
@@ -92,6 +113,10 @@ class CommandBus:
         self.http_timeout = http_timeout
         self.api_circuit_breaker = api_circuit_breaker
         self._zone_gh_uid_cache: Dict[int, str] = {}
+        self.command_dedupe_ttl_sec = _DEFAULT_COMMAND_DEDUPE_TTL_SEC
+        self.command_dedupe_enabled = str(os.getenv("AE_COMMAND_DEDUPE_ENABLED", "1")).strip().lower() in _TRUE_VALUES
+        self._dedupe_store: Dict[str, Dict[str, Any]] = {}
+        self._dedupe_lock = asyncio.Lock()
         if enforce_node_zone_assignment is None:
             raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "1")).strip().lower()
             self.enforce_node_zone_assignment = raw_guard in _TRUE_VALUES
@@ -105,6 +130,22 @@ class CommandBus:
         
         # Долгоживущий HTTP клиент для переиспользования соединений
         self._http_client: Optional[httpx.AsyncClient] = None
+
+    async def _safe_create_zone_event(
+        self,
+        zone_id: int,
+        event_type: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        try:
+            await create_zone_event(zone_id, event_type, payload)
+        except Exception:
+            logger.warning(
+                "Zone %s: failed to create %s event",
+                zone_id,
+                event_type,
+                exc_info=True,
+            )
 
     async def _verify_node_zone_assignment(
         self,
@@ -440,6 +481,180 @@ class CommandBus:
             return None
         return self._http_client
 
+    def _resolve_dedupe_ttl_sec(self, params: Optional[Dict[str, Any]] = None) -> int:
+        ttl_raw: Any = None
+        if isinstance(params, dict):
+            ttl_raw = params.get("dedupe_ttl_sec")
+        try:
+            ttl_value = int(ttl_raw) if ttl_raw is not None else int(self.command_dedupe_ttl_sec)
+        except Exception:
+            ttl_value = int(self.command_dedupe_ttl_sec)
+        return max(10, ttl_value)
+
+    @staticmethod
+    def _normalized_json_payload(payload: Any) -> str:
+        try:
+            return json.dumps(payload if payload is not None else {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        except Exception:
+            return json.dumps({"__repr__": repr(payload)}, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def _build_dedupe_reference_key(
+        self,
+        *,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        cmd: str,
+        params: Optional[Dict[str, Any]],
+    ) -> str:
+        material = "|".join(
+            [
+                str(int(zone_id)),
+                str(node_uid or "").strip().lower(),
+                str(channel or "").strip().lower(),
+                str(cmd or "").strip().lower(),
+                self._normalized_json_payload(params),
+            ]
+        )
+        digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
+        return f"zone:{int(zone_id)}:cmd:{digest}"
+
+    def _prune_dedupe_store_locked(self, now_monotonic: float) -> None:
+        stale_keys = [
+            key
+            for key, entry in self._dedupe_store.items()
+            if float(entry.get("expires_at_monotonic", 0.0)) <= now_monotonic
+        ]
+        for key in stale_keys:
+            self._dedupe_store.pop(key, None)
+        if len(self._dedupe_store) <= _MAX_COMMAND_DEDUPE_ENTRIES:
+            return
+        sorted_items = sorted(
+            self._dedupe_store.items(),
+            key=lambda item: float(item[1].get("expires_at_monotonic", now_monotonic)),
+        )
+        overflow = len(self._dedupe_store) - _MAX_COMMAND_DEDUPE_ENTRIES
+        for key, _ in sorted_items[:overflow]:
+            self._dedupe_store.pop(key, None)
+
+    async def _reserve_command_dedupe(
+        self,
+        *,
+        zone_id: int,
+        node_uid: str,
+        channel: str,
+        cmd: str,
+        params: Optional[Dict[str, Any]],
+        cmd_id: Optional[str],
+        dedupe_ttl_sec: int,
+    ) -> Dict[str, Any]:
+        reference_key = self._build_dedupe_reference_key(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            channel=channel,
+            cmd=cmd,
+            params=params,
+        )
+        if not self.command_dedupe_enabled:
+            return {
+                "decision": "new",
+                "reference_key": reference_key,
+                "dedupe_ttl_sec": dedupe_ttl_sec,
+                "reservation_token": None,
+                "effective_cmd_id": cmd_id,
+            }
+
+        now_monotonic = time.monotonic()
+        now_iso = time.time()
+        async with self._dedupe_lock:
+            self._prune_dedupe_store_locked(now_monotonic)
+            existing = self._dedupe_store.get(reference_key)
+            if existing is not None and float(existing.get("expires_at_monotonic", 0.0)) > now_monotonic:
+                status = str(existing.get("status") or "").strip().lower()
+                effective_cmd_id = str(existing.get("cmd_id") or "").strip() or None
+                if status == "reserved":
+                    COMMAND_DEDUPE_DECISIONS.labels(outcome="duplicate_blocked").inc()
+                    COMMAND_DEDUPE_HITS.labels(outcome="duplicate_blocked").inc()
+                    COMMAND_DEDUPE_RESERVE_CONFLICTS.inc()
+                    return {
+                        "decision": "duplicate_blocked",
+                        "reference_key": reference_key,
+                        "dedupe_ttl_sec": dedupe_ttl_sec,
+                        "reservation_token": None,
+                        "effective_cmd_id": effective_cmd_id,
+                    }
+                COMMAND_DEDUPE_DECISIONS.labels(outcome="duplicate_no_effect").inc()
+                COMMAND_DEDUPE_HITS.labels(outcome="duplicate_no_effect").inc()
+                return {
+                    "decision": "duplicate_no_effect",
+                    "reference_key": reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_sec,
+                    "reservation_token": None,
+                    "effective_cmd_id": effective_cmd_id,
+                }
+
+            reservation_token = hashlib.sha256(f"{reference_key}:{now_iso}:{new_command_id()}".encode("utf-8")).hexdigest()
+            self._dedupe_store[reference_key] = {
+                "status": "reserved",
+                "reservation_token": reservation_token,
+                "created_at_monotonic": now_monotonic,
+                "expires_at_monotonic": now_monotonic + float(dedupe_ttl_sec),
+                "cmd_id": str(cmd_id or "").strip() or None,
+            }
+            COMMAND_DEDUPE_DECISIONS.labels(outcome="new").inc()
+            return {
+                "decision": "new",
+                "reference_key": reference_key,
+                "dedupe_ttl_sec": dedupe_ttl_sec,
+                "reservation_token": reservation_token,
+                "effective_cmd_id": str(cmd_id or "").strip() or None,
+            }
+
+    async def _bind_dedupe_cmd_id(self, dedupe_state: Optional[Dict[str, Any]], cmd_id: Optional[str]) -> None:
+        if not dedupe_state or not self.command_dedupe_enabled:
+            return
+        reservation_token = str(dedupe_state.get("reservation_token") or "").strip()
+        reference_key = str(dedupe_state.get("reference_key") or "").strip()
+        resolved_cmd_id = str(cmd_id or "").strip()
+        if not reservation_token or not reference_key or not resolved_cmd_id:
+            return
+        now_monotonic = time.monotonic()
+        async with self._dedupe_lock:
+            entry = self._dedupe_store.get(reference_key)
+            if entry is None:
+                return
+            if str(entry.get("reservation_token") or "") != reservation_token:
+                return
+            entry["cmd_id"] = resolved_cmd_id
+            entry["expires_at_monotonic"] = max(float(entry.get("expires_at_monotonic", now_monotonic)), now_monotonic)
+
+    async def _complete_command_dedupe(
+        self,
+        dedupe_state: Optional[Dict[str, Any]],
+        *,
+        success: bool,
+    ) -> None:
+        if not dedupe_state or not self.command_dedupe_enabled:
+            return
+        reference_key = str(dedupe_state.get("reference_key") or "").strip()
+        reservation_token = str(dedupe_state.get("reservation_token") or "").strip()
+        dedupe_ttl_sec = int(dedupe_state.get("dedupe_ttl_sec") or self.command_dedupe_ttl_sec)
+        if not reference_key or not reservation_token:
+            return
+
+        now_monotonic = time.monotonic()
+        async with self._dedupe_lock:
+            entry = self._dedupe_store.get(reference_key)
+            if entry is None:
+                return
+            if str(entry.get("reservation_token") or "") != reservation_token:
+                return
+            if success:
+                entry["status"] = "published"
+                entry["expires_at_monotonic"] = now_monotonic + float(max(10, dedupe_ttl_sec))
+            else:
+                self._dedupe_store.pop(reference_key, None)
+
     async def _emit_publish_failure_alert(
         self,
         *,
@@ -519,7 +734,9 @@ class CommandBus:
         channel: str,
         cmd: str,
         params: Optional[Dict[str, Any]] = None,
-        cmd_id: Optional[str] = None
+        cmd_id: Optional[str] = None,
+        *,
+        dedupe_state: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Публикация команды через history-logger REST API.
@@ -535,10 +752,64 @@ class CommandBus:
         Returns:
             True если команда успешно отправлена, False в противном случае
         """
-        import time
         start_time = time.time()
-        
+        publish_success = False
+        dedupe_ttl_sec = self._resolve_dedupe_ttl_sec(params)
+        active_dedupe_state = dedupe_state
+        if active_dedupe_state is None:
+            active_dedupe_state = await self._reserve_command_dedupe(
+                zone_id=zone_id,
+                node_uid=node_uid,
+                channel=channel,
+                cmd=cmd,
+                params=params,
+                cmd_id=cmd_id,
+                dedupe_ttl_sec=dedupe_ttl_sec,
+            )
+
+        dedupe_decision = str(active_dedupe_state.get("decision") or "new").strip().lower()
+        dedupe_reference_key = str(active_dedupe_state.get("reference_key") or "").strip()
+        dedupe_ttl_value = int(active_dedupe_state.get("dedupe_ttl_sec") or dedupe_ttl_sec)
+        effective_cmd_id = str(cmd_id or active_dedupe_state.get("effective_cmd_id") or "").strip() or None
+
+        if dedupe_decision in {"duplicate_blocked", "duplicate_no_effect"}:
+            logger.info(
+                "Zone %s: command dedupe prevented side-effect publish cmd=%s node_uid=%s channel=%s decision=%s",
+                zone_id,
+                cmd,
+                node_uid,
+                channel,
+                dedupe_decision,
+                extra={
+                    "zone_id": zone_id,
+                    "cmd": cmd,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
+                },
+            )
+            await record_simulation_event(
+                zone_id,
+                service="automation-engine",
+                stage="command_dedupe",
+                status=dedupe_decision,
+                message="Команда пропущена dedupe арбитражем",
+                payload={
+                    "cmd": cmd,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "cmd_id": effective_cmd_id,
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
+                },
+            )
+            return True
+
         try:
+            await self._bind_dedupe_cmd_id(active_dedupe_state, effective_cmd_id)
             is_assigned = await self._verify_node_zone_assignment(
                 zone_id=zone_id,
                 node_uid=node_uid,
@@ -586,8 +857,8 @@ class CommandBus:
 
             # Получаем trace_id из контекста логирования
             trace_id = get_trace_id()
-            if cmd_id:
-                trace_id = cmd_id
+            if effective_cmd_id:
+                trace_id = effective_cmd_id
             
             # Формируем запрос к history-logger
             effective_gh_uid = await self._resolve_greenhouse_uid_for_zone(zone_id)
@@ -600,8 +871,8 @@ class CommandBus:
                 "source": self.command_source,
                 "params": params or {},
             }
-            if cmd_id:
-                payload["cmd_id"] = cmd_id
+            if effective_cmd_id:
+                payload["cmd_id"] = effective_cmd_id
             if trace_id:
                 payload["trace_id"] = trace_id
             
@@ -661,8 +932,12 @@ class CommandBus:
                             "channel": channel,
                             "node_uid": node_uid,
                             "source": self.command_source,
+                            "dedupe_decision": dedupe_decision,
+                            "dedupe_reference_key": dedupe_reference_key,
+                            "dedupe_ttl_sec": dedupe_ttl_value,
                         },
                     )
+                    publish_success = True
                     return True
                 except Exception as e:
                     error_type = "json_decode_error"
@@ -683,6 +958,9 @@ class CommandBus:
                             "channel": channel,
                             "node_uid": node_uid,
                             "error": str(e),
+                            "dedupe_decision": dedupe_decision,
+                            "dedupe_reference_key": dedupe_reference_key,
+                            "dedupe_ttl_sec": dedupe_ttl_value,
                         },
                     )
                     await self._emit_publish_failure_alert(
@@ -719,6 +997,9 @@ class CommandBus:
                         "node_uid": node_uid,
                         "http_status": response.status_code,
                         "error": error_msg,
+                        "dedupe_decision": dedupe_decision,
+                        "dedupe_reference_key": dedupe_reference_key,
+                        "dedupe_ttl_sec": dedupe_ttl_value,
                     },
                 )
                 await self._emit_publish_failure_alert(
@@ -749,6 +1030,9 @@ class CommandBus:
                     "channel": channel,
                     "node_uid": node_uid,
                     "error": str(e),
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
                 },
             )
             await self._emit_publish_failure_alert(
@@ -777,6 +1061,9 @@ class CommandBus:
                     "channel": channel,
                     "node_uid": node_uid,
                     "error": str(e),
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
                 },
             )
             await self._emit_publish_failure_alert(
@@ -805,6 +1092,9 @@ class CommandBus:
                     "channel": channel,
                     "node_uid": node_uid,
                     "error": str(e),
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
                 },
             )
             await send_infra_exception_alert(
@@ -820,6 +1110,8 @@ class CommandBus:
                 cmd=cmd,
             )
             return False
+        finally:
+            await self._complete_command_dedupe(active_dedupe_state, success=publish_success)
     
     async def publish_controller_command(
         self,
@@ -869,10 +1161,14 @@ class CommandBus:
                     'validation_error': error
                 }
             )
-            await create_zone_event(zone_id, 'COMMAND_VALIDATION_FAILED', {
-                'command': command,
-                'error': error
-            })
+            await self._safe_create_zone_event(
+                zone_id,
+                "COMMAND_VALIDATION_FAILED",
+                {
+                    "command": command,
+                    "error": error,
+                },
+            )
             await record_simulation_event(
                 zone_id,
                 service="automation-engine",
@@ -887,31 +1183,85 @@ class CommandBus:
             )
             return False
         
-        # Отслеживание команды
-        cmd_id = None
-        if self.tracker:
-            try:
-                cmd_id = await self.tracker.track_command(zone_id, command, normalized_context)
-                # Добавляем cmd_id в команду (top-level)
-                command['cmd_id'] = cmd_id
-                cmd_id = command['cmd_id']
-            except Exception as e:
-                logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
-                # Tracker недоступен: fail-closed для корреляции.
-                # Не используем входной cmd_id, чтобы не подтверждать stale-id
-                # от переиспользованного dict команды.
-                params = command.get('params')
-                cmd_id = None
-                command.pop('cmd_id', None)
+        dedupe_ttl_sec = self._resolve_dedupe_ttl_sec(params)
+        generated_cmd_id = incoming_cmd_id
+        if generated_cmd_id is None and self.tracker is not None:
+            generated_cmd_id = new_command_id()
+
+        dedupe_state = await self._reserve_command_dedupe(
+            zone_id=zone_id,
+            node_uid=str(node_uid),
+            channel=str(channel),
+            cmd=str(cmd),
+            params=params if isinstance(params, dict) else {},
+            cmd_id=generated_cmd_id,
+            dedupe_ttl_sec=dedupe_ttl_sec,
+        )
+        dedupe_decision = str(dedupe_state.get("decision") or "new").strip().lower()
+        dedupe_reference_key = str(dedupe_state.get("reference_key") or "").strip()
+        dedupe_ttl_value = int(dedupe_state.get("dedupe_ttl_sec") or dedupe_ttl_sec)
+        effective_cmd_id = str(dedupe_state.get("effective_cmd_id") or generated_cmd_id or "").strip() or None
+
+        command["dedupe_decision"] = dedupe_decision
+        command["dedupe_reference_key"] = dedupe_reference_key
+        command["dedupe_ttl_sec"] = dedupe_ttl_value
+
+        if dedupe_decision in {"duplicate_blocked", "duplicate_no_effect"}:
+            if effective_cmd_id:
+                command["cmd_id"] = effective_cmd_id
+            cmd_id = effective_cmd_id
+            await self._safe_create_zone_event(
+                zone_id,
+                "COMMAND_DEDUPE_SKIPPED",
+                {
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "cmd": cmd,
+                    "cmd_id": effective_cmd_id,
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
+                },
+            )
+            success = True
         else:
-            # Если tracker не настроен, используем исходные params
-            params = command.get('params')
-            cmd_id = incoming_cmd_id
-            if cmd_id:
-                command['cmd_id'] = cmd_id
-        
-        # Публикация команды (cmd_id передается top-level)
-        success = await self.publish_command(zone_id, node_uid, channel, cmd, params, cmd_id=cmd_id)
+            # Отслеживание команды
+            cmd_id = None
+            if self.tracker:
+                try:
+                    cmd_id = await self.tracker.track_command(
+                        zone_id,
+                        command,
+                        normalized_context,
+                        cmd_id=generated_cmd_id,
+                    )
+                    command["cmd_id"] = cmd_id
+                    await self._bind_dedupe_cmd_id(dedupe_state, cmd_id)
+                except Exception as e:
+                    logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
+                    await self._complete_command_dedupe(dedupe_state, success=False)
+                    params = command.get('params')
+                    cmd_id = None
+                    command.pop('cmd_id', None)
+                    return False
+            else:
+                cmd_id = incoming_cmd_id
+                if cmd_id:
+                    command["cmd_id"] = cmd_id
+                    await self._bind_dedupe_cmd_id(dedupe_state, cmd_id)
+
+            # Публикация команды (cmd_id передается top-level)
+            success = await self.publish_command(
+                zone_id,
+                node_uid,
+                channel,
+                cmd,
+                params,
+                cmd_id=cmd_id,
+                dedupe_state=dedupe_state,
+            )
+
+        cmd_id = str(command.get("cmd_id") or cmd_id or "").strip() or None
         
         # Аудит команды (даже если не удалось отправить)
         try:
@@ -961,7 +1311,7 @@ class CommandBus:
             result["terminal_status"] = "SEND_FAILED"
             result["error_code"] = "SEND_FAILED"
             result["error"] = "publish_failed"
-            await create_zone_event(
+            await self._safe_create_zone_event(
                 zone_id,
                 "COMMAND_EFFECT_NOT_CONFIRMED",
                 {
@@ -988,7 +1338,7 @@ class CommandBus:
             result["terminal_status"] = "TRACKER_UNAVAILABLE"
             result["error_code"] = "TRACKER_UNAVAILABLE"
             result["error"] = "command_tracker_required_for_closed_loop"
-            await create_zone_event(
+            await self._safe_create_zone_event(
                 zone_id,
                 "COMMAND_EFFECT_NOT_CONFIRMED",
                 {
@@ -1038,7 +1388,7 @@ class CommandBus:
         result["error_code"] = normalized_status
         result["error"] = f"command_terminal_status_{normalized_status.lower()}"
 
-        await create_zone_event(
+        await self._safe_create_zone_event(
             zone_id,
             "COMMAND_EFFECT_NOT_CONFIRMED",
             {

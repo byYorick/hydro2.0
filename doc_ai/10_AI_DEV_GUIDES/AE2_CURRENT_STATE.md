@@ -1,7 +1,7 @@
 # AE2_CURRENT_STATE.md
 # Текущее состояние AE2 stage-потока
 
-**Дата обновления:** 2026-02-18  
+**Дата обновления:** 2026-02-19  
 **Статус:** ACTIVE
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -24,9 +24,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `S11` Observability + Integration + Cutover: COMPLETED.
 
 ## 3. Открытые решения/ADR
-1. Scheduler monolith split ADR (S8/S9) — OPEN.
-2. Single-writer arbitration hardening ADR (S10) — OPEN.
-3. Runtime-state schema versioning + unified serialization contract ADR — OPEN.
+1. Single-writer arbitration hardening ADR (S10) — OPEN.
+2. Runtime-state schema versioning + unified serialization contract ADR — OPEN.
 
 ## 4. Зафиксированные решения
 1. `check_phase_transitions` owner: AE simulation-only path.
@@ -82,6 +81,42 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 51. S12 (increment 10): выполнен dry-run runbook команды (`requests=240`, `concurrency=40`), добавлен `AE2_S12_STAGING_SLO_BASELINE.csv` как формат артефакта; staging blocker сохранен до реального стенда.
 52. S12 (increment 11): добавлен `tests/s12_slo_release_decision.py` для формализованного `ALLOW/HOLD` решения по SLO CSV; dry-run baseline дал `ALLOW_FULL_ROLLOUT`, но staging blocker сохранен.
 53. S12 (increment 12): добавлен `AE2_S12_STAGING_RELEASE_DECISION.txt` как отдельный артефакт release decision; runbook/final-report обновлены под обязательную пару `baseline.csv + decision.txt`.
+54. S12 (increment 13): `tests/s12_cutover_slo_probe.py` расширен режимом `AE2_SLO_PROBE_MODE=remote` (реальный HTTP стенд + bootstrap wait->ready polling + optional Authorization/X-Trace-Id), `AE2_S12_STAGING_SLO_RUNBOOK.md` обновлен на явные local/staging команды.
+55. S12 (increment 14): `tests/s12_cutover_slo_probe.py` hardened для `local` режима (stubbed `fetch/create_scheduler_log/send_infra_alert`), подтвержден изолированный `--no-deps` local baseline run; `AE2_STAGE_S12_TASK.md` и runbook унифицированы на `--no-deps` probe/decision команды.
+56. S12 (increment 15): перегенерирован `AE2_S12_LOCAL_SLO_BASELINE.csv` из `AE2_SLO_PROBE_MODE=local` (`--no-deps`), локальные p95/p99 остаются в рамках release thresholds; decision-helper по локальному CSV вернул `ALLOW_FULL_ROLLOUT`.
+57. S12 (increment 16): добавлен wrapper `tools/testing/run_ae2_s12_staging_gate.sh` для one-command staging gate (collect CSV + release decision); runbook/task обновлены на использование wrapper; fail-fast проверка `AE2_SLO_PROBE_BASE_URL` верифицирована.
+58. S12 (increment 17): wrapper поддерживает `AE2_SLO_PROBE_MODE=local` и relative artifact paths (`AE2_S12_BASELINE_CSV`/`AE2_S12_DECISION_TXT`) с резолвом к корню репозитория; dry-run wrapper из `tools/testing` подтвержден (`artifacts/ae2_s12_local_*_from_tools.*`, decision `ALLOW_FULL_ROLLOUT`).
+59. S12 (increment 18): добавлен `tools/testing/check_ae2_s12_release_bundle.sh` для валидации целостности release bundle (`baseline.csv + decision.txt`); checker успешно подтверждает консистентность текущего dry-run staging пакета.
+60. S12 (increment 19): bundle checker переведен в strict gate режим (`AE2_S12_EXPECT_DECISION`, default `ALLOW_FULL_ROLLOUT`) с диагностическим override `ANY`; runbook/task обновлены под strict+diagnostic usage.
+61. S12 (increment 20): wrapper `run_ae2_s12_staging_gate.sh` выполняет auto bundle-check по умолчанию (`AE2_S12_RUN_BUNDLE_CHECK=true`) и поддерживает debug skip mode (`false`); оба режима локально верифицированы.
+62. S12 (increment 21): добавлен auto-summary артефакт `AE2_S12_STAGING_GATE_SUMMARY.md` (генерация через `build_ae2_s12_gate_summary.py`, по умолчанию вызывается wrapper; управляется `AE2_S12_WRITE_SUMMARY`/`AE2_S12_SUMMARY_MD`).
+63. S12 (increment 22): введен metadata gate (`AE2_S12_STAGING_GATE_METADATA.json`) и strict remote проверка в checker (`AE2_S12_REQUIRE_REMOTE_METADATA=true`); на текущем dry-run пакете strict remote check ожидаемо не проходит из-за пустого `base_url`.
+64. S12 (increment 23): добавлен `tools/testing/finalize_ae2_s12_docs.py` для post-gate автоматизации перевода статусов в `COMPLETED`; `--apply` блокируется strict gate check до реального стендового PASS.
+65. S12 (increment 24): wrapper поддерживает `AE2_S12_AUTO_FINALIZE_DOCS=true` для one-command full flow (staging gate + finalize); auto-finalize выполняется только в `remote` режиме и при включенном bundle-check.
+66. S12 (increment 25): hardened `tools/testing/finalize_ae2_s12_docs.py` (regex-check финальной строки вместо жесткого `increment 23`, tolerant status replacement), чтобы снизить риск дублирования финальной записи и падений на частично финализированном документе.
+67. S12 (increment 26): wrapper full-flow hardening — при `AE2_S12_AUTO_FINALIZE_DOCS=true` финализация дополнительно требует `AE2_S12_WRITE_METADATA=true`; runbook/README синхронизированы с обновленным набором preconditions.
+68. S12 (increment 27): strict remote gate защищен от `AE2_S12_EXPECT_DECISION=ANY`; `finalize_ae2_s12_docs.py` принудительно использует `AE2_S12_EXPECT_DECISION=ALLOW_FULL_ROLLOUT`, wrapper full-flow пропускает auto-finalize при `EXPECT_DECISION=ANY`.
+69. S12 (increment 28): `AE2_S12_EXPECT_DECISION` нормализован в wrapper/checker (uppercase + trim), что устраняет case-sensitive ложные FAIL и сохраняет строгую семантику `ANY` только для диагностического режима.
+70. S12 (increment 29): wrapper full-flow ограничен `AE2_S12_EXPECT_DECISION=ALLOW_FULL_ROLLOUT` для auto-finalize, чтобы исключить перевод `S12` в `COMPLETED` при non-allow release decision.
+71. S12 (increment 30): при `AE2_S12_AUTO_FINALIZE_DOCS=true` wrapper автоматически включает strict remote metadata check (`AE2_S12_REQUIRE_REMOTE_METADATA=true`) на этапе bundle-check, чтобы детектировать strict-gate несоответствия до запуска финализатора.
+72. S12 (increment 31): нормализация `AE2_S12_EXPECT_DECISION` расширена поддержкой опционального префикса `decision=` в wrapper/checker, чтобы упростить повторное использование decision строки из артефактов без ручной правки.
+73. S12 (increment 32): unsafe bypass `finalize_ae2_s12_docs.py --skip-gate-check` защищен обязательным explicit-flag `AE2_S12_ALLOW_UNSAFE_FINALIZE=true`, чтобы снизить риск случайной финализации без strict gate PASS.
+74. S12 (increment 33): добавлены недостающие stage-task артефакты `AE2_STAGE_S02_TASK.md` и `AE2_STAGE_S03_TASK.md`; `AE2_STAGE_S01_TASK.md` синхронизирован на `COMPLETED`; добавлен machine-checkable guard rail `tools/testing/AE2_INVARIANTS.py` (+ `check_ae2_invariants.sh`, doc `AE2_INVARIANTS.md`) и доработан zone-specific binding filter (`InfrastructureRepository + ActuatorRegistry`) с unit coverage.
+75. S12 (increment 34): `AE2_INVARIANTS` подключен в CI (`.github/workflows/ci.yml`) как fail-fast gate шаг `AE2 invariants`.
+76. S12 (increment 35): добавлен отдельный CI job `automation-engine-smoke` (Python 3.11 + `pytest -q test_actuator_registry.py test_infrastructure_repository.py`), `scheduler-chaos` переведен на `needs: [build-and-test, automation-engine-smoke]`.
+77. S12 (increment 36): в `automation-engine-smoke` добавлена генерация JUnit (`--junitxml=test-results/automation-engine-smoke.xml`) и upload artifact `automation-engine-smoke-junit`.
+78. S12 (increment 37): `automation-engine-smoke` расширен критичным набором `test_command_bus.py` (локально в Docker подтверждено `24 passed`), чтобы gate покрывал publish/validation path команд.
+79. S12 (increment 38): `automation-engine-smoke` дополнен `test_scheduler_task_executor.py` (локально в Docker подтверждено `67 passed`) для покрытия scheduler execution contract в CI smoke-gate.
+80. S12 (increment 39): `CommandGateway` переведен на process-wide per-loop lock registry (общие `per-zone` lock-и между runtime/scheduler инстансами gateway), что закрывает локальный race-gap single-writer арбитража.
+81. S12 (increment 40): runtime-loop single-writer gating усилен: при активной scheduler bootstrap lease side-effect обработка loop-path блокируется (кроме явного fallback флага `AE2_FALLBACK_LOOP_WRITER_ENABLED=true`).
+82. S12 (increment 41): `CommandBus` получил pre-publish dedupe reserve/check с TTL, `duplicate_blocked/duplicate_no_effect` решениями и audit-полями (`dedupe_decision`, `dedupe_reference_key`, `dedupe_ttl_sec`) на command path.
+83. S12 (increment 42): scheduler diagnostics contract ужесточен: `/scheduler/task` требует явные `topology/workflow` (422 `missing_topology|missing_workflow`), legacy workflow fallback удален из `workflow_input_policy`, router переведен в fail-closed для unsupported route.
+84. S12 (increment 43): crash-recovery snapshot расширен `main.py` runtime state (`throttle/circuit-breaker alert timestamps`, включая per-error map) с restore/save через `main_runtime`.
+85. S12 (increment 44): deprecated `main.publish_correction_command()` переведен в hard fail-fast (`RuntimeError`), чтобы исключить legacy publish-path обход `CommandGateway/CommandBus`.
+86. S12 (increment 45): `scheduler/main.py` декомпозирован на `app/domain/infrastructure` модули с backward-compatible facade (`main.py`) и unified runtime-state (`SchedulerRuntimeState`), принят ADR `AE2_SCHEDULER_SPLIT_ADR.md`.
+87. S12 (increment 46): зафиксирован `scheduler-sync/v1` контракт (`AE2_SCHEDULER_SYNC_CONTRACT_V1.md`) и подтвержден regression-gate scheduler (`docker compose ... scheduler pytest -q test_main.py` -> `61 passed`).
+88. S12 (increment 47): добавлен machine-checkable guard rail для split scheduler (`tools/testing/SCHEDULER_SPLIT_INVARIANTS.py`, `check_scheduler_split_invariants.sh`, doc `AE2_SCHEDULER_SPLIT_INVARIANTS.md`) с локальным baseline `PASS`.
+89. S12 (increment 48): `Scheduler split invariants` подключен в CI (`.github/workflows/ci.yml`) как fail-fast шаг в job `build-and-test`.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -170,6 +205,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/test_decision_alerts.py`
 - `backend/services/automation-engine/services/zone_automation_service.py`
 - `backend/services/automation-engine/test_zone_automation_service.py`
+- `backend/services/automation-engine/test_command_bus.py`
 - `backend/services/automation-engine/application/decision_retry_enqueue.py`
 - `backend/services/automation-engine/application/api_scheduler_bootstrap.py`
 - `backend/services/automation-engine/application/api_scheduler_helpers.py`
@@ -192,7 +228,32 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `doc_ai/10_AI_DEV_GUIDES/AE2_RESILIENCE_CONSOLIDATION_S10.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S10_FINAL_REPORT.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_TASK.md`
+- `backend/services/automation-engine/infrastructure/command_tracker.py`
+- `backend/services/automation-engine/application/workflow_router.py`
+- `backend/services/automation-engine/application/workflow_validator.py`
+- `backend/services/automation-engine/application/api_contracts.py`
+- `backend/services/automation-engine/domain/policies/workflow_input_policy.py`
+- `backend/services/automation-engine/test_workflow_components.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_OBSERVABILITY_INTEGRATION_CUTOVER_S11.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S11_FINAL_REPORT.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S12_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_ACCEPTANCE_VALIDATION_S12.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S12_FINAL_REPORT.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_SUMMARY.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_METADATA.json`
+- `tools/testing/run_ae2_s12_staging_gate.sh`
+- `tools/testing/check_ae2_s12_release_bundle.sh`
+- `tools/testing/build_ae2_s12_gate_summary.py`
+- `tools/testing/build_ae2_s12_gate_metadata.py`
+- `tools/testing/finalize_ae2_s12_docs.py`
+- `tools/testing/README.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S02_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S03_TASK.md`
+- `doc_ai/10_AI_DEV_GUIDES/AE2_INVARIANTS.md`
+- `backend/services/automation-engine/actuator_registry.py`
+- `backend/services/automation-engine/repositories/infrastructure_repository.py`
+- `backend/services/automation-engine/test_actuator_registry.py`
+- `backend/services/automation-engine/test_infrastructure_repository.py`
+- `tools/testing/AE2_INVARIANTS.py`
+- `tools/testing/check_ae2_invariants.sh`
+- `.github/workflows/ci.yml`

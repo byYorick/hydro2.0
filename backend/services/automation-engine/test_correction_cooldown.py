@@ -33,10 +33,12 @@ async def test_get_last_correction_time_ph():
         ]
         
         result = await get_last_correction_time(1, "ph")
-        
+
         assert result is not None
         assert isinstance(result, datetime)
         mock_fetch.assert_called_once()
+        query = mock_fetch.call_args[0][0]
+        assert "payload_json->>'correction_type'" in query
 
 
 @pytest.mark.asyncio

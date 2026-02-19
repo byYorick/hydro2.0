@@ -67,7 +67,7 @@ async def get_last_correction_time(zone_id: int, correction_type: str) -> Option
         FROM zone_events
         WHERE zone_id = $1
           AND type = ANY($2::text[])
-          AND (details->>'correction_type' LIKE $3 OR details->>'type' LIKE $3)
+          AND (payload_json->>'correction_type' LIKE $3 OR payload_json->>'type' LIKE $3)
         ORDER BY created_at DESC
         LIMIT 1
         """,

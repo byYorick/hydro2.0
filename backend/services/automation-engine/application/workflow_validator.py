@@ -9,6 +9,17 @@ from typing import Any, Callable, Dict, Optional
 from infrastructure.observability import log_structured
 
 logger = logging.getLogger(__name__)
+_WORKFLOWS_REQUIRING_TOPOLOGY = {
+    "startup",
+    "cycle_start",
+    "refill_check",
+    "clean_fill_check",
+    "solution_fill_check",
+    "prepare_recirculation",
+    "prepare_recirculation_check",
+    "irrigation_recovery",
+    "irrigation_recovery_check",
+}
 
 
 @dataclass(frozen=True)
@@ -92,7 +103,37 @@ class WorkflowValidator:
                 ),
             )
 
-        if requires_explicit and not workflow:
+        topology_required = requires_explicit or workflow in _WORKFLOWS_REQUIRING_TOPOLOGY
+        if topology_required and not topology:
+            reason_code = "invalid_payload_missing_topology"
+            log_structured(
+                logger,
+                logging.WARNING,
+                "Diagnostics payload rejected: missing topology",
+                component="workflow_validator",
+                zone_id=zone_id,
+                task_id=task_id,
+                task_type=task_type,
+                workflow=workflow or None,
+                decision="fail",
+                reason_code=reason_code,
+                result_status="rejected",
+                correlation_id=correlation_id,
+            )
+            return WorkflowValidationResult(
+                valid=False,
+                workflow=workflow,
+                topology=topology,
+                payload_contract_version=contract_version,
+                requires_explicit_workflow=requires_explicit,
+                error_result=self._build_invalid_payload_result(
+                    reason_code=reason_code,
+                    reason="Для diagnostics task требуется обязательное payload.topology",
+                    payload_contract_version=contract_version or "v2",
+                ),
+            )
+
+        if not workflow:
             reason_code = "invalid_payload_missing_workflow"
             log_structured(
                 logger,
@@ -115,7 +156,7 @@ class WorkflowValidator:
                 requires_explicit_workflow=requires_explicit,
                 error_result=self._build_invalid_payload_result(
                     reason_code=reason_code,
-                    reason="Для startup workflow требуется явный payload.workflow",
+                    reason="Для diagnostics task требуется обязательное payload.workflow",
                     payload_contract_version=contract_version or "v2",
                 ),
             )

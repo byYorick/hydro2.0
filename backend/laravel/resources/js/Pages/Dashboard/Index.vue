@@ -3,23 +3,23 @@
     <template #default>
       <AgronomistDashboard
         v-if="isAgronomist"
-        :dashboard="dashboard as any"
+        :dashboard="dashboard"
       />
       <AdminDashboard
         v-else-if="isAdmin"
-        :dashboard="dashboard as any"
+        :dashboard="dashboard"
       />
       <EngineerDashboard
         v-else-if="isEngineer"
-        :dashboard="dashboard as any"
+        :dashboard="dashboard"
       />
       <OperatorDashboard
         v-else-if="isOperator"
-        :dashboard="dashboard as any"
+        :dashboard="dashboard"
       />
       <ViewerDashboard
         v-else-if="isViewer"
-        :dashboard="dashboard as any"
+        :dashboard="dashboard"
       />
       <div
         v-else
@@ -177,7 +177,7 @@
             <Card
               v-for="gh in dashboard.greenhouses"
               :key="gh.id"
-              v-memo="[gh.id, gh.name, (gh as any).zones_count, (gh as any).zones_running]"
+              v-memo="[gh.id, gh.name, gh.zones_count, gh.zones_running]"
               class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
             >
               <div class="flex items-start justify-between">
@@ -186,18 +186,18 @@
                     {{ gh.name }}
                   </div>
                   <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                    <span v-if="(gh as any).type">{{ (gh as any).type }}</span>
+                    <span v-if="gh.type">{{ gh.type }}</span>
                     <span
-                      v-if="(gh as any).uid"
+                      v-if="gh.uid"
                       class="ml-2"
-                    >UID: {{ (gh as any).uid }}</span>
+                    >UID: {{ gh.uid }}</span>
                   </div>
                 </div>
               </div>
               <div class="mt-3 text-xs text-[color:var(--text-muted)]">
-                <div>Зон: {{ (gh as any).zones_count || 0 }}</div>
+                <div>Зон: {{ gh.zones_count || 0 }}</div>
                 <div class="text-[color:var(--accent-green)]">
-                  Запущено: {{ (gh as any).zones_running || 0 }}
+                  Запущено: {{ gh.zones_running || 0 }}
                 </div>
               </div>
             </Card>
@@ -214,7 +214,7 @@
             <Card
               v-for="zone in dashboard.problematicZones"
               :key="zone.id"
-              v-memo="[zone.id, zone.status, (zone as any).alerts_count]"
+              v-memo="[zone.id, zone.status, zone.alerts_count]"
               class="surface-card-hover hover:border-[color:var(--badge-danger-border)] transition-all duration-200 border-[color:var(--badge-danger-border)]"
             >
               <div class="flex items-start justify-between mb-2">
@@ -240,10 +240,10 @@
                 {{ zone.description }}
               </div>
               <div
-                v-if="(zone as any).alerts_count > 0"
+                v-if="zone.alerts_count > 0"
                 class="text-xs text-[color:var(--accent-red)] mb-2"
               >
-                Активных алертов: {{ (zone as any).alerts_count }}
+                Активных алертов: {{ zone.alerts_count }}
               </div>
               <div class="mt-3 flex items-center gap-2 flex-wrap">
                 <Link :href="`/zones/${zone.id}`">
@@ -432,7 +432,7 @@
                 :key="metric.key"
                 v-memo="[metric.data, metric.currentValue, metric.loading, selectedZoneId]"
                 :label="metric.label"
-                :data="metric.data as any"
+                :data="metric.data"
                 :current-value="metric.currentValue === null ? undefined : metric.currentValue"
                 :unit="metric.unit"
                 :loading="metric.loading"
@@ -486,7 +486,7 @@
         </div>
         <div class="mb-3 flex gap-1 flex-wrap shrink-0">
           <button
-            v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
+            v-for="kind in (['ALL', 'ALERT', 'WARNING', 'INFO'] as const)"
             :key="kind"
             :data-testid="`dashboard-event-filter-${kind}`"
             class="px-2.5 py-1 text-xs rounded-md border transition-all duration-200"
@@ -495,7 +495,7 @@
                 ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
                 : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'
             "
-            @click="eventFilter = kind as any"
+            @click="eventFilter = kind"
           >
             {{ kind === "ALL" ? "Все" : kind }}
           </button>

@@ -76,7 +76,7 @@ async def restore_workflow_phase_from_events(
     try:
         rows = await fetch_fn(
             """
-            SELECT details
+            SELECT payload_json AS details
             FROM zone_events
             WHERE zone_id = $1
               AND type = $2

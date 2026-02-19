@@ -127,7 +127,8 @@ class CommandTracker:
         self,
         zone_id: int,
         command: Dict[str, Any],
-        context: ContextLike = None
+        context: ContextLike = None,
+        cmd_id: Optional[str] = None,
     ) -> str:
         """
         Начать отслеживание команды.
@@ -140,10 +141,12 @@ class CommandTracker:
         Returns:
             cmd_id: Уникальный ID команды (UUID формат, совместимый с history-logger)
         """
-        cmd_id = new_command_id()
+        resolved_cmd_id = str(cmd_id or "").strip() if cmd_id is not None else ""
+        if not resolved_cmd_id:
+            resolved_cmd_id = new_command_id()
         
         command_info = {
-            'cmd_id': cmd_id,
+            'cmd_id': resolved_cmd_id,
             'zone_id': zone_id,
             'command': command,
             'command_type': command.get('cmd', 'unknown'),
@@ -152,7 +155,7 @@ class CommandTracker:
             'context': normalize_context(context)
         }
         
-        self.pending_commands[cmd_id] = command_info
+        self.pending_commands[resolved_cmd_id] = command_info
         
         # Обновляем метрики
         PENDING_COMMANDS.labels(zone_id=str(zone_id)).inc()
@@ -161,19 +164,19 @@ class CommandTracker:
         # Мы только отслеживаем её локально и проверяем статус из БД
         
         # Устанавливаем таймаут
-        timeout_task = asyncio.create_task(self._check_timeout(cmd_id))
-        self._timeout_tasks[cmd_id] = timeout_task
+        timeout_task = asyncio.create_task(self._check_timeout(resolved_cmd_id))
+        self._timeout_tasks[resolved_cmd_id] = timeout_task
         
         logger.debug(
             f"Zone {zone_id}: Command {cmd_id} tracked",
             extra={
                 'zone_id': zone_id,
-                'cmd_id': cmd_id,
+                'cmd_id': resolved_cmd_id,
                 'command_type': command.get('cmd')
             }
         )
         
-        return cmd_id
+        return resolved_cmd_id
     
     async def _confirm_command_internal(
         self,

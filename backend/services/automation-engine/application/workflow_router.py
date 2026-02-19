@@ -58,8 +58,38 @@ class WorkflowRouter:
             route = "cycle_start"
             handler = self._execute_cycle_start
         else:
-            route = "default"
-            handler = self._execute_default
+            route = "invalid"
+            log_structured(
+                logger,
+                logging.WARNING,
+                "Diagnostics payload rejected: unsupported topology/workflow route",
+                component="workflow_router",
+                zone_id=zone_id,
+                task_id=str(context.get("task_id") or "") or None,
+                task_type=task_type,
+                workflow=normalized_workflow or None,
+                decision="fail",
+                reason_code="invalid_payload_routing",
+                result_status="rejected",
+                correlation_id=str(context.get("correlation_id") or "") or None,
+                started_at=started_at,
+                topology=normalized_topology or None,
+            )
+            return {
+                "success": False,
+                "task_type": task_type,
+                "mode": "diagnostics_invalid_payload",
+                "commands_total": 0,
+                "commands_failed": 0,
+                "action_required": False,
+                "decision": "fail",
+                "reason_code": "invalid_payload_routing",
+                "reason": "Diagnostics payload требует явные поддерживаемые topology/workflow",
+                "error": "invalid_payload_routing",
+                "error_code": "invalid_payload_routing",
+                "topology": normalized_topology or None,
+                "workflow": normalized_workflow or None,
+            }
 
         log_structured(
             logger,

@@ -71,6 +71,7 @@ def reset_scheduler_runtime_state():
     scheduler_main._leader_active = False
     scheduler_main._leader_next_attempt_at = None
     scheduler_main._leader_next_healthcheck_at = None
+    scheduler_main.SCHEDULER_ZONE_PREFLIGHT_ENFORCE = False
     yield
     scheduler_main._LAST_SCHEDULE_CHECKS.clear()
     scheduler_main._LOADED_ZONE_CURSORS.clear()
@@ -89,6 +90,7 @@ def reset_scheduler_runtime_state():
     scheduler_main._leader_active = False
     scheduler_main._leader_next_attempt_at = None
     scheduler_main._leader_next_healthcheck_at = None
+    scheduler_main.SCHEDULER_ZONE_PREFLIGHT_ENFORCE = False
 
 
 def test_parse_time_spec():

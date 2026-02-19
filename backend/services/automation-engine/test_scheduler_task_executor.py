@@ -868,7 +868,12 @@ async def test_execute_cycle_start_tank_already_full_skips_refill():
             task_type="diagnostics",
             payload={
                 "workflow": "cycle_start",
-                "config": {"execution": {"required_node_types": ["irrig", "climate", "light"]}},
+                "config": {
+                    "execution": {
+                        "topology": "cycle_start_generic",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
             },
             task_context={"task_id": "st-cycle-1", "correlation_id": "corr-cycle-1"},
         )
@@ -1017,6 +1022,28 @@ async def test_execute_three_tank_missing_workflow_fails_payload_validation():
 
 
 @pytest.mark.asyncio
+async def test_execute_cycle_start_missing_topology_fails_payload_validation():
+    command_bus = _build_command_bus_mock()
+
+    with patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "cycle_start",
+                "payload_contract_version": "v2",
+            },
+            task_context={"task_id": "st-cycle-missing-topology", "correlation_id": "corr-cycle-missing-topology"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_missing_topology"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_three_tank_invalid_payload_contract_version_fails_payload_validation():
     command_bus = _build_command_bus_mock()
 
@@ -1074,33 +1101,11 @@ async def test_execute_cycle_start_invalid_payload_contract_version_fails_withou
 
 
 @pytest.mark.asyncio
-async def test_execute_three_tank_missing_workflow_legacy_v1_uses_cycle_start_fallback():
+async def test_execute_three_tank_missing_workflow_legacy_v1_fails_payload_validation():
     command_bus = _build_command_bus_mock()
-    fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    async def _fetch_side_effect(query, *args):
-        normalized = " ".join(str(query).split()).lower()
-        if "group by lower(coalesce(n.type, ''))" in normalized:
-            return [
-                {"node_type": "irrig", "online_count": 1},
-                {"node_type": "climate", "online_count": 1},
-                {"node_type": "light", "online_count": 1},
-            ]
-        if "from sensors s" in normalized and "s.type = 'water_level'" in normalized:
-            return [
-                {
-                    "sensor_id": 117,
-                    "sensor_label": "Clean tank",
-                    "level": 0.99,
-                    "sample_ts": fresh_sample_ts,
-                }
-            ]
-        return []
 
     with patch.object(ste, "AE_LEGACY_WORKFLOW_DEFAULT_ENABLED", True), \
-         patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
-        mock_fetch.side_effect = _fetch_side_effect
         executor = SchedulerTaskExecutor(command_bus=command_bus)
         result = await executor.execute(
             zone_id=28,
@@ -1120,9 +1125,10 @@ async def test_execute_three_tank_missing_workflow_legacy_v1_uses_cycle_start_fa
             },
         )
 
-    assert result["success"] is True
-    assert result["mode"] == "three_tank_startup_ready"
-    assert result["workflow"] == "cycle_start"
+    assert result["success"] is False
+    assert result["mode"] == "diagnostics_invalid_payload"
+    assert result["error_code"] == "invalid_payload_missing_workflow"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1173,6 +1179,7 @@ async def test_execute_cycle_start_dispatches_refill_and_enqueues_check():
                 "workflow": "cycle_start",
                 "config": {
                     "execution": {
+                        "topology": "cycle_start_generic",
                         "required_node_types": ["irrig", "climate", "light"],
                         "refill": {"duration_sec": 15},
                     }
@@ -1246,6 +1253,7 @@ async def test_execute_cycle_start_clamps_next_check_to_refill_timeout():
                 "refill_timeout_at": refill_timeout_at.isoformat(),
                 "config": {
                     "execution": {
+                        "topology": "cycle_start_generic",
                         "required_node_types": ["irrig", "climate", "light"],
                         "refill": {"duration_sec": 15},
                     }
@@ -1301,7 +1309,12 @@ async def test_execute_refill_check_timeout_emits_alert_and_fails():
                 "refill_started_at": (timeout_at - timedelta(seconds=20)).isoformat(),
                 "refill_timeout_at": timeout_at.isoformat(),
                 "refill_attempt": 2,
-                "config": {"execution": {"required_node_types": ["irrig", "climate", "light"]}},
+                "config": {
+                    "execution": {
+                        "topology": "cycle_start_generic",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
             },
             task_context={"task_id": "st-cycle-3", "correlation_id": "corr-cycle-3"},
         )
@@ -1470,7 +1483,12 @@ async def test_execute_cycle_start_stale_tank_telemetry_fails_safe():
             task_type="diagnostics",
             payload={
                 "workflow": "cycle_start",
-                "config": {"execution": {"required_node_types": ["irrig", "climate", "light"]}},
+                "config": {
+                    "execution": {
+                        "topology": "cycle_start_generic",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
             },
             task_context={"task_id": "st-cycle-stale", "correlation_id": "corr-cycle-stale"},
         )
@@ -1520,7 +1538,12 @@ async def test_execute_cycle_start_stale_tank_telemetry_fails_safe_with_timezone
             task_type="diagnostics",
             payload={
                 "workflow": "cycle_start",
-                "config": {"execution": {"required_node_types": ["irrig", "climate", "light"]}},
+                "config": {
+                    "execution": {
+                        "topology": "cycle_start_generic",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
             },
             task_context={"task_id": "st-cycle-stale-aware", "correlation_id": "corr-cycle-stale-aware"},
         )
@@ -1560,7 +1583,12 @@ async def test_execute_cycle_start_without_tank_telemetry_fails_with_unavailable
             task_type="diagnostics",
             payload={
                 "workflow": "cycle_start",
-                "config": {"execution": {"required_node_types": ["irrig", "climate", "light"]}},
+                "config": {
+                    "execution": {
+                        "topology": "cycle_start_generic",
+                        "required_node_types": ["irrig", "climate", "light"],
+                    }
+                },
             },
             task_context={"task_id": "st-cycle-no-tank", "correlation_id": "corr-cycle-no-tank"},
         )

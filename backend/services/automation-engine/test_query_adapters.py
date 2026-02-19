@@ -182,3 +182,35 @@ async def test_find_zone_event_since_returns_none_for_empty_inputs():
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_find_zone_event_since_queries_payload_json_alias():
+    captured = {}
+
+    async def _fetch(query, zone_id, event_types, since):
+        captured["query"] = query
+        assert zone_id == 2
+        assert event_types == ["PH_CORRECTED"]
+        assert since is not None
+        return [
+            {
+                "id": 77,
+                "type": "PH_CORRECTED",
+                "created_at": since,
+                "details": {"correction_type": "ph"},
+            }
+        ]
+
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=5)
+    result = await find_zone_event_since(
+        fetch_fn=_fetch,
+        zone_id=2,
+        event_types=["ph_corrected"],
+        since=since,
+    )
+
+    assert "payload_json AS details" in captured["query"]
+    assert result is not None
+    assert result["id"] == 77
+    assert result["details"]["correction_type"] == "ph"

@@ -64,6 +64,29 @@ def test_workflow_validator_requires_explicit_workflow():
     assert result.error_result["reason_code"] == "invalid_payload_missing_workflow"
 
 
+def test_workflow_validator_requires_topology():
+    validator = WorkflowValidator(
+        extract_workflow=lambda payload: "startup",
+        extract_topology=lambda payload: "",
+        extract_payload_contract_version=lambda payload: "v2",
+        is_supported_payload_contract_version=lambda value: True,
+        requires_explicit_workflow=lambda payload: True,
+        build_invalid_payload_result=lambda **kwargs: kwargs,
+        explicit_workflow_feature_enabled=lambda: True,
+    )
+
+    result = validator.validate_diagnostics(
+        zone_id=3,
+        payload={"workflow": "startup"},
+        task_type="diagnostics",
+        task_id="task-2-topology",
+        correlation_id="corr-2-topology",
+    )
+
+    assert result.valid is False
+    assert result.error_result["reason_code"] == "invalid_payload_missing_topology"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("topology", "workflow", "expected_route"),
@@ -71,7 +94,7 @@ def test_workflow_validator_requires_explicit_workflow():
         ("two_tank", "startup", "two_tank"),
         ("three_tank", "startup", "three_tank"),
         ("", "cycle_start", "cycle_start"),
-        ("", "unknown", "default"),
+        ("", "unknown", "invalid"),
     ],
 )
 async def test_workflow_router_selects_route(topology, workflow, expected_route):
@@ -101,8 +124,14 @@ async def test_workflow_router_selects_route(topology, workflow, expected_route)
         task_type="diagnostics",
     )
 
-    assert calls == [expected_route]
-    assert result["mode"] == expected_route
+    if expected_route == "invalid":
+        assert calls == []
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_payload_routing"
+        assert result["mode"] == "diagnostics_invalid_payload"
+    else:
+        assert calls == [expected_route]
+        assert result["mode"] == expected_route
 
 
 @pytest.mark.asyncio

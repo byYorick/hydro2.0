@@ -27,6 +27,9 @@ export interface Zone {
   devices?: Device[]
   cycles?: GrowCycle[]
   activeGrowCycle?: GrowCycle | null
+  alerts_count?: number
+  crop?: string
+  issues?: string[]
   created_at: string
   updated_at: string
 }

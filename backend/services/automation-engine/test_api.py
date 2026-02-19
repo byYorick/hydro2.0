@@ -97,6 +97,20 @@ def reset_bootstrap_state():
     api._SCHEDULER_BOOTSTRAP_ENFORCE = old_enforce
 
 
+@pytest.fixture(autouse=True)
+def scheduler_security_baseline_defaults():
+    old_enforce = api._AE_SCHEDULER_SECURITY_BASELINE_ENFORCE
+    old_require_trace = api._AE_SCHEDULER_REQUIRE_TRACE_ID
+    old_token = api._AE_SCHEDULER_API_TOKEN
+    api._AE_SCHEDULER_SECURITY_BASELINE_ENFORCE = True
+    api._AE_SCHEDULER_REQUIRE_TRACE_ID = True
+    api._AE_SCHEDULER_API_TOKEN = "dev-token-12345"
+    yield
+    api._AE_SCHEDULER_SECURITY_BASELINE_ENFORCE = old_enforce
+    api._AE_SCHEDULER_REQUIRE_TRACE_ID = old_require_trace
+    api._AE_SCHEDULER_API_TOKEN = old_token
+
+
 def bootstrap_headers(
     client: TestClient,
     scheduler_id: str = "scheduler-test",
@@ -125,6 +139,14 @@ def bootstrap_headers(
 
 
 def scheduler_task_payload(**overrides) -> dict:
+    def _merge_dict(dst: dict, src: dict) -> dict:
+        for key, value in src.items():
+            if isinstance(value, dict) and isinstance(dst.get(key), dict):
+                _merge_dict(dst[key], value)
+            else:
+                dst[key] = value
+        return dst
+
     base_scheduled_for = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5)).replace(microsecond=0)
     base_due_at = base_scheduled_for + timedelta(seconds=15)
     base_expires_at = base_scheduled_for + timedelta(minutes=2)
@@ -132,13 +154,27 @@ def scheduler_task_payload(**overrides) -> dict:
     payload = {
         "zone_id": 1,
         "task_type": "diagnostics",
-        "payload": {"reason": "scheduled_check"},
+        "payload": {
+            "workflow": "startup",
+            "config": {
+                "execution": {
+                    "topology": "two_tank_drip_substrate_trays",
+                }
+            },
+            "reason": "scheduled_check",
+        },
         "scheduled_for": base_scheduled_for.isoformat(),
         "due_at": base_due_at.isoformat(),
         "expires_at": base_expires_at.isoformat(),
         "correlation_id": "sch:z1:diagnostics:test",
     }
-    payload.update(overrides)
+    local_overrides = dict(overrides)
+    payload_override = local_overrides.pop("payload", None)
+    if isinstance(payload_override, dict):
+        _merge_dict(payload["payload"], payload_override)
+    elif payload_override is not None:
+        payload["payload"] = payload_override
+    payload.update(local_overrides)
     return payload
 
 
@@ -751,6 +787,31 @@ def test_scheduler_task_validation_error(client, mock_command_bus):
     )
     response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
     assert response.status_code == 422
+
+
+def test_scheduler_task_diagnostics_requires_topology(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = scheduler_task_payload(
+        payload={
+            "workflow": "startup",
+            "config": {"execution": {"topology": ""}},
+        },
+        correlation_id="sch:z1:diagnostics:missing-topology",
+    )
+    response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
+    assert response.status_code == 422
+    assert "missing_topology" in response.text
+
+
+def test_scheduler_task_diagnostics_requires_workflow(client, mock_command_bus):
+    set_command_bus(mock_command_bus, "gh-1")
+    payload = scheduler_task_payload(
+        payload={"workflow": "", "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}},
+        correlation_id="sch:z1:diagnostics:missing-workflow",
+    )
+    response = client.post("/scheduler/task", json=payload, headers=bootstrap_headers(client))
+    assert response.status_code == 422
+    assert "missing_workflow" in response.text
 
 
 def test_scheduler_task_zone_not_found(client, mock_command_bus):

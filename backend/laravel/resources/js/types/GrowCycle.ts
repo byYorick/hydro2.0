@@ -30,6 +30,14 @@ export interface GrowCycle {
   current_stage_code?: string
   current_phase_index?: number | null
   current_phase_name?: string | null
+  phase_started_at?: string | null
+  recipeRevision?: {
+    recipe?: { id?: number; name?: string }
+    recipe_id?: number
+  } | null
+  currentPhase?: {
+    phase_index?: number
+  } | null
   batch_label?: string | null
   planting_at?: string | null
   created_at: string

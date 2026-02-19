@@ -78,7 +78,7 @@ async def check_pid_config_updates(
     try:
         rows = await fetch_fn(
             """
-            SELECT details
+            SELECT payload_json AS details
             FROM zone_events
             WHERE zone_id = $1
               AND type = 'PID_CONFIG_UPDATED'

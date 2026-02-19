@@ -5,6 +5,8 @@ declare const require: (moduleId: string) => any;
 
 interface Window {
   __echartsTooltipStyleAdded?: boolean;
+  __logsPollInterval__?: ReturnType<typeof setInterval> | null;
+  __logsSearchDebounce__?: ReturnType<typeof setTimeout> | null;
 }
 
 declare const Ziggy: unknown;

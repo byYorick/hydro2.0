@@ -1,5 +1,5 @@
 endpoint,count,p50_ms,p95_ms,p99_ms,max_ms
-cutover_state,120,6.42,8.43,8.76,8.91
-integration_contracts,120,6.79,8.95,9.49,9.61
-observability_contracts,120,6.18,26.27,26.42,26.49
-bootstrap_heartbeat,120,25.67,140.67,146.87,147.94
+cutover_state,120,6.81,8.17,8.79,8.95
+integration_contracts,120,7.04,8.37,8.63,8.80
+observability_contracts,120,7.48,26.88,27.19,27.25
+bootstrap_heartbeat,120,12.23,14.86,15.52,15.79

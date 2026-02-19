@@ -177,6 +177,8 @@ static const channel_def_t PH_CORRECTION_CHANNELS[] = {
     {.name = "ph_sensor", .type = "SENSOR", .metric = "PH", .is_actuator = false},
     {.name = "pump_acid", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "pump_base", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    // Service channel required by automation-engine sensor mode dispatch.
+    {.name = "system", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
 };
 
 static const channel_def_t EC_CORRECTION_CHANNELS[] = {
@@ -185,6 +187,8 @@ static const channel_def_t EC_CORRECTION_CHANNELS[] = {
     {.name = "pump_b", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "pump_c", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
     {.name = "pump_d", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
+    // Service channel required by automation-engine sensor mode dispatch.
+    {.name = "system", .type = "ACTUATOR", .metric = NULL, .is_actuator = true},
 };
 
 static const channel_def_t CLIMATE_CHANNELS[] = {
@@ -1185,6 +1189,12 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
     if (wifi) {
         cJSON_AddBoolToObject(wifi, "configured", !node_preconfig_mode);
         cJSON_AddItemToObject(json, "wifi", wifi);
+    }
+
+    cJSON *mqtt = cJSON_CreateObject();
+    if (mqtt) {
+        cJSON_AddBoolToObject(mqtt, "configured", true);
+        cJSON_AddItemToObject(json, "mqtt", mqtt);
     }
 
     payload_buf = (char *)malloc(payload_buf_size);

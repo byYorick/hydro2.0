@@ -82,6 +82,7 @@ class InfrastructureRepository:
             pump_calibration = self._extract_pump_calibration(row.get("channel_config"))
             if role not in result:
                 result[role] = {
+                    "zone_id": zone_id,
                     "node_id": row["node_id"],
                     "node_uid": row["node_uid"],
                     "node_channel_id": row["node_channel_id"],
@@ -165,6 +166,7 @@ class InfrastructureRepository:
             
             if role not in result[zone_id]:
                 result[zone_id][role] = {
+                    "zone_id": zone_id,
                     "node_id": row["node_id"],
                     "node_uid": row["node_uid"],
                     "node_channel_id": row["node_channel_id"],

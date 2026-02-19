@@ -87,7 +87,6 @@ from services.resilience_contract import (
 )
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
-from infrastructure.command_gateway import CommandGateway
 from config.settings import get_settings as get_automation_settings
 from error_handler import handle_automation_error, error_handler
 from exceptions import InvalidConfigurationError
@@ -132,6 +131,68 @@ _last_missing_gh_uid_alert_at: Optional[datetime] = None
 _MISSING_GH_UID_ALERT_THROTTLE_SECONDS = 300
 _last_config_fetch_error_alert_at: Dict[str, datetime] = {}
 _CONFIG_FETCH_ERROR_ALERT_THROTTLE_SECONDS = 180
+_AE2_RUNTIME_SINGLE_WRITER_ENFORCE = str(os.getenv("AE2_RUNTIME_SINGLE_WRITER_ENFORCE", "1")).strip().lower() in {"1", "true", "yes", "on"}
+_AE2_FALLBACK_LOOP_WRITER_ENABLED = str(os.getenv("AE2_FALLBACK_LOOP_WRITER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+_last_scheduler_single_writer_skip_log_at: Optional[datetime] = None
+_SCHEDULER_SINGLE_WRITER_SKIP_LOG_THROTTLE_SECONDS = 120
+
+
+def _serialize_optional_datetime(value: Optional[datetime]) -> Optional[str]:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
+def _deserialize_optional_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _export_main_runtime_state() -> Dict[str, Any]:
+    return {
+        "last_db_circuit_open_alert_at": _serialize_optional_datetime(_last_db_circuit_open_alert_at),
+        "last_health_unhealthy_alert_at": _serialize_optional_datetime(_last_health_unhealthy_alert_at),
+        "last_health_check_failed_alert_at": _serialize_optional_datetime(_last_health_check_failed_alert_at),
+        "last_config_unavailable_alert_at": _serialize_optional_datetime(_last_config_unavailable_alert_at),
+        "last_missing_gh_uid_alert_at": _serialize_optional_datetime(_last_missing_gh_uid_alert_at),
+        "last_scheduler_single_writer_skip_log_at": _serialize_optional_datetime(_last_scheduler_single_writer_skip_log_at),
+        "last_config_fetch_error_alert_at": {
+            str(error_type): dt.isoformat()
+            for error_type, dt in _last_config_fetch_error_alert_at.items()
+            if isinstance(dt, datetime)
+        },
+    }
+
+
+def _restore_main_runtime_state(raw_state: Optional[Dict[str, Any]]) -> None:
+    global _last_db_circuit_open_alert_at
+    global _last_health_unhealthy_alert_at
+    global _last_health_check_failed_alert_at
+    global _last_config_unavailable_alert_at
+    global _last_missing_gh_uid_alert_at
+    global _last_config_fetch_error_alert_at
+    global _last_scheduler_single_writer_skip_log_at
+
+    state = raw_state if isinstance(raw_state, dict) else {}
+    _last_db_circuit_open_alert_at = _deserialize_optional_datetime(state.get("last_db_circuit_open_alert_at"))
+    _last_health_unhealthy_alert_at = _deserialize_optional_datetime(state.get("last_health_unhealthy_alert_at"))
+    _last_health_check_failed_alert_at = _deserialize_optional_datetime(state.get("last_health_check_failed_alert_at"))
+    _last_config_unavailable_alert_at = _deserialize_optional_datetime(state.get("last_config_unavailable_alert_at"))
+    _last_missing_gh_uid_alert_at = _deserialize_optional_datetime(state.get("last_missing_gh_uid_alert_at"))
+    _last_scheduler_single_writer_skip_log_at = _deserialize_optional_datetime(state.get("last_scheduler_single_writer_skip_log_at"))
+
+    restored_config_fetch: Dict[str, datetime] = {}
+    raw_fetch_map = state.get("last_config_fetch_error_alert_at")
+    if isinstance(raw_fetch_map, dict):
+        for error_type, dt_raw in raw_fetch_map.items():
+            dt = _deserialize_optional_datetime(dt_raw)
+            if dt is not None:
+                restored_config_fetch[str(error_type)] = dt
+    _last_config_fetch_error_alert_at = restored_config_fetch
 
 
 def _restore_zone_runtime_state_snapshot(
@@ -152,6 +213,7 @@ def _restore_zone_runtime_state_snapshot(
         return False
 
     zone_service.restore_runtime_state(snapshot.get("zone_service"))
+    _restore_main_runtime_state(snapshot.get("main_runtime"))
     logger.info(
         "Runtime snapshot restored",
         extra={
@@ -179,6 +241,7 @@ def _save_zone_runtime_state_snapshot(
     payload = {
         "saved_at": utcnow().isoformat(),
         "zone_service": zone_service.export_runtime_state(),
+        "main_runtime": _export_main_runtime_state(),
     }
     saved = RuntimeStateStore(snapshot_path).save(payload)
     if saved:
@@ -264,6 +327,35 @@ def _should_emit_config_fetch_error_alert(now: datetime, error_type: str) -> boo
         _last_config_fetch_error_alert_at[error_type] = now
         return True
     return False
+
+
+def _should_log_scheduler_single_writer_skip(now: datetime) -> bool:
+    global _last_scheduler_single_writer_skip_log_at
+    if _last_scheduler_single_writer_skip_log_at is None:
+        _last_scheduler_single_writer_skip_log_at = now
+        return True
+
+    elapsed = (now - _last_scheduler_single_writer_skip_log_at).total_seconds()
+    if elapsed >= _SCHEDULER_SINGLE_WRITER_SKIP_LOG_THROTTLE_SECONDS:
+        _last_scheduler_single_writer_skip_log_at = now
+        return True
+    return False
+
+
+async def _is_scheduler_single_writer_active() -> bool:
+    if not _AE2_RUNTIME_SINGLE_WRITER_ENFORCE:
+        return False
+
+    try:
+        from api import is_scheduler_single_writer_active
+    except Exception:
+        return False
+
+    try:
+        return bool(await is_scheduler_single_writer_active())
+    except Exception as exc:
+        logger.warning("Failed to check scheduler single-writer state: %s", exc, exc_info=True)
+        return False
 
 
 async def _emit_config_fetch_failure_alert(
@@ -367,8 +459,6 @@ async def get_zone_capabilities(zone_id: int) -> Dict[str, bool]:
     return await repo.get_zone_capabilities(zone_id)
 
 
-# DEPRECATED: Используйте CommandBus вместо этой функции
-# Оставлено для обратной совместимости
 async def publish_correction_command(
     mqtt: MqttClient,
     gh_uid: str,
@@ -379,31 +469,10 @@ async def publish_correction_command(
     params: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
-    DEPRECATED: Используйте CommandBus.publish_command() вместо этой функции.
-    Оставлено для обратной совместимости.
+    Legacy publish-path удалён.
+    Команды должны отправляться только через CommandGateway/CommandBus из runtime scheduler/zone paths.
     """
-    global _command_bus
-    if _command_bus is not None:
-        gateway = CommandGateway(_command_bus)
-        return await gateway.publish_command(zone_id, node_uid, channel, cmd, params)
-    
-    # Fallback: создаем временный CommandBus если глобальный не инициализирован
-    from infrastructure import CommandBus
-    history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
-    history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-    command_bus = CommandBus(
-        mqtt=None,
-        gh_uid=gh_uid,
-        history_logger_url=history_logger_url,
-        history_logger_token=history_logger_token,
-        enforce_node_zone_assignment=True,
-    )
-    await command_bus.start()
-    try:
-        gateway = CommandGateway(command_bus)
-        return await gateway.publish_command(zone_id, node_uid, channel, cmd, params)
-    finally:
-        await command_bus.stop()
+    raise RuntimeError("publish_correction_command is removed; use CommandGateway/CommandBus path")
 
 
 async def check_phase_transitions(zone_id: int):
@@ -1155,51 +1224,63 @@ async def main():
 
                     # Параллельная обработка зон с адаптивной конкурентностью
                     if zones:
-                        # Вычисляем оптимальную конкурентность, если включена адаптивность
-                        if automation_settings.ADAPTIVE_CONCURRENCY:
-                            global _avg_processing_time
-                            optimal_concurrency = await calculate_optimal_concurrency(
-                                total_zones=len(zones),
-                                target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
-                                avg_zone_processing_time=_avg_processing_time
-                            )
-                            
-                            OPTIMAL_CONCURRENCY.set(optimal_concurrency)
-                            
-                            logger.info(
-                                f"Adaptive concurrency: {optimal_concurrency} zones "
-                                f"(avg time: {_avg_processing_time:.2f}s, target cycle: {automation_settings.TARGET_CYCLE_TIME_SEC}s)"
-                            )
-                            
-                            max_concurrent = optimal_concurrency
+                        scheduler_writer_active = False
+                        if _AE2_RUNTIME_SINGLE_WRITER_ENFORCE and not _AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                            scheduler_writer_active = await _is_scheduler_single_writer_active()
+
+                        if scheduler_writer_active and not _AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                            now_utc = utcnow()
+                            if _should_log_scheduler_single_writer_skip(now_utc):
+                                logger.info(
+                                    "Scheduler single-writer active: continuous loop side-effects are gated "
+                                    "(set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)"
+                                )
                         else:
-                            max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
-                        
-                        # Обрабатываем зоны с отслеживанием результатов
-                        results = await process_zones_parallel(
-                            zones,
-                            _zone_service,
-                            max_concurrent=max_concurrent,
-                            simulation_clocks=simulation_clocks,
-                        )
-                        
-                        # Логируем результаты для мониторинга
-                        if results['failed'] > 0:
-                            logger.warning(
-                                f"Zone processing completed with errors: {results['success']}/{results['total']} success, "
-                                f"{results['failed']} failed"
-                            )
-                        
-                        # Логируем состояние системы (каждые 5 минут)
-                        if int(time.time()) % 300 == 0:  # Каждые 5 минут
-                            await log_system_state(
-                                _zone_service,
+                            # Вычисляем оптимальную конкурентность, если включена адаптивность
+                            if automation_settings.ADAPTIVE_CONCURRENCY:
+                                global _avg_processing_time
+                                optimal_concurrency = await calculate_optimal_concurrency(
+                                    total_zones=len(zones),
+                                    target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
+                                    avg_zone_processing_time=_avg_processing_time
+                                )
+
+                                OPTIMAL_CONCURRENCY.set(optimal_concurrency)
+
+                                logger.info(
+                                    f"Adaptive concurrency: {optimal_concurrency} zones "
+                                    f"(avg time: {_avg_processing_time:.2f}s, target cycle: {automation_settings.TARGET_CYCLE_TIME_SEC}s)"
+                                )
+
+                                max_concurrent = optimal_concurrency
+                            else:
+                                max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
+
+                            # Обрабатываем зоны с отслеживанием результатов
+                            results = await process_zones_parallel(
                                 zones,
-                                _command_tracker,
-                                db_circuit_breaker,
-                                api_circuit_breaker,
-                                mqtt_circuit_breaker
+                                _zone_service,
+                                max_concurrent=max_concurrent,
+                                simulation_clocks=simulation_clocks,
                             )
+
+                            # Логируем результаты для мониторинга
+                            if results['failed'] > 0:
+                                logger.warning(
+                                    f"Zone processing completed with errors: {results['success']}/{results['total']} success, "
+                                    f"{results['failed']} failed"
+                                )
+
+                            # Логируем состояние системы (каждые 5 минут)
+                            if int(time.time()) % 300 == 0:  # Каждые 5 минут
+                                await log_system_state(
+                                    _zone_service,
+                                    zones,
+                                    _command_tracker,
+                                    db_circuit_breaker,
+                                    api_circuit_breaker,
+                                    mqtt_circuit_breaker
+                                )
                 except KeyboardInterrupt:
                     logger.info("Received interrupt signal, shutting down")
                     _shutdown_event.set()
