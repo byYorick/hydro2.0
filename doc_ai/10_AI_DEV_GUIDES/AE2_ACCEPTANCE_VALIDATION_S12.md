@@ -49,7 +49,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py` -> `80 passed`.
 3. Локальный load gate подтвержден для burst/churn/high-volume сценариев scheduler ingress.
 
-## 7. Следующий инкремент S12
+## 7. Increment 5 (2026-02-18)
+1. Выполнен consolidated Docker acceptance прогон:
+- `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py test_scheduler_task_executor.py test_zone_node_recovery.py` -> `152 passed`.
+2. Подтвержден локальный baseline стабильности для cutover parity + chaos recovery + scheduler ingress.
+
+## 8. Следующий инкремент S12
 1. Провести стендовый SLO-прогон cutover ingress и зафиксировать p50/p95/p99.
 2. Зафиксировать SLO gate (`PASS/FAIL/DEFERRED`) на основании стендовых метрик.
 3. Подготовить `AE2_STAGE_S12_FINAL_REPORT.md` после закрытия обязательных gates.
