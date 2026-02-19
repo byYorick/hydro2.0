@@ -1290,6 +1290,47 @@ async def test_scheduler_bootstrap_heartbeat_churn_stays_ready(mock_command_bus)
     assert len(set(lease_ids)) == 30
 
 
+@pytest.mark.asyncio
+async def test_scheduler_task_high_volume_concurrent_submit_stable(mock_command_bus):
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        bootstrap_response = await async_client.post(
+            "/scheduler/bootstrap",
+            json={
+                "scheduler_id": "scheduler-high-volume",
+                "scheduler_version": "test",
+                "protocol_version": "2.0",
+            },
+        )
+        assert bootstrap_response.status_code == 200
+        lease_id = bootstrap_response.json()["data"]["lease_id"]
+        headers = {
+            "X-Scheduler-Id": "scheduler-high-volume",
+            "X-Scheduler-Lease-Id": lease_id,
+            "Authorization": "Bearer dev-token-12345",
+            "X-Trace-Id": "trace-test-high-volume",
+        }
+
+        async def _submit(index: int) -> str:
+            payload = scheduler_task_payload(
+                correlation_id=f"sch:z1:diagnostics:high-volume-{index}",
+                payload={"reason": "high_volume", "index": index},
+            )
+            response = await async_client.post("/scheduler/task", json=payload, headers=headers)
+            assert response.status_code == 200, response.text
+            data = response.json()["data"]
+            assert data["is_duplicate"] is False
+            return data["task_id"]
+
+        task_ids = await asyncio.gather(*(_submit(i) for i in range(120)))
+
+    assert len(task_ids) == 120
+    assert len(set(task_ids)) == 120
+
+
 def test_scheduler_task_status_not_found(client):
     """Status endpoint must return 404 for unknown task."""
     response = client.get("/scheduler/task/st-unknown")

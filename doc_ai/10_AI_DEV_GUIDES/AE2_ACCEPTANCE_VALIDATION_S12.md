@@ -14,7 +14,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 2. Gates
 1. Load gate: `PASS (local burst baseline)`:
-- `pytest test_api.py` включает burst/churn acceptance checks для scheduler cutover/bootstrap paths.
+- `pytest test_api.py` включает burst/churn/high-volume acceptance checks для scheduler cutover/bootstrap/task-ingress paths.
 2. Chaos gate: `PASS (local baseline)`:
 - `pytest test_scheduler_task_executor.py test_zone_node_recovery.py` -> `72 passed`.
 3. Parity gate: `PASS (local baseline)`:
@@ -42,7 +42,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py` -> `79 passed`.
 3. Локальный load gate переведен в `PASS (local burst baseline)` без изменения runtime логики.
 
-## 6. Следующий инкремент S12
+## 6. Increment 4 (2026-02-18)
+1. Добавлен high-volume ingress acceptance тест в `test_api.py`:
+- `test_scheduler_task_high_volume_concurrent_submit_stable` (120 concurrent `/scheduler/task` submit с уникальными correlation id).
+2. Повторный Docker-прогон:
+- `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py` -> `80 passed`.
+3. Локальный load gate подтвержден для burst/churn/high-volume сценариев scheduler ingress.
+
+## 7. Следующий инкремент S12
 1. Провести стендовый SLO-прогон cutover ingress и зафиксировать p50/p95/p99.
 2. Зафиксировать SLO gate (`PASS/FAIL/DEFERRED`) на основании стендовых метрик.
 3. Подготовить `AE2_STAGE_S12_FINAL_REPORT.md` после закрытия обязательных gates.
