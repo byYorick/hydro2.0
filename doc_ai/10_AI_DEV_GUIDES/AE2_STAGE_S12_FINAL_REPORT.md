@@ -28,6 +28,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. Staging SLO run отсутствует в этом цикле.
 2. Release decision `ALLOW_FULL_ROLLOUT` / `HOLD_AND_INVESTIGATE` не зафиксирован.
 3. `AE2_S12_STAGING_SLO_BASELINE.csv` пока содержит локальный dry-run, а не данные целевого стенда.
+4. Автоматический decision-helper (`tests/s12_slo_release_decision.py`) прогнан только на dry-run baseline.
 
 ## 4. Required before `S12 COMPLETED`
 1. Выполнить `AE2_S12_STAGING_SLO_RUNBOOK.md`.

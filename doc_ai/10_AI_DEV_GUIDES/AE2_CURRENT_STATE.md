@@ -80,6 +80,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 49. S12 (increment 8): добавлен `AE2_S12_STAGING_SLO_RUNBOOK.md` с единым чек-листом стендового SLO/cutover прогона и форматом release decision артефактов.
 50. S12 (increment 9): создан драфт `AE2_STAGE_S12_FINAL_REPORT.md` с локально закрытыми gates и явными staging-blockers до перевода `S12` в `COMPLETED`.
 51. S12 (increment 10): выполнен dry-run runbook команды (`requests=240`, `concurrency=40`), добавлен `AE2_S12_STAGING_SLO_BASELINE.csv` как формат артефакта; staging blocker сохранен до реального стенда.
+52. S12 (increment 11): добавлен `tests/s12_slo_release_decision.py` для формализованного `ALLOW/HOLD` решения по SLO CSV; dry-run baseline дал `ALLOW_FULL_ROLLOUT`, но staging blocker сохранен.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -108,6 +109,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/api.py`
 - `backend/services/automation-engine/test_api.py`
 - `backend/services/automation-engine/tests/s12_cutover_slo_probe.py`
+- `backend/services/automation-engine/tests/s12_slo_release_decision.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_S12_LOCAL_SLO_BASELINE.csv`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_RUNBOOK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S12_FINAL_REPORT.md`

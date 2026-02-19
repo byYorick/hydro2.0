@@ -104,3 +104,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `observability_contracts`: p50=12.77, p95=15.19, p99=15.59;
 - `bootstrap_heartbeat`: p50=49.10, p95=186.83, p99=196.83.
 4. Статус блокера не меняется: нужен реальный стендовый прогон.
+
+## 14. Increment 11 (2026-02-19)
+1. Добавлен автоматический decision-helper:
+- `backend/services/automation-engine/tests/s12_slo_release_decision.py`.
+2. Прогон decision-helper на `AE2_S12_STAGING_SLO_BASELINE.csv`:
+- `decision=ALLOW_FULL_ROLLOUT` (для текущего dry-run baseline).
+3. `AE2_S12_STAGING_SLO_RUNBOOK.md` обновлен командой формализации release decision.
+4. Статус блокера сохраняется: требуется прогон на реальном стенде.

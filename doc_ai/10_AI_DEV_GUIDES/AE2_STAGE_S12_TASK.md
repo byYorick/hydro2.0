@@ -36,6 +36,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_scheduler_task_executor.py test_zone_node_recovery.py`
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine python tests/s12_cutover_slo_probe.py`
 - `docker compose -f backend/docker-compose.dev.yml run --rm -e AE2_SLO_PROBE_OUTPUT_MODE=csv automation-engine python tests/s12_cutover_slo_probe.py > doc_ai/10_AI_DEV_GUIDES/AE2_S12_LOCAL_SLO_BASELINE.csv`
+- `cat doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv | docker compose -f backend/docker-compose.dev.yml run --rm -T automation-engine python tests/s12_slo_release_decision.py --stdin`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_RUNBOOK.md` (стендовый SLO gate)
 
 ## 5. Критерий завершения
