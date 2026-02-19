@@ -72,6 +72,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 41. S11 (increment 7): stage-gate закрыт, добавлен `AE2_STAGE_S11_FINAL_REPORT.md`, `S11` переведен в `COMPLETED`.
 42. S12 (increment 1): стартован acceptance-stage, добавлены `AE2_STAGE_S12_TASK.md` и `AE2_ACCEPTANCE_VALIDATION_S12.md`, расширены API acceptance тесты на cutover parity.
 43. S12 (increment 2): Docker acceptance baseline прогоны green (`test_api.py` 77 passed, `test_scheduler_task_executor.py + test_zone_node_recovery.py` 72 passed), parity/chaos local gates отмечены PASS.
+44. S12 (increment 3): добавлены burst/churn acceptance тесты для cutover/bootstrap API (`test_api.py` 79 passed), load gate переведен в `PASS (local burst baseline)`.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.

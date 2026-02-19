@@ -1231,6 +1231,65 @@ async def test_scheduler_task_concurrent_submit_with_housekeeping_no_loop_errors
     assert len(set(task_ids)) == 40
 
 
+@pytest.mark.asyncio
+async def test_scheduler_cutover_contract_endpoints_burst_no_errors():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        async def _call(path: str) -> None:
+            response = await async_client.get(path)
+            assert response.status_code == 200, response.text
+            data = response.json()["data"]
+            assert isinstance(data, dict)
+
+        paths = (
+            "/scheduler/cutover/state",
+            "/scheduler/integration/contracts",
+            "/scheduler/observability/contracts",
+        )
+        await asyncio.gather(*(_call(paths[i % len(paths)]) for i in range(180)))
+
+
+@pytest.mark.asyncio
+async def test_scheduler_bootstrap_heartbeat_churn_stays_ready(mock_command_bus):
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        async def _bootstrap_and_heartbeat(index: int) -> str:
+            scheduler_id = f"scheduler-churn-{index}"
+            bootstrap = await async_client.post(
+                "/scheduler/bootstrap",
+                json={
+                    "scheduler_id": scheduler_id,
+                    "scheduler_version": "test",
+                    "protocol_version": "2.0",
+                },
+            )
+            assert bootstrap.status_code == 200, bootstrap.text
+            bootstrap_data = bootstrap.json()["data"]
+            assert bootstrap_data["bootstrap_status"] == "ready"
+            lease_id = bootstrap_data["lease_id"]
+
+            heartbeat = await async_client.post(
+                "/scheduler/bootstrap/heartbeat",
+                json={
+                    "scheduler_id": scheduler_id,
+                    "lease_id": lease_id,
+                },
+            )
+            assert heartbeat.status_code == 200, heartbeat.text
+            heartbeat_data = heartbeat.json()["data"]
+            assert heartbeat_data["bootstrap_status"] == "ready"
+            assert heartbeat_data["lease_id"] == lease_id
+            return lease_id
+
+        lease_ids = await asyncio.gather(*(_bootstrap_and_heartbeat(i) for i in range(30)))
+
+    assert len(lease_ids) == 30
+    assert len(set(lease_ids)) == 30
+
+
 def test_scheduler_task_status_not_found(client):
     """Status endpoint must return 404 for unknown task."""
     response = client.get("/scheduler/task/st-unknown")
