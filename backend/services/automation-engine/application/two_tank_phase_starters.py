@@ -486,7 +486,11 @@ async def start_two_tank_irrigation_recovery(
     )
 
     phase_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["irrigation_recovery_timeout_sec"])
+    timeout_sec = int(runtime_cfg["irrigation_recovery_timeout_sec"])
+    if attempt > 1:
+        retry_multiplier = float(runtime_cfg.get("irrigation_recovery_retry_timeout_multiplier") or 1.0)
+        timeout_sec = max(timeout_sec, int(round(timeout_sec * retry_multiplier)))
+    phase_timeout_at = phase_started_at + timedelta(seconds=timeout_sec)
     try:
         enqueue_result = await enqueue_two_tank_check_fn(
             zone_id=zone_id,

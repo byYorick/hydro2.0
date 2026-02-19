@@ -13,6 +13,20 @@ export interface AutomationTimelineEvent {
   active?: boolean
 }
 
+export interface IrrNodeState {
+  clean_level_max: boolean | null
+  clean_level_min: boolean | null
+  solution_level_max: boolean | null
+  solution_level_min: boolean | null
+  valve_clean_fill: boolean | null
+  valve_clean_supply: boolean | null
+  valve_solution_fill: boolean | null
+  valve_solution_supply: boolean | null
+  valve_irrigation: boolean | null
+  pump_main: boolean | null
+  updated_at?: string | null
+}
+
 export interface AutomationState {
   zone_id: number
   state: AutomationStateType
@@ -45,6 +59,7 @@ export interface AutomationState {
   timeline: AutomationTimelineEvent[]
   next_state: AutomationStateType | null
   estimated_completion_sec: number | null
+  irr_node_state?: IrrNodeState | null
 }
 
 export interface HoveredElement {

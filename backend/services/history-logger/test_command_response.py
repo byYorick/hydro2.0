@@ -293,3 +293,47 @@ async def test_handle_command_response_missing_ts_rejected():
         mock_fetch.assert_not_called()
         mock_send.assert_not_called()
         mock_record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_state_persists_irr_snapshot_event():
+    from mqtt_handlers import handle_command_response
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump_main/command_response"
+    payload = json.dumps(
+        {
+            "cmd_id": "cmd-state-1",
+            "status": "DONE",
+            "ts": 1737979200012,
+            "details": {
+                "snapshot": {
+                    "clean_level_max": True,
+                    "clean_level_min": True,
+                    "solution_level_max": False,
+                    "solution_level_min": True,
+                    "valve_clean_fill": False,
+                    "valve_clean_supply": True,
+                    "valve_solution_fill": True,
+                    "valve_solution_supply": False,
+                    "valve_irrigation": False,
+                    "pump_main": True,
+                }
+            },
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock), \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 7, "cmd": "state"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_create_zone_event.assert_awaited_once()
+        args = mock_create_zone_event.await_args.args
+        assert args[0] == 7
+        assert args[1] == "IRR_STATE_SNAPSHOT"
+        assert args[2]["snapshot"]["clean_level_max"] is True
+        assert args[2]["snapshot"]["solution_level_max"] is False

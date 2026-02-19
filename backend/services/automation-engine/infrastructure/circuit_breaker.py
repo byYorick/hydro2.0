@@ -101,7 +101,7 @@ class CircuitBreaker:
         # Проверяем состояние
         if self.state == CircuitState.OPEN:
             # Проверяем, не прошло ли достаточно времени для попытки восстановления
-            if self.last_failure_time and (time.time() - self.last_failure_time) >= self.timeout:
+            if self.last_failure_time and (time.monotonic() - self.last_failure_time) >= self.timeout:
                 logger.info(f"Circuit breaker {self.name}: Attempting recovery, transitioning to HALF_OPEN")
                 self.state = CircuitState.HALF_OPEN
                 self.half_open_calls = 0
@@ -161,7 +161,7 @@ class CircuitBreaker:
     def _on_failure(self):
         """Обработка сбоя."""
         self.failure_count += 1
-        self.last_failure_time = time.time()
+        self.last_failure_time = time.monotonic()
         self.failures_counter.labels(component=self.name).inc()
         
         if self.state == CircuitState.HALF_OPEN:
@@ -207,4 +207,3 @@ class CircuitBreaker:
     def is_open(self) -> bool:
         """Проверить, открыт ли Circuit Breaker."""
         return self.state == CircuitState.OPEN
-

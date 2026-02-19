@@ -84,14 +84,13 @@ class CommandGateway:
         context: ContextLike = None,
         timeout_sec: Optional[float] = None,
     ) -> Dict[str, Any]:
-        return await self._run_serialized(
-            zone_id,
-            self._command_bus.publish_controller_command_closed_loop(
-                zone_id=zone_id,
-                command=command,
-                context=context,
-                timeout_sec=timeout_sec,
-            ),
+        # Closed-loop может ждать DONE/TIMEOUT десятки секунд. Не держим zone lock
+        # на весь период ожидания, чтобы не блокировать stop/compensation команды зоны.
+        return await self._command_bus.publish_controller_command_closed_loop(
+            zone_id=zone_id,
+            command=command,
+            context=context,
+            timeout_sec=timeout_sec,
         )
 
 

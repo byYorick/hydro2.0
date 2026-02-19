@@ -1877,7 +1877,7 @@ async def test_execute_two_tank_startup_unavailable_level_includes_expected_and_
                 "config": {
                     "execution": {
                         "topology": "two_tank_drip_substrate_trays",
-                        "startup": {"required_node_types": ["irrig"]},
+                        "startup": {"required_node_types": ["irrig"], "irr_state_wait_timeout_sec": 0},
                     }
                 },
             },
@@ -1891,6 +1891,396 @@ async def test_execute_two_tank_startup_unavailable_level_includes_expected_and_
     assert "clean_top_sensor" in result["available_sensor_labels"]
     assert "solution_top_sensor" in result["available_sensor_labels"]
     assert result["level_source"] == "none"
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_requests_irr_state_snapshot_best_effort():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-query", "correlation_id": "corr-two-tank-state-query"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_unavailable"
+    assert result["reason_code"] == "irr_state_unavailable"
+    assert result["error_code"] == "two_tank_irr_state_unavailable"
+    command_bus.publish_command.assert_awaited_once()
+    args = command_bus.publish_command.await_args.args
+    kwargs = command_bus.publish_command.await_args.kwargs
+    assert args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 10})
+    assert isinstance(kwargs.get("cmd_id"), str)
+    assert kwargs["cmd_id"]
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_fails_on_stale_irr_state_snapshot():
+    command_bus = _build_command_bus_mock()
+    stale_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=80)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if "from zone_events" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            return [
+                {
+                    "payload_json": {
+                        "snapshot": {
+                            "pump_main": False,
+                            "valve_clean_fill": False,
+                            "valve_clean_supply": False,
+                            "valve_solution_fill": False,
+                            "valve_solution_supply": False,
+                            "valve_irrigation": False,
+                            "clean_level_max": False,
+                            "clean_level_min": False,
+                            "solution_level_max": False,
+                            "solution_level_min": False,
+                        }
+                    },
+                    "created_at": stale_snapshot_time,
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                        "two_tank_runtime": {"irr_state_max_age_sec": 30},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-stale", "correlation_id": "corr-two-tank-state-stale"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_stale"
+    assert result["reason_code"] == "irr_state_stale"
+    assert result["error_code"] == "two_tank_irr_state_stale"
+    assert result["snapshot_max_age_sec"] == 30
+    assert isinstance(result["snapshot_age_sec"], float)
+    assert result["snapshot_age_sec"] > 30.0
+    command_bus.publish_command.assert_awaited_once()
+    args = command_bus.publish_command.await_args.args
+    kwargs = command_bus.publish_command.await_args.kwargs
+    assert args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 10})
+    assert isinstance(kwargs.get("cmd_id"), str)
+    assert kwargs["cmd_id"]
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_reuses_recent_latest_snapshot_when_cmd_id_lookup_misses():
+    command_bus = _build_command_bus_mock()
+    fresh_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if (
+            "from zone_events" in normalized
+            and "type = 'irr_state_snapshot'" in normalized
+            and "payload_json->>'cmd_id' = $2" in normalized
+        ):
+            return []
+        if "from zone_events" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            return [
+                {
+                    "payload_json": {
+                        "snapshot": {
+                            "pump_main": True,
+                            "valve_clean_fill": False,
+                            "valve_clean_supply": False,
+                            "valve_solution_fill": False,
+                            "valve_solution_supply": False,
+                            "valve_irrigation": False,
+                            "clean_level_max": False,
+                            "clean_level_min": False,
+                            "solution_level_max": False,
+                            "solution_level_min": False,
+                        }
+                    },
+                    "created_at": fresh_snapshot_time,
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {
+                            "required_node_types": ["irrig"],
+                            "irr_state_wait_timeout_sec": 0,
+                        },
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-recent-fallback", "correlation_id": "corr-two-tank-state-recent-fallback"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_mismatch"
+    assert result["error_code"] == "two_tank_irr_state_mismatch"
+    command_bus.publish_command.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_rechecks_latest_snapshot_before_stale_failure():
+    command_bus = _build_command_bus_mock()
+    command_bus.publish_command = AsyncMock(return_value=False)
+    stale_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=80)
+    fresh_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None)
+    latest_calls = {"count": 0}
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if "from zone_events" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            latest_calls["count"] += 1
+            created_at = stale_snapshot_time if latest_calls["count"] == 1 else fresh_snapshot_time
+            return [
+                {
+                    "payload_json": {
+                        "snapshot": {
+                            "pump_main": True,
+                            "valve_clean_fill": False,
+                            "valve_clean_supply": False,
+                            "valve_solution_fill": False,
+                            "valve_solution_supply": False,
+                            "valve_irrigation": False,
+                            "clean_level_max": False,
+                            "clean_level_min": False,
+                            "solution_level_max": False,
+                            "solution_level_min": False,
+                        }
+                    },
+                    "created_at": created_at,
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {
+                            "required_node_types": ["irrig"],
+                            "irr_state_wait_timeout_sec": 1,
+                        },
+                        "two_tank_runtime": {"irr_state_max_age_sec": 30},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-stale-recheck", "correlation_id": "corr-two-tank-state-stale-recheck"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_mismatch"
+    assert result["error_code"] == "two_tank_irr_state_mismatch"
+    assert latest_calls["count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_fails_on_irr_state_expected_vs_actual_mismatch():
+    command_bus = _build_command_bus_mock()
+    fresh_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if "from zone_events" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            return [
+                {
+                    "payload_json": {
+                        "snapshot": {
+                            "pump_main": True,
+                            "valve_clean_fill": False,
+                            "valve_clean_supply": False,
+                            "valve_solution_fill": False,
+                            "valve_solution_supply": False,
+                            "valve_irrigation": False,
+                            "clean_level_max": False,
+                            "clean_level_min": False,
+                            "solution_level_max": False,
+                            "solution_level_min": False,
+                        }
+                    },
+                    "created_at": fresh_snapshot_time,
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-mismatch", "correlation_id": "corr-two-tank-state-mismatch"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_mismatch"
+    assert result["reason_code"] == "irr_state_mismatch"
+    assert result["error_code"] == "two_tank_irr_state_mismatch"
+    assert result["expected_vs_actual"]["matches"] is False
+    assert result["expected_vs_actual"]["mismatches"][0]["field"] == "pump_main"
+    command_bus.publish_command.assert_awaited_once()
+    args = command_bus.publish_command.await_args.args
+    kwargs = command_bus.publish_command.await_args.kwargs
+    assert args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 10})
+    assert isinstance(kwargs.get("cmd_id"), str)
+    assert kwargs["cmd_id"]
+    command_bus.publish_controller_command_closed_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_startup_reads_irr_snapshot_from_record_like_row():
+    command_bus = _build_command_bus_mock()
+    fresh_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    class _RecordLikeRow:
+        def __init__(self, payload_json, created_at):
+            self._data = {
+                "payload_json": payload_json,
+                "created_at": created_at,
+            }
+
+        def __getitem__(self, key):
+            return self._data[key]
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if "from zone_events" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            return [
+                _RecordLikeRow(
+                    payload_json={
+                        "snapshot": {
+                            "pump_main": True,
+                            "valve_clean_fill": False,
+                            "valve_clean_supply": False,
+                            "valve_solution_fill": False,
+                            "valve_solution_supply": False,
+                            "valve_irrigation": False,
+                            "clean_level_max": False,
+                            "clean_level_min": False,
+                            "solution_level_max": False,
+                            "solution_level_min": False,
+                        }
+                    },
+                    created_at=fresh_snapshot_time,
+                )
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "startup",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-two-tank-state-record-like", "correlation_id": "corr-two-tank-state-record-like"},
+        )
+
+    assert result["success"] is False
+    assert result["mode"] == "two_tank_irr_state_mismatch"
+    assert result["reason_code"] == "irr_state_mismatch"
+    assert result["error_code"] == "two_tank_irr_state_mismatch"
+    assert result["expected_vs_actual"]["matches"] is False
+    assert result["expected_vs_actual"]["mismatches"][0]["field"] == "pump_main"
+    command_bus.publish_command.assert_awaited_once()
+    args = command_bus.publish_command.await_args.args
+    kwargs = command_bus.publish_command.await_args.kwargs
+    assert args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 10})
+    assert isinstance(kwargs.get("cmd_id"), str)
+    assert kwargs["cmd_id"]
     command_bus.publish_controller_command_closed_loop.assert_not_awaited()
 
 
@@ -1931,6 +2321,7 @@ async def test_execute_two_tank_clean_fill_check_event_transitions_to_solution_f
     command_bus = _build_command_bus_mock()
     clean_started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
     clean_timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -1943,6 +2334,15 @@ async def test_execute_two_tank_clean_fill_check_event_transitions_to_solution_f
                     "type": "CLEAN_FILL_COMPLETED",
                     "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
                     "details": {"source": "node_event"},
+                }
+            ]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 1001,
+                    "sensor_label": "level_clean_min",
+                    "level": 1.0,
+                    "sample_ts": sample_ts,
                 }
             ]
         if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
@@ -1996,6 +2396,7 @@ async def test_execute_two_tank_solution_fill_start_sends_sensor_mode_activation
     command_bus = _build_command_bus_mock()
     clean_started_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=60)
     clean_timeout_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=300)
+    sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async def _fetch_side_effect(query, *args):
         normalized = " ".join(str(query).split()).lower()
@@ -2008,6 +2409,15 @@ async def test_execute_two_tank_solution_fill_start_sends_sensor_mode_activation
                     "type": "CLEAN_FILL_COMPLETED",
                     "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
                     "details": {"source": "node_event"},
+                }
+            ]
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 1001,
+                    "sensor_label": "level_clean_min",
+                    "level": 1.0,
+                    "sample_ts": sample_ts,
                 }
             ]
         if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
@@ -2453,7 +2863,8 @@ async def test_execute_two_tank_irrigation_recovery_check_attempts_exceeded():
 
     assert result["success"] is False
     assert result["mode"] == "two_tank_irrigation_recovery_failed"
-    assert result["reason_code"] == "irrigation_recovery_failed"
+    assert result["reason_code"] == "manual_ack_required_after_retries"
+    assert result["manual_ack_required"] is True
     assert result["error_code"] == "irrigation_recovery_attempts_exceeded"
     assert command_bus.publish_controller_command_closed_loop.await_count == 3
     mock_enqueue.assert_not_awaited()

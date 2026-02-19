@@ -23,18 +23,19 @@ use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SchedulerTaskController;
+use App\Http\Controllers\ServiceLogController;
+use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
-use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
+use App\Http\Controllers\ZoneAutomationLogicProfileController;
+use App\Http\Controllers\ZoneAutomationManualResumeController;
+use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
-use App\Http\Controllers\ZoneAutomationLogicProfileController;
-use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use Illuminate\Http\Request;
@@ -311,6 +312,8 @@ Route::middleware([
     // Commands status (viewer+)
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
     Route::get('zones/{zone}/automation-state', [ZoneAutomationStateController::class, 'show']);
+    Route::post('zones/{zone}/automation/manual-resume', [ZoneAutomationManualResumeController::class, 'store'])
+        ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
     Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);
 

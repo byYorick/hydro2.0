@@ -51,6 +51,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
 #define SOLUTION_FILL_DELAY_SEC 60
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
+#define SOLUTION_MAX_LATCH_LEVEL 0.92f
+#define IRR_STATE_MAX_AGE_SEC 30
 #define PH_DRIFT_BIAS_PER_TICK 0.004f
 #define EC_DRIFT_BIAS_PER_TICK -0.006f
 #define PH_REACTION_BASE_DELTA 0.03f
@@ -111,6 +113,14 @@ typedef struct {
     bool light_on;
     bool ph_sensor_mode_active;
     bool ec_sensor_mode_active;
+    bool force_clean_sensor_conflict;
+    bool force_solution_sensor_conflict;
+    bool simulate_clean_fill_timeout;
+    bool simulate_solution_fill_timeout;
+    int8_t level_clean_min_override;
+    int8_t level_clean_max_override;
+    int8_t level_solution_min_override;
+    int8_t level_solution_max_override;
 
     uint8_t light_pwm;
     uint8_t irrigation_boost_ticks;
@@ -125,6 +135,7 @@ typedef enum {
     COMMAND_KIND_CONFIG_REPORT = 2,
     COMMAND_KIND_RESTART = 3,
     COMMAND_KIND_GENERIC = 4,
+    COMMAND_KIND_STATE_QUERY = 5,
 } command_kind_t;
 
 typedef struct {
@@ -149,6 +160,24 @@ typedef struct {
     bool sim_status_present;
     char sim_status[16];
     bool sim_no_effect;
+    bool event_code_present;
+    char event_code[96];
+    bool clean_sensor_conflict_present;
+    bool clean_sensor_conflict;
+    bool solution_sensor_conflict_present;
+    bool solution_sensor_conflict;
+    bool clean_fill_timeout_present;
+    bool clean_fill_timeout;
+    bool solution_fill_timeout_present;
+    bool solution_fill_timeout;
+    bool level_clean_min_override_present;
+    int8_t level_clean_min_override;
+    bool level_clean_max_override_present;
+    int8_t level_clean_max_override;
+    bool level_solution_min_override_present;
+    int8_t level_solution_min_override;
+    bool level_solution_max_override_present;
+    int8_t level_solution_max_override;
     int execute_delay_ms;
 } pending_command_t;
 
@@ -258,6 +287,14 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .light_on = false,
     .ph_sensor_mode_active = false,
     .ec_sensor_mode_active = false,
+    .force_clean_sensor_conflict = false,
+    .force_solution_sensor_conflict = false,
+    .simulate_clean_fill_timeout = false,
+    .simulate_solution_fill_timeout = false,
+    .level_clean_min_override = -1,
+    .level_clean_max_override = -1,
+    .level_solution_min_override = -1,
+    .level_solution_max_override = -1,
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
@@ -293,6 +330,14 @@ static virtual_state_t s_virtual_state = {
     .light_on = false,
     .ph_sensor_mode_active = false,
     .ec_sensor_mode_active = false,
+    .force_clean_sensor_conflict = false,
+    .force_solution_sensor_conflict = false,
+    .simulate_clean_fill_timeout = false,
+    .simulate_solution_fill_timeout = false,
+    .level_clean_min_override = -1,
+    .level_clean_max_override = -1,
+    .level_solution_min_override = -1,
+    .level_solution_max_override = -1,
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
@@ -739,7 +784,44 @@ static float level_switch_from_threshold(float level_value, float threshold, boo
     return level_value <= threshold ? 1.0f : 0.0f;
 }
 
+static float override_switch_value(int8_t override_value) {
+    if (override_value > 0) {
+        return 1.0f;
+    }
+    return 0.0f;
+}
+
+static const char *switch_override_label(int8_t override_value) {
+    if (override_value < 0) {
+        return "auto";
+    }
+    return override_value > 0 ? "on" : "off";
+}
+
+static bool parse_switch_override_param(cJSON *item, int8_t *out_value) {
+    if (!item || !out_value) {
+        return false;
+    }
+    if (cJSON_IsBool(item)) {
+        *out_value = cJSON_IsTrue(item) ? 1 : 0;
+        return true;
+    }
+    if (cJSON_IsNumber(item)) {
+        double raw = cJSON_GetNumberValue(item);
+        if (raw < 0.0) {
+            *out_value = -1;
+        } else {
+            *out_value = raw > 0.0 ? 1 : 0;
+        }
+        return true;
+    }
+    return false;
+}
+
 static float resolve_clean_max_switch_value(void) {
+    if (s_virtual_state.level_clean_max_override >= 0) {
+        return override_switch_value(s_virtual_state.level_clean_max_override);
+    }
     if (s_virtual_state.clean_max_latched) {
         return 1.0f;
     }
@@ -747,6 +829,18 @@ static float resolve_clean_max_switch_value(void) {
 }
 
 static float resolve_clean_min_switch_value(void) {
+    if (s_virtual_state.level_clean_min_override >= 0) {
+        return override_switch_value(s_virtual_state.level_clean_min_override);
+    }
+    bool clean_max_active = false;
+    if (s_virtual_state.clean_max_latched) {
+        clean_max_active = true;
+    } else if (level_switch_from_threshold(s_virtual_state.water_level, 0.90f, true) >= 0.5f) {
+        clean_max_active = true;
+    }
+    if (s_virtual_state.force_clean_sensor_conflict && clean_max_active) {
+        return 0.0f;
+    }
     if (s_virtual_state.clean_max_latched) {
         return 1.0f;
     }
@@ -760,6 +854,9 @@ static float resolve_clean_min_switch_value(void) {
 }
 
 static float resolve_solution_max_switch_value(void) {
+    if (s_virtual_state.level_solution_max_override >= 0) {
+        return override_switch_value(s_virtual_state.level_solution_max_override);
+    }
     if (s_virtual_state.solution_max_latched) {
         return 1.0f;
     }
@@ -767,6 +864,18 @@ static float resolve_solution_max_switch_value(void) {
 }
 
 static float resolve_solution_min_switch_value(void) {
+    if (s_virtual_state.level_solution_min_override >= 0) {
+        return override_switch_value(s_virtual_state.level_solution_min_override);
+    }
+    bool solution_max_active = false;
+    if (s_virtual_state.solution_max_latched) {
+        solution_max_active = true;
+    } else if (level_switch_from_threshold(s_virtual_state.solution_level, 0.90f, true) >= 0.5f) {
+        solution_max_active = true;
+    }
+    if (s_virtual_state.force_solution_sensor_conflict && solution_max_active) {
+        return 0.0f;
+    }
     if (s_virtual_state.solution_max_latched) {
         return 1.0f;
     }
@@ -877,6 +986,33 @@ static bool is_ec_correction_channel(const char *channel) {
             strcmp(channel, "pump_b") == 0 ||
             strcmp(channel, "pump_c") == 0 ||
             strcmp(channel, "pump_d") == 0
+        );
+}
+
+static bool is_main_pump_interlock_satisfied(void) {
+    bool has_withdraw_valve = s_virtual_state.valve_clean_supply_on || s_virtual_state.valve_solution_supply_on;
+    bool has_target_valve = s_virtual_state.valve_solution_fill_on || s_virtual_state.valve_irrigation_on;
+    return has_withdraw_valve && has_target_valve;
+}
+
+static void append_main_pump_interlock_error(cJSON *details) {
+    if (!details) {
+        return;
+    }
+    cJSON_AddStringToObject(details, "error", "pump_interlock_blocked");
+    cJSON_AddStringToObject(details, "error_code", "pump_interlock_blocked");
+    cJSON_AddStringToObject(
+        details,
+        "error_message",
+        "pump_main requires open supply valve and open solution_fill or irrigation valve"
+    );
+}
+
+static bool is_storage_system_channel(const char *channel) {
+    return channel
+        && (
+            strcmp(channel, "system") == 0 ||
+            strcmp(channel, "storage_state") == 0
         );
 }
 
@@ -1699,6 +1835,58 @@ static cJSON *build_sensor_probe_details(const char *channel) {
     return details;
 }
 
+static cJSON *build_irr_state_snapshot(void) {
+    cJSON *snapshot = cJSON_CreateObject();
+    if (!snapshot) {
+        return NULL;
+    }
+
+    cJSON_AddBoolToObject(snapshot, "clean_level_max", resolve_clean_max_switch_value() >= 0.5f);
+    cJSON_AddBoolToObject(snapshot, "clean_level_min", resolve_clean_min_switch_value() >= 0.5f);
+    cJSON_AddBoolToObject(snapshot, "solution_level_max", resolve_solution_max_switch_value() >= 0.5f);
+    cJSON_AddBoolToObject(snapshot, "solution_level_min", resolve_solution_min_switch_value() >= 0.5f);
+    cJSON_AddBoolToObject(snapshot, "valve_clean_fill", s_virtual_state.valve_clean_fill_on);
+    cJSON_AddBoolToObject(snapshot, "valve_clean_supply", s_virtual_state.valve_clean_supply_on);
+    cJSON_AddBoolToObject(snapshot, "valve_solution_fill", s_virtual_state.valve_solution_fill_on);
+    cJSON_AddBoolToObject(snapshot, "valve_solution_supply", s_virtual_state.valve_solution_supply_on);
+    cJSON_AddBoolToObject(snapshot, "valve_irrigation", s_virtual_state.valve_irrigation_on);
+    cJSON_AddBoolToObject(snapshot, "pump_main", s_virtual_state.main_pump_on);
+    return snapshot;
+}
+
+static void publish_irrig_node_event(const char *event_code) {
+    char topic[192];
+    cJSON *json;
+    cJSON *snapshot;
+
+    if (!event_code || event_code[0] == '\0') {
+        return;
+    }
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+    if (build_topic(topic, sizeof(topic), DEFAULT_MQTT_NODE_UID, "storage_state", "event") != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to build node event topic for irrig node");
+        return;
+    }
+
+    json = cJSON_CreateObject();
+    if (!json) {
+        return;
+    }
+
+    cJSON_AddStringToObject(json, "event_code", event_code);
+    cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
+    snapshot = build_irr_state_snapshot();
+    if (snapshot) {
+        cJSON_AddItemToObject(json, "snapshot", snapshot);
+    }
+
+    publish_json_payload(topic, json, 1, 0);
+    ui_logf(DEFAULT_MQTT_NODE_UID, "event %s", event_code);
+    cJSON_Delete(json);
+}
+
 static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t *job, cJSON *params) {
     int delay_ms = 900;
     cJSON *sim_delay_ms;
@@ -1718,7 +1906,7 @@ static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t
         }
     }
 
-    if (kind == COMMAND_KIND_SENSOR_PROBE) {
+    if (kind == COMMAND_KIND_SENSOR_PROBE || kind == COMMAND_KIND_STATE_QUERY) {
         return random_range_ms(180, 480);
     }
     if (kind == COMMAND_KIND_CONFIG_REPORT) {
@@ -1823,6 +2011,78 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
     cJSON *sim_no_effect = cJSON_GetObjectItem(params, "sim_no_effect");
     if (sim_no_effect && cJSON_IsBool(sim_no_effect)) {
         job->sim_no_effect = cJSON_IsTrue(sim_no_effect);
+    }
+
+    cJSON *event_code = cJSON_GetObjectItem(params, "event_code");
+    if (event_code && cJSON_IsString(event_code) && event_code->valuestring && event_code->valuestring[0] != '\0') {
+        size_t max_len = sizeof(job->event_code) - 1;
+        size_t src_len = strlen(event_code->valuestring);
+        if (src_len > max_len) {
+            src_len = max_len;
+        }
+        memcpy(job->event_code, event_code->valuestring, src_len);
+        job->event_code[src_len] = '\0';
+        job->event_code_present = true;
+    }
+
+    cJSON *sensor_conflict_clean = cJSON_GetObjectItem(params, "sensor_conflict_clean");
+    if (sensor_conflict_clean && (cJSON_IsBool(sensor_conflict_clean) || cJSON_IsNumber(sensor_conflict_clean))) {
+        job->clean_sensor_conflict_present = true;
+        if (cJSON_IsBool(sensor_conflict_clean)) {
+            job->clean_sensor_conflict = cJSON_IsTrue(sensor_conflict_clean);
+        } else {
+            job->clean_sensor_conflict = cJSON_GetNumberValue(sensor_conflict_clean) > 0;
+        }
+    }
+
+    cJSON *sensor_conflict_solution = cJSON_GetObjectItem(params, "sensor_conflict_solution");
+    if (sensor_conflict_solution && (cJSON_IsBool(sensor_conflict_solution) || cJSON_IsNumber(sensor_conflict_solution))) {
+        job->solution_sensor_conflict_present = true;
+        if (cJSON_IsBool(sensor_conflict_solution)) {
+            job->solution_sensor_conflict = cJSON_IsTrue(sensor_conflict_solution);
+        } else {
+            job->solution_sensor_conflict = cJSON_GetNumberValue(sensor_conflict_solution) > 0;
+        }
+    }
+
+    cJSON *clean_timeout_mode = cJSON_GetObjectItem(params, "clean_fill_timeout_mode");
+    if (clean_timeout_mode && (cJSON_IsBool(clean_timeout_mode) || cJSON_IsNumber(clean_timeout_mode))) {
+        job->clean_fill_timeout_present = true;
+        if (cJSON_IsBool(clean_timeout_mode)) {
+            job->clean_fill_timeout = cJSON_IsTrue(clean_timeout_mode);
+        } else {
+            job->clean_fill_timeout = cJSON_GetNumberValue(clean_timeout_mode) > 0;
+        }
+    }
+
+    cJSON *solution_timeout_mode = cJSON_GetObjectItem(params, "solution_fill_timeout_mode");
+    if (solution_timeout_mode && (cJSON_IsBool(solution_timeout_mode) || cJSON_IsNumber(solution_timeout_mode))) {
+        job->solution_fill_timeout_present = true;
+        if (cJSON_IsBool(solution_timeout_mode)) {
+            job->solution_fill_timeout = cJSON_IsTrue(solution_timeout_mode);
+        } else {
+            job->solution_fill_timeout = cJSON_GetNumberValue(solution_timeout_mode) > 0;
+        }
+    }
+
+    cJSON *level_clean_min_override = cJSON_GetObjectItem(params, "level_clean_min_override");
+    if (parse_switch_override_param(level_clean_min_override, &job->level_clean_min_override)) {
+        job->level_clean_min_override_present = true;
+    }
+
+    cJSON *level_clean_max_override = cJSON_GetObjectItem(params, "level_clean_max_override");
+    if (parse_switch_override_param(level_clean_max_override, &job->level_clean_max_override)) {
+        job->level_clean_max_override_present = true;
+    }
+
+    cJSON *level_solution_min_override = cJSON_GetObjectItem(params, "level_solution_min_override");
+    if (parse_switch_override_param(level_solution_min_override, &job->level_solution_min_override)) {
+        job->level_solution_min_override_present = true;
+    }
+
+    cJSON *level_solution_max_override = cJSON_GetObjectItem(params, "level_solution_max_override");
+    if (parse_switch_override_param(level_solution_max_override, &job->level_solution_max_override)) {
+        job->level_solution_max_override_present = true;
     }
 
     job->execute_delay_ms = resolve_command_delay_ms(job->kind, job, params);
@@ -1962,7 +2222,19 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         }
     } else if (is_main_pump_channel(job->channel)) {
         if (strcmp(job->cmd, "set_relay") == 0) {
+            if (job->relay_state && !is_main_pump_interlock_satisfied()) {
+                append_main_pump_interlock_error(details);
+                *status_out = "ERROR";
+                return;
+            }
             s_virtual_state.main_pump_on = job->relay_state;
+            handled = true;
+        } else if (strcmp(job->cmd, "run_pump") == 0 || strcmp(job->cmd, "dose") == 0) {
+            if (!is_main_pump_interlock_satisfied()) {
+                append_main_pump_interlock_error(details);
+                *status_out = "ERROR";
+                return;
+            }
             handled = true;
         }
     } else if (strcmp(job->channel, "valve_clean_fill") == 0) {
@@ -2083,10 +2355,54 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             s_virtual_state.light_on = pwm_value > 0;
             handled = true;
         }
-    } else if (strcmp(job->channel, "system") == 0) {
+    } else if (is_storage_system_channel(job->channel)) {
         if (strcmp(job->cmd, "reset_state") == 0) {
             reset_virtual_state_runtime();
             cJSON_AddStringToObject(details, "note", "virtual_state_reset");
+            handled = true;
+        } else if (strcmp(job->cmd, "emit_event") == 0) {
+            if (!job->event_code_present || job->event_code[0] == '\0') {
+                cJSON_AddStringToObject(details, "error", "missing_event_code");
+                cJSON_AddStringToObject(details, "error_code", "missing_event_code");
+                *status_out = "INVALID";
+                return;
+            }
+            publish_irrig_node_event(job->event_code);
+            cJSON_AddStringToObject(details, "event_code", job->event_code);
+            handled = true;
+        } else if (strcmp(job->cmd, "set_fault_mode") == 0) {
+            if (job->clean_sensor_conflict_present) {
+                s_virtual_state.force_clean_sensor_conflict = job->clean_sensor_conflict;
+            }
+            if (job->solution_sensor_conflict_present) {
+                s_virtual_state.force_solution_sensor_conflict = job->solution_sensor_conflict;
+            }
+            if (job->clean_fill_timeout_present) {
+                s_virtual_state.simulate_clean_fill_timeout = job->clean_fill_timeout;
+            }
+            if (job->solution_fill_timeout_present) {
+                s_virtual_state.simulate_solution_fill_timeout = job->solution_fill_timeout;
+            }
+            if (job->level_clean_min_override_present) {
+                s_virtual_state.level_clean_min_override = job->level_clean_min_override;
+            }
+            if (job->level_clean_max_override_present) {
+                s_virtual_state.level_clean_max_override = job->level_clean_max_override;
+            }
+            if (job->level_solution_min_override_present) {
+                s_virtual_state.level_solution_min_override = job->level_solution_min_override;
+            }
+            if (job->level_solution_max_override_present) {
+                s_virtual_state.level_solution_max_override = job->level_solution_max_override;
+            }
+            cJSON_AddBoolToObject(details, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
+            cJSON_AddBoolToObject(details, "sensor_conflict_solution", s_virtual_state.force_solution_sensor_conflict);
+            cJSON_AddBoolToObject(details, "clean_fill_timeout_mode", s_virtual_state.simulate_clean_fill_timeout);
+            cJSON_AddBoolToObject(details, "solution_fill_timeout_mode", s_virtual_state.simulate_solution_fill_timeout);
+            cJSON_AddStringToObject(details, "level_clean_min_override", switch_override_label(s_virtual_state.level_clean_min_override));
+            cJSON_AddStringToObject(details, "level_clean_max_override", switch_override_label(s_virtual_state.level_clean_max_override));
+            cJSON_AddStringToObject(details, "level_solution_min_override", switch_override_label(s_virtual_state.level_solution_min_override));
+            cJSON_AddStringToObject(details, "level_solution_max_override", switch_override_label(s_virtual_state.level_solution_max_override));
             handled = true;
         } else if (strcmp(job->cmd, "reset_binding") == 0) {
             esp_err_t reset_err = config_storage_reset_namespace(PRECONFIG_GH_UID, PRECONFIG_ZONE_UID);
@@ -2234,6 +2550,12 @@ static void execute_pending_command(const pending_command_t *job) {
         if (strcmp(job->channel, "pump_irrigation") == 0) {
             s_virtual_state.irrigation_on = true;
         } else if (is_main_pump_channel(job->channel)) {
+            if (!is_main_pump_interlock_satisfied()) {
+                append_main_pump_interlock_error(details);
+                publish_command_response(job->node_uid, job->channel, job->cmd_id, "ERROR", details);
+                cJSON_Delete(details);
+                return;
+            }
             s_virtual_state.main_pump_on = true;
         } else if (is_fill_channel(job->channel)) {
             s_virtual_state.tank_fill_on = true;
@@ -2251,6 +2573,27 @@ static void execute_pending_command(const pending_command_t *job) {
         if (probe) {
             cJSON_AddItemToObject(details, "probe", probe);
         }
+    } else if (job->kind == COMMAND_KIND_STATE_QUERY) {
+        cJSON *snapshot = build_irr_state_snapshot();
+        if (snapshot) {
+            cJSON_AddItemToObject(details, "snapshot", snapshot);
+        }
+        cJSON *fault_modes = cJSON_CreateObject();
+        if (fault_modes) {
+            cJSON_AddBoolToObject(fault_modes, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
+            cJSON_AddBoolToObject(fault_modes, "sensor_conflict_solution", s_virtual_state.force_solution_sensor_conflict);
+            cJSON_AddBoolToObject(fault_modes, "clean_fill_timeout_mode", s_virtual_state.simulate_clean_fill_timeout);
+            cJSON_AddBoolToObject(fault_modes, "solution_fill_timeout_mode", s_virtual_state.simulate_solution_fill_timeout);
+            cJSON_AddStringToObject(fault_modes, "level_clean_min_override", switch_override_label(s_virtual_state.level_clean_min_override));
+            cJSON_AddStringToObject(fault_modes, "level_clean_max_override", switch_override_label(s_virtual_state.level_clean_max_override));
+            cJSON_AddStringToObject(fault_modes, "level_solution_min_override", switch_override_label(s_virtual_state.level_solution_min_override));
+            cJSON_AddStringToObject(fault_modes, "level_solution_max_override", switch_override_label(s_virtual_state.level_solution_max_override));
+            cJSON_AddItemToObject(details, "fault_modes", fault_modes);
+        }
+        cJSON_AddNumberToObject(details, "sample_ts", (double)get_timestamp_seconds());
+        cJSON_AddNumberToObject(details, "age_sec", 0);
+        cJSON_AddNumberToObject(details, "max_age_sec", IRR_STATE_MAX_AGE_SEC);
+        cJSON_AddBoolToObject(details, "is_fresh", true);
     } else if (job->kind == COMMAND_KIND_CONFIG_REPORT) {
         publish_config_report_for_node(node);
         cJSON_AddStringToObject(details, "note", "config_report_published");
@@ -2313,6 +2656,9 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
     if (strcmp(cmd_name, "test_sensor") == 0 || strcmp(cmd_name, "probe_sensor") == 0) {
         return COMMAND_KIND_SENSOR_PROBE;
     }
+    if (strcmp(cmd_name, "state") == 0) {
+        return COMMAND_KIND_STATE_QUERY;
+    }
 
     if (
         strcmp(cmd_name, "report_config") == 0 ||
@@ -2332,6 +2678,8 @@ static command_kind_t resolve_command_kind(const char *cmd_name) {
         strcmp(cmd_name, "set_pwm") == 0 ||
         strcmp(cmd_name, "run_pump") == 0 ||
         strcmp(cmd_name, "dose") == 0 ||
+        strcmp(cmd_name, "emit_event") == 0 ||
+        strcmp(cmd_name, "set_fault_mode") == 0 ||
         strcmp(cmd_name, "reset_state") == 0 ||
         strcmp(cmd_name, "reset_binding") == 0 ||
         strcmp(cmd_name, "activate_sensor_mode") == 0 ||
@@ -2405,12 +2753,46 @@ static void command_callback(const char *topic, const char *channel, const char 
 
     command_json = cJSON_ParseWithLength(data, data_len);
     if (!command_json) {
+        char payload_preview[161];
+        int preview_len = data_len;
+        const char *parse_error_ptr = cJSON_GetErrorPtr();
+        int parse_error_offset = -1;
+        int index;
+
+        if (preview_len > (int)sizeof(payload_preview) - 1) {
+            preview_len = (int)sizeof(payload_preview) - 1;
+        }
+        if (preview_len < 0) {
+            preview_len = 0;
+        }
+        for (index = 0; index < preview_len; index++) {
+            unsigned char ch = (unsigned char)data[index];
+            payload_preview[index] = isprint(ch) ? (char)ch : '.';
+        }
+        payload_preview[preview_len] = '\0';
+
+        if (parse_error_ptr && parse_error_ptr >= data && parse_error_ptr < (data + data_len)) {
+            parse_error_offset = (int)(parse_error_ptr - data);
+        }
+
         cJSON *details = cJSON_CreateObject();
         if (details) {
             cJSON_AddStringToObject(details, "error", "invalid_json");
+            cJSON_AddNumberToObject(details, "payload_len", data_len);
+            if (parse_error_offset >= 0) {
+                cJSON_AddNumberToObject(details, "error_offset", parse_error_offset);
+            }
             publish_command_response(node_uid, topic_channel, "unknown", "INVALID", details);
             cJSON_Delete(details);
         }
+        ESP_LOGI(
+            CMD_TAG,
+            "[%s] cmd invalid_json len=%d err_off=%d payload='%s'",
+            node_uid,
+            data_len,
+            parse_error_offset,
+            payload_preview
+        );
         ui_logf(node_uid, "cmd invalid_json");
         return;
     }
@@ -2631,26 +3013,36 @@ static void apply_passive_drift(void) {
 
     if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {
-            if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
-                s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
+            if (s_virtual_state.simulate_clean_fill_timeout) {
+                publish_irrig_node_event("clean_fill_timeout");
+            } else {
+                if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
+                    s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
+                }
+                if (!s_virtual_state.clean_max_latched) {
+                    ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay clean_fill done max=1");
+                    publish_irrig_node_event("clean_fill_completed");
+                }
+                s_virtual_state.clean_max_latched = true;
             }
-            if (!s_virtual_state.clean_max_latched) {
-                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay clean_fill done max=1");
-            }
-            s_virtual_state.clean_max_latched = true;
             s_virtual_state.clean_fill_stage_active = false;
             s_virtual_state.clean_fill_started_at = 0;
         }
     }
     if (s_virtual_state.solution_fill_stage_active && s_virtual_state.solution_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.solution_fill_started_at) >= SOLUTION_FILL_DELAY_SEC) {
-            if (s_virtual_state.solution_level < CLEAN_MAX_LATCH_LEVEL) {
-                s_virtual_state.solution_level = CLEAN_MAX_LATCH_LEVEL;
+            if (s_virtual_state.simulate_solution_fill_timeout) {
+                publish_irrig_node_event("solution_fill_timeout");
+            } else {
+                if (s_virtual_state.solution_level < SOLUTION_MAX_LATCH_LEVEL) {
+                    s_virtual_state.solution_level = SOLUTION_MAX_LATCH_LEVEL;
+                }
+                if (!s_virtual_state.solution_max_latched) {
+                    ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay solution_fill done max=1");
+                    publish_irrig_node_event("solution_fill_completed");
+                }
+                s_virtual_state.solution_max_latched = true;
             }
-            if (!s_virtual_state.solution_max_latched) {
-                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay solution_fill done max=1");
-            }
-            s_virtual_state.solution_max_latched = true;
             s_virtual_state.solution_fill_stage_active = false;
             s_virtual_state.solution_fill_started_at = 0;
         }

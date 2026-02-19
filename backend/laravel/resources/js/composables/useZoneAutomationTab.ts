@@ -33,7 +33,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   const state = useZoneAutomationState(props, { sendZoneCommand, showToast })
   const api = useZoneAutomationApi(props, state, { get, post, showToast, sendZoneCommand })
-  const scheduler = useZoneAutomationScheduler(props, { get })
+  const scheduler = useZoneAutomationScheduler(props, { get, post, showToast })
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -98,8 +98,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTaskIdInput: scheduler.schedulerTaskIdInput,
     schedulerTaskLookupLoading: scheduler.schedulerTaskLookupLoading,
     schedulerTaskListLoading: scheduler.schedulerTaskListLoading,
+    manualResumeLoading: scheduler.manualResumeLoading,
     schedulerTaskError: scheduler.schedulerTaskError,
     schedulerTaskStatus: scheduler.schedulerTaskStatus,
+    manualResumeActionAvailable: scheduler.manualResumeActionAvailable,
     recentSchedulerTasks: scheduler.recentSchedulerTasks,
     filteredRecentSchedulerTasks: scheduler.filteredRecentSchedulerTasks,
     schedulerTaskSearch: scheduler.schedulerTaskSearch,
@@ -108,6 +110,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTasksUpdatedAt: scheduler.schedulerTasksUpdatedAt,
     fetchRecentSchedulerTasks: scheduler.fetchRecentSchedulerTasks,
     lookupSchedulerTask: scheduler.lookupSchedulerTask,
+    requestManualResume: scheduler.requestManualResume,
     schedulerTaskStatusVariant: scheduler.schedulerTaskStatusVariant,
     schedulerTaskStatusLabel: scheduler.schedulerTaskStatusLabel,
     schedulerTaskProcessStatusVariant: scheduler.schedulerTaskProcessStatusVariant,

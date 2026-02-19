@@ -256,6 +256,7 @@ def test_zone_automation_state_returns_idle_without_active_tasks(client):
     assert data["state_details"]["progress_percent"] == 0
     assert data["active_processes"]["pump_in"] is False
     assert data["system_config"]["tanks_count"] == 2
+    assert data["irr_node_state"] is None
 
 
 def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
@@ -292,6 +293,67 @@ def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
     assert data["system_config"]["tanks_count"] == 2
     assert data["system_config"]["clean_tank_capacity_l"] == 80.0
     assert data["system_config"]["nutrient_tank_capacity_l"] == 120.0
+    assert "irr_node_state" in data
+
+
+def test_manual_resume_accepts_manual_ack_blocked_task(client):
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0).isoformat()
+    api._scheduler_tasks["st-blocked-recovery"] = {
+        "task_id": "st-blocked-recovery",
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "status": "failed",
+        "payload": {
+            "workflow": "irrigation_recovery_check",
+            "irrigation_recovery_attempt": 2,
+            "irrigation_recovery_started_at": now_iso,
+            "irrigation_recovery_timeout_at": now_iso,
+            "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+        },
+        "result": {
+            "success": False,
+            "reason_code": "manual_ack_required_after_retries",
+            "error_code": "irrigation_recovery_attempts_exceeded",
+            "manual_ack_required": True,
+        },
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+
+    response = client.post("/zones/1/automation/manual-resume", json={"task_id": "st-blocked-recovery"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["data"]["zone_id"] == 1
+    assert data["data"]["manual_resume"] == "accepted"
+    resumed_task_id = data["data"]["task_id"]
+    assert resumed_task_id in api._scheduler_tasks
+    resumed_payload = api._scheduler_tasks[resumed_task_id]["payload"]
+    assert resumed_payload["workflow"] == "irrigation_recovery"
+    assert resumed_payload["irrigation_recovery_attempt"] == 1
+    assert "irrigation_recovery_started_at" not in resumed_payload
+    assert "irrigation_recovery_timeout_at" not in resumed_payload
+
+
+def test_manual_resume_rejects_when_manual_ack_not_required(client):
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0).isoformat()
+    api._scheduler_tasks["st-not-blocked"] = {
+        "task_id": "st-not-blocked",
+        "zone_id": 1,
+        "task_type": "diagnostics",
+        "status": "failed",
+        "payload": {
+            "workflow": "irrigation_recovery_check",
+            "config": {"execution": {"topology": "two_tank_drip_substrate_trays"}},
+        },
+        "result": {"success": False, "reason_code": "irrigation_recovery_failed"},
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+
+    response = client.post("/zones/1/automation/manual-resume", json={"task_id": "st-not-blocked"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "manual_ack_not_required"
 
 
 def test_scheduler_bootstrap_wait_when_command_bus_not_ready(client):

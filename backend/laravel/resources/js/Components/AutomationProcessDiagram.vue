@@ -179,6 +179,32 @@
       </g>
     </svg>
   </div>
+  <div
+    v-if="irrNodeState"
+    class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] p-3"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+        IRR state snapshot
+      </div>
+      <div
+        v-if="irrNodeState.updated_at"
+        class="text-[11px] text-[color:var(--text-dim)]"
+      >
+        {{ irrNodeState.updated_at }}
+      </div>
+    </div>
+    <div class="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        v-for="item in irrStateRows"
+        :key="item.key"
+        class="rounded-lg border border-[color:var(--border-muted)]/70 px-2 py-1.5 text-xs"
+      >
+        <div class="text-[color:var(--text-dim)]">{{ item.label }}</div>
+        <div class="mt-0.5 font-semibold text-[color:var(--text-primary)]">{{ item.value }}</div>
+      </div>
+    </div>
+  </div>
 
   <Teleport to="body">
     <div
@@ -203,7 +229,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { AutomationState, HoveredElement } from '@/types/Automation'
+import type { AutomationState, HoveredElement, IrrNodeState } from '@/types/Automation'
 
 interface Props {
   flowOffset: number
@@ -219,6 +245,7 @@ interface Props {
   isIrrigationActive: boolean
   isProcessActive: boolean
   automationState: AutomationState | null
+  irrNodeState: IrrNodeState | null
 }
 
 const props = defineProps<Props>()
@@ -274,6 +301,29 @@ const tooltipStyle = computed(() => {
     left: `${hoveredElement.value.x}px`,
     top: `${hoveredElement.value.y}px`,
   }
+})
+
+function formatIrrStateValue(value: boolean | null | undefined): string {
+  if (value === true) return 'Вкл'
+  if (value === false) return 'Выкл'
+  return '—'
+}
+
+const irrStateRows = computed(() => {
+  const state = props.irrNodeState
+  if (!state) return []
+  return [
+    { key: 'clean_max', label: 'Датчик чистая вода max', value: formatIrrStateValue(state.clean_level_max) },
+    { key: 'clean_min', label: 'Датчик чистая вода min', value: formatIrrStateValue(state.clean_level_min) },
+    { key: 'solution_max', label: 'Датчик раствор max', value: formatIrrStateValue(state.solution_level_max) },
+    { key: 'solution_min', label: 'Датчик раствор min', value: formatIrrStateValue(state.solution_level_min) },
+    { key: 'valve_clean_fill', label: 'Клапан набор чистой', value: formatIrrStateValue(state.valve_clean_fill) },
+    { key: 'valve_clean_supply', label: 'Клапан отбор чистой', value: formatIrrStateValue(state.valve_clean_supply) },
+    { key: 'valve_solution_fill', label: 'Клапан набор раствора', value: formatIrrStateValue(state.valve_solution_fill) },
+    { key: 'valve_solution_supply', label: 'Клапан отбор раствора', value: formatIrrStateValue(state.valve_solution_supply) },
+    { key: 'valve_irrigation', label: 'Клапан полива', value: formatIrrStateValue(state.valve_irrigation) },
+    { key: 'pump_main', label: 'Помпа', value: formatIrrStateValue(state.pump_main) },
+  ]
 })
 
 // ─── Tank geometry helpers ──────────────────────────────────────────────────

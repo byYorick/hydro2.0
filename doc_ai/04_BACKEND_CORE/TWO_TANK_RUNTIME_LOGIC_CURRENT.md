@@ -42,8 +42,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `subsystems.diagnostics.execution.irrigation_recovery.*` (timeout/attempts/tolerances)
 
 Нормализация workflow:
-- `cycle_start -> startup`
-- `refill_check -> clean_fill_check`
+- legacy-алиасы не используются; ожидаются только канонические workflow-stages.
 
 ---
 
@@ -76,6 +75,7 @@ stateDiagram-v2
 
     IDLE --> CLEAN_FILL: startup && clean_max=0
     IDLE --> SOLUTION_FILL: startup && clean_max=1
+    IDLE --> FAILED: startup && irr/state unavailable|stale|mismatch (critical)
 
     CLEAN_FILL --> CLEAN_FILL: clean_fill_check (poll self-task)
     CLEAN_FILL --> SOLUTION_FILL: CLEAN_FILL_COMPLETED event\nили level_clean_max>=threshold
@@ -84,16 +84,19 @@ stateDiagram-v2
     CLEAN_FILL --> FAILED: level unavailable/stale\nили stop/enqueue failed
 
     SOLUTION_FILL --> SOLUTION_FILL: solution_fill_check (poll self-task)
+    SOLUTION_FILL --> FAILED: irr/state unavailable|stale|mismatch (critical)
     SOLUTION_FILL --> READY: level_solution_max reached\nи prepare-targets reached
     SOLUTION_FILL --> PREPARE_RECIRC: level_solution_max reached\nи prepare-targets NOT reached
     SOLUTION_FILL --> FAILED: timeout\nили level unavailable/stale\nили stop/enqueue failed
 
     PREPARE_RECIRC --> PREPARE_RECIRC: prepare_recirculation_check (poll self-task)
+    PREPARE_RECIRC --> FAILED: irr/state unavailable|stale|mismatch (critical)
     PREPARE_RECIRC --> READY: PREPARE_TARGETS_REACHED event\nили targets reached
     PREPARE_RECIRC --> FAILED: timeout\nили stop/enqueue failed
 
     IRRIGATING --> IRRIG_RECIRC: online correction failed
     IRRIG_RECIRC --> IRRIG_RECIRC: irrigation_recovery_check (poll self-task)
+    IRRIG_RECIRC --> FAILED: irr/state unavailable|stale|mismatch (critical)
     IRRIG_RECIRC --> IRRIGATING: recovery-targets reached
     IRRIG_RECIRC --> IRRIGATING: timeout && degraded-targets reached
     IRRIG_RECIRC --> IRRIG_RECIRC: timeout && attempt<max_attempts
@@ -115,6 +118,7 @@ stateDiagram-v2
    - fast-path: ищется `CLEAN_FILL_COMPLETED` event;
    - fallback: проверка `level_clean_max`;
    - при подтверждении выполняется stop `clean_fill` и переход в `solution_fill`;
+   - при `max=1 && min=0` -> fail `sensor_state_inconsistent` (остановка цикла);
    - при timeout: stop + retry до `clean_fill_retry_cycles`, затем fail.
 
 3. `solution_fill_check`:
@@ -139,7 +143,23 @@ stateDiagram-v2
    - при timeout:
      - если degraded target достигнут -> `irrigating` (degraded completion);
      - иначе retry до `max_continue_attempts`;
-     - при исчерпании попыток -> fail `irrigation_recovery_attempts_exceeded`.
+     - при исчерпании попыток -> fail `irrigation_recovery_attempts_exceeded` + `manual_ack_required=true`.
+3. Вторая попытка recovery использует увеличенный timeout:
+   - `retry_timeout = base_timeout * irrigation_recovery_retry_timeout_multiplier` (по умолчанию `x1.5`).
+
+### 6.3 Critical expected-vs-actual check (`irr/state`)
+
+Перед выполнением workflow всегда отправляется команда `storage_state/state` на irr-ноду
+(best-effort запрос snapshot), после чего для critical stages выполняется guard:
+- `startup` -> ожидается `pump_main=false`
+- `solution_fill_check` -> ожидается `valve_clean_supply=true`, `valve_solution_fill=true`, `pump_main=true`
+- `prepare_recirculation_check` -> ожидается `valve_solution_supply=true`, `valve_solution_fill=true`, `pump_main=true`
+- `irrigation_recovery_check` -> ожидается `valve_solution_supply=true`, `valve_solution_fill=true`, `valve_irrigation=false`, `pump_main=true`
+
+Fail-closed режим:
+- snapshot отсутствует -> `two_tank_irr_state_unavailable` (`irr_state_unavailable`)
+- snapshot устарел (`age > irr_state_max_age_sec`) -> `two_tank_irr_state_stale` (`irr_state_stale`)
+- snapshot не совпал с expected -> `two_tank_irr_state_mismatch` (`irr_state_mismatch`)
 
 ---
 
@@ -187,10 +207,13 @@ stateDiagram-v2
 - `solution_fill_timeout_sec = 1800`
 - `prepare_recirculation_timeout_sec = 1200`
 - `irrigation_recovery_timeout_sec = 600`
-- `irrigation_recovery_max_attempts = 5`
+- `irrigation_recovery_max_attempts = 2`
+- `irrigation_recovery_retry_timeout_multiplier = 1.5`
 - `clean_fill_retry_cycles = 1`
 - `level_poll_interval_sec = 60` (через runtime default)
 - `level_switch_on_threshold = 0.5`
+- `irr_state_max_age_sec = 30`
+- `irr_state_wait_timeout_sec = 2` (ожидание появления snapshot после `storage_state/state` перед fail `irr_state_unavailable`)
 - prepare tolerance: `EC=25%`, `PH=15%`
 - recovery tolerance: `EC=10%`, `PH=5%`
 - degraded tolerance: `EC=20%`, `PH=10%`
@@ -209,14 +232,22 @@ stateDiagram-v2
    - отсутствие уровня -> `two_tank_level_unavailable`
    - stale при enforce freshness -> `two_tank_level_stale`
 
-3. Fail-closed по командам:
+3. Fail-closed по expected-vs-actual `irr/state`:
+   - `two_tank_irr_state_unavailable`
+   - `two_tank_irr_state_stale`
+   - `two_tank_irr_state_mismatch`
+
+4. Отдельная ошибка согласованности датчиков:
+   - `two_tank_sensor_state_inconsistent` (`sensor_state_inconsistent`)
+
+5. Fail-closed по командам:
    - успех команды считается только при terminal status из accepted набора (по умолчанию `DONE`);
    - partial/failed dispatch даёт `two_tank_command_failed`/детализированные command error codes.
 
-4. Safety guard при timeout-stop:
+6. Safety guard при timeout-stop:
    - если timeout произошёл и stop не подтверждён, ветка возвращает `*_stop_not_confirmed` режим и блокирует опасный рестарт.
 
-5. Компенсация при ошибке enqueue после старта:
+7. Компенсация при ошибке enqueue после старта:
    - выполняется compensating stop и `sensor_mode deactivate`.
 
 ---
@@ -234,6 +265,9 @@ stateDiagram-v2
    - при отсутствии last-value используется fallback на последнюю запись `telemetry_samples`.
 
 Оба канала используются параллельно: событие ускоряет переход, poll остаётся резервом.
+
+Отдельно от node-event: snapshot `irr/state` формируется из `command_response` на команду `state`
+и сохраняется в `zone_events` с типом `IRR_STATE_SNAPSHOT`.
 
 ---
 
@@ -265,10 +299,10 @@ stateDiagram-v2
 
 ## 12. Связанные спецификации
 
+- `doc_ai/04_BACKEND_CORE/TWO_TANK_RUNTIME_LOGIC_TARGET_SPEC.md` (target/to-be контракт)
 - `doc_ai/04_BACKEND_CORE/SCHEDULER_AUTOMATION_TASK_EXECUTION_SCHEMA.md`
 - `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - `doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`
 - `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`
 - `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`
-

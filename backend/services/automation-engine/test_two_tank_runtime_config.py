@@ -100,3 +100,8 @@ def test_resolve_two_tank_runtime_config_uses_payload_targets_and_runtime_defaul
     assert result["target_ec_prepare"] == 1.0
     assert result["prepare_tolerance"]["ec_pct"] == 30.0
     assert result["commands"]["clean_fill_start"][0]["channel"] == "valve_a"
+    assert result["irrigation_recovery_max_attempts"] == 2
+    assert result["irrigation_recovery_retry_timeout_multiplier"] == 1.5
+    assert result["irr_state_max_age_sec"] == 30
+    assert result["clean_min_labels"] == ["level_clean_min", "clean_min"]
+    assert result["solution_min_labels"] == ["level_solution_min", "solution_min"]

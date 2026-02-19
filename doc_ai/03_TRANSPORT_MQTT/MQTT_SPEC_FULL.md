@@ -352,6 +352,19 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 **Правило (для всех нод):** команда `restart` доступна для любых узлов. Узел обязан отправить
 `command_response` со статусом `DONE`, а затем выполнить перезагрузку устройства.
 
+### 8) Снимок состояния IRR-ноды (`state`)
+```json
+{
+ "cmd": "state",
+ "params": {},
+ "cmd_id": "cmd-598",
+ "ts": 1737355119,
+ "sig": "b7c8d9e0f1a2..."
+}
+```
+**Правило (для нод типа `irrig`):** команда `state` возвращает `command_response` со статусом `DONE`
+и `details.snapshot`, где все дискретные поля представлены как `bool`.
+
 ## 7.3. Формат команды с HMAC подписью
 
 Все команды должны содержать следующие обязательные поля:
@@ -881,6 +894,38 @@ Backend никогда не остаётся "в неизвестности": п
   "error_message": "Command timestamp is outside acceptable range"
 }
 ```
+
+## 8.2.2. Формат `command_response` для `cmd=state` (IRR)
+
+Для `cmd=state` узел типа `irrig` возвращает snapshot:
+
+```json
+{
+  "cmd_id": "cmd-598",
+  "status": "DONE",
+  "details": {
+    "snapshot": {
+      "clean_level_max": true,
+      "clean_level_min": true,
+      "solution_level_max": false,
+      "solution_level_min": true,
+      "valve_clean_fill": false,
+      "valve_clean_supply": true,
+      "valve_solution_fill": true,
+      "valve_solution_supply": false,
+      "valve_irrigation": false,
+      "pump_main": true
+    },
+    "sample_ts": 1710003399
+  },
+  "ts": 1710003399123
+}
+```
+
+Требования:
+- поля `snapshot.*` — `bool`;
+- отсутствие поля в snapshot трактуется как `unknown` на стороне backend;
+- `sample_ts` используется для freshness-check в automation-engine.
 
 ## 8.3. Базовый payload
 

@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { AutomationState, AutomationStateType, AutomationTimelineEvent, SetupStageStatus, SetupStageView } from '@/types/Automation'
+import type { AutomationState, AutomationStateType, AutomationTimelineEvent, IrrNodeState, SetupStageStatus, SetupStageView } from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 import { readBooleanEnv } from '@/utils/env'
 import { getEchoInstance, onWsStateChange } from '@/utils/echoClient'
@@ -82,6 +82,49 @@ function clampPercent(value: unknown): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 0
   return Math.max(0, Math.min(100, parsed))
+}
+
+function toOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (value === 1) return true
+    if (value === 0) return false
+    return null
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === '1' || normalized === 'true') return true
+    if (normalized === '0' || normalized === 'false') return false
+  }
+  return null
+}
+
+function pickFirstDefined(source: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      return source[key]
+    }
+  }
+  return undefined
+}
+
+function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
+  if (!raw || typeof raw !== 'object') return null
+  const state = raw as Record<string, unknown>
+
+  return {
+    clean_level_max: toOptionalBoolean(pickFirstDefined(state, ['clean_level_max', 'level_clean_max', 'clean_max'])),
+    clean_level_min: toOptionalBoolean(pickFirstDefined(state, ['clean_level_min', 'level_clean_min', 'clean_min'])),
+    solution_level_max: toOptionalBoolean(pickFirstDefined(state, ['solution_level_max', 'level_solution_max', 'solution_max'])),
+    solution_level_min: toOptionalBoolean(pickFirstDefined(state, ['solution_level_min', 'level_solution_min', 'solution_min'])),
+    valve_clean_fill: toOptionalBoolean(pickFirstDefined(state, ['valve_clean_fill'])),
+    valve_clean_supply: toOptionalBoolean(pickFirstDefined(state, ['valve_clean_supply'])),
+    valve_solution_fill: toOptionalBoolean(pickFirstDefined(state, ['valve_solution_fill'])),
+    valve_solution_supply: toOptionalBoolean(pickFirstDefined(state, ['valve_solution_supply'])),
+    valve_irrigation: toOptionalBoolean(pickFirstDefined(state, ['valve_irrigation'])),
+    pump_main: toOptionalBoolean(pickFirstDefined(state, ['pump_main', 'pump'])),
+    updated_at: typeof state.updated_at === 'string' ? state.updated_at : null,
+  }
 }
 
 function formatDuration(rawSeconds: number | null | undefined): string {
@@ -177,9 +220,19 @@ export function useAutomationPanel(
 
   function normalizeState(raw: unknown): AutomationState {
     const source = (raw && typeof raw === 'object' ? raw : {}) as Partial<AutomationState>
+    const sourceAny = source as Record<string, unknown>
     const state = String(source.state || 'IDLE') as AutomationStateType
     const tanksRaw = Number(source.system_config?.tanks_count ?? props.fallbackTanksCount ?? 2)
     const tanksCount: 2 | 3 = tanksRaw === 3 ? 3 : 2
+
+    const irrNodeStateRaw =
+      sourceAny.irr_node_state
+      ?? sourceAny.irrState
+      ?? sourceAny.irrigation_node_state
+      ?? (sourceAny.process_state && typeof sourceAny.process_state === 'object'
+        ? (sourceAny.process_state as Record<string, unknown>).irr_node_state
+        : undefined)
+    const irrNodeState = normalizeIrrNodeState(irrNodeStateRaw)
 
     return {
       zone_id: Number(source.zone_id ?? props.zoneId ?? 0),
@@ -213,6 +266,7 @@ export function useAutomationPanel(
       timeline: Array.isArray(source.timeline) ? source.timeline : [],
       next_state: source.next_state ?? null,
       estimated_completion_sec: source.estimated_completion_sec ?? null,
+      irr_node_state: irrNodeState,
     }
   }
 
@@ -387,24 +441,53 @@ export function useAutomationPanel(
   })
 
   const isProcessActive = computed(() => stateCode.value !== 'IDLE' && stateCode.value !== 'READY')
-  const cleanTankLevel = computed(() => automationState.value?.current_levels.clean_tank_level_percent ?? 0)
-  const nutrientTankLevel = computed(() => automationState.value?.current_levels.nutrient_tank_level_percent ?? 0)
+  const irrNodeState = computed(() => automationState.value?.irr_node_state ?? null)
+  const cleanTankLevel = computed(() => {
+    const state = irrNodeState.value
+    if (state?.clean_level_max === true) return 100
+    if (state?.clean_level_min === true) return 50
+    if (state?.clean_level_max === false && state?.clean_level_min === false) return 0
+    return automationState.value?.current_levels.clean_tank_level_percent ?? 0
+  })
+  const nutrientTankLevel = computed(() => {
+    const state = irrNodeState.value
+    if (state?.solution_level_max === true) return 100
+    if (state?.solution_level_min === true) return 50
+    if (state?.solution_level_max === false && state?.solution_level_min === false) return 0
+    return automationState.value?.current_levels.nutrient_tank_level_percent ?? 0
+  })
   const bufferTankLevel = computed(() => clampPercent(automationState.value?.current_levels.buffer_tank_level_percent ?? 0))
-  const isPumpInActive = computed(() => Boolean(automationState.value?.active_processes.pump_in))
+  const isPumpInActive = computed(() => {
+    const fromIrr = irrNodeState.value?.pump_main
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
+    return Boolean(automationState.value?.active_processes.pump_in)
+  })
   const isCirculationActive = computed(() => Boolean(automationState.value?.active_processes.circulation_pump))
   const isPhCorrectionActive = computed(() => Boolean(automationState.value?.active_processes.ph_correction))
   const isEcCorrectionActive = computed(() => Boolean(automationState.value?.active_processes.ec_correction))
   const progressPercent = computed(() => clampPercent(automationState.value?.state_details.progress_percent ?? 0))
 
   const isWaterInletActive = computed(() => {
+    const fromIrr = irrNodeState.value?.valve_clean_fill
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
     return stateCode.value === 'TANK_FILLING'
   })
 
   const isTankRefillActive = computed(() => {
+    const fromIrr = irrNodeState.value
+    if (fromIrr) {
+      const solutionFill = fromIrr.valve_solution_fill
+      const solutionSupply = fromIrr.valve_solution_supply
+      if (solutionFill !== null || solutionSupply !== null) {
+        return Boolean(solutionFill) || Boolean(solutionSupply)
+      }
+    }
     return stateCode.value === 'TANK_FILLING' || stateCode.value === 'TANK_RECIRC'
   })
 
   const isIrrigationActive = computed(() => {
+    const fromIrr = irrNodeState.value?.valve_irrigation
+    if (fromIrr !== null && fromIrr !== undefined) return fromIrr
     return stateCode.value === 'IRRIGATING' || stateCode.value === 'IRRIG_RECIRC'
   })
 
@@ -601,5 +684,6 @@ export function useAutomationPanel(
     currentSetupStageLabel,
     progressSummary,
     timelineEvents,
+    irrNodeState,
   }
 }

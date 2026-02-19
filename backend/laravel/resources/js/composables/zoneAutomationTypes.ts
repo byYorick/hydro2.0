@@ -168,6 +168,7 @@ export interface SchedulerTaskStatus {
   decision?: string | null
   reason_code?: string | null
   reason?: string | null
+  manual_ack_required?: boolean | null
   command_submitted?: boolean | null
   command_effect_confirmed?: boolean | null
   commands_total?: number | null

@@ -141,6 +141,60 @@ const ALERT_CODE_MAP: Record<string, AlertCodeMeta> = {
     recommendation: 'Откройте детали алерта и журналы сервиса.',
     severity: 'error',
   },
+  sensor_state_inconsistent: {
+    title: 'Несогласованное состояние датчиков',
+    description: 'Комбинация min/max датчиков уровня противоречит логике бака.',
+    recommendation: 'Проверьте wiring датчиков уровня и соответствие каналов ноды.',
+    severity: 'error',
+  },
+  manual_ack_required_after_retries: {
+    title: 'Требуется ручное подтверждение',
+    description: 'Автопопытки исчерпаны, workflow ожидает подтверждение оператора.',
+    recommendation: 'Проверьте причину остановки и подтвердите продолжение в UI.',
+    severity: 'warning',
+  },
+  irr_state_unavailable: {
+    title: 'Нет snapshot irr state',
+    description: 'Не найден снимок состояния irr-ноды для expected-vs-actual проверки.',
+    recommendation: 'Проверьте канал state на irr-ноде и поток command_response в history-logger.',
+    severity: 'error',
+  },
+  irr_state_stale: {
+    title: 'Snapshot irr state устарел',
+    description: 'Снимок состояния irr-ноды старше допустимого окна свежести.',
+    recommendation: 'Проверьте частоту опроса state и доставку ответов от irr-ноды.',
+    severity: 'error',
+  },
+  irr_state_mismatch: {
+    title: 'Состояние irr-ноды не совпало',
+    description: 'Фактическое состояние клапанов/помпы не соответствует ожидаемому на critical этапе.',
+    recommendation: 'Проверьте interlock клапанов/помпы и последовательность команд.',
+    severity: 'error',
+  },
+  two_tank_irr_state_unavailable: {
+    title: 'Нет snapshot irr state',
+    description: 'Не найден снимок состояния irr-ноды для critical проверки двухбакового workflow.',
+    recommendation: 'Проверьте обработку команды state и сохранение IRR_STATE_SNAPSHOT.',
+    severity: 'error',
+  },
+  two_tank_irr_state_stale: {
+    title: 'Snapshot irr state устарел',
+    description: 'Снимок состояния irr-ноды устарел для critical проверки двухбакового workflow.',
+    recommendation: 'Проверьте latency от запроса state до записи snapshot в zone_events.',
+    severity: 'error',
+  },
+  two_tank_irr_state_mismatch: {
+    title: 'Critical mismatch irr state',
+    description: 'Ожидаемое и фактическое состояние irr-ноды расходятся на critical этапе.',
+    recommendation: 'Проверьте wiring, логи команд и фактическое состояние реле/клапанов.',
+    severity: 'error',
+  },
+  irrigation_correction_attempts_exhausted_continue_irrigation: {
+    title: 'Коррекция исчерпала лимит попыток',
+    description: 'Целевые значения не достигнуты в лимите итераций, полив продолжается по расписанию.',
+    recommendation: 'Проверьте дозирующие каналы и параметры рецепта EC/pH.',
+    severity: 'warning',
+  },
 }
 
 function normalizeCode(code?: string): string {

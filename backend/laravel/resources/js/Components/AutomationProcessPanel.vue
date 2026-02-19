@@ -25,6 +25,7 @@
       :is-irrigation-active="isIrrigationActive"
       :is-process-active="isProcessActive"
       :automation-state="automationState"
+      :irr-node-state="irrNodeState"
     />
 
     <AutomationTimeline :events="timelineEvents" />
@@ -76,6 +77,7 @@ const {
   currentSetupStageLabel,
   progressSummary,
   timelineEvents,
+  irrNodeState,
 } = useAutomationPanel(props, emit)
 </script>
 

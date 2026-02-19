@@ -321,6 +321,18 @@ Backend → Node
 **Правило (для всех нод):** узел обязан отправить `command_response` со статусом `DONE`,
 после чего выполнить перезагрузку.
 
+**Снимок состояния IRR-ноды:**
+- `cmd`: `state`
+- `params`: `{}`
+**Правило (для нод типа `irrig`):** узел обязан вернуть `command_response` со статусом `DONE`
+и `details.snapshot` (все дискретные поля только `bool`):
+- `clean_level_max`, `clean_level_min`
+- `solution_level_max`, `solution_level_min`
+- `valve_clean_fill`, `valve_clean_supply`
+- `valve_solution_fill`, `valve_solution_supply`
+- `valve_irrigation`
+- `pump_main`
+
 ## 10.2. Требования
 - Узел обязан:
  - валидировать команду (HMAC подпись, timestamp, параметры),
@@ -459,6 +471,36 @@ Payload:
   }
 }
 ```
+
+## 11.5. Ответ `command_response` для `cmd=state` (IRR)
+
+```json
+{
+  "cmd_id": "cmd-9201",
+  "status": "DONE",
+  "ts": 1710012930123,
+  "details": {
+    "snapshot": {
+      "clean_level_max": true,
+      "clean_level_min": true,
+      "solution_level_max": false,
+      "solution_level_min": true,
+      "valve_clean_fill": false,
+      "valve_clean_supply": true,
+      "valve_solution_fill": true,
+      "valve_solution_supply": false,
+      "valve_irrigation": false,
+      "pump_main": true
+    },
+    "sample_ts": 1710012930
+  }
+}
+```
+
+Требования:
+- `details.snapshot.*` — только `bool`;
+- отсутствие ключа трактуется backend как `unknown`;
+- `details.sample_ts` используется automation-engine для freshness-check.
 
 Нормализация `event_code` в backend:
 - источник: `event_code` (fallback: `event`, `type`);

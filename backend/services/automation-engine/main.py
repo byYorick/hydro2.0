@@ -49,6 +49,8 @@ logger = logging.getLogger(__name__)
 
 # Таймаут отправки алертов, чтобы внешние сбои не блокировали цикл обработки зон.
 ALERT_SEND_TIMEOUT_SECONDS = 5.0
+AE_ZONE_PROCESS_TIMEOUT_SEC = max(1.0, float(os.getenv("AE_ZONE_PROCESS_TIMEOUT_SEC", "90")))
+SYSTEM_STATE_LOG_INTERVAL_SEC = max(30.0, float(os.getenv("AE_SYSTEM_STATE_LOG_INTERVAL_SEC", "300")))
 
 # Метрики для отслеживания ошибок
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
@@ -528,7 +530,8 @@ async def process_zones_parallel(
     zones: List[Dict[str, Any]],
     zone_service: ZoneAutomationService,
     max_concurrent: int = 5,
-    simulation_clocks: Optional[Dict[int, SimulationClock]] = None
+    simulation_clocks: Optional[Dict[int, SimulationClock]] = None,
+    per_zone_timeout_sec: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Обработка зон параллельно с ограничением количества одновременных операций и отслеживанием ошибок.
@@ -563,9 +566,15 @@ async def process_zones_parallel(
         try:
             async with semaphore:
                 try:
-                    start = time.time()
-                    await zone_service.process_zone(zone_id, sim_clock=sim_clock)
-                    duration = time.time() - start
+                    start = time.monotonic()
+                    if per_zone_timeout_sec is not None and per_zone_timeout_sec > 0:
+                        await asyncio.wait_for(
+                            zone_service.process_zone(zone_id, sim_clock=sim_clock),
+                            timeout=float(per_zone_timeout_sec),
+                        )
+                    else:
+                        await zone_service.process_zone(zone_id, sim_clock=sim_clock)
+                    duration = time.monotonic() - start
                     
                     ZONE_PROCESSING_TIME.observe(duration)
                     
@@ -1026,8 +1035,10 @@ async def main():
             last_config_ts = 0.0
             laravel_api_repo = LaravelApiRepository()
             
+            next_system_state_log_at = time.monotonic() + SYSTEM_STATE_LOG_INTERVAL_SEC
             while not _shutdown_event.is_set():
                 simulation_clocks = {}
+                skip_cycle_sleep = False
                 try:
                     # Fetch config через Circuit Breaker (c кешированием)
                     cfg: Optional[Dict[str, Any]] = None
@@ -1262,6 +1273,7 @@ async def main():
                                 _zone_service,
                                 max_concurrent=max_concurrent,
                                 simulation_clocks=simulation_clocks,
+                                per_zone_timeout_sec=AE_ZONE_PROCESS_TIMEOUT_SEC,
                             )
 
                             # Логируем результаты для мониторинга
@@ -1272,7 +1284,8 @@ async def main():
                                 )
 
                             # Логируем состояние системы (каждые 5 минут)
-                            if int(time.time()) % 300 == 0:  # Каждые 5 минут
+                            now_mono = time.monotonic()
+                            if now_mono >= next_system_state_log_at:
                                 await log_system_state(
                                     _zone_service,
                                     zones,
@@ -1281,6 +1294,7 @@ async def main():
                                     api_circuit_breaker,
                                     mqtt_circuit_breaker
                                 )
+                                next_system_state_log_at = now_mono + SYSTEM_STATE_LOG_INTERVAL_SEC
                 except KeyboardInterrupt:
                     logger.info("Received interrupt signal, shutting down")
                     _shutdown_event.set()
@@ -1298,10 +1312,13 @@ async def main():
                     )
                     # Sleep before retrying to avoid tight error loops
                     await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                    skip_cycle_sleep = True
                 
                 # Проверяем shutdown event
                 if _shutdown_event.is_set():
                     break
+                if skip_cycle_sleep:
+                    continue
                 
                 sleep_seconds = automation_settings.MAIN_LOOP_SLEEP_SECONDS
                 if simulation_clocks:

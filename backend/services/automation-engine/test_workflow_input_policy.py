@@ -41,9 +41,9 @@ def test_is_supported_payload_contract_version():
     assert is_supported_payload_contract_version("unknown") is False
 
 
-def test_normalize_two_tank_workflow_mapping():
-    assert normalize_two_tank_workflow("cycle_start") == "startup"
-    assert normalize_two_tank_workflow("refill_check") == "clean_fill_check"
+def test_normalize_two_tank_workflow_without_legacy_aliases():
+    assert normalize_two_tank_workflow("cycle_start") == "cycle_start"
+    assert normalize_two_tank_workflow("refill_check") == "refill_check"
 
 
 def test_is_two_tank_startup_workflow_predicate():

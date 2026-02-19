@@ -15,6 +15,7 @@ async def build_zone_automation_state_payload(
     estimate_progress_percent_fn: Callable[[Any, str], int],
     load_zone_system_config_fn: Callable[[int, Dict[str, Any]], Awaitable[Dict[str, Any]]],
     load_zone_current_levels_fn: Callable[[int], Awaitable[Dict[str, Any]]],
+    load_latest_irr_node_state_fn: Callable[[int], Awaitable[Dict[str, Any] | None]],
     derive_active_processes_fn: Callable[[Any, str], Dict[str, bool]],
     load_automation_timeline_fn: Callable[[int], Awaitable[list[Dict[str, Any]]]],
     estimate_completion_seconds_fn: Callable[[Any], Any],
@@ -34,6 +35,7 @@ async def build_zone_automation_state_payload(
 
     system_config = await load_zone_system_config_fn(zone_id, payload)
     current_levels = await load_zone_current_levels_fn(zone_id)
+    irr_node_state = await load_latest_irr_node_state_fn(zone_id)
     active_processes = derive_active_processes_fn(task, state)
     timeline = await load_automation_timeline_fn(zone_id)
     estimated_completion_sec = estimate_completion_seconds_fn(task)
@@ -59,6 +61,7 @@ async def build_zone_automation_state_payload(
         "timeline": timeline,
         "next_state": automation_state_next.get(state),
         "estimated_completion_sec": estimated_completion_sec,
+        "irr_node_state": irr_node_state,
     }
 
 

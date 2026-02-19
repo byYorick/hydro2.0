@@ -71,6 +71,19 @@ _NODE_EVENT_METRIC_ALLOWED_CODES = {
     "IRRIGATION_RECOVERY_COMPLETED",
     "IRRIGATION_RECOVERY_FAILED",
 }
+_IRR_STATE_SNAPSHOT_EVENT_TYPE = "IRR_STATE_SNAPSHOT"
+_IRR_STATE_ALIASES = {
+    "clean_level_max": ("clean_level_max", "level_clean_max"),
+    "clean_level_min": ("clean_level_min", "level_clean_min"),
+    "solution_level_max": ("solution_level_max", "level_solution_max"),
+    "solution_level_min": ("solution_level_min", "level_solution_min"),
+    "valve_clean_fill": ("valve_clean_fill",),
+    "valve_clean_supply": ("valve_clean_supply",),
+    "valve_solution_fill": ("valve_solution_fill",),
+    "valve_solution_supply": ("valve_solution_supply",),
+    "valve_irrigation": ("valve_irrigation",),
+    "pump_main": ("pump_main", "main_pump"),
+}
 _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
 _BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
@@ -183,6 +196,40 @@ def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
     if isinstance(raw_details, dict):
         return dict(raw_details)
     raise ValueError("'details' must be object when present")
+
+
+def _to_optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _normalize_irr_state_snapshot(raw_snapshot: Any) -> Optional[Dict[str, bool]]:
+    if not isinstance(raw_snapshot, dict):
+        return None
+
+    snapshot: Dict[str, bool] = {}
+    for field, aliases in _IRR_STATE_ALIASES.items():
+        value: Optional[bool] = None
+        for alias in aliases:
+            if alias in raw_snapshot:
+                value = _to_optional_bool(raw_snapshot.get(alias))
+                break
+        if value is None:
+            return None
+        snapshot[field] = value
+    return snapshot
 
 
 def _normalize_node_event_type(raw_event_code: Any) -> str:
@@ -1568,6 +1615,31 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 node_uid,
                 channel,
             )
+
+        cmd_name_normalized = str(cmd_name or "").strip().lower()
+        if zone_id and cmd_name_normalized == "state":
+            snapshot = _normalize_irr_state_snapshot(details.get("snapshot"))
+            if snapshot is not None:
+                try:
+                    await create_zone_event(
+                        int(zone_id),
+                        _IRR_STATE_SNAPSHOT_EVENT_TYPE,
+                        {
+                            "source": "command_response_state",
+                            "cmd_id": cmd_id,
+                            "node_uid": node_uid,
+                            "channel": channel,
+                            "response_ts": response_ts,
+                            "snapshot": snapshot,
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "[COMMAND_RESPONSE] Failed to persist IRR_STATE_SNAPSHOT for zone_id=%s cmd_id=%s",
+                        zone_id,
+                        cmd_id,
+                        exc_info=True,
+                    )
 
         if zone_id:
             status_value = (

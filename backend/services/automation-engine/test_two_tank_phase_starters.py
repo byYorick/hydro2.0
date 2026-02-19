@@ -1,6 +1,7 @@
 """Unit tests for application.two_tank_phase_starters helpers."""
 
 import asyncio
+from datetime import datetime
 from unittest.mock import AsyncMock
 
 from application.two_tank_phase_starters import (
@@ -27,6 +28,7 @@ def _runtime_cfg():
         "solution_fill_timeout_sec": 60,
         "prepare_recirculation_timeout_sec": 60,
         "irrigation_recovery_timeout_sec": 60,
+        "irrigation_recovery_retry_timeout_multiplier": 1.5,
         "poll_interval_sec": 30,
     }
 
@@ -131,3 +133,6 @@ def test_start_two_tank_irrigation_recovery_success():
     )
     assert result["success"] is True
     assert result["irrigation_recovery_attempt"] == 2
+    started_at = datetime.fromisoformat(result["irrigation_recovery_started_at"])
+    timeout_at = datetime.fromisoformat(result["irrigation_recovery_timeout_at"])
+    assert int((timeout_at - started_at).total_seconds()) == 90

@@ -683,9 +683,9 @@ class CommandTracker:
         if timeout_sec is None:
             timeout_sec = self.command_timeout
         
-        start_time = time.time()
+        start_time = time.monotonic()
         
-        while (time.time() - start_time) < timeout_sec:
+        while (time.monotonic() - start_time) < timeout_sec:
             db_status = await self._get_command_status_from_db(cmd_id)
             
             if db_status == "DONE":

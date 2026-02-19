@@ -403,6 +403,24 @@
               </dd>
             </div>
           </dl>
+          <div
+            v-if="manualResumeActionAvailable"
+            class="rounded-xl border border-amber-500/30 bg-amber-500/8 p-2"
+          >
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <p class="text-xs text-[color:var(--text-primary)]">
+                Процесс требует ручного подтверждения для продолжения workflow.
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="manualResumeLoading"
+                @click="requestManualResume"
+              >
+                {{ manualResumeLoading ? 'Отправка...' : 'Подтвердить и продолжить' }}
+              </Button>
+            </div>
+          </div>
           <dl class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
             <div>
               <dt class="text-[color:var(--text-dim)]">Подтверждение ноды DONE</dt>
@@ -717,8 +735,10 @@ const {
   schedulerTaskIdInput,
   schedulerTaskLookupLoading,
   schedulerTaskListLoading,
+  manualResumeLoading,
   schedulerTaskError,
   schedulerTaskStatus,
+  manualResumeActionAvailable,
   filteredRecentSchedulerTasks,
   schedulerTaskSearch,
   schedulerTaskPreset,
@@ -726,6 +746,7 @@ const {
   schedulerTasksUpdatedAt,
   fetchRecentSchedulerTasks,
   lookupSchedulerTask,
+  requestManualResume,
   schedulerTaskStatusVariant,
   schedulerTaskStatusLabel,
   schedulerTaskProcessStatusVariant,

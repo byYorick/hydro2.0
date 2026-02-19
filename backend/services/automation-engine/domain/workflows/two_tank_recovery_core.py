@@ -175,12 +175,13 @@ async def execute_two_tank_recovery_branch(
                 "command_statuses": stop_result.get("command_statuses", []),
                 "action_required": True,
                 "decision": "run",
-                "reason_code": REASON_IRRIGATION_RECOVERY_FAILED,
-                "reason": "Превышено число попыток irrigation recovery",
+                "reason_code": REASON_MANUAL_ACK_REQUIRED_AFTER_RETRIES,
+                "reason": "Превышено число автопопыток irrigation recovery, требуется ручное подтверждение",
                 "error": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
                 "error_code": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
                 "irrigation_recovery_attempt": attempt,
                 "targets_state": recovery_state,
+                "manual_ack_required": True,
             }
 
         try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -104,11 +105,11 @@ async def wait_task_completion(
         m.set_trace_id()
         created_trace = True
 
-    deadline = m.utcnow().timestamp() + timeout_sec
+    deadline = time.monotonic() + timeout_sec
     headers = m._scheduler_headers()
 
     try:
-        while m.utcnow().timestamp() < deadline:
+        while time.monotonic() < deadline:
             try:
                 response = await ae_client.get_json(
                     url=f"{m.AUTOMATION_ENGINE_URL}/scheduler/task/{task_id}",

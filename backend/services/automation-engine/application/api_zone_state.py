@@ -166,6 +166,115 @@ async def load_zone_current_levels(
     return levels
 
 
+_IRR_STATE_FIELDS = (
+    "clean_level_max",
+    "clean_level_min",
+    "solution_level_max",
+    "solution_level_min",
+    "valve_clean_fill",
+    "valve_clean_supply",
+    "valve_solution_fill",
+    "valve_solution_supply",
+    "valve_irrigation",
+    "pump_main",
+)
+
+
+_IRR_STATE_ALIASES = {
+    "clean_level_max": ("clean_level_max", "level_clean_max"),
+    "clean_level_min": ("clean_level_min", "level_clean_min"),
+    "solution_level_max": ("solution_level_max", "level_solution_max"),
+    "solution_level_min": ("solution_level_min", "level_solution_min"),
+    "valve_clean_fill": ("valve_clean_fill",),
+    "valve_clean_supply": ("valve_clean_supply",),
+    "valve_solution_fill": ("valve_solution_fill",),
+    "valve_solution_supply": ("valve_solution_supply",),
+    "valve_irrigation": ("valve_irrigation",),
+    "pump_main": ("pump_main", "main_pump"),
+}
+
+
+def _to_optional_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def normalize_irr_node_state_snapshot(raw_snapshot: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw_snapshot, dict):
+        return None
+
+    normalized: Dict[str, Any] = {}
+    for field in _IRR_STATE_FIELDS:
+        value: Optional[bool] = None
+        for alias in _IRR_STATE_ALIASES[field]:
+            if alias in raw_snapshot:
+                value = _to_optional_bool(raw_snapshot.get(alias))
+                break
+        normalized[field] = value
+
+    if not any(value is not None for value in normalized.values()):
+        return None
+    return normalized
+
+
+async def load_latest_irr_node_state(
+    zone_id: int,
+    *,
+    fetch_fn: Callable[..., Awaitable[Any]],
+    logger: Optional[logging.Logger] = None,
+) -> Optional[Dict[str, Any]]:
+    try:
+        rows = await fetch_fn(
+            """
+            SELECT payload_json, created_at
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = 'IRR_STATE_SNAPSHOT'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+    except Exception:
+        if logger is not None:
+            logger.debug("Failed to load irr node state snapshot for zone_id=%s", zone_id, exc_info=True)
+        return None
+
+    if not rows:
+        return None
+
+    row = rows[0]
+    payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+    snapshot_raw = payload.get("snapshot")
+    if not isinstance(snapshot_raw, dict):
+        snapshot_raw = payload.get("state")
+    snapshot = normalize_irr_node_state_snapshot(snapshot_raw)
+    if snapshot is None:
+        return None
+
+    created_at = row.get("created_at")
+    if isinstance(created_at, datetime):
+        snapshot["updated_at"] = created_at.isoformat()
+    else:
+        snapshot["updated_at"] = None
+    return snapshot
+
+
 async def load_automation_timeline(
     zone_id: int,
     *,
@@ -242,8 +351,10 @@ async def load_automation_timeline(
 
 __all__ = [
     "load_automation_timeline",
+    "load_latest_irr_node_state",
     "load_zone_current_levels",
     "load_zone_system_config",
     "normalize_level_percent",
+    "normalize_irr_node_state_snapshot",
     "system_config_from_task_payload",
 ]

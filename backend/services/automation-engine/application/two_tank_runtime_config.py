@@ -208,6 +208,10 @@ def resolve_two_tank_runtime_config(
         target_ec_prepare_raw = target_ec * (nutrient_npk_ratio_pct / 100.0)
     target_ec_prepare = resolve_float_fn(target_ec_prepare_raw, target_ec, 0.0, 20.0)
 
+    recovery_max_attempts_raw = recovery_cfg.get("max_attempts")
+    if recovery_max_attempts_raw is None:
+        recovery_max_attempts_raw = recovery_cfg.get("max_continue_attempts")
+
     return {
         "required_node_types": required_node_types,
         "clean_fill_timeout_sec": resolve_int_fn(startup.get("clean_fill_timeout_sec"), 1200, 30),
@@ -215,11 +219,24 @@ def resolve_two_tank_runtime_config(
         "poll_interval_sec": resolve_int_fn(startup.get("level_poll_interval_sec"), refill_check_delay_sec, 10),
         "clean_fill_retry_cycles": resolve_int_fn(startup.get("clean_fill_retry_cycles"), 1, 0),
         "prepare_recirculation_timeout_sec": resolve_int_fn(startup.get("prepare_recirculation_timeout_sec"), 1200, 30),
+        "irr_state_max_age_sec": resolve_int_fn(startup.get("irr_state_max_age_sec"), 30, 5),
+        "irr_state_wait_timeout_sec": resolve_int_fn(startup.get("irr_state_wait_timeout_sec"), 2, 0),
         "irrigation_recovery_timeout_sec": resolve_int_fn(recovery_cfg.get("timeout_sec"), 600, 30),
-        "irrigation_recovery_max_attempts": resolve_int_fn(recovery_cfg.get("max_continue_attempts"), 5, 1),
+        "irrigation_recovery_max_attempts": resolve_int_fn(recovery_max_attempts_raw, 2, 1),
+        "irrigation_recovery_retry_timeout_multiplier": resolve_float_fn(
+            recovery_cfg.get("retry_timeout_multiplier"),
+            1.5,
+            1.0,
+            3.0,
+        ),
         "level_switch_on_threshold": resolve_float_fn(startup.get("level_switch_on_threshold"), 0.5, 0.0, 1.0),
         "clean_max_labels": normalize_labels_fn(startup.get("clean_max_sensor_labels"), ("level_clean_max", "clean_max")),
+        "clean_min_labels": normalize_labels_fn(startup.get("clean_min_sensor_labels"), ("level_clean_min", "clean_min")),
         "solution_max_labels": normalize_labels_fn(startup.get("solution_max_sensor_labels"), ("level_solution_max", "solution_max")),
+        "solution_min_labels": normalize_labels_fn(
+            startup.get("solution_min_sensor_labels"),
+            ("level_solution_min", "solution_min"),
+        ),
         "target_ph": target_ph,
         "target_ec": target_ec,
         "target_ec_prepare": target_ec_prepare,

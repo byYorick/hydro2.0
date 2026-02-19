@@ -7,6 +7,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.responses import JSONResponse
@@ -78,6 +79,7 @@ from application.api_scheduler_bootstrap import (
 )
 from application.api_zone_state import (
     load_automation_timeline as policy_load_automation_timeline,
+    load_latest_irr_node_state as policy_load_latest_irr_node_state,
     load_zone_current_levels as policy_load_zone_current_levels,
     load_zone_system_config as policy_load_zone_system_config,
 )
@@ -152,6 +154,7 @@ from services.resilience_contract import (
 )
 
 logger = logging.getLogger(__name__)
+MANUAL_ACK_REQUIRED_REASON_CODE = "manual_ack_required_after_retries"
 
 
 @asynccontextmanager
@@ -863,6 +866,11 @@ async def zone_automation_state(zone_id: int):
             zone_id_value,
             fetch_fn=fetch,
         ),
+        load_latest_irr_node_state_fn=lambda zone_id_value: policy_load_latest_irr_node_state(
+            zone_id_value,
+            fetch_fn=fetch,
+            logger=logger,
+        ),
         derive_active_processes_fn=lambda task, state: policy_derive_active_processes(
             task,
             state,
@@ -894,6 +902,111 @@ async def zone_automation_state(zone_id: int):
         automation_state_next=AUTOMATION_STATE_NEXT,
     )
     return payload
+
+
+def _manual_resume_workflow_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return None
+    workflow = str(payload.get("workflow") or "").strip().lower()
+    if workflow not in {"irrigation_recovery", "irrigation_recovery_check"}:
+        return None
+
+    next_payload = dict(payload)
+    next_payload["workflow"] = "irrigation_recovery"
+    next_payload["irrigation_recovery_attempt"] = 1
+    next_payload.pop("irrigation_recovery_started_at", None)
+    next_payload.pop("irrigation_recovery_timeout_at", None)
+    return next_payload
+
+
+@app.post("/zones/{zone_id}/automation/manual-resume")
+async def zone_automation_manual_resume(zone_id: int, request: Optional[Dict[str, Any]] = Body(default=None)):
+    await _validate_scheduler_zone(zone_id)
+
+    request = request if isinstance(request, dict) else {}
+
+    requested_task_id = str(request.get("task_id") or "").strip() or None
+    source = str(request.get("source") or "frontend_manual_resume").strip() or "frontend_manual_resume"
+
+    source_task: Optional[Dict[str, Any]]
+    if requested_task_id:
+        source_task = _scheduler_tasks.get(requested_task_id)
+        if source_task is None:
+            source_task = await _load_scheduler_task_snapshot(requested_task_id)
+        if source_task is None:
+            raise HTTPException(status_code=404, detail=f"Task '{requested_task_id}' not found")
+    else:
+        source_task = await _load_latest_zone_task(zone_id)
+        if source_task is None:
+            raise HTTPException(status_code=404, detail="No scheduler task found for zone")
+
+    if int(source_task.get("zone_id") or 0) != zone_id:
+        raise HTTPException(status_code=422, detail="task_zone_mismatch")
+
+    source_result = source_task.get("result") if isinstance(source_task.get("result"), dict) else {}
+    source_reason_code = str(source_result.get("reason_code") or "").strip().lower()
+    if source_reason_code != MANUAL_ACK_REQUIRED_REASON_CODE:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "manual_ack_not_required",
+                "reason_code": source_reason_code or None,
+            },
+        )
+
+    source_payload = source_task.get("payload") if isinstance(source_task.get("payload"), dict) else {}
+    resume_payload = _manual_resume_workflow_payload(source_payload)
+    if resume_payload is None:
+        raise HTTPException(status_code=422, detail="manual_resume_workflow_not_supported")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    scheduled_for = now
+    due_at = now + timedelta(seconds=30)
+    expires_at = now + timedelta(minutes=10)
+
+    req = SchedulerTaskRequest(
+        zone_id=zone_id,
+        task_type="diagnostics",
+        payload=resume_payload,
+        scheduled_for=scheduled_for.isoformat(),
+        due_at=due_at.isoformat(),
+        expires_at=expires_at.isoformat(),
+        correlation_id=f"ae:manual_resume:{zone_id}:{uuid4().hex[:16]}",
+    )
+
+    task, is_duplicate = await _create_scheduler_task(req)
+    if not is_duplicate:
+        await create_zone_event(
+            zone_id,
+            "MANUAL_RESUME_ACCEPTED",
+            {
+                "zone_id": zone_id,
+                "source_task_id": source_task.get("task_id"),
+                "task_id": task.get("task_id"),
+                "source": source,
+                "reason_code": MANUAL_ACK_REQUIRED_REASON_CODE,
+                "workflow": "irrigation_recovery",
+            },
+        )
+        trace_id = get_trace_id()
+        _spawn_background_task(
+            _execute_scheduler_task(task["task_id"], req, trace_id),
+            task_name=f"scheduler_task_{task['task_id']}",
+            zone_id=zone_id,
+            task_id=task["task_id"],
+            task_type="diagnostics",
+        )
+
+    return {
+        "status": "ok",
+        "data": {
+            "zone_id": zone_id,
+            "task_id": task.get("task_id"),
+            "source_task_id": source_task.get("task_id"),
+            "manual_resume": "accepted",
+            "is_duplicate": is_duplicate,
+        },
+    }
 
 
 async def _run_scheduler_task_recovery_on_startup() -> None:

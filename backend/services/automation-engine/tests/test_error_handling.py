@@ -2,6 +2,8 @@
 Тесты для обработки ошибок в automation-engine.
 Проверяет явный учет ошибок по зонам в gather.
 """
+import asyncio
+
 import pytest
 from unittest.mock import AsyncMock, patch
 from main import process_zones_parallel
@@ -55,3 +57,29 @@ async def test_process_zones_parallel_all_success():
     assert results['success'] == 2
     assert results['failed'] == 0
     assert len(results['errors']) == 0
+
+
+@pytest.mark.asyncio
+async def test_process_zones_parallel_marks_timeout_as_zone_failure():
+    zone_service = AsyncMock()
+
+    async def process_zone(_zone_id, **_kwargs):
+        await asyncio.sleep(0.05)
+
+    zone_service.process_zone = process_zone
+    zones = [{"id": 1, "name": "Zone 1"}]
+
+    with patch("main.send_infra_exception_alert", new_callable=AsyncMock), \
+         patch("error_handler.handle_zone_error"):
+        results = await process_zones_parallel(
+            zones,
+            zone_service,
+            max_concurrent=1,
+            per_zone_timeout_sec=0.01,
+        )
+
+    assert results["total"] == 1
+    assert results["success"] == 0
+    assert results["failed"] == 1
+    assert len(results["errors"]) == 1
+    assert results["errors"][0]["error_type"] == "TimeoutError"

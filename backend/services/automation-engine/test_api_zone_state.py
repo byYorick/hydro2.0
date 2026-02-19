@@ -3,6 +3,7 @@
 import pytest
 
 from application.api_zone_state import (
+    load_latest_irr_node_state,
     load_zone_current_levels,
     load_zone_system_config,
 )
@@ -109,3 +110,46 @@ async def test_load_zone_current_levels_ignores_none_values():
 
     assert levels["clean_tank_level_percent"] is None
     assert levels["ph"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_latest_irr_node_state_normalizes_snapshot():
+    async def _fetch(query, zone_id):
+        assert "irr_state_snapshot" in query.lower()
+        assert zone_id == 9
+        return [
+            {
+                "payload_json": {
+                    "snapshot": {
+                        "level_clean_max": 1,
+                        "level_clean_min": 1,
+                        "level_solution_max": 0,
+                        "level_solution_min": 1,
+                        "valve_clean_fill": False,
+                        "valve_clean_supply": True,
+                        "valve_solution_fill": True,
+                        "valve_solution_supply": False,
+                        "valve_irrigation": False,
+                        "pump_main": True,
+                    }
+                },
+                "created_at": "not-a-datetime",
+            }
+        ]
+
+    state = await load_latest_irr_node_state(zone_id=9, fetch_fn=_fetch)
+
+    assert state is not None
+    assert state["clean_level_max"] is True
+    assert state["solution_level_max"] is False
+    assert state["pump_main"] is True
+    assert state["updated_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_latest_irr_node_state_returns_none_when_snapshot_missing():
+    async def _fetch(query, zone_id):
+        return [{"payload_json": {"foo": "bar"}, "created_at": None}]
+
+    state = await load_latest_irr_node_state(zone_id=4, fetch_fn=_fetch)
+    assert state is None

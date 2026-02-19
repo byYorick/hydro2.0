@@ -58,6 +58,7 @@ async def run_scheduler_main_loop(m: Any) -> None:
                     context={"error": str(e)},
                 )
                 await m.asyncio.sleep(max(1.0, m.SCHEDULER_MAIN_TICK_SEC))
+                continue
 
             await m.asyncio.sleep(max(1.0, m.SCHEDULER_MAIN_TICK_SEC))
     finally:
