@@ -92,3 +92,15 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. Подготовлен драфт финального отчета:
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S12_FINAL_REPORT.md`.
 2. В отчете отделены локально закрытые gates и обязательные staging-blockers перед `S12 COMPLETED`.
+
+## 13. Increment 10 (2026-02-19)
+1. Выполнен dry-run команды staging runbook в повышенном профиле нагрузки:
+- `AE2_SLO_PROBE_REQUESTS=240`, `AE2_SLO_PROBE_CONCURRENCY=40`.
+2. Добавлен артефакт формата стендового отчета:
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv`.
+3. Результаты dry-run (ms):
+- `cutover_state`: p50=11.74, p95=13.97, p99=14.99;
+- `integration_contracts`: p50=12.18, p95=33.54, p99=34.19;
+- `observability_contracts`: p50=12.77, p95=15.19, p99=15.59;
+- `bootstrap_heartbeat`: p50=49.10, p95=186.83, p99=196.83.
+4. Статус блокера не меняется: нужен реальный стендовый прогон.
