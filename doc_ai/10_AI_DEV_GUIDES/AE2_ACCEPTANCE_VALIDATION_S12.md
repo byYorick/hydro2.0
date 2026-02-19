@@ -82,3 +82,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. Провести стендовый SLO-прогон cutover ingress и зафиксировать p50/p95/p99.
 2. Подтвердить/скорректировать SLO gate по стендовым метрикам и оформить release decision.
 3. Подготовить `AE2_STAGE_S12_FINAL_REPORT.md` после закрытия обязательных gates.
+
+## 11. Increment 8 (2026-02-19)
+1. Подготовлен staging runbook:
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_RUNBOOK.md`.
+2. Зафиксирован единый шаблон стендового прогона и артефактов для финального S12 gate.
