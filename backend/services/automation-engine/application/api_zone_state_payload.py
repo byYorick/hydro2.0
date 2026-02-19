@@ -18,6 +18,7 @@ async def build_zone_automation_state_payload(
     derive_active_processes_fn: Callable[[Any, str], Dict[str, bool]],
     load_automation_timeline_fn: Callable[[int], Awaitable[list[Dict[str, Any]]]],
     estimate_completion_seconds_fn: Callable[[Any], Any],
+    derive_failed_state_fn: Callable[[Any], bool],
     automation_state_labels: Dict[str, str],
     automation_state_idle: str,
     automation_state_next: Dict[str, Any],
@@ -29,6 +30,7 @@ async def build_zone_automation_state_payload(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     elapsed_sec = int((now - state_started_at).total_seconds()) if state_started_at is not None else 0
     progress_percent = estimate_progress_percent_fn(task, state)
+    failed = derive_failed_state_fn(task)
 
     system_config = await load_zone_system_config_fn(zone_id, payload)
     current_levels = await load_zone_current_levels_fn(zone_id)
@@ -44,6 +46,7 @@ async def build_zone_automation_state_payload(
             "started_at": state_started_at.isoformat() if state_started_at is not None else None,
             "elapsed_sec": elapsed_sec,
             "progress_percent": progress_percent,
+            "failed": failed,
         },
         "system_config": {
             "tanks_count": int(system_config.get("tanks_count") or 2),

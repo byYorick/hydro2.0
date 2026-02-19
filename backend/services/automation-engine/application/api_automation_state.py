@@ -199,6 +199,25 @@ def derive_active_processes(
     }
 
 
+def derive_failed_state(task: Optional[Dict[str, Any]]) -> bool:
+    """Определить, находится ли задача в состоянии ошибки.
+
+    Returns True если:
+    - task.status == "failed"
+    - task.status == "completed" с result.decision == "fail"
+    """
+    if not task:
+        return False
+    status = str(task.get("status") or "").strip().lower()
+    if status == "failed":
+        return True
+    if status == "completed":
+        result = task.get("result") if isinstance(task.get("result"), dict) else {}
+        decision = str(result.get("decision") or "").strip().lower()
+        return decision == "fail"
+    return False
+
+
 def extract_timeline_reason(payload: Dict[str, Any]) -> Optional[str]:
     reason_code = payload.get("reason_code")
     if isinstance(reason_code, str) and reason_code.strip():
@@ -227,6 +246,7 @@ __all__ = [
     "build_timeline_label",
     "derive_active_processes",
     "derive_automation_state",
+    "derive_failed_state",
     "estimate_completion_seconds",
     "estimate_progress_percent",
     "extract_timeline_reason",

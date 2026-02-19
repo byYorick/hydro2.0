@@ -52,6 +52,8 @@ def extract_workflow(
     workflow = str(raw_workflow or "").strip().lower()
     if workflow:
         return workflow
+    if legacy_workflow_default_enabled and requires_explicit_workflow(payload):
+        return "cycle_start"
     return ""
 
 

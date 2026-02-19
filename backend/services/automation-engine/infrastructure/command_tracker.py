@@ -194,7 +194,7 @@ class CommandTracker:
             response: Ответ от узла (опционально)
             error: Сообщение об ошибке (опционально)
         """
-        command_info = self.pending_commands.get(cmd_id)
+        command_info = self.pending_commands.pop(cmd_id, None)
         if not command_info:
             # Команда может быть не в pending, если уже обработана в конкурентной ветке
             logger.debug(f"Command {cmd_id} not found in pending commands (may be already processed)")
@@ -282,8 +282,6 @@ class CommandTracker:
                     error=error,
                 )
         
-        # Удаляем из pending
-        self.pending_commands.pop(cmd_id, None)
 
     async def _emit_failure_alert(
         self,

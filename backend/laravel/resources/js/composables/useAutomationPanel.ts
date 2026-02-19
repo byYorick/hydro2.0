@@ -189,6 +189,7 @@ export function useAutomationPanel(
         started_at: source.state_details?.started_at ?? null,
         elapsed_sec: Number(source.state_details?.elapsed_sec ?? 0),
         progress_percent: clampPercent(source.state_details?.progress_percent ?? 0),
+        failed: Boolean(source.state_details?.failed ?? false),
       },
       system_config: {
         tanks_count: tanksCount,
@@ -396,7 +397,7 @@ export function useAutomationPanel(
   const progressPercent = computed(() => clampPercent(automationState.value?.state_details.progress_percent ?? 0))
 
   const isWaterInletActive = computed(() => {
-    return stateCode.value === 'TANK_FILLING' || cleanTankLevel.value < 90
+    return stateCode.value === 'TANK_FILLING'
   })
 
   const isTankRefillActive = computed(() => {
@@ -409,12 +410,13 @@ export function useAutomationPanel(
 
   const hasFailedState = computed(() => {
     if (errorMessage.value) return true
+    if (automationState.value?.state_details.failed) return true
+    // Fallback: проверяем последнее событие таймлайна (для обратной совместимости)
     const timeline = automationState.value?.timeline ?? []
     const latest = timeline[timeline.length - 1]
     if (!latest) return false
     const eventCode = String(latest.event ?? '').toUpperCase()
-    const label = String(latest.label ?? '').toLowerCase()
-    return eventCode.includes('FAILED') || eventCode.includes('TIMEOUT') || label.includes('ошиб') || label.includes('таймаут')
+    return eventCode.includes('FAILED') || eventCode.includes('TIMEOUT')
   })
 
   const hasSetupTransitionCompleted = computed(() => {

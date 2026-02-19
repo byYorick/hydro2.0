@@ -21,6 +21,7 @@ export interface AutomationState {
     started_at: string | null
     elapsed_sec: number
     progress_percent: number
+    failed?: boolean
   }
   system_config: {
     tanks_count: 2 | 3

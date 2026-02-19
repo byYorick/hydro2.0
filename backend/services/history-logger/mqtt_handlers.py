@@ -1506,6 +1506,19 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             else:
                 zone_id = existing_cmd[0].get("zone_id")
                 cmd_name = existing_cmd[0].get("cmd")
+                existing_status = str(existing_cmd[0].get("status") or "").strip().upper()
+                # Дедупликация: если статус уже терминальный и совпадает — пропускаем
+                _terminal = ("DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED")
+                if (
+                    existing_status == normalized_status.value.upper()
+                    and existing_status in _terminal
+                ):
+                    logger.debug(
+                        "[COMMAND_RESPONSE] Duplicate response for cmd_id=%s (status=%s already set), skipping",
+                        cmd_id,
+                        existing_status,
+                    )
+                    return
         except Exception as e:
             logger.warning(
                 "[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id=%s: %s",

@@ -111,34 +111,31 @@ async def load_zone_current_levels(
     *,
     fetch_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
-    levels = {
+    levels: Dict[str, Any] = {
         "clean_tank_level_percent": None,
         "nutrient_tank_level_percent": None,
+        "ph": None,
+        "ec": None,
     }
 
     try:
         rows = await fetch_fn(
             """
             SELECT
-                COALESCE(
-                    payload_json->>'channel',
-                    payload_json->'details'->>'channel',
-                    payload_json->'metric'->>'channel',
-                    ''
-                ) AS channel,
-                payload_json,
-                created_at
-            FROM zone_events
-            WHERE zone_id = $1
-              AND type IN ('telemetry', 'status')
-              AND COALESCE(
-                    payload_json->>'channel',
-                    payload_json->'details'->>'channel',
-                    payload_json->'metric'->>'channel',
-                    ''
-              ) IN ('lvl_clean', 'lvl_solution')
-            ORDER BY created_at DESC, id DESC
-            LIMIT 200
+                s.type AS sensor_type,
+                LOWER(TRIM(COALESCE(s.label, ''))) AS sensor_label,
+                tl.last_value AS value
+            FROM telemetry_last tl
+            JOIN sensors s ON s.id = tl.sensor_id
+            WHERE s.zone_id = $1
+              AND s.is_active = TRUE
+              AND (
+                (s.type = 'WATER_LEVEL'
+                 AND LOWER(TRIM(COALESCE(s.label, ''))) IN ('lvl_clean', 'lvl_solution'))
+                OR s.type IN ('PH', 'EC')
+              )
+            ORDER BY s.type, tl.last_ts DESC NULLS LAST, tl.updated_at DESC NULLS LAST
+            LIMIT 10
             """,
             zone_id,
         )
@@ -146,30 +143,25 @@ async def load_zone_current_levels(
         return levels
 
     for row in rows:
-        channel = str(row.get("channel") or "").strip().lower()
-        payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+        sensor_type = str(row.get("sensor_type") or "").strip().upper()
+        sensor_label = str(row.get("sensor_label") or "").strip().lower()
+        raw_value = row.get("value")
 
-        raw_level = None
-        if "value" in payload:
-            raw_level = payload.get("value")
-        elif isinstance(payload.get("details"), dict):
-            raw_level = payload["details"].get("value")
-        elif isinstance(payload.get("metric"), dict):
-            raw_level = payload["metric"].get("value")
-        elif isinstance(payload.get("telemetry"), dict):
-            raw_level = payload["telemetry"].get("value")
-
-        level = normalize_level_percent(raw_level)
-        if level is None:
-            continue
-
-        if channel == "lvl_clean" and levels["clean_tank_level_percent"] is None:
-            levels["clean_tank_level_percent"] = level
-        elif channel == "lvl_solution" and levels["nutrient_tank_level_percent"] is None:
-            levels["nutrient_tank_level_percent"] = level
-
-        if levels["clean_tank_level_percent"] is not None and levels["nutrient_tank_level_percent"] is not None:
-            break
+        if sensor_type == "WATER_LEVEL":
+            if sensor_label == "lvl_clean" and levels["clean_tank_level_percent"] is None:
+                levels["clean_tank_level_percent"] = normalize_level_percent(raw_value)
+            elif sensor_label == "lvl_solution" and levels["nutrient_tank_level_percent"] is None:
+                levels["nutrient_tank_level_percent"] = normalize_level_percent(raw_value)
+        elif sensor_type == "PH" and levels["ph"] is None:
+            try:
+                levels["ph"] = round(float(raw_value), 2) if raw_value is not None else None
+            except (TypeError, ValueError):
+                pass
+        elif sensor_type == "EC" and levels["ec"] is None:
+            try:
+                levels["ec"] = round(float(raw_value), 1) if raw_value is not None else None
+            except (TypeError, ValueError):
+                pass
 
     return levels
 

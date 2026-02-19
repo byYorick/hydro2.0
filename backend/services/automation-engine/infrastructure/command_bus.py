@@ -1375,9 +1375,17 @@ class CommandBus:
         normalized_status = str(terminal_status or "").strip().upper()
 
         if wait_result is None:
-            normalized_status = "TIMEOUT"
+            # Нода могла ответить между последним poll и таймаутом —
+            # если БД уже содержит терминальный статус, используем его.
+            if normalized_status == "DONE":
+                result["command_effect_confirmed"] = True
+                result["terminal_status"] = "DONE"
+                return result
+            if normalized_status not in _TERMINAL_COMMAND_STATUSES:
+                normalized_status = "TIMEOUT"
             try:
-                await tracker.confirm_command_status(cmd_id, "TIMEOUT", error="closed_loop_timeout")
+                if normalized_status == "TIMEOUT":
+                    await tracker.confirm_command_status(cmd_id, "TIMEOUT", error="closed_loop_timeout")
             except Exception:
                 logger.warning("Zone %s: failed to mark TIMEOUT for cmd_id=%s", zone_id, cmd_id, exc_info=True)
 

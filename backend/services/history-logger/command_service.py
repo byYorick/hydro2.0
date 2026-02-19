@@ -127,9 +127,9 @@ async def publish_command_mqtt(
         if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
             zone_segment = zone_uid
         elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            logger.warning(
-                "mqtt_zone_format=uid but zone_uid not provided, using zn-%s (may cause mismatch with node subscription)",
-                zone_id,
+            raise ValueError(
+                f"mqtt_zone_format=uid but zone_uid not provided for zone_id={zone_id}. "
+                f"Cannot publish command — node subscription mismatch guaranteed."
             )
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
@@ -193,9 +193,9 @@ async def publish_config_mqtt(
         if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
             zone_segment = zone_uid
         elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            logger.warning(
-                "mqtt_zone_format=uid but zone_uid not provided, using zn-%s (may cause mismatch with node subscription)",
-                zone_id,
+            raise ValueError(
+                f"mqtt_zone_format=uid but zone_uid not provided for zone_id={zone_id}. "
+                f"Cannot publish command — node subscription mismatch guaranteed."
             )
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
