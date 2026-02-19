@@ -112,3 +112,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `decision=ALLOW_FULL_ROLLOUT` (для текущего dry-run baseline).
 3. `AE2_S12_STAGING_SLO_RUNBOOK.md` обновлен командой формализации release decision.
 4. Статус блокера сохраняется: требуется прогон на реальном стенде.
+
+## 15. Increment 12 (2026-02-19)
+1. Сформирован отдельный decision artifact:
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_RELEASE_DECISION.txt`.
+2. Для текущего dry-run baseline зафиксирован результат:
+- `decision=ALLOW_FULL_ROLLOUT`.
+3. Runbook и final report обновлены: decision artifact включен в обязательный пакет для финального S12 gate.

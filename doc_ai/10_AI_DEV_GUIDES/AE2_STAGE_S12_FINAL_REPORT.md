@@ -30,8 +30,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. `AE2_S12_STAGING_SLO_BASELINE.csv` пока содержит локальный dry-run, а не данные целевого стенда.
 4. Автоматический decision-helper (`tests/s12_slo_release_decision.py`) прогнан только на dry-run baseline.
 
-## 4. Required before `S12 COMPLETED`
+## 4. Dry-run artifacts (не финальный стенд)
+1. `AE2_S12_STAGING_SLO_BASELINE.csv` (240/40 profile, local dry-run).
+2. `AE2_S12_STAGING_RELEASE_DECISION.txt`:
+- текущий dry-run результат: `decision=ALLOW_FULL_ROLLOUT`.
+
+## 5. Required before `S12 COMPLETED`
 1. Выполнить `AE2_S12_STAGING_SLO_RUNBOOK.md`.
-2. Приложить `AE2_S12_STAGING_SLO_BASELINE.csv`.
-3. Обновить статус этого отчета на `COMPLETED`.
-4. Перевести `AE2_STAGE_S12_TASK.md` и `AE2_CURRENT_STATE.md` в `S12 COMPLETED`.
+2. Приложить `AE2_S12_STAGING_SLO_BASELINE.csv` (из целевого стенда).
+3. Приложить `AE2_S12_STAGING_RELEASE_DECISION.txt` (из целевого стенда).
+4. Обновить статус этого отчета на `COMPLETED`.
+5. Перевести `AE2_STAGE_S12_TASK.md` и `AE2_CURRENT_STATE.md` в `S12 COMPLETED`.

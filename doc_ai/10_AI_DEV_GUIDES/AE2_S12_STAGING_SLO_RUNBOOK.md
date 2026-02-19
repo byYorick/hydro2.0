@@ -39,7 +39,8 @@ docker compose -f backend/docker-compose.dev.yml run --rm \
 ```bash
 cat doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv | \
   docker compose -f backend/docker-compose.dev.yml run --rm -T \
-  automation-engine python tests/s12_slo_release_decision.py --stdin
+  automation-engine python tests/s12_slo_release_decision.py --stdin \
+  > doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_RELEASE_DECISION.txt
 ```
 
 ## 5. Gate-таблица (заполнить по факту)
@@ -50,7 +51,7 @@ cat doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv | \
 
 ## 6. Что приложить к S12 final report
 1. `AE2_S12_STAGING_SLO_BASELINE.csv`
-2. Вывод `s12_slo_release_decision.py` (decision + violations, если есть).
+2. `AE2_S12_STAGING_RELEASE_DECISION.txt` (decision + violations, если есть).
 3. Краткий summary p50/p95/p99 по каждому endpoint.
 4. Release decision:
 - `ALLOW_FULL_ROLLOUT` или `HOLD_AND_INVESTIGATE`.

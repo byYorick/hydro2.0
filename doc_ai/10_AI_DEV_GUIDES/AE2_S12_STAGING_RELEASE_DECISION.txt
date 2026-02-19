@@ -1,0 +1,5 @@
+decision=ALLOW_FULL_ROLLOUT
+cutover_state: count=240 (min 120), p95=13.97ms (max 60.00), p99=14.99ms (max 80.00)
+integration_contracts: count=240 (min 120), p95=33.54ms (max 70.00), p99=34.19ms (max 90.00)
+observability_contracts: count=240 (min 120), p95=15.19ms (max 90.00), p99=15.59ms (max 120.00)
+bootstrap_heartbeat: count=240 (min 120), p95=186.83ms (max 250.00), p99=196.83ms (max 320.00)
