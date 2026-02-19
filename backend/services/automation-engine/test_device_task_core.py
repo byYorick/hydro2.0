@@ -71,6 +71,30 @@ async def test_execute_device_task_core_publishes_when_ready():
     )
     assert result["success"] is True
     publish_batch.assert_awaited_once()
+    assert publish_batch.await_args.kwargs["accepted_terminal_statuses"] is None
+
+
+@pytest.mark.asyncio
+async def test_execute_device_task_core_state_command_accepts_no_effect_terminal():
+    mapping = SchedulerTaskMapping(task_type="ventilation", node_types=("climate",), cmd="set_relay", state_key="state")
+    publish_batch = AsyncMock(return_value={"success": True})
+    result = await execute_device_task_core(
+        zone_id=1,
+        payload={"state": True},
+        mapping=mapping,
+        context={"task_id": "st-vent-1"},
+        decision=DecisionOutcome(action_required=True, decision="run", reason_code="ok", reason="ok"),
+        get_zone_nodes_fn=AsyncMock(return_value=[{"node_uid": "nd-climate-1", "channel": "default"}]),
+        resolve_command_name_fn=lambda *_: "set_relay",
+        resolve_command_params_fn=lambda *_: {"state": True},
+        publish_batch_fn=publish_batch,
+        send_infra_alert_fn=AsyncMock(return_value=True),
+        err_mapping_not_found="mapping_not_found",
+        err_no_online_nodes="no_online_nodes",
+    )
+    assert result["success"] is True
+    publish_batch.assert_awaited_once()
+    assert publish_batch.await_args.kwargs["accepted_terminal_statuses"] == ("DONE", "NO_EFFECT")
 
 
 @pytest.mark.asyncio

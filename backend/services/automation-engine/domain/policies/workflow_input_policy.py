@@ -53,7 +53,11 @@ def extract_workflow(
     if workflow:
         return workflow
     if legacy_workflow_default_enabled and requires_explicit_workflow(payload):
-        return "cycle_start"
+        # Three-tank topologies always require an explicit workflow even in legacy mode.
+        # Legacy default applies only to two-tank (and empty-topology) payloads.
+        topology = extract_topology(payload)
+        if not topology.startswith("three_tank"):
+            return "cycle_start"
     return ""
 
 

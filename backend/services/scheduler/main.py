@@ -1180,13 +1180,15 @@ async def execute_scheduled_task(
     schedule: Dict[str, Any],
     trigger_time: datetime,
     schedule_key: Optional[str] = None,
-) -> bool:
+    include_result_meta: bool = False,
+) -> Union[bool, Dict[str, Any]]:
     return await _dispatch_service_mod.execute_scheduled_task(
         _self_module(),
         zone_id=zone_id,
         schedule=schedule,
         trigger_time=trigger_time,
         schedule_key=schedule_key,
+        include_result_meta=include_result_meta,
     )
 
 

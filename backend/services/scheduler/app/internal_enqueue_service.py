@@ -139,33 +139,113 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                 )
                 continue
 
+        dispatch_retry_count = m._safe_non_negative_int(item.get("dispatch_retry_count"), 0)
+        dispatch_attempt = dispatch_retry_count + 1
+        root_correlation_id = str(item.get("correlation_id_root") or item.get("correlation_id") or "").strip()
+        attempt_correlation_id = root_correlation_id
+        if root_correlation_id and dispatch_attempt > 1:
+            attempt_correlation_id = f"{root_correlation_id}:dispatch{dispatch_attempt}"
+
         schedule = {
             "type": task_type,
             "targets": (item.get("payload") or {}).get("targets", {}) if isinstance(item.get("payload"), dict) else {},
             "config": (item.get("payload") or {}).get("config", {}) if isinstance(item.get("payload"), dict) else {},
             "payload": item.get("payload") if isinstance(item.get("payload"), dict) else {},
-            "correlation_id": item.get("correlation_id"),
+            "correlation_id": attempt_correlation_id or None,
         }
         schedule_key = f"internal_enqueue:{enqueue_id}"
-        dispatched = await m.execute_scheduled_task(
+        dispatch_trigger_time = scheduled_for_dt if scheduled_for_dt >= now_dt else now_dt
+        dispatch_result = await m.execute_scheduled_task(
             zone_id=zone_id,
             schedule=schedule,
-            trigger_time=scheduled_for_dt,
+            trigger_time=dispatch_trigger_time,
             schedule_key=schedule_key,
+            include_result_meta=True,
         )
+        if isinstance(dispatch_result, dict):
+            dispatched = bool(dispatch_result.get("dispatched"))
+            retryable = bool(dispatch_result.get("retryable")) if "retryable" in dispatch_result else (not dispatched)
+            dispatch_reason = str(dispatch_result.get("reason") or "").strip() or "dispatch_failed"
+            dispatch_error_code = str(dispatch_result.get("error_code") or "").strip() or None
+        else:
+            dispatched = bool(dispatch_result)
+            retryable = not dispatched
+            dispatch_reason = "dispatch_failed" if not dispatched else "accepted"
+            dispatch_error_code = None
+
         if not dispatched:
-            dispatch_retry_count = m._safe_non_negative_int(item.get("dispatch_retry_count"), 0)
+            if not retryable:
+                await m._emit_scheduler_diagnostic(
+                    reason="internal_enqueue_dispatch_not_retryable",
+                    message=(
+                        "Scheduler получил неретраибельный результат dispatch для internal enqueue "
+                        f"(enqueue_id={enqueue_id}, reason={dispatch_reason})"
+                    ),
+                    level="warning",
+                    zone_id=zone_id,
+                    details={
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "scheduled_for": scheduled_for,
+                        "dispatch_reason": dispatch_reason,
+                        "dispatch_error_code": dispatch_error_code,
+                        "dispatch_attempt": dispatch_attempt,
+                        "correlation_id": attempt_correlation_id,
+                    },
+                    alert_code="infra_scheduler_internal_enqueue_dispatch_not_retryable",
+                    error_type=dispatch_reason,
+                )
+                await m._mark_internal_enqueue_status(
+                    task_name,
+                    "failed",
+                    {
+                        **item,
+                        "error": dispatch_reason,
+                        "dispatch_error_code": dispatch_error_code,
+                        "dispatch_retry_count": dispatch_retry_count,
+                        "dispatch_attempt": dispatch_attempt,
+                        "last_dispatch_error": dispatch_reason,
+                        "last_dispatch_failed_at": now_dt.isoformat(),
+                    },
+                )
+                await m.create_zone_event(
+                    zone_id,
+                    "SELF_TASK_DISPATCH_FAILED",
+                    {
+                        "enqueue_id": enqueue_id,
+                        "task_type": task_type,
+                        "scheduled_for": scheduled_for,
+                        "retry_count": dispatch_retry_count,
+                        "max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                        "retryable": False,
+                        "dispatch_reason": dispatch_reason,
+                        "dispatch_error_code": dispatch_error_code,
+                    },
+                )
+                continue
+
             next_retry_count = dispatch_retry_count + 1
             if next_retry_count < m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS:
                 backoff_sec = m._internal_enqueue_dispatch_backoff_sec(next_retry_count)
                 next_retry_at = now_dt + m.timedelta(seconds=backoff_sec)
+                next_dispatch_attempt = next_retry_count + 1
+                next_dispatch_correlation_id = (
+                    f"{root_correlation_id}:dispatch{next_dispatch_attempt}"
+                    if root_correlation_id and next_dispatch_attempt > 1
+                    else (root_correlation_id or None)
+                )
                 retry_item = {
                     **item,
                     "dispatch_retry_count": next_retry_count,
                     "scheduled_for": next_retry_at.isoformat(),
-                    "last_dispatch_error": "dispatch_failed",
+                    "last_dispatch_error": dispatch_reason,
+                    "last_dispatch_error_code": dispatch_error_code,
                     "last_dispatch_failed_at": now_dt.isoformat(),
+                    "last_dispatch_correlation_id": attempt_correlation_id,
                 }
+                if root_correlation_id:
+                    retry_item["correlation_id"] = root_correlation_id
+                    retry_item["correlation_id_root"] = root_correlation_id
                 await m._emit_scheduler_diagnostic(
                     reason="internal_enqueue_dispatch_retry_scheduled",
                     message=f"Scheduler отложил retry internal enqueue после dispatch-fail (enqueue_id={enqueue_id})",
@@ -178,6 +258,9 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                         "max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
                         "backoff_sec": backoff_sec,
                         "next_retry_at": next_retry_at.isoformat(),
+                        "dispatch_reason": dispatch_reason,
+                        "dispatch_error_code": dispatch_error_code,
+                        "next_dispatch_correlation_id": next_dispatch_correlation_id,
                     },
                     alert_code="infra_scheduler_internal_enqueue_dispatch_retry",
                     error_type="dispatch_retry_scheduled",
@@ -192,6 +275,9 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                         "retry_count": next_retry_count,
                         "max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
                         "next_retry_at": next_retry_at.isoformat(),
+                        "dispatch_reason": dispatch_reason,
+                        "dispatch_error_code": dispatch_error_code,
+                        "next_dispatch_correlation_id": next_dispatch_correlation_id,
                     },
                 )
                 continue
@@ -207,6 +293,8 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                     "scheduled_for": scheduled_for,
                     "retry_count": next_retry_count,
                     "max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                    "dispatch_reason": dispatch_reason,
+                    "dispatch_error_code": dispatch_error_code,
                 },
                 alert_code="infra_scheduler_internal_enqueue_dispatch_failed",
                 error_type="dispatch_failed",
@@ -216,9 +304,11 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                 "failed",
                 {
                     **item,
-                    "error": "dispatch_failed",
+                    "error": dispatch_reason,
+                    "dispatch_error_code": dispatch_error_code,
                     "dispatch_retry_count": next_retry_count,
                     "dispatch_retry_max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                    "last_dispatch_correlation_id": attempt_correlation_id,
                 },
             )
             await m.create_zone_event(
@@ -230,6 +320,8 @@ async def process_internal_enqueued_tasks(m: Any, now_dt) -> None:
                     "scheduled_for": scheduled_for,
                     "retry_count": next_retry_count,
                     "max_attempts": m._INTERNAL_ENQUEUE_DISPATCH_MAX_ATTEMPTS,
+                    "dispatch_reason": dispatch_reason,
+                    "dispatch_error_code": dispatch_error_code,
                 },
             )
             continue

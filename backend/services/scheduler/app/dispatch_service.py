@@ -148,7 +148,32 @@ async def execute_scheduled_task(
     schedule: Dict[str, Any],
     trigger_time,
     schedule_key: Optional[str] = None,
-) -> bool:
+    include_result_meta: bool = False,
+) -> Union[bool, Dict[str, Any]]:
+    def _dispatch_result(
+        *,
+        dispatched: bool,
+        reason: str,
+        retryable: bool,
+        task_id: Optional[str] = None,
+        status: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> Union[bool, Dict[str, Any]]:
+        if not include_result_meta:
+            return dispatched
+        payload: Dict[str, Any] = {
+            "dispatched": dispatched,
+            "reason": reason,
+            "retryable": retryable,
+        }
+        if task_id:
+            payload["task_id"] = task_id
+        if status:
+            payload["status"] = status
+        if error_code:
+            payload["error_code"] = error_code
+        return payload
+
     task_type = str(schedule.get("type") or "").strip().lower()
     if task_type not in m.SUPPORTED_TASK_TYPES:
         await m._emit_scheduler_diagnostic(
@@ -159,7 +184,7 @@ async def execute_scheduled_task(
             details={"schedule": schedule},
             alert_code="infra_scheduler_unsupported_task_type",
         )
-        return False
+        return _dispatch_result(dispatched=False, reason="unsupported_task_type", retryable=False)
 
     task_name = f"{task_type}_zone_{zone_id}"
     if m.SCHEDULER_ZONE_PREFLIGHT_ENFORCE:
@@ -195,7 +220,7 @@ async def execute_scheduled_task(
                 alert_code="infra_scheduler_dispatch_zone_not_found",
                 error_type="zone_not_found",
             )
-            return False
+            return _dispatch_result(dispatched=False, reason="zone_not_found", retryable=False)
 
     normalized_key = schedule_key or m._build_schedule_key(zone_id, schedule)
     if m._is_schedule_busy(normalized_key):
@@ -213,7 +238,7 @@ async def execute_scheduled_task(
             alert_code="infra_scheduler_schedule_busy_skip",
             error_type="schedule_busy",
         )
-        return False
+        return _dispatch_result(dispatched=False, reason="schedule_busy", retryable=True)
 
     await m.create_scheduler_log(
         task_name,
@@ -303,7 +328,7 @@ async def execute_scheduled_task(
             },
             task_type=task_type,
         )
-        return False
+        return _dispatch_result(dispatched=False, reason="submit_failed", retryable=True)
 
     accept_latency_sec = max(0.0, (accepted_at - submitted_at).total_seconds())
     m.SCHEDULER_TASK_ACCEPT_LATENCY_SEC.labels(task_type=task_type).observe(accept_latency_sec)
@@ -362,9 +387,21 @@ async def execute_scheduled_task(
                 task_id=task_id,
                 task_type=task_type,
             )
-            return True
+            return _dispatch_result(
+                dispatched=True,
+                reason="terminal_completed",
+                retryable=False,
+                task_id=task_id,
+                status=terminal_status,
+            )
 
         m.SCHEDULER_TASK_STATUS.labels(task_type=task_type, status=terminal_status).inc()
+        terminal_error_code = str(outcome.get("error_code") or "").strip().lower()
+        terminal_reason_code = str(outcome.get("reason_code") or "").strip().lower()
+        retryable_terminal_codes = {"task_due_deadline_exceeded"}
+        terminal_retryable = (
+            terminal_error_code in retryable_terminal_codes or terminal_reason_code in retryable_terminal_codes
+        )
         await m.create_scheduler_log(
             task_name,
             "failed",
@@ -401,7 +438,14 @@ async def execute_scheduled_task(
             task_id=task_id,
             task_type=task_type,
         )
-        return False
+        return _dispatch_result(
+            dispatched=False,
+            reason=f"terminal_{terminal_status}",
+            retryable=terminal_retryable,
+            task_id=task_id,
+            status=terminal_status,
+            error_code=terminal_error_code or None,
+        )
 
     await m._create_zone_event_safe(
         zone_id,
@@ -440,4 +484,10 @@ async def execute_scheduled_task(
             "correlation_id": correlation_id,
         },
     )
-    return True
+    return _dispatch_result(
+        dispatched=True,
+        reason="accepted",
+        retryable=False,
+        task_id=task_id,
+        status=submit_status,
+    )

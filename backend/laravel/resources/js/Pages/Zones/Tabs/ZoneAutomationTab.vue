@@ -485,32 +485,84 @@
             <li
               v-for="(step, index) in schedulerTaskTimeline"
               :key="`${schedulerTaskStatus.task_id}-timeline-${step.event_id || index}`"
-              class="flex flex-col md:flex-row md:items-center md:justify-between gap-1 border-b border-[color:var(--border-muted)]/40 pb-1 last:border-0"
+              class="flex flex-col gap-1 border-b border-[color:var(--border-muted)]/40 pb-2 last:border-0"
             >
-              <div class="text-[color:var(--text-primary)]">
-                {{ schedulerTaskTimelineStepLabel(step) }}
-                <span
-                  v-if="schedulerTaskTimelineStageLabel(step)"
-                  class="text-[color:var(--text-dim)]"
-                >
-                  · {{ schedulerTaskTimelineStageLabel(step) }}
+              <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-1">
+                <div class="text-[color:var(--text-primary)]">
+                  {{ schedulerTaskTimelineStepLabel(step) }}
+                  <span
+                    v-if="schedulerTaskTimelineStageLabel(step)"
+                    class="text-[color:var(--text-dim)]"
+                  >
+                    · {{ schedulerTaskTimelineStageLabel(step) }}
+                  </span>
+                  <span
+                    v-if="step.reason_code && !schedulerTaskTimelineStageLabel(step)"
+                    class="text-[color:var(--text-dim)]"
+                  >
+                    · {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
+                  </span>
+                  <span
+                    v-if="step.error_code"
+                    class="text-red-500"
+                  >
+                    · {{ schedulerTaskErrorLabel(step.error_code) }}
+                  </span>
+                </div>
+                <div class="text-[color:var(--text-dim)]">
+                  {{ formatDateTime(step.at) }}
+                </div>
+              </div>
+
+              <div
+                v-if="step.decision || step.reason_code || step.error_code"
+                class="text-[11px] text-[color:var(--text-dim)]"
+              >
+                <span v-if="step.decision">
+                  decision: {{ schedulerTaskDecisionLabel(step.decision) }}
+                  <span class="font-mono">({{ step.decision }})</span>
                 </span>
                 <span
-                  v-if="step.reason_code && !schedulerTaskTimelineStageLabel(step)"
-                  class="text-[color:var(--text-dim)]"
+                  v-if="step.reason_code"
+                  class="ml-2"
                 >
-                  · {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
+                  reason: {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
+                  <span class="font-mono">({{ step.reason_code }})</span>
                 </span>
                 <span
                   v-if="step.error_code"
-                  class="text-red-500"
+                  class="ml-2"
                 >
-                  · {{ schedulerTaskErrorLabel(step.error_code) }}
+                  error: {{ schedulerTaskErrorLabel(step.error_code) }}
+                  <span class="font-mono">({{ step.error_code }})</span>
                 </span>
               </div>
-              <div class="text-[color:var(--text-dim)]">
-                {{ formatDateTime(step.at) }}
+
+              <div
+                v-if="schedulerTaskTimelineExtraMeta(step).length > 0"
+                class="flex flex-wrap gap-1"
+              >
+                <span
+                  v-for="meta in schedulerTaskTimelineExtraMeta(step)"
+                  :key="`${step.event_id}-meta-${meta}`"
+                  class="rounded-md border border-[color:var(--border-muted)]/50 bg-[color:var(--surface-card)] px-1.5 py-0.5 text-[10px] text-[color:var(--text-dim)] font-mono"
+                >
+                  {{ meta }}
+                </span>
               </div>
+
+              <details
+                v-if="formatSchedulerTimelineRawDetails(step)"
+                class="rounded-lg border border-[color:var(--border-muted)]/50 bg-[color:var(--surface-card)]/40"
+              >
+                <summary class="cursor-pointer list-none px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]">
+                  raw payload
+                </summary>
+                <pre
+                  v-if="formatSchedulerTimelineRawDetails(step)"
+                  class="max-h-52 overflow-auto border-t border-[color:var(--border-muted)]/40 px-2 py-2 text-[10px] leading-4 text-[color:var(--text-muted)]"
+                >{{ formatSchedulerTimelineRawDetails(step) }}</pre>
+              </details>
             </li>
           </ul>
           <p
@@ -623,6 +675,7 @@ import type {
   ClimateFormState,
   LightingFormState,
   WaterFormState,
+  SchedulerTaskTimelineItem,
 } from '@/composables/zoneAutomationTypes'
 import type { AutomationStateType } from '@/types/Automation'
 import {
@@ -700,6 +753,62 @@ const isProcessActive = computed(() => processState.value !== 'IDLE' && processS
 
 function handleProcessStateChange(state: AutomationStateType): void {
   processState.value = state
+}
+
+function normalizeSchedulerText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized !== '' ? normalized : null
+}
+
+function formatSchedulerBool(value: boolean | null | undefined): string | null {
+  if (value === true) return 'yes'
+  if (value === false) return 'no'
+  return null
+}
+
+function formatSchedulerTimelineRawDetails(step: SchedulerTaskTimelineItem): string {
+  if (!step.details || typeof step.details !== 'object') return ''
+  try {
+    return JSON.stringify(step.details, null, 2)
+  } catch {
+    return ''
+  }
+}
+
+function schedulerTaskTimelineExtraMeta(step: SchedulerTaskTimelineItem): string[] {
+  const items: string[] = []
+  const nodeUid = normalizeSchedulerText(step.node_uid)
+  const channel = normalizeSchedulerText(step.channel)
+  const cmd = normalizeSchedulerText(step.cmd)
+  const runMode = normalizeSchedulerText(step.run_mode)
+  const terminalStatus = normalizeSchedulerText(step.terminal_status)
+  const source = normalizeSchedulerText(step.source)
+  const eventSeq = typeof step.event_seq === 'number' ? String(step.event_seq) : null
+  const retryAttempt = typeof step.retry_attempt === 'number' ? step.retry_attempt : null
+  const retryMaxAttempts = typeof step.retry_max_attempts === 'number' ? step.retry_max_attempts : null
+  const retryBackoff = typeof step.retry_backoff_sec === 'number' ? `${step.retry_backoff_sec}s` : null
+  const commandSubmitted = formatSchedulerBool(step.command_submitted)
+  const commandEffectConfirmed = formatSchedulerBool(step.command_effect_confirmed)
+  const nextDueAt = normalizeSchedulerText(step.next_due_at)
+
+  if (eventSeq) items.push(`seq: ${eventSeq}`)
+  if (nodeUid) items.push(`node: ${nodeUid}`)
+  if (channel) items.push(`channel: ${channel}`)
+  if (cmd) items.push(`cmd: ${cmd}`)
+  if (runMode) items.push(`mode: ${runMode}`)
+  if (terminalStatus) items.push(`terminal: ${terminalStatus}`)
+  if (commandSubmitted) items.push(`submitted: ${commandSubmitted}`)
+  if (commandEffectConfirmed) items.push(`effect_confirmed: ${commandEffectConfirmed}`)
+  if (retryAttempt !== null) {
+    const retryMeta = retryMaxAttempts !== null ? `${retryAttempt}/${retryMaxAttempts}` : String(retryAttempt)
+    items.push(`retry: ${retryMeta}`)
+  }
+  if (retryBackoff) items.push(`backoff: ${retryBackoff}`)
+  if (nextDueAt) items.push(`next_due_at: ${formatDateTime(nextDueAt)}`)
+  if (source) items.push(`source: ${source}`)
+
+  return items
 }
 
 async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Promise<void> {

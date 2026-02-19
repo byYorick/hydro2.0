@@ -738,6 +738,47 @@ async def test_execute_ventilation_marks_external_fallback_when_weather_metrics_
 
 
 @pytest.mark.asyncio
+async def test_execute_ventilation_treats_no_effect_as_success_for_state_command():
+    command_bus = _build_command_bus_mock(
+        command_submitted=True,
+        command_effect_confirmed=False,
+        terminal_status="NO_EFFECT",
+    )
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from sensors s" in normalized and "s.type = $2" in normalized:
+            return []
+        if "from nodes n" in normalized and "lower(trim(coalesce(n.type, ''))) = any($2::text[])" in normalized:
+            return [{"uid": "nd-vent-1", "type": "climate", "channel": "default"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=1,
+            task_type="ventilation",
+            payload={
+                "config": {
+                    "execution": {
+                        "limits": {
+                            "strong_wind_mps": 10.0,
+                            "low_outside_temp_c": 8.0,
+                        }
+                    }
+                }
+            },
+        )
+
+    assert result["success"] is True
+    assert result["command_effect_confirmed"] is True
+    assert result["reason_code"] == "climate_external_nodes_unavailable"
+    command_bus.publish_controller_command_closed_loop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_diagnostics_without_zone_service_fails_with_alert():
     command_bus = _build_command_bus_mock()
 

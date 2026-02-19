@@ -1331,6 +1331,50 @@ async def test_execute_scheduled_task_terminal_submit_keeps_terminal_when_fetch_
 
 
 @pytest.mark.asyncio
+async def test_execute_scheduled_task_terminal_rejected_due_deadline_returns_retryable_meta():
+    terminal_payload = {
+        "task_id": "st-rejected-fast-fail-meta",
+        "status": "rejected",
+        "result": {
+            "action_required": False,
+            "decision": "skip",
+            "reason_code": "task_due_deadline_exceeded",
+            "error_code": "task_due_deadline_exceeded",
+        },
+        "error": "task_due_deadline_exceeded",
+        "error_code": "task_due_deadline_exceeded",
+    }
+
+    with patch("main.submit_task_to_automation_engine", new_callable=AsyncMock) as mock_submit, \
+         patch("main._fetch_task_status_once", new_callable=AsyncMock) as mock_fetch_status, \
+         patch("main.create_scheduler_log", new_callable=AsyncMock), \
+         patch("main.create_zone_event", new_callable=AsyncMock):
+        mock_submit.return_value = {
+            "task_id": "st-rejected-fast-fail-meta",
+            "status": "rejected",
+            "payload": {},
+        }
+        mock_fetch_status.return_value = ("rejected", terminal_payload)
+
+        dispatch_meta = await execute_scheduled_task(
+            zone_id=28,
+            schedule={"type": "diagnostics", "targets": {}, "config": {}},
+            trigger_time=datetime(2025, 1, 1, 8, 0, 0),
+            schedule_key="zone:28|type:diagnostics|interval=1800",
+            include_result_meta=True,
+        )
+
+    assert dispatch_meta == {
+        "dispatched": False,
+        "reason": "terminal_rejected",
+        "retryable": True,
+        "task_id": "st-rejected-fast-fail-meta",
+        "status": "rejected",
+        "error_code": "task_due_deadline_exceeded",
+    }
+
+
+@pytest.mark.asyncio
 async def test_check_and_execute_schedules_runs_interval_task():
     with patch("main.get_active_schedules", new_callable=AsyncMock) as mock_schedules, \
          patch("main.get_simulation_clocks", new_callable=AsyncMock) as mock_sim_clocks, \
@@ -1645,6 +1689,32 @@ async def test_process_internal_enqueued_tasks_dispatches_pending_entry():
 
 
 @pytest.mark.asyncio
+async def test_process_internal_enqueued_tasks_clamps_stale_trigger_time_to_now():
+    now_dt = datetime(2025, 1, 1, 8, 0, 0)
+    pending_entry = {
+        "enqueue_id": "enq-stale-trigger",
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "payload": {},
+        "scheduled_for": (now_dt - timedelta(minutes=2)).isoformat(),
+        "expires_at": (now_dt + timedelta(minutes=5)).isoformat(),
+        "correlation_id": "ae:self:28:diagnostics:enq-stale-trigger",
+    }
+
+    with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
+         patch("main.execute_scheduled_task", new_callable=AsyncMock) as mock_execute, \
+         patch("main._mark_internal_enqueue_status", new_callable=AsyncMock), \
+         patch("main.create_zone_event", new_callable=AsyncMock):
+        mock_load.return_value = [pending_entry]
+        mock_execute.return_value = True
+        _ACTIVE_SCHEDULE_TASKS["internal_enqueue:enq-stale-trigger"] = "st-internal-stale-1"
+
+        await process_internal_enqueued_tasks(now_dt)
+
+    assert mock_execute.await_args.kwargs["trigger_time"] == now_dt
+
+
+@pytest.mark.asyncio
 async def test_process_internal_enqueued_tasks_marks_expired_entry():
     now_dt = datetime(2025, 1, 1, 8, 0, 0)
     pending_entry = {
@@ -1760,6 +1830,76 @@ async def test_process_internal_enqueued_tasks_dispatch_failed_emits_diagnostic(
     assert isinstance(retry_details["scheduled_for"], str)
     assert mock_diag.await_count == 1
     assert mock_diag.await_args.kwargs["reason"] == "internal_enqueue_dispatch_retry_scheduled"
+
+
+@pytest.mark.asyncio
+async def test_process_internal_enqueued_tasks_dispatch_retry_uses_new_attempt_correlation_id():
+    now_dt = datetime(2025, 1, 1, 8, 0, 0)
+    pending_entry = {
+        "enqueue_id": "enq-dispatch-retry-correlation",
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "payload": {},
+        "scheduled_for": (now_dt - timedelta(seconds=5)).isoformat(),
+        "correlation_id": "ae:self:28:diagnostics:enq-dispatch-retry-correlation",
+        "dispatch_retry_count": 1,
+    }
+
+    with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
+         patch("main.execute_scheduled_task", new_callable=AsyncMock) as mock_execute, \
+         patch("main._mark_internal_enqueue_status", new_callable=AsyncMock) as mock_mark, \
+         patch("main.create_zone_event", new_callable=AsyncMock), \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock):
+        mock_load.return_value = [pending_entry]
+        mock_execute.return_value = {
+            "dispatched": False,
+            "retryable": True,
+            "reason": "submit_failed",
+            "error_code": "http_500",
+        }
+        await process_internal_enqueued_tasks(now_dt)
+
+    execute_kwargs = mock_execute.await_args.kwargs
+    assert execute_kwargs["schedule"]["correlation_id"] == "ae:self:28:diagnostics:enq-dispatch-retry-correlation:dispatch2"
+    retry_details = mock_mark.await_args.args[2]
+    assert retry_details["correlation_id"] == "ae:self:28:diagnostics:enq-dispatch-retry-correlation"
+    assert retry_details["correlation_id_root"] == "ae:self:28:diagnostics:enq-dispatch-retry-correlation"
+    assert retry_details["dispatch_retry_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_process_internal_enqueued_tasks_dispatch_non_retryable_marks_failed():
+    now_dt = datetime(2025, 1, 1, 8, 0, 0)
+    pending_entry = {
+        "enqueue_id": "enq-dispatch-not-retryable",
+        "zone_id": 28,
+        "task_type": "diagnostics",
+        "payload": {},
+        "scheduled_for": (now_dt - timedelta(seconds=5)).isoformat(),
+        "correlation_id": "ae:self:28:diagnostics:enq-dispatch-not-retryable",
+    }
+
+    with patch("main._load_pending_internal_enqueues", new_callable=AsyncMock) as mock_load, \
+         patch("main.execute_scheduled_task", new_callable=AsyncMock) as mock_execute, \
+         patch("main._mark_internal_enqueue_status", new_callable=AsyncMock) as mock_mark, \
+         patch("main.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("main._emit_scheduler_diagnostic", new_callable=AsyncMock) as mock_diag:
+        mock_load.return_value = [pending_entry]
+        mock_execute.return_value = {
+            "dispatched": False,
+            "retryable": False,
+            "reason": "terminal_failed",
+            "error_code": "command_no_effect",
+        }
+        await process_internal_enqueued_tasks(now_dt)
+
+    assert mock_mark.await_args.args[1] == "failed"
+    details = mock_mark.await_args.args[2]
+    assert details["error"] == "terminal_failed"
+    assert details["dispatch_error_code"] == "command_no_effect"
+    assert mock_diag.await_args.kwargs["reason"] == "internal_enqueue_dispatch_not_retryable"
+    assert mock_event.await_args.args[1] == "SELF_TASK_DISPATCH_FAILED"
+    assert mock_event.await_args.args[2]["retryable"] is False
 
 
 @pytest.mark.asyncio

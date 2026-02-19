@@ -30,6 +30,14 @@ def _filter_nodes_for_command(nodes: Sequence[Dict[str, Any]], cmd: str | None) 
     return filtered
 
 
+def _accepted_terminal_statuses_for_mapping(mapping: SchedulerTaskMapping) -> tuple[str, ...] | None:
+    # Команды с state_key (set_relay/light_on/light_off) идемпотентны для текущего состояния,
+    # поэтому NO_EFFECT считаем подтверждённым эффектом.
+    if mapping.state_key:
+        return ("DONE", "NO_EFFECT")
+    return None
+
+
 async def execute_device_task_core(
     *,
     zone_id: int,
@@ -110,6 +118,7 @@ async def execute_device_task_core(
         }
 
     params = resolve_command_params_fn(payload, mapping)
+    accepted_terminal_statuses = _accepted_terminal_statuses_for_mapping(mapping)
     return await publish_batch_fn(
         zone_id=zone_id,
         task_type=mapping.task_type,
@@ -118,6 +127,7 @@ async def execute_device_task_core(
         params=params,
         context=context,
         decision=decision,
+        accepted_terminal_statuses=accepted_terminal_statuses,
     )
 
 

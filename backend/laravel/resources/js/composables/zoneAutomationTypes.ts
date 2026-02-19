@@ -112,6 +112,13 @@ export interface SchedulerTaskTimelineItem {
   terminal_status?: string | null
   status?: string | null
   run_mode?: string | null
+  retry_attempt?: number | null
+  retry_max_attempts?: number | null
+  retry_backoff_sec?: number | null
+  next_due_at?: string | null
+  executed_steps?: unknown[] | null
+  safety_flags?: Record<string, unknown> | null
+  measurements_before_after?: Record<string, unknown> | null
   source?: string | null
   details?: Record<string, unknown> | null
 }
