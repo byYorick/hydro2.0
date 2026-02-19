@@ -67,3 +67,124 @@ export interface ZoneAutomationForms {
   waterForm: WaterFormState
   lightingForm: LightingFormState
 }
+
+// ─── Zone Automation Tab types ────────────────────────────────────────────────
+
+import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
+
+export type PredictionTargets = Record<string, { min?: number; max?: number }>
+
+export interface ZoneAutomationTabProps {
+  zoneId: number | null
+  targets: ZoneTargetsType | PredictionTargets
+  telemetry?: ZoneTelemetry | null
+  activeGrowCycle?: { status?: string | null } | null
+}
+
+// ─── Scheduler Task types ─────────────────────────────────────────────────────
+
+export interface SchedulerTaskLifecycleItem {
+  status: string
+  at: string | null
+  error?: string | null
+  source?: string | null
+}
+
+export interface SchedulerTaskTimelineItem {
+  event_id: string
+  event_seq?: number | null
+  event_type: string
+  type?: string | null
+  at: string | null
+  task_id?: string | null
+  correlation_id?: string | null
+  task_type?: string | null
+  action_required?: boolean | null
+  decision?: string | null
+  reason_code?: string | null
+  reason?: string | null
+  node_uid?: string | null
+  channel?: string | null
+  cmd?: string | null
+  error_code?: string | null
+  command_submitted?: boolean | null
+  command_effect_confirmed?: boolean | null
+  terminal_status?: string | null
+  status?: string | null
+  run_mode?: string | null
+  source?: string | null
+  details?: Record<string, unknown> | null
+}
+
+export interface SchedulerTaskProcessAction {
+  event_type?: string | null
+  reason_code?: string | null
+  at?: string | null
+}
+
+export interface SchedulerTaskProcessState {
+  status?: string | null
+  status_label?: string | null
+  phase?: string | null
+  phase_label?: string | null
+  is_setup_completed?: boolean | null
+  is_work_mode?: boolean | null
+  current_action?: SchedulerTaskProcessAction | null
+}
+
+export interface SchedulerTaskProcessStep {
+  phase: string
+  label: string
+  status: string
+  status_label?: string | null
+  started_at?: string | null
+  updated_at?: string | null
+  last_reason_code?: string | null
+  last_event_type?: string | null
+}
+
+export interface SchedulerTaskStatus {
+  task_id: string
+  zone_id: number
+  task_type: string | null
+  status: string | null
+  created_at: string | null
+  updated_at: string | null
+  scheduled_for: string | null
+  due_at?: string | null
+  expires_at?: string | null
+  correlation_id: string | null
+  result?: Record<string, unknown> | null
+  error?: string | null
+  error_code?: string | null
+  action_required?: boolean | null
+  decision?: string | null
+  reason_code?: string | null
+  reason?: string | null
+  command_submitted?: boolean | null
+  command_effect_confirmed?: boolean | null
+  commands_total?: number | null
+  commands_effect_confirmed?: number | null
+  commands_failed?: number | null
+  source?: string | null
+  lifecycle: SchedulerTaskLifecycleItem[]
+  timeline?: SchedulerTaskTimelineItem[]
+  process_state?: SchedulerTaskProcessState | null
+  process_steps?: SchedulerTaskProcessStep[] | null
+}
+
+export type SchedulerTaskSlaVariant = 'success' | 'warning' | 'danger' | 'info' | 'secondary'
+
+export interface SchedulerTaskSlaMeta {
+  variant: SchedulerTaskSlaVariant
+  label: string
+  hint: string
+}
+
+export interface SchedulerTaskDoneMeta {
+  variant: SchedulerTaskSlaVariant
+  label: string
+  hint: string
+}
+
+export type SchedulerTaskPreset = 'all' | 'failed' | 'deadline' | 'done_confirmed' | 'done_unconfirmed'

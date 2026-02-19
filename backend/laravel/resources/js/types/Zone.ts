@@ -26,7 +26,7 @@ export interface Zone {
   telemetry?: ZoneTelemetry
   devices?: Device[]
   cycles?: GrowCycle[]
-  activeGrowCycle?: any // TODO: Define proper type
+  activeGrowCycle?: GrowCycle | null
   created_at: string
   updated_at: string
 }

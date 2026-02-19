@@ -52,3 +52,15 @@ export interface HoveredElement {
   x: number
   y: number
 }
+
+/**
+ * Типы стадий Setup режима автоматизации
+ */
+export type SetupStageCode = 'clean_fill' | 'solution_fill' | 'parallel_correction' | 'setup_transition'
+export type SetupStageStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface SetupStageView {
+  code: SetupStageCode
+  label: string
+  status: SetupStageStatus
+}

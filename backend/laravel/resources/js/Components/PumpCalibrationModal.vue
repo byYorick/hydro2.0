@@ -222,32 +222,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import type { Device, PumpCalibrationConfig } from '@/types'
-
-type PumpCalibrationComponent = 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'
-
-interface PumpChannelOption {
-  id: number
-  label: string
-  channelName: string
-  priority: number
-  calibration: PumpCalibrationConfig | null
-}
-
-interface StartPumpCalibrationPayload {
-  node_channel_id: number
-  duration_sec: number
-  component: PumpCalibrationComponent
-}
-
-interface SavePumpCalibrationPayload extends StartPumpCalibrationPayload {
-  actual_ml: number
-  skip_run: true
-  test_volume_l?: number
-  ec_before_ms?: number
-  ec_after_ms?: number
-  temperature_c?: number
-}
+import type { Device } from '@/types'
+import type { PumpCalibrationComponent, PumpChannelOption, PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
 interface Props {
   show?: boolean
@@ -267,8 +243,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'start', payload: StartPumpCalibrationPayload): void
-  (e: 'save', payload: SavePumpCalibrationPayload): void
+  (e: 'start', payload: PumpCalibrationRunPayload): void
+  (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
 
 const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }> = [
@@ -674,7 +650,7 @@ function onSave(): void {
   }
 
   formError.value = null
-  const payload: SavePumpCalibrationPayload = {
+  const payload: PumpCalibrationSavePayload = {
     node_channel_id: form.node_channel_id as number,
     duration_sec: Math.trunc(form.duration_sec),
     actual_ml: Number(form.actual_ml),

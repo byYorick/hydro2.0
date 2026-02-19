@@ -17,6 +17,9 @@ export interface RecipePhaseTargets {
   light_hours?: number
   irrigation_interval_sec?: number
   irrigation_duration_sec?: number
+  irrigation?: Record<string, unknown>
+  lighting?: Record<string, unknown>
+  climate?: Record<string, unknown>
 }
 
 export interface NutrientProduct {
@@ -40,6 +43,8 @@ export interface RecipePhase {
   phase_index: number
   name: string
   duration_hours: number
+  phase_started_at?: string | null
+  phase_ends_at?: string | null
   targets?: RecipePhaseTargets
   nutrient_program_code?: string | null
   nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null

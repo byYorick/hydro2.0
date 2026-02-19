@@ -321,7 +321,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
 
     try {
       const response = await api.post('/plants', payload)
-      const plant = (response.data as any)?.data || response.data
+      const plant = extractData<{ id?: number | null }>(response.data)
       createdPlantId.value = plant?.id ?? null
       createdPlantData.value = plant
       logger.info('Plant created:', response.data)

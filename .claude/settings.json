@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Read(//home/georgiy/esp/hydro/hydro2.0/**)"
+      "Read(//home/georgiy/esp/hydro/hydro2.0/**)",
+      "Bash(./node_modules/.bin/vue-tsc:*)"
     ]
   }
 }
