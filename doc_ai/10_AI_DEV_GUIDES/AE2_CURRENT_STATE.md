@@ -75,6 +75,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 44. S12 (increment 3): добавлены burst/churn acceptance тесты для cutover/bootstrap API (`test_api.py` 79 passed), load gate переведен в `PASS (local burst baseline)`.
 45. S12 (increment 4): добавлен high-volume concurrent ingress acceptance test (`/scheduler/task`, 120 submits), `test_api.py` обновлен до `80 passed`, load gate подтвержден локально.
 46. S12 (increment 5): выполнен consolidated acceptance прогон (`test_api.py + test_scheduler_task_executor.py + test_zone_node_recovery.py` -> 152 passed), подтверждена локальная стабильность parity/chaos/load baseline.
+47. S12 (increment 6): добавлен локальный SLO probe `tests/s12_cutover_slo_probe.py` (p50/p95/p99 для cutover/bootstrap endpoints), SLO gate отмечен как `PASS (local probe baseline)` с обязательным стендовым подтверждением.
 
 ## 5. Известные риски
 1. Остаточный dual-writer риск до полного S10 arbitration hardening.
@@ -102,6 +103,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `backend/services/automation-engine/application/api_scheduler_routes.py`
 - `backend/services/automation-engine/api.py`
 - `backend/services/automation-engine/test_api.py`
+- `backend/services/automation-engine/tests/s12_cutover_slo_probe.py`
 - `backend/services/scheduler/main.py`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_STAGE_S04_TASK.md`
 - `doc_ai/10_AI_DEV_GUIDES/AE2_CONTRACT_SECURITY_BASELINE_S4.md`

@@ -33,9 +33,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 4. Тесты для проверки
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py`
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_scheduler_task_executor.py test_zone_node_recovery.py`
+- `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine python tests/s12_cutover_slo_probe.py`
 
 ## 5. Критерий завершения
 1. Есть acceptance-отчет `AE2_ACCEPTANCE_VALIDATION_S12.md` с load/chaos/parity/SLO gate-статусами.
 2. Regression suite по затронутым тестам зеленый в Docker.
 3. `AE2_CURRENT_STATE.md` обновлен до статуса `S12 COMPLETED` и содержит финальный gate-increment.
-

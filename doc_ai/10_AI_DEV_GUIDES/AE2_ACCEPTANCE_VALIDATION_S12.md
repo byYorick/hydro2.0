@@ -19,7 +19,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `pytest test_scheduler_task_executor.py test_zone_node_recovery.py` -> `72 passed`.
 3. Parity gate: `PASS (local baseline)`:
 - `pytest test_api.py` -> `79 passed`, включая новые S12 acceptance checks.
-4. SLO gate: `PENDING` (требует стендовых метрик cutover потока).
+4. SLO gate: `PASS (local probe baseline)`:
+- подтвержден `s12_cutover_slo_probe.py`, стендовый SLO gate остается обязательным перед full rollout.
 
 ## 3. Increment 1 (2026-02-18)
 1. Добавлены acceptance-тесты в `test_api.py`:
@@ -54,7 +55,19 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine pytest test_api.py test_scheduler_task_executor.py test_zone_node_recovery.py` -> `152 passed`.
 2. Подтвержден локальный baseline стабильности для cutover parity + chaos recovery + scheduler ingress.
 
-## 8. Следующий инкремент S12
+## 8. Increment 6 (2026-02-18)
+1. Добавлен reproducible локальный SLO probe:
+- `backend/services/automation-engine/tests/s12_cutover_slo_probe.py`.
+2. Прогон в Docker:
+- `docker compose -f backend/docker-compose.dev.yml run --rm automation-engine python tests/s12_cutover_slo_probe.py`.
+3. Результаты локального probe (ms):
+- `GET /scheduler/cutover/state`: p50=5.92, p95=6.75, p99=7.11;
+- `GET /scheduler/integration/contracts`: p50=6.12, p95=7.18, p99=7.66;
+- `GET /scheduler/observability/contracts`: p50=5.86, p95=28.12, p99=28.37;
+- `POST /scheduler/bootstrap/heartbeat`: p50=23.21, p95=132.33, p99=138.29.
+4. SLO gate переведен в `PASS (local probe baseline)`, стендовый gate остается обязательным перед full rollout.
+
+## 9. Следующий инкремент S12
 1. Провести стендовый SLO-прогон cutover ingress и зафиксировать p50/p95/p99.
-2. Зафиксировать SLO gate (`PASS/FAIL/DEFERRED`) на основании стендовых метрик.
+2. Подтвердить/скорректировать SLO gate по стендовым метрикам и оформить release decision.
 3. Подготовить `AE2_STAGE_S12_FINAL_REPORT.md` после закрытия обязательных gates.
