@@ -67,6 +67,7 @@ async def _probe_endpoint(
 async def main() -> None:
     requests_count = max(20, int(os.getenv("AE2_SLO_PROBE_REQUESTS", "120")))
     concurrency = max(1, int(os.getenv("AE2_SLO_PROBE_CONCURRENCY", "20")))
+    output_mode = str(os.getenv("AE2_SLO_PROBE_OUTPUT_MODE", "human")).strip().lower()
 
     old_command_bus = api._command_bus
     old_gh_uid = api._gh_uid
@@ -124,14 +125,18 @@ async def main() -> None:
                 ),
             )
 
-        print("S12 Local SLO Probe Results (milliseconds):")
-        print(
+        csv_payload = (
             "endpoint,count,p50_ms,p95_ms,p99_ms,max_ms\n"
             f"cutover_state,{int(cutover['count'])},{cutover['p50_ms']:.2f},{cutover['p95_ms']:.2f},{cutover['p99_ms']:.2f},{cutover['max_ms']:.2f}\n"
             f"integration_contracts,{int(integration['count'])},{integration['p50_ms']:.2f},{integration['p95_ms']:.2f},{integration['p99_ms']:.2f},{integration['max_ms']:.2f}\n"
             f"observability_contracts,{int(observability['count'])},{observability['p50_ms']:.2f},{observability['p95_ms']:.2f},{observability['p99_ms']:.2f},{observability['max_ms']:.2f}\n"
             f"bootstrap_heartbeat,{int(heartbeat['count'])},{heartbeat['p50_ms']:.2f},{heartbeat['p95_ms']:.2f},{heartbeat['p99_ms']:.2f},{heartbeat['max_ms']:.2f}"
         )
+        if output_mode == "csv":
+            print(csv_payload)
+        else:
+            print("S12 Local SLO Probe Results (milliseconds):")
+            print(csv_payload)
     finally:
         api._scheduler_tasks.clear()
         api._scheduler_tasks.update(old_scheduler_tasks)

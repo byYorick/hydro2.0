@@ -67,7 +67,18 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `POST /scheduler/bootstrap/heartbeat`: p50=23.21, p95=132.33, p99=138.29.
 4. SLO gate переведен в `PASS (local probe baseline)`, стендовый gate остается обязательным перед full rollout.
 
-## 9. Следующий инкремент S12
+## 9. Increment 7 (2026-02-18)
+1. Добавлен machine-readable SLO baseline artifact:
+- `doc_ai/10_AI_DEV_GUIDES/AE2_S12_LOCAL_SLO_BASELINE.csv`.
+2. Зафиксирован reproducible экспорт:
+- `docker compose -f backend/docker-compose.dev.yml run --rm -e AE2_SLO_PROBE_OUTPUT_MODE=csv automation-engine python tests/s12_cutover_slo_probe.py > doc_ai/10_AI_DEV_GUIDES/AE2_S12_LOCAL_SLO_BASELINE.csv`.
+3. Последний локальный baseline (ms):
+- `cutover_state`: p50=6.42, p95=8.43, p99=8.76;
+- `integration_contracts`: p50=6.79, p95=8.95, p99=9.49;
+- `observability_contracts`: p50=6.18, p95=26.27, p99=26.42;
+- `bootstrap_heartbeat`: p50=25.67, p95=140.67, p99=146.87.
+
+## 10. Следующий инкремент S12
 1. Провести стендовый SLO-прогон cutover ingress и зафиксировать p50/p95/p99.
 2. Подтвердить/скорректировать SLO gate по стендовым метрикам и оформить release decision.
 3. Подготовить `AE2_STAGE_S12_FINAL_REPORT.md` после закрытия обязательных gates.
