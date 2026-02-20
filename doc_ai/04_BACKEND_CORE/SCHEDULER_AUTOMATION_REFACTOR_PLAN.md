@@ -9,6 +9,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 > Актуальный runtime-owner planning/dispatch: Laravel scheduler-dispatch
 > (см. `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`).
 > При конфликте использовать migration plan как приоритетный источник.
+> Исторические пути `backend/services/scheduler/*` могут отсутствовать
+> в текущей рабочей ветке после decommission legacy scheduler.
 
 ## 1. Цель
 

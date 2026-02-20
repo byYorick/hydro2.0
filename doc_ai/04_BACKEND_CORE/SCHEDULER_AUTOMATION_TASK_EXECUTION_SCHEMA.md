@@ -9,6 +9,8 @@
 > Текущий migration owner для planner/dispatch зафиксирован в
 > `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
 > При конфликте по runtime-owner использовать новый migration plan как приоритетный источник.
+> Ссылки на `backend/services/scheduler/*` в этом документе исторические и
+> могут отсутствовать в текущей рабочей ветке после decommission legacy scheduler.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость для старых scheduler/device-level контрактов не поддерживается.
