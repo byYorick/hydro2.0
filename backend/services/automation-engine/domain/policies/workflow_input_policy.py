@@ -88,6 +88,7 @@ def is_two_tank_startup_workflow(*, topology: str, workflow: str) -> bool:
         return False
     return workflow in {
         "startup",
+        "manual_step",
         "clean_fill_check",
         "solution_fill_check",
         "prepare_recirculation",

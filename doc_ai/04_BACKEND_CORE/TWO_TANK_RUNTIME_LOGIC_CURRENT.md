@@ -58,6 +58,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Для 2-бакового workflow поддерживаются stages:
 - `startup`
+- `manual_step`
 - `clean_fill_check`
 - `solution_fill_check`
 - `prepare_recirculation`
@@ -220,7 +221,26 @@ Fail-closed режим:
 
 ---
 
-## 9. Fail-safe и валидация
+## 9. API для ручного управления (AE/Laravel)
+
+Новые endpoint automation-engine:
+- `GET /zones/{zone_id}/automation/control-mode`
+- `POST /zones/{zone_id}/automation/control-mode` (`control_mode`: `auto|semi|manual`)
+- `POST /zones/{zone_id}/automation/manual-step` (`manual_step`: start/stop по этапам 2-баковой схемы)
+
+Проксирование в Laravel API:
+- `GET /api/zones/{zone}/automation/control-mode`
+- `POST /api/zones/{zone}/automation/control-mode` (роль `operator`)
+- `POST /api/zones/{zone}/automation/manual-step` (роль `operator`)
+
+Поведение:
+- в `auto` manual-step запрещён (`manual_step_forbidden_in_auto_mode`);
+- в `semi` и `manual` manual-step разрешён;
+- `GET /zones/{zone_id}/automation-state` возвращает `control_mode` и `allowed_manual_steps` для UI.
+
+---
+
+## 10. Fail-safe и валидация
 
 1. Fail-closed по payload:
    - `invalid_payload_contract_version`
@@ -252,7 +272,7 @@ Fail-closed режим:
 
 ---
 
-## 10. Особенности источников подтверждения наполнения
+## 11. Особенности источников подтверждения наполнения
 
 Подтверждение завершения fill может прийти из двух каналов:
 
@@ -266,12 +286,19 @@ Fail-closed режим:
 
 Оба канала используются параллельно: событие ускоряет переход, poll остаётся резервом.
 
-Отдельно от node-event: snapshot `irr/state` формируется из `command_response` на команду `state`
-и сохраняется в `zone_events` с типом `IRR_STATE_SNAPSHOT`.
+Отдельно от node-event: snapshot `irr/state` сохраняется в `zone_events` с типом `IRR_STATE_SNAPSHOT`:
+
+- из `command_response`:
+  - при `cmd=state`;
+  - fail-safe: также при `channel=storage_state` (даже если в записи команды `cmd` не восстановлен).
+- из `storage_state/event`, если payload содержит объект `snapshot`.
+
+Для snapshot допускается частичный набор bool-полей (не только строго полный): critical guard в AE
+сравнивает только поля, обязательные для текущего этапа, а отсутствующие трактуются как mismatch, а не unavailable.
 
 ---
 
-## 11. Где смотреть в коде
+## 12. Где смотреть в коде
 
 - Router/validation:
   - `backend/services/automation-engine/application/workflow_validator.py`
@@ -297,7 +324,7 @@ Fail-closed режим:
 
 ---
 
-## 12. Связанные спецификации
+## 13. Связанные спецификации
 
 - `doc_ai/04_BACKEND_CORE/TWO_TANK_RUNTIME_LOGIC_TARGET_SPEC.md` (target/to-be контракт)
 - `doc_ai/04_BACKEND_CORE/SCHEDULER_AUTOMATION_TASK_EXECUTION_SCHEMA.md`

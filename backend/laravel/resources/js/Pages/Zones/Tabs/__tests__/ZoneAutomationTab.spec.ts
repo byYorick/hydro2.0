@@ -886,4 +886,28 @@ describe('ZoneAutomationTab.vue', () => {
     const editButton = wrapper.findAll('button').find((btn) => btn.text() === 'Редактировать')
     expect(editButton).toBeUndefined()
   })
+
+  it('блокирует ручное управление двухбаковой схемой для не-operator роли', async () => {
+    roleState.role = 'engineer'
+
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+
+    const modeSelect = wrapper.find('select.input-select')
+    expect(modeSelect.exists()).toBe(true)
+    expect(modeSelect.attributes('disabled')).toBeDefined()
+
+    const manualStepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
+    expect(manualStepButton).toBeTruthy()
+    expect(manualStepButton!.attributes('disabled')).toBeDefined()
+  })
 })

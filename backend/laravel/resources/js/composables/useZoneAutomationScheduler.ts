@@ -28,6 +28,17 @@ import {
   type SchedulerTaskResponse,
 } from '@/composables/zoneSchedulerFormatters'
 
+export type AutomationControlMode = 'auto' | 'semi' | 'manual'
+export type AutomationManualStep =
+  | 'clean_fill_start'
+  | 'clean_fill_stop'
+  | 'solution_fill_start'
+  | 'solution_fill_stop'
+  | 'prepare_recirculation_start'
+  | 'prepare_recirculation_stop'
+  | 'irrigation_recovery_start'
+  | 'irrigation_recovery_stop'
+
 // ─── Composable ───────────────────────────────────────────────────────────────
 
 export interface ZoneAutomationSchedulerDeps {
@@ -47,6 +58,20 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   const schedulerTaskError = ref<string | null>(null)
   const schedulerTaskStatus = ref<SchedulerTaskStatus | null>(null)
   const recentSchedulerTasks = ref<SchedulerTaskStatus[]>([])
+  const automationControlMode = ref<AutomationControlMode>('auto')
+  const allowedManualSteps = ref<AutomationManualStep[]>([])
+  const automationControlModeLoading = ref(false)
+  const automationControlModeSaving = ref(false)
+  const manualStepLoading = ref<Record<AutomationManualStep, boolean>>({
+    clean_fill_start: false,
+    clean_fill_stop: false,
+    solution_fill_start: false,
+    solution_fill_stop: false,
+    prepare_recirculation_start: false,
+    prepare_recirculation_stop: false,
+    irrigation_recovery_start: false,
+    irrigation_recovery_stop: false,
+  })
   const schedulerTaskSearch = ref('')
   const schedulerTaskPreset = ref<SchedulerTaskPreset>('all')
   const schedulerTasksUpdatedAt = ref<string | null>(null)
@@ -96,6 +121,64 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       if (normalized === '0' || normalized === 'false') return false
     }
     return null
+  }
+
+  function normalizeControlMode(value: unknown): AutomationControlMode {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'semi' || normalized === 'manual') return normalized
+    return 'auto'
+  }
+
+  function normalizeManualSteps(value: unknown): AutomationManualStep[] {
+    if (!Array.isArray(value)) return []
+    const allowed = new Set<AutomationManualStep>([
+      'clean_fill_start',
+      'clean_fill_stop',
+      'solution_fill_start',
+      'solution_fill_stop',
+      'prepare_recirculation_start',
+      'prepare_recirculation_stop',
+      'irrigation_recovery_start',
+      'irrigation_recovery_stop',
+    ])
+    return value
+      .map((item) => String(item ?? '').trim().toLowerCase())
+      .filter((item): item is AutomationManualStep => allowed.has(item as AutomationManualStep))
+  }
+
+  function extractApiErrorMessage(error: unknown, fallback: string): string {
+    const err = error as { response?: { data?: unknown } }
+    const data = err?.response?.data
+    if (typeof data === 'string' && data.trim() !== '') {
+      return data.trim()
+    }
+    if (data && typeof data === 'object') {
+      const payload = data as Record<string, unknown>
+      const message = payload.message
+      if (typeof message === 'string' && message.trim() !== '') {
+        return message.trim()
+      }
+      const code = payload.code
+      if (typeof code === 'string' && code.trim() !== '') {
+        return code.trim()
+      }
+      const detail = payload.detail
+      if (typeof detail === 'string' && detail.trim() !== '') {
+        return detail.trim()
+      }
+      if (detail && typeof detail === 'object') {
+        const detailPayload = detail as Record<string, unknown>
+        const detailMessage = detailPayload.message
+        if (typeof detailMessage === 'string' && detailMessage.trim() !== '') {
+          return detailMessage.trim()
+        }
+        const detailCode = detailPayload.code
+        if (typeof detailCode === 'string' && detailCode.trim() !== '') {
+          return detailCode.trim()
+        }
+      }
+    }
+    return fallback
   }
 
   // ─── Computed ──────────────────────────────────────────────────────────────
@@ -160,6 +243,82 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
   }
 
+  async function fetchAutomationControlMode(): Promise<void> {
+    if (!props.zoneId) {
+      automationControlMode.value = 'auto'
+      allowedManualSteps.value = []
+      automationControlModeLoading.value = false
+      return
+    }
+    automationControlModeLoading.value = true
+    try {
+      const response = await get<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] } }>(
+        `/api/zones/${props.zoneId}/automation/control-mode`
+      )
+      const payload = response.data?.data ?? {}
+      automationControlMode.value = normalizeControlMode(payload.control_mode)
+      allowedManualSteps.value = normalizeManualSteps(payload.allowed_manual_steps)
+    } catch (error) {
+      logger.warn('[ZoneAutomationTab] Failed to fetch automation control mode', { error, zoneId: props.zoneId })
+      automationControlMode.value = 'auto'
+      allowedManualSteps.value = []
+    } finally {
+      automationControlModeLoading.value = false
+    }
+  }
+
+  async function setAutomationControlMode(mode: AutomationControlMode): Promise<boolean> {
+    if (!props.zoneId) return false
+    automationControlModeSaving.value = true
+    schedulerTaskError.value = null
+    try {
+      const response = await post<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] } }>(
+        `/api/zones/${props.zoneId}/automation/control-mode`,
+        {
+          control_mode: mode,
+          source: 'frontend',
+        }
+      )
+      const payload = response.data?.data ?? {}
+      automationControlMode.value = normalizeControlMode(payload.control_mode ?? mode)
+      allowedManualSteps.value = normalizeManualSteps(payload.allowed_manual_steps)
+      showToast('Режим управления автоматикой обновлён.', 'success')
+      return true
+    } catch (error: unknown) {
+      logger.warn('[ZoneAutomationTab] Failed to update automation control mode', { error, zoneId: props.zoneId, mode })
+      schedulerTaskError.value = extractApiErrorMessage(error, 'Не удалось обновить режим управления.')
+      return false
+    } finally {
+      automationControlModeSaving.value = false
+    }
+  }
+
+  async function runManualStep(step: AutomationManualStep): Promise<void> {
+    if (!props.zoneId) return
+    manualStepLoading.value[step] = true
+    schedulerTaskError.value = null
+    try {
+      const response = await post<{ data?: { task_id?: string | null } }>(
+        `/api/zones/${props.zoneId}/automation/manual-step`,
+        {
+          manual_step: step,
+          source: 'frontend_manual_step',
+        }
+      )
+      showToast('Команда manual-step отправлена.', 'success')
+      const taskId = String(response.data?.data?.task_id ?? '').trim()
+      await fetchRecentSchedulerTasks()
+      if (taskId) {
+        await lookupSchedulerTask(taskId)
+      }
+    } catch (error: unknown) {
+      logger.warn('[ZoneAutomationTab] Failed to run manual step', { error, zoneId: props.zoneId, step })
+      schedulerTaskError.value = extractApiErrorMessage(error, 'Не удалось выполнить manual-step.')
+    } finally {
+      manualStepLoading.value[step] = false
+    }
+  }
+
   async function lookupSchedulerTask(taskIdRaw?: string): Promise<void> {
     if (!props.zoneId) return
 
@@ -191,8 +350,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       }
       logger.warn('[ZoneAutomationTab] Failed to lookup scheduler task', { error, zoneId: props.zoneId, taskId })
       schedulerTaskStatus.value = null
-      const err = error as { response?: { data?: { message?: string } } }
-      schedulerTaskError.value = err?.response?.data?.message ?? 'Не удалось получить статус задачи.'
+      schedulerTaskError.value = extractApiErrorMessage(error, 'Не удалось получить статус задачи.')
     } finally {
       if (requestVersion === schedulerTaskLookupRequestVersion && requestZoneId === props.zoneId) {
         schedulerTaskLookupLoading.value = false
@@ -229,8 +387,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       }
     } catch (error: unknown) {
       logger.warn('[ZoneAutomationTab] Manual resume request failed', { error, zoneId: props.zoneId })
-      const err = error as { response?: { data?: { message?: string } } }
-      schedulerTaskError.value = err?.response?.data?.message ?? 'Не удалось отправить manual resume.'
+      schedulerTaskError.value = extractApiErrorMessage(error, 'Не удалось отправить manual resume.')
     } finally {
       manualResumeLoading.value = false
     }
@@ -292,6 +449,13 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     schedulerTasksUpdatedAt.value = null
     schedulerTaskListLoading.value = false
     schedulerTaskLookupLoading.value = false
+    automationControlMode.value = 'auto'
+    allowedManualSteps.value = []
+    automationControlModeLoading.value = false
+    automationControlModeSaving.value = false
+    for (const step of Object.keys(manualStepLoading.value) as AutomationManualStep[]) {
+      manualStepLoading.value[step] = false
+    }
   }
 
   return {
@@ -302,6 +466,11 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     manualResumeLoading,
     schedulerTaskError,
     schedulerTaskStatus,
+    automationControlMode,
+    allowedManualSteps,
+    automationControlModeLoading,
+    automationControlModeSaving,
+    manualStepLoading,
     manualResumeActionAvailable,
     recentSchedulerTasks,
     filteredRecentSchedulerTasks,
@@ -311,7 +480,10 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     schedulerTasksUpdatedAt,
     // Actions
     fetchRecentSchedulerTasks,
+    fetchAutomationControlMode,
     lookupSchedulerTask,
+    setAutomationControlMode,
+    runManualStep,
     requestManualResume,
     clearSchedulerTasksPollTimer,
     hasActiveSchedulerTask,

@@ -337,3 +337,48 @@ async def test_handle_command_response_state_persists_irr_snapshot_event():
         assert args[1] == "IRR_STATE_SNAPSHOT"
         assert args[2]["snapshot"]["clean_level_max"] is True
         assert args[2]["snapshot"]["solution_level_max"] is False
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_storage_state_persists_snapshot_even_without_state_cmd():
+    from mqtt_handlers import handle_command_response
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/storage_state/command_response"
+    payload = json.dumps(
+        {
+            "cmd_id": "cmd-storage-state-1",
+            "status": "DONE",
+            "ts": 1737979200013,
+            "details": {
+                "snapshot": {
+                    "clean_level_max": True,
+                    "clean_level_min": True,
+                    "solution_level_max": False,
+                    "solution_level_min": True,
+                    "valve_clean_fill": False,
+                    "valve_clean_supply": True,
+                    "valve_solution_fill": True,
+                    "valve_solution_supply": False,
+                    "pump_main": True,
+                }
+            },
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock), \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
+        # cmd != state, но канал storage_state — snapshot всё равно должен попасть в zone_events.
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 7, "cmd": "set_fault_mode"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_create_zone_event.assert_awaited_once()
+        args = mock_create_zone_event.await_args.args
+        assert args[0] == 7
+        assert args[1] == "IRR_STATE_SNAPSHOT"
+        assert args[2]["snapshot"]["pump_main"] is True
+        # Частичный snapshot допустим: отсутствующие поля не блокируют сохранение.
+        assert "valve_irrigation" not in args[2]["snapshot"]

@@ -44,6 +44,10 @@ const AUTOMATION_EVENT_LABELS: Record<string, string> = {
   CLEAN_FILL_RETRY_STARTED: 'Запущен повторный цикл clean-fill',
   PREPARE_TARGETS_REACHED: 'Целевые pH/EC достигнуты',
   TWO_TANK_STARTUP_INITIATED: 'Запущен старт 2-баковой схемы',
+  AUTOMATION_CONTROL_MODE_UPDATED: 'Режим управления автоматикой обновлён',
+  MANUAL_STEP_ACCEPTED: 'Ручной шаг принят',
+  MANUAL_STEP_REQUESTED: 'Запрошен ручной шаг',
+  MANUAL_STEP_EXECUTED: 'Ручной шаг выполнен',
 }
 
 const AUTOMATION_REASON_LABELS: Record<string, string> = {
@@ -62,6 +66,9 @@ const AUTOMATION_REASON_LABELS: Record<string, string> = {
   setup_completed: 'Setup завершен',
   setup_to_working: 'Переход в рабочий режим',
   working_mode_activated: 'Рабочий режим активирован',
+  manual_step_requested: 'Ручной шаг запрошен',
+  manual_step_executed: 'Ручной шаг выполнен',
+  automation_control_mode_updated: 'Режим управления изменён',
 }
 
 const WS_MIN_REFRESH_INTERVAL_MS = 1200

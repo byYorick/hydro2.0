@@ -96,6 +96,9 @@ class WorkflowStateStore:
     ) -> None:
         normalized_phase = _normalize_phase(workflow_phase)
         existing = await self.get(zone_id)
+        existing_payload = existing.get("payload_normalized") if isinstance(existing, dict) else {}
+        if not isinstance(existing_payload, dict):
+            existing_payload = {}
 
         started_at: Optional[datetime]
         if normalized_phase == "idle":
@@ -109,7 +112,11 @@ class WorkflowStateStore:
         else:
             started_at = utcnow()
 
-        payload_json = json.dumps(payload if isinstance(payload, dict) else {})
+        next_payload = dict(payload) if isinstance(payload, dict) else {}
+        if "control_mode" not in next_payload and "control_mode" in existing_payload:
+            next_payload["control_mode"] = existing_payload["control_mode"]
+
+        payload_json = json.dumps(next_payload)
         await execute(
             """
             INSERT INTO zone_workflow_state (

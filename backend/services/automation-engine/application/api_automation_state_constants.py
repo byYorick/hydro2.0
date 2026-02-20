@@ -46,6 +46,10 @@ AUTOMATION_TIMELINE_EVENT_LABELS: Dict[str, str] = {
     "TWO_TANK_STARTUP_INITIATED": "Запущен старт 2-баковой схемы",
     "SCHEDULE_TASK_EXECUTION_STARTED": "Старт исполнения scheduler-task",
     "SCHEDULE_TASK_EXECUTION_FINISHED": "Финиш исполнения scheduler-task",
+    "AUTOMATION_CONTROL_MODE_UPDATED": "Режим управления автоматикой обновлён",
+    "MANUAL_STEP_ACCEPTED": "Ручной шаг принят",
+    "MANUAL_STEP_REQUESTED": "Ручной шаг запрошен",
+    "MANUAL_STEP_EXECUTED": "Ручной шаг выполнен",
 }
 
 

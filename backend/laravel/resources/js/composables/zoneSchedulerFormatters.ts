@@ -221,6 +221,10 @@ export function schedulerTaskEventLabel(eventType: string | null | undefined): s
   if (normalized === 'SCHEDULE_TASK_ACCEPTED') return 'Scheduler: задача принята'
   if (normalized === 'SCHEDULE_TASK_COMPLETED') return 'Scheduler: задача завершена'
   if (normalized === 'SCHEDULE_TASK_FAILED') return 'Scheduler: задача завершилась с ошибкой'
+  if (normalized === 'AUTOMATION_CONTROL_MODE_UPDATED') return 'Режим управления автоматикой обновлён'
+  if (normalized === 'MANUAL_STEP_ACCEPTED') return 'Ручной шаг принят'
+  if (normalized === 'MANUAL_STEP_REQUESTED') return 'Ручной шаг запрошен'
+  if (normalized === 'MANUAL_STEP_EXECUTED') return 'Ручной шаг выполнен'
   return eventType ? String(eventType) : 'Событие'
 }
 
@@ -378,6 +382,14 @@ export function schedulerTaskReasonLabel(reasonCode: string | null | undefined, 
     tank_level_checked: 'Проверка уровня бака выполнена',
     tank_refill_required: 'Требуется наполнение бака',
     tank_refill_started: 'Наполнение бака запущено',
+    automation_control_mode_updated: 'Режим управления автоматикой обновлён',
+    manual_step_requested: 'Ручной шаг запрошен',
+    manual_step_executed: 'Ручной шаг выполнен',
+    manual_step_failed: 'Ручной шаг завершился ошибкой',
+    manual_step_command_plan_missing: 'Не найден command plan для ручного шага',
+    manual_step_unsupported: 'Неподдерживаемый ручной шаг',
+    manual_step_forbidden_in_auto_mode: 'Ручной шаг запрещён в auto-режиме',
+    manual_step_topology_not_supported: 'Ручной шаг поддерживается только для 2-баковой топологии',
     tank_refill_in_progress: 'Наполнение бака в процессе',
     tank_refill_completed: 'Наполнение бака завершено',
     tank_refill_not_required: 'Наполнение бака не требуется',

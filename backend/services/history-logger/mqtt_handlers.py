@@ -221,14 +221,16 @@ def _normalize_irr_state_snapshot(raw_snapshot: Any) -> Optional[Dict[str, bool]
 
     snapshot: Dict[str, bool] = {}
     for field, aliases in _IRR_STATE_ALIASES.items():
-        value: Optional[bool] = None
         for alias in aliases:
-            if alias in raw_snapshot:
-                value = _to_optional_bool(raw_snapshot.get(alias))
-                break
-        if value is None:
-            return None
-        snapshot[field] = value
+            if alias not in raw_snapshot:
+                continue
+            value = _to_optional_bool(raw_snapshot.get(alias))
+            if value is not None:
+                snapshot[field] = value
+            break
+
+    if not snapshot:
+        return None
     return snapshot
 
 
@@ -1061,6 +1063,26 @@ async def handle_node_event(topic: str, payload: bytes) -> None:
             "payload": data,
         }
         await create_zone_event(zone_id, event_type, details)
+
+        channel_normalized = str(channel or "").strip().lower()
+        if channel_normalized == "storage_state":
+            snapshot = _normalize_irr_state_snapshot(data.get("snapshot"))
+            if snapshot is not None:
+                snapshot_payload = {
+                    "source": "node_event_storage_state",
+                    "topic": topic,
+                    "gh_uid": gh_uid,
+                    "zone_uid": zone_uid,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "event_code": event_code,
+                    "cmd_id": str(data.get("cmd_id") or "").strip() or None,
+                    "response_ts": data.get("ts"),
+                    "snapshot": snapshot,
+                }
+                snapshot_payload = {k: v for k, v in snapshot_payload.items() if v is not None}
+                await create_zone_event(zone_id, _IRR_STATE_SNAPSHOT_EVENT_TYPE, snapshot_payload)
+
         metric_event_code = _metric_event_code_label(event_type)
         NODE_EVENT_RECEIVED.labels(event_code=metric_event_code).inc()
         if metric_event_code == _NODE_EVENT_METRIC_FALLBACK:
@@ -1617,8 +1639,13 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             )
 
         cmd_name_normalized = str(cmd_name or "").strip().lower()
-        if zone_id and cmd_name_normalized == "state":
-            snapshot = _normalize_irr_state_snapshot(details.get("snapshot"))
+        channel_normalized = str(channel or "").strip().lower()
+        should_persist_irr_snapshot = cmd_name_normalized == "state" or channel_normalized == "storage_state"
+        if zone_id and should_persist_irr_snapshot:
+            snapshot_source = details.get("snapshot")
+            if not isinstance(snapshot_source, dict):
+                snapshot_source = details.get("state")
+            snapshot = _normalize_irr_state_snapshot(snapshot_source)
             if snapshot is not None:
                 try:
                     await create_zone_event(

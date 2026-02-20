@@ -59,6 +59,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
 | GET | /api/zones/{id}/automation-state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
+| GET | /api/zones/{id}/automation/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
+| POST | /api/zones/{id}/automation/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
+| POST | /api/zones/{id}/automation/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual_step` через scheduler-task) |
 | POST | /api/zones/{id}/automation/manual-resume | auth:sanctum (operator/admin/agronomist/engineer) | Ручное подтверждение и возобновление 2-бакового workflow после `manual_ack_required_after_retries` |
 | GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
 | GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy к automation-engine) + `timeline` и outcome (`decision/reason_code`) |

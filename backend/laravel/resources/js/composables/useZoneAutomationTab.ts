@@ -39,6 +39,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   onMounted(() => {
     void api.hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
+    void scheduler.fetchAutomationControlMode()
     void scheduler.fetchRecentSchedulerTasks()
     if (import.meta.env.MODE !== 'test') {
       void scheduler.pollSchedulerTasksCycle()
@@ -63,6 +64,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       state.pendingTargetsSyncForZoneChange.value = true
       scheduler.resetForZoneChange()
       void api.hydrateAutomationProfileFromCurrentZone({ includeTargets: false })
+      void scheduler.fetchAutomationControlMode()
       void scheduler.fetchRecentSchedulerTasks()
       scheduler.scheduleSchedulerTasksPoll()
     }
@@ -101,6 +103,11 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     manualResumeLoading: scheduler.manualResumeLoading,
     schedulerTaskError: scheduler.schedulerTaskError,
     schedulerTaskStatus: scheduler.schedulerTaskStatus,
+    automationControlMode: scheduler.automationControlMode,
+    allowedManualSteps: scheduler.allowedManualSteps,
+    automationControlModeLoading: scheduler.automationControlModeLoading,
+    automationControlModeSaving: scheduler.automationControlModeSaving,
+    manualStepLoading: scheduler.manualStepLoading,
     manualResumeActionAvailable: scheduler.manualResumeActionAvailable,
     recentSchedulerTasks: scheduler.recentSchedulerTasks,
     filteredRecentSchedulerTasks: scheduler.filteredRecentSchedulerTasks,
@@ -109,7 +116,10 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     schedulerTaskPresetOptions: scheduler.schedulerTaskPresetOptions,
     schedulerTasksUpdatedAt: scheduler.schedulerTasksUpdatedAt,
     fetchRecentSchedulerTasks: scheduler.fetchRecentSchedulerTasks,
+    fetchAutomationControlMode: scheduler.fetchAutomationControlMode,
     lookupSchedulerTask: scheduler.lookupSchedulerTask,
+    setAutomationControlMode: scheduler.setAutomationControlMode,
+    runManualStep: scheduler.runManualStep,
     requestManualResume: scheduler.requestManualResume,
     schedulerTaskStatusVariant: scheduler.schedulerTaskStatusVariant,
     schedulerTaskStatusLabel: scheduler.schedulerTaskStatusLabel,

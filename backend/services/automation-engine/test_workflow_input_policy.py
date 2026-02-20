@@ -51,6 +51,10 @@ def test_is_two_tank_startup_workflow_predicate():
         topology="two_tank_drip_substrate_trays",
         workflow="prepare_recirculation_check",
     ) is True
+    assert is_two_tank_startup_workflow(
+        topology="two_tank_drip_substrate_trays",
+        workflow="manual_step",
+    ) is True
     assert is_two_tank_startup_workflow(topology="three_tank", workflow="startup") is False
 
 

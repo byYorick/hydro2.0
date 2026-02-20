@@ -239,6 +239,96 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
+            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Режим управления 2-баками</h3>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              `auto` — только по расписанию, `semi`/`manual` — доступны ручные шаги.
+            </p>
+          </div>
+          <div class="w-full lg:w-56">
+            <select
+              :value="automationControlMode"
+              class="input-select w-full"
+              :disabled="!canOperateAutomation || !manualControlAllowed || automationControlModeLoading || automationControlModeSaving"
+              @change="onControlModeChange"
+            >
+              <option value="auto">auto</option>
+              <option value="semi">semi</option>
+              <option value="manual">manual</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('clean_fill_start') || manualStepLoading.clean_fill_start"
+            @click="runManualStep('clean_fill_start')"
+          >
+            {{ manualStepLoading.clean_fill_start ? 'Отправка...' : 'Набрать чистую воду' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('clean_fill_stop') || manualStepLoading.clean_fill_stop"
+            @click="runManualStep('clean_fill_stop')"
+          >
+            {{ manualStepLoading.clean_fill_stop ? 'Отправка...' : 'Стоп набор чистой' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('solution_fill_start') || manualStepLoading.solution_fill_start"
+            @click="runManualStep('solution_fill_start')"
+          >
+            {{ manualStepLoading.solution_fill_start ? 'Отправка...' : 'Набрать раствор' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('solution_fill_stop') || manualStepLoading.solution_fill_stop"
+            @click="runManualStep('solution_fill_stop')"
+          >
+            {{ manualStepLoading.solution_fill_stop ? 'Отправка...' : 'Стоп набор раствора' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('prepare_recirculation_start') || manualStepLoading.prepare_recirculation_start"
+            @click="runManualStep('prepare_recirculation_start')"
+          >
+            {{ manualStepLoading.prepare_recirculation_start ? 'Отправка...' : 'Старт рециркуляции setup' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('prepare_recirculation_stop') || manualStepLoading.prepare_recirculation_stop"
+            @click="runManualStep('prepare_recirculation_stop')"
+          >
+            {{ manualStepLoading.prepare_recirculation_stop ? 'Отправка...' : 'Стоп рециркуляции setup' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('irrigation_recovery_start') || manualStepLoading.irrigation_recovery_start"
+            @click="runManualStep('irrigation_recovery_start')"
+          >
+            {{ manualStepLoading.irrigation_recovery_start ? 'Отправка...' : 'Старт рециркуляции полива' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('irrigation_recovery_stop') || manualStepLoading.irrigation_recovery_stop"
+            @click="runManualStep('irrigation_recovery_stop')"
+          >
+            {{ manualStepLoading.irrigation_recovery_stop ? 'Отправка...' : 'Стоп рециркуляции полива' }}
+          </Button>
+        </div>
+      </section>
+
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
             <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Применение профиля автоматики</h3>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
               Профиль сначала сохраняется в БД, затем отправляется `GROWTH_CYCLE_CONFIG` (`mode=adjust`, `profile_mode`).
@@ -707,9 +797,20 @@ interface ZoneAutomationWizardApplyPayload {
   lightingForm: LightingFormState
 }
 
+type ManualStepCode =
+  | 'clean_fill_start'
+  | 'clean_fill_stop'
+  | 'solution_fill_start'
+  | 'solution_fill_stop'
+  | 'prepare_recirculation_start'
+  | 'prepare_recirculation_stop'
+  | 'irrigation_recovery_start'
+  | 'irrigation_recovery_stop'
+
 const props = defineProps<ZoneAutomationTabProps>()
 
 const {
+  role,
   canConfigureAutomation,
   canOperateAutomation,
   isSystemTypeLocked,
@@ -738,6 +839,11 @@ const {
   manualResumeLoading,
   schedulerTaskError,
   schedulerTaskStatus,
+  automationControlMode,
+  allowedManualSteps,
+  automationControlModeLoading,
+  automationControlModeSaving,
+  manualStepLoading,
   manualResumeActionAvailable,
   filteredRecentSchedulerTasks,
   schedulerTaskSearch,
@@ -745,7 +851,9 @@ const {
   schedulerTaskPresetOptions,
   schedulerTasksUpdatedAt,
   fetchRecentSchedulerTasks,
+  setAutomationControlMode,
   lookupSchedulerTask,
+  runManualStep,
   requestManualResume,
   schedulerTaskStatusVariant,
   schedulerTaskStatusLabel,
@@ -771,6 +879,7 @@ const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
 const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
 const isProcessActive = computed(() => processState.value !== 'IDLE' && processState.value !== 'READY')
+const manualControlAllowed = computed(() => role.value === 'operator')
 
 function handleProcessStateChange(state: AutomationStateType): void {
   processState.value = state
@@ -841,5 +950,16 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
   if (success) {
     showEditWizard.value = false
   }
+}
+
+function isManualStepAllowed(step: ManualStepCode): boolean {
+  return allowedManualSteps.value.includes(step)
+}
+
+async function onControlModeChange(event: Event): Promise<void> {
+  const target = event.target as HTMLSelectElement | null
+  if (!target) return
+  const mode = (target.value || 'auto') as 'auto' | 'semi' | 'manual'
+  await setAutomationControlMode(mode)
 }
 </script>

@@ -257,6 +257,8 @@ def test_zone_automation_state_returns_idle_without_active_tasks(client):
     assert data["active_processes"]["pump_in"] is False
     assert data["system_config"]["tanks_count"] == 2
     assert data["irr_node_state"] is None
+    assert data["control_mode"] == "auto"
+    assert data["allowed_manual_steps"] == []
 
 
 def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
@@ -294,6 +296,87 @@ def test_zone_automation_state_maps_two_tank_workflow_to_tank_filling(client):
     assert data["system_config"]["clean_tank_capacity_l"] == 80.0
     assert data["system_config"]["nutrient_tank_capacity_l"] == 120.0
     assert "irr_node_state" in data
+    assert data["control_mode"] == "auto"
+
+
+def test_zone_automation_state_includes_manual_control_mode(client):
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="manual"):
+        response = client.get("/zones/1/automation-state")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["control_mode"] == "manual"
+    assert isinstance(data["allowed_manual_steps"], list)
+    assert "clean_fill_start" in data["allowed_manual_steps"]
+
+
+def test_automation_control_mode_get_returns_default_auto(client):
+    with patch.object(api._workflow_state_store, "get", new_callable=AsyncMock, return_value=None):
+        response = client.get("/zones/1/automation/control-mode")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["data"]["control_mode"] == "auto"
+    assert data["data"]["allowed_manual_steps"] == []
+
+
+def test_automation_control_mode_post_rejects_invalid_mode(client):
+    response = client.post("/zones/1/automation/control-mode", json={"control_mode": "invalid"})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_control_mode"
+
+
+def test_automation_control_mode_post_updates_mode(client):
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="auto"), \
+         patch("api._persist_zone_control_mode", new_callable=AsyncMock, return_value={"updated_at": datetime.now(timezone.utc)}), \
+         patch("api.create_zone_event", new_callable=AsyncMock) as mock_event:
+        response = client.post("/zones/1/automation/control-mode", json={"control_mode": "manual"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["data"]["control_mode"] == "manual"
+    assert "clean_fill_start" in data["data"]["allowed_manual_steps"]
+    mock_event.assert_awaited_once()
+
+
+def test_automation_manual_step_rejects_in_auto_mode(client):
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="auto"):
+        response = client.post("/zones/1/automation/manual-step", json={"manual_step": "clean_fill_start"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "manual_step_forbidden_in_auto_mode"
+
+
+def test_automation_manual_step_accepts_supported_step(client):
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="manual"), \
+         patch("api.create_zone_event", new_callable=AsyncMock) as mock_event:
+        response = client.post("/zones/1/automation/manual-step", json={"manual_step": "clean_fill_start"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["data"]["manual_step"] == "clean_fill_start"
+    task_id = data["data"]["task_id"]
+    assert task_id in api._scheduler_tasks
+    payload = api._scheduler_tasks[task_id]["payload"]
+    assert payload["workflow"] == "manual_step"
+    assert payload["manual_step"] == "clean_fill_start"
+    assert payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
+    mock_event.assert_awaited_once()
+
+
+def test_automation_manual_step_rejects_unsupported_topology(client):
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="manual"), \
+         patch("api._load_latest_zone_task", new_callable=AsyncMock, return_value={
+             "payload": {"config": {"execution": {"topology": "three_tank"}}}
+         }):
+        response = client.post("/zones/1/automation/manual-step", json={"manual_step": "clean_fill_start"})
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "manual_step_topology_not_supported"
 
 
 def test_manual_resume_accepts_manual_ack_blocked_task(client):

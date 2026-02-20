@@ -155,6 +155,18 @@ from services.resilience_contract import (
 
 logger = logging.getLogger(__name__)
 MANUAL_ACK_REQUIRED_REASON_CODE = "manual_ack_required_after_retries"
+AUTOMATION_CONTROL_MODE_VALUES = {"auto", "semi", "manual"}
+AUTOMATION_MANUAL_STEPS = (
+    "clean_fill_start",
+    "clean_fill_stop",
+    "solution_fill_start",
+    "solution_fill_stop",
+    "prepare_recirculation_start",
+    "prepare_recirculation_stop",
+    "irrigation_recovery_start",
+    "irrigation_recovery_stop",
+)
+DEFAULT_TWO_TANK_TOPOLOGY = "two_tank_drip_substrate_trays"
 
 
 @asynccontextmanager
@@ -901,7 +913,223 @@ async def zone_automation_state(zone_id: int):
         automation_state_idle=AUTOMATION_STATE_IDLE,
         automation_state_next=AUTOMATION_STATE_NEXT,
     )
+    control_mode = await _load_zone_control_mode(zone_id)
+    payload["control_mode"] = control_mode
+    payload["control_mode_available"] = sorted(AUTOMATION_CONTROL_MODE_VALUES)
+    payload["allowed_manual_steps"] = list(AUTOMATION_MANUAL_STEPS) if control_mode in {"manual", "semi"} else []
     return payload
+
+
+def _normalize_control_mode(raw_mode: Any) -> str:
+    value = str(raw_mode or "").strip().lower()
+    if value in AUTOMATION_CONTROL_MODE_VALUES:
+        return value
+    return "auto"
+
+
+async def _load_zone_control_mode(zone_id: int) -> str:
+    try:
+        row = await _workflow_state_store.get(zone_id)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load zone control mode; fallback to auto: zone_id=%s error=%s",
+            zone_id,
+            exc,
+        )
+        return "auto"
+    payload = row.get("payload_normalized") if isinstance(row, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return _normalize_control_mode(payload.get("control_mode"))
+
+
+async def _persist_zone_control_mode(zone_id: int, control_mode: str) -> Dict[str, Any]:
+    existing = await _workflow_state_store.get(zone_id)
+    workflow_phase = "idle"
+    payload: Dict[str, Any] = {}
+    scheduler_task_id: Optional[str] = None
+
+    if isinstance(existing, dict):
+        workflow_phase = str(existing.get("workflow_phase") or "idle").strip().lower() or "idle"
+        existing_payload = existing.get("payload_normalized")
+        if isinstance(existing_payload, dict):
+            payload = dict(existing_payload)
+        scheduler_task_id = str(existing.get("scheduler_task_id") or "").strip() or None
+
+    payload["control_mode"] = control_mode
+    await _workflow_state_store.set(
+        zone_id=zone_id,
+        workflow_phase=workflow_phase,
+        payload=payload,
+        scheduler_task_id=scheduler_task_id,
+    )
+    latest = await _workflow_state_store.get(zone_id)
+    return latest or {"zone_id": zone_id, "workflow_phase": workflow_phase, "payload_normalized": payload}
+
+
+@app.get("/zones/{zone_id}/automation/control-mode")
+async def zone_automation_control_mode(zone_id: int):
+    await _validate_scheduler_zone(zone_id)
+    try:
+        row = await _workflow_state_store.get(zone_id)
+    except Exception:
+        row = None
+    control_mode = await _load_zone_control_mode(zone_id)
+    updated_at = row.get("updated_at") if isinstance(row, dict) else None
+
+    return {
+        "status": "ok",
+        "data": {
+            "zone_id": zone_id,
+            "control_mode": control_mode,
+            "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES),
+            "allowed_manual_steps": list(AUTOMATION_MANUAL_STEPS) if control_mode in {"manual", "semi"} else [],
+            "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
+        },
+    }
+
+
+@app.post("/zones/{zone_id}/automation/control-mode")
+async def zone_automation_set_control_mode(zone_id: int, request: Optional[Dict[str, Any]] = Body(default=None)):
+    await _validate_scheduler_zone(zone_id)
+    request = request if isinstance(request, dict) else {}
+
+    requested_mode = str(request.get("control_mode") or "").strip().lower()
+    if requested_mode not in AUTOMATION_CONTROL_MODE_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "invalid_control_mode",
+                "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES),
+            },
+        )
+
+    source = str(request.get("source") or "frontend").strip() or "frontend"
+    previous_mode = await _load_zone_control_mode(zone_id)
+    persisted = await _persist_zone_control_mode(zone_id, requested_mode)
+    updated_at = persisted.get("updated_at") if isinstance(persisted, dict) else None
+
+    await create_zone_event(
+        zone_id,
+        "AUTOMATION_CONTROL_MODE_UPDATED",
+        {
+            "zone_id": zone_id,
+            "control_mode": requested_mode,
+            "previous_control_mode": previous_mode,
+            "source": source,
+            "reason_code": "automation_control_mode_updated",
+        },
+    )
+
+    return {
+        "status": "ok",
+        "data": {
+            "zone_id": zone_id,
+            "control_mode": requested_mode,
+            "previous_control_mode": previous_mode,
+            "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES),
+            "allowed_manual_steps": list(AUTOMATION_MANUAL_STEPS) if requested_mode in {"manual", "semi"} else [],
+            "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
+        },
+    }
+
+
+@app.post("/zones/{zone_id}/automation/manual-step")
+async def zone_automation_manual_step(zone_id: int, request: Optional[Dict[str, Any]] = Body(default=None)):
+    await _validate_scheduler_zone(zone_id)
+    request = request if isinstance(request, dict) else {}
+
+    manual_step = str(request.get("manual_step") or "").strip().lower()
+    if manual_step not in AUTOMATION_MANUAL_STEPS:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "manual_step_unsupported",
+                "available_steps": list(AUTOMATION_MANUAL_STEPS),
+            },
+        )
+
+    control_mode = await _load_zone_control_mode(zone_id)
+    if control_mode == "auto":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "manual_step_forbidden_in_auto_mode",
+                "control_mode": control_mode,
+            },
+        )
+
+    source = str(request.get("source") or "frontend_manual_step").strip() or "frontend_manual_step"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    scheduled_for = now
+    due_at = now + timedelta(seconds=45)
+    expires_at = now + timedelta(minutes=10)
+
+    latest_task = await _load_latest_zone_task(zone_id)
+    latest_payload = latest_task.get("payload") if isinstance(latest_task, dict) and isinstance(latest_task.get("payload"), dict) else {}
+    latest_config = latest_payload.get("config") if isinstance(latest_payload.get("config"), dict) else {}
+    latest_execution = latest_config.get("execution") if isinstance(latest_config.get("execution"), dict) else {}
+    execution = dict(latest_execution)
+    requested_topology = str(execution.get("topology") or "").strip().lower()
+    if requested_topology and requested_topology != DEFAULT_TWO_TANK_TOPOLOGY:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "manual_step_topology_not_supported",
+                "topology": requested_topology,
+                "supported_topology": DEFAULT_TWO_TANK_TOPOLOGY,
+            },
+        )
+    execution["topology"] = DEFAULT_TWO_TANK_TOPOLOGY
+
+    req = SchedulerTaskRequest(
+        zone_id=zone_id,
+        task_type="diagnostics",
+        payload={
+            "workflow": "manual_step",
+            "manual_step": manual_step,
+            "config": {"execution": execution},
+            "control_mode": control_mode,
+        },
+        scheduled_for=scheduled_for.isoformat(),
+        due_at=due_at.isoformat(),
+        expires_at=expires_at.isoformat(),
+        correlation_id=f"ae:manual_step:{zone_id}:{manual_step}:{uuid4().hex[:12]}",
+    )
+
+    task, is_duplicate = await _create_scheduler_task(req)
+    if not is_duplicate:
+        await create_zone_event(
+            zone_id,
+            "MANUAL_STEP_ACCEPTED",
+            {
+                "zone_id": zone_id,
+                "task_id": task.get("task_id"),
+                "manual_step": manual_step,
+                "control_mode": control_mode,
+                "source": source,
+                "reason_code": "manual_step_requested",
+            },
+        )
+        trace_id = get_trace_id()
+        _spawn_background_task(
+            _execute_scheduler_task(task["task_id"], req, trace_id),
+            task_name=f"scheduler_task_{task['task_id']}",
+            zone_id=zone_id,
+            task_id=task["task_id"],
+            task_type="diagnostics",
+        )
+
+    return {
+        "status": "ok",
+        "data": {
+            "zone_id": zone_id,
+            "task_id": task.get("task_id"),
+            "manual_step": manual_step,
+            "control_mode": control_mode,
+            "is_duplicate": is_duplicate,
+        },
+    }
 
 
 def _manual_resume_workflow_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
