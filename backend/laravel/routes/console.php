@@ -74,3 +74,13 @@ Schedule::command('commands:process-timeouts')
 Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->dailyAt('04:00')
     ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
+
+// MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
+// Команда отправляет abstract scheduler задачи в automation-engine /scheduler/task.
+// Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
+Schedule::command('automation:dispatch-schedules')
+    ->everyMinute()
+    ->withoutOverlapping(1)
+    ->onOneServer()
+    ->when(fn (): bool => (bool) config('services.automation_engine.laravel_scheduler_enabled', false))
+    ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');

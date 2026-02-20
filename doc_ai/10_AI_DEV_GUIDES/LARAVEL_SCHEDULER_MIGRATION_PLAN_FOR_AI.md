@@ -47,8 +47,8 @@ Breaking-change: owner планирования/dispatch перенесен на
    - активные задачи сейчас через Cache;
    - курсоры сейчас завязаны на `scheduler_logs` JSON (`details.last_check`).
 3. Недостаточное целевое покрытие тестами именно Laravel scheduler пути.
-4. Legacy Python scheduler удален из default runtime compose-профилей;
-   в репозитории сохранены только legacy-артефакты для rollback/history.
+4. Legacy Python scheduler удален из default runtime compose-профилей и из текущей рабочей ветки.
+   Rollback возможен только через отдельный artifact (release tag/compose overlay).
 
 ## 2.3 Текущие значения env по compose (важно)
 
@@ -140,7 +140,7 @@ Breaking-change: owner планирования/dispatch перенесен на
 ## P2 (сопровождение)
 
 1. Финальная синхронизация документации.
-2. Финальная зачистка legacy scheduler кода и артефактов после rollback-drill.
+2. Финальная зачистка legacy scheduler ссылок/артефактов после rollback-drill.
 
 Примечание: документация важна, но не блокирует старт P0 по durable state.
 

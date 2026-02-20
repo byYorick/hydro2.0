@@ -51,19 +51,6 @@ AE2_S12_DECISION_TXT=artifacts/ae2_s12_local_decision.txt \
 3. централизация executor feature flags в `application/executor_constants.py`;
 4. отсутствие SQL DDL (`CREATE/ALTER/DROP TABLE`) в Python-сервисах.
 
-### Scheduler split invariants
-
-```bash
-./tools/testing/check_scheduler_split_invariants.sh
-```
-
-Проверки:
-1. наличие split-модулей scheduler (`app/domain/infrastructure`);
-2. наличие фасадного wiring в `backend/services/scheduler/main.py`;
-3. отсутствие дублей ключевых фасадных функций;
-4. отсутствие прямого `httpx.AsyncClient` в `main.py`;
-5. контроль line-count `main.py` после split.
-
 Отключить auto-check wrapper (debug-only):
 
 ```bash

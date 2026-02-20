@@ -53,6 +53,19 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
      - `domain/workflows/{two_tank,three_tank,cycle_start}.py`
      - `infrastructure/observability.py`
 
+## 0.1 Актуализация 2026-02-20 (Scheduler ownership)
+
+1. Runtime owner planning/dispatch перенесен в Laravel:
+   - `automation:dispatch-schedules`.
+2. Python `scheduler` выведен из default runtime compose-профилей.
+3. `automation-engine` продолжает принимать scheduler-intent через:
+   - `POST /scheduler/task`,
+   - `POST /scheduler/bootstrap`,
+   - `POST /scheduler/bootstrap/heartbeat`,
+   - `GET /scheduler/task/{task_id}`.
+4. Командный side-effect путь не меняется:
+   - `Laravel scheduler-dispatch -> automation-engine -> history-logger -> MQTT`.
+
 ---
 
 ## 1. Общая архитектура (обновлено)
@@ -186,12 +199,16 @@ targets = await repo.get_effective_targets_batch([1, 2, 3])
 
 ---
 
-### 4.2. scheduler (ОБНОВЛЕНО)
+### 4.2. Laravel scheduler-dispatch (runtime owner planning/dispatch)
 
-**Изменения:**
-- ✅ Использует effective targets из Laravel API
-- ✅ Расписания извлекаются из структурированных targets
-- ✅ Контекст команды включает `cycle_id`
+**Статус:**
+- ✅ runtime-owner planning/dispatch в текущей архитектуре.
+- ✅ отправляет abstract task intent в `automation-engine` по `/scheduler/task`.
+- ✅ использует effective-targets/automation profiles из Laravel API.
+
+**Важно:**
+- это не Python-сервис внутри `backend/services/*`;
+- Python legacy scheduler исключен из default runtime compose-профилей.
 
 ---
 
@@ -304,8 +321,8 @@ history-logger/
 
 **REST API Endpoints (порт 9405):**
 - `POST /scheduler/task` — прием задачи от scheduler
-  - Body: `{"task_id": "...", "type": "...", "zone_id": ..., "params": {...}}`
-  - Response: `{"status": "accepted", "task_id": "..."}`
+  - Body (актуальный контракт): `zone_id`, `task_type`, `payload`, `correlation_id`, `scheduled_for`, `due_at`, `expires_at`
+  - Response: `{"status": "ok", "data": {"task_id": "...", "status": "accepted"}}`
 - `POST /scheduler/bootstrap` — инициализация scheduler
 - `POST /scheduler/bootstrap/heartbeat` — heartbeat от scheduler
 - `GET /scheduler/task/{task_id}` — получение статуса задачи
@@ -345,38 +362,14 @@ automation-engine/
 
 ---
 
-### 3.4. scheduler
+### 3.4. scheduler (LEGACY / RUNTIME REMOVED)
 
-**Назначение:** Расписания поливов/света из recipe phases, публикация команд на MQTT.
+**Статус:** LEGACY / RUNTIME REMOVED.
 
-**Порт:** 9402 (Prometheus metrics)
-
-**Функционал:**
-- Загрузка активных расписаний из БД
-- Парсинг time spec из recipe phases
-- Публикация команд по расписанию
-- Отслеживание выполненных команд
-
-**Зависимости:**
-- MQTT Broker
-- PostgreSQL
-
-**Структура:**
-```
-scheduler/
-├── main.py          # Основной цикл проверки расписаний
-├── test_main.py     # Тесты
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
-**Алгоритм:**
-1. Загрузка активных расписаний из БД
-2. Парсинг time spec (например, "08:00", "12:00,18:00")
-3. Проверка текущего времени
-4. Публикация команд при наступлении времени
-5. Повтор каждые 60 секунд
+1. Python scheduler больше не является runtime owner planning/dispatch.
+2. Исторический код сохранен только как legacy-артефакт для rollback/history.
+3. Актуальный planner/dispatch path:
+   - Laravel `automation:dispatch-schedules` -> `automation-engine /scheduler/task`.
 
 ---
 
@@ -578,7 +571,10 @@ php artisan tinker
 - `mqtt-bridge`: порт 9000 (`/metrics`)
 - `history-logger`: порт 9301 (`/metrics`)
 - `automation-engine`: порт 9401 (`/metrics`)
-- `scheduler`: порт 9402 (`/metrics`)
+
+Примечание:
+- Python `scheduler` (порт 9402) — legacy runtime removed.
+- Планирование/dispatch выполняется Laravel scheduler-dispatch.
 
 **Метрики:**
 - Счетчики команд (отправлено, получено)

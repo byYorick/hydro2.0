@@ -16,7 +16,7 @@ groups:
     interval: 30s
     rules:
       - alert: ServiceDown
-        expr: up{job=~"automation-engine|scheduler|mqtt-bridge|history-logger"} == 0
+        expr: up{job=~"automation-engine|mqtt-bridge|history-logger"} == 0
         for: 2m
         labels:
           severity: critical

@@ -112,6 +112,9 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+      # Laravel scheduler owner flags
+      - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
+      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)
@@ -243,34 +246,6 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
-  scheduler:
-    build:
-      context: ./services
-      dockerfile: scheduler/Dockerfile
-    environment:
-      - APP_ENV=local
-      - SCHEDULER_ZONE_PREFLIGHT_ENFORCE=1
-      - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
-      - MQTT_TLS=0
-      - MQTT_USER=scheduler
-      - MQTT_PASS=scheduler_pass
-      - PG_HOST=db
-      - PG_DB=hydro_dev
-      - PG_USER=hydro
-      - PG_PASS=hydro
-    depends_on:
-      - mqtt
-      - db
-    ports:
-      - "9402:9402"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -288,7 +263,6 @@ services:
       - "9090:9090"
     depends_on:
       - automation-engine
-      - scheduler
       - mqtt-bridge
     restart: unless-stopped
   grafana:

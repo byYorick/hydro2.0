@@ -318,9 +318,9 @@ Route::middleware([
     Route::post('zones/{zone}/automation/manual-resume', [ZoneAutomationManualResumeController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/automation/control-mode', [ZoneAutomationControlModeController::class, 'update'])
-        ->middleware('role:operator');
+        ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/automation/manual-step', [ZoneAutomationManualStepController::class, 'store'])
-        ->middleware('role:operator');
+        ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
     Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);
 

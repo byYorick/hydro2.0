@@ -239,90 +239,135 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
-            <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Режим управления 2-баками</h3>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Режим управления 2-баками</h3>
+              <Badge
+                v-if="!automationControlModeLoading"
+                :variant="automationControlMode === 'auto' ? 'info' : 'warning'"
+              >
+                {{ automationControlMode }}
+              </Badge>
+              <span
+                v-else
+                class="text-xs text-[color:var(--text-dim)] animate-pulse"
+              >загрузка...</span>
+            </div>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              `auto` — только по расписанию, `semi`/`manual` — доступны ручные шаги.
+              <code>auto</code> — только по расписанию, <code>semi</code>/<code>manual</code> — доступны ручные шаги.
             </p>
           </div>
-          <div class="w-full lg:w-56">
-            <select
-              :value="automationControlMode"
-              class="input-select w-full"
-              :disabled="!canOperateAutomation || !manualControlAllowed || automationControlModeLoading || automationControlModeSaving"
-              @change="onControlModeChange"
+          <div class="w-full lg:w-auto">
+            <div
+              class="inline-flex gap-1 rounded-xl border border-[color:var(--border-muted)] p-1 bg-[color:var(--surface-card)]"
+              :class="{ 'opacity-60': automationControlModeLoading }"
             >
-              <option value="auto">auto</option>
-              <option value="semi">semi</option>
-              <option value="manual">manual</option>
-            </select>
+              <button
+                v-for="mode in (['auto', 'semi', 'manual'] as const)"
+                :key="mode"
+                type="button"
+                class="rounded-lg px-4 py-1.5 text-sm font-medium transition-all duration-150 min-w-[4.5rem]"
+                :class="[
+                  automationControlMode === mode
+                    ? 'bg-[color:var(--accent,#3b82f6)] text-white shadow-sm'
+                    : 'text-[color:var(--text-muted)] hover:bg-[color:var(--surface-muted)]/60 hover:text-[color:var(--text-primary)]',
+                ]"
+                :disabled="!canOperateAutomation || automationControlModeLoading || automationControlModeSaving"
+                @click="onControlModeSelect(mode)"
+              >
+                <span
+                  v-if="automationControlModeSaving && automationControlMode !== mode"
+                  class="inline-block animate-spin mr-1 opacity-60"
+                >⟳</span>
+                {{ mode }}
+              </button>
+            </div>
+            <p
+              v-if="automationControlModeSaving"
+              class="text-xs text-[color:var(--text-dim)] mt-1 text-right"
+            >
+              Сохранение...
+            </p>
           </div>
         </div>
 
-        <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('clean_fill_start') || manualStepLoading.clean_fill_start"
-            @click="runManualStep('clean_fill_start')"
-          >
-            {{ manualStepLoading.clean_fill_start ? 'Отправка...' : 'Набрать чистую воду' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('clean_fill_stop') || manualStepLoading.clean_fill_stop"
-            @click="runManualStep('clean_fill_stop')"
-          >
-            {{ manualStepLoading.clean_fill_stop ? 'Отправка...' : 'Стоп набор чистой' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('solution_fill_start') || manualStepLoading.solution_fill_start"
-            @click="runManualStep('solution_fill_start')"
-          >
-            {{ manualStepLoading.solution_fill_start ? 'Отправка...' : 'Набрать раствор' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('solution_fill_stop') || manualStepLoading.solution_fill_stop"
-            @click="runManualStep('solution_fill_stop')"
-          >
-            {{ manualStepLoading.solution_fill_stop ? 'Отправка...' : 'Стоп набор раствора' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('prepare_recirculation_start') || manualStepLoading.prepare_recirculation_start"
-            @click="runManualStep('prepare_recirculation_start')"
-          >
-            {{ manualStepLoading.prepare_recirculation_start ? 'Отправка...' : 'Старт рециркуляции setup' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('prepare_recirculation_stop') || manualStepLoading.prepare_recirculation_stop"
-            @click="runManualStep('prepare_recirculation_stop')"
-          >
-            {{ manualStepLoading.prepare_recirculation_stop ? 'Отправка...' : 'Стоп рециркуляции setup' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('irrigation_recovery_start') || manualStepLoading.irrigation_recovery_start"
-            @click="runManualStep('irrigation_recovery_start')"
-          >
-            {{ manualStepLoading.irrigation_recovery_start ? 'Отправка...' : 'Старт рециркуляции полива' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="!canOperateAutomation || !manualControlAllowed || !isManualStepAllowed('irrigation_recovery_stop') || manualStepLoading.irrigation_recovery_stop"
-            @click="runManualStep('irrigation_recovery_stop')"
-          >
-            {{ manualStepLoading.irrigation_recovery_stop ? 'Отправка...' : 'Стоп рециркуляции полива' }}
-          </Button>
+        <div class="space-y-2">
+          <p class="text-xs text-[color:var(--text-muted)]">
+            Ручные шаги:
+            <span
+              v-if="automationControlMode === 'auto'"
+              class="text-[color:var(--text-dim)]"
+            >недоступны в режиме <code>auto</code></span>
+            <span
+              v-else
+              class="text-emerald-500 dark:text-emerald-400"
+            >доступны в режиме <code>{{ automationControlMode }}</code></span>
+          </p>
+          <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('clean_fill_start') || manualStepLoading.clean_fill_start"
+              @click="runManualStep('clean_fill_start')"
+            >
+              {{ manualStepLoading.clean_fill_start ? 'Отправка...' : 'Набрать чистую воду' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('clean_fill_stop') || manualStepLoading.clean_fill_stop"
+              @click="runManualStep('clean_fill_stop')"
+            >
+              {{ manualStepLoading.clean_fill_stop ? 'Отправка...' : 'Стоп набор чистой' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('solution_fill_start') || manualStepLoading.solution_fill_start"
+              @click="runManualStep('solution_fill_start')"
+            >
+              {{ manualStepLoading.solution_fill_start ? 'Отправка...' : 'Набрать раствор' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('solution_fill_stop') || manualStepLoading.solution_fill_stop"
+              @click="runManualStep('solution_fill_stop')"
+            >
+              {{ manualStepLoading.solution_fill_stop ? 'Отправка...' : 'Стоп набор раствора' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('prepare_recirculation_start') || manualStepLoading.prepare_recirculation_start"
+              @click="runManualStep('prepare_recirculation_start')"
+            >
+              {{ manualStepLoading.prepare_recirculation_start ? 'Отправка...' : 'Старт рециркуляции setup' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('prepare_recirculation_stop') || manualStepLoading.prepare_recirculation_stop"
+              @click="runManualStep('prepare_recirculation_stop')"
+            >
+              {{ manualStepLoading.prepare_recirculation_stop ? 'Отправка...' : 'Стоп рециркуляции setup' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('irrigation_recovery_start') || manualStepLoading.irrigation_recovery_start"
+              @click="runManualStep('irrigation_recovery_start')"
+            >
+              {{ manualStepLoading.irrigation_recovery_start ? 'Отправка...' : 'Старт рециркуляции полива' }}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="!canOperateAutomation || !isManualStepAllowed('irrigation_recovery_stop') || manualStepLoading.irrigation_recovery_stop"
+              @click="runManualStep('irrigation_recovery_stop')"
+            >
+              {{ manualStepLoading.irrigation_recovery_stop ? 'Отправка...' : 'Стоп рециркуляции полива' }}
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -879,7 +924,6 @@ const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
 const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
 const isProcessActive = computed(() => processState.value !== 'IDLE' && processState.value !== 'READY')
-const manualControlAllowed = computed(() => role.value === 'operator')
 
 function handleProcessStateChange(state: AutomationStateType): void {
   processState.value = state
@@ -956,10 +1000,8 @@ function isManualStepAllowed(step: ManualStepCode): boolean {
   return allowedManualSteps.value.includes(step)
 }
 
-async function onControlModeChange(event: Event): Promise<void> {
-  const target = event.target as HTMLSelectElement | null
-  if (!target) return
-  const mode = (target.value || 'auto') as 'auto' | 'semi' | 'manual'
+async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {
+  if (mode === automationControlMode.value || automationControlModeSaving.value) return
   await setAutomationControlMode(mode)
 }
 </script>

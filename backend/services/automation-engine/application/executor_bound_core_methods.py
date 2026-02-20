@@ -22,11 +22,22 @@ from application.executor_small_delegates import (
     update_zone_workflow_phase as policy_delegate_update_zone_workflow_phase,
 )
 from application.task_events_persistence import persist_zone_event_safe as policy_persist_zone_event_safe
-from application.workflow_phase_policy import WORKFLOW_PHASE_EVENT_TYPE
+from application.workflow_phase_policy import (
+    WORKFLOW_PHASE_EVENT_TYPE,
+    WORKFLOW_PHASE_IRRIG_RECIRC,
+    WORKFLOW_PHASE_TANK_FILLING,
+    WORKFLOW_PHASE_TANK_RECIRC,
+)
 from domain.policies.outcome_enrichment_policy import ensure_extended_outcome as policy_ensure_extended_outcome
 from application.decision_retry_enqueue import enqueue_decision_retry as policy_enqueue_decision_retry
 
 logger = logging.getLogger(__name__)
+
+POST_WORKFLOW_CORRECTION_PHASES = {
+    WORKFLOW_PHASE_TANK_FILLING,
+    WORKFLOW_PHASE_TANK_RECIRC,
+    WORKFLOW_PHASE_IRRIG_RECIRC,
+}
 
 
 async def bound_create_zone_event_safe(
@@ -206,6 +217,8 @@ async def bound_execute_diagnostics_task(
         build_invalid_payload_result_fn=self._build_diagnostics_invalid_payload_result,
         cycle_start_workflows=CYCLE_START_WORKFLOWS,
         err_invalid_payload_contract_version=ERR_INVALID_PAYLOAD_CONTRACT_VERSION,
+        post_workflow_diagnostics_fn=self._execute_diagnostics,
+        post_workflow_phases=POST_WORKFLOW_CORRECTION_PHASES,
     )
 
 

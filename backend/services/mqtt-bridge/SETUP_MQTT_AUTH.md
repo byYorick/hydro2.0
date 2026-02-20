@@ -36,9 +36,6 @@ mosquitto_passwd passwords automation_engine
 mosquitto_passwd passwords history_logger
 # Введите пароль: logger_pass
 
-mosquitto_passwd passwords scheduler
-# Введите пароль: scheduler_pass
-
 mosquitto_passwd passwords mqtt_bridge
 # Введите пароль: bridge_pass
 
@@ -88,4 +85,3 @@ docker exec backend-mqtt-1 mosquitto_sub -h localhost -p 1883 -u automation_engi
    docker logs backend-automation-engine-1 | grep -i mqtt
    docker logs backend-history-logger-1 | grep -i mqtt
    ```
-

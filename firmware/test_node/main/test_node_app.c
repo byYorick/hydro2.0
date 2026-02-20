@@ -617,64 +617,6 @@ static bool update_node_namespace(const char *node_uid, const char *gh_uid, cons
     return changed;
 }
 
-static void apply_namespace_to_all_virtual_nodes(const char *gh_uid, const char *zone_uid, const char *reason) {
-    size_t index;
-
-    if (!gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
-        return;
-    }
-
-    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
-        (void)update_node_namespace(VIRTUAL_NODES[index].node_uid, gh_uid, zone_uid, reason);
-    }
-}
-
-static bool restore_runtime_namespace_from_storage(const char *reason) {
-    char restored_gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
-    char restored_zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
-    esp_err_t gh_err;
-    esp_err_t zone_err;
-
-    gh_err = config_storage_get_gh_uid(restored_gh_uid, sizeof(restored_gh_uid));
-    zone_err = config_storage_get_zone_uid(restored_zone_uid, sizeof(restored_zone_uid));
-    if (
-        gh_err != ESP_OK ||
-        zone_err != ESP_OK ||
-        restored_gh_uid[0] == '\0' ||
-        restored_zone_uid[0] == '\0'
-    ) {
-        snprintf(restored_gh_uid, sizeof(restored_gh_uid), "%s", PRECONFIG_GH_UID);
-        snprintf(restored_zone_uid, sizeof(restored_zone_uid), "%s", PRECONFIG_ZONE_UID);
-        ESP_LOGW(
-            TAG,
-            "Virtual restart fallback to preconfig namespace (gh_err=%s zone_err=%s)",
-            esp_err_to_name(gh_err),
-            esp_err_to_name(zone_err)
-        );
-    }
-
-    if (
-        restored_gh_uid[0] == '\0' ||
-        restored_zone_uid[0] == '\0' ||
-        strcmp(restored_gh_uid, PRECONFIG_GH_UID) == 0 ||
-        strcmp(restored_zone_uid, PRECONFIG_ZONE_UID) == 0
-    ) {
-        snprintf(restored_gh_uid, sizeof(restored_gh_uid), "%s", PRECONFIG_GH_UID);
-        snprintf(restored_zone_uid, sizeof(restored_zone_uid), "%s", PRECONFIG_ZONE_UID);
-    }
-
-    apply_namespace_to_all_virtual_nodes(restored_gh_uid, restored_zone_uid, reason);
-    ui_sync_all_virtual_nodes(false);
-    ESP_LOGI(
-        TAG,
-        "Virtual restart applied namespace: gh=%s zone=%s reason=%s",
-        restored_gh_uid,
-        restored_zone_uid,
-        reason ? reason : "unknown"
-    );
-    return true;
-}
-
 static bool parse_config_topic(
     const char *topic,
     char *out_gh_uid,
@@ -1019,8 +961,6 @@ static bool is_storage_system_channel(const char *channel) {
 static void publish_all_config_reports(const char *reason);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
-static void apply_namespace_to_all_virtual_nodes(const char *gh_uid, const char *zone_uid, const char *reason);
-static bool restore_runtime_namespace_from_storage(const char *reason);
 static void persist_received_config_or_namespace(
     const char *node_uid,
     const char *config_payload,

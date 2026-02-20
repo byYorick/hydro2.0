@@ -261,7 +261,7 @@ async def test_process_correction_controllers_workflow_tank_filling_bypasses_mis
 
 
 @pytest.mark.asyncio
-async def test_process_correction_controllers_workflow_tank_filling_stale_flags_fail_closed():
+async def test_process_correction_controllers_workflow_tank_filling_ignores_stale_flags():
     service = _build_zone_service()
     service.command_bus.publish_controller_command = AsyncMock(return_value=True)
     service.ph_controller = Mock()
@@ -293,10 +293,46 @@ async def test_process_correction_controllers_workflow_tank_filling_stale_flags_
             actuators={},
         )
 
-    service.ph_controller.check_and_correct.assert_not_awaited()
-    service.ec_controller.check_and_correct.assert_not_awaited()
-    event_types = [call.args[1] for call in mock_event.await_args_list]
-    assert "CORRECTION_SKIPPED_STALE_FLAGS" in event_types
+    service.ph_controller.check_and_correct.assert_awaited_once()
+    service.ec_controller.check_and_correct.assert_awaited_once()
+    skip_events = [call for call in mock_event.await_args_list if call.args[1] == "CORRECTION_SKIPPED_STALE_FLAGS"]
+    assert not skip_events
+
+
+@pytest.mark.asyncio
+async def test_process_correction_controllers_workflow_tank_filling_forces_correction_when_capabilities_disabled():
+    service = _build_zone_service()
+    service.command_bus.publish_controller_command = AsyncMock(return_value=True)
+    service.ph_controller = Mock()
+    service.ph_controller.check_and_correct = AsyncMock(return_value=None)
+    service.ec_controller = Mock()
+    service.ec_controller.check_and_correct = AsyncMock(return_value=None)
+    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+    with patch("services.zone_automation_service.create_zone_event", new_callable=AsyncMock):
+        await service._process_correction_controllers(
+            zone_id=118,
+            targets={"ph": {"target": 5.8}, "ec": {"target": 1.6}},
+            telemetry={"PH": 6.1, "EC": 1.1},
+            telemetry_timestamps={},
+            correction_flags={
+                "flow_active": True,
+                "stable": True,
+                "corrections_allowed": True,
+                "flow_active_ts": now_ts,
+                "stable_ts": now_ts,
+                "corrections_allowed_ts": now_ts,
+            },
+            nodes={},
+            capabilities={"ph_control": False, "ec_control": False},
+            workflow_phase="tank_filling",
+            water_level_ok=True,
+            bindings={},
+            actuators={},
+        )
+
+    service.ph_controller.check_and_correct.assert_awaited_once()
+    service.ec_controller.check_and_correct.assert_awaited_once()
 
 
 @pytest.mark.asyncio

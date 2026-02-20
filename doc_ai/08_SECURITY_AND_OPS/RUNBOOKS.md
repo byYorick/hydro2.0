@@ -18,6 +18,27 @@
 - Убедиться, что фронтенд использует правильные VITE_WS_HOST/PORT/TLS.
 - Проверить авторизацию приватных каналов (`routes/channels.php`) и токен сессии.
 
+## 3.1. Cutover scheduler -> Laravel
+
+Цель: включить Laravel как единственный planner/dispatch owner (legacy Python `scheduler` выведен из runtime).
+
+### 3.1.1. Включение cutover (dev/prod)
+- Laravel env: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1`.
+- Laravel token env: `AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=<token>` (или fallback на `PY_INGEST_TOKEN`).
+- Перезапуск: `docker compose up -d laravel`.
+
+### 3.1.2. Проверки после включения
+- Проверить регистрацию команды: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
+- Ручной прогон цикла: `docker compose exec -e AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1 laravel php artisan automation:dispatch-schedules --zone-id=1`.
+- Проверить отсутствие legacy scheduler в runtime: `docker compose ps | rg scheduler` (ожидается пусто).
+
+### 3.1.3. Rollback
+- Минимальный safe-stop: вернуть `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0` и перезапустить `laravel`.
+- Важно: это останавливает dispatch, но не включает legacy Python scheduler автоматически.
+- Для полного rollback на legacy scheduler нужен отдельный rollback artifact
+  (compose overlay или откат на release, где сервис `scheduler` присутствует в runtime).
+- После включения legacy scheduler убедиться, что в один момент активен только один dispatcher owner.
+
 ## 4. Playwright E2E падает (webServer)
 - Освободить порт 8000, проверить `php artisan serve` локально.
 - Запустить `php artisan migrate:fresh --seed` перед прогоном.

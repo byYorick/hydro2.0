@@ -1,7 +1,8 @@
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { logger } from '@/utils/logger'
 import type { ToastHandler } from '@/composables/useApi'
 import type { AutomationLogicMode } from '@/composables/zoneAutomationUtils'
+import { useWebSocket } from '@/composables/useWebSocket'
 import type {
   ZoneAutomationTabProps,
   SchedulerTaskStatus,
@@ -49,6 +50,10 @@ export interface ZoneAutomationSchedulerDeps {
 
 export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: ZoneAutomationSchedulerDeps) {
   const { get, post, showToast } = deps
+  const { subscribeToZoneCommands, subscribeToGlobalEvents, unsubscribeAll } = useWebSocket(
+    showToast,
+    'zone-automation-scheduler'
+  )
 
   // ─── Refs ──────────────────────────────────────────────────────────────────
   const schedulerTaskIdInput = ref('')
@@ -78,6 +83,13 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   let schedulerTasksPollTimer: ReturnType<typeof setTimeout> | null = null
   let schedulerTaskListRequestVersion = 0
   let schedulerTaskLookupRequestVersion = 0
+  let schedulerRealtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let schedulerRealtimeRefreshLastAt = 0
+  let schedulerRealtimeRefreshInFlight = false
+  let unsubscribeZoneCommands: (() => void) | null = null
+  let unsubscribeGlobalEvents: (() => void) | null = null
+
+  const REALTIME_REFRESH_MIN_INTERVAL_MS = 900
 
   const schedulerTaskPresetOptions: Array<{ value: SchedulerTaskPreset; label: string }> = [
     { value: 'all', label: 'Все' },
@@ -225,9 +237,8 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
         return
       }
 
-      const items = Array.isArray((response.data as SchedulerTasksResponse)?.data)
-        ? (response.data as SchedulerTasksResponse).data!
-        : []
+      const payload = response.data as SchedulerTasksResponse
+      const items = Array.isArray(payload?.data) ? payload.data : []
       recentSchedulerTasks.value = items
       schedulerTasksUpdatedAt.value = new Date().toISOString()
     } catch (error) {
@@ -400,6 +411,112 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     }
   }
 
+  function clearRealtimeRefreshTimer(): void {
+    if (schedulerRealtimeRefreshTimer) {
+      clearTimeout(schedulerRealtimeRefreshTimer)
+      schedulerRealtimeRefreshTimer = null
+    }
+  }
+
+  async function refreshSchedulerFromRealtime(reason: string): Promise<void> {
+    if (!props.zoneId) return
+    if (schedulerRealtimeRefreshInFlight) return
+
+    schedulerRealtimeRefreshInFlight = true
+    try {
+      await fetchRecentSchedulerTasks()
+
+      const activeTaskId = normalizeTaskId(schedulerTaskStatus.value?.task_id)
+      if (activeTaskId) {
+        await lookupSchedulerTask(activeTaskId)
+      }
+
+      if (reason === 'control_mode_event') {
+        await fetchAutomationControlMode()
+      }
+    } finally {
+      schedulerRealtimeRefreshInFlight = false
+    }
+  }
+
+  function scheduleRealtimeRefresh(reason: string): void {
+    if (!props.zoneId) return
+
+    const now = Date.now()
+    const elapsed = now - schedulerRealtimeRefreshLastAt
+    if (elapsed >= REALTIME_REFRESH_MIN_INTERVAL_MS) {
+      schedulerRealtimeRefreshLastAt = now
+      void refreshSchedulerFromRealtime(reason)
+      return
+    }
+
+    if (schedulerRealtimeRefreshTimer) {
+      return
+    }
+
+    schedulerRealtimeRefreshTimer = setTimeout(() => {
+      schedulerRealtimeRefreshTimer = null
+      schedulerRealtimeRefreshLastAt = Date.now()
+      void refreshSchedulerFromRealtime(reason)
+    }, REALTIME_REFRESH_MIN_INTERVAL_MS - elapsed)
+  }
+
+  function shouldRefreshByGlobalKind(kind: string): boolean {
+    if (kind === 'AUTOMATION_CONTROL_MODE_UPDATED') return true
+    return (
+      kind.startsWith('SCHEDULE_TASK_')
+      || kind.startsWith('TASK_')
+      || kind.startsWith('COMMAND_')
+      || kind.startsWith('MANUAL_STEP_')
+    )
+  }
+
+  function stopRealtimeSubscriptions(): void {
+    clearRealtimeRefreshTimer()
+    if (unsubscribeZoneCommands) {
+      unsubscribeZoneCommands()
+      unsubscribeZoneCommands = null
+    }
+    if (unsubscribeGlobalEvents) {
+      unsubscribeGlobalEvents()
+      unsubscribeGlobalEvents = null
+    }
+  }
+
+  function startRealtimeSubscriptions(): void {
+    stopRealtimeSubscriptions()
+    if (!props.zoneId) return
+    if (import.meta.env.MODE === 'test') return
+
+    unsubscribeZoneCommands = subscribeToZoneCommands(props.zoneId, (event) => {
+      const eventZoneId = typeof event.zoneId === 'number' ? event.zoneId : null
+      if (eventZoneId !== null && eventZoneId !== props.zoneId) {
+        return
+      }
+      scheduleRealtimeRefresh('command_event')
+    })
+
+    unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
+      if (!props.zoneId) return
+      const eventZoneId = typeof event.zoneId === 'number' ? event.zoneId : null
+      if (eventZoneId === null || eventZoneId !== props.zoneId) {
+        return
+      }
+
+      const kind = String(event.kind ?? '').trim().toUpperCase()
+      if (!shouldRefreshByGlobalKind(kind)) {
+        return
+      }
+
+      if (kind === 'AUTOMATION_CONTROL_MODE_UPDATED') {
+        scheduleRealtimeRefresh('control_mode_event')
+        return
+      }
+
+      scheduleRealtimeRefresh('global_event')
+    })
+  }
+
   function hasActiveSchedulerTask(): boolean {
     const isActive = (status: string | null | undefined): boolean => {
       const s = String(status ?? '').trim().toLowerCase()
@@ -457,6 +574,22 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       manualStepLoading.value[step] = false
     }
   }
+
+  onMounted(() => {
+    startRealtimeSubscriptions()
+  })
+
+  onUnmounted(() => {
+    stopRealtimeSubscriptions()
+    unsubscribeAll()
+  })
+
+  watch(
+    () => props.zoneId,
+    () => {
+      startRealtimeSubscriptions()
+    }
+  )
 
   return {
     // State

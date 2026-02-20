@@ -817,6 +817,8 @@ async def scheduler_task(request: Request, req: SchedulerTaskRequest = Body(...)
         execute_scheduler_task_fn=_execute_scheduler_task,
         get_trace_id_fn=get_trace_id,
         logger=logger,
+        load_zone_control_mode_fn=_load_zone_control_mode,
+        load_zone_workflow_phase_fn=_load_zone_workflow_phase,
     )
 
 
@@ -941,6 +943,32 @@ async def _load_zone_control_mode(zone_id: int) -> str:
     if not isinstance(payload, dict):
         payload = {}
     return _normalize_control_mode(payload.get("control_mode"))
+
+
+async def _load_zone_workflow_phase(zone_id: int) -> str:
+    try:
+        row = await _workflow_state_store.get(zone_id)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load zone workflow phase; fallback to idle: zone_id=%s error=%s",
+            zone_id,
+            exc,
+        )
+        return "idle"
+
+    if not isinstance(row, dict):
+        return "idle"
+
+    workflow_phase = str(row.get("workflow_phase") or "").strip().lower()
+    if workflow_phase:
+        return workflow_phase
+
+    payload = row.get("payload_normalized")
+    if isinstance(payload, dict):
+        payload_phase = str(payload.get("workflow_phase") or "").strip().lower()
+        if payload_phase:
+            return payload_phase
+    return "idle"
 
 
 async def _persist_zone_control_mode(zone_id: int, control_mode: str) -> Dict[str, Any]:

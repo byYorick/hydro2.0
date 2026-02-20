@@ -13,8 +13,8 @@
 
 ## 2) Границы ответственности сервисов
 
-- `scheduler`:
-  - только формирует расписания;
+- `laravel` scheduler-dispatch:
+  - формирует расписания;
   - отправляет абстрактные задачи в `automation-engine`;
   - отслеживает статусы задач `accepted/running/completed/failed`.
 - `automation-engine`:
@@ -43,12 +43,11 @@
 
 - Минимум: unit/feature тесты затронутого сервиса.
 - Перед сдачей прогонять:
-  - `scheduler`: `pytest -q test_main.py`
   - `automation-engine`: профильные `pytest` по изменённым модулям
   - `laravel`: feature тесты для новых API endpoint-ов
 
 ## 6) Что запрещено
 
-- Переносить device-level контроль обратно в `scheduler`.
+- Возвращать runtime planner/dispatch обратно в Python `scheduler`.
 - Обходить `history-logger` при отправке команд на узлы.
 - Изменять роли/авторизацию без явной причины и тестов.

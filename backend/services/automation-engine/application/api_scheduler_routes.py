@@ -49,6 +49,8 @@ async def submit_scheduler_task(
     execute_scheduler_task_fn: Callable[[str, Any, Optional[str]], Awaitable[None]],
     get_trace_id_fn: Callable[[], Optional[str]],
     logger: Any,
+    load_zone_control_mode_fn: Optional[Callable[[int], Awaitable[str]]] = None,
+    load_zone_workflow_phase_fn: Optional[Callable[[int], Awaitable[str]]] = None,
 ) -> Dict[str, Any]:
     if not command_bus:
         raise HTTPException(status_code=503, detail="CommandBus not initialized")
@@ -59,6 +61,61 @@ async def submit_scheduler_task(
     await validate_scheduler_dispatch_lease_fn(request)
     await validate_scheduler_security_baseline_fn(request)
     await validate_scheduler_zone_fn(req.zone_id)
+
+    if load_zone_control_mode_fn is not None:
+        control_mode = await load_zone_control_mode_fn(req.zone_id)
+        if control_mode == "manual":
+            allow_in_manual_mode = False
+            if req.task_type == "diagnostics" and load_zone_workflow_phase_fn is not None:
+                workflow_phase = str(await load_zone_workflow_phase_fn(req.zone_id) or "").strip().lower()
+                allow_in_manual_mode = workflow_phase in {"tank_filling", "tank_recirc", "irrig_recirc"}
+
+            if allow_in_manual_mode:
+                logger.info(
+                    "Scheduler task allowed in manual mode for active correction workflow phase",
+                    extra={
+                        "zone_id": req.zone_id,
+                        "task_type": req.task_type,
+                    },
+                )
+            else:
+                blocked_result = {
+                    "status": SCHEDULER_STATUS_REJECTED,
+                    "reason_code": "scheduler_blocked_manual_mode",
+                    "decision": "reject",
+                    "action_required": False,
+                    "error": "Zone is in manual control mode; auto scheduler tasks are blocked",
+                    "error_code": "scheduler_blocked_manual_mode",
+                }
+                task, is_duplicate = await create_scheduler_task_fn(
+                    req,
+                    initial_status=SCHEDULER_STATUS_REJECTED,
+                    initial_result=blocked_result,
+                    initial_error="Zone is in manual control mode; auto scheduler tasks are blocked",
+                    initial_error_code="scheduler_blocked_manual_mode",
+                )
+                if not is_duplicate:
+                    await create_zone_event_fn(
+                        req.zone_id,
+                        "SCHEDULE_TASK_REJECTED",
+                        {
+                            "task_id": task["task_id"],
+                            "task_type": req.task_type,
+                            "reason": "manual_mode",
+                            "error_code": "scheduler_blocked_manual_mode",
+                            "correlation_id": req.correlation_id,
+                        },
+                    )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "task_id": task["task_id"],
+                        "zone_id": req.zone_id,
+                        "task_type": req.task_type,
+                        "status": SCHEDULER_STATUS_REJECTED,
+                        "is_duplicate": is_duplicate,
+                    },
+                }
 
     scheduled_for_dt: Optional[datetime] = None
     if req.scheduled_for:

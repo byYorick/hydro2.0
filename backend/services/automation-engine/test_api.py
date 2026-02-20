@@ -1105,6 +1105,67 @@ def test_scheduler_task_deadline_fast_fail_expired(client, mock_command_bus):
     assert status_data["error_code"] == "task_expired"
 
 
+def test_scheduler_task_blocked_in_manual_mode(client, mock_command_bus):
+    """In manual control mode the scheduler task is rejected with scheduler_blocked_manual_mode."""
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    payload = scheduler_task_payload(
+        task_type="irrigation",
+        correlation_id="sch:z1:irrigation:manual-mode-block",
+    )
+
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="manual"):
+        response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "rejected"
+    assert data["is_duplicate"] is False
+
+    status_response = client.get(f"/scheduler/task/{data['task_id']}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert status_data["status"] == "rejected"
+    assert status_data["error_code"] == "scheduler_blocked_manual_mode"
+
+
+def test_scheduler_task_diagnostics_allowed_in_manual_mode_for_tank_filling(client, mock_command_bus):
+    """Diagnostics task is allowed in manual mode while correction workflow phase is active."""
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:manual-mode-tank-filling")
+
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="manual"), \
+         patch("api._load_zone_workflow_phase", new_callable=AsyncMock, return_value="tank_filling"):
+        response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] in {"accepted", "running", "completed", "failed"}
+    assert data["status"] != "rejected"
+
+    status_response = client.get(f"/scheduler/task/{data['task_id']}")
+    assert status_response.status_code == 200
+    status_data = status_response.json()["data"]
+    assert status_data["error_code"] != "scheduler_blocked_manual_mode"
+
+
+def test_scheduler_task_allowed_in_semi_mode(client, mock_command_bus):
+    """In semi control mode the scheduler task is accepted (automation still runs)."""
+    mock_command_bus.publish_command = AsyncMock(return_value=True)
+    set_command_bus(mock_command_bus, "gh-1")
+    headers = bootstrap_headers(client)
+    payload = scheduler_task_payload(correlation_id="sch:z1:diagnostics:semi-mode-ok")
+
+    with patch("api._load_zone_control_mode", new_callable=AsyncMock, return_value="semi"):
+        response = client.post("/scheduler/task", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] != "rejected"
+    assert data["zone_id"] == 1
+
+
 @pytest.mark.asyncio
 async def test_execute_scheduler_task_command_bus_unavailable_sets_structured_failure(mock_command_bus):
     old_command_bus = api._command_bus

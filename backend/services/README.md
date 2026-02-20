@@ -11,7 +11,7 @@ Python Core (MVP 1a)
   - `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
   - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
   - `automation-engine` — контроллер зон, проверка targets, публикация команд через history-logger REST API (порты 9401/metrics, 9405/REST API)
-  - `scheduler` — расписания поливов/света из recipe phases, публикация команд через automation-engine REST API (порт 9402)
+  - `Laravel scheduler-dispatch` — owner planning/dispatch abstract tasks в `automation-engine` (через `automation:dispatch-schedules`)
   - `device-registry` — PLANNED (см. `device-registry/README.md`)
 
 ## Переменные окружения (dev)
@@ -61,24 +61,23 @@ POST http://localhost:9000/bridge/zones/{zone_id}/commands
 - `GET /health` - health check
 
 **Automation-Engine (порт 9405):**
-- `POST /scheduler/command` - прием команд от scheduler
+- `POST /scheduler/task` - прием abstract task intent от Laravel scheduler-dispatch
 - `GET /health` - health check
 
 ### Prometheus metrics
 - history-logger: `http://localhost:9301/metrics`
 - automation-engine: `http://localhost:9401/metrics`
-- scheduler: `http://localhost:9402/metrics`
 
 ## Архитектура команд
 
 **Централизованная публикация команд:**
 ```
-Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
+Laravel Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
 ```
 
 **Важно:** 
 - `history-logger` — **единственная точка публикации команд в MQTT**
-- `automation-engine` и `scheduler` публикуют команды через REST API, не напрямую в MQTT
+- `automation-engine` публикует device-команды только через history-logger REST API, не напрямую в MQTT
 - Это обеспечивает единую точку логирования и мониторинга команд
 
 ## Документация

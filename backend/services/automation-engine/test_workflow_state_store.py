@@ -13,33 +13,25 @@ from infrastructure.workflow_state_store import WorkflowStateStore
 
 
 @pytest.mark.asyncio
-async def test_set_preserves_existing_control_mode_when_payload_omits_it(monkeypatch):
+async def test_set_passes_payload_through_unchanged(monkeypatch):
+    """WorkflowStateStore.set() передаёт payload как есть — без слияния с existing."""
     store = WorkflowStateStore()
     captured: Dict[str, Any] = {}
-
-    async def fake_get(zone_id: int):
-        return {
-            "zone_id": zone_id,
-            "workflow_phase": "tank_filling",
-            "started_at": datetime(2026, 2, 20, 0, 0, 0),
-            "payload_normalized": {"control_mode": "manual", "workflow": "clean_fill_check"},
-            "scheduler_task_id": "st-prev",
-        }
 
     async def fake_execute(query: str, *args):
         captured["args"] = args
 
-    monkeypatch.setattr(store, "get", fake_get)
     monkeypatch.setattr(workflow_state_store_module, "execute", fake_execute)
 
     await store.set(
         zone_id=6,
         workflow_phase="tank_filling",
-        payload={"workflow": "solution_fill_check"},
+        payload={"workflow": "solution_fill_check", "control_mode": "manual"},
         scheduler_task_id="st-next",
     )
 
-    payload_json = captured["args"][3]
+    # args: (zone_id, normalized_phase, payload_json, scheduler_task_id)
+    payload_json = captured["args"][2]
     payload = json.loads(payload_json)
     assert payload["workflow"] == "solution_fill_check"
     assert payload["control_mode"] == "manual"
@@ -47,22 +39,13 @@ async def test_set_preserves_existing_control_mode_when_payload_omits_it(monkeyp
 
 @pytest.mark.asyncio
 async def test_set_uses_payload_control_mode_override(monkeypatch):
+    """control_mode в payload передаётся напрямую, без слияния из existing."""
     store = WorkflowStateStore()
     captured: Dict[str, Any] = {}
-
-    async def fake_get(zone_id: int):
-        return {
-            "zone_id": zone_id,
-            "workflow_phase": "idle",
-            "started_at": None,
-            "payload_normalized": {"control_mode": "manual"},
-            "scheduler_task_id": None,
-        }
 
     async def fake_execute(query: str, *args):
         captured["args"] = args
 
-    monkeypatch.setattr(store, "get", fake_get)
     monkeypatch.setattr(workflow_state_store_module, "execute", fake_execute)
 
     await store.set(
@@ -72,6 +55,7 @@ async def test_set_uses_payload_control_mode_override(monkeypatch):
         scheduler_task_id=None,
     )
 
-    payload_json = captured["args"][3]
+    # args: (zone_id, normalized_phase, payload_json, scheduler_task_id)
+    payload_json = captured["args"][2]
     payload = json.loads(payload_json)
     assert payload["control_mode"] == "auto"

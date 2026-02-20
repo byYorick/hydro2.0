@@ -52,11 +52,6 @@ topic read hydro/time/request
 topic write hydro/+/+/+/+/command
 topic write hydro/+/+/events/#
 
-# Scheduler - только чтение статуса и телеметрии, команды через automation-engine REST API
-user scheduler
-topic read hydro/+/+/+/status
-topic read hydro/+/+/+/+/telemetry
-
 # MQTT Bridge - full access (bridge between systems)
 user mqtt_bridge
 topic readwrite hydro/#

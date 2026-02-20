@@ -24,7 +24,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Архитектура Python-сервисов**
 - Общая архитектура
 - Общая библиотека (`common/`)
-- Сервисы: mqtt-bridge, history-logger, automation-engine, scheduler
+- Сервисы: mqtt-bridge, history-logger, automation-engine
+- Laravel scheduler-dispatch как runtime owner planning/dispatch
 - Взаимодействие между сервисами
 
 #### [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)

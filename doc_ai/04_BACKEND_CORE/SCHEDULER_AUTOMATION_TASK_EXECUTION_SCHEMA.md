@@ -4,6 +4,12 @@
 **Статус:** Актуализировано после внедрения P3/P4 (event integrity, workflow persistence/recovery)  
 **Область:** `backend/services/scheduler`, `backend/services/automation-engine`, `backend/laravel`  
 
+> Важно (2026-02-20): документ фиксирует исторический `as-is/to-be` для этапа,
+> где planner-owner был Python `scheduler`.
+> Текущий migration owner для planner/dispatch зафиксирован в
+> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
+> При конфликте по runtime-owner использовать новый migration plan как приоритетный источник.
+
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость для старых scheduler/device-level контрактов не поддерживается.
 

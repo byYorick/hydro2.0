@@ -7,6 +7,11 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: обратная совместимость с legacy/deprecated контрактами не требуется; legacy endpoint-ы, alias-поля и fallback-ветки удаляются при переходе на целевой контракт.
 
+> Важно (2026-02-20): roadmap закрыт как исторический для Python scheduler runtime.
+> Текущий runtime-owner planning/dispatch зафиксирован в
+> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
+> При конфликте по owner-модели использовать migration plan.
+
 ---
 
 ## 1. Цель плана

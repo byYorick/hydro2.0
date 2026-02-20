@@ -293,6 +293,60 @@ async def test_publish_controller_command_duplicate_reuses_existing_cmd_id():
 
 
 @pytest.mark.asyncio
+async def test_publish_controller_command_manual_step_bypasses_dedupe():
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+
+        tracker = AsyncMock()
+
+        async def _track_command(zone_id, command, context, cmd_id=None):
+            return str(cmd_id or "cmd-track-fallback")
+
+        tracker.track_command = AsyncMock(side_effect=_track_command)
+        tracker.confirm_command_status = AsyncMock(return_value=None)
+
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker,
+        )
+
+        first_command = {
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "cmd": "run_pump",
+            "params": {"duration_ms": 60000},
+        }
+        second_command = {
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+            "cmd": "run_pump",
+            "params": {"duration_ms": 60000},
+        }
+        manual_context = {"reason_code": "manual_step_requested", "workflow": "manual_step"}
+
+        first = await command_bus.publish_controller_command(1, first_command, manual_context)
+        second = await command_bus.publish_controller_command(1, second_command, manual_context)
+
+        assert first is True
+        assert second is True
+        assert "cmd_id" in first_command
+        assert "cmd_id" in second_command
+        assert second_command.get("cmd_id") != first_command.get("cmd_id")
+        assert tracker.track_command.await_count == 2
+        assert mock_client.post.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_publish_controller_command_invalid():
     """Test publishing invalid controller command."""
     command_bus = CommandBus(

@@ -134,7 +134,7 @@ class ZoneDataService
                 'telemetry' => $telemetry,
                 'latest_telemetry_per_channel' => $latestTelemetryPerChannel,
                 'active_alerts' => $alerts,
-                'commands_recent' => $commandsRecent,
+                'recent_commands' => $commandsRecent,
                 'recent_events' => $recentEvents,
                 'nodes' => [], // Пока пустой массив, может быть заполнен позже
             ];

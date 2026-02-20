@@ -2285,6 +2285,105 @@ async def test_execute_two_tank_startup_reads_irr_snapshot_from_record_like_row(
 
 
 @pytest.mark.asyncio
+async def test_solution_fill_check_retries_irr_state_snapshot_before_mismatch_failure():
+    command_bus = _build_command_bus_mock()
+    fresh_snapshot_time = datetime.now(timezone.utc).replace(tzinfo=None)
+    snapshot_cmd_lookup_calls = {"count": 0}
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "select n.uid, n.type, coalesce(nc.channel, 'default') as channel" in normalized:
+            return [{"uid": "nd-irrig-1", "type": "irrig", "channel": "pump_main"}]
+        if "payload_json->>'cmd_id' = $2" in normalized and "type = 'irr_state_snapshot'" in normalized:
+            snapshot_cmd_lookup_calls["count"] += 1
+            if snapshot_cmd_lookup_calls["count"] == 1:
+                return [
+                    {
+                        "payload_json": {
+                            "snapshot": {
+                                "valve_clean_supply": False,
+                                "valve_solution_fill": False,
+                                "pump_main": False,
+                            }
+                        },
+                        "created_at": fresh_snapshot_time,
+                    }
+                ]
+            return [
+                {
+                    "payload_json": {
+                        "snapshot": {
+                            "valve_clean_supply": True,
+                            "valve_solution_fill": True,
+                            "pump_main": True,
+                        }
+                    },
+                    "created_at": fresh_snapshot_time,
+                }
+            ]
+        if "from zone_events" in normalized and "type = any($2::text[])" in normalized:
+            return []
+        if "from sensors s" in normalized and "lower(trim(coalesce(s.label, ''))) = any($2::text[])" in normalized:
+            return [
+                {
+                    "sensor_id": 202,
+                    "sensor_label": "level_solution_max",
+                    "level": 0.0,
+                    "sample_ts": fresh_snapshot_time,
+                }
+            ]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-solution-check-retry",
+            "scheduled_for": "2026-02-20T11:31:00",
+            "expires_at": "2026-02-20T12:01:00",
+            "correlation_id": "ae:self:28:diagnostics:enq-solution-check-retry",
+            "status": "pending",
+            "zone_id": 28,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=28,
+            task_type="diagnostics",
+            payload={
+                "workflow": "solution_fill_check",
+                "solution_fill_started_at": (fresh_snapshot_time - timedelta(seconds=15)).isoformat(),
+                "solution_fill_timeout_at": (fresh_snapshot_time + timedelta(minutes=5)).isoformat(),
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={
+                "task_id": "st-solution-fill-check-retry",
+                "correlation_id": "corr-solution-fill-check-retry",
+            },
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_solution_fill_in_progress"
+    assert snapshot_cmd_lookup_calls["count"] >= 2
+    assert command_bus.publish_command.await_count == 2
+    first_call = command_bus.publish_command.await_args_list[0]
+    second_call = command_bus.publish_command.await_args_list[1]
+    assert first_call.args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 10})
+    assert second_call.args == (28, "nd-irrig-1", "storage_state", "state", {"dedupe_ttl_sec": 0})
+    assert isinstance(first_call.kwargs.get("cmd_id"), str)
+    assert isinstance(second_call.kwargs.get("cmd_id"), str)
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_read_level_switch_uses_telemetry_samples_fallback_source():
     executor = SchedulerTaskExecutor(command_bus=_build_command_bus_mock())
     fresh_sample_ts = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -2471,6 +2570,120 @@ async def test_execute_two_tank_solution_fill_start_sends_sensor_mode_activation
     assert sent_cmds.count("activate_sensor_mode") == 2
     assert command_bus.publish_controller_command_closed_loop.await_count == 6
     mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_manual_solution_fill_start_restarts_fill_cycle_with_sensor_mode():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            node_types = [str(item).lower() for item in (args[2] if len(args) > 2 else [])]
+            if channel in {"valve_clean_supply", "valve_solution_fill", "pump_main"}:
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": channel}]
+            if channel == "system" and "ph" in node_types:
+                return [{"node_uid": "nd-ph-1", "node_type": "ph", "channel": "system"}]
+            if channel == "system" and "ec" in node_types:
+                return [{"node_uid": "nd-ec-1", "node_type": "ec", "channel": "system"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock), \
+         patch("scheduler_task_executor.enqueue_internal_scheduler_task", new_callable=AsyncMock) as mock_enqueue:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_enqueue.return_value = {
+            "enqueue_id": "enq-manual-solution-1",
+            "scheduled_for": "2026-02-20T09:32:00",
+            "expires_at": "2026-02-20T10:02:00",
+            "correlation_id": "ae:self:2:diagnostics:enq-manual-solution-1",
+            "status": "pending",
+            "zone_id": 2,
+            "task_type": "diagnostics",
+        }
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=2,
+            task_type="diagnostics",
+            payload={
+                "workflow": "manual_step",
+                "manual_step": "solution_fill_start",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-manual-solution-fill", "correlation_id": "corr-manual-solution-fill"},
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_manual_step_executed"
+    assert result["manual_step"] == "solution_fill_start"
+    assert result["next_check"]["enqueue_id"] == "enq-manual-solution-1"
+    sent_cmds = [
+        call.kwargs["command"]["cmd"]
+        for call in command_bus.publish_controller_command_closed_loop.await_args_list
+    ]
+    assert sent_cmds.count("activate_sensor_mode") == 2
+    assert command_bus.publish_controller_command_closed_loop.await_count == 5
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_two_tank_manual_solution_fill_stop_stops_cycle_and_deactivates_sensor_mode():
+    command_bus = _build_command_bus_mock()
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "group by lower(coalesce(n.type, ''))" in normalized:
+            return [{"node_type": "irrig", "online_count": 1}]
+        if "lower(coalesce(nc.channel, 'default')) = $2" in normalized:
+            channel = args[1]
+            node_types = [str(item).lower() for item in (args[2] if len(args) > 2 else [])]
+            if channel in {"valve_clean_supply", "valve_solution_fill", "pump_main"}:
+                return [{"node_uid": "nd-irrig-1", "node_type": "irrig", "channel": channel}]
+            if channel == "system" and "ph" in node_types:
+                return [{"node_uid": "nd-ph-1", "node_type": "ph", "channel": "system"}]
+            if channel == "system" and "ec" in node_types:
+                return [{"node_uid": "nd-ec-1", "node_type": "ec", "channel": "system"}]
+        return []
+
+    with patch("scheduler_task_executor.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("scheduler_task_executor.create_zone_event", new_callable=AsyncMock):
+        mock_fetch.side_effect = _fetch_side_effect
+        executor = SchedulerTaskExecutor(command_bus=command_bus)
+        result = await executor.execute(
+            zone_id=2,
+            task_type="diagnostics",
+            payload={
+                "workflow": "manual_step",
+                "manual_step": "solution_fill_stop",
+                "config": {
+                    "execution": {
+                        "topology": "two_tank_drip_substrate_trays",
+                        "startup": {"required_node_types": ["irrig"]},
+                    }
+                },
+            },
+            task_context={"task_id": "st-manual-solution-stop", "correlation_id": "corr-manual-solution-stop"},
+        )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_manual_step_executed"
+    assert result["manual_step"] == "solution_fill_stop"
+    assert result["workflow_phase"] == "idle"
+    sent_cmds = [
+        call.kwargs["command"]["cmd"]
+        for call in command_bus.publish_controller_command_closed_loop.await_args_list
+    ]
+    assert sent_cmds.count("set_relay") == 3
+    assert sent_cmds.count("deactivate_sensor_mode") == 2
+    assert command_bus.publish_controller_command_closed_loop.await_count == 5
 
 
 @pytest.mark.asyncio
