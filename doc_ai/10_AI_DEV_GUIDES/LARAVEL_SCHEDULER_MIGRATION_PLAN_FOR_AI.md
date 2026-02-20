@@ -3,7 +3,7 @@
 
 **Версия:** v1.2  
 **Дата:** 2026-02-20  
-**Статус:** READY_FOR_EXECUTION  
+**Статус:** EXECUTION_IN_PROGRESS  
 **Область:** `backend/laravel`, `backend/services/automation-engine`, `tests/e2e`, `doc_ai`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -43,10 +43,11 @@ Breaking-change: owner планирования/dispatch перенесен на
 ## 2.2 Что не завершено
 
 1. Код Laravel scheduler остается монолитом (техдолг декомпозиции).
-2. Durable state отсутствует как отдельная модель данных scheduler:
-   - активные задачи сейчас через Cache;
-   - курсоры сейчас завязаны на `scheduler_logs` JSON (`details.last_check`).
-3. Недостаточное целевое покрытие тестами именно Laravel scheduler пути.
+2. Durable state переведен на отдельную модель данных scheduler:
+   - активные задачи: `laravel_scheduler_active_tasks` (+ `ActiveTaskStore`);
+   - курсоры зон: `laravel_scheduler_zone_cursors` (+ `ZoneCursorStore`);
+   - Cache оставлен как ускоритель, source of truth перенесен в БД.
+3. Покрытие Laravel scheduler пути добавлено (unit internals + feature dispatch/recovery + CI smoke job).
 4. Legacy Python scheduler удален из default runtime compose-профилей и из текущей рабочей ветки.
    Rollback возможен только через отдельный artifact (release tag/compose overlay).
 
@@ -56,7 +57,11 @@ Breaking-change: owner планирования/dispatch перенесен на
 
 1. `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${...:-0}`
 
-Это означает: planner/dispatch owner один (Laravel), риск dual-dispatch между Laravel и Python scheduler в runtime снят.
+Уточнение:
+1. `0` в compose-файлах — безопасный шаблонный default (dispatch не активен, пока флаг явно не включен для окружения).
+2. Для рабочего окружения dispatcher включается явным `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1`.
+3. Риск dual-dispatch снят, потому что Python scheduler выведен из runtime compose-профилей.
+4. Отдельно контролируется риск `no-dispatch` (если флаг оставлен в `0` в окружении, где ожидается активный scheduler).
 
 ## 2.4 Статус миграционных вех
 
@@ -66,13 +71,13 @@ Breaking-change: owner планирования/dispatch перенесен на
 2. `LRS-027`: canary переход.
 3. `LRS-028`: full rollout Laravel scheduler.
 4. Удаление Python scheduler из runtime compose-профилей.
+5. `LRS-018..020`: unit/feature/recovery тесты для `automation:dispatch-schedules`.
+6. `LRS-022`: CI job `laravel-scheduler-smoke`.
 
 **Осталось сделать:**
 
-1. Durable state (`LRS-011..014`).
-2. Тесты/CI (`LRS-018..022`).
-3. Рефакторинг монолита Laravel scheduler (`LRS-004..010`).
-4. Формализованный rollback artifact и rollback drill.
+1. Рефакторинг монолита Laravel scheduler (`LRS-004..010`).
+2. Формализованный rollback artifact и rollback drill.
 
 ---
 
@@ -150,10 +155,10 @@ Breaking-change: owner планирования/dispatch перенесен на
 
 ### EPIC A (P0): Durable state Laravel scheduler
 
-1. `LRS-011` (P0): таблица активных задач scheduler.
-2. `LRS-012` (P0): таблица курсоров по зонам.
-3. `LRS-013` (P0): `ActiveTaskStore` + `CursorStore` + startup recovery scan.
-4. `LRS-014` (P0): индексы/retention/cleanup job.
+1. `LRS-011` (DONE): таблица активных задач scheduler (`laravel_scheduler_active_tasks`).
+2. `LRS-012` (DONE): таблица курсоров по зонам (`laravel_scheduler_zone_cursors`).
+3. `LRS-013` (DONE): `ActiveTaskStore` + `ZoneCursorStore`; reconcile читает durable state, Cache только ускоритель.
+4. `LRS-014` (DONE): индексы + retention/cleanup в цикле dispatcher (config-driven batch cleanup).
 
 **Минимальная схема (обязательный baseline):**
 
@@ -225,10 +230,10 @@ CREATE INDEX idx_lszc_cursor_at ON laravel_scheduler_zone_cursors(cursor_at DESC
 
 ### EPIC C (P0): Тесты и CI
 
-10. `LRS-018` (P0): unit planning/catchup/correlation/deadlines.
-11. `LRS-019` (P0): feature тесты `automation:dispatch-schedules` (HTTP fake).
-12. `LRS-020` (P0): recovery тесты restart active tasks.
-13. `LRS-022` (P0): CI job `laravel-scheduler-smoke`.
+10. `LRS-018` (DONE): unit planning/catchup/correlation/deadlines (`AutomationDispatchSchedulesInternalsTest`).
+11. `LRS-019` (DONE): feature тесты `automation:dispatch-schedules` (HTTP fake, durable assertions).
+12. `LRS-020` (DONE): recovery тест restart active tasks (reconcile persisted task + next dispatch).
+13. `LRS-022` (DONE): CI job `laravel-scheduler-smoke`.
 
 **Приемка:**
 

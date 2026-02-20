@@ -367,7 +367,7 @@ automation-engine/
 **Статус:** LEGACY / RUNTIME REMOVED.
 
 1. Python scheduler больше не является runtime owner planning/dispatch.
-2. Исторический код сохранен только как legacy-артефакт для rollback/history.
+2. Исторический код доступен только через rollback artifact/release tags (в текущей ветке может отсутствовать).
 3. Актуальный planner/dispatch path:
    - Laravel `automation:dispatch-schedules` -> `automation-engine /scheduler/task`.
 
@@ -468,17 +468,15 @@ backend/services/
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── README.md
-├── scheduler/           # Расписания
-│   ├── main.py
-│   ├── test_main.py     # Тесты
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
 ├── device-registry/    # PLANNED
 ├── pytest.ini          # Конфигурация тестов
 ├── requirements-test.txt
 └── README.md           # Общее описание
 ```
+
+Примечание:
+- Python `scheduler/` исключен из default runtime и текущей ветки.
+- Планирование/dispatch выполняется Laravel scheduler-dispatch.
 
 ### 5.2. Планируемая структура (согласно документации)
 

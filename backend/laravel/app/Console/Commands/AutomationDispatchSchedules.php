@@ -4,6 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\GrowCycle;
 use App\Models\SchedulerLog;
+use App\Services\AutomationScheduler\ActiveTaskStore;
+use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -49,13 +51,10 @@ class AutomationDispatchSchedules extends Command
      */
     private array $zoneCursorCache = [];
 
-    /**
-     * @var array<int, bool>
-     */
-    private array $zoneCursorLoaded = [];
-
     public function __construct(
         private readonly EffectiveTargetsService $effectiveTargetsService,
+        private readonly ActiveTaskStore $activeTaskStore,
+        private readonly ZoneCursorStore $zoneCursorStore,
     ) {
         parent::__construct();
     }
@@ -113,6 +112,7 @@ class AutomationDispatchSchedules extends Command
     private function dispatchCycle(array $zoneFilter): array
     {
         $cfg = $this->schedulerConfig();
+        $this->cleanupTerminalActiveTasks($cfg);
         $traceId = $this->newTraceId();
         $bootstrap = $this->bootstrapLease($cfg, $traceId);
 
@@ -399,8 +399,29 @@ class AutomationDispatchSchedules extends Command
             'catchup_rate_limit_per_cycle' => max(1, (int) config('services.automation_engine.scheduler_catchup_rate_limit_per_cycle', 20)),
             'dispatch_interval_sec' => max(10, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60)),
             'active_task_ttl_sec' => max(30, (int) config('services.automation_engine.scheduler_active_task_ttl_sec', $expiresAfterSec)),
+            'active_task_retention_days' => max(1, (int) config('services.automation_engine.scheduler_active_task_retention_days', 60)),
+            'active_task_cleanup_batch' => max(1, (int) config('services.automation_engine.scheduler_active_task_cleanup_batch', 500)),
             'cursor_persist_enabled' => (bool) config('services.automation_engine.scheduler_cursor_persist_enabled', true),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
+    private function cleanupTerminalActiveTasks(array $cfg): void
+    {
+        $retentionDays = max(1, (int) ($cfg['active_task_retention_days'] ?? 60));
+        $batchLimit = max(1, (int) ($cfg['active_task_cleanup_batch'] ?? 500));
+        $threshold = $this->nowUtc()->subDays($retentionDays);
+        $deleted = $this->activeTaskStore->cleanupTerminalOlderThan($threshold, $batchLimit);
+
+        if ($deleted > 0) {
+            Log::info('Laravel scheduler active task cleanup executed', [
+                'deleted' => $deleted,
+                'retention_days' => $retentionDays,
+                'batch_limit' => $batchLimit,
+            ]);
+        }
     }
 
     private function newTraceId(): string
@@ -921,28 +942,11 @@ class AutomationDispatchSchedules extends Command
             return $default;
         }
 
-        if (isset($this->zoneCursorLoaded[$zoneId])) {
-            $this->zoneCursorCache[$zoneId] = $default;
+        $storedCursor = $this->zoneCursorStore->getCursorAt($zoneId);
+        if ($storedCursor !== null) {
+            $this->zoneCursorCache[$zoneId] = $storedCursor;
 
-            return $default;
-        }
-
-        $this->zoneCursorLoaded[$zoneId] = true;
-        $taskName = sprintf('scheduler_cursor_zone_%d', $zoneId);
-        $row = SchedulerLog::query()
-            ->where('task_name', $taskName)
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->first(['details']);
-
-        if ($row && is_array($row->details)) {
-            $raw = $row->details['last_check'] ?? ($row->details['cursor_at'] ?? null);
-            $parsed = $this->parseIsoDateTime(is_string($raw) ? $raw : null);
-            if ($parsed !== null) {
-                $this->zoneCursorCache[$zoneId] = $parsed;
-
-                return $parsed;
-            }
+            return $storedCursor;
         }
 
         $this->zoneCursorCache[$zoneId] = $default;
@@ -955,6 +959,15 @@ class AutomationDispatchSchedules extends Command
         if (! $cursorPersistEnabled) {
             return;
         }
+
+        $this->zoneCursorStore->upsertCursor(
+            zoneId: $zoneId,
+            cursorAt: $cursorAt,
+            catchupPolicy: $catchupPolicy,
+            metadata: [
+                'source' => 'automation:dispatch-schedules',
+            ],
+        );
 
         $taskName = sprintf('scheduler_cursor_zone_%d', $zoneId);
         $this->writeSchedulerLog($taskName, 'cursor', [
@@ -1102,6 +1115,9 @@ class AutomationDispatchSchedules extends Command
             );
 
         [$dueAtIso, $expiresAtIso] = $this->computeTaskDeadlines($triggerTime, $cfg['due_grace_sec'], $cfg['expires_after_sec']);
+        $acceptedAt = $this->nowUtc();
+        $dueAt = $this->parseIsoDateTime($dueAtIso);
+        $expiresAt = $this->parseIsoDateTime($expiresAtIso);
 
         $requestPayload = [
             'zone_id' => $zoneId,
@@ -1181,16 +1197,35 @@ class AutomationDispatchSchedules extends Command
         $normalizedStatus = $this->normalizeTerminalStatus($taskStatus);
         if ($this->isTerminalStatus($normalizedStatus)) {
             $logStatus = $normalizedStatus === 'completed' ? 'completed' : 'failed';
+            $terminalDetails = [
+                'terminal_on_submit' => true,
+                'is_duplicate' => $isDuplicate,
+                'scheduled_for' => $scheduledForIso,
+                'due_at' => $dueAtIso,
+                'expires_at' => $expiresAtIso,
+                'schedule_key' => $scheduleKey,
+                'correlation_id' => $correlationId,
+                'accepted_at' => $this->toIso($acceptedAt),
+            ];
             $this->writeSchedulerLog($taskName, $logStatus, [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
                 'task_id' => $taskId,
                 'status' => $normalizedStatus,
-                'terminal_on_submit' => true,
-                'is_duplicate' => $isDuplicate,
-                'schedule_key' => $scheduleKey,
-                'correlation_id' => $correlationId,
+                ...$terminalDetails,
             ]);
+            $this->persistActiveTaskSnapshot(
+                zoneId: $zoneId,
+                taskId: $taskId,
+                taskType: $taskType,
+                scheduleKey: $scheduleKey,
+                correlationId: $correlationId,
+                status: $normalizedStatus,
+                acceptedAt: $acceptedAt,
+                dueAt: $dueAt,
+                expiresAt: $expiresAt,
+                details: $terminalDetails,
+            );
 
             return [
                 'dispatched' => $normalizedStatus === 'completed',
@@ -1199,19 +1234,35 @@ class AutomationDispatchSchedules extends Command
             ];
         }
 
-        $this->writeSchedulerLog($taskName, 'accepted', [
-            'zone_id' => $zoneId,
-            'task_type' => $taskType,
-            'task_id' => $taskId,
-            'status' => $taskStatus,
+        $acceptedDetails = [
             'is_duplicate' => $isDuplicate,
             'scheduled_for' => $scheduledForIso,
             'due_at' => $dueAtIso,
             'expires_at' => $expiresAtIso,
             'schedule_key' => $scheduleKey,
             'correlation_id' => $correlationId,
-            'accepted_at' => $this->toIso($this->nowUtc()),
+            'accepted_at' => $this->toIso($acceptedAt),
+        ];
+
+        $this->writeSchedulerLog($taskName, 'accepted', [
+            'zone_id' => $zoneId,
+            'task_type' => $taskType,
+            'task_id' => $taskId,
+            'status' => $taskStatus,
+            ...$acceptedDetails,
         ]);
+        $this->persistActiveTaskSnapshot(
+            zoneId: $zoneId,
+            taskId: $taskId,
+            taskType: $taskType,
+            scheduleKey: $scheduleKey,
+            correlationId: $correlationId,
+            status: $taskStatus,
+            acceptedAt: $acceptedAt,
+            dueAt: $dueAt,
+            expiresAt: $expiresAt,
+            details: $acceptedDetails,
+        );
 
         Cache::put(
             $this->activeTaskCacheKey($scheduleKey),
@@ -1219,7 +1270,7 @@ class AutomationDispatchSchedules extends Command
                 'task_id' => $taskId,
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
-                'accepted_at' => $this->toIso($this->nowUtc()),
+                'accepted_at' => $this->toIso($acceptedAt),
             ],
             now()->addSeconds($cfg['active_task_ttl_sec']),
         );
@@ -1238,34 +1289,124 @@ class AutomationDispatchSchedules extends Command
     private function isScheduleBusy(string $scheduleKey, array $cfg, array $headers): bool
     {
         $cacheKey = $this->activeTaskCacheKey($scheduleKey);
-        $cached = Cache::get($cacheKey);
-        if (! is_array($cached) && ! is_string($cached)) {
+        $now = $this->nowUtc();
+        $taskId = $this->resolveActiveTaskIdFromCache($cacheKey);
+
+        $task = null;
+        if ($taskId !== '') {
+            $task = $this->activeTaskStore->findByTaskId($taskId);
+        }
+        if ($task === null) {
+            $task = $this->activeTaskStore->findActiveByScheduleKey($scheduleKey, $now);
+        }
+        if ($task === null) {
+            Cache::forget($cacheKey);
+
             return false;
         }
 
-        $taskId = '';
-        if (is_string($cached)) {
-            $taskId = trim($cached);
-        } elseif (is_array($cached)) {
-            $taskId = trim((string) ($cached['task_id'] ?? ''));
-        }
+        $taskId = trim((string) $task->task_id);
         if ($taskId === '') {
             Cache::forget($cacheKey);
 
             return false;
         }
 
-        $status = $this->fetchTaskStatus($taskId, $cfg, $headers);
-        if ($status === null) {
-            return true;
-        }
-        if ($this->isTerminalStatus($status)) {
+        $persistedStatus = strtolower(trim((string) $task->status));
+        if ($this->isTerminalStatus($persistedStatus)) {
             Cache::forget($cacheKey);
 
             return false;
         }
 
+        $persistedExpiresAt = $task->expires_at;
+        if ($persistedExpiresAt !== null) {
+            $expiresAt = CarbonImmutable::instance($persistedExpiresAt)->utc()->setMicroseconds(0);
+            if ($expiresAt->lt($now)) {
+                $this->activeTaskStore->markTerminal(
+                    taskId: $taskId,
+                    status: 'timeout',
+                    terminalAt: $now,
+                    detailsPatch: [
+                        'terminal_source' => 'laravel_dispatcher_local_expiry',
+                    ],
+                    lastPolledAt: $now,
+                );
+                Cache::forget($cacheKey);
+
+                return false;
+            }
+        }
+
+        $status = $this->fetchTaskStatus($taskId, $cfg, $headers);
+        if ($status === null) {
+            Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
+            $this->activeTaskStore->touchPolledAt($taskId, $now, null);
+
+            return true;
+        }
+
+        if ($this->isTerminalStatus($status)) {
+            $this->activeTaskStore->markTerminal(
+                taskId: $taskId,
+                status: $status,
+                terminalAt: $now,
+                detailsPatch: [
+                    'terminal_source' => 'automation_engine_status_poll',
+                ],
+                lastPolledAt: $now,
+            );
+            Cache::forget($cacheKey);
+
+            return false;
+        }
+
+        Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
+        $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
+
         return true;
+    }
+
+    private function resolveActiveTaskIdFromCache(string $cacheKey): string
+    {
+        $cached = Cache::get($cacheKey);
+        if (is_string($cached)) {
+            return trim($cached);
+        }
+        if (is_array($cached)) {
+            return trim((string) ($cached['task_id'] ?? ''));
+        }
+
+        return '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    private function persistActiveTaskSnapshot(
+        int $zoneId,
+        string $taskId,
+        string $taskType,
+        string $scheduleKey,
+        string $correlationId,
+        string $status,
+        CarbonImmutable $acceptedAt,
+        ?CarbonImmutable $dueAt,
+        ?CarbonImmutable $expiresAt,
+        array $details,
+    ): void {
+        $this->activeTaskStore->upsertTaskSnapshot(
+            taskId: $taskId,
+            zoneId: $zoneId,
+            taskType: $taskType,
+            scheduleKey: $scheduleKey,
+            correlationId: $correlationId,
+            status: $status,
+            acceptedAt: $acceptedAt,
+            dueAt: $dueAt,
+            expiresAt: $expiresAt,
+            details: $details,
+        );
     }
 
     /**

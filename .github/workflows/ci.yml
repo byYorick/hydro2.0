@@ -320,3 +320,70 @@ jobs:
           name: automation-engine-smoke-junit
           path: test-results/automation-engine-smoke.xml
           retention-days: 7
+
+  laravel-scheduler-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:2.13.0-pg15
+        env:
+          POSTGRES_DB: hydro_test
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hydro -d hydro_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    defaults:
+      run:
+        working-directory: backend/laravel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ runner.os }}-${{ hashFiles('backend/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - name: Install PHP deps
+        run: composer install --no-interaction --prefer-dist
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Laravel scheduler smoke tests
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro_test
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          BROADCAST_CONNECTION: log
+          BROADCAST_DRIVER: log
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: |
+          mkdir -p test-results
+          php artisan test \
+            tests/Unit/Console/AutomationDispatchSchedulesInternalsTest.php \
+            tests/Feature/AutomationDispatchSchedulesCommandTest.php \
+            --no-coverage \
+            --log-junit test-results/laravel-scheduler-smoke.xml
+      - name: Upload Laravel scheduler smoke JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: laravel-scheduler-smoke-junit
+          path: backend/laravel/test-results/laravel-scheduler-smoke.xml
+          retention-days: 7

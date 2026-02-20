@@ -916,6 +916,68 @@ Owner-модель статусов:
 
 ---
 
+## 8.5. laravel_scheduler_active_tasks
+
+Durable state для Laravel scheduler (source of truth по активным scheduler-task).
+
+```
+id BIGSERIAL PK
+task_id VARCHAR(128) UNIQUE NOT NULL
+zone_id BIGINT FK -> zones
+task_type VARCHAR(64) NOT NULL
+schedule_key VARCHAR(255) NOT NULL
+correlation_id VARCHAR(255) NOT NULL
+status VARCHAR(32) NOT NULL
+accepted_at TIMESTAMPTZ NOT NULL
+due_at TIMESTAMPTZ NULL
+expires_at TIMESTAMPTZ NULL
+last_polled_at TIMESTAMPTZ NULL
+terminal_at TIMESTAMPTZ NULL
+details JSONB NOT NULL DEFAULT '{}'
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+lsat_zone_status_updated_idx (zone_id, status, updated_at)
+lsat_sched_key_updated_idx (schedule_key, updated_at)
+lsat_expires_at_idx (expires_at)
+lsat_terminal_at_idx (terminal_at)
+lsat_corr_idx (correlation_id)
+```
+
+Назначение:
+- восстановление reconcile после рестарта Laravel/worker;
+- арбитраж `isScheduleBusy` через БД;
+- cleanup terminal записей по retention policy.
+
+---
+
+## 8.6. laravel_scheduler_zone_cursors
+
+Durable курсор последней успешной scheduler-проверки по зоне.
+
+```
+zone_id BIGINT PK FK -> zones
+cursor_at TIMESTAMPTZ NOT NULL
+catchup_policy VARCHAR(32) NOT NULL
+metadata JSONB NOT NULL DEFAULT '{}'
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+lszc_cursor_at_idx (cursor_at)
+```
+
+Назначение:
+- источник истины для `resolveZoneLastCheck`;
+- сохранение catchup-контекста между циклами и рестартами.
+
+---
+
 # 9. Пользователи и роли
 
 ## 9.1. users
@@ -1015,6 +1077,8 @@ sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
 zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
+zone 1—N laravel_scheduler_active_tasks
+zone 1—1 laravel_scheduler_zone_cursors
 zone 1—N commands
 zone 1—1 zone_workflow_state
 zone 1—N zone_simulations

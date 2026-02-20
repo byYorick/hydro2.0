@@ -1,10 +1,13 @@
-# AE2 Scheduler Split ADR
+# [HISTORICAL] AE2 Scheduler Split ADR
 
 **Дата:** 2026-02-19  
-**Статус:** ACCEPTED  
+**Статус:** HISTORICAL_ACCEPTED  
 **Контекст:** декомпозиция `backend/services/scheduler/main.py` без остановки planner-only режима
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+> Важно (2026-02-20): ADR исторический и описывает этап, где owner planning/dispatch был Python scheduler.  
+> Для текущей runtime owner-модели использовать `LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
 
 ## Решение
 

@@ -54,7 +54,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 Архитектура real-time обновлений
 
 #### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
-Деплой полного стека через Docker
+Деплой полного стека через Docker (`PARTIALLY_HISTORICAL` для legacy Python scheduler секций)
 
 ---
 
@@ -73,6 +73,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 2. **Python-сервисы?** → См. [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
 3. **API разработка?** → Прочитайте [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
 4. **REST API?** → См. [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
+
+Важно: при вопросах ownership scheduler runtime использовать
+`PYTHON_SERVICES_ARCH.md` и
+`doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`
+как приоритетные источники.
 
 ---
 

@@ -1,10 +1,14 @@
-# AE2 Scheduler Sync Contract v1
+# [HISTORICAL] AE2 Scheduler Sync Contract v1
 
 **Дата:** 2026-02-19  
-**Статус:** ACTIVE  
+**Статус:** HISTORICAL_SUPERSEDED  
 **Версия контракта:** `scheduler-sync/v1`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+> Важно (2026-02-20): контракт исторический (эпоха Python scheduler runtime owner).  
+> Для актуального scheduler intent path и инвариантов использовать:
+> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md` и `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`.
 
 ## 1. Scope
 

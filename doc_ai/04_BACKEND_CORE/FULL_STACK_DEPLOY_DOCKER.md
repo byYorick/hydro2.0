@@ -18,9 +18,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ---
 
+> Важно (2026-02-20): документ `PARTIALLY_HISTORICAL`.  
+> Блоки, где фигурирует отдельный Python `scheduler` сервис в compose/структуре,
+> относятся к исторической фазе до decommission runtime scheduler.  
+> Актуальный runtime owner planning/dispatch: Laravel scheduler-dispatch.  
+> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` и
+> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
+
 ## 1. Структура репозитория
 
-Актуальная структура проекта:
+Исторический пример структуры проекта (до decommission Python scheduler runtime):
 
 ```text
 hydro2.0/
@@ -96,6 +103,9 @@ hydro2.0/
 ---
 
 ## 3. docker-compose.yml (актуальная структура)
+
+Примечание: пример ниже содержит исторический сервис `scheduler` и показан только для контекста эволюции.
+Для реального запуска использовать текущие `backend/docker-compose*.yml`.
 
 Основные сервисы:
 

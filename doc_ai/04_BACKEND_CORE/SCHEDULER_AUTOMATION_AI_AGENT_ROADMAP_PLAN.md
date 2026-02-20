@@ -11,6 +11,8 @@ Breaking-change: обратная совместимость с legacy/deprecate
 > Текущий runtime-owner planning/dispatch зафиксирован в
 > `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
 > При конфликте по owner-модели использовать migration plan.
+> Пути `backend/services/scheduler/*`, встречающиеся ниже,
+> являются историческими и могут отсутствовать в текущей рабочей ветке.
 
 ---
 

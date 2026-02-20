@@ -1,12 +1,16 @@
-# AE2 Scheduler: план рефакторинга и синхронизации
+# [HISTORICAL] AE2 Scheduler: план рефакторинга и синхронизации
 
 **Дата:** 2026-02-19  
-**Статус:** DRAFT_FOR_IMPLEMENTATION  
+**Статус:** HISTORICAL_ARCHIVE  
 **Область:** `backend/services/scheduler/main.py`, `backend/services/scheduler/test_main.py`, контракт `scheduler <-> automation-engine`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ---
+
+> Важно (2026-02-20): документ исторический.  
+> Runtime owner planning/dispatch в текущей модели: Laravel scheduler-dispatch.  
+> Источник истины: `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
 
 ## 1. Цель
 
@@ -209,4 +213,3 @@ Rollback:
 3. Обновленные тесты и отчет parity/e2e.
 4. Обновленный `doc_ai/10_AI_DEV_GUIDES/AE2_CURRENT_STATE.md` с закрытием пункта:
 `Scheduler monolith split ADR`.
-

@@ -2,6 +2,7 @@
 
 Этот раздел содержит руководства для работы с ИИ-агентами над различными компонентами системы.
 
+**Статус раздела:** MIXED (`ACTIVE` + `HISTORICAL`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -18,8 +19,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Формат задач
 - Проверка результатов
 
-#### [GPT5_PROMPTING_GUIDE.md](../../docs/10_AI_DEV_GUIDES/GPT5_PROMPTING_GUIDE.md)
-**Краткий конспект промптов для GPT-5.1 Codex Max (англ. версия в `docs/10_AI_DEV_GUIDES`)**
+#### [GPT5_PROMPTING_GUIDE.md](GPT5_PROMPTING_GUIDE.md)
+**Краткий конспект промптов для GPT-5.1 Codex Max**
 - Принципы построения запросов
 - Работа с инструментами и кодогенерацией
 - Шаблон промпта и контроль качества
@@ -46,6 +47,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### Планы и rollout
 
+#### [LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md](LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md)
+**Актуальный план по scheduler migration/cutover (source of truth)**
+- As-Is статус Laravel scheduler-dispatch
+- Явная граница `переносим/не переносим`
+- Implementation backlog и rollback artifact policy
+
 #### [AI_AGENT_EXECUTION_PLAN_V2.md](AI_AGENT_EXECUTION_PLAN_V2.md)
 **Операционный план выполнения задач ИИ-агентов**
 - Последовательность этапов исполнения
@@ -66,6 +73,20 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Целевая архитектура отказоустойчивого AE2
 - Пошаговый roadmap для ИИ-ассистентов (куда смотреть/что делать/что на выходе)
 - Модель расширяемых topology/workflow плагинов
+
+### Исторические документы (scheduler runtime owner = Python, не использовать как source of truth)
+
+#### [AE2_SCHEDULER_REFACTOR_SYNC_PLAN.md](AE2_SCHEDULER_REFACTOR_SYNC_PLAN.md)
+Исторический план декомпозиции Python `scheduler/main.py`.
+
+#### [AE2_SCHEDULER_SPLIT_ADR.md](AE2_SCHEDULER_SPLIT_ADR.md)
+Исторический ADR для Python scheduler split.
+
+#### [AE2_SCHEDULER_SYNC_CONTRACT_V1.md](AE2_SCHEDULER_SYNC_CONTRACT_V1.md)
+Исторический sync-контракт для Python scheduler ingress.
+
+#### `AE2_STAGE_S*_TASK.md` и `AE2_STAGE_S*_FINAL_REPORT.md`
+Исторические stage-артефакты закрытых итераций AE2 (использовать как журнал изменений, не как текущий план исполнения).
 
 ### Специализированные гайды
 
@@ -120,7 +141,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 📊 Статус документов
 
-Все документы имеют статус **SPEC_READY** — гайды готовы к использованию.
+1. `ACTIVE`: общие гайды, шаблоны задач, актуальные migration/cutover планы.
+2. `HISTORICAL`: старые stage/roadmap/ADR документы, отражающие закрытые этапы или прежнюю owner-модель runtime.
+3. При конфликте по scheduler owner использовать:
+`LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md` + `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`.
 
 ---
 
