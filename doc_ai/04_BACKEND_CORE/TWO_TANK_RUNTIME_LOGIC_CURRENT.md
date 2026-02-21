@@ -3,9 +3,13 @@
 
 **Версия:** 1.0  
 **Дата обновления:** 2026-02-19  
-**Статус:** Актуальная фиксация текущей реализации
+**Статус:** Историческая фиксация pre-AE2-Lite (as-is snapshot)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+> Примечание: каноничная реализация для нового runtime описана в
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Этот документ сохранен как исторический снимок и не задает актуальный API-контракт.
 
 ---
 
@@ -25,7 +29,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 2. Контекст и границы
 
 - Топология runtime: `two_tank_drip_substrate_trays`.
-- Базовый маршрут diagnostics:
+- Базовый маршрут diagnostics (исторический):
   `Scheduler task -> automation-engine -> history-logger (/commands) -> MQTT -> ESP32`.
 - Публикация команд на ноды выполняется через `history-logger`; прямой MQTT publish из automation-engine не используется.
 - Нода обязана поддерживать локальный auto-stop наполнения по `*_max` датчикам (см. ссылки внизу).
@@ -222,6 +226,9 @@ Fail-closed режим:
 ---
 
 ## 9. API для ручного управления (AE/Laravel)
+
+Раздел ниже исторический. В AE2-Lite canonical runtime endpoint запуска:
+`POST /zones/{id}/start-cycle`.
 
 Новые endpoint automation-engine:
 - `GET /zones/{zone_id}/automation/control-mode`

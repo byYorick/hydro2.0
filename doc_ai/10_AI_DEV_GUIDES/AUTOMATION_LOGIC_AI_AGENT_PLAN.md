@@ -2,12 +2,16 @@
 # План выполнения для ИИ-агента: рефактор логики автоматики (scheduler + automation-engine)
 
 **Дата:** 2026-02-13  
-**Статус:** Draft/Active (Refined v1.2, progress updated 2026-02-13)  
+**Статус:** LEGACY / SUPERSEDED  
 **Владелец:** AI Agent (cross-layer)  
 **Приоритет:** высокий
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
 Breaking-change: контракт runtime-логики автоматики обновляется; дублирование recipe-targets в logic-конфиге удаляется.
+
+> Внимание: для текущего runtime использовать
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Упоминания scheduler-task transport (`/scheduler/task`) в этом файле исторические.
 
 ---
 

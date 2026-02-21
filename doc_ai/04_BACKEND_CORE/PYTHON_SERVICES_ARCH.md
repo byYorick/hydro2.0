@@ -1,631 +1,213 @@
 # PYTHON_SERVICES_ARCH.md
-# Архитектура Python-сервисов hydro2.0
-# **ОБНОВЛЕНО ПОСЛЕ РЕФАКТОРИНГА 2025-12-25**
+# Архитектура Python-сервисов hydro2.0 (AE2-Lite)
 
-Документ описывает архитектуру Python-сервисов, их взаимодействие и структуру.
-
-**КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ:**
-- ✅ Python сервисы используют Laravel API вместо прямых SQL
-- ✅ Единый контракт через `/api/internal/effective-targets/batch`
-- ✅ Убраны прямые запросы к `zone_recipe_instances` и `recipe_phases.targets`
-
-**Связанные документы:**
-- `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
-- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
-- `../01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
-
+**Версия:** 3.0  
+**Дата обновления:** 2026-02-21  
+**Статус:** Актуально (канонично для runtime)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: legacy scheduler-task transport удален из runtime; обратная совместимость не поддерживается.
 
 ---
 
-## 0. Актуализация 2026-02-16 (Automation-Engine P3/P4/P5)
+## 1. Цель
 
-Зафиксированные изменения в `automation-engine`:
-
-1. **Event integrity для controller actions**
-   - action-события (`IRRIGATION_STARTED`, `RECIRCULATION_CYCLE`, и др.) создаются только после подтверждённого publish в `CommandBus`;
-   - для негативных веток используются `*_COMMAND_REJECTED` и `*_COMMAND_UNCONFIRMED`;
-   - в `event_details` прокидывается `correlation_id` (из `cmd_id`) для склейки с `command_audit`.
-
-2. **Persistence workflow phase**
-   - добавлен DB-store `infrastructure/workflow_state_store.py`;
-   - состояние по зоне хранится в таблице `zone_workflow_state` (phase/payload/scheduler_task_id/updated_at);
-   - `SchedulerTaskExecutor` синхронизирует `workflow_phase` при переходах workflow-stage.
-
-3. **Startup recovery in-flight workflow**
-   - на старте API выполняется scanner `zone_workflow_state`;
-   - stale записи переводятся в `idle` с событием `WORKFLOW_RECOVERY_STALE_STOPPED`;
-   - актуальные записи продолжаются через enqueue diagnostics с событием `WORKFLOW_RECOVERY_ENQUEUED`.
-
-4. **Safety defaults**
-   - `AE_ENFORCE_NODE_ZONE_ASSIGNMENT=1` и `AE_ENFORCE_COMMAND_CHANNEL_COMPATIBILITY=1` включены по умолчанию в коде и `docker-compose.dev*`.
-
-5. **Decomposition step (P5.1)**
-   - публичный `scheduler_task_executor.py` оставлен как тонкий compatibility-coordinator без `exec(...)`;
-   - основная реализация перемещена в `application/scheduler_executor_impl.py`;
-   - выделены модульные границы:
-     - `application/workflow_router.py`
-     - `application/workflow_validator.py`
-     - `application/command_dispatch.py`
-     - `application/workflow_state_sync.py`
-     - `domain/workflows/{two_tank,three_tank,cycle_start}.py`
-     - `infrastructure/observability.py`
-
-## 0.1 Актуализация 2026-02-20 (Scheduler ownership)
-
-1. Runtime owner planning/dispatch перенесен в Laravel:
-   - `automation:dispatch-schedules`.
-2. Python `scheduler` выведен из default runtime compose-профилей.
-3. `automation-engine` продолжает принимать scheduler-intent через:
-   - `POST /scheduler/task`,
-   - `POST /scheduler/bootstrap`,
-   - `POST /scheduler/bootstrap/heartbeat`,
-   - `GET /scheduler/task/{task_id}`.
-4. Командный side-effect путь не меняется:
-   - `Laravel scheduler-dispatch -> automation-engine -> history-logger -> MQTT`.
+Зафиксировать текущую архитектуру Python-сервисов после перехода на AE2-Lite:
+- единый поток команд через `history-logger`;
+- единый запуск workflow зоны через `POST /zones/{id}/start-cycle`;
+- direct SQL read-model в runtime path automation-engine;
+- `LISTEN/NOTIFY + reconcile polling` для телеметрии и статусов команд.
 
 ---
 
-## 1. Общая архитектура (обновлено)
+## 2. Состав сервисов
 
-Python-сервисы образуют промежуточный слой между:
-- **Laravel API** (конфигурация, effective targets, пользователи)
-- **MQTT Broker** (коммуникация с ESP32-нодами)
-- **PostgreSQL** (хранение телеметрии и событий)
+### 2.1 `history-logger`
 
-### Новые принципы после рефакторинга:
-1. **Laravel API first** — все данные через REST API, не прямые SQL
-2. **Effective targets контракт** — единый источник целей для контроллеров
-3. **GrowCycle-centric** — логика строится вокруг активных циклов выращивания
-4. **Stateless сервисы** — вся конфигурация из Laravel API
-5. **Мониторинг** через Prometheus metrics
+Назначение:
+- подписка на MQTT телеметрию и события;
+- запись в PostgreSQL (`telemetry_samples`, `telemetry_last`, `commands`, `zone_events`);
+- единственная точка публикации команд в MQTT через `POST /commands`.
 
-### Архитектурные изменения:
-- ❌ **Убрано:** Прямые SQL запросы к recipe таблицам
-- ✅ **Добавлено:** `LaravelApiRepository` для работы с API
-- ✅ **Добавлено:** Batch endpoints для эффективного получения данных
+Порты:
+- `9300` REST API;
+- `9301` metrics.
 
----
+### 2.2 `automation-engine` (AE2-Lite)
 
-## 2. Общая библиотека (`common/`)
+Назначение:
+- долгоживущие zone runners;
+- two-tank workflow;
+- коррекция pH/EC;
+- rich zone state для UI;
+- исполнение intents от Laravel scheduler.
 
-### 2.1. Структура
+Порты:
+- `9405` REST API;
+- `9401` metrics.
 
-```
-common/
-├── __init__.py
-├── env.py          # Настройки из переменных окружения
-├── db.py           # Подключение к PostgreSQL (asyncpg)
-├── mqtt.py         # MQTT клиент (paho-mqtt)
-├── schemas.py      # Pydantic схемы для валидации
-├── commands.py     # Утилиты для работы с командами
-└── test_db.py      # Тесты БД
-```
+### 2.3 Прочие Python-сервисы
 
-### 2.2. Модули
-
-#### `env.py` — Настройки
-- Централизованное управление переменными окружения
-- Dataclass `Settings` с дефолтными значениями
-- Поддержка MQTT, PostgreSQL, Laravel API
-
-#### `db.py` — База данных
-- Connection pool к PostgreSQL (asyncpg)
-- Функции `fetch()` и `execute()` для запросов
-- Автоматическое управление пулом соединений
-
-#### `mqtt.py` — MQTT клиент
-- Класс `MqttClient` для подписки/публикации
-- Автоматический реконнект
-- Обработка сообщений через callbacks
-
-#### `schemas.py` — Валидация данных
-- Pydantic схемы для телеметрии
-- Валидация команд
-- Конвертация типов
-
-#### `commands.py` — Работа с командами
-- Утилиты для формирования команд
-- Валидация параметров команд
-- Форматирование для MQTT
+- `mqtt-bridge`, `digital-twin`, `health-monitor` и др. работают в своих доменах.
+- Никакой сервис, кроме `history-logger`, не публикует device-команды напрямую в MQTT.
 
 ---
 
-## 3. Получение данных из Laravel (новая модель)
+## 3. Канонические потоки
 
-### 3.1. LaravelApiRepository
+### 3.1 Командный поток (инвариант)
 
-**Назначение:** Единый клиент для работы с Laravel API.
+`Laravel scheduler -> automation-engine -> history-logger -> MQTT -> ESP32`
 
-**Ключевые методы:**
-- `get_effective_targets_batch(zone_ids)` — batch получение effective targets
-- `get_effective_targets(zone_id)` — targets для одной зоны
+Правила:
+- `automation-engine` отправляет команды только через `POST http://history-logger:9300/commands`.
+- Командный await в AE2-Lite завершается только по terminal statuses:
+  `DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`.
+- `QUEUED|SENT|ACK` считаются non-terminal.
 
-**Пример использования:**
-```python
-from repositories.laravel_api_repository import LaravelApiRepository
+### 3.2 Запуск цикла и intents
 
-repo = LaravelApiRepository()
-targets = await repo.get_effective_targets_batch([1, 2, 3])
+Единый внешний entrypoint:
+- `POST /zones/{id}/start-cycle`
 
-# Результат:
-{
-  "1": {
-    "cycle_id": 123,
-    "phase": {"name": "VEG", "started_at": "...", "due_at": "..."},
-    "targets": {
-      "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
-      "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
-      "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600}
-    }
-  }
-}
-```
+Scheduler модель:
+1. Laravel scheduler пишет запись в `zone_automation_intents` со статусом `pending`.
+2. Laravel вызывает `POST /zones/{id}/start-cycle`.
+3. AE2-Lite claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
+4. AE2-Lite обновляет intent lifecycle (`claimed/running/completed/failed/cancelled`).
 
-### 3.2. RecipeRepository (обновлен)
+Legacy endpoint-ы:
+- `POST /scheduler/task` — удален.
+- `GET /scheduler/task/{task_id}` — удален.
 
-**Изменения после рефакторинга:**
-- ✅ Использует `LaravelApiRepository` вместо прямых SQL
-- ✅ Получает данные через `/api/internal/effective-targets/batch`
-- ❌ Убраны запросы к `zone_recipe_instances` и `recipe_phases.targets`
+### 3.3 Телеметрия и фидбек команд
 
-**Методы:**
-- `get_zone_recipe_and_targets(zone_id)` — получает effective targets для зоны
+Основной transport:
+- PostgreSQL `LISTEN/NOTIFY` каналы:
+  - `ae_command_status`
+  - `ae_signal_update`
 
----
+Обязательный fallback:
+- reconcile polling (`commands`, `telemetry_last`, `zone_events`).
 
-## 4. Сервисы (обновлено после рефакторинга)
-
-### 4.1. automation-engine (КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ)
-
-**Назначение:** Основной контроллер зон с новой логикой GrowCycle.
-
-**Изменения после рефакторинга:**
-- ✅ Получает effective targets через `LaravelApiRepository`
-- ✅ Использует `recipe_revisions` вместо `recipe_phases.targets`
-- ❌ Убраны прямые SQL запросы к recipe таблицам
-
-**Ключевые компоненты:**
-- `repositories/recipe_repository.py` — получение effective targets
-- `repositories/laravel_api_repository.py` — клиент Laravel API
-- `services/zone_controllers/` — контроллеры с новой логикой
-
-**Функционал:**
-- Получение effective targets для активных зон
-- Управление pH/EC/irrigation/lighting/climate контроллерами
-- Генерация команд на основе структурированных целей
+Источник истины:
+- таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
 
 ---
 
-### 4.2. Laravel scheduler-dispatch (runtime owner planning/dispatch)
+## 4. Runtime-модель AE2-Lite
 
-**Статус:**
-- ✅ runtime-owner planning/dispatch в текущей архитектуре.
-- ✅ отправляет abstract task intent в `automation-engine` по `/scheduler/task`.
-- ✅ использует effective-targets/automation profiles из Laravel API.
+- один event loop на процесс;
+- один долгоживущий `ZoneRunner` на зону;
+- последовательное исполнение шагов: `send -> await terminal -> next`;
+- переход на следующий шаг только при `DONE`.
 
-**Важно:**
-- это не Python-сервис внутри `backend/services/*`;
-- Python legacy scheduler исключен из default runtime compose-профилей.
+### 4.1 Режимы управления
 
----
+Поддерживаются только:
+- `auto`
+- `semi`
+- `manual`
 
-### 4.3. digital-twin (ОБНОВЛЕНО)
+### 4.2 Two-tank scope
 
-**Изменения:**
-- ✅ Использует `recipe_revisions` и фазы по колонкам
-- ✅ Симуляция работает с новой моделью ревизий
+Поддерживаемая топология runtime v1:
+- только `two_tank`.
 
----
-
-### 4.4. health-monitor (ОБНОВЛЕНО)
-
-**Изменения:**
-- ✅ Использует effective targets из Laravel API
-- ✅ Мониторинг основан на новой доменной модели
+Фазы:
+- `idle -> tank_filling -> tank_recirc -> ready -> irrigating <-> irrig_recirc`.
 
 ---
 
-### 4.5. mqtt-bridge (БЕЗ ИЗМЕНЕНИЙ)
+## 5. Источник runtime-данных (direct SQL read-model)
 
-**Назначение:** FastAPI мост для отправки команд через MQTT.
+AE2-Lite в runtime читает данные напрямую из PostgreSQL:
+- `zones`, `nodes`, `node_channels`, `infrastructure_instances`, `channel_bindings`;
+- `grow_cycles`, `grow_cycle_phases`;
+- `zone_automation_logic_profiles`;
+- `telemetry_last`, `telemetry_samples`;
+- `commands`, `zone_events`, `zone_workflow_state`, `pid_state`.
 
-**Порт:** 9000
+Приоритет резолва runtime-настроек:
+`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode)`.
 
-**Функционал:**
-- REST API для отправки команд на ноды
-- Валидация команд через Pydantic
-- Публикация команд в MQTT топики
-- Логирование всех команд
-
-**Эндпоинты:**
-- `POST /bridge/zones/{zone_id}/commands` — отправка команды в зону
-- `GET /metrics` — Prometheus metrics
-
-**Зависимости:**
-- MQTT Broker
-- PostgreSQL (для логирования, опционально)
-
-**Структура:**
-```
-mqtt-bridge/
-├── main.py          # FastAPI приложение
-├── publisher.py     # Публикация в MQTT
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
+Требование:
+- runtime path не зависит от `/api/internal/effective-targets/*`.
 
 ---
 
-### 3.2. history-logger
+## 6. API automation-engine (runtime)
 
-**Назначение:** Подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT**.
+### 6.1 Канонические endpoint-ы
 
-**Порты:**
-- **9300**: REST API для отправки команд
-- **9301**: Prometheus metrics (`/metrics`)
+- `POST /zones/{id}/start-cycle`
+- `GET /zones/{id}/state`
+- `POST /zones/{id}/control-mode`
+- `POST /zones/{id}/manual-step`
+- `GET /health/live`
+- `GET /health/ready`
 
-**Функционал:**
-- Подписка на топики `hydro/+/+/+/telemetry`
-- Парсинг JSON payload
-- Батчинг и upsert в `telemetry_samples`
-- Обновление `telemetry_last`
-- **REST API для централизованной публикации команд в MQTT**
-- Обработка ошибок и реконнект
+### 6.2 Удаленные endpoint-ы
 
-**REST API Endpoints:**
-- `POST /commands` — универсальный endpoint для команд
-- `POST /zones/{zone_id}/commands` — команды для конкретной зоны
-- `POST /nodes/{node_uid}/commands` — команды для конкретной ноды
-- `GET /health` — health check
-
-**Зависимости:**
-- MQTT Broker
-- PostgreSQL
-
-**Структура:**
-```
-history-logger/
-├── main.py          # Основной цикл подписки
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
-**Алгоритм:**
-1. Подписка на MQTT топики телеметрии
-2. Накопление сообщений в батч
-3. Периодическая запись батча в БД (upsert)
-4. Обновление `telemetry_last` для последних значений
+- `POST /scheduler/task`
+- `GET /scheduler/task/{task_id}`
+- `POST /scheduler/bootstrap`
+- `POST /scheduler/bootstrap/heartbeat`
+- `POST /scheduler/internal/enqueue`
+- `POST /zones/{id}/automation/manual-resume`
 
 ---
 
-### 3.3. automation-engine
+## 7. База данных и миграции
 
-**Назначение:** Контроллер зон, проверка targets, публикация команд корректировки через history-logger.
+Изменения схемы только через Laravel migrations.
 
-**Порты:**
-- **9401**: Prometheus metrics (`/metrics`)
-- **9405**: REST API для приема задач от scheduler
-
-**Функционал:**
-- Периодическая загрузка конфигурации из Laravel
-- Проверка активных зон с рецептами
-- Сравнение текущих значений с targets (pH, EC)
-- Публикация команд корректировки через history-logger REST API
-- Прием и выполнение задач от scheduler
-- Мониторинг через Prometheus
-
-**REST API Endpoints (порт 9405):**
-- `POST /scheduler/task` — прием задачи от scheduler
-  - Body (актуальный контракт): `zone_id`, `task_type`, `payload`, `correlation_id`, `scheduled_for`, `due_at`, `expires_at`
-  - Response: `{"status": "ok", "data": {"task_id": "...", "status": "accepted"}}`
-- `POST /scheduler/bootstrap` — инициализация scheduler
-- `POST /scheduler/bootstrap/heartbeat` — heartbeat от scheduler
-- `GET /scheduler/task/{task_id}` — получение статуса задачи
-- `POST /scheduler/internal/enqueue` — внутренний endpoint для постановки задач в очередь
-- `GET /zones/{zone_id}/automation-state` — агрегированный runtime-state workflow зоны
-- `GET /health/live` — liveness probe
-- `GET /health/ready` — readiness probe (CommandBus + DB + lease-store)
-
-**Зависимости:**
-- history-logger REST API (для публикации команд)
-- PostgreSQL
-- Laravel API
-
-**Структура:**
-```
-automation-engine/
-├── main.py          # Основной цикл проверки зон
-├── test_main.py     # Тесты
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
-**Алгоритм:**
-1. Загрузка полной конфигурации из Laravel API
-2. Получение активных зон с рецептами из БД
-3. Для каждой зоны:
-   - Получение текущих значений из `telemetry_last`
-   - Сравнение с targets из рецепта
-   - Публикация команд корректировки при отклонении
-4. Повтор каждые 15 секунд
-
-**Дополнительно (P3/P4):**
-- action-события контроллеров фиксируются только после подтверждённого publish;
-- `workflow_phase` сохраняется в `zone_workflow_state` и восстанавливается после рестарта;
-- startup recovery продолжает in-flight workflow через self-enqueue diagnostics.
+Ключевые сущности AE2-Lite:
+- `zone_automation_logic_profiles.command_plans` (JSONB, явный приоритет);
+- `zone_automation_intents` (scheduler -> automation контракт);
+- `zone_workflow_state` (workflow snapshot);
+- `zone_automation_state` (rich UI state snapshot);
+- `command_audit`.
 
 ---
 
-### 3.4. scheduler (LEGACY / RUNTIME REMOVED)
+## 8. Freshness и fail-closed
 
-**Статус:** LEGACY / RUNTIME REMOVED.
+`effective_ts = COALESCE(sample_ts, updated_at)`
 
-1. Python scheduler больше не является runtime owner planning/dispatch.
-2. Исторический код доступен только через rollback artifact/release tags (в текущей ветке может отсутствовать).
-3. Актуальный planner/dispatch path:
-   - Laravel `automation:dispatch-schedules` -> `automation-engine /scheduler/task`.
+Пороги (дефолты):
+- pH/EC: `<= 300s`
+- gating flags (`flow_active/stable/corrections_allowed`): `<= 60s`
+- irr state: `<= 30s`
+- level switches: `<= 120s`
 
----
-
-### 3.5. device-registry (LEGACY / NOT USED)
-
-**Назначение:** Реестр устройств, хранение и выдача NodeConfig.
-
-**Статус:** LEGACY / NOT USED — функционал полностью реализован в Laravel.
-
-**Текущая реализация:**
-- Функционал device-registry полностью реализован в Laravel:
-  - Модели `DeviceNode` хранят информацию о нодах
-  - Конфигурация нод хранится в БД через Laravel
-  - NodeConfig может быть сгенерирован из данных БД
-  - `NodeRegistryService` — регистрация нод
-  - API `/api/nodes/register` — регистрация новых нод
-
-**См. также:** `../../backend/services/device-registry/README.md` (описание legacy статуса)
+Fail-closed:
+- stale critical сигнал -> коррекция/шаг блокируется;
+- причина фиксируется в `zone_events`.
 
 ---
 
-## 4. Взаимодействие между сервисами
+## 9. Тестирование
 
-### 4.1. С Laravel
-
-**Направление:** Python → Laravel
-
-**Метод:** HTTP REST API
-
-**Использование:**
-- `automation-engine` загружает конфигурацию через `/api/system/config/full`
-- Все сервисы могут читать данные из PostgreSQL (общая БД)
-
-**Аутентификация:**
-- Token-based через `LARAVEL_API_TOKEN`
-
-### 4.2. С MQTT Broker
-
-**Направление:** Двустороннее
-
-**Подписки:**
-- `history-logger`: `hydro/+/+/+/telemetry`
-- `automation-engine`: может подписываться на события (опционально)
-
-**Публикации:**
-- **ТОЛЬКО `history-logger`** публикует команды напрямую в MQTT: `hydro/{gh}/{zone}/{node}/{channel}/command`
-- `automation-engine` → REST (9300) → `history-logger` → MQTT
-- `scheduler` → REST (9405) → `automation-engine` → REST (9300) → `history-logger` → MQTT
-
-**Архитектура потока команд:**
-```
-Scheduler → REST → Automation-Engine → REST → History-Logger → MQTT → Узлы
-         (9405)                      (9300)
-```
-
-**Важно:** Централизованная публикация команд через history-logger обеспечивает единую точку логирования и мониторинга всех команд.
-
-### 4.3. С PostgreSQL
-
-**Направление:** Python → PostgreSQL
-
-**Таблицы:**
-- `telemetry_samples` — история телеметрии (запись через `history-logger`)
-- `telemetry_last` — последние значения (обновление через `history-logger`)
-- `zones`, `recipes`, `recipe_phases` — чтение через `automation-engine` и `scheduler`
-- `commands` — логирование команд (опционально)
+Обязательные уровни:
+- unit: workflow, plan executor, PID/gating/freshness;
+- integration: command wait, notify/polling, intent claim/idempotency;
+- e2e smoke в Docker: `start-cycle -> two-tank progression -> state API`.
 
 ---
 
-## 5. Структура проекта
+## 10. Legacy policy
 
-### 5.1. Текущая структура (плоская)
-
-```
-backend/services/
-├── common/              # Общая библиотека
-│   ├── env.py
-│   ├── db.py
-│   ├── mqtt.py
-│   ├── schemas.py
-│   └── commands.py
-├── mqtt-bridge/         # FastAPI мост REST→MQTT
-│   ├── main.py          # Основной код
-│   ├── publisher.py     # Публикация в MQTT
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
-├── history-logger/      # Запись телеметрии
-│   ├── main.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
-├── automation-engine/    # Контроллер зон
-│   ├── main.py
-│   ├── test_main.py     # Тесты
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
-├── device-registry/    # PLANNED
-├── pytest.ini          # Конфигурация тестов
-├── requirements-test.txt
-└── README.md           # Общее описание
-```
-
-Примечание:
-- Python `scheduler/` исключен из default runtime и текущей ветки.
-- Планирование/dispatch выполняется Laravel scheduler-dispatch.
-
-### 5.2. Планируемая структура (согласно документации)
-
-Согласно `../01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
-
-```
-backend/services/
-├── mqtt-bridge/
-│   ├── src/            # Исходный код
-│   │   ├── main.py
-│   │   └── publisher.py
-│   ├── tests/          # Тесты
-│   ├── Dockerfile
-│   └── README.md
-```
-
-**Примечание:** Текущая плоская структура работает и достаточна для MVP.  
-Реорганизация с `src/` и `tests/` может быть выполнена в будущем для лучшей организации кода.
+- замененный legacy-код удаляется в той же итерации;
+- отключенные “временно” legacy route/флаги не допускаются;
+- после этапов обязателен cleanup-аудит.
 
 ---
 
-## 6. Переменные окружения
+## 11. Связанные документы
 
-Общие для всех сервисов (через `common/env.py`):
-
-### MQTT
-- `MQTT_HOST` — хост MQTT брокера (по умолчанию: `mqtt`)
-- `MQTT_PORT` — порт (по умолчанию: `1883`)
-- `MQTT_USER`, `MQTT_PASS` — аутентификация (опционально)
-- `MQTT_TLS` — использование TLS (по умолчанию: `0`)
-
-### PostgreSQL
-- `PG_HOST` — хост БД (по умолчанию: `db`)
-- `PG_PORT` — порт (по умолчанию: `5432`)
-- `PG_DB` — имя БД (по умолчанию: `hydro_dev`)
-- `PG_USER` — пользователь (по умолчанию: `hydro`)
-- `PG_PASS` — пароль (по умолчанию: `hydro`)
-
-### Laravel API
-- `LARAVEL_API_URL` — URL Laravel API (по умолчанию: `http://laravel`)
-- `LARAVEL_API_TOKEN` — токен для аутентификации
-
-**Пример использования LARAVEL_API_TOKEN:**
-
-```python
-import os
-import httpx
-from common.env import get_settings
-
-settings = get_settings()
-
-# Запрос к Laravel API с токеном
-headers = {}
-if settings.laravel_api_token:
-    headers['Authorization'] = f'Bearer {settings.laravel_api_token}'
-
-response = httpx.get(
-    f'{settings.laravel_api_url}/api/system/config/full',
-    headers=headers,
-    timeout=10.0
-)
-config = response.json()
-```
-
-**Генерация токена:**
-
-Токен генерируется в Laravel через Laravel Sanctum:
-
-```bash
-# В Laravel контейнере
-php artisan tinker
->>> $user = \App\Models\User::first();
->>> $token = $user->createToken('python-service')->plainTextToken;
->>> echo $token;
-```
-
-Полученный токен устанавливается в переменную окружения `LARAVEL_API_TOKEN` для Python сервисов.
-
-### Прочее
-- `TELEMETRY_BATCH_SIZE` — размер батча для телеметрии (по умолчанию: `200`)
-- `TELEMETRY_FLUSH_MS` — интервал записи батча (по умолчанию: `500` мс)
-- `COMMAND_TIMEOUT_SEC` — таймаут команды (по умолчанию: `30` сек)
-
----
-
-## 7. Мониторинг
-
-Все сервисы экспортируют Prometheus metrics:
-
-- `mqtt-bridge`: порт 9000 (`/metrics`)
-- `history-logger`: порт 9301 (`/metrics`)
-- `automation-engine`: порт 9401 (`/metrics`)
-
-Примечание:
-- Python `scheduler` (порт 9402) — legacy runtime removed.
-- Планирование/dispatch выполняется Laravel scheduler-dispatch.
-
-**Метрики:**
-- Счетчики команд (отправлено, получено)
-- Гистограммы задержек
-- Счетчики ошибок
-
----
-
-## 8. Тестирование
-
-**Фреймворк:** pytest
-
-**Структура:**
-- `pytest.ini` — общая конфигурация
-- `requirements-test.txt` — зависимости для тестов
-- `test_main.py` в каждом сервисе — unit-тесты
-
-**Запуск:**
-```bash
-pytest backend/services/
-```
-
----
-
-## 9. Деплой
-
-**Docker Compose:**
-- `backend/docker-compose.dev.yml` — для разработки
-- `backend/docker-compose.prod.yml` — для продакшена
-
-**Зависимости:**
-- Все сервисы зависят от `mqtt` и `db`
-- `automation-engine` зависит от `laravel`
-
-**Health checks:**
-- HTTP endpoints для проверки здоровья
-- Prometheus metrics endpoints
-
----
-
-## 10. Планы развития
-
-1. **Реорганизация структуры** — переход на `src/` и `tests/` согласно документации
-2. **Реализация device-registry** — отдельный Python-сервис
-3. **Интеграционные тесты** — тесты в docker-compose стенде
-4. **Улучшение мониторинга** — больше метрик, алерты
-5. **Обработка ошибок** — retry логика, dead letter queue
-
----
-
-## Ссылки
-
-- Документация проекта: `../`
-- Backend архитектура: `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Общий README: `../../backend/services/README.md`
+- `HISTORY_LOGGER_API.md`
+- `REST_API_REFERENCE.md`
+- `API_SPEC_FRONTEND_BACKEND_FULL.md`
+- `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
+- `../10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`

@@ -662,7 +662,6 @@ workflow_phase VARCHAR(50) NOT NULL DEFAULT 'idle'
 started_at TIMESTAMPTZ NULL
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 payload JSONB NOT NULL DEFAULT '{}'::jsonb
-scheduler_task_id VARCHAR(100) NULL
 PK (zone_id)
 ```
 
@@ -670,13 +669,12 @@ PK (zone_id)
 ```
 zone_workflow_state_workflow_phase_idx (workflow_phase)
 zone_workflow_state_updated_at_idx (updated_at)
-zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
 ```
 
 Назначение:
 - персистентное хранение доменной `workflow_phase` для зоны;
 - восстановление in-flight workflow после рестарта `automation-engine`;
-- связь continuation payload с последним scheduler-task (`scheduler_task_id`).
+- связь continuation payload с текущим intent (`payload.intent_id`).
 
 Допустимые значения `workflow_phase`:
 - `idle`
@@ -693,6 +691,7 @@ id PK
 zone_id FK → zones
 mode VARCHAR(16) -- setup|working
 subsystems JSONB -- runtime-конфиг подсистем
+command_plans JSONB NOT NULL DEFAULT '{}'::jsonb -- планы команд two-tank
 is_active BOOLEAN DEFAULT false
 created_by FK → users NULL
 updated_by FK → users NULL
@@ -705,6 +704,41 @@ UNIQUE (zone_id, mode)
 ```
 zone_automation_logic_profiles_zone_id_is_active_index
 ```
+
+Требования к `command_plans`:
+- содержит `schema_version` и `plan_version`;
+- каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
+- приоритет runtime-резолва: `command_plans` (колонка) -> legacy fallback только на период миграции.
+
+## 6.8. zone_automation_intents
+
+```
+id BIGSERIAL PK
+zone_id BIGINT NOT NULL FK -> zones
+intent_type VARCHAR(64) NOT NULL
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+idempotency_key VARCHAR(255) NOT NULL
+status VARCHAR(32) NOT NULL -- pending|claimed|running|completed|failed|cancelled
+not_before TIMESTAMPTZ NULL
+claimed_at TIMESTAMPTZ NULL
+completed_at TIMESTAMPTZ NULL
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+Индексы:
+```
+zone_automation_intents_zone_status_idx (zone_id, status, updated_at)
+zone_automation_intents_status_not_before_idx (status, not_before)
+zone_automation_intents_idempotency_idx (zone_id, idempotency_key) UNIQUE
+```
+
+Назначение:
+- durable contract между Laravel scheduler-dispatch и AE2-Lite;
+- идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
+- арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
 
 Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
 
@@ -864,7 +898,7 @@ simulation_reports_status_index (status)
 
 ---
 
-## 8.4. scheduler_logs
+## 8.4. scheduler_logs (LEGACY / DIAGNOSTICS)
 
 ```
 id PK
@@ -875,8 +909,8 @@ created_at TIMESTAMP
 ```
 
 Назначение:
-- lifecycle/snapshot записи scheduler и automation-engine;
-- хранение статусов task-level исполнения (`accepted/running/completed/failed` и служебные статусы scheduler).
+- исторический журнал старого scheduler-task транспорта;
+- может использоваться как diagnostics source до полного cleanup.
 
 Индексы:
 ```
@@ -887,7 +921,7 @@ scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id
 scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
 ```
 
-### 8.4.1. Контракт `scheduler_logs.details` (Protocol 2.0)
+### 8.4.1. Контракт `scheduler_logs.details` (LEGACY)
 
 Обязательные ключи task snapshot:
 - `task_id: string`
@@ -910,15 +944,15 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 - `result.commands_effect_confirmed: int|null`
 - `result.commands_failed: int|null`
 
-Owner-модель статусов:
-- business (automation-engine): `accepted|running|completed|failed|rejected|expired`;
-- transport (scheduler reconcile): `timeout|not_found` (не являются business outcome decision-layer).
+Статус:
+- в AE2-Lite canonical runtime вместо scheduler-task используется `zone_automation_intents`.
 
 ---
 
-## 8.5. laravel_scheduler_active_tasks
+## 8.5. laravel_scheduler_active_tasks (LEGACY / OPTIONAL)
 
-Durable state для Laravel scheduler (source of truth по активным scheduler-task).
+Исторический durable state для старого scheduler-task транспорта.
+В AE2-Lite рекомендуется миграция на `zone_automation_intents`.
 
 ```
 id BIGSERIAL PK
@@ -954,9 +988,9 @@ lsat_corr_idx (correlation_id)
 
 ---
 
-## 8.6. laravel_scheduler_zone_cursors
+## 8.6. laravel_scheduler_zone_cursors (LEGACY / OPTIONAL)
 
-Durable курсор последней успешной scheduler-проверки по зоне.
+Исторический курсор legacy scheduler-reconcile.
 
 ```
 zone_id BIGINT PK FK -> zones
@@ -1126,13 +1160,15 @@ channel_binding 1—1 node_channel
 
 ---
 
-# 13. Использование данных в Python сервисах (обновлено)
+# 13. Использование данных в Python сервисах (AE2-Lite)
 
-**Python сервисы теперь используют Laravel API вместо прямых SQL запросов:**
+**Automation-engine (AE2-Lite) использует direct SQL read-model в runtime path.**
 
-**Основной контракт:**
-- `GET /api/internal/effective-targets/batch` — batch получение effective targets для зон
-- Возвращает цели из активного цикла с учётом overrides
+**Основной контракт runtime:**
+- чтение таблиц `grow_cycles`, `grow_cycle_phases`, `zone_automation_logic_profiles`,
+  `telemetry_last`, `zone_workflow_state`, `zone_events`, `commands`;
+- приоритет резолва: `phase snapshot -> grow_cycle_overrides -> active logic profile`;
+- отсутствие runtime-зависимости от `/api/internal/effective-targets/*`.
 
 **Структура ответа:**
 ```json
@@ -1165,9 +1201,9 @@ channel_binding 1—1 node_channel
 }
 ```
 
-### 13.1. Контракт `targets.*.execution` для scheduler-task
+### 13.1. Контракт `targets.*.execution` для AE2-Lite workflow
 
-Для task-level исполнения scheduler/automation-engine поддерживаются execution-конфиги
+Для workflow-исполнения поддерживаются execution-конфиги
 в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.
 
 Поля:
@@ -1179,22 +1215,22 @@ channel_binding 1—1 node_channel
 - `default_state: bool`
 - `params: object`
 - `duration_sec: number`
-- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"`
+- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"` (optional)
 
-### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> effective targets)
+### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> runtime DTO)
 
 Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
 
-При формировании `effective_targets.targets` применяется приоритет:
+При формировании runtime DTO применяется приоритет:
 
 `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
 
-Применение runtime-профиля в pipeline:
+Применение runtime-профиля:
 - фронтенд сохраняет профиль через `POST /api/zones/{zone}/automation-logic-profile`
-- затем отправляет `GROWTH_CYCLE_CONFIG` только с `params.profile_mode`
-- Laravel резолвит `subsystems` по `profile_mode` и инжектит их в команду перед отправкой в Python слой
+- scheduler/оператор формирует intent;
+- AE2-Lite читает профиль напрямую из БД и применяет в зоне.
 
-Нормализация runtime-полей в scheduler/automation контракт:
+Нормализация runtime-полей в automation контракт:
 
 - `subsystems.irrigation.execution.interval_minutes` -> `targets.irrigation.interval_sec`
 - `subsystems.irrigation.execution.duration_seconds` -> `targets.irrigation.duration_sec`
@@ -1226,15 +1262,13 @@ channel_binding 1—1 node_channel
 - при `enabled=false` выставляется `targets.<task>.execution.force_skip=true`
 - при `enabled=true` выставляется `targets.<task>.execution.force_skip=false`
 
-Runtime-снимок подсистем также отражается в `targets.extensions.subsystems` для UI/диагностики.
-Метаданные источника runtime отражаются в `targets.extensions.automation_logic` (`source`, `mode`, `updated_at`).
+Runtime-снимок подсистем отражается в `zone_automation_state` для UI/диагностики.
 
 Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
-обязаны фиксироваться в `zone_events` и lifecycle-снимках `scheduler_logs`.
+обязаны фиксироваться в `zone_events` и lifecycle `zone_automation_intents`.
 
-**Устаревший подход (до рефакторинга):**
-- ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`
-- ✅ Заменён на Laravel API для consistency и версионирования
+Legacy примечание:
+- старый scheduler-task транспорт и его таблицы считаются историческими.
 
 ---
 

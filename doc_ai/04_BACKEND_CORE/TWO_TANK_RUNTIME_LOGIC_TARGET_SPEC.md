@@ -3,10 +3,14 @@
 
 **Версия:** 1.0  
 **Дата обновления:** 2026-02-19  
-**Статус:** Draft (implementation target)
+**Статус:** LEGACY TARGET / SUPERSEDED BY AE2-Lite PLAN
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy workflow aliases не поддерживаются.
+
+> Внимание: для текущей реализации использовать
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Пункты про `manual_resume` в этом документе считаются историческими.
 
 ---
 

@@ -1,0 +1,14 @@
+flowchart TD
+    A[ZoneRunner loop] --> B[Load read-model snapshot]
+    B --> C[Sync mode auto/semi/manual]
+    C --> D{Есть active intent/phase?}
+    D -- нет --> E[Sleep short interval]
+    E --> A
+    D -- да --> F[TwoTankWorkflow step executor]
+    F --> G{Phase in ready/irrigating?}
+    G -- нет --> H[Persist state + events]
+    H --> A
+    G -- да --> I{Mode = auto/semi?}
+    I -- нет --> H
+    I -- да --> J[Run CorrectionLoop pH/EC]
+    J --> H

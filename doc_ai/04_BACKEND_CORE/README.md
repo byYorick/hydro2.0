@@ -76,7 +76,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Важно: при вопросах ownership scheduler runtime использовать
 `PYTHON_SERVICES_ARCH.md` и
-`doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`
+`doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
 как приоритетные источники.
 
 ---

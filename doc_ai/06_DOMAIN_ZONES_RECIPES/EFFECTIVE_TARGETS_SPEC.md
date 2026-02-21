@@ -3,6 +3,11 @@
 
 Документ описывает формальную спецификацию **effective-targets** — структурированных целевых значений и параметров управления для зон выращивания.
 
+Актуализация AE2-Lite (2026-02-21):
+- effective-targets остаются канонической бизнес-моделью Laravel;
+- automation-engine в runtime использует direct SQL read-model и не зависит от runtime вызовов `/api/internal/effective-targets/*`;
+- структура effective-targets используется как эталон семантики для SQL parity.
+
 **Связанные документы:**
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон
@@ -31,18 +36,19 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
    - Revision рецепта
    - Базовых параметров зоны
 
-2. Python сервисы (automation-engine, scheduler) получают targets через REST API
-3. Контроллеры используют targets для принятия решений о командах
+2. Laravel и интеграции могут получать targets через REST API
+3. Контроллеры AE2-Lite используют эквивалентную семантику через SQL read-model
 
 ---
 
 ## 2. Источник effective targets
 
-### 2.1. Laravel API Endpoint
+### 2.1. Laravel API Endpoint (diagnostics/integration)
 
 **Endpoint:** `POST /api/internal/effective-targets/batch`
 
 **Метод:** Batch получение targets для нескольких зон за один запрос.
+Используется вне runtime path AE2-Lite.
 
 **Request:**
 ```json
@@ -90,7 +96,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 }
 ```
 
-### 2.2. Endpoint для одной зоны
+### 2.2. Endpoint для одной зоны (diagnostics/integration)
 
 **Endpoint:** `GET /api/internal/effective-targets/{zone_id}`
 
@@ -555,7 +561,7 @@ interface CorrectionTimingsTarget {
 **См. также:**
 - `CORRECTION_CYCLE_SPEC.md` — полная спецификация correction cycle state machine
 - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (секция 7.5) — команды activate/deactivate
-- `ARCHITECTURE_FLOWS.md` (секция 3.3) — диаграммы потоков коррекций
+- `ARCHITECTURE_FLOWS.md` — диаграммы потоков коррекций
 
 ---
 

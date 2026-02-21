@@ -242,7 +242,7 @@ AutomationProcessPanel.vue           ← оболочка + fetch состоян
 └── AutomationAnomalySection.vue     ← equipment anomaly guard секция (~300 строк)
 ```
 
-**Заменить:** `fetch('/api/zones/{zoneId}/automation-state')` на `useApi().get(...)`.
+**Заменить:** `fetch('/api/zones/{zoneId}/state')` на `useApi().get(...)`.
 
 ---
 

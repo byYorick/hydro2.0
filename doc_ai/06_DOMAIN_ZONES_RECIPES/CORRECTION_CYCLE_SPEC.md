@@ -12,6 +12,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ---
 
+Актуализация AE2-Lite (2026-02-21):
+- команды к нодам идут только через `history-logger /commands`;
+- запуск цикла автоматики выполняется через `POST /zones/{id}/start-cycle`;
+- runtime-резолв target/config выполняется через SQL read-model (effective-targets API не используется в runtime path).
+
+---
+
 ## 1. Проблема и решение
 
 ### 1.1. Проблема

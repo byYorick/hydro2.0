@@ -15,10 +15,11 @@
 
 - `laravel` scheduler-dispatch:
   - формирует расписания;
-  - отправляет абстрактные задачи в `automation-engine`;
-  - отслеживает статусы задач `accepted/running/completed/failed`.
+  - пишет intent в БД (`zone_automation_intents`);
+  - будит `automation-engine` только через `POST /zones/{id}/start-cycle`;
+  - отслеживает lifecycle intents (`pending/claimed/running/completed/failed/cancelled`).
 - `automation-engine`:
-  - принимает scheduler tasks;
+  - подхватывает intents из БД и исполняет workflow зоны;
   - выполняет автоматизацию, safety-проверки, коррекции;
   - отправляет device-level команды через `history-logger/CommandBus`.
 - `history-logger`:
@@ -26,15 +27,17 @@
 
 ## 3) Контракты и совместимость
 
-- Источник целей: `/api/internal/effective-targets/batch` (Laravel).
-- Для scheduler-task использовать `targets.*.execution` контракт из:
-  - `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
+- Runtime-контракт запуска цикла: только `POST /zones/{id}/start-cycle`.
+- Runtime источник данных AE2-Lite: direct SQL read-model (PostgreSQL), без runtime-зависимости от Laravel effective-targets API.
+- Для intent lifecycle использовать контракт из:
+  - `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
   - `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 - Любые изменения контрактов отражать в документации до/вместе с кодом.
 
 ## 4) Правила изменения кода
 
-- Не добавлять прямые SQL-запросы к legacy recipe-таблицам, если есть Laravel API контракт.
+- Не использовать runtime HTTP-запросы в Laravel для read-model автоматики.
+- Прямой SQL read-model в AE2-Lite разрешен и обязателен для runtime path.
 - Предпочитать явные схемы payload и fail-closed валидацию.
 - Ошибки и деградации сопровождать сервисными логами и infra-alert кодами.
 - Для новых API endpoint-ов добавлять тесты и негативные сценарии.
@@ -45,9 +48,11 @@
 - Перед сдачей прогонять:
   - `automation-engine`: профильные `pytest` по изменённым модулям
   - `laravel`: feature тесты для новых API endpoint-ов
+  - `tests/e2e`: smoke в Docker для сценария `start-cycle -> workflow`.
 
 ## 6) Что запрещено
 
 - Возвращать runtime planner/dispatch обратно в Python `scheduler`.
 - Обходить `history-logger` при отправке команд на узлы.
+- Использовать legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` в новом runtime.
 - Изменять роли/авторизацию без явной причины и тестов.

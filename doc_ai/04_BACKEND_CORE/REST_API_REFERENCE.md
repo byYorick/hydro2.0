@@ -6,6 +6,11 @@
 
 Он дополняет `API_SPEC_FRONTEND_BACKEND_FULL.md`, но сфокусирован именно на списке URL и их назначении.
 
+Актуализация AE2-Lite (2026-02-21):
+- единый запуск workflow через `POST /zones/{id}/start-cycle` (внутренний AE endpoint);
+- legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
+- runtime path automation-engine использует direct SQL read-model.
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -58,20 +63,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
-| GET | /api/zones/{id}/automation-state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
+| GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
 | GET | /api/zones/{id}/automation/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/automation/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
-| POST | /api/zones/{id}/automation/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual_step` через scheduler-task) |
-| POST | /api/zones/{id}/automation/manual-resume | auth:sanctum (operator/admin/agronomist/engineer) | Ручное подтверждение и возобновление 2-бакового workflow после `manual_ack_required_after_retries` |
-| GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
-| GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy к automation-engine) + `timeline` и outcome (`decision/reason_code`) |
+| POST | /api/zones/{id}/automation/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (доступен только в `semi|manual`) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
-
-Инварианты scheduler-task (`/api/zones/{id}/scheduler-tasks*`):
-- terminal business-статусы: `completed|failed|rejected|expired`;
-- transport-статусы scheduler уровня: `timeout|not_found` (только для lifecycle/diagnostics);
-- `timeline[]` должен быть отсортирован по времени события по возрастанию.
 
 ---
 
@@ -275,17 +272,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /health/live | internal | Liveness: процесс API доступен |
 | GET | /health/ready | internal | Readiness: `CommandBus`, DB и bootstrap lease-store готовы |
 
-### 18.2 Automation-engine scheduler endpoints
+### 18.2 Automation-engine runtime endpoints
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------|------|----------------------------------------------------|
-| POST | /scheduler/bootstrap | internal | Startup-handshake scheduler -> automation-engine |
-| POST | /scheduler/bootstrap/heartbeat | internal | Heartbeat/lease keepalive для scheduler |
-| POST | /scheduler/task | internal | Принять task intent от scheduler |
-| GET | /scheduler/task/{task_id} | internal | Получить task status/outcome |
-| POST | /scheduler/internal/enqueue | internal | Внутренний enqueue self-task (AE -> scheduler) |
+| POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
+| GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
+| POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
+| POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (разрешен только в `semi|manual`) |
 
-Инварианты task-level API (`POST /scheduler/task`):
-- обязательны `correlation_id`, `due_at`, `expires_at`;
-- идемпотентность по `correlation_id` + `idempotency_payload_mismatch` при mismatch payload;
-- успех execute-пути считается подтвержденным только при статусе ноды `DONE`.
+Инварианты `POST /zones/{id}/start-cycle`:
+- endpoint не несет device-level payload (минимальный wake-up контракт);
+- фактические действия определяются pending intent-ами в БД;
+- повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение.

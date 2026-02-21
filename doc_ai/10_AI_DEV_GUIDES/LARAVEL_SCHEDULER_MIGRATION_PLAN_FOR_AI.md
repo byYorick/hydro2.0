@@ -3,11 +3,15 @@
 
 **Версия:** v1.2  
 **Дата:** 2026-02-20  
-**Статус:** EXECUTION_IN_PROGRESS  
+**Статус:** LEGACY / SUPERSEDED  
 **Область:** `backend/laravel`, `backend/services/automation-engine`, `tests/e2e`, `doc_ai`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: owner планирования/dispatch перенесен на Laravel scheduler; Python scheduler выведен из runtime compose-профилей.
+
+> Внимание: актуальный контракт scheduler-dispatch для AE2-Lite описан в
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Разделы с task-transport и polling legacy-статусов в этом документе исторические.
 
 ---
 

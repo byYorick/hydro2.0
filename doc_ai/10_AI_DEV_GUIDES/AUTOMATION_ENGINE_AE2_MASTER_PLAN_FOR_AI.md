@@ -3,11 +3,16 @@
 
 **Версия:** v1.10
 **Дата:** 2026-02-18
-**Статус:** AUDITED_AND_CORRECTED  
+**Статус:** LEGACY / SUPERSEDED  
 **Область:** `backend/services/automation-engine*`, `backend/services/scheduler`, `backend/laravel`, `tests/e2e`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
 Breaking-change: Big Bang rewrite отменен; AE2 внедряется эволюционно поверх текущего automation-engine с feature-flag cutover.
+
+> Внимание: документ устарел для текущего runtime.
+> Каноничный план исполнения и контракты AE2-Lite:
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Упоминания `/scheduler/task` в этом файле являются историческими.
 
 ## Что изменено в v1.10
 

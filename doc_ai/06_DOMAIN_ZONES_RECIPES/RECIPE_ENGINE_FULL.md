@@ -84,11 +84,9 @@ CREATE TABLE recipe_revision_phases (
 
 ### 3.2. Работа Python контроллеров
 
-1. **Получение effective targets** через Laravel API:
-   ```bash
-   POST /api/internal/effective-targets/batch
-   {"zone_ids": [1, 2, 3]}
-   ```
+1. **Получение runtime targets** через SQL read-model (AE2-Lite):
+   - чтение `grow_cycles/grow_cycle_phases/grow_cycle_overrides/zone_automation_logic_profiles`;
+   - приоритет: `phase snapshot -> grow_cycle_overrides -> active logic profile`.
 
 2. **Ответ содержит** цели из текущей фазы с учётом overrides:
    ```json
@@ -136,16 +134,11 @@ CREATE TABLE recipe_revision_phases (
 
 ## 4. Связь с контроллерами (новая модель)
 
-**Контроллеры получают данные через EffectiveTargetsService:**
+**Контроллеры получают данные через runtime read-model (AE2-Lite):**
 
-1. **Batch запрос** для нескольких зон:
-   ```bash
-   POST /api/internal/effective-targets/batch
-   Content-Type: application/json
-   Authorization: Bearer <token>
-
-   {"zone_ids": [1, 2, 3]}
-   ```
+1. **Batch read** для нескольких зон:
+   - прямые SQL запросы к read-model таблицам;
+   - без runtime HTTP запроса к Laravel internal API.
 
 2. **Ответ с полной информацией о циклах:**
    ```json

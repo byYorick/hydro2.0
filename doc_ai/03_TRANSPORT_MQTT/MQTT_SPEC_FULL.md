@@ -406,137 +406,74 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
-## 7.4. Архитектура публикации команд через Scheduler-Task
+## 7.4. Архитектура публикации команд (AE2-Lite)
 
-**Важно:** Scheduler и Automation-Engine **НЕ публикуют команды напрямую в MQTT**. Вместо этого используется многоуровневая архитектура с централизованной публикацией через history-logger.
+**Важно:** Laravel scheduler и automation-engine **НЕ публикуют команды напрямую в MQTT**.  
+Единственный publisher команд в MQTT: `history-logger`.
 
 ### 7.4.1. Поток команд
 
 ```
-┌──────────┐      REST API (9405)      ┌────────────────┐      REST API (9300)      ┌───────────────┐
-│ Scheduler│ ────────────────────────> │ Automation-    │ ────────────────────────> │ History-      │
-│          │  POST /scheduler/task     │ Engine         │  POST /commands           │ Logger        │
-└──────────┘                            └────────────────┘                            └───────────────┘
-                                                                                              │
-                                                                                              │ MQTT Publish
-                                                                                              ▼
-                                                                                      ┌──────────────┐
-                                                                                      │ MQTT Broker  │
-                                                                                      │ (Mosquitto)  │
-                                                                                      └──────────────┘
-                                                                                              │
-                                                                                              │ Subscribe
-                                                                                              ▼
-                                                                                      ┌──────────────┐
-                                                                                      │  ESP32 Nodes │
-                                                                                      └──────────────┘
+┌──────────────────────┐   DB write (intent)   ┌────────────────┐  REST API (9300)   ┌───────────────┐
+│ Laravel scheduler    │ ─────────────────────> │ Automation-    │ ──────────────────> │ History-      │
+│ (dispatch)           │   + POST /start-cycle  │ Engine         │  POST /commands     │ Logger        │
+└──────────────────────┘                         └────────────────┘                     └───────────────┘
+                                                                                                 │
+                                                                                                 │ MQTT Publish
+                                                                                                 ▼
+                                                                                         ┌──────────────┐
+                                                                                         │ MQTT Broker  │
+                                                                                         └──────────────┘
+                                                                                                 │
+                                                                                                 ▼
+                                                                                         ┌──────────────┐
+                                                                                         │ ESP32 Nodes  │
+                                                                                         └──────────────┘
 ```
 
-### 7.4.2. Scheduler → Automation-Engine
+### 7.4.2. Laravel scheduler → Automation-Engine
 
-**Endpoint:** `POST http://automation-engine:9405/scheduler/task`
+Laravel scheduler передает intent двумя шагами:
+1. пишет `pending` в `zone_automation_intents`;
+2. вызывает `POST http://automation-engine:9405/zones/{id}/start-cycle`.
 
-**Назначение:** Scheduler создает абстрактную задачу (scheduler-task) и отправляет её в automation-engine для выполнения.
-
-**Формат scheduler-task:**
-```json
-{
-  "task_id": "task-irrigation-123",
-  "type": "IRRIGATION",
-  "zone_id": 1,
-  "params": {
-    "duration_sec": 60,
-    "volume_ml": 2000,
-    "mode": "SCHEDULED"
-  },
-  "context": {
-    "source": "scheduler",
-    "cycle_id": 456,
-    "phase": "VEG",
-    "scheduled_at": "2026-02-14T10:00:00Z"
-  }
-}
-```
-
-**Типы scheduler-task:**
-- `IRRIGATION` — задача полива
-- `LIGHTING` — задача управления освещением
-- `DOSING` — задача дозирования (pH/EC)
-- `CLIMATE_CONTROL` — задача управления климатом
+`POST /zones/{id}/start-cycle` является wake-up endpoint и не несет device-level команд.
 
 ### 7.4.3. Automation-Engine → History-Logger
 
 **Endpoint:** `POST http://history-logger:9300/commands`
 
-**Назначение:** Automation-engine преобразует абстрактную scheduler-task в конкретные device-level команды и отправляет их в history-logger для публикации в MQTT.
-Контракт history-logger strict: поле `cmd` обязательно, legacy `type` в `/commands` не допускается.
+Automation-engine:
+- claim-ит pending intent;
+- строит шаги workflow зоны;
+- отправляет device-level команды в history-logger;
+- ждет terminal status (`DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`).
 
-**Преобразование задачи в команду:**
-
-Scheduler-task `IRRIGATION`:
-```json
-{
-  "task_id": "task-irrigation-123",
-  "type": "IRRIGATION",
-  "zone_id": 1,
-  "params": {
-    "duration_sec": 60
-  }
-}
-```
-
-↓ **Преобразуется automation-engine в** ↓
-
-MQTT команда `run_pump`:
-```json
-{
-  "cmd": "run_pump",
-  "params": {
-    "duration_ms": 60000
-  },
-  "cmd_id": "cmd-12345",
-  "ts": 1710001234,
-  "sig": "a1b2c3d4e5f6..."
-}
-```
-
-**Топик:** `hydro/gh-1/zn-1/nd-pump-1/pump_in/command`
+Контракт history-logger strict:
+- поле `cmd` обязательно;
+- legacy `type` в `/commands` не допускается.
 
 ### 7.4.4. History-Logger → MQTT
 
-**Назначение:** History-logger — **единственная точка публикации команд в MQTT**. Это обеспечивает:
-- Централизованное логирование всех команд
-- Единая точка валидации
-- Единая точка HMAC подписи
-- Упрощенный мониторинг и отладка
-
-**Действия history-logger:**
-1. Получает команду через REST API (9300)
-2. Валидирует формат команды
-3. Добавляет HMAC подпись (если требуется)
-4. Публикует в MQTT топик
-5. Логирует команду в БД (`commands` таблица)
-6. Экспортирует метрики в Prometheus
+History-logger:
+1. принимает команду через REST;
+2. валидирует payload;
+3. подписывает (если включен HMAC policy);
+4. публикует в MQTT топик `hydro/{gh}/{zone}/{node}/{channel}/command`;
+5. фиксирует lifecycle команды в БД.
 
 ### 7.4.5. Пример полного потока
 
-**1. Scheduler отправляет задачу:**
+**1. Scheduler создает intent и будит зону**
 ```bash
-POST http://automation-engine:9405/scheduler/task
+POST http://automation-engine:9405/zones/1/start-cycle
 {
-  "task_id": "task-irr-001",
-  "type": "IRRIGATION",
-  "zone_id": 1,
-  "params": {"duration_sec": 30}
+  "source": "laravel_scheduler",
+  "idempotency_key": "sch:z1:irrigation:2026-02-21T10:00:00Z"
 }
 ```
 
-**2. Automation-engine обрабатывает задачу:**
-- Получает effective-targets для зоны 1
-- Определяет, какую ноду и канал использовать (например, `nd-pump-1/pump_in`)
-- Преобразует в device-level команду `run_pump`
-
-**3. Automation-engine отправляет команду в history-logger:**
+**2. Automation-engine отправляет команду в history-logger**
 ```bash
 POST http://history-logger:9300/commands
 {
@@ -546,38 +483,20 @@ POST http://history-logger:9300/commands
   "channel": "pump_in",
   "cmd": "run_pump",
   "params": {"duration_ms": 30000},
-  "context": {
-    "task_id": "task-irr-001",
-    "source": "scheduler"
-  }
+  "source": "automation-engine"
 }
 ```
 
-**4. History-logger публикует в MQTT:**
-```
-Topic: hydro/gh-1/zn-1/nd-pump-1/pump_in/command
-Payload:
-{
-  "cmd": "run_pump",
-  "params": {"duration_ms": 30000},
-  "cmd_id": "cmd-abc123",
-  "ts": 1710001234,
-  "sig": "a1b2c3..."
-}
-```
-
-**5. ESP32 нода получает команду:**
-- Подписана на топик `hydro/gh-1/zn-1/nd-pump-1/pump_in/command`
-- Проверяет HMAC подпись
-- Выполняет команду
-- Отправляет `command_response` (см. раздел 8)
+**3. Нода возвращает `command_response`**
+- `history-logger` сохраняет статус команды;
+- AE2-Lite получает обновление через `LISTEN/NOTIFY` и reconcile polling.
 
 ### 7.4.6. Преимущества архитектуры
 
-1. **Разделение ответственности:**
-   - Scheduler — планирование и расписания
-   - Automation-engine — бизнес-логика и преобразование задач
-   - History-logger — транспортный уровень и логирование
+1. Единый командный publisher (`history-logger`) и единый audit trail.
+2. Детерминированный wake-up контракт (`POST /zones/{id}/start-cycle`).
+3. Отделение scheduling (Laravel) от device execution (AE2-Lite).
+4. Устойчивость через `NOTIFY + polling` для feedback-команд.
 
 2. **Централизованное логирование:**
    - Все команды проходят через history-logger

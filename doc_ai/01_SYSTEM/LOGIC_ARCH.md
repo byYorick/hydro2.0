@@ -107,7 +107,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 - Подписка на весь namespace MQTT (`hydro/#`).
 - Разбор телеметрии → запись в БД (см. `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`).
-- Получение **effective targets** через Laravel API (`/api/internal/effective-targets/batch`).
+- Получение runtime-целей через SQL read-model из PostgreSQL
+  (агрегация фаз/override/profile в automation-engine).
 - Запуск контроллеров для активных циклов:
  - pH-контроллер (поддержание целевого pH);
  - EC-контроллер;
@@ -147,9 +148,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. Пользователь через UI создаёт теплицу/зону/узлы и каналы.
 2. Агроном создаёт рецепт с ревизиями и запускает цикл выращивания (Wizard).
 3. Backend сохраняет конфигурацию в PostgreSQL + создаёт снапшоты фаз (`GrowCyclePhase`).
-4. Python-сервис получает effective targets через Laravel API:
- - `/api/internal/effective-targets/batch` — batch запрос для всех активных зон;
- - возвращает цели из текущей фазы активного цикла с учётом overrides.
+4. Python-сервис (AE2-Lite) собирает effective runtime-цели напрямую из БД:
+ - приоритет: `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles`;
+ - без runtime HTTP-запросов к Laravel internal API.
 5. Python-сервис синхронизирует NodeConfig с узлами:
  - через MQTT-команды и/или REST provisioning (см. `NODE_LIFECYCLE_AND_PROVISIONING.md`).
 
@@ -225,15 +226,15 @@ hydro/{gh}/{zone}/{node}/{channel}/status
 1. **Zone имеет активный цикл** (`grow_cycles` с `recipe_revision_id`).
 2. **Цикл имеет текущую фазу** (`current_phase_id` → `GrowCyclePhase` — снапшот).
 3. **Фаза содержит цели по колонкам** (ph_target, ec_target, irrigation_mode и т.д.).
-4. **Python получает effective targets** через Laravel API (с учётом overrides).
-5. **На основании effective targets** формирует команды узлам (через MQTT).
+4. **Python (AE2-Lite) собирает runtime targets** через direct SQL read-model (с учётом overrides/profile).
+5. **На основании runtime targets** формирует команды узлам через `history-logger`.
 
 **Ключевые изменения после рефакторинга:**
 - Убрана старая модель `zone_recipe_instances` + JSON targets
 - Введено версионирование рецептов (`RecipeRevision`)
 - Цели хранятся по колонкам, а не в JSON
 - Центр истины — `GrowCycle`, а не `Zone`
-- Единый контракт через Laravel API для всех Python сервисов
+- Для AE2-Lite runtime используется SQL read-model с паритетом effective-targets семантики
 
 Принцип: **рецепты и фазы никогда не хранятся в узлах** — только в БД (через backend).
 
