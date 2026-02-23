@@ -34,7 +34,21 @@
 - `commands/E10_command_happy.yaml` — команда → DONE + WS + zone_events
 - `alerts/E20_error_to_alert_realtime.yaml` — error → alert + dedup
 - `snapshot/E31_reconnect_replay_gap.yaml` — snapshot + replay
-- `automation_engine/E75_two_tank_fill_contract.yaml` — контракт 2-бакового контура (тайминги level switches на real test_node)
+- `automation_engine/E61_fail_closed_corrections.yaml` — fail-closed логика коррекций
+- `automation_engine/E64_effective_targets_only.yaml` — runtime только на effective targets
+- `automation_engine/E65_phase_transition_api.yaml` — переходы фаз через API
+- `automation_engine/E74_node_zone_mismatch_guard.yaml` — guard node/zone mismatch
+
+## AE2-Lite совместимость
+
+По состоянию на 2026-02-22 каноничный runtime AE2-Lite поддерживает только
+`ae_test_hook action=publish_command` (через `history-logger /commands`).
+
+AE2-Lite compatible automation-сценарии:
+- `automation_engine/E61_fail_closed_corrections.yaml`
+- `automation_engine/E64_effective_targets_only.yaml`
+- `automation_engine/E65_phase_transition_api.yaml`
+- `automation_engine/E74_node_zone_mismatch_guard.yaml`
 
 ## Формат действий
 

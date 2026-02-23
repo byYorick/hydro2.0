@@ -1,12 +1,4 @@
-"""
-Correction Cooldown Manager - предотвращение лавины корректировок.
-Согласно AI-24: cooldown 10 минут, анализ тренда.
-
-Модуль отслеживает:
-- Время последней корректировки для каждой зоны и типа (pH/EC)
-- Тренд изменения параметра (улучшается/ухудшается)
-- Cooldown период (10 минут по умолчанию)
-"""
+"""Cooldown/trend policies for correction controllers."""
 from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
@@ -41,16 +33,7 @@ def _now_naive_utc() -> datetime:
 
 
 async def get_last_correction_time(zone_id: int, correction_type: str) -> Optional[datetime]:
-    """
-    Получить время последней корректировки для зоны и типа.
-    
-    Args:
-        zone_id: ID зоны
-        correction_type: 'ph' или 'ec'
-    
-    Returns:
-        datetime последней корректировки или None
-    """
+    """Возвращает timestamp последней корректировки pH/EC для зоны."""
     # Ищем события корректировки по типу
     if correction_type == "ph":
         event_types = ['PH_CORRECTED', 'DOSING']
@@ -82,17 +65,7 @@ async def get_last_correction_time(zone_id: int, correction_type: str) -> Option
 
 
 async def is_in_cooldown(zone_id: int, correction_type: str, cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES) -> bool:
-    """
-    Проверить, находится ли зона в cooldown периоде.
-    
-    Args:
-        zone_id: ID зоны
-        correction_type: 'ph' или 'ec'
-        cooldown_minutes: Период cooldown в минутах
-    
-    Returns:
-        True если в cooldown, False если можно корректировать
-    """
+    """Проверяет cooldown для коррекции pH/EC."""
     last_correction = await get_last_correction_time(zone_id, correction_type)
     if last_correction is None:
         return False
@@ -111,21 +84,7 @@ async def analyze_trend(
     target_value: float,
     hours: int = 2
 ) -> Tuple[bool, Optional[float]]:
-    """
-    Анализ тренда изменения параметра.
-    
-    Args:
-        zone_id: ID зоны
-        metric_type: 'PH' или 'EC'
-        current_value: Текущее значение
-        target_value: Целевое значение
-        hours: Период анализа в часах
-    
-    Returns:
-        Tuple[is_improving, trend_slope]
-        - is_improving: True если значение приближается к цели
-        - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
-    """
+    """Возвращает `(is_improving, trend_slope)` по истории метрики."""
     analysis_now = _now_naive_utc()
     cutoff_time = analysis_now - timedelta(hours=hours)
     
@@ -208,22 +167,7 @@ async def should_apply_correction(
     diff: float,
     cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES
 ) -> Tuple[bool, str]:
-    """
-    Определить, нужно ли применять корректировку.
-    
-    Args:
-        zone_id: ID зоны
-        correction_type: 'ph' или 'ec'
-        current_value: Текущее значение
-        target_value: Целевое значение
-        diff: Разница между текущим и целевым значением
-        cooldown_minutes: Период cooldown в минутах
-    
-    Returns:
-        Tuple[should_correct, reason]
-        - should_correct: True если нужно корректировать
-        - reason: Причина решения
-    """
+    """Политика решения по корректировке с учётом cooldown и тренда."""
     # Проверяем cooldown
     if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
         last_correction = await get_last_correction_time(zone_id, correction_type)
@@ -302,10 +246,7 @@ async def analyze_proactive_correction_signal(
     dead_zone: float,
     settings: Any,
 ) -> Dict[str, Any]:
-    """
-    S9: сигнал proactive-correction (EWMA + slope).
-    Возвращает решение, нужно ли запускать коррекцию внутри dead-zone.
-    """
+    """S9: EWMA+slope сигнал proactive-correction внутри dead-zone."""
     if not bool(getattr(settings, "AE_PROACTIVE_CORRECTION_ENABLED", True)):
         return {"should_correct": False, "reason_code": "proactive_disabled"}
 
@@ -421,10 +362,7 @@ async def should_apply_proactive_correction(
 
 
 async def record_correction(zone_id: int, correction_type: str, details: Dict) -> None:
-    """
-    Записать информацию о выполненной корректировке.
-    Это делается автоматически через create_zone_event, но можно использовать для логирования.
-    """
+    """Логирует информацию о выполненной корректировке."""
     logger.info(
         f"Correction recorded: zone_id={zone_id}, type={correction_type}, details={details}"
     )

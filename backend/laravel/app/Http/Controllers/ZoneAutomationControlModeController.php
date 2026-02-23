@@ -145,7 +145,7 @@ class ZoneAutomationControlModeController extends Controller
         /** @var Response $response */
         $response = Http::acceptJson()
             ->timeout($timeout)
-            ->get("{$apiUrl}/zones/{$zoneId}/automation/control-mode");
+            ->get("{$apiUrl}/zones/{$zoneId}/control-mode");
 
         $response->throw();
 
@@ -169,7 +169,7 @@ class ZoneAutomationControlModeController extends Controller
         /** @var Response $response */
         $response = Http::acceptJson()
             ->timeout($timeout)
-            ->post("{$apiUrl}/zones/{$zoneId}/automation/control-mode", $payload);
+            ->post("{$apiUrl}/zones/{$zoneId}/control-mode", $payload);
 
         $response->throw();
 

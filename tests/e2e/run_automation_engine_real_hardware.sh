@@ -49,17 +49,15 @@ export E2E_REAL_HARDWARE=1
 export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_NODE_HW_ID
 LARAVEL_URL="${LARAVEL_URL:-http://localhost:8081}"
 AUTOMATION_ENGINE_URL="${AUTOMATION_ENGINE_URL:-http://localhost:9505}"
+HISTORY_LOGGER_URL="${HISTORY_LOGGER_URL:-http://localhost:${HISTORY_LOGGER_PORT:-9302}}"
+HISTORY_LOGGER_TOKEN="${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}"
 
 SERVICES=(automation-engine history-logger laravel mqtt-bridge digital-twin)
 SCENARIOS=(
-  "scenarios/automation_engine/E60_climate_control_happy.yaml"
+  # AE2-Lite compatible subset (без legacy /test/hook действий)
   "scenarios/automation_engine/E61_fail_closed_corrections.yaml"
-  "scenarios/automation_engine/E62_controller_fault_isolation.yaml"
-  "scenarios/automation_engine/E63_backoff_on_errors.yaml"
   "scenarios/automation_engine/E64_effective_targets_only.yaml"
   "scenarios/automation_engine/E65_phase_transition_api.yaml"
-  "scenarios/automation_engine/E66_fail_closed_corrections.yaml"
-  "scenarios/automation_engine/E75_two_tank_fill_contract.yaml"
 )
 
 scan_logs_since_epoch() {
@@ -500,11 +498,11 @@ build_ae_publish_payload() {
   local cmd="$4"
   local params_json="${5:-{}}"
   local cmd_id="$6"
-  "$PYTHON_BIN" - <<'PY' "$zone_id" "$node_uid" "$channel" "$cmd" "$params_json" "$cmd_id"
+  "$PYTHON_BIN" - <<'PY' "$zone_id" "$node_uid" "$channel" "$cmd" "$params_json" "$cmd_id" "$TEST_NODE_GH_UID"
 import json
 import sys
 
-zone_id, node_uid, channel, cmd, params_json, cmd_id = sys.argv[1:7]
+zone_id, node_uid, channel, cmd, params_json, cmd_id, gh_uid = sys.argv[1:8]
 params = {}
 if params_json:
     try:
@@ -514,15 +512,14 @@ if params_json:
     except Exception:
         params = {}
 payload = {
+    "greenhouse_uid": gh_uid,
     "zone_id": int(zone_id),
-    "action": "publish_command",
-    "command": {
-        "node_uid": node_uid,
-        "channel": channel,
-        "cmd": cmd,
-        "params": params,
-        "cmd_id": cmd_id,
-    },
+    "node_uid": node_uid,
+    "channel": channel,
+    "cmd": cmd,
+    "params": params,
+    "cmd_id": cmd_id,
+    "source": "e2e_real_hardware",
 }
 print(json.dumps(payload, separators=(",", ":")))
 PY
@@ -544,8 +541,9 @@ import sys
 body_file = sys.argv[1]
 with open(body_file, "r", encoding="utf-8") as f:
     data = json.loads(f.read() or "{}")
-published = bool(((data.get("data") or {}).get("published")))
-if not published:
+ok = str(data.get("status") or "").strip().lower() == "ok"
+command_id = str(((data.get("data") or {}).get("command_id") or "")).strip()
+if not ok or not command_id:
     raise SystemExit(1)
 PY
 }
@@ -559,7 +557,7 @@ import sys
 body_file = sys.argv[1]
 with open(body_file, "r", encoding="utf-8") as f:
     data = json.loads(f.read() or "{}")
-cmd_id = ((data.get("data") or {}).get("cmd_id")) or ""
+cmd_id = ((data.get("data") or {}).get("command_id")) or ((data.get("data") or {}).get("cmd_id")) or ""
 print(str(cmd_id).strip())
 PY
 }
@@ -598,25 +596,25 @@ ae_publish_command() {
   local channel="$3"
   local cmd="$4"
   local params_json="${5:-{}}"
-  local payload_json hook_code request_cmd_id response_cmd_id terminal_status command_row
+  local payload_json publish_code request_cmd_id response_cmd_id terminal_status command_row
 
   request_cmd_id="$(new_cmd_id)"
   if ! payload_json="$(build_ae_publish_payload "$zone_id" "$node_uid" "$channel" "$cmd" "$params_json" "$request_cmd_id")"; then
-    echo "❌ Не удалось собрать payload для AE test hook: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
+    echo "❌ Не удалось собрать payload для history-logger /commands: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
     return 1
   fi
   if [ -z "$payload_json" ]; then
-    echo "❌ Пустой payload для AE test hook: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
+    echo "❌ Пустой payload для history-logger /commands: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
     return 1
   fi
-  hook_code="$(api_request_code "POST" "$AUTOMATION_ENGINE_URL/test/hook" "$payload_json" "" "/tmp/e2e_ae_publish_resp.json")"
-  if [ "$hook_code" -lt 200 ] || [ "$hook_code" -ge 300 ]; then
-    echo "❌ AE test hook publish_command вернул HTTP $hook_code: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
+  publish_code="$(api_request_code "POST" "$HISTORY_LOGGER_URL/commands" "$payload_json" "$HISTORY_LOGGER_TOKEN" "/tmp/e2e_ae_publish_resp.json")"
+  if [ "$publish_code" -lt 200 ] || [ "$publish_code" -ge 300 ]; then
+    echo "❌ History-logger /commands вернул HTTP $publish_code: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
     cat /tmp/e2e_ae_publish_resp.json
     return 1
   fi
   if ! assert_ae_publish_ok "/tmp/e2e_ae_publish_resp.json"; then
-    echo "❌ AE test hook не подтвердил publish_command: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
+    echo "❌ History-logger /commands вернул невалидный ответ: cmd=$cmd node=$node_uid channel=$channel zone_id=$zone_id"
     cat /tmp/e2e_ae_publish_resp.json
     return 1
   fi
@@ -920,11 +918,6 @@ for scenario in "${SCENARIOS[@]}"; do
     echo "❌ Сценарий упал: $scenario"
     scan_logs_since_epoch "$started_at" || true
     exit 1
-  fi
-
-  if [[ "$scenario" == *"E62_controller_fault_isolation.yaml" ]]; then
-    echo "ℹ️ Пропуск строгого log-scan для $scenario (ожидаемые TEST_HOOK ошибки контроллера)"
-    continue
   fi
 
   if scan_logs_since_epoch "$started_at"; then

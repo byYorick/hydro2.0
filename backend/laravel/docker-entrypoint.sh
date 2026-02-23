@@ -267,6 +267,13 @@ if [ -f /app/queue-supervisor.conf ]; then
     chmod 644 /opt/docker/etc/supervisor.d/queue.conf /opt/docker/etc/supervisor.d/queue-worker.conf 2>/dev/null || true
 fi
 
+# Копируем конфигурацию scheduler worker (Laravel Schedule)
+if [ -f /app/schedule-supervisor.conf ]; then
+    echo "Copying scheduler supervisor config to base image directory..."
+    cp /app/schedule-supervisor.conf /opt/docker/etc/supervisor.d/scheduler.conf
+    chmod 644 /opt/docker/etc/supervisor.d/scheduler.conf 2>/dev/null || true
+fi
+
 # Vite supervisor only in development mode
 if [ "${APP_ENV:-production}" = "local" ]; then
     if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then

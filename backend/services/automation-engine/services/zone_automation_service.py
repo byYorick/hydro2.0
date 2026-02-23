@@ -1,184 +1,123 @@
-from typing import Dict, Any, Optional, List
-import logging
+"""Zone automation orchestration service."""
+
 from datetime import datetime
-from common.utils.time import utcnow
-from common.simulation_clock import SimulationClock
-from common.simulation_events import record_simulation_event
-from common.infra_alerts import (
-    send_infra_alert,
-    send_infra_exception_alert,
-    send_infra_resolved_alert,
-)
-from common.db import create_zone_event, fetch
-from common.water_flow import check_water_level, ensure_water_level_alert
-from common.pump_safety import can_run_pump
-from light_controller import check_and_control_lighting
-from climate_controller import check_and_control_climate
-from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
-from health_monitor import calculate_zone_health, update_zone_health_in_db
+from typing import Any, Dict, Optional
+
+from actuator_registry import ActuatorRegistry
 from correction_controller import CorrectionController, CorrectionType
-from config.settings import get_settings
-from repositories import (
-    ZoneRepository, 
-    TelemetryRepository, 
-    NodeRepository, 
-    RecipeRepository,
-    GrowCycleRepository,
-    InfrastructureRepository
-)
 from infrastructure.command_bus import CommandBus
 from infrastructure.command_gateway import CommandGateway
-from infrastructure.circuit_breaker import CircuitBreakerOpenError
+from repositories import (
+    GrowCycleRepository,
+    InfrastructureRepository,
+    NodeRepository,
+    RecipeRepository,
+    TelemetryRepository,
+    ZoneRepository,
+)
 from services.pid_state_manager import PidStateManager
-from prometheus_client import Histogram, Counter
-from services.pid_config_service import invalidate_cache
-from actuator_registry import ActuatorRegistry
-from services.zone_correction_gating import (
-    build_correction_gating_state as policy_build_correction_gating_state,
+from services.zone_automation_constants import (
+    BACKOFF_MULTIPLIER,
+    CHECK_LAT,
+    CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+    CONTROLLER_COOLDOWN_SECONDS,
+    COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS,
+    CORRECTION_FLAGS_MAX_AGE_SECONDS,
+    CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS,
+    CORRECTION_FLAGS_REQUIRE_TIMESTAMPS,
+    CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS,
+    CORRECTION_REQUIRED_FLAG_NAMES,
+    CORRECTION_SKIP_EVENT_THROTTLE_SECONDS,
+    DEGRADED_MODE_THRESHOLD,
+    INITIAL_BACKOFF_SECONDS,
+    MAX_BACKOFF_SECONDS,
+    REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS,
+    SENSOR_MODE_POLICY,
+    SKIP_REPORT_THROTTLE_SECONDS,
+    WORKFLOW_CORRECTION_OPEN_PHASES,
+    WORKFLOW_EC_COMPONENTS_BY_PHASE,
+    WORKFLOW_PHASE_EVENT_TYPE,
+    WORKFLOW_PHASE_VALUES,
+    WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES,
+    ZONE_CHECKS,
 )
-from services.zone_sensor_mode_orchestrator import (
-    apply_sensor_mode_policy as policy_apply_sensor_mode_policy,
-    resolve_correction_sensor_nodes as policy_resolve_correction_sensor_nodes,
-    resolve_sensor_mode_action as policy_resolve_sensor_mode_action,
-    set_sensor_mode as policy_set_sensor_mode,
+from services.zone_automation_controller_exec import (
+    append_correlation_id,
+    check_phase_transitions,
+    emit_controller_circuit_open_signal,
+    emit_controller_cooldown_skip_signal,
+    is_controller_in_cooldown,
+    process_climate_controller,
+    process_irrigation_controller,
+    process_light_controller,
+    process_recirculation_controller,
+    publish_controller_action_with_event_integrity,
+    record_controller_failure,
+    safe_process_controller,
 )
-from services.zone_correction_skip_events import (
-    build_correction_skip_signature as policy_build_correction_skip_signature,
-    emit_correction_skip_event_throttled as policy_emit_correction_skip_event_throttled,
-    normalize_flag_signature_values as policy_normalize_flag_signature_values,
+from services.zone_automation_corrections import (
+    apply_sensor_mode_policy,
+    build_correction_gating_state,
+    build_correction_skip_signature,
+    check_pid_config_updates,
+    check_zone_deletion,
+    emit_correction_skip_event_throttled,
+    normalize_flag_signature_values,
+    process_correction_controllers,
+    resolve_correction_sensor_nodes,
+    resolve_sensor_mode_action,
+    set_sensor_mode,
+    update_zone_health,
 )
-from services.zone_correction_signals import (
-    emit_correction_missing_flags_signal as policy_emit_correction_missing_flags_signal,
-    emit_correction_stale_flags_signal as policy_emit_correction_stale_flags_signal,
+from services.zone_automation_recovery import (
+    check_required_nodes_online_safe,
+    emit_required_nodes_offline_signal,
+    emit_required_nodes_recovered_signal,
+    evaluate_required_nodes_recovery_gate,
 )
-from services.zone_correction_orchestrator import (
-    process_correction_controllers as policy_process_correction_controllers,
+from services.zone_automation_runtime import (
+    calculate_backoff_seconds,
+    deserialize_dt,
+    export_runtime_state,
+    get_error_streak,
+    get_next_allowed_run_at,
+    get_or_restore_workflow_phase,
+    get_zone_state,
+    is_degraded_mode,
+    normalize_workflow_phase,
+    process_zone,
+    record_zone_error,
+    reset_zone_error_streak,
+    reset_zone_pid_state,
+    resolve_allowed_ec_components,
+    restore_runtime_state,
+    restore_workflow_phase_from_events,
+    save_all_pid_states,
+    serialize_dt,
+    should_process_zone,
+    sync_sensor_mode_cache_with_workflow_phase,
+    update_workflow_phase,
 )
-from services.zone_skip_signals import (
-    emit_backoff_skip_signal as policy_emit_backoff_skip_signal,
-    emit_missing_targets_signal as policy_emit_missing_targets_signal,
-)
-from services.zone_runtime_signals import (
-    emit_degraded_mode_signal as policy_emit_degraded_mode_signal,
-    emit_zone_data_unavailable_signal as policy_emit_zone_data_unavailable_signal,
-    emit_zone_recovered_signal as policy_emit_zone_recovered_signal,
-)
-from services.zone_state_runtime import (
-    get_or_restore_workflow_phase as policy_get_or_restore_workflow_phase,
-    get_zone_state as policy_get_zone_state,
-    normalize_workflow_phase as policy_normalize_workflow_phase,
-    reset_zone_pid_state as policy_reset_zone_pid_state,
-    resolve_allowed_ec_components as policy_resolve_allowed_ec_components,
-    restore_workflow_phase_from_events as policy_restore_workflow_phase_from_events,
-    sync_sensor_mode_cache_with_workflow_phase as policy_sync_sensor_mode_cache_with_workflow_phase,
-    update_workflow_phase as policy_update_workflow_phase,
-)
-from services.zone_process_cycle import (
-    process_zone_cycle as policy_process_zone_cycle,
-)
-from services.zone_node_recovery import (
-    evaluate_required_nodes_recovery_gate as policy_evaluate_required_nodes_recovery_gate,
-)
-from services.resilience_contract import (
-    INFRA_ZONE_REQUIRED_NODES_OFFLINE,
-    INFRA_ZONE_EVENT_WRITE_FAILED,
-    REASON_CORRECTION_GATING_PASSED,
-    REASON_CORRECTION_MISSING_FLAGS,
-    REASON_CORRECTION_STALE_FLAGS,
-    REASON_REQUIRED_NODES_OFFLINE,
-    REASON_REQUIRED_NODES_RECOVERED,
-)
-from services.zone_housekeeping import (
-    check_pid_config_updates as policy_check_pid_config_updates,
-    check_zone_deletion as policy_check_zone_deletion,
-    update_zone_health as policy_update_zone_health,
-)
-from infrastructure.node_query_adapter import (
-    check_required_nodes_online,
-)
-from services.zone_runtime_backoff import (
-    calculate_backoff_seconds as policy_calculate_backoff_seconds,
-    is_degraded_mode as policy_is_degraded_mode,
-    record_zone_error as policy_record_zone_error,
-    reset_zone_error_streak as policy_reset_zone_error_streak,
-    should_process_zone as policy_should_process_zone,
-)
-from services.zone_controller_guardrails import (
-    emit_controller_circuit_open_signal as policy_emit_controller_circuit_open_signal,
-    emit_controller_cooldown_skip_signal as policy_emit_controller_cooldown_skip_signal,
-    is_controller_in_cooldown as policy_is_controller_in_cooldown,
-    record_controller_failure as policy_record_controller_failure,
-    safe_process_controller as policy_safe_process_controller,
-)
-from services.zone_controller_execution import (
-    append_correlation_id as policy_append_correlation_id,
-    check_phase_transitions as policy_check_phase_transitions,
-    publish_controller_action_with_event_integrity as policy_publish_controller_action_with_event_integrity,
-)
-from services.zone_controller_processors import (
-    process_climate_controller as policy_process_climate_controller,
-    process_irrigation_controller as policy_process_irrigation_controller,
-    process_light_controller as policy_process_light_controller,
-    process_recirculation_controller as policy_process_recirculation_controller,
+from services.zone_automation_signals import (
+    create_zone_event_safe,
+    emit_backoff_skip_signal,
+    emit_correction_gating_recovered_signal,
+    emit_correction_missing_flags_signal,
+    emit_correction_stale_flags_signal,
+    emit_degraded_mode_signal,
+    emit_missing_targets_signal,
+    emit_zone_data_unavailable_signal,
+    emit_zone_recovered_signal,
 )
 
-logger = logging.getLogger(__name__)
 
-
-ZONE_CHECKS = Counter("zone_checks_total", "Zone automation checks")
-CHECK_LAT = Histogram("zone_check_seconds", "Zone check duration seconds")
-
-CONTROLLER_COOLDOWN_SECONDS = 60
-
-INITIAL_BACKOFF_SECONDS = 30
-MAX_BACKOFF_SECONDS = 600
-BACKOFF_MULTIPLIER = 2
-DEGRADED_MODE_THRESHOLD = 3
-SKIP_REPORT_THROTTLE_SECONDS = 120
-COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS = 120
-CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS = 120
-CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS = 120
-REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS = 120
-_AUTOMATION_SETTINGS = get_settings()
-CORRECTION_FLAGS_MAX_AGE_SECONDS = max(
-    30,
-    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_MAX_AGE_SEC", 300)),
-)
-CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS = max(
-    30,
-    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC", 120)),
-)
-CORRECTION_SKIP_EVENT_THROTTLE_SECONDS = max(
-    5,
-    int(getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", 120)),
-)
-CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = bool(
-    getattr(_AUTOMATION_SETTINGS, "AE_CORRECTION_FLAGS_REQUIRE_TS", True)
-)
-CORRECTION_REQUIRED_FLAG_NAMES = ("flow_active", "stable", "corrections_allowed")
-WORKFLOW_PHASE_EVENT_TYPE = "WORKFLOW_PHASE_UPDATED"
-WORKFLOW_PHASE_VALUES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
-WORKFLOW_CORRECTION_OPEN_PHASES = {"tank_filling", "tank_recirc"}
-WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES = {"tank_filling", "tank_recirc", "irrig_recirc"}
-WORKFLOW_EC_COMPONENTS_BY_PHASE = {
-    "tank_filling": ["npk"],
-    "tank_recirc": ["npk"],
-    "irrigating": ["calcium", "magnesium", "micro"],
-    "irrig_recirc": ["calcium", "magnesium", "micro"],
-}
-SENSOR_MODE_POLICY = {
-    REASON_CORRECTION_GATING_PASSED: "noop",
-    REASON_CORRECTION_MISSING_FLAGS: "noop",
-    "flow_inactive": "deactivate",
-    "sensor_unstable": "deactivate",
-    "corrections_not_allowed": "deactivate",
-    REASON_CORRECTION_STALE_FLAGS: "deactivate",
-}
+# Backward-compatible alias with the original typo used in older code.
+COOL_DOWN_SKIP_REPORT_THROTTLE_SECONDS = COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS
 
 
 class ZoneAutomationService:
     """Оркестрация автоматизации зоны."""
-    
+
     def __init__(
         self,
         zone_repo: ZoneRepository,
@@ -188,7 +127,7 @@ class ZoneAutomationService:
         grow_cycle_repo: GrowCycleRepository,
         infrastructure_repo: InfrastructureRepository,
         command_bus: CommandBus,
-        pid_state_manager: Optional[PidStateManager] = None
+        pid_state_manager: Optional[PidStateManager] = None,
     ):
         self.zone_repo = zone_repo
         self.telemetry_repo = telemetry_repo
@@ -209,931 +148,94 @@ class ZoneAutomationService:
         self._controller_cooldown_reported_at: Dict[tuple[int, str], datetime] = {}
         self._controller_circuit_open_reported_at: Dict[tuple[int, str], datetime] = {}
         self._correction_sensor_mode_state: Dict[int, bool] = {}
-    
-    async def save_all_pid_states(self):
-        """Сохранить состояние всех PID контроллеров."""
-        await self.ph_controller.save_all_states()
-        await self.ec_controller.save_all_states()
 
-    @staticmethod
-    def _serialize_dt(value: Any) -> Optional[str]:
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return None
+    save_all_pid_states = save_all_pid_states
+    _serialize_dt = staticmethod(serialize_dt)
+    _deserialize_dt = staticmethod(deserialize_dt)
+    export_runtime_state = export_runtime_state
+    restore_runtime_state = restore_runtime_state
+    process_zone = process_zone
+    _get_zone_state = get_zone_state
+    _get_error_streak = get_error_streak
+    _get_next_allowed_run_at = get_next_allowed_run_at
+    _normalize_workflow_phase = staticmethod(normalize_workflow_phase)
+    _restore_workflow_phase_from_events = restore_workflow_phase_from_events
+    _get_or_restore_workflow_phase = get_or_restore_workflow_phase
+    _reset_zone_pid_state = reset_zone_pid_state
+    _sync_sensor_mode_cache_with_workflow_phase = sync_sensor_mode_cache_with_workflow_phase
+    update_workflow_phase = update_workflow_phase
+    _resolve_allowed_ec_components = staticmethod(resolve_allowed_ec_components)
+    _should_process_zone = should_process_zone
+    _is_degraded_mode = is_degraded_mode
+    _calculate_backoff_seconds = calculate_backoff_seconds
+    _record_zone_error = record_zone_error
+    _reset_zone_error_streak = reset_zone_error_streak
 
-    @staticmethod
-    def _deserialize_dt(value: Any) -> Optional[datetime]:
-        if not isinstance(value, str) or not value:
-            return None
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
+    _create_zone_event_safe = create_zone_event_safe
+    _emit_backoff_skip_signal = emit_backoff_skip_signal
+    _emit_missing_targets_signal = emit_missing_targets_signal
+    _emit_correction_missing_flags_signal = emit_correction_missing_flags_signal
+    _emit_correction_stale_flags_signal = emit_correction_stale_flags_signal
+    _emit_correction_gating_recovered_signal = emit_correction_gating_recovered_signal
+    _emit_zone_data_unavailable_signal = emit_zone_data_unavailable_signal
+    _emit_degraded_mode_signal = emit_degraded_mode_signal
+    _emit_zone_recovered_signal = emit_zone_recovered_signal
 
-    def export_runtime_state(self) -> Dict[str, Any]:
-        zone_states: Dict[str, Any] = {}
-        for zone_id, state in self._zone_states.items():
-            if not isinstance(state, dict):
-                continue
-            serialized_state = dict(state)
-            for key, raw_value in list(serialized_state.items()):
-                if isinstance(raw_value, datetime):
-                    serialized_state[key] = raw_value.isoformat()
-            zone_states[str(zone_id)] = serialized_state
+    _check_required_nodes_online = check_required_nodes_online_safe
+    _emit_required_nodes_offline_signal = emit_required_nodes_offline_signal
+    _emit_required_nodes_recovered_signal = emit_required_nodes_recovered_signal
+    _evaluate_required_nodes_recovery_gate = evaluate_required_nodes_recovery_gate
 
-        def _serialize_controller_map(raw: Dict[tuple[int, str], datetime]) -> Dict[str, str]:
-            payload: Dict[str, str] = {}
-            for (zone_id, controller_name), dt_value in raw.items():
-                if isinstance(dt_value, datetime):
-                    payload[f"{int(zone_id)}::{str(controller_name)}"] = dt_value.isoformat()
-            return payload
+    _emit_controller_circuit_open_signal = emit_controller_circuit_open_signal
+    _is_controller_in_cooldown = is_controller_in_cooldown
+    _record_controller_failure = record_controller_failure
+    _safe_process_controller = safe_process_controller
+    _emit_controller_cooldown_skip_signal = emit_controller_cooldown_skip_signal
+    _check_phase_transitions = check_phase_transitions
+    _append_correlation_id = staticmethod(append_correlation_id)
+    _publish_controller_action_with_event_integrity = publish_controller_action_with_event_integrity
+    _process_light_controller = process_light_controller
+    _process_climate_controller = process_climate_controller
+    _process_irrigation_controller = process_irrigation_controller
+    _process_recirculation_controller = process_recirculation_controller
 
-        return {
-            "zone_states": zone_states,
-            "controller_failures": _serialize_controller_map(self._controller_failures),
-            "controller_cooldown_reported_at": _serialize_controller_map(self._controller_cooldown_reported_at),
-            "controller_circuit_open_reported_at": _serialize_controller_map(self._controller_circuit_open_reported_at),
-            "correction_sensor_mode_state": {
-                str(zone_id): bool(value)
-                for zone_id, value in self._correction_sensor_mode_state.items()
-            },
-            "ph_controller": self.ph_controller.export_runtime_state(),
-            "ec_controller": self.ec_controller.export_runtime_state(),
-        }
+    _emit_correction_skip_event_throttled = emit_correction_skip_event_throttled
+    _normalize_flag_signature_values = staticmethod(normalize_flag_signature_values)
+    _build_correction_skip_signature = classmethod(build_correction_skip_signature)
+    _resolve_sensor_mode_action = staticmethod(resolve_sensor_mode_action)
+    _apply_sensor_mode_policy = apply_sensor_mode_policy
+    _process_correction_controllers = process_correction_controllers
+    _build_correction_gating_state = build_correction_gating_state
+    _resolve_correction_sensor_nodes = staticmethod(resolve_correction_sensor_nodes)
+    _set_sensor_mode = set_sensor_mode
+    _update_zone_health = update_zone_health
+    _check_zone_deletion = check_zone_deletion
+    _check_pid_config_updates = check_pid_config_updates
 
-    def restore_runtime_state(self, raw_state: Optional[Dict[str, Any]]) -> None:
-        state = raw_state or {}
 
-        zone_states: Dict[int, Dict[str, Any]] = {}
-        raw_zone_states = state.get("zone_states")
-        if isinstance(raw_zone_states, dict):
-            for key, payload in raw_zone_states.items():
-                if not isinstance(payload, dict):
-                    continue
-                try:
-                    zone_id = int(key)
-                except (TypeError, ValueError):
-                    continue
-                normalized = dict(payload)
-                for field in (
-                    "next_allowed_run_at",
-                    "last_backoff_reported_until",
-                    "last_missing_targets_report_at",
-                    "last_missing_correction_flags_report_at",
-                    "last_stale_correction_flags_report_at",
-                    "last_correction_skip_event_at",
-                    "required_nodes_offline_since",
-                    "last_required_nodes_offline_report_at",
-                    "workflow_phase_updated_at",
-                ):
-                    normalized[field] = self._deserialize_dt(normalized.get(field))
-                zone_states[zone_id] = normalized
-        self._zone_states = zone_states
-
-        def _deserialize_controller_map(raw: Any) -> Dict[tuple[int, str], datetime]:
-            result: Dict[tuple[int, str], datetime] = {}
-            if not isinstance(raw, dict):
-                return result
-            for key, value in raw.items():
-                if not isinstance(key, str) or "::" not in key:
-                    continue
-                zone_part, controller_name = key.split("::", 1)
-                dt_value = self._deserialize_dt(value)
-                if dt_value is None:
-                    continue
-                try:
-                    zone_id = int(zone_part)
-                except (TypeError, ValueError):
-                    continue
-                result[(zone_id, controller_name)] = dt_value
-            return result
-
-        self._controller_failures = _deserialize_controller_map(state.get("controller_failures"))
-        self._controller_cooldown_reported_at = _deserialize_controller_map(state.get("controller_cooldown_reported_at"))
-        self._controller_circuit_open_reported_at = _deserialize_controller_map(state.get("controller_circuit_open_reported_at"))
-
-        raw_sensor_mode = state.get("correction_sensor_mode_state")
-        sensor_mode: Dict[int, bool] = {}
-        if isinstance(raw_sensor_mode, dict):
-            for key, value in raw_sensor_mode.items():
-                try:
-                    sensor_mode[int(key)] = bool(value)
-                except (TypeError, ValueError):
-                    continue
-        self._correction_sensor_mode_state = sensor_mode
-
-        self.ph_controller.restore_runtime_state(state.get("ph_controller"))
-        self.ec_controller.restore_runtime_state(state.get("ec_controller"))
-    
-    async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] = None) -> None:
-        await policy_process_zone_cycle(
-            zone_id=zone_id,
-            sim_clock=sim_clock,
-            should_process_zone_fn=self._should_process_zone,
-            emit_backoff_skip_signal_fn=self._emit_backoff_skip_signal,
-            is_degraded_mode_fn=self._is_degraded_mode,
-            check_zone_deletion_fn=self._check_zone_deletion,
-            check_pid_config_updates_fn=self._check_pid_config_updates,
-            check_phase_transitions_fn=self._check_phase_transitions,
-            grow_cycle_repo=self.grow_cycle_repo,
-            recipe_repo=self.recipe_repo,
-            infrastructure_repo=self.infrastructure_repo,
-            actuator_registry=self.actuator_registry,
-            record_zone_error_fn=self._record_zone_error,
-            emit_zone_data_unavailable_signal_fn=self._emit_zone_data_unavailable_signal,
-            get_or_restore_workflow_phase_fn=self._get_or_restore_workflow_phase,
-            safe_process_controller_fn=self._safe_process_controller,
-            process_light_controller_fn=self._process_light_controller,
-            process_climate_controller_fn=self._process_climate_controller,
-            process_irrigation_controller_fn=self._process_irrigation_controller,
-            process_recirculation_controller_fn=self._process_recirculation_controller,
-            process_correction_controllers_fn=self._process_correction_controllers,
-            evaluate_required_nodes_recovery_gate_fn=self._evaluate_required_nodes_recovery_gate,
-            update_zone_health_fn=self._update_zone_health,
-            emit_missing_targets_signal_fn=self._emit_missing_targets_signal,
-            emit_degraded_mode_signal_fn=self._emit_degraded_mode_signal,
-            reset_zone_error_streak_fn=self._reset_zone_error_streak,
-            emit_zone_recovered_signal_fn=self._emit_zone_recovered_signal,
-            get_error_streak_fn=self._get_error_streak,
-            get_next_allowed_run_at_fn=self._get_next_allowed_run_at,
-            create_zone_event_fn=create_zone_event,
-            check_water_level_fn=check_water_level,
-            ensure_water_level_alert_fn=ensure_water_level_alert,
-            utcnow_fn=utcnow,
-            check_latency_metric=CHECK_LAT,
-            zone_checks_metric=ZONE_CHECKS,
-            logger=logger,
-        )
-    
-    def _get_zone_state(self, zone_id: int) -> Dict[str, Any]:
-        return policy_get_zone_state(
-            zone_id=zone_id,
-            zone_states=self._zone_states,
-            logger=logger,
-        )
-    
-    def _get_error_streak(self, zone_id: int) -> int:
-        return self._get_zone_state(zone_id)['error_streak']
-    
-    def _get_next_allowed_run_at(self, zone_id: int) -> Optional[datetime]:
-        return self._get_zone_state(zone_id)['next_allowed_run_at']
-
-    @staticmethod
-    def _normalize_workflow_phase(raw: Any) -> str:
-        return policy_normalize_workflow_phase(raw, workflow_phase_values=WORKFLOW_PHASE_VALUES)
-
-    async def _restore_workflow_phase_from_events(self, zone_id: int) -> str:
-        return await policy_restore_workflow_phase_from_events(
-            zone_id=zone_id,
-            fetch_fn=fetch,
-            workflow_phase_event_type=WORKFLOW_PHASE_EVENT_TYPE,
-            normalize_workflow_phase_fn=self._normalize_workflow_phase,
-            logger=logger,
-        )
-
-    async def _get_or_restore_workflow_phase(self, zone_id: int) -> str:
-        return await policy_get_or_restore_workflow_phase(
-            zone_id=zone_id,
-            state=self._get_zone_state(zone_id),
-            restore_workflow_phase_from_events_fn=self._restore_workflow_phase_from_events,
-            normalize_workflow_phase_fn=self._normalize_workflow_phase,
-            utcnow_fn=utcnow,
-            logger=logger,
-        )
-
-    def _reset_zone_pid_state(self, zone_id: int) -> None:
-        policy_reset_zone_pid_state(
-            zone_id=zone_id,
-            ph_controller=self.ph_controller,
-            ec_controller=self.ec_controller,
-            logger=logger,
-        )
-
-    def _sync_sensor_mode_cache_with_workflow_phase(
-        self,
-        *,
-        zone_id: int,
-        previous_phase: str,
-        normalized_phase: str,
-    ) -> None:
-        policy_sync_sensor_mode_cache_with_workflow_phase(
-            zone_id=zone_id,
-            previous_phase=previous_phase,
-            normalized_phase=normalized_phase,
-            correction_sensor_mode_state=self._correction_sensor_mode_state,
-            workflow_sensor_mode_external_phases=WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES,
-            logger=logger,
-        )
-
-    async def update_workflow_phase(
-        self,
-        *,
-        zone_id: int,
-        workflow_phase: str,
-        workflow_stage: Optional[str] = None,
-        source: str = "scheduler",
-        reason_code: Optional[str] = None,
-        force_event: bool = False,
-    ) -> str:
-        return await policy_update_workflow_phase(
-            zone_id=zone_id,
-            workflow_phase=workflow_phase,
-            workflow_stage=workflow_stage,
-            source=source,
-            reason_code=reason_code,
-            force_event=force_event,
-            state=self._get_zone_state(zone_id),
-            normalize_workflow_phase_fn=self._normalize_workflow_phase,
-            utcnow_fn=utcnow,
-            reset_zone_pid_state_fn=self._reset_zone_pid_state,
-            sync_sensor_mode_cache_with_workflow_phase_fn=self._sync_sensor_mode_cache_with_workflow_phase,
-            create_zone_event_fn=create_zone_event,
-            workflow_phase_event_type=WORKFLOW_PHASE_EVENT_TYPE,
-            logger=logger,
-        )
-
-    @staticmethod
-    def _resolve_allowed_ec_components(workflow_phase: str) -> Optional[List[str]]:
-        return policy_resolve_allowed_ec_components(
-            workflow_phase=workflow_phase,
-            normalize_workflow_phase_fn=ZoneAutomationService._normalize_workflow_phase,
-            workflow_ec_components_by_phase=WORKFLOW_EC_COMPONENTS_BY_PHASE,
-        )
-    
-    def _should_process_zone(self, zone_id: int) -> bool:
-        return policy_should_process_zone(
-            zone_id=zone_id,
-            next_allowed_run_at=self._get_next_allowed_run_at(zone_id),
-            utcnow_fn=utcnow,
-            logger=logger,
-        )
-    
-    def _is_degraded_mode(self, zone_id: int) -> bool:
-        return policy_is_degraded_mode(
-            error_streak=self._get_error_streak(zone_id),
-            degraded_mode_threshold=DEGRADED_MODE_THRESHOLD,
-        )
-    
-    def _calculate_backoff_seconds(self, error_streak: int) -> int:
-        return policy_calculate_backoff_seconds(
-            error_streak=error_streak,
-            initial_backoff_seconds=INITIAL_BACKOFF_SECONDS,
-            backoff_multiplier=BACKOFF_MULTIPLIER,
-            max_backoff_seconds=MAX_BACKOFF_SECONDS,
-        )
-    
-    def _record_zone_error(self, zone_id: int) -> None:
-        policy_record_zone_error(
-            zone_id=zone_id,
-            get_zone_state_fn=self._get_zone_state,
-            calculate_backoff_seconds_fn=self._calculate_backoff_seconds,
-            utcnow_fn=utcnow,
-            logger=logger,
-        )
-    
-    def _reset_zone_error_streak(self, zone_id: int) -> int:
-        return policy_reset_zone_error_streak(
-            zone_id=zone_id,
-            get_zone_state_fn=self._get_zone_state,
-            logger=logger,
-        )
-
-    async def _create_zone_event_safe(
-        self,
-        zone_id: int,
-        event_type: str,
-        details: Dict[str, Any],
-        signal_name: str,
-    ) -> bool:
-        try:
-            await create_zone_event(zone_id, event_type, details)
-            return True
-        except Exception as event_error:
-            logger.warning(
-                "Zone %s: Failed to create %s event: %s",
-                zone_id,
-                event_type,
-                event_error,
-                exc_info=True,
-            )
-            await send_infra_exception_alert(
-                error=event_error,
-                code=INFRA_ZONE_EVENT_WRITE_FAILED,
-                alert_type="Zone Event Write Failed",
-                severity="error",
-                zone_id=zone_id,
-                service="automation-engine",
-                component="zone_events",
-                details={
-                    "event_type": event_type,
-                    "signal_name": signal_name,
-                },
-            )
-            return False
-
-    async def _emit_backoff_skip_signal(self, zone_id: int) -> None:
-        """Лог/ивент/алерт при пропуске зоны из-за backoff (с защитой от спама)."""
-        await policy_emit_backoff_skip_signal(
-            zone_id=zone_id,
-            zone_state=self._get_zone_state(zone_id),
-            utcnow_fn=utcnow,
-            get_error_streak_fn=self._get_error_streak,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_alert_fn=send_infra_alert,
-            skip_report_throttle_seconds=SKIP_REPORT_THROTTLE_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_missing_targets_signal(self, zone_id: int, grow_cycle: Optional[Dict[str, Any]]) -> None:
-        """Лог/ивент/алерт при отсутствии targets (чтобы не было тихого return)."""
-        await policy_emit_missing_targets_signal(
-            zone_id=zone_id,
-            grow_cycle=grow_cycle,
-            zone_state=self._get_zone_state(zone_id),
-            utcnow_fn=utcnow,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_alert_fn=send_infra_alert,
-            skip_report_throttle_seconds=SKIP_REPORT_THROTTLE_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_correction_missing_flags_signal(
-        self,
-        zone_id: int,
-        gating_state: Dict[str, Any],
-        nodes: Dict[str, Dict[str, Any]],
-    ) -> None:
-        """Инфра-алерт о пропуске коррекций из-за отсутствия sensor-mode flags."""
-        await policy_emit_correction_missing_flags_signal(
-            zone_id=zone_id,
-            gating_state=gating_state,
-            nodes=nodes,
-            zone_state=self._get_zone_state(zone_id),
-            utcnow_fn=utcnow,
-            resolve_correction_sensor_nodes_fn=self._resolve_correction_sensor_nodes,
-            send_infra_alert_fn=send_infra_alert,
-            correction_flags_missing_alert_throttle_seconds=CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_correction_stale_flags_signal(
-        self,
-        zone_id: int,
-        gating_state: Dict[str, Any],
-        nodes: Dict[str, Dict[str, Any]],
-    ) -> None:
-        """Инфра-алерт о пропуске коррекций из-за устаревших correction_flags."""
-        await policy_emit_correction_stale_flags_signal(
-            zone_id=zone_id,
-            gating_state=gating_state,
-            nodes=nodes,
-            zone_state=self._get_zone_state(zone_id),
-            utcnow_fn=utcnow,
-            resolve_correction_sensor_nodes_fn=self._resolve_correction_sensor_nodes,
-            send_infra_alert_fn=send_infra_alert,
-            correction_flags_stale_alert_throttle_seconds=CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_zone_data_unavailable_signal(self, zone_id: int) -> None:
-        """Лог/ивент/алерт при недоступности данных зоны (DB circuit breaker open)."""
-        state = self._get_zone_state(zone_id)
-        await policy_emit_zone_data_unavailable_signal(
-            zone_id=zone_id,
-            error_streak=int(state.get("error_streak", 0)),
-            next_allowed_run_at=state.get("next_allowed_run_at"),
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_alert_fn=send_infra_alert,
-            logger=logger,
-        )
-
-    async def _emit_degraded_mode_signal(self, zone_id: int) -> None:
-        """Лог/ивент/алерт при входе в degraded mode (один раз на инцидент)."""
-        await policy_emit_degraded_mode_signal(
-            zone_id=zone_id,
-            zone_state=self._get_zone_state(zone_id),
-            degraded_mode_threshold=DEGRADED_MODE_THRESHOLD,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_alert_fn=send_infra_alert,
-            logger=logger,
-        )
-
-    async def _emit_zone_recovered_signal(self, zone_id: int, previous_error_streak: int) -> None:
-        """Явный recovery-сигнал в логи и zone_events после серии ошибок."""
-        await policy_emit_zone_recovered_signal(
-            zone_id=zone_id,
-            previous_error_streak=previous_error_streak,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_resolved_alert_fn=send_infra_resolved_alert,
-            logger=logger,
-        )
-
-    async def _check_required_nodes_online(
-        self,
-        zone_id: int,
-        required_types: List[str],
-    ) -> Dict[str, Any]:
-        try:
-            return await check_required_nodes_online(
-                fetch_fn=fetch,
-                zone_id=zone_id,
-                required_types=required_types,
-            )
-        except Exception:
-            logger.warning(
-                "Zone %s: required-node online check failed; allowing cycle to continue",
-                zone_id,
-                exc_info=True,
-                extra={"zone_id": zone_id, "required_types": required_types},
-            )
-            return {
-                "required_types": list(required_types or []),
-                "online_counts": {},
-                "missing_types": [],
-            }
-
-    async def _emit_required_nodes_offline_signal(
-        self,
-        *,
-        zone_id: int,
-        required_types: List[str],
-        online_counts: Dict[str, Any],
-        missing_types: List[str],
-        reason_code: str = REASON_REQUIRED_NODES_OFFLINE,
-    ) -> None:
-        await self._create_zone_event_safe(
-            zone_id=zone_id,
-            event_type="ZONE_REQUIRED_NODES_OFFLINE",
-            details={
-                "required_types": sorted(required_types),
-                "online_counts": online_counts,
-                "missing_types": sorted(missing_types),
-                "reason_code": reason_code,
-                "status": "frozen",
-            },
-            signal_name="zone_required_nodes_offline",
-        )
-        await send_infra_alert(
-            code=INFRA_ZONE_REQUIRED_NODES_OFFLINE,
-            alert_type="Required Nodes Offline",
-            message=f"Zone {zone_id} required nodes offline: {', '.join(sorted(missing_types))}",
-            severity="error",
-            zone_id=zone_id,
-            service="automation-engine",
-            component="zone_node_recovery",
-            error_type="RequiredNodesOffline",
-            details={
-                "required_types": sorted(required_types),
-                "online_counts": online_counts,
-                "missing_types": sorted(missing_types),
-                "reason_code": reason_code,
-                "status": "frozen",
-            },
-        )
-
-    async def _emit_required_nodes_recovered_signal(
-        self,
-        *,
-        zone_id: int,
-        previous_missing_types: List[str],
-        required_types: List[str],
-        online_counts: Dict[str, Any],
-        reason_code: str = REASON_REQUIRED_NODES_RECOVERED,
-    ) -> None:
-        await self._create_zone_event_safe(
-            zone_id=zone_id,
-            event_type="ZONE_REQUIRED_NODES_RECOVERED",
-            details={
-                "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
-                "required_types": sorted(required_types),
-                "online_counts": online_counts,
-                "reason_code": reason_code,
-                "status": "ready",
-            },
-            signal_name="zone_required_nodes_recovered",
-        )
-        await send_infra_resolved_alert(
-            code=INFRA_ZONE_REQUIRED_NODES_OFFLINE,
-            alert_type="Required Nodes Recovered",
-            message=f"Zone {zone_id} required nodes recovered",
-            zone_id=zone_id,
-            service="automation-engine",
-            component="zone_node_recovery",
-            details={
-                "previous_missing_types": sorted(str(item).strip().lower() for item in previous_missing_types if str(item).strip()),
-                "required_types": sorted(required_types),
-                "online_counts": online_counts,
-                "reason_code": reason_code,
-                "status": "ready",
-            },
-        )
-
-    async def _evaluate_required_nodes_recovery_gate(
-        self,
-        zone_id: int,
-        capabilities: Dict[str, Any],
-    ) -> bool:
-        return await policy_evaluate_required_nodes_recovery_gate(
-            zone_id=zone_id,
-            capabilities=capabilities,
-            zone_state=self._get_zone_state(zone_id),
-            check_required_nodes_online_fn=self._check_required_nodes_online,
-            emit_required_nodes_offline_signal_fn=self._emit_required_nodes_offline_signal,
-            emit_required_nodes_recovered_signal_fn=self._emit_required_nodes_recovered_signal,
-            utcnow_fn=utcnow,
-            throttle_seconds=REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_controller_circuit_open_signal(
-        self,
-        zone_id: int,
-        controller_name: str,
-        *,
-        channel: Optional[str] = None,
-        cmd: Optional[str] = None,
-    ) -> None:
-        """Алерт о пропуске команды из-за открытого API Circuit Breaker (с троттлингом)."""
-        await policy_emit_controller_circuit_open_signal(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            controller_circuit_open_reported_at=self._controller_circuit_open_reported_at,
-            throttle_seconds=CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
-            utcnow_fn=utcnow,
-            send_infra_alert_fn=send_infra_alert,
-            channel=channel,
-            cmd=cmd,
-        )
-    
-    def _is_controller_in_cooldown(self, zone_id: int, controller_name: str) -> bool:
-        return policy_is_controller_in_cooldown(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            controller_failures=self._controller_failures,
-            cooldown_seconds=CONTROLLER_COOLDOWN_SECONDS,
-            utcnow_fn=utcnow,
-        )
-    
-    def _record_controller_failure(self, zone_id: int, controller_name: str) -> None:
-        policy_record_controller_failure(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            controller_failures=self._controller_failures,
-            controller_cooldown_reported_at=self._controller_cooldown_reported_at,
-            utcnow_fn=utcnow,
-        )
-    
-    async def _safe_process_controller(
-        self,
-        controller_name: str,
-        controller_coro,
-        zone_id: int
-    ) -> None:
-        await policy_safe_process_controller(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            controller_coro=controller_coro,
-            is_controller_in_cooldown_fn=self._is_controller_in_cooldown,
-            emit_controller_cooldown_skip_signal_fn=self._emit_controller_cooldown_skip_signal,
-            record_controller_failure_fn=self._record_controller_failure,
-            controller_failures=self._controller_failures,
-            controller_cooldown_reported_at=self._controller_cooldown_reported_at,
-            create_zone_event_fn=create_zone_event,
-            send_infra_exception_alert_fn=send_infra_exception_alert,
-            controller_cooldown_seconds=CONTROLLER_COOLDOWN_SECONDS,
-            logger=logger,
-        )
-
-    async def _emit_controller_cooldown_skip_signal(self, zone_id: int, controller_name: str) -> None:
-        """Лог/ивент/алерт при skip контроллера в cooldown с троттлингом."""
-        await policy_emit_controller_cooldown_skip_signal(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            controller_failures=self._controller_failures,
-            controller_cooldown_reported_at=self._controller_cooldown_reported_at,
-            cooldown_seconds=CONTROLLER_COOLDOWN_SECONDS,
-            cooldown_skip_report_throttle_seconds=COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS,
-            utcnow_fn=utcnow,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            send_infra_alert_fn=send_infra_alert,
-            logger=logger,
-        )
-    
-    async def _check_phase_transitions(
-        self,
-        zone_id: int,
-        sim_clock: Optional[SimulationClock] = None,
-    ) -> None:
-        await policy_check_phase_transitions(
-            zone_id=zone_id,
-            sim_clock=sim_clock,
-            grow_cycle_repo=self.grow_cycle_repo,
-            record_simulation_event_fn=record_simulation_event,
-            emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
-            logger=logger,
-        )
-
-    @staticmethod
-    def _append_correlation_id(details: Dict[str, Any], correlation_id: Optional[str]) -> Dict[str, Any]:
-        return policy_append_correlation_id(details, correlation_id)
-
-    async def _publish_controller_action_with_event_integrity(
-        self,
-        *,
-        zone_id: int,
-        controller_name: str,
-        command: Dict[str, Any],
-    ) -> bool:
-        return await policy_publish_controller_action_with_event_integrity(
-            zone_id=zone_id,
-            controller_name=controller_name,
-            command=command,
-            command_gateway=self.command_gateway,
-            create_zone_event_safe_fn=self._create_zone_event_safe,
-            emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
-            append_correlation_id_fn=self._append_correlation_id,
-        )
-    
-    async def _process_light_controller(
-        self,
-        zone_id: int,
-        targets: Dict[str, Any],
-        capabilities: Dict[str, bool],
-        bindings: Dict[str, Dict[str, Any]],
-        current_time: datetime,
-    ) -> None:
-        """Обработка контроллера освещения."""
-        await policy_process_light_controller(
-            zone_id=zone_id,
-            targets=targets,
-            capabilities=capabilities,
-            bindings=bindings,
-            current_time=current_time,
-            check_and_control_lighting_fn=check_and_control_lighting,
-            publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
-        )
-    
-    async def _process_climate_controller(
-        self,
-        zone_id: int,
-        targets: Dict[str, Any],
-        telemetry: Dict[str, Optional[float]],
-        capabilities: Dict[str, bool],
-        bindings: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """Обработка контроллера климата."""
-        await policy_process_climate_controller(
-            zone_id=zone_id,
-            targets=targets,
-            telemetry=telemetry,
-            capabilities=capabilities,
-            bindings=bindings,
-            check_and_control_climate_fn=check_and_control_climate,
-            publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
-        )
-    
-    async def _process_irrigation_controller(
-        self,
-        zone_id: int,
-        targets: Dict[str, Any],
-        telemetry: Dict[str, Optional[float]],
-        capabilities: Dict[str, bool],
-        workflow_phase: str,
-        water_level_ok: bool,
-        bindings: Dict[str, Dict[str, Any]],
-        actuators: Dict[str, Dict[str, Any]],
-        current_time: datetime,
-        time_scale: Optional[float],
-        sim_clock: Optional[SimulationClock],
-    ) -> None:
-        """Обработка контроллера полива."""
-        await policy_process_irrigation_controller(
-            zone_id=zone_id,
-            targets=targets,
-            telemetry=telemetry,
-            capabilities=capabilities,
-            workflow_phase=workflow_phase,
-            bindings=bindings,
-            actuators=actuators,
-            current_time=current_time,
-            time_scale=time_scale,
-            sim_clock=sim_clock,
-            check_and_control_irrigation_fn=check_and_control_irrigation,
-            can_run_pump_fn=can_run_pump,
-            send_infra_alert_fn=send_infra_alert,
-            publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
-            logger=logger,
-        )
-    
-    async def _process_recirculation_controller(
-        self,
-        zone_id: int,
-        targets: Dict[str, Any],
-        telemetry: Dict[str, Optional[float]],
-        capabilities: Dict[str, bool],
-        water_level_ok: bool,
-        bindings: Dict[str, Dict[str, Any]],
-        actuators: Dict[str, Dict[str, Any]],
-        current_time: datetime,
-        time_scale: Optional[float],
-        sim_clock: Optional[SimulationClock],
-    ) -> None:
-        """Обработка контроллера рециркуляции."""
-        await policy_process_recirculation_controller(
-            zone_id=zone_id,
-            targets=targets,
-            telemetry=telemetry,
-            capabilities=capabilities,
-            bindings=bindings,
-            actuators=actuators,
-            current_time=current_time,
-            time_scale=time_scale,
-            sim_clock=sim_clock,
-            check_and_control_recirculation_fn=check_and_control_recirculation,
-            publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
-        )
-    
-    async def _emit_correction_skip_event_throttled(
-        self,
-        *,
-        zone_id: int,
-        event_type: str,
-        event_payload: Dict[str, Any],
-        reason_code: str,
-    ) -> None:
-        await policy_emit_correction_skip_event_throttled(
-            zone_id=zone_id,
-            event_type=event_type,
-            event_payload=event_payload,
-            reason_code=reason_code,
-            zone_state=self._get_zone_state(zone_id),
-            correction_skip_event_throttle_seconds=CORRECTION_SKIP_EVENT_THROTTLE_SECONDS,
-            utcnow_fn=utcnow,
-            create_zone_event_fn=create_zone_event,
-            logger=logger,
-        )
-
-    @staticmethod
-    def _normalize_flag_signature_values(raw_values: Any) -> List[str]:
-        return policy_normalize_flag_signature_values(raw_values)
-
-    @classmethod
-    def _build_correction_skip_signature(
-        cls,
-        *,
-        event_type: str,
-        event_payload: Dict[str, Any],
-        reason_code: str,
-    ) -> str:
-        return policy_build_correction_skip_signature(
-            event_type=event_type,
-            event_payload=event_payload,
-            reason_code=reason_code,
-        )
-
-    @staticmethod
-    def _resolve_sensor_mode_action(reason_code: str, can_run: bool) -> str:
-        return policy_resolve_sensor_mode_action(
-            reason_code,
-            can_run,
-            sensor_mode_policy=SENSOR_MODE_POLICY,
-        )
-
-    async def _apply_sensor_mode_policy(
-        self,
-        *,
-        zone_id: int,
-        nodes: Dict[str, Dict[str, Any]],
-        reason_code: str,
-        can_run: bool,
-    ) -> None:
-        await policy_apply_sensor_mode_policy(
-            zone_id=zone_id,
-            nodes=nodes,
-            reason_code=reason_code,
-            can_run=can_run,
-            resolve_sensor_mode_action_fn=self._resolve_sensor_mode_action,
-            set_sensor_mode_fn=self._set_sensor_mode,
-            logger=logger,
-        )
-
-    async def _process_correction_controllers(
-        self,
-        zone_id: int,
-        targets: Dict[str, Any],
-        telemetry: Dict[str, Optional[float]],
-        telemetry_timestamps: Dict[str, Any],
-        correction_flags: Dict[str, Any],
-        nodes: Dict[str, Dict[str, Any]],
-        capabilities: Dict[str, bool],
-        workflow_phase: str,
-        water_level_ok: bool,
-        bindings: Dict[str, Dict[str, Any]],
-        actuators: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """Обработка контроллеров корректировки pH/EC."""
-        await policy_process_correction_controllers(
-            zone_id=zone_id,
-            targets=targets,
-            telemetry=telemetry,
-            telemetry_timestamps=telemetry_timestamps,
-            correction_flags=correction_flags,
-            nodes=nodes,
-            capabilities=capabilities,
-            workflow_phase=workflow_phase,
-            water_level_ok=water_level_ok,
-            actuators=actuators,
-            ph_controller=self.ph_controller,
-            ec_controller=self.ec_controller,
-            command_gateway=self.command_gateway,
-            build_correction_gating_state_fn=self._build_correction_gating_state,
-            emit_correction_skip_event_throttled_fn=self._emit_correction_skip_event_throttled,
-            emit_correction_missing_flags_signal_fn=self._emit_correction_missing_flags_signal,
-            emit_correction_stale_flags_signal_fn=self._emit_correction_stale_flags_signal,
-            apply_sensor_mode_policy_fn=self._apply_sensor_mode_policy,
-            resolve_allowed_ec_components_fn=self._resolve_allowed_ec_components,
-            emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
-            logger=logger,
-        )
-
-    def _build_correction_gating_state(
-        self,
-        *,
-        telemetry: Dict[str, Optional[float]],
-        telemetry_timestamps: Dict[str, Any],
-        correction_flags: Dict[str, Any],
-        workflow_phase: str = "idle",
-    ) -> Dict[str, Any]:
-        return policy_build_correction_gating_state(
-            telemetry=telemetry,
-            telemetry_timestamps=telemetry_timestamps,
-            correction_flags=correction_flags,
-            workflow_phase=workflow_phase,
-            normalize_workflow_phase_fn=self._normalize_workflow_phase,
-            utcnow_fn=utcnow,
-            correction_open_phases=WORKFLOW_CORRECTION_OPEN_PHASES,
-            required_flag_names=CORRECTION_REQUIRED_FLAG_NAMES,
-            flags_max_age_seconds=CORRECTION_FLAGS_MAX_AGE_SECONDS,
-            flags_require_timestamps=CORRECTION_FLAGS_REQUIRE_TIMESTAMPS,
-            logger=logger,
-        )
-
-    @staticmethod
-    def _resolve_correction_sensor_nodes(nodes: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return policy_resolve_correction_sensor_nodes(nodes)
-
-    async def _set_sensor_mode(
-        self,
-        *,
-        zone_id: int,
-        nodes: Dict[str, Dict[str, Any]],
-        activate: bool,
-        reason: str,
-    ) -> None:
-        await policy_set_sensor_mode(
-            zone_id=zone_id,
-            nodes=nodes,
-            activate=activate,
-            reason=reason,
-            command_gateway=self.command_gateway,
-            correction_sensor_mode_state=self._correction_sensor_mode_state,
-            emit_controller_circuit_open_signal_fn=self._emit_controller_circuit_open_signal,
-            logger=logger,
-            resolve_correction_sensor_nodes_fn=self._resolve_correction_sensor_nodes,
-        )
-    
-    async def _update_zone_health(self, zone_id: int) -> None:
-        """Обновление health score зоны."""
-        await policy_update_zone_health(
-            zone_id=zone_id,
-            calculate_zone_health_fn=calculate_zone_health,
-            update_zone_health_in_db_fn=update_zone_health_in_db,
-        )
-    
-    async def _check_zone_deletion(self, zone_id: int) -> None:
-        """Проверить, не была ли зона удалена, и очистить PID инстансы."""
-        from common.db import fetch as db_fetch
-
-        await policy_check_zone_deletion(
-            zone_id=zone_id,
-            fetch_fn=db_fetch,
-            invalidate_cache_fn=invalidate_cache,
-            ph_controller=self.ph_controller,
-            ec_controller=self.ec_controller,
-            logger=logger,
-            send_infra_exception_alert_fn=send_infra_exception_alert,
-        )
-    
-    async def _check_pid_config_updates(self, zone_id: int) -> None:
-        """Проверить обновления PID конфигов и инвалидировать кеш при необходимости."""
-        from common.db import fetch as db_fetch
-
-        await policy_check_pid_config_updates(
-            zone_id=zone_id,
-            fetch_fn=db_fetch,
-            invalidate_cache_fn=invalidate_cache,
-            ph_controller=self.ph_controller,
-            ec_controller=self.ec_controller,
-            logger=logger,
-            send_infra_exception_alert_fn=send_infra_exception_alert,
-        )
+__all__ = [
+    "ZoneAutomationService",
+    "ZONE_CHECKS",
+    "CHECK_LAT",
+    "CONTROLLER_COOLDOWN_SECONDS",
+    "INITIAL_BACKOFF_SECONDS",
+    "MAX_BACKOFF_SECONDS",
+    "BACKOFF_MULTIPLIER",
+    "DEGRADED_MODE_THRESHOLD",
+    "SKIP_REPORT_THROTTLE_SECONDS",
+    "COOLDOWN_SKIP_REPORT_THROTTLE_SECONDS",
+    "CONTROLLER_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS",
+    "CORRECTION_FLAGS_MISSING_ALERT_THROTTLE_SECONDS",
+    "REQUIRED_NODES_OFFLINE_ALERT_THROTTLE_SECONDS",
+    "CORRECTION_FLAGS_MAX_AGE_SECONDS",
+    "CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SECONDS",
+    "CORRECTION_SKIP_EVENT_THROTTLE_SECONDS",
+    "CORRECTION_FLAGS_REQUIRE_TIMESTAMPS",
+    "CORRECTION_REQUIRED_FLAG_NAMES",
+    "WORKFLOW_PHASE_EVENT_TYPE",
+    "WORKFLOW_PHASE_VALUES",
+    "WORKFLOW_CORRECTION_OPEN_PHASES",
+    "WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES",
+    "WORKFLOW_EC_COMPONENTS_BY_PHASE",
+    "SENSOR_MODE_POLICY",
+]

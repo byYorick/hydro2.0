@@ -19,7 +19,7 @@ from command_service import (
 )
 from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
-from common.db import execute, fetch
+from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.mqtt import get_mqtt_client
@@ -123,6 +123,56 @@ async def _emit_command_send_failed_alert(
     )
 
 
+async def _emit_command_node_zone_mismatch_observability(
+    *,
+    zone_id: int,
+    node_uid: str,
+    node_zone_id: Any,
+    pending_zone_id: Any,
+) -> None:
+    """Emit zone_event + infra alert for fail-closed node/zone guard rejections."""
+    details = {
+        "reason": "zone_mismatch",
+        "node_uid": node_uid,
+        "requested_zone_id": zone_id,
+        "actual_zone_id": node_zone_id,
+        "pending_zone_id": pending_zone_id,
+    }
+
+    try:
+        await create_zone_event(zone_id, "COMMAND_ZONE_NODE_MISMATCH", details)
+    except Exception as exc:
+        logger.warning(
+            "[COMMAND_PUBLISH] Failed to create COMMAND_ZONE_NODE_MISMATCH event: zone_id=%s node_uid=%s error=%s",
+            zone_id,
+            node_uid,
+            exc,
+        )
+
+    try:
+        await send_infra_alert(
+            code="infra_command_node_zone_mismatch",
+            alert_type="Command Node/Zone Mismatch",
+            message=(
+                f"Command publish blocked: node '{node_uid}' is assigned to zone "
+                f"{node_zone_id}, requested zone is {zone_id}"
+            ),
+            severity="warning",
+            zone_id=zone_id,
+            service="history-logger",
+            component="command_publish_guard",
+            node_uid=node_uid,
+            details=details,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[COMMAND_PUBLISH] Failed to send infra_command_node_zone_mismatch alert: zone_id=%s node_uid=%s error=%s",
+            zone_id,
+            node_uid,
+            exc,
+        )
+
+
 async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str]) -> str:
     """
     Резолвить канонический gh_uid по zone_id.
@@ -195,6 +245,12 @@ async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
                     "(pending assignment confirmation)"
                 ),
             )
+        await _emit_command_node_zone_mismatch_observability(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            node_zone_id=node_zone_id,
+            pending_zone_id=pending_zone_id,
+        )
         raise HTTPException(
             status_code=409,
             detail=(

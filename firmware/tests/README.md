@@ -34,8 +34,8 @@ HIL/интеграционный тест таймингов command lifecycle:
 (`telemetry/command_response/heartbeat/status`, а также `ACK -> terminal`), но не валидирует
 бизнес-процессы 2-бакового цикла (`startup/clean_fill/solution_fill/prepare_recirculation`).
 
-Проверка согласованности автоматики и `test_node` по 2 бакам вынесена в e2e-сценарий:
-- `tests/e2e/scenarios/automation_engine/E75_two_tank_fill_contract.yaml`
+Проверка согласованности автоматики и `test_node` выполняется в e2e-наборе
+`tests/e2e/scenarios/automation_engine/` (актуальный AE2-Lite subset: `E61`, `E64`, `E65`, `E74`).
 
 ## Быстрый старт
 

@@ -168,7 +168,7 @@ history-logger/
 
 ### 3.3. automation-engine
 
-**Назначение:** Контроллер зон, проверка targets, публикация команд корректировки.
+**Назначение:** AE2-Lite рантайм автоматизации зон и scheduler wake-up оркестрация.
 
 **Порты:** 
 - 9401 (Prometheus metrics)
@@ -179,7 +179,8 @@ history-logger/
 - Проверка активных зон с рецептами
 - Сравнение текущих значений с targets (pH, EC)
 - Публикация команд корректировки через history-logger REST API
-- REST API endpoint для scheduler task ingress (`/scheduler/task`)
+- Каноничный wake-up endpoint `POST /zones/{id}/start-cycle`
+- Runtime API для UI: `GET /zones/{id}/state`, `GET/POST /zones/{id}/control-mode`, `POST /zones/{id}/manual-step`
 - Мониторинг через Prometheus
 - **Адаптивная конкурентность:**
   - Автоматический расчет оптимального количества параллельных зон
@@ -226,8 +227,13 @@ automation-engine/
 5. Повтор каждые 15 секунд
 
 **REST API:**
-- `POST /scheduler/task` - прием abstract scheduler-task от Laravel scheduler-dispatch
-- `GET /health` - health check
+- `POST /zones/{id}/start-cycle` - каноничный запуск цикла из Laravel scheduler-dispatch
+- `GET /zones/{id}/state` - runtime state зоны
+- `GET /zones/{id}/control-mode` - активный режим и доступные ручные шаги
+- `POST /zones/{id}/control-mode` - смена режима (`auto|semi|manual`)
+- `POST /zones/{id}/manual-step` - ручной шаг в `semi|manual`
+- `GET /health/live` - liveness
+- `GET /health/ready` - readiness
 
 ---
 
@@ -280,13 +286,18 @@ automation-engine/
 
 **Архитектура команд:**
 ```
-Laravel Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
+Laravel Scheduler → POST /zones/{id}/start-cycle → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
 ```
 
 **Endpoints:**
 - **Automation-Engine** (`http://automation-engine:9405`):
-  - `POST /scheduler/task` - прием abstract scheduler-task
-  - `GET /health` - health check
+  - `POST /zones/{id}/start-cycle` - каноничный wake-up
+  - `GET /zones/{id}/state` - runtime state
+  - `GET /zones/{id}/control-mode` - режим/доступные шаги
+  - `POST /zones/{id}/control-mode` - смена режима
+  - `POST /zones/{id}/manual-step` - ручной шаг
+  - `GET /health/live` - liveness
+  - `GET /health/ready` - readiness
   
 - **History-Logger** (`http://history-logger:9300`):
   - `POST /commands` - универсальный endpoint для команд

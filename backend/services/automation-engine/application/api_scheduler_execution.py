@@ -142,7 +142,7 @@ async def execute_scheduler_task(
             severity="error",
             zone_id=req.zone_id,
             service="automation-engine",
-            component="api:/scheduler/task",
+            component="api:/zones/{id}/start-cycle",
             error_type=type(exc).__name__,
             details={"task_id": task_id, "task_type": req.task_type},
         )

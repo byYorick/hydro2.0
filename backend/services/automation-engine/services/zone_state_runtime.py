@@ -49,6 +49,9 @@ def get_zone_state(
     state.setdefault("last_missing_targets_report_at", None)
     state.setdefault("last_missing_correction_flags_report_at", None)
     state.setdefault("last_stale_correction_flags_report_at", None)
+    # None means "unknown on cold-start", so resolver can perform one probe.
+    state.setdefault("correction_missing_flags_active", None)
+    state.setdefault("correction_stale_flags_active", None)
     state.setdefault("last_correction_skip_event_at", None)
     state.setdefault("last_correction_skip_reason", None)
     state.setdefault("last_correction_skip_signature", None)

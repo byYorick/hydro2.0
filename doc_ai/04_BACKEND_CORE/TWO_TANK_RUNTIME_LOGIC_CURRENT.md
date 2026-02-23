@@ -230,20 +230,22 @@ Fail-closed режим:
 Раздел ниже исторический. В AE2-Lite canonical runtime endpoint запуска:
 `POST /zones/{id}/start-cycle`.
 
+Legacy endpoint `POST /zones/{id}/automation/manual-resume` удален и не используется.
+
 Новые endpoint automation-engine:
-- `GET /zones/{zone_id}/automation/control-mode`
-- `POST /zones/{zone_id}/automation/control-mode` (`control_mode`: `auto|semi|manual`)
-- `POST /zones/{zone_id}/automation/manual-step` (`manual_step`: start/stop по этапам 2-баковой схемы)
+- `GET /zones/{zone_id}/control-mode`
+- `POST /zones/{zone_id}/control-mode` (`control_mode`: `auto|semi|manual`)
+- `POST /zones/{zone_id}/manual-step` (`manual_step`: start/stop по этапам 2-баковой схемы)
 
 Проксирование в Laravel API:
-- `GET /api/zones/{zone}/automation/control-mode`
-- `POST /api/zones/{zone}/automation/control-mode` (роль `operator`)
-- `POST /api/zones/{zone}/automation/manual-step` (роль `operator`)
+- `GET /api/zones/{zone}/control-mode`
+- `POST /api/zones/{zone}/control-mode` (роль `operator`)
+- `POST /api/zones/{zone}/manual-step` (роль `operator`)
 
 Поведение:
 - в `auto` manual-step запрещён (`manual_step_forbidden_in_auto_mode`);
 - в `semi` и `manual` manual-step разрешён;
-- `GET /zones/{zone_id}/automation-state` возвращает `control_mode` и `allowed_manual_steps` для UI.
+- `GET /zones/{zone_id}/state` возвращает `control_mode` и `allowed_manual_steps` для UI.
 
 ---
 

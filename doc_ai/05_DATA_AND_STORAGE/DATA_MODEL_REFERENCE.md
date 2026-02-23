@@ -231,6 +231,12 @@ last_quality ENUM
 updated_at
 ```
 
+Индексы:
+```
+telemetry_last_ts_idx (last_ts)
+telemetry_last_sensor_updated_at_idx (sensor_id, updated_at) -- AE2-Lite freshness/polling
+```
+
 ---
 
 # 5. Таблицы рецептов (новая модель после рефакторинга)
@@ -574,6 +580,7 @@ commands_zone_status_idx (zone_id, status) -- уже существует
 commands_node_status_idx (node_id, status) -- уже существует
 commands_created_at_idx (created_at) -- уже существует
 commands_sent_at_idx (sent_at) -- уже существует
+commands_status_updated_at_idx (status, updated_at DESC) -- AE2-Lite reconcile polling
 commands_zone_node_status_idx (zone_id, node_id, status) WHERE zone_id IS NOT NULL AND node_id IS NOT NULL
 commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
 commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
@@ -710,35 +717,108 @@ zone_automation_logic_profiles_zone_id_is_active_index
 - каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
 - приоритет runtime-резолва: `command_plans` (колонка) -> legacy fallback только на период миграции.
 
+Минимальная JSON-схема `command_plans` (AE2-Lite):
+
+```json
+{
+  "schema_version": 1,
+  "plan_version": 1,
+  "source": "subsystems_backfill|manual",
+  "plans": {
+    "diagnostics": {
+      "execution": {
+        "topology": "two_tank_drip_substrate_trays",
+        "workflow": "cycle_start"
+      },
+      "steps": [
+        {
+          "name": "clean_fill_start",
+          "channel": "irrigation",
+          "cmd": "set_valve",
+          "params": {
+            "valve": "valve_clean_fill",
+            "state": true
+          },
+          "timeout_sec": 30
+        }
+      ]
+    }
+  }
+}
+```
+
+Правила валидации:
+- `schema_version` и `plan_version` обязательны;
+- `plans.<plan>.steps[]` обязательный массив;
+- каждый шаг обязан иметь `channel`, `cmd`, `params` (JSON object);
+- неподдерживаемый `schema_version` блокирует runtime-выполнение (fail-closed).
+
 ## 6.8. zone_automation_intents
 
 ```
 id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones
 intent_type VARCHAR(64) NOT NULL
-payload JSONB NOT NULL DEFAULT '{}'::jsonb
-idempotency_key VARCHAR(255) NOT NULL
+payload JSONB NULL
+idempotency_key VARCHAR(191) NOT NULL
 status VARCHAR(32) NOT NULL -- pending|claimed|running|completed|failed|cancelled
 not_before TIMESTAMPTZ NULL
 claimed_at TIMESTAMPTZ NULL
 completed_at TIMESTAMPTZ NULL
 error_code VARCHAR(128) NULL
 error_message TEXT NULL
+retry_count INT NOT NULL DEFAULT 0
+max_retries INT NOT NULL DEFAULT 3
 created_at TIMESTAMPTZ NOT NULL
 updated_at TIMESTAMPTZ NOT NULL
 ```
 
 Индексы:
 ```
-zone_automation_intents_zone_status_idx (zone_id, status, updated_at)
+zone_automation_intents_idempotency_key_unique (idempotency_key) UNIQUE
+zone_automation_intents_zone_status_idx (zone_id, status)
 zone_automation_intents_status_not_before_idx (status, not_before)
-zone_automation_intents_idempotency_idx (zone_id, idempotency_key) UNIQUE
+```
+
+Constraints:
+```
+zone_automation_intents_status_check:
+status IN ('pending','claimed','running','completed','failed','cancelled')
 ```
 
 Назначение:
 - durable contract между Laravel scheduler-dispatch и AE2-Lite;
 - идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
 - арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
+
+Lifecycle:
+- `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
+- повторный `idempotency_key` возвращает deduplicated wake-up без повторного исполнения;
+- `failed` intent может быть re-claimed только при `retry_count < max_retries`.
+
+## 6.9. PostgreSQL NOTIFY triggers (AE2-Lite)
+
+Источник событий для fast-path listener в `automation-engine`:
+
+1) `ae_command_status`:
+- trigger: `trg_ae_command_status_notify` на `commands` (`AFTER INSERT OR UPDATE OF status, updated_at`);
+- payload:
+```json
+{"cmd_id":"...", "zone_id":12, "status":"DONE", "updated_at":"..."}
+```
+
+2) `ae_signal_update`:
+- trigger: `trg_ae_signal_update_zone_events` на `zone_events` (`AFTER INSERT OR UPDATE`);
+- trigger: `trg_ae_signal_update_telemetry_last` на `telemetry_last`
+  (`AFTER INSERT OR UPDATE OF last_value, last_ts, updated_at`);
+- payload:
+```json
+{"zone_id":12, "kind":"zone_event|telemetry_last", "updated_at":"..."}
+```
+
+Правило runtime:
+- `NOTIFY` используется как fast-path;
+- reconcile polling обязателен как fallback на случай пропуска notify-событий.
 
 Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
 

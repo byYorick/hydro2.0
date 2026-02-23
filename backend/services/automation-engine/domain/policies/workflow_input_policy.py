@@ -80,7 +80,10 @@ def extract_topology(payload: Dict[str, Any]) -> str:
 
 
 def normalize_two_tank_workflow(workflow: str) -> str:
-    return workflow
+    normalized = str(workflow or "").strip().lower()
+    if normalized == "cycle_start":
+        return "startup"
+    return normalized
 
 
 def is_two_tank_startup_workflow(*, topology: str, workflow: str) -> bool:
@@ -88,6 +91,7 @@ def is_two_tank_startup_workflow(*, topology: str, workflow: str) -> bool:
         return False
     return workflow in {
         "startup",
+        "cycle_start",
         "manual_step",
         "clean_fill_check",
         "solution_fill_check",

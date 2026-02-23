@@ -257,9 +257,12 @@ async def test_publish_command_returns_500_when_sent_status_not_persisted(client
 async def test_publish_command_rejects_node_zone_mismatch(client, auth_headers, mock_mqtt_client):
     """Command must be rejected if node belongs to another zone."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
-         patch("command_routes.get_settings") as mock_settings:
+         patch("command_routes.get_settings") as mock_settings, \
+         patch("command_routes.send_infra_alert", new_callable=AsyncMock) as mock_send_infra_alert, \
+         patch("command_routes.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
         mock_get_mqtt.return_value = mock_mqtt_client
         mock_settings.return_value = Mock(mqtt_zone_format="id")
+        mock_send_infra_alert.return_value = True
 
         payload = {
             "cmd": "run_pump",
@@ -275,6 +278,8 @@ async def test_publish_command_rejects_node_zone_mismatch(client, auth_headers, 
         assert response.status_code == 409
         assert "assigned to zone 2" in response.json()["detail"]
         assert not mock_mqtt_client._client._client.publish.called
+        mock_send_infra_alert.assert_awaited_once()
+        mock_create_zone_event.assert_awaited_once()
 
 
 @pytest.mark.asyncio

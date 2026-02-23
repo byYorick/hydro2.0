@@ -423,13 +423,13 @@
 
 `automation-engine` принимает от `scheduler` абстрактные задачи расписания:
 
-- `POST /scheduler/bootstrap` -> `ready|wait|deny` + lease
-- `POST /scheduler/bootstrap/heartbeat` -> refresh lease
-- `POST /scheduler/task` -> `accepted` + `task_id`
-- `GET /scheduler/task/{task_id}` -> `accepted|running|completed|failed|rejected|expired`
-- `GET /zones/{zone_id}/automation-state` -> текущий state workflow автоматики зоны для UI-панели
+- `POST /zones/{zone_id}/start-cycle` -> каноничный wake-up для запуска цикла
+- `GET /zones/{zone_id}/state` -> текущий state workflow автоматики зоны для UI-панели
+- `GET /zones/{zone_id}/control-mode` -> активный режим (`auto|semi|manual`) и разрешенные manual-step
+- `POST /zones/{zone_id}/control-mode` -> переключение режима
+- `POST /zones/{zone_id}/manual-step` -> запуск ручного шага (только в `semi|manual`)
 - `GET /health/live` -> liveness probe
-- `GET /health/ready` -> readiness probe (`CommandBus + DB + bootstrap lease-store`)
+- `GET /health/ready` -> readiness probe (`CommandBus + DB`)
 
 Поддерживаемые `task_type`:
 - `irrigation`
@@ -443,9 +443,8 @@
 Детализация и исполнение задач выполняются внутри `automation-engine` через `CommandBus`.
 
 Дополнительно:
-- `correlation_id` в `POST /scheduler/task` обязателен;
-- повторный `POST` с тем же `correlation_id` и тем же payload возвращает тот же `task_id` (`is_duplicate=true`);
-- повтор с тем же `correlation_id`, но другим payload отклоняется (`409 idempotency_payload_mismatch`).
+- `idempotency_key` в `POST /zones/{zone_id}/start-cycle` обязателен;
+- повторный вызов с тем же `idempotency_key` возвращает deduplicated `accepted` без двойного исполнения.
 
 Маппинг `task_type -> node_types/cmd/params` вынесен в `config/scheduler_task_mapping.py` и поддерживает override из `payload.config.execution`.
 Снимки статусов scheduler-task (`accepted/running/completed/failed`) сохраняются в `scheduler_logs` для восстановления после рестарта.

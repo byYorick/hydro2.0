@@ -59,7 +59,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
   const schedulerTaskIdInput = ref('')
   const schedulerTaskLookupLoading = ref(false)
   const schedulerTaskListLoading = ref(false)
-  const manualResumeLoading = ref(false)
   const schedulerTaskError = ref<string | null>(null)
   const schedulerTaskStatus = ref<SchedulerTaskStatus | null>(null)
   const recentSchedulerTasks = ref<SchedulerTaskStatus[]>([])
@@ -119,20 +118,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     const fromCurrentAction = normalizeReasonCode(task.process_state?.current_action?.reason_code)
     if (fromCurrentAction) return fromCurrentAction
     return ''
-  }
-
-  function toOptionalBoolean(value: unknown): boolean | null {
-    if (typeof value === 'boolean') return value
-    if (typeof value === 'number') {
-      if (value === 1) return true
-      if (value === 0) return false
-    }
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase()
-      if (normalized === '1' || normalized === 'true') return true
-      if (normalized === '0' || normalized === 'false') return false
-    }
-    return null
   }
 
   function normalizeControlMode(value: unknown): AutomationControlMode {
@@ -201,19 +186,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     })
   })
 
-  const manualResumeActionAvailable = computed(() => {
-    const task = schedulerTaskStatus.value
-    if (!task) return false
-    const result = task.result && typeof task.result === 'object'
-      ? (task.result as Record<string, unknown>)
-      : null
-    const taskLevelManualAck = toOptionalBoolean(task.manual_ack_required)
-    const resultLevelManualAck = toOptionalBoolean(result?.manual_ack_required)
-    if (taskLevelManualAck === true || resultLevelManualAck === true) return true
-    const reasonCode = resolvePrimaryReasonCode(task)
-    return reasonCode === 'manual_ack_required_after_retries'
-  })
-
   // ─── Polling ───────────────────────────────────────────────────────────────
 
   async function fetchRecentSchedulerTasks(): Promise<void> {
@@ -264,7 +236,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     automationControlModeLoading.value = true
     try {
       const response = await get<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] } }>(
-        `/api/zones/${props.zoneId}/automation/control-mode`
+        `/api/zones/${props.zoneId}/control-mode`
       )
       const payload = response.data?.data ?? {}
       automationControlMode.value = normalizeControlMode(payload.control_mode)
@@ -284,7 +256,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     schedulerTaskError.value = null
     try {
       const response = await post<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] } }>(
-        `/api/zones/${props.zoneId}/automation/control-mode`,
+        `/api/zones/${props.zoneId}/control-mode`,
         {
           control_mode: mode,
           source: 'frontend',
@@ -310,7 +282,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     schedulerTaskError.value = null
     try {
       const response = await post<{ data?: { task_id?: string | null } }>(
-        `/api/zones/${props.zoneId}/automation/manual-step`,
+        `/api/zones/${props.zoneId}/manual-step`,
         {
           manual_step: step,
           source: 'frontend_manual_step',
@@ -336,7 +308,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     const taskId = normalizeTaskId(taskIdRaw)
     if (!taskId) {
       schedulerTaskStatus.value = null
-      schedulerTaskError.value = 'Укажите task_id вида st-...'
+      schedulerTaskError.value = 'Укажите task_id вида st-... или intent-...'
       return
     }
 
@@ -367,40 +339,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
         schedulerTaskLookupLoading.value = false
         scheduleSchedulerTasksPoll()
       }
-    }
-  }
-
-  async function requestManualResume(): Promise<void> {
-    if (!props.zoneId) return
-    if (!manualResumeActionAvailable.value) return
-
-    const currentTaskId = normalizeTaskId(schedulerTaskStatus.value?.task_id)
-    manualResumeLoading.value = true
-    schedulerTaskError.value = null
-
-    try {
-      const response = await post<{ status?: string; message?: string; data?: { task_id?: string | null } }>(
-        `/api/zones/${props.zoneId}/automation/manual-resume`,
-        {
-          task_id: currentTaskId || undefined,
-          source: 'frontend_manual_resume',
-        }
-      )
-
-      showToast('Подтверждение принято, запрошено возобновление workflow.', 'success')
-
-      const responseTaskId = String(response.data?.data?.task_id ?? '').trim()
-      const taskIdForRefresh = responseTaskId || currentTaskId
-
-      await fetchRecentSchedulerTasks()
-      if (taskIdForRefresh) {
-        await lookupSchedulerTask(taskIdForRefresh)
-      }
-    } catch (error: unknown) {
-      logger.warn('[ZoneAutomationTab] Manual resume request failed', { error, zoneId: props.zoneId })
-      schedulerTaskError.value = extractApiErrorMessage(error, 'Не удалось отправить manual resume.')
-    } finally {
-      manualResumeLoading.value = false
     }
   }
 
@@ -596,7 +534,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     schedulerTaskIdInput,
     schedulerTaskLookupLoading,
     schedulerTaskListLoading,
-    manualResumeLoading,
     schedulerTaskError,
     schedulerTaskStatus,
     automationControlMode,
@@ -604,7 +541,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     automationControlModeLoading,
     automationControlModeSaving,
     manualStepLoading,
-    manualResumeActionAvailable,
     recentSchedulerTasks,
     filteredRecentSchedulerTasks,
     schedulerTaskSearch,
@@ -617,7 +553,6 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     lookupSchedulerTask,
     setAutomationControlMode,
     runManualStep,
-    requestManualResume,
     clearSchedulerTasksPollTimer,
     hasActiveSchedulerTask,
     scheduleSchedulerTasksPoll,

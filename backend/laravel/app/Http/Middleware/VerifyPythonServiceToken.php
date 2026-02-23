@@ -88,6 +88,10 @@ class VerifyPythonServiceToken
             ], 401);
         }
 
+        // Токен валиден - помечаем сервисную аутентификацию для downstream контроллеров.
+        // Это важно для /api/system/config/full, где в dev среде может не быть пользователей.
+        $request->attributes->set('python_service_authenticated', true);
+
         // Токен валиден - устанавливаем сервисного пользователя, если он существует
         // Для публичных эндпоинтов (например, /api/system/config/full) пользователь не обязателен
         $serviceUser = $this->getServiceUser();

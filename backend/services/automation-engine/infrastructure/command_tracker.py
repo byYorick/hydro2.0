@@ -1,35 +1,28 @@
-"""
-Отслеживание выполнения команд.
-Позволяет проверять успешность выполнения команд и обрабатывать таймауты.
-
-Статусы команд отслеживаются через таблицу commands в БД, которая обновляется history-logger.
-Это обеспечивает единый источник истины и работу после рестарта.
-
-Статусы команд:
-- QUEUED: команда в очереди
-- SENT: команда отправлена
-- ACK: команда принята узлом (промежуточный статус)
-- DONE: команда выполнена успешно (терминальный)
-- ERROR: команда завершилась с ошибкой (терминальный)
-- INVALID: команда отклонена (терминальный)
-- BUSY: узел занят (терминальный)
-- NO_EFFECT: команда не изменила состояние (терминальный, неуспех для closed-loop)
-- TIMEOUT: таймаут выполнения команды (терминальный)
-- SEND_FAILED: ошибка отправки команды (терминальный)
-
-Терминальные статусы: DONE, ERROR, INVALID, BUSY, NO_EFFECT, TIMEOUT, SEND_FAILED
-"""
+"""Command tracker для ожидания terminal-статусов команд через DB polling + LISTEN/NOTIFY."""
 import asyncio
-import json
 import logging
-import time
 from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 from common.utils.time import utcnow
-from common.db import execute, fetch, create_zone_event
-from common.infra_alerts import send_infra_alert
-from common.command_status_queue import send_status_to_laravel
-from common.commands import mark_command_send_failed, mark_command_timeout, new_command_id
+from common.db import fetch
+from common.commands import new_command_id
+from infrastructure.command_tracker_confirm import (
+    check_timeout_impl,
+    confirm_command_internal_impl,
+    emit_failure_alert_impl,
+    persist_terminal_status_impl,
+    wait_for_command_done_impl,
+)
+from infrastructure.command_tracker_runtime import (
+    close_notify_connection_impl,
+    handle_notify_payload_impl,
+    listen_command_statuses_impl,
+    on_command_status_notify_impl,
+    poll_command_statuses_impl,
+    restore_pending_commands_impl,
+    start_polling_impl,
+    stop_polling_impl,
+)
 from prometheus_client import Histogram, Counter, Gauge
 from decision_context import ContextLike, normalize_context
 
@@ -90,7 +83,19 @@ class CommandTracker:
         self.poll_interval = poll_interval
         self._timeout_tasks: Dict[str, asyncio.Task] = {}
         self._poll_task: Optional[asyncio.Task] = None
+        self._notify_task: Optional[asyncio.Task] = None
+        self._notify_conn: Optional[Any] = None
+        self._notify_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=10000)
         self._shutdown_event = asyncio.Event()
+        self._logger = logger
+        self._utcnow = utcnow
+        self._metrics = {
+            "COMMAND_LATENCY": COMMAND_LATENCY,
+            "COMMAND_SUCCESS": COMMAND_SUCCESS,
+            "COMMAND_FAILURE": COMMAND_FAILURE,
+            "COMMAND_TIMEOUT": COMMAND_TIMEOUT,
+            "PENDING_COMMANDS": PENDING_COMMANDS,
+        }
 
     @staticmethod
     def _normalize_utc_datetime(value: Any) -> datetime:
@@ -185,103 +190,7 @@ class CommandTracker:
         response: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None
     ):
-        """
-        Внутренний метод для подтверждения команды на основе статуса из БД.
-        
-        Args:
-            cmd_id: ID команды
-            status: Статус из БД ('DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED')
-            response: Ответ от узла (опционально)
-            error: Сообщение об ошибке (опционально)
-        """
-        command_info = self.pending_commands.pop(cmd_id, None)
-        if not command_info:
-            # Команда может быть не в pending, если уже обработана в конкурентной ветке
-            logger.debug(f"Command {cmd_id} not found in pending commands (may be already processed)")
-            return
-
-        zone_id = command_info['zone_id']
-        command_type = command_info['command_type']
-        
-        # Отменяем таймаут
-        timeout_task = self._timeout_tasks.pop(cmd_id, None)
-        current_task = asyncio.current_task()
-        if timeout_task is not None and timeout_task is not current_task and not timeout_task.done():
-            timeout_task.cancel()
-        
-        # Определяем успешность на основе статуса.
-        # ВАЖНО: closed-loop успех только при DONE.
-        # NO_EFFECT/BUSY/INVALID/ERROR/TIMEOUT/SEND_FAILED считаются неуспехом.
-        success = status == "DONE"
-        suppress_no_effect_alert = self._should_suppress_no_effect_alert(status, command_info)
-        
-        # Обновляем статус
-        command_info['status'] = status
-        command_info['completed_at'] = self._normalize_utc_datetime(utcnow())
-        command_info['sent_at'] = self._normalize_utc_datetime(command_info.get('sent_at'))
-        if response:
-            command_info['response'] = response
-        if error:
-            command_info['error'] = error
-        
-        # Вычисляем задержку
-        latency = (command_info['completed_at'] - command_info['sent_at']).total_seconds()
-        COMMAND_LATENCY.labels(zone_id=str(zone_id), command_type=command_type).observe(latency)
-        
-        # Обновляем метрики
-        PENDING_COMMANDS.labels(zone_id=str(zone_id)).dec()
-        
-        if success:
-            COMMAND_SUCCESS.labels(zone_id=str(zone_id), command_type=command_type).inc()
-        else:
-            reason = error or status
-            COMMAND_FAILURE.labels(zone_id=str(zone_id), command_type=command_type, reason=reason).inc()
-        
-        # Логируем результат
-        if success:
-            logger.info(
-                f"Zone {zone_id}: Command {cmd_id} completed successfully (status: {status})",
-                extra={
-                    'zone_id': zone_id,
-                    'cmd_id': cmd_id,
-                    'command_type': command_type,
-                    'status': status,
-                    'latency': latency
-                }
-            )
-        else:
-            if suppress_no_effect_alert:
-                logger.info(
-                    f"Zone {zone_id}: Command {cmd_id} completed with expected NO_EFFECT (command={command_type})",
-                    extra={
-                        'zone_id': zone_id,
-                        'cmd_id': cmd_id,
-                        'command_type': command_type,
-                        'status': status,
-                        'error': error,
-                        'latency': latency
-                    }
-                )
-            else:
-                logger.warning(
-                    f"Zone {zone_id}: Command {cmd_id} failed (status: {status}): {error}",
-                    extra={
-                        'zone_id': zone_id,
-                        'cmd_id': cmd_id,
-                        'command_type': command_type,
-                        'status': status,
-                        'error': error,
-                        'latency': latency
-                    }
-                )
-                await self._emit_failure_alert(
-                    zone_id=zone_id,
-                    cmd_id=cmd_id,
-                    status=status,
-                    command_info=command_info,
-                    error=error,
-                )
-        
+        await confirm_command_internal_impl(self, cmd_id=cmd_id, status=status, response=response, error=error)
 
     async def _emit_failure_alert(
         self,
@@ -292,41 +201,15 @@ class CommandTracker:
         command_info: Dict[str, Any],
         error: Optional[str],
     ) -> None:
-        command = command_info.get("command") or {}
-        node_uid = command.get("node_uid")
-        channel = command.get("channel")
-        cmd = command.get("cmd") or command_info.get("command_type")
-
-        status_upper = str(status).upper()
-        code_map = {
-            "SEND_FAILED": ("infra_command_send_failed", "critical"),
-            "TIMEOUT": ("infra_command_timeout", "critical"),
-            "ERROR": ("infra_command_failed", "error"),
-            "INVALID": ("infra_command_invalid", "error"),
-            "BUSY": ("infra_command_busy", "warning"),
-            "NO_EFFECT": ("infra_command_no_effect", "warning"),
-        }
-        code, severity = code_map.get(status_upper, ("infra_command_unknown_status", "error"))
-
-        await send_infra_alert(
-            code=code,
-            alert_type="Command Execution Failed",
-            message=f"Команда {cmd or 'unknown'} завершилась со статусом {status_upper}: {error or status_upper}",
-            severity=severity,
+        await emit_failure_alert_impl(
+            self,
             zone_id=zone_id,
-            service="automation-engine",
-            component="command_tracker",
-            node_uid=node_uid,
-            channel=channel,
-            cmd=cmd,
-            error_type=status_upper,
-            details={
-                "cmd_id": cmd_id,
-                "status": status_upper,
-                "error_message": error,
-            },
+            cmd_id=cmd_id,
+            status=status,
+            command_info=command_info,
+            error=error,
         )
-    
+
     async def confirm_command(
         self,
         cmd_id: str,
@@ -364,110 +247,10 @@ class CommandTracker:
         status: str,
         error: Optional[str],
     ) -> None:
-        """Персистит TIMEOUT/SEND_FAILED в commands и отправляет status-ack в Laravel."""
-        try:
-            transitioned = False
-            if status == "TIMEOUT":
-                transitioned = await mark_command_timeout(cmd_id)
-            elif status == "SEND_FAILED":
-                transitioned = await mark_command_send_failed(cmd_id, error_message=error)
+        await persist_terminal_status_impl(self, cmd_id=cmd_id, status=status, error=error)
 
-            if not transitioned:
-                return
-
-            command_info = self.pending_commands.get(cmd_id, {})
-            command_payload = command_info.get("command")
-            if not isinstance(command_payload, dict):
-                command_payload = {}
-            details = {
-                "zone_id": command_info.get("zone_id"),
-                "node_uid": command_payload.get("node_uid"),
-                "channel": command_payload.get("channel"),
-                "command": command_payload.get("cmd"),
-                "source": "automation-engine",
-                "status_origin": "command_tracker",
-                "error_code": status,
-                "error_message": error,
-            }
-            details = {k: v for k, v in details.items() if v is not None}
-            await send_status_to_laravel(cmd_id, status, details)
-        except Exception:
-            logger.warning(
-                "Failed to persist terminal status for cmd_id=%s status=%s",
-                cmd_id,
-                status,
-                exc_info=True,
-            )
-    
     async def _check_timeout(self, cmd_id: str):
-        """Проверить таймаут команды."""
-        try:
-            await asyncio.sleep(self.command_timeout)
-            
-            if cmd_id in self.pending_commands:
-                command_info = self.pending_commands[cmd_id]
-                # Проверяем статус в БД перед обработкой таймаута
-                db_status = await self._get_command_status_from_db(cmd_id)
-                
-                if db_status and db_status in ('DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED'):
-                    # Команда уже обработана в БД: проводим через единый confirm-путь,
-                    # чтобы не терять метрики/алерты/финализацию pending-состояния.
-                    normalized_status = str(db_status).upper()
-                    logger.debug(
-                        "Command %s already processed in DB (status: %s), confirming via tracker",
-                        cmd_id,
-                        normalized_status,
-                    )
-
-                    timeout_task = self._timeout_tasks.pop(cmd_id, None)
-                    current_task = asyncio.current_task()
-                    if timeout_task is not None and timeout_task is not current_task and not timeout_task.done():
-                        timeout_task.cancel()
-
-                    error = None
-                    if normalized_status in ('ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED'):
-                        error = f"Command {normalized_status}"
-
-                    await self._confirm_command_internal(cmd_id, normalized_status, error=error)
-                    return
-                
-                if command_info['status'] in ('QUEUED', 'SENT', 'ACK'):
-                    # Команда не завершена (в очереди, отправлена или принята, но еще не выполнена)
-                    zone_id = command_info['zone_id']
-                    command_type = command_info['command_type']
-                    
-                    logger.warning(
-                        f"Zone {zone_id}: Command {cmd_id} timed out after {self.command_timeout}s (status: {command_info['status']})",
-                        extra={
-                            'zone_id': zone_id,
-                            'cmd_id': cmd_id,
-                            'command_type': command_type,
-                            'timeout': self.command_timeout,
-                            'status': command_info['status']
-                        }
-                    )
-                    
-                    COMMAND_TIMEOUT.labels(zone_id=str(zone_id), command_type=command_type).inc()
-                    
-                    # Подтверждаем как timeout через public confirm-путь:
-                    # он персистит TIMEOUT в БД и отправляет status-ack в Laravel.
-                    await self.confirm_command_status(cmd_id, 'TIMEOUT', error='timeout')
-                    
-                    # Создаем событие
-                    await create_zone_event(
-                        zone_id,
-                        'COMMAND_TIMEOUT',
-                        {
-                            'cmd_id': cmd_id,
-                            'command': command_info['command'],
-                            'timeout_seconds': self.command_timeout
-                        }
-                    )
-        except asyncio.CancelledError:
-            # Таймаут отменен (команда подтверждена)
-            pass
-        except Exception as e:
-            logger.error(f"Error in timeout check for command {cmd_id}: {e}", exc_info=True)
+        await check_timeout_impl(self, cmd_id)
     
     async def _get_command_status_from_db(self, cmd_id: str) -> Optional[str]:
         """
@@ -491,6 +274,21 @@ class CommandTracker:
         except Exception as e:
             logger.debug(f"Failed to get command status from DB for {cmd_id}: {e}")
         return None
+
+    async def _fetch_rows(self, query: str, *args: Any) -> Any:
+        return await fetch(query, *args)
+
+    def _on_command_status_notify(self, _connection, _pid: int, _channel: str, payload: str) -> None:
+        on_command_status_notify_impl(self, payload)
+
+    async def _handle_notify_payload(self, payload: str) -> None:
+        await handle_notify_payload_impl(self, payload)
+
+    async def _listen_command_statuses(self) -> None:
+        await listen_command_statuses_impl(self)
+
+    async def _close_notify_connection(self) -> None:
+        await close_notify_connection_impl(self)
 
     async def get_command_outcome(self, cmd_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -526,136 +324,22 @@ class CommandTracker:
             return None
     
     async def _poll_command_statuses(self):
-        """
-        Периодически проверяет статусы команд из БД и обновляет внутреннее состояние.
-        
-        ВАЖНО: Обрабатываются только терминальные статусы (DONE, ERROR, INVALID, BUSY, NO_EFFECT, TIMEOUT, SEND_FAILED).
-        ACK не обрабатывается, так как это промежуточный статус.
-        """
-        while not self._shutdown_event.is_set():
-            try:
-                await asyncio.sleep(self.poll_interval)
-                
-                if not self.pending_commands:
-                    continue
-                
-                # Получаем список cmd_id для проверки
-                cmd_ids = list(self.pending_commands.keys())
-                
-                if not cmd_ids:
-                    continue
-                
-                # Проверяем статусы в БД батчами
-                try:
-                    rows = await fetch(
-                        """
-                        SELECT cmd_id, status, ack_at, failed_at, error_message
-                        FROM commands
-                        WHERE cmd_id = ANY($1::text[])
-                        AND status IN ('DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED')
-                        """,
-                        cmd_ids
-                    )
-                    
-                    # Обрабатываем обновленные команды
-                    for row in rows:
-                        cmd_id = row['cmd_id']
-                        status = row['status']
-                        
-                        if cmd_id in self.pending_commands:
-                            # Команда завершена, обновляем состояние
-                            error = None
-                            if status in ('ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'):
-                                error = row.get('error_message') or f'Command {status}'
-                            
-                            await self._confirm_command_internal(cmd_id, status, error=error)
-                            
-                except Exception as e:
-                    logger.warning(f"Error polling command statuses from DB: {e}", exc_info=True)
-                    
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in command status polling loop: {e}", exc_info=True)
-                await asyncio.sleep(self.poll_interval)
+        await poll_command_statuses_impl(self)
     
     async def start_polling(self):
         """Запустить периодическую проверку статусов команд из БД."""
-        if self._poll_task is None or self._poll_task.done():
-            self._shutdown_event.clear()
-            self._poll_task = asyncio.create_task(self._poll_command_statuses())
-            logger.info(f"Started command status polling (interval: {self.poll_interval}s)")
+        await start_polling_impl(self)
     
     async def stop_polling(self):
-        """Остановить периодическую проверку статусов команд."""
-        self._shutdown_event.set()
-        if self._poll_task and not self._poll_task.done():
-            self._poll_task.cancel()
-            try:
-                await self._poll_task
-            except asyncio.CancelledError:
-                pass
-            logger.info("Stopped command status polling")
+        """Остановить периодическую проверку статусов команд и LISTEN-подписку."""
+        await stop_polling_impl(self)
     
     async def restore_pending_commands(self):
         """
         Восстановить pending команды из БД после рестарта.
         Загружает команды со статусами 'QUEUED', 'SENT' или 'ACK', которые были отправлены недавно.
         """
-        try:
-            # Загружаем команды, которые были отправлены в последние command_timeout секунд
-            rows = await fetch(
-                """
-                SELECT cmd_id, zone_id, cmd, params, status, sent_at, created_at
-                FROM commands
-                WHERE status IN ('QUEUED', 'SENT', 'ACK')
-                AND (
-                    (sent_at IS NOT NULL AND sent_at > NOW() - ($1 * INTERVAL '1 second'))
-                    OR (sent_at IS NULL AND created_at > NOW() - ($2 * INTERVAL '1 second'))
-                )
-                ORDER BY created_at DESC, cmd_id DESC
-                LIMIT 1000
-                """,
-                self.command_timeout,
-                self.command_timeout
-            )
-            
-            restored_count = 0
-            for row in rows:
-                cmd_id = row['cmd_id']
-                zone_id = row['zone_id']
-                cmd = row['cmd']
-                params = row.get('params') or {}
-                status = row['status']
-                sent_at = row.get('sent_at') or row.get('created_at')
-                
-                # Восстанавливаем команду в pending_commands
-                command_info = {
-                    'cmd_id': cmd_id,
-                    'zone_id': zone_id,
-                    'command': {'cmd': cmd, 'params': params},
-                    'command_type': cmd,
-                    'sent_at': self._normalize_utc_datetime(sent_at),
-                    'status': status,
-                    'context': {}
-                }
-                
-                self.pending_commands[cmd_id] = command_info
-                PENDING_COMMANDS.labels(zone_id=str(zone_id)).inc()
-                
-                # Устанавливаем таймаут
-                timeout_task = asyncio.create_task(self._check_timeout(cmd_id))
-                self._timeout_tasks[cmd_id] = timeout_task
-                
-                restored_count += 1
-            
-            if restored_count > 0:
-                logger.info(f"Restored {restored_count} pending commands from DB after restart")
-            else:
-                logger.debug("No pending commands to restore from DB")
-                
-        except Exception as e:
-            logger.warning(f"Failed to restore pending commands from DB: {e}", exc_info=True)
+        await restore_pending_commands_impl(self)
     
     async def wait_for_command_done(
         self,
@@ -680,33 +364,12 @@ class CommandTracker:
             False если команда завершилась со статусом NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
             None если истек таймаут
         """
-        if timeout_sec is None:
-            timeout_sec = self.command_timeout
-        
-        start_time = time.monotonic()
-        
-        while (time.monotonic() - start_time) < timeout_sec:
-            db_status = await self._get_command_status_from_db(cmd_id)
-            
-            if db_status == "DONE":
-                # Команда успешно завершена.
-                if cmd_id in self.pending_commands:
-                    await self._confirm_command_internal(cmd_id, db_status)
-                return True
-            
-            if db_status in ("NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"):
-                # Команда завершилась неуспешно.
-                if cmd_id in self.pending_commands:
-                    error = f"Command {db_status}"
-                    await self._confirm_command_internal(cmd_id, db_status, error=error)
-                return False
-            
-            # Промежуточные статусы (QUEUED, SENT, ACK) - продолжаем ждать
-            await asyncio.sleep(poll_interval_sec)
-        
-        # Таймаут
-        logger.warning(f"Timeout waiting for command {cmd_id} to complete (waited {timeout_sec}s)")
-        return None
+        return await wait_for_command_done_impl(
+            self,
+            cmd_id=cmd_id,
+            timeout_sec=timeout_sec,
+            poll_interval_sec=poll_interval_sec,
+        )
     
     async def get_pending_commands(self, zone_id: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
         """

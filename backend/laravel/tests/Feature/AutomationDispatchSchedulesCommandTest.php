@@ -10,6 +10,7 @@ use App\Services\EffectiveTargetsService;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\RefreshDatabase;
@@ -35,25 +36,15 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/scheduler/bootstrap')) {
-                return Http::response([
-                    'status' => 'ok',
-                    'data' => [
-                        'bootstrap_status' => 'ready',
-                        'lease_id' => 'lease-test-1',
-                    ],
-                ], 200);
-            }
-
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/scheduler/task')) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
                         'task_id' => 'st-accepted-1',
                         'zone_id' => $zone->id,
-                        'task_type' => 'irrigation',
-                        'status' => 'accepted',
-                        'is_duplicate' => false,
+                        'accepted' => true,
+                        'runner_state' => 'active',
+                        'deduplicated' => false,
                     ],
                 ], 200);
             }
@@ -74,6 +65,11 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'zone_id' => $zone->id,
             'catchup_policy' => 'replay_limited',
         ]);
+        $this->assertDatabaseCount('zone_automation_intents', 1);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'status' => 'pending',
+        ]);
 
         $task = LaravelSchedulerActiveTask::query()
             ->where('task_id', 'st-accepted-1')
@@ -84,20 +80,15 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertArrayHasKey('schedule_key', $task->details ?? []);
 
         Http::assertSent(function (Request $request) use ($zone): bool {
-            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/scheduler/task'))) {
+            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle'))) {
                 return false;
             }
 
             $payload = $request->data();
-            $correlationId = (string) ($payload['correlation_id'] ?? '');
-            $taskPayload = is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
-            $scheduleKey = (string) ($taskPayload['schedule_key'] ?? '');
+            $idempotencyKey = (string) ($payload['idempotency_key'] ?? '');
 
-            return (int) ($payload['zone_id'] ?? 0) === $zone->id
-                && (string) ($payload['task_type'] ?? '') === 'irrigation'
-                && str_starts_with($correlationId, 'sch:z'.$zone->id.':irrigation:')
-                && isset($payload['due_at'], $payload['expires_at'])
-                && str_contains($scheduleKey, 'zone:'.$zone->id.'|type:irrigation');
+            return (string) ($payload['source'] ?? '') === 'laravel_scheduler'
+                && str_starts_with($idempotencyKey, 'sch:z'.$zone->id.':irrigation:');
         });
     }
 
@@ -108,20 +99,8 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 2);
 
         $postCalls = 0;
-        $pollCalls = 0;
-
-        Http::fake(function (Request $request) use ($zone, &$postCalls, &$pollCalls) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/scheduler/bootstrap')) {
-                return Http::response([
-                    'status' => 'ok',
-                    'data' => [
-                        'bootstrap_status' => 'ready',
-                        'lease_id' => 'lease-recovery',
-                    ],
-                ], 200);
-            }
-
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/scheduler/task')) {
+        Http::fake(function (Request $request) use ($zone, &$postCalls) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
                 $postCalls++;
                 $taskId = $postCalls === 1 ? 'st-recovery-old' : 'st-recovery-new';
 
@@ -130,22 +109,9 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
                     'data' => [
                         'task_id' => $taskId,
                         'zone_id' => $zone->id,
-                        'task_type' => 'irrigation',
-                        'status' => 'accepted',
-                    ],
-                ], 200);
-            }
-
-            if ($request->method() === 'GET' && str_ends_with($request->url(), '/scheduler/task/st-recovery-old')) {
-                $pollCalls++;
-
-                return Http::response([
-                    'status' => 'ok',
-                    'data' => [
-                        'task_id' => 'st-recovery-old',
-                        'zone_id' => $zone->id,
-                        'task_type' => 'irrigation',
-                        'status' => 'completed',
+                        'accepted' => true,
+                        'runner_state' => 'active',
+                        'deduplicated' => false,
                     ],
                 ], 200);
             }
@@ -160,31 +126,89 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'task_id' => 'st-recovery-old',
             'status' => 'accepted',
         ]);
+        $this->assertDatabaseCount('zone_automation_intents', 1);
 
         Cache::flush();
+        $this->travel(130)->seconds();
 
         $this->artisan('automation:dispatch-schedules')
             ->assertExitCode(0);
 
         $this->assertSame(2, $postCalls);
-        $this->assertSame(1, $pollCalls);
 
         $oldTask = LaravelSchedulerActiveTask::query()
             ->where('task_id', 'st-recovery-old')
             ->first();
         $this->assertNotNull($oldTask);
-        $this->assertSame('completed', $oldTask->status);
-        $this->assertNotNull($oldTask->terminal_at);
-        $this->assertSame(
-            'automation_engine_status_poll',
-            (string) (($oldTask->details ?? [])['terminal_source'] ?? '')
-        );
+        $this->assertSame('accepted', $oldTask->status);
+        $this->assertNull($oldTask->terminal_at);
 
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
             'task_id' => 'st-recovery-new',
             'zone_id' => $zone->id,
             'status' => 'accepted',
         ]);
+        $this->assertDatabaseCount('zone_automation_intents', 2);
+    }
+
+    public function test_command_marks_task_terminal_when_intent_completed(): void
+    {
+        $this->enableSchedulerConfig();
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 2);
+
+        $postCalls = 0;
+        Http::fake(function (Request $request) use ($zone, &$postCalls) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                $postCalls++;
+
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                        'runner_state' => 'active',
+                        'deduplicated' => false,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        $firstTask = LaravelSchedulerActiveTask::query()->orderBy('id')->first();
+        $this->assertNotNull($firstTask);
+        $firstTaskId = (string) $firstTask->task_id;
+        $this->assertMatchesRegularExpression('/^intent-\d+$/', $firstTaskId);
+
+        $intentId = (int) str_replace('intent-', '', $firstTaskId);
+        DB::table('zone_automation_intents')
+            ->where('id', $intentId)
+            ->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        Cache::flush();
+        $this->travel(61)->seconds();
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        $this->assertSame(2, $postCalls);
+        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+            'task_id' => $firstTaskId,
+            'status' => 'completed',
+        ]);
+        $completedTask = LaravelSchedulerActiveTask::query()
+            ->where('task_id', $firstTaskId)
+            ->first();
+        $this->assertNotNull($completedTask);
+        $this->assertNotNull($completedTask->terminal_at);
     }
 
     private function enableSchedulerConfig(): void

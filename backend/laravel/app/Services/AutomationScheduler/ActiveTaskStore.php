@@ -4,6 +4,7 @@ namespace App\Services\AutomationScheduler;
 
 use App\Models\LaravelSchedulerActiveTask;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class ActiveTaskStore
@@ -16,6 +17,7 @@ class ActiveTaskStore
         'expired',
         'timeout',
         'error',
+        'cancelled',
         'not_found',
     ];
 
@@ -118,6 +120,31 @@ class ActiveTaskStore
             ]);
 
             return null;
+        }
+    }
+
+    /**
+     * @return Collection<int, LaravelSchedulerActiveTask>
+     */
+    public function listPendingForPolling(int $limit = 500): Collection
+    {
+        $limit = max(1, $limit);
+
+        try {
+            return LaravelSchedulerActiveTask::query()
+                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->orderByRaw('last_polled_at IS NULL DESC')
+                ->orderBy('last_polled_at')
+                ->orderBy('accepted_at')
+                ->limit($limit)
+                ->get();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to list laravel scheduler pending tasks for polling', [
+                'limit' => $limit,
+                'error' => $e->getMessage(),
+            ]);
+
+            return collect();
         }
     }
 
@@ -229,4 +256,3 @@ class ActiveTaskStore
         return in_array($status, self::TERMINAL_STATUSES, true);
     }
 }
-

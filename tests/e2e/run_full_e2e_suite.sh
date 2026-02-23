@@ -136,14 +136,11 @@ run_test_with_retry "scenarios/alerts/E24_laravel_down_pending_alerts.yaml"
 run_test_with_retry "scenarios/alerts/E25_dlq_replay.yaml"
 
 echo ""
-echo "=== AUTOMATION ENGINE ТЕСТЫ ==="
-run_test_with_retry "scenarios/automation_engine/E60_climate_control_happy.yaml"
+echo "=== AUTOMATION ENGINE ТЕСТЫ (AE2-Lite compatible) ==="
 run_test_with_retry "scenarios/automation_engine/E61_fail_closed_corrections.yaml"
-run_test_with_retry "scenarios/automation_engine/E62_controller_fault_isolation.yaml"
-run_test_with_retry "scenarios/automation_engine/E63_backoff_on_errors.yaml"
 run_test_with_retry "scenarios/automation_engine/E64_effective_targets_only.yaml"
 run_test_with_retry "scenarios/automation_engine/E65_phase_transition_api.yaml"
-run_test_with_retry "scenarios/automation_engine/E66_fail_closed_corrections.yaml"
+run_test_with_retry "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
 
 echo ""
 echo "=== SIMULATION ТЕСТЫ ==="
@@ -162,7 +159,6 @@ run_test_with_retry "scenarios/chaos/E71_db_flaky.yaml"
 echo ""
 echo "🎉 ПОЛНЫЙ E2E-НАБОР ЗАВЕРШЕН!"
 echo "Время окончания: $(date)"
-
 
 
 

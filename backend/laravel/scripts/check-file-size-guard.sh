@@ -3,6 +3,7 @@ set -euo pipefail
 
 MAX_LINES="${MAX_FILE_LINES:-900}"
 MAX_INCREASE="${MAX_FILE_LINES_INCREASE:-30}"
+EXCEPTIONS_FILE="${FILE_SIZE_GUARD_EXCEPTIONS_FILE:-backend/laravel/scripts/file-size-guard-exceptions.txt}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -94,6 +95,35 @@ trim_space() {
   tr -d '[:space:]'
 }
 
+get_exception_limit() {
+  local file="$1"
+  local normalized_file="$file"
+  local exceptions_path="${REPO_ROOT}/${EXCEPTIONS_FILE}"
+
+  if [[ ! -f "$exceptions_path" ]]; then
+    return 1
+  fi
+
+  while IFS='|' read -r pattern limit; do
+    pattern="$(echo -n "${pattern:-}" | xargs || true)"
+    limit="$(echo -n "${limit:-}" | xargs || true)"
+
+    if [[ -z "$pattern" ]] || [[ "$pattern" =~ ^# ]]; then
+      continue
+    fi
+
+    if [[ "$normalized_file" == "$pattern" ]]; then
+      if [[ "$limit" =~ ^[0-9]+$ ]]; then
+        echo "$limit"
+        return 0
+      fi
+      return 1
+    fi
+  done < "$exceptions_path"
+
+  return 1
+}
+
 if [[ "$MODE" == "working-tree" ]]; then
   BASE_REF="HEAD"
 else
@@ -134,6 +164,16 @@ for file in "${changed_files[@]}"; do
 
   if (( current_lines <= MAX_LINES )); then
     echo "[file-size-guard] OK: ${file} (${current_lines} lines)"
+    continue
+  fi
+
+  exception_limit=""
+  if exception_limit="$(get_exception_limit "$file")"; then
+    if (( current_lines <= exception_limit )); then
+      echo "[file-size-guard] EXCEPTION: ${file} (${current_lines} lines, allowed up to ${exception_limit})"
+      continue
+    fi
+    violations+=("${file}: ${current_lines} lines exceeds exception_limit=${exception_limit}")
     continue
   fi
 

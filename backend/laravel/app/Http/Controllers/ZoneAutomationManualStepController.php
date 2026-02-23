@@ -97,7 +97,7 @@ class ZoneAutomationManualStepController extends Controller
         /** @var Response $response */
         $response = Http::acceptJson()
             ->timeout($timeout)
-            ->post("{$apiUrl}/zones/{$zoneId}/automation/manual-step", $payload);
+            ->post("{$apiUrl}/zones/{$zoneId}/manual-step", $payload);
 
         $response->throw();
 

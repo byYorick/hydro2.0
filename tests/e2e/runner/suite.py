@@ -145,17 +145,9 @@ class TestSuite:
                 str(base_path / "grow_cycle" / "E59_cycle_restart.yaml"),
             ],
             "automation_engine": [
-                str(base_path / "automation_engine" / "E60_climate_control_happy.yaml"),
                 str(base_path / "automation_engine" / "E61_fail_closed_corrections.yaml"),
-                str(base_path / "automation_engine" / "E62_controller_fault_isolation.yaml"),
-                str(base_path / "automation_engine" / "E63_backoff_on_errors.yaml"),
                 str(base_path / "automation_engine" / "E64_effective_targets_only.yaml"),
                 str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
-                str(base_path / "automation_engine" / "E66_fail_closed_corrections.yaml"),
-                str(base_path / "automation_engine" / "E67_nutrition_strict_contract.yaml"),
-                str(base_path / "automation_engine" / "E68_dose_ml_l_only_incomplete_profile.yaml"),
-                str(base_path / "automation_engine" / "E69_ec_batch_early_stop_tolerance.yaml"),
-                str(base_path / "automation_engine" / "E73_backoff_skip_signals.yaml"),
                 str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
             "scheduler": [

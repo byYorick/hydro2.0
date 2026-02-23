@@ -1,0 +1,23 @@
+# AE2-Lite runtime limits and feature flags.
+# Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+timeouts:
+  command_timeout_sec: 300
+  start_cycle_due_sec: 60
+  start_cycle_expires_sec: 900
+
+polling:
+  pending_commands_interval_sec: 1
+  active_zones_interval_sec: 2
+  passive_zones_interval_sec: 10
+
+freshness:
+  ph_ec_max_age_sec: 300
+  correction_flags_max_age_sec: 60
+  irr_state_max_age_sec: 30
+  level_switch_max_age_sec: 120
+
+rate_limit:
+  start_cycle_max_requests: 30
+  start_cycle_window_sec: 10
+  start_cycle_enabled: true

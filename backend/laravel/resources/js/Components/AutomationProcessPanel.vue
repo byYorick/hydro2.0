@@ -7,6 +7,7 @@
       :is-process-active="isProcessActive"
       :progress-summary="progressSummary"
       :error-message="errorMessage"
+      :warning-message="connectivityWarning"
       :setup-stages="setupStages"
       :current-setup-stage-label="currentSetupStageLabel"
     />
@@ -58,6 +59,7 @@ const emit = defineEmits<{
 const {
   automationState,
   errorMessage,
+  connectivityWarning,
   flowOffset,
   stateCode,
   stateLabel,

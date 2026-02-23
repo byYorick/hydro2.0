@@ -16,7 +16,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
     {
         $zone = Zone::factory()->create();
 
-        $response = $this->postJson("/api/zones/{$zone->id}/automation/manual-step");
+        $response = $this->postJson("/api/zones/{$zone->id}/manual-step");
 
         $response->assertStatus(401);
     }
@@ -29,7 +29,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/manual-step", [
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
                 'manual_step' => 'clean_fill_start',
             ]);
 
@@ -43,7 +43,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/manual-step" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/manual-step" => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
@@ -56,7 +56,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/manual-step", [
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
                 'manual_step' => 'clean_fill_start',
             ]);
 
@@ -75,7 +75,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/manual-step", [
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
                 'manual_step' => 'invalid_step',
             ]);
 
@@ -89,7 +89,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/manual-step" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/manual-step" => Http::response([
                 'status' => 'error',
                 'code' => 'manual_step_forbidden_in_auto_mode',
                 'message' => 'manual step disabled in auto mode',
@@ -98,7 +98,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/manual-step", [
+            ->postJson("/api/zones/{$zone->id}/manual-step", [
                 'manual_step' => 'clean_fill_start',
             ]);
 

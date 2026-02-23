@@ -29,6 +29,7 @@ from application.sensor_mode_dispatch import (
 from application.executor_run import (
     run_scheduler_executor_execute as policy_run_scheduler_executor_execute,
 )
+from application.scheduler_executor_bindings import apply_scheduler_executor_bindings
 from application.executor_init import (
     initialize_executor_components as policy_initialize_executor_components,
 )
@@ -287,112 +288,6 @@ class SchedulerTaskExecutor:
         self.send_infra_alert_fn = send_infra_alert
         self.enqueue_internal_scheduler_task_fn = enqueue_internal_scheduler_task
 
-    _enqueue_two_tank_check = bound_enqueue_two_tank_check
-    _create_zone_event_safe = bound_create_zone_event_safe
-    _sync_zone_workflow_phase_core = bound_sync_zone_workflow_phase_core
-    _emit_task_event = bound_emit_task_event
-    _update_zone_workflow_phase = bound_update_zone_workflow_phase
-    _publish_batch = bound_publish_batch
-    _enqueue_decision_retry = bound_enqueue_decision_retry
-    _ensure_extended_outcome = bound_ensure_extended_outcome
-    _execute_diagnostics_task = bound_execute_diagnostics_task
-    _dispatch_diagnostics_workflow = bound_dispatch_diagnostics_workflow
-    _compensate_two_tank_start_enqueue_failure = bound_compensate_two_tank_start_enqueue_failure
-    _merge_with_sensor_mode_deactivate = bound_merge_with_sensor_mode_deactivate
-    _try_start_two_tank_irrigation_recovery_from_irrigation_failure = (
-        bound_try_start_two_tank_irrigation_recovery_from_irrigation_failure
-    )
-    _start_two_tank_clean_fill = bound_start_two_tank_clean_fill
-    _start_two_tank_solution_fill = bound_start_two_tank_solution_fill
-    _start_two_tank_prepare_recirculation = bound_start_two_tank_prepare_recirculation
-    _start_two_tank_irrigation_recovery = bound_start_two_tank_irrigation_recovery
-    _execute_two_tank_startup_workflow = bound_execute_two_tank_startup_workflow
-    _execute_two_tank_startup_workflow_core = bound_execute_two_tank_startup_workflow_core
-    _execute_three_tank_startup_workflow = bound_execute_three_tank_startup_workflow
-    _execute_three_tank_startup_workflow_core = bound_execute_three_tank_startup_workflow_core
-    _execute_cycle_start_workflow = bound_execute_cycle_start_workflow
-    _execute_cycle_start_workflow_core = bound_execute_cycle_start_workflow_core
-    _execute_diagnostics = bound_execute_diagnostics
-    _resolve_required_node_types = bound_resolve_required_node_types
-    _resolve_clean_tank_threshold = bound_resolve_clean_tank_threshold
-    _resolve_refill_duration_ms = bound_resolve_refill_duration_ms
-    _resolve_refill_attempt = bound_resolve_refill_attempt
-    _resolve_refill_started_at = bound_resolve_refill_started_at
-    _resolve_refill_timeout_at = bound_resolve_refill_timeout_at
-    _build_refill_check_payload = bound_build_refill_check_payload
-    _check_required_nodes_online = bound_check_required_nodes_online
-    _read_clean_tank_level = bound_read_clean_tank_level
-    _resolve_refill_command = bound_resolve_refill_command
-    _emit_cycle_alert = bound_emit_cycle_alert
-    _build_two_tank_check_payload = bound_build_two_tank_check_payload
-    _log_two_tank_safety_guard = bound_log_two_tank_safety_guard
-    _build_two_tank_stop_not_confirmed_result = bound_build_two_tank_stop_not_confirmed_result
-    _decide_action = staticmethod(bound_decide_action)
-    _safe_float = staticmethod(bound_safe_float)
-    _safe_int = staticmethod(bound_safe_int)
-    _safe_bool = staticmethod(bound_safe_bool)
-    _extract_nested_metric = staticmethod(bound_extract_nested_metric)
-    _extract_nested_bool = staticmethod(bound_extract_nested_bool)
-    _extract_retry_attempt = staticmethod(bound_extract_retry_attempt)
-    _decide_irrigation_action = staticmethod(bound_decide_irrigation_action)
-    _extract_next_due_at = staticmethod(bound_extract_next_due_at)
-    _build_decision_retry_correlation_id = staticmethod(bound_build_decision_retry_correlation_id)
-    _extract_two_tank_chemistry_orchestration = staticmethod(bound_extract_two_tank_chemistry_orchestration)
-    _normalize_workflow_stage = staticmethod(bound_normalize_workflow_stage)
-    _normalize_workflow_phase = staticmethod(bound_normalize_workflow_phase)
-    _terminal_status_to_error_code = staticmethod(bound_terminal_status_to_error_code)
-    _extract_duration_sec = staticmethod(bound_extract_duration_sec)
-    _resolve_command_name = staticmethod(bound_resolve_command_name)
-    _resolve_command_params = staticmethod(bound_resolve_command_params)
-    _extract_execution_config = staticmethod(bound_extract_execution_config)
-    _extract_refill_config = staticmethod(bound_extract_refill_config)
-    _extract_payload_contract_version = staticmethod(bound_extract_payload_contract_version)
-    _is_supported_payload_contract_version = staticmethod(bound_is_supported_payload_contract_version)
-    _extract_topology = staticmethod(bound_extract_topology)
-    _to_optional_float = staticmethod(bound_to_optional_float)
-    _with_decision_details = staticmethod(bound_with_decision_details)
-    _resolve_int = staticmethod(bound_resolve_int)
-    _resolve_float = staticmethod(bound_resolve_float)
-    _normalize_labels = staticmethod(bound_normalize_labels)
-    _canonical_sensor_label = staticmethod(bound_canonical_sensor_label)
-    _merge_dict_recursive = staticmethod(bound_merge_dict_recursive)
-    _normalize_text_list = staticmethod(bound_normalize_text_list)
-    _normalize_node_type_list = staticmethod(bound_normalize_node_type_list)
-    _extract_workflow = bound_extract_workflow
-    _is_cycle_start_workflow = bound_is_cycle_start_workflow
-    _normalize_two_tank_workflow = bound_normalize_two_tank_workflow
-    _is_two_tank_startup_workflow = bound_is_two_tank_startup_workflow
-    _is_three_tank_startup_workflow = bound_is_three_tank_startup_workflow
-    _default_two_tank_command_plan = bound_default_two_tank_command_plan
-    _normalize_command_plan = bound_normalize_command_plan
-    _resolve_two_tank_runtime_config = bound_resolve_two_tank_runtime_config
-    _build_diagnostics_invalid_payload_result = bound_build_diagnostics_invalid_payload_result
-    _get_zone_nodes = bound_get_zone_nodes
-    _read_level_switch = bound_read_level_switch
-    _read_latest_metric = bound_read_latest_metric
-    _is_value_within_pct = bound_is_value_within_pct
-    _evaluate_ph_ec_targets = bound_evaluate_ph_ec_targets
-    _find_zone_event_since = bound_find_zone_event_since
-    _resolve_online_node_for_channel = bound_resolve_online_node_for_channel
-    _dispatch_sensor_mode_command_for_nodes = bound_dispatch_sensor_mode_command_for_nodes
-    _merge_command_dispatch_results = staticmethod(bound_merge_command_dispatch_results)
-    _dispatch_two_tank_command_plan = bound_dispatch_two_tank_command_plan
-    _dispatch_two_tank_command_plan_core = bound_dispatch_two_tank_command_plan_core
-    _two_tank_safety_guards_enabled = staticmethod(bound_two_tank_safety_guards_enabled)
-    _execute_device_task = bound_execute_device_task
-    _execute_device_task_core = bound_execute_device_task_core
-    _apply_ventilation_climate_guards = bound_apply_ventilation_climate_guards
-    _build_two_tank_runtime_payload = bound_build_two_tank_runtime_payload
-    _requires_explicit_workflow = staticmethod(bound_requires_explicit_workflow)
-    _tank_state_machine_enabled = staticmethod(bound_tank_state_machine_enabled)
-    _telemetry_freshness_enforce = staticmethod(bound_telemetry_freshness_enforce)
-    _telemetry_freshness_max_age_sec = staticmethod(bound_telemetry_freshness_max_age_sec)
-    _extract_workflow_hint = staticmethod(bound_extract_workflow_hint)
-    _derive_workflow_phase = staticmethod(bound_derive_workflow_phase)
-    _build_workflow_state_payload = staticmethod(bound_build_workflow_state_payload)
-    _resolve_workflow_stage_for_state_sync = staticmethod(bound_resolve_workflow_stage_for_state_sync)
-    _sync_zone_workflow_phase = bound_sync_zone_workflow_phase
-
     async def execute(
         self,
         *,
@@ -415,3 +310,6 @@ class SchedulerTaskExecutor:
             auto_logic_extended_outcome_v1=AUTO_LOGIC_EXTENDED_OUTCOME_V1,
             workflow_phase_irrigating=WORKFLOW_PHASE_IRRIGATING,
         )
+
+
+apply_scheduler_executor_bindings(SchedulerTaskExecutor, globals())

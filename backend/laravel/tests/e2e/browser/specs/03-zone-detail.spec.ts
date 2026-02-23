@@ -155,7 +155,7 @@ test.describe('Zone Detail', () => {
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
 
       await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
       await page.getByRole('button', { name: 'Открыть' }).first().click();
@@ -265,7 +265,7 @@ test.describe('Zone Detail', () => {
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
 
       const schedulerPresetSelect = page
         .locator('select')

@@ -33,7 +33,6 @@ use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneAutomationLogicProfileController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
-use App\Http\Controllers\ZoneAutomationManualResumeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
@@ -313,13 +312,11 @@ Route::middleware([
 
     // Commands status (viewer+)
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
-    Route::get('zones/{zone}/automation-state', [ZoneAutomationStateController::class, 'show']);
-    Route::get('zones/{zone}/automation/control-mode', [ZoneAutomationControlModeController::class, 'show']);
-    Route::post('zones/{zone}/automation/manual-resume', [ZoneAutomationManualResumeController::class, 'store'])
+    Route::get('zones/{zone}/state', [ZoneAutomationStateController::class, 'show']);
+    Route::get('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'show']);
+    Route::post('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'update'])
         ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/automation/control-mode', [ZoneAutomationControlModeController::class, 'update'])
-        ->middleware('role:operator,admin,agronomist,engineer');
-    Route::post('zones/{zone}/automation/manual-step', [ZoneAutomationManualStepController::class, 'store'])
+    Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
     Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);

@@ -120,16 +120,21 @@ Response (пример):
 
 ## 4.2. Laravel -> Automation-engine (upstream)
 
-`POST /zones/{zone_id}/automation/manual-resume`
+LEGACY / SUPERSEDED: путь `POST /zones/{zone_id}/automation/manual-resume` удален в AE2-Lite.
 
-Назначение: снять блокировку `manual_ack_required` и возобновить workflow/recovery.
+Актуальные endpoint:
+- `POST /zones/{zone_id}/start-cycle` (wake-up)
+- `POST /zones/{zone_id}/control-mode`
+- `POST /zones/{zone_id}/manual-step`
+
+Источник истины: `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
 
 ## 4.3. UI поведение
 
 - Если у текущей задачи `reason_code=manual_ack_required_after_retries`, UI обязан показать кнопку подтверждения.
 - По клику:
-  - отправить `manual_resume`;
-  - обновить `scheduler-task` и `automation-state`;
+  - переключить `control-mode` и/или отправить `manual-step` (в зависимости от сценария);
+  - обновить `scheduler-task` и `state`;
   - показать результат (`accepted/rejected/failed`).
 
 ---

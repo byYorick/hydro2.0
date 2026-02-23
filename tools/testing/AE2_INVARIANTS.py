@@ -20,6 +20,27 @@ class Violation:
 
 IGNORED_DIRS = {"__pycache__", ".venv", ".mypy_cache", ".pytest_cache"}
 
+REMOVED_LEGACY_E2E_SCENARIOS = (
+    "E60_climate_control_happy.yaml",
+    "E62_controller_fault_isolation.yaml",
+    "E63_backoff_on_errors.yaml",
+    "E66_fail_closed_corrections.yaml",
+    "E68_dose_ml_l_only_incomplete_profile.yaml",
+    "E69_ec_batch_early_stop_tolerance.yaml",
+    "E73_backoff_skip_signals.yaml",
+    "E75_two_tank_fill_contract.yaml",
+)
+
+REQUIRED_AE2_E2E_SCENARIOS = (
+    "E61_fail_closed_corrections.yaml",
+    "E64_effective_targets_only.yaml",
+    "E65_phase_transition_api.yaml",
+    "E74_node_zone_mismatch_guard.yaml",
+)
+
+AE2_FILE_LINE_LIMIT = 400
+AE2_LEGACY_OVER_LIMIT_ALLOWLIST = ()
+
 
 def _iter_python_files(base: Path) -> Iterable[Path]:
     for path in base.rglob("*.py"):
@@ -56,13 +77,16 @@ def check_history_logger_publish_path(repo_root: Path) -> List[Violation]:
     """
     check_name = "history_logger_single_publish_path"
     ae_root = repo_root / "backend/services/automation-engine"
-    allowed = ae_root / "infrastructure/command_bus.py"
+    allowed = {
+        ae_root / "infrastructure/command_bus.py",
+        ae_root / "infrastructure/command_bus_publish.py",
+    }
     violations: List[Violation] = []
 
     for path in _iter_python_files(ae_root):
         if _is_test_file(path, repo_root):
             continue
-        if path == allowed:
+        if path in allowed:
             continue
         text = _read_text(path)
         if "/commands" in text and ("history_logger" in text or "history-logger" in text):
@@ -70,7 +94,10 @@ def check_history_logger_publish_path(repo_root: Path) -> List[Violation]:
                 Violation(
                     check=check_name,
                     path=path,
-                    message="Найден reference history-logger publish endpoint вне infrastructure/command_bus.py",
+                    message=(
+                        "Найден reference history-logger publish endpoint "
+                        "вне infrastructure/command_bus.py|command_bus_publish.py"
+                    ),
                 )
             )
     return violations
@@ -169,12 +196,157 @@ def check_no_sql_ddl_in_python_services(repo_root: Path) -> List[Violation]:
     return violations
 
 
+def check_legacy_e2e_scenarios_removed(repo_root: Path) -> List[Violation]:
+    check_name = "legacy_e2e_scenarios_removed"
+    scenarios_root = repo_root / "tests/e2e/scenarios/automation_engine"
+    violations: List[Violation] = []
+
+    for scenario in REMOVED_LEGACY_E2E_SCENARIOS:
+        path = scenarios_root / scenario
+        if path.exists():
+            violations.append(
+                Violation(
+                    check=check_name,
+                    path=path,
+                    message="Legacy scenario должен быть удален из active tree",
+                )
+            )
+    return violations
+
+
+def check_e2e_runner_publish_only_hook(repo_root: Path) -> List[Violation]:
+    check_name = "e2e_runner_publish_only_hook"
+    runner_path = repo_root / "tests/e2e/runner/e2e_runner.py"
+    violations: List[Violation] = []
+
+    if not runner_path.exists():
+        return [
+            Violation(
+                check=check_name,
+                path=runner_path,
+                message="Отсутствует tests/e2e/runner/e2e_runner.py",
+            )
+        ]
+
+    text = _read_text(runner_path)
+
+    if "/test/hook" in text:
+        violations.append(
+            Violation(
+                check=check_name,
+                path=runner_path,
+                message="Найден legacy /test/hook reference; разрешен только history-logger /commands",
+            )
+        )
+
+    if "supports only action=publish_command" not in text:
+        violations.append(
+            Violation(
+                check=check_name,
+                path=runner_path,
+                message="Не найден guard publish-only для ae_test_hook",
+            )
+        )
+
+    forbidden_actions = ("inject_error", "clear_error", "reset_backoff", "set_state")
+    for action in forbidden_actions:
+        if action in text:
+            violations.append(
+                Violation(
+                    check=check_name,
+                    path=runner_path,
+                    message=f"Найден legacy ae_test_hook action reference: {action}",
+                )
+            )
+    return violations
+
+
+def check_e2e_launchers_subset(repo_root: Path) -> List[Violation]:
+    check_name = "e2e_launchers_subset"
+    launchers = (
+        repo_root / "tests/e2e/runner/suite.py",
+        repo_root / "tests/e2e/run_full_e2e_suite.sh",
+        repo_root / "tests/e2e/run_improved_tests.sh",
+        repo_root / "tests/e2e/run_automation_engine_real_hardware.sh",
+        repo_root / "tools/testing/run_e2e.sh",
+    )
+    violations: List[Violation] = []
+
+    for path in launchers:
+        if not path.exists():
+            violations.append(
+                Violation(
+                    check=check_name,
+                    path=path,
+                    message="Файл launcher/suite не найден",
+                )
+            )
+            continue
+
+        text = _read_text(path)
+
+        for scenario in REMOVED_LEGACY_E2E_SCENARIOS:
+            if scenario.replace(".yaml", "") in text or scenario in text:
+                violations.append(
+                    Violation(
+                        check=check_name,
+                        path=path,
+                        message=f"Найдена ссылка на удаленный legacy scenario: {scenario}",
+                    )
+                )
+
+        # Для suite и общих launcher-скриптов требуем базовый AE2-Lite subset.
+        if path.name in {"suite.py", "run_full_e2e_suite.sh", "run_improved_tests.sh", "run_e2e.sh"}:
+            for scenario in REQUIRED_AE2_E2E_SCENARIOS:
+                scenario_key = scenario.replace(".yaml", "")
+                if scenario_key not in text and scenario not in text:
+                    violations.append(
+                        Violation(
+                            check=check_name,
+                            path=path,
+                            message=f"Отсутствует обязательный AE2-Lite scenario в launcher: {scenario}",
+                        )
+                    )
+    return violations
+
+
+def check_ae2_python_file_size(repo_root: Path) -> List[Violation]:
+    check_name = "ae2_python_file_size"
+    ae_root = repo_root / "backend/services/automation-engine"
+    allowlist = {repo_root / rel for rel in AE2_LEGACY_OVER_LIMIT_ALLOWLIST}
+    violations: List[Violation] = []
+
+    for path in _iter_python_files(ae_root):
+        if _is_test_file(path, repo_root):
+            continue
+        line_count = len(_read_text(path).splitlines())
+        if line_count < AE2_FILE_LINE_LIMIT:
+            continue
+        if path in allowlist:
+            continue
+        violations.append(
+            Violation(
+                check=check_name,
+                path=path,
+                message=(
+                    f"Файл содержит {line_count} строк; лимит для AE2-Lite < {AE2_FILE_LINE_LIMIT}. "
+                    "Разбейте модуль на части."
+                ),
+            )
+        )
+    return violations
+
+
 def run_all(repo_root: Path) -> Sequence[Violation]:
     checks = (
         check_history_logger_publish_path,
         check_no_direct_mqtt_publish_in_runtime,
         check_feature_flags_executor_constants,
         check_no_sql_ddl_in_python_services,
+        check_legacy_e2e_scenarios_removed,
+        check_e2e_runner_publish_only_hook,
+        check_e2e_launchers_subset,
+        check_ae2_python_file_size,
     )
     violations: List[Violation] = []
     for check in checks:

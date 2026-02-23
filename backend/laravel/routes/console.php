@@ -76,7 +76,7 @@ Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
 
 // MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
-// Команда отправляет abstract scheduler задачи в automation-engine /scheduler/task.
+// Команда будит зону в automation-engine через /zones/{id}/start-cycle.
 // Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
 Schedule::command('automation:dispatch-schedules')
     ->everyMinute()

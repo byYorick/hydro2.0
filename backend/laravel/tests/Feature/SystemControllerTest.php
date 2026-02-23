@@ -92,6 +92,31 @@ class SystemControllerTest extends TestCase
         $this->assertNotNull($targetNode);
     }
 
+    public function test_system_config_full_allows_valid_service_token_without_user(): void
+    {
+        Config::set('services.python_bridge.token', 'service-token-123');
+
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $response = $this->withHeader('Authorization', 'Bearer service-token-123')
+            ->getJson('/api/system/config/full');
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok');
+
+        $greenhouses = $response->json('data.greenhouses');
+        $targetGreenhouse = collect($greenhouses)->firstWhere('id', $greenhouse->id);
+        $this->assertNotNull($targetGreenhouse);
+
+        $targetZone = collect($targetGreenhouse['zones'] ?? [])->firstWhere('id', $zone->id);
+        $this->assertNotNull($targetZone);
+
+        $targetNode = collect($targetZone['nodes'] ?? [])->firstWhere('id', $node->id);
+        $this->assertNotNull($targetNode);
+    }
+
     public function test_system_config_full_includes_all_relations(): void
     {
         $token = $this->token();

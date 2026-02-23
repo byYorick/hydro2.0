@@ -244,7 +244,7 @@ test.describe('Scheduler lifecycle в вкладке Автоматизация'
 
     await page.goto(`/zones/${zoneId}`, { waitUntil: 'load' })
     await page.getByRole('tab', { name: 'Автоматизация' }).click()
-    await expect(page.getByRole('heading', { name: 'Scheduler Task Lifecycle' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Scheduler / Intent Lifecycle' })).toBeVisible()
     await expect(page.locator('li', { hasText: 'st-skip' })).toBeVisible()
   })
 

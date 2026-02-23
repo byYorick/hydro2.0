@@ -17,11 +17,6 @@ from services.resilience_contract import (
 def new_scheduler_task_id() -> str:
     return f"st-{uuid4().hex}"
 
-
-def new_scheduler_lease_id() -> str:
-    return f"lease-{uuid4().hex}"
-
-
 def canonical_json(payload: Any) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
@@ -166,7 +161,6 @@ __all__ = [
     "build_deadline_terminal_result",
     "build_execution_terminal_result",
     "canonical_json",
-    "new_scheduler_lease_id",
     "new_scheduler_task_id",
     "normalize_failed_execution_result",
     "task_payload_fingerprint",

@@ -378,10 +378,9 @@ main() {
                 "grow_cycle/E54_pause_resume_harvest"
                 
                 # AUTOMATION ENGINE
-                "automation_engine/E60_climate_control_happy"
                 "automation_engine/E61_fail_closed_corrections"
-                "automation_engine/E62_controller_fault_isolation"
-                "automation_engine/E63_backoff_on_errors"
+                "automation_engine/E64_effective_targets_only"
+                "automation_engine/E65_phase_transition_api"
                 "automation_engine/E74_node_zone_mismatch_guard"
             )
             

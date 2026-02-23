@@ -64,9 +64,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
-| GET | /api/zones/{id}/automation/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
-| POST | /api/zones/{id}/automation/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
-| POST | /api/zones/{id}/automation/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (доступен только в `semi|manual`) |
+| GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
+| POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
+| POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (доступен только в `semi|manual`) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
@@ -285,3 +285,45 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - endpoint не несет device-level payload (минимальный wake-up контракт);
 - фактические действия определяются pending intent-ами в БД;
 - повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение.
+
+Минимальный request:
+```json
+{
+  "source": "laravel_scheduler",
+  "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
+}
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "data": {
+    "zone_id": 12,
+    "accepted": true,
+    "runner_state": "active",
+    "deduplicated": false,
+    "task_id": "tsk_...",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
+  }
+}
+```
+
+### 18.3 Scheduler intents lifecycle (DB contract)
+
+`POST /zones/{id}/start-cycle` работает только как wake-up endpoint.
+Фактическое выполнение берется из `zone_automation_intents`.
+
+Lifecycle intents:
+- `pending`
+- `claimed`
+- `running`
+- `completed`
+- `failed`
+- `cancelled`
+
+Правила:
+- scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle`;
+- `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
+- при повторном `idempotency_key` endpoint возвращает `accepted=true` + `deduplicated=true`
+  без повторного выполнения device-команд.

@@ -17,6 +17,7 @@ BuildCorrectionGatingStateFn = Callable[..., Dict[str, Any]]
 EmitCorrectionSkipEventThrottledFn = Callable[..., Awaitable[None]]
 EmitCorrectionMissingFlagsSignalFn = Callable[[int, Dict[str, Any], Dict[str, Dict[str, Any]]], Awaitable[None]]
 EmitCorrectionStaleFlagsSignalFn = Callable[[int, Dict[str, Any], Dict[str, Dict[str, Any]]], Awaitable[None]]
+ResolveCorrectionGatingSignalsFn = Callable[[int, str], Awaitable[None]]
 ApplySensorModePolicyFn = Callable[..., Awaitable[None]]
 ResolveAllowedEcComponentsFn = Callable[[str], Optional[list[str]]]
 EmitControllerCircuitOpenSignalFn = Callable[..., Awaitable[None]]
@@ -41,6 +42,7 @@ async def process_correction_controllers(
     emit_correction_skip_event_throttled_fn: EmitCorrectionSkipEventThrottledFn,
     emit_correction_missing_flags_signal_fn: EmitCorrectionMissingFlagsSignalFn,
     emit_correction_stale_flags_signal_fn: EmitCorrectionStaleFlagsSignalFn,
+    resolve_correction_gating_signals_fn: ResolveCorrectionGatingSignalsFn,
     apply_sensor_mode_policy_fn: ApplySensorModePolicyFn,
     resolve_allowed_ec_components_fn: ResolveAllowedEcComponentsFn,
     emit_controller_circuit_open_signal_fn: EmitControllerCircuitOpenSignalFn,
@@ -110,6 +112,7 @@ async def process_correction_controllers(
             reason_code=REASON_CORRECTION_MISSING_FLAGS,
         )
         await emit_correction_missing_flags_signal_fn(zone_id, gating_state, nodes)
+        await resolve_correction_gating_signals_fn(zone_id, REASON_CORRECTION_MISSING_FLAGS)
         await apply_sensor_mode_policy_fn(
             zone_id=zone_id,
             nodes=nodes,
@@ -156,6 +159,7 @@ async def process_correction_controllers(
         )
         if reason_code == REASON_CORRECTION_STALE_FLAGS:
             await emit_correction_stale_flags_signal_fn(zone_id, gating_state, nodes)
+        await resolve_correction_gating_signals_fn(zone_id, reason_code)
         await apply_sensor_mode_policy_fn(
             zone_id=zone_id,
             nodes=nodes,
@@ -164,6 +168,7 @@ async def process_correction_controllers(
         )
         return
 
+    await resolve_correction_gating_signals_fn(zone_id, REASON_CORRECTION_GATING_PASSED)
     await apply_sensor_mode_policy_fn(
         zone_id=zone_id,
         nodes=nodes,

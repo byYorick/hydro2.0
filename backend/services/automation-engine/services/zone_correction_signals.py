@@ -8,10 +8,13 @@ from typing import Any, Awaitable, Callable, Dict, List
 from services.resilience_contract import (
     INFRA_CORRECTION_FLAGS_MISSING,
     INFRA_CORRECTION_FLAGS_STALE,
+    REASON_CORRECTION_MISSING_FLAGS,
+    REASON_CORRECTION_STALE_FLAGS,
 )
 
 ResolveCorrectionSensorNodesFn = Callable[[Dict[str, Dict[str, Any]]], List[Dict[str, Any]]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
+SendInfraResolvedAlertFn = Callable[..., Awaitable[bool]]
 UtcNowFn = Callable[[], datetime]
 
 
@@ -27,6 +30,7 @@ async def emit_correction_missing_flags_signal(
     correction_flags_missing_alert_throttle_seconds: int,
     logger: Any,
 ) -> None:
+    zone_state["correction_missing_flags_active"] = True
     now = utcnow_fn()
     last_reported = zone_state.get("last_missing_correction_flags_report_at")
     if isinstance(last_reported, datetime) and (
@@ -83,6 +87,7 @@ async def emit_correction_stale_flags_signal(
     correction_flags_stale_alert_throttle_seconds: int,
     logger: Any,
 ) -> None:
+    zone_state["correction_stale_flags_active"] = True
     now = utcnow_fn()
     last_reported = zone_state.get("last_stale_correction_flags_report_at")
     if isinstance(last_reported, datetime) and (
@@ -143,7 +148,57 @@ async def emit_correction_stale_flags_signal(
         zone_state["last_stale_correction_flags_report_at"] = now
 
 
+async def resolve_correction_gating_signals(
+    *,
+    zone_id: int,
+    reason_code: str,
+    zone_state: Dict[str, Any],
+    send_infra_resolved_alert_fn: SendInfraResolvedAlertFn,
+    logger: Any,
+) -> None:
+    reason = str(reason_code or "").strip().lower()
+
+    if reason != REASON_CORRECTION_MISSING_FLAGS and zone_state.get("correction_missing_flags_active") is not False:
+        resolved = await send_infra_resolved_alert_fn(
+            code=INFRA_CORRECTION_FLAGS_MISSING,
+            alert_type="Correction Flags Missing",
+            message=f"Zone {zone_id} recovered from missing sensor-mode flags",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="correction_gating",
+            details={"reason_code": reason or "unknown"},
+        )
+        if resolved:
+            zone_state["correction_missing_flags_active"] = False
+            zone_state["last_missing_correction_flags_report_at"] = None
+            logger.info(
+                "Zone %s: resolved correction missing-flags alert",
+                zone_id,
+                extra={"zone_id": zone_id, "reason_code": reason},
+            )
+
+    if reason != REASON_CORRECTION_STALE_FLAGS and zone_state.get("correction_stale_flags_active") is not False:
+        resolved = await send_infra_resolved_alert_fn(
+            code=INFRA_CORRECTION_FLAGS_STALE,
+            alert_type="Correction Flags Stale",
+            message=f"Zone {zone_id} recovered from stale sensor-mode flags",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="correction_gating",
+            details={"reason_code": reason or "unknown"},
+        )
+        if resolved:
+            zone_state["correction_stale_flags_active"] = False
+            zone_state["last_stale_correction_flags_report_at"] = None
+            logger.info(
+                "Zone %s: resolved correction stale-flags alert",
+                zone_id,
+                extra={"zone_id": zone_id, "reason_code": reason},
+            )
+
+
 __all__ = [
     "emit_correction_missing_flags_signal",
     "emit_correction_stale_flags_signal",
+    "resolve_correction_gating_signals",
 ]

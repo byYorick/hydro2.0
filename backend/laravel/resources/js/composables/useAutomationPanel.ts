@@ -203,6 +203,7 @@ export function useAutomationPanel(
 
   const automationState = ref<AutomationState | null>(null)
   const errorMessage = ref<string | null>(null)
+  const connectivityWarning = ref<string | null>(null)
   const flowOffset = ref(0)
 
   let fetchInFlight = false
@@ -289,14 +290,21 @@ export function useAutomationPanel(
 
     fetchInFlight = true
     try {
-      const response = await get(`/api/zones/${props.zoneId}/automation-state`)
+      const response = await get(`/api/zones/${props.zoneId}/state`)
       const normalized = normalizeState(response.data)
       automationState.value = normalized
       emit('state-change', normalized.state)
       errorMessage.value = null
+      connectivityWarning.value = null
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown_error'
-      errorMessage.value = `Не удалось получить состояние автоматизации (${message}).`
+      if (automationState.value) {
+        errorMessage.value = null
+        connectivityWarning.value = `Связь с automation-engine нестабильна (${message}). Показано последнее полученное состояние.`
+      } else {
+        connectivityWarning.value = null
+        errorMessage.value = `Не удалось получить состояние автоматизации (${message}).`
+      }
     } finally {
       fetchInFlight = false
       if (fetchQueued) {
@@ -499,7 +507,6 @@ export function useAutomationPanel(
   })
 
   const hasFailedState = computed(() => {
-    if (errorMessage.value) return true
     if (automationState.value?.state_details.failed) return true
     // Fallback: проверяем последнее событие таймлайна (для обратной совместимости)
     const timeline = automationState.value?.timeline ?? []
@@ -599,6 +606,7 @@ export function useAutomationPanel(
     if (!newZoneId) {
       automationState.value = null
       errorMessage.value = null
+      connectivityWarning.value = null
       return
     }
 
@@ -672,6 +680,7 @@ export function useAutomationPanel(
   return {
     automationState,
     errorMessage,
+    connectivityWarning,
     flowOffset,
     stateCode,
     stateLabel,

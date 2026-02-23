@@ -15,9 +15,10 @@ class ZoneAutomationLogicProfileService
     public function getProfilesPayload(Zone $zone): array
     {
         $profiles = $this->getProfilesForZone($zone->id);
+        $activeProfile = $this->resolveActiveProfileForZone($zone->id);
 
         return [
-            'active_mode' => $this->resolveActiveModeFromCollection($profiles),
+            'active_mode' => $activeProfile?->mode,
             'profiles' => $this->mapProfilesForResponse($profiles),
         ];
     }
@@ -61,9 +62,31 @@ class ZoneAutomationLogicProfileService
      */
     public function resolveActiveProfileForZone(int $zoneId): ?ZoneAutomationLogicProfile
     {
-        return ZoneAutomationLogicProfile::query()
+        $allowedModes = ZoneAutomationLogicProfile::allowedModes();
+
+        $activeAllowedProfile = ZoneAutomationLogicProfile::query()
             ->where('zone_id', $zoneId)
             ->where('is_active', true)
+            ->whereIn('mode', $allowedModes)
+            ->orderByDesc('updated_at')
+            ->first();
+        if ($activeAllowedProfile instanceof ZoneAutomationLogicProfile) {
+            return $activeAllowedProfile;
+        }
+
+        $hasUnsupportedActiveProfile = ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zoneId)
+            ->where('is_active', true)
+            ->whereNotIn('mode', $allowedModes)
+            ->exists();
+        if (! $hasUnsupportedActiveProfile) {
+            return null;
+        }
+
+        return ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zoneId)
+            ->whereIn('mode', $allowedModes)
+            ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
             ->orderByDesc('updated_at')
             ->first();
     }
@@ -87,16 +110,6 @@ class ZoneAutomationLogicProfileService
             ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
             ->orderByDesc('updated_at')
             ->get();
-    }
-
-    protected function resolveActiveModeFromCollection(Collection $profiles): ?string
-    {
-        $active = $profiles->firstWhere('is_active', true);
-        if ($active instanceof ZoneAutomationLogicProfile) {
-            return $active->mode;
-        }
-
-        return null;
     }
 
     protected function mapProfilesForResponse(Collection $profiles): array

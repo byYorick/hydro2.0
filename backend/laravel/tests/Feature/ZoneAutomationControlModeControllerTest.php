@@ -16,7 +16,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
     {
         $zone = Zone::factory()->create();
 
-        $response = $this->getJson("/api/zones/{$zone->id}/automation/control-mode");
+        $response = $this->getJson("/api/zones/{$zone->id}/control-mode");
         $response->assertStatus(401);
     }
 
@@ -27,7 +27,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/control-mode" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
@@ -40,7 +40,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->getJson("/api/zones/{$zone->id}/automation/control-mode");
+            ->getJson("/api/zones/{$zone->id}/control-mode");
 
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
@@ -56,7 +56,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/control-mode", [
+            ->postJson("/api/zones/{$zone->id}/control-mode", [
                 'control_mode' => 'manual',
             ]);
 
@@ -70,7 +70,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/control-mode" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
@@ -81,7 +81,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/control-mode", [
+            ->postJson("/api/zones/{$zone->id}/control-mode", [
                 'control_mode' => 'semi',
             ]);
 
@@ -98,7 +98,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/control-mode" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
                 'status' => 'error',
                 'code' => 'NOT_FOUND',
             ], 404),
@@ -106,7 +106,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->getJson("/api/zones/{$zone->id}/automation/control-mode");
+            ->getJson("/api/zones/{$zone->id}/control-mode");
 
         $response->assertStatus(501)
             ->assertJsonPath('code', 'UPSTREAM_NOT_SUPPORTED');
@@ -119,7 +119,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/automation/control-mode" => Http::response([
+            "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
                 'status' => 'error',
                 'code' => 'invalid_control_mode',
                 'message' => 'invalid control mode',
@@ -128,7 +128,7 @@ class ZoneAutomationControlModeControllerTest extends TestCase
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/automation/control-mode", [
+            ->postJson("/api/zones/{$zone->id}/control-mode", [
                 'control_mode' => 'manual',
             ]);
 

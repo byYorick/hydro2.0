@@ -26,6 +26,12 @@
     >
       {{ errorMessage }}
     </p>
+    <p
+      v-if="warningMessage"
+      class="mt-3 text-xs text-amber-400"
+    >
+      {{ warningMessage }}
+    </p>
 
     <section class="mt-3 rounded-xl border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/45 p-3">
       <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
@@ -64,6 +70,7 @@ interface Props {
   isProcessActive: boolean
   progressSummary: string
   errorMessage: string | null
+  warningMessage: string | null
   setupStages: SetupStageView[]
   currentSetupStageLabel: string
 }

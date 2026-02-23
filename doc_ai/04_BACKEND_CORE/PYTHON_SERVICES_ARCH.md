@@ -87,8 +87,13 @@ Legacy endpoint-ы:
   - `ae_command_status`
   - `ae_signal_update`
 
+Payload-contract:
+- `ae_command_status`: `cmd_id`, `zone_id`, `status`, `updated_at`;
+- `ae_signal_update`: `zone_id`, `kind`, `updated_at`.
+
 Обязательный fallback:
 - reconcile polling (`commands`, `telemetry_last`, `zone_events`).
+- при burst/перегрузке listener runtime переключается на polling-first до стабилизации.
 
 Источник истины:
 - таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
@@ -155,6 +160,11 @@ AE2-Lite в runtime читает данные напрямую из PostgreSQL:
 - `POST /scheduler/bootstrap/heartbeat`
 - `POST /scheduler/internal/enqueue`
 - `POST /zones/{id}/automation/manual-resume`
+- `GET /zones/{id}/automation-state`
+- `GET /zones/{id}/automation/control-mode`
+- `POST /zones/{id}/automation/control-mode`
+- `POST /zones/{id}/automation/manual-step`
+- `/test/hook*`
 
 ---
 

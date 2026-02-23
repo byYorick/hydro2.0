@@ -76,6 +76,8 @@ export type SchedulerTaskProcessStatus = 'pending' | 'running' | 'completed' | '
 export function normalizeTargetSchedulerStatus(status: string | null | undefined): TargetSchedulerStatus | null {
   const normalized = String(status ?? '').trim().toLowerCase()
   if (normalized === 'done') return 'completed'
+  if (normalized === 'pending' || normalized === 'claimed') return 'accepted'
+  if (normalized === 'cancelled' || normalized === 'canceled') return 'rejected'
   if (TARGET_SCHEDULER_STATUSES.includes(normalized as TargetSchedulerStatus)) {
     return normalized as TargetSchedulerStatus
   }

@@ -5,6 +5,23 @@ on:
   pull_request:
 
 jobs:
+  automation-engine-smoke-all:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/services/automation-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+      - name: Run AE2 smoke tests
+        env:
+          PYTHONPATH: backend/services
+        run: pytest -q test_*.py
+
   build-and-test:
     runs-on: ubuntu-latest
     services:
@@ -309,9 +326,21 @@ jobs:
           mkdir -p test-results
           pytest -q \
             backend/services/automation-engine/test_actuator_registry.py \
-            backend/services/automation-engine/test_infrastructure_repository.py \
-            backend/services/automation-engine/test_command_bus.py \
+            backend/services/automation-engine/test_alerts_manager_phase2.py \
             backend/services/automation-engine/test_scheduler_task_executor.py \
+            backend/services/automation-engine/test_scheduler_idempotency_replay.py \
+            backend/services/automation-engine/test_start_cycle_contract.py \
+            backend/services/automation-engine/test_api_intents.py \
+            backend/services/automation-engine/test_api_start_cycle.py \
+            backend/services/automation-engine/test_command_tracker_notify.py \
+            backend/services/automation-engine/test_start_cycle_rate_limit.py \
+            backend/services/automation-engine/test_start_cycle_intent_flow_integration.py \
+            backend/services/automation-engine/test_workflow_phase_policy.py \
+            backend/services/automation-engine/test_two_tank_runtime_config.py \
+            backend/services/automation-engine/test_zone_correction_gating.py \
+            backend/services/automation-engine/test_workflow_state_recovery_integration.py \
+            backend/services/automation-engine/test_notify_partition_smoke.py \
+            backend/services/automation-engine/test_laravel_api_repository_sql_read_model.py \
             --junitxml=test-results/automation-engine-smoke.xml
       - name: Upload automation-engine smoke JUnit
         if: always()
@@ -378,6 +407,9 @@ jobs:
           php artisan test \
             tests/Unit/Console/AutomationDispatchSchedulesInternalsTest.php \
             tests/Feature/AutomationDispatchSchedulesCommandTest.php \
+            tests/Feature/ZoneAutomationStateControllerTest.php \
+            tests/Feature/ZoneAutomationControlModeControllerTest.php \
+            tests/Feature/ZoneAutomationManualStepControllerTest.php \
             --no-coverage \
             --log-junit test-results/laravel-scheduler-smoke.xml
       - name: Upload Laravel scheduler smoke JUnit

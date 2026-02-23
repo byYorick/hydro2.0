@@ -2256,44 +2256,99 @@ class E2ERunner:
         # Automation Engine test hook
         if step_type == "ae_test_hook":
             import httpx
-            automation_engine_url = cfg.get("url")
-            if not automation_engine_url:
-                host = os.getenv("AUTOMATION_ENGINE_HOST")
-                if not host:
-                    host = "automation-engine" if os.getenv("E2E_CONTAINER") == "1" else "localhost"
-                port = os.getenv("AUTOMATION_ENGINE_API_PORT", "9505")
-                automation_engine_url = f"http://{host}:{port}"
+
             zone_id = cfg.get("zone_id") or self.context.get("zone_id")
-            controller = cfg.get("controller")
-            action = cfg.get("action")  # inject_error, clear_error, reset_backoff, set_state
-            error_type = cfg.get("error_type")
-            state = cfg.get("state")
+            action = cfg.get("action")
             command = cfg.get("command")
             
             if not zone_id:
                 raise ValueError("ae_test_hook requires zone_id")
             if not action:
                 raise ValueError("ae_test_hook requires action")
-            
-            payload = {
-                "zone_id": zone_id,
-                "action": action,
-            }
-            if controller:
-                payload["controller"] = controller
-            if error_type:
-                payload["error_type"] = error_type
-            if state:
-                payload["state"] = state
-            if command:
-                payload["command"] = self._resolve_variables(command)
-            
+            if action != "publish_command":
+                raise ValueError(
+                    "ae_test_hook supports only action=publish_command in AE2-Lite scenarios"
+                )
+
+            resolved_command = self._resolve_variables(command or {})
+            if not isinstance(resolved_command, dict):
+                raise ValueError("ae_test_hook publish_command requires command object")
+
+            cmd_payload = dict(resolved_command)
+            cmd_payload["zone_id"] = int(cmd_payload.get("zone_id") or zone_id)
+            cmd_payload["greenhouse_uid"] = str(
+                cmd_payload.get("greenhouse_uid")
+                or os.getenv("TEST_NODE_GH_UID")
+                or os.getenv("E2E_GH_UID")
+                or "gh-test-1"
+            ).strip()
+            cmd_payload["source"] = str(cmd_payload.get("source") or "e2e_runner").strip() or "e2e_runner"
+
+            required = ("node_uid", "channel", "cmd")
+            for key in required:
+                if not str(cmd_payload.get(key) or "").strip():
+                    raise ValueError(f"ae_test_hook publish_command missing required field: {key}")
+
+            if "cmd_id" not in cmd_payload or not str(cmd_payload.get("cmd_id") or "").strip():
+                import uuid
+                cmd_payload["cmd_id"] = f"e2e:{uuid.uuid4().hex[:24]}"
+
+            history_logger_url = cfg.get("history_logger_url")
+            if not history_logger_url:
+                host = os.getenv("HISTORY_LOGGER_HOST")
+                if not host:
+                    host = "history-logger" if os.getenv("E2E_CONTAINER") == "1" else "localhost"
+                port = os.getenv("HISTORY_LOGGER_PORT", "9302")
+                history_logger_url = f"http://{host}:{port}"
+
+            history_logger_token = str(
+                cfg.get("history_logger_token")
+                or os.getenv("HISTORY_LOGGER_API_TOKEN")
+                or os.getenv("PY_INGEST_TOKEN")
+                or "dev-token-12345"
+            ).strip()
+            headers: Dict[str, str] = {}
+            if history_logger_token:
+                headers["Authorization"] = f"Bearer {history_logger_token}"
+
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(f"{automation_engine_url}/test/hook", json=payload)
+                resp = await client.post(f"{history_logger_url}/commands", json=cmd_payload, headers=headers)
+                upstream = resp.json() if resp.text else {}
+                command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
+
+                # Для guard-сценариев 4xx является ожидаемым бизнес-результатом
+                # и должен возвращаться как published=false, а не runtime exception.
+                if 400 <= resp.status_code < 500:
+                    result = {
+                        "status": "ok",
+                        "data": {
+                            "published": False,
+                            "cmd_id": command_id or None,
+                            "zone_id": cmd_payload["zone_id"],
+                            "node_uid": cmd_payload["node_uid"],
+                            "channel": cmd_payload["channel"],
+                            "http_status": int(resp.status_code),
+                            "error": upstream.get("detail"),
+                        },
+                    }
+                    if "save" in cfg:
+                        self.context[cfg["save"]] = result
+                    return result
+
                 if resp.status_code != 200:
-                    raise RuntimeError(f"Test hook failed: {resp.status_code} - {resp.text}")
-                
-                result = resp.json()
+                    raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
+
+                result = {
+                    "status": "ok",
+                    "data": {
+                        "published": bool(command_id),
+                        "cmd_id": command_id,
+                        "zone_id": cmd_payload["zone_id"],
+                        "node_uid": cmd_payload["node_uid"],
+                        "channel": cmd_payload["channel"],
+                        "http_status": int(resp.status_code),
+                    },
+                }
                 if "save" in cfg:
                     self.context[cfg["save"]] = result
                 return result
