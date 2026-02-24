@@ -111,6 +111,139 @@ actions:
     params:
       nid: ${irrig_node_id}
 
+  # ─── 5.1 Сброс состояния irrig-ноды (детерминированный старт) ───────────
+  # Без явного reset relay-состояний startup может попасть в dedupe/no-effect
+  # и затем упасть на solution_fill_check с irr_state_mismatch.
+  - step: publish_reset_pump_main_off
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: nd-irrig-e2e
+      channel: pump_main
+      cmd: set_relay
+      params:
+        state: false
+    save: reset_pump_main_result
+
+  - step: wait_reset_pump_main_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_pump_main_result.data.cmd_id}
+    timeout: 15.0
+
+  - step: publish_reset_valve_clean_fill_off
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: nd-irrig-e2e
+      channel: valve_clean_fill
+      cmd: set_relay
+      params:
+        state: false
+    save: reset_valve_clean_fill_result
+
+  - step: wait_reset_valve_clean_fill_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_valve_clean_fill_result.data.cmd_id}
+    timeout: 15.0
+
+  - step: publish_reset_valve_clean_supply_off
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: nd-irrig-e2e
+      channel: valve_clean_supply
+      cmd: set_relay
+      params:
+        state: false
+    save: reset_valve_clean_supply_result
+
+  - step: wait_reset_valve_clean_supply_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_valve_clean_supply_result.data.cmd_id}
+    timeout: 15.0
+
+  - step: publish_reset_valve_solution_fill_off
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: nd-irrig-e2e
+      channel: valve_solution_fill
+      cmd: set_relay
+      params:
+        state: false
+    save: reset_valve_solution_fill_result
+
+  - step: wait_reset_valve_solution_fill_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_valve_solution_fill_result.data.cmd_id}
+    timeout: 15.0
+
+  - step: publish_reset_valve_solution_supply_off
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: nd-irrig-e2e
+      channel: valve_solution_supply
+      cmd: set_relay
+      params:
+        state: false
+    save: reset_valve_solution_supply_result
+
+  - step: wait_reset_valve_solution_supply_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_valve_solution_supply_result.data.cmd_id}
+    timeout: 15.0
+
   # ─── 6. Upsert actuator channels: dosing (с калибровкой для ec_npk_pump) ──
   # ec_npk_pump: pump_calibration.ml_per_sec=2.0 (нужно для расчёта duration_ms)
   # acid_pump: нет калибровки (cmd=dose, не run_pump)
