@@ -1,0 +1,43 @@
+# Multi-node simulator config для two_tank workflow E2E тестов (E83/E84/E85/E86)
+# Запуск: python -m node_sim.cli multi --config node-sim-multi-workflow.yaml
+#
+# Узел irrig отвечает на команды set_relay для всех клапанов и насосов
+# двухбакового workflow. node-sim автоматически отправляет ACK на каждую команду.
+# Узел dosing отвечает на команды run_pump (EC коррекция) и dose (pH коррекция).
+
+mqtt:
+  host: mosquitto
+  port: 1883
+
+nodes:
+  - node_uid: nd-irrig-e2e
+    gh_uid: gh-test-1
+    zone_uid: zn-test-1
+    hardware_id: esp32-irrig-e2e
+    node_type: irrig
+    mode: configured
+    # Actuator channels: AE отправляет set_relay команды на эти каналы
+    actuators:
+      - valve_clean_fill       # clean_fill_start / clean_fill_stop
+      - valve_clean_supply     # solution_fill_start / solution_fill_stop
+      - valve_solution_fill    # solution_fill_start, prepare_recirculation_start
+      - valve_solution_supply  # prepare_recirculation_start / prepare_recirculation_stop
+      - pump_main              # solution_fill_start, prepare_recirculation_start
+    telemetry:
+      # Не генерируем телеметрию из node-sim — уровни инжектируются через SQL
+      interval_seconds: 300.0
+
+  - node_uid: nd-dosing-e2e
+    gh_uid: gh-test-1
+    zone_uid: zn-test-1
+    hardware_id: esp32-dosing-e2e
+    node_type: ph
+    mode: configured
+    # Actuator channels: AE отправляет run_pump (EC коррекция) и dose (pH коррекция)
+    # node_type=ph — поддерживает dose команды; run_pump обрабатывается generic-хэндлером
+    actuators:
+      - ec_npk_pump   # EC коррекция: run_pump(add_nutrients) - E86/E87
+      - acid_pump     # pH коррекция: dose(add_acid) - E86/E87
+    telemetry:
+      # Не генерируем телеметрию из node-sim — EC/pH инжектируются через SQL
+      interval_seconds: 300.0

@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, Callable, Awaitable
 import logging
 
-from application.correction_ec_batch_utils import (
+from executor.correction_ec_batch_utils import (
     extract_nutrition_control,
     get_latest_ec_value,
     resolve_batch_dose_control,

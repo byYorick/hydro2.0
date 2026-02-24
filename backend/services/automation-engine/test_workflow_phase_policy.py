@@ -1,4 +1,4 @@
-from application.workflow_phase_policy import (
+from executor.workflow_phase_policy import (
     WORKFLOW_PHASE_IRRIGATING,
     WORKFLOW_PHASE_IRRIG_RECIRC,
     WORKFLOW_PHASE_READY,

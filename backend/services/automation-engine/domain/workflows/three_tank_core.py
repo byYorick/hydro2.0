@@ -5,7 +5,7 @@ This module is imported lazily from SchedulerTaskExecutor to keep startup import
 
 from __future__ import annotations
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 
 
 async def execute_three_tank_startup_workflow_core(

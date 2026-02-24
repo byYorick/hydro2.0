@@ -119,9 +119,11 @@ services:
     - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
     - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+    - AUTOMATION_ENGINE_API_URL=${AUTOMATION_ENGINE_API_URL:-http://automation-engine:9505}
     # Cutover flags (Laravel scheduler owner)
     - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-0}
     - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+    - AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED=${AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED:-1}
     - PHP_OPCACHE_ENABLE=0
     - HISTORY_LOGGER_URL=http://history-logger:9300
     - DIGITAL_TWIN_URL=http://digital-twin:8003
@@ -343,6 +345,8 @@ services:
     - AUTOMATION_ENGINE_API_PORT=${AUTOMATION_ENGINE_API_PORT:-9505}
     - FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD=${FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD:-3}
     - CONFIG_FETCH_RETRY_SLEEP_SECONDS=${CONFIG_FETCH_RETRY_SLEEP_SECONDS:-2}
+    # Ускоренный poll-интервал для two_tank workflow тестов (E83/E84/E85)
+    - AE_REFILL_CHECK_DELAY_SEC=${AE_REFILL_CHECK_DELAY_SEC:-10}
     # Test mode для детерминированных ошибок
     - AE_TEST_MODE=${AE_TEST_MODE:-1}
     depends_on:
@@ -387,6 +391,23 @@ services:
     command: python -m node_sim.cli run --config /app/config/sim.yaml
     networks:
     - backend
+  node-sim-workflow:
+    build:
+      context: ../../tests/node_sim
+      dockerfile: Dockerfile
+    environment:
+    - PYTHONUNBUFFERED=1
+    - MQTT_HOST=mosquitto
+    - MQTT_PORT=1883
+    volumes:
+    - ../../tests/node_sim:/app
+    - ./node-sim-multi-workflow.yaml:/app/config/workflow-sim.yaml:ro
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    command: python -m node_sim.cli multi --config /app/config/workflow-sim.yaml
+    networks:
+    - backend
   e2e-runner:
     build:
       context: .
@@ -425,6 +446,8 @@ services:
       redis:
         condition: service_healthy
       node-sim:
+        condition: service_started
+      node-sim-workflow:
         condition: service_started
       node-sim-manager:
         condition: service_started

@@ -5,7 +5,7 @@ This module is imported lazily from SchedulerTaskExecutor to keep startup import
 
 from __future__ import annotations
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 from domain.workflows.cycle_start_refill_sequence import execute_cycle_start_refill_sequence
 from services.resilience_contract import (
     INFRA_CYCLE_START_NODES_UNAVAILABLE,

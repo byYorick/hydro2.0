@@ -4,8 +4,8 @@ from datetime import datetime
 
 import pytest
 
-from application.api_contracts import StartCycleRequest
-from application.api_intents import (
+from ae2lite.api_contracts import StartCycleRequest
+from ae2lite.api_intents import (
     build_scheduler_task_request_from_intent,
     claim_start_cycle_intent,
 )
@@ -80,10 +80,10 @@ async def test_claim_start_cycle_intent_returns_deduplicated_for_running_intent(
 
 
 @pytest.mark.asyncio
-async def test_claim_start_cycle_intent_inserts_and_claims_when_missing():
+async def test_claim_start_cycle_intent_returns_missing_when_scheduler_intent_absent():
     now = datetime(2026, 2, 22, 12, 0, 0)
     req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:new")
-    calls = {"candidate": 0, "existing": 0, "insert": 0, "claim_after_insert": 0}
+    calls = {"candidate": 0, "existing": 0, "cross_zone_lookup": 0}
 
     async def fake_fetch(query, *args):
         q = _norm(query)
@@ -91,14 +91,11 @@ async def test_claim_start_cycle_intent_inserts_and_claims_when_missing():
             calls["candidate"] += 1
             return []
         if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
-            calls["existing"] += 1
+            if "where zone_id = $1" in q:
+                calls["existing"] += 1
+                return []
+            calls["cross_zone_lookup"] += 1
             return []
-        if "insert into zone_automation_intents" in q:
-            calls["insert"] += 1
-            return [{"id": 909, "zone_id": 5, "status": "pending", "retry_count": 0, "payload": {}}]
-        if "update zone_automation_intents" in q and "where id = $1" in q and "status = 'pending'" in q:
-            calls["claim_after_insert"] += 1
-            return [{"id": 909, "zone_id": 5, "status": "claimed", "retry_count": 0, "payload": {}}]
         raise AssertionError(f"unexpected query: {q}")
 
     claimed = await claim_start_cycle_intent(
@@ -108,9 +105,35 @@ async def test_claim_start_cycle_intent_inserts_and_claims_when_missing():
         fetch_fn=fake_fetch,
     )
 
-    assert calls == {"candidate": 1, "existing": 1, "insert": 1, "claim_after_insert": 1}
-    assert claimed["decision"] == "claimed"
-    assert claimed["intent"]["id"] == 909
+    assert calls == {"candidate": 1, "existing": 1, "cross_zone_lookup": 1}
+    assert claimed["decision"] == "missing"
+    assert claimed["intent"] == {}
+
+
+@pytest.mark.asyncio
+async def test_claim_start_cycle_intent_returns_cross_zone_conflict_for_same_idempotency_key():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:conflict")
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            return []
+        if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
+            if "where zone_id = $1" in q:
+                return []
+            return [{"id": 909, "zone_id": 99, "status": "pending", "retry_count": 0, "payload": {}}]
+        raise AssertionError(f"unexpected query: {q}")
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=5,
+        req=req,
+        now=now,
+        fetch_fn=fake_fetch,
+    )
+
+    assert claimed["decision"] == "conflict_cross_zone"
+    assert claimed["intent"]["zone_id"] == 99
 
 
 def test_build_scheduler_task_request_from_intent_uses_intent_identity():
@@ -140,4 +163,24 @@ def test_build_scheduler_task_request_from_intent_uses_intent_identity():
     assert scheduler_req.task_type == "diagnostics"
     assert scheduler_req.payload["workflow"] == "cycle_start"
     assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
-    assert scheduler_req.correlation_id == "start-cycle-intent:1001:2:sch:z12:irrigation:test"
+    assert scheduler_req.correlation_id.startswith("start-cycle-intent:1001:2:")
+    assert len(scheduler_req.correlation_id) <= 128
+
+
+def test_build_scheduler_task_request_from_intent_handles_max_idempotency_key_length():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="k" * 160)
+    intent = {"id": 42, "retry_count": 0, "payload": {"task_type": "diagnostics", "workflow": "cycle_start"}}
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=1,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.correlation_id.startswith("start-cycle-intent:42:0:")
+    assert len(scheduler_req.correlation_id) <= 128

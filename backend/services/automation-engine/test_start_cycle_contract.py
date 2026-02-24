@@ -3,8 +3,8 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from application.api_contracts import StartCycleRequest
-from application.api_start_cycle import (
+from ae2lite.api_contracts import StartCycleRequest
+from ae2lite.api_start_cycle import (
     DEFAULT_START_CYCLE_WORKFLOW,
     build_start_cycle_response,
     build_start_cycle_scheduler_task_request,

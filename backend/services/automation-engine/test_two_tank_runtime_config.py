@@ -1,4 +1,4 @@
-from application.two_tank_runtime_config import normalize_command_plan, resolve_two_tank_runtime_config
+from executor.two_tank_runtime_config import normalize_command_plan, resolve_two_tank_runtime_config
 
 
 def _normalize_node_types(raw, default):

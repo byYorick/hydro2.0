@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 from domain.workflows.two_tank_startup_prepare_branch import handle_two_tank_prepare_branches
 from domain.workflows.two_tank_startup_solution_branch import handle_two_tank_solution_fill_check
 from domain.workflows.two_tank_startup_start_branch import (

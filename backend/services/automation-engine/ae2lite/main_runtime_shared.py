@@ -81,6 +81,11 @@ _AE2_RUNTIME_SINGLE_WRITER_ENFORCE = str(os.getenv("AE2_RUNTIME_SINGLE_WRITER_EN
 _AE2_FALLBACK_LOOP_WRITER_ENABLED = str(os.getenv("AE2_FALLBACK_LOOP_WRITER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
 _last_scheduler_single_writer_skip_log_at: Optional[datetime] = None
 _SCHEDULER_SINGLE_WRITER_SKIP_LOG_THROTTLE_SECONDS = 120
+# Watchdog: если scheduler-writer активен дольше этого порога — принудительный fallback
+_SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC: float = max(
+    60.0, float(os.getenv("AE2_SCHEDULER_WRITER_WATCHDOG_SEC", "600"))
+)
+_scheduler_writer_active_since: Optional[float] = None  # time.monotonic(), None если не активен
 
 
 def _serialize_optional_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -331,6 +336,8 @@ __all__ = [
     "_should_emit_health_unhealthy_alert",
     "_should_emit_missing_gh_uid_alert",
     "_should_log_scheduler_single_writer_skip",
+    "_scheduler_writer_active_since",
+    "_SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC",
     "_shutdown_event",
     "_zone_service",
     "AE_ZONE_PROCESS_TIMEOUT_SEC",

@@ -7,10 +7,14 @@ Adaptive PID controller with zones, safety limits and basic statistics.
 """
 from __future__ import annotations
 
+import copy
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Dict
 import time
+
+logger = logging.getLogger(__name__)
 
 
 class PidZone(Enum):
@@ -59,10 +63,12 @@ class AdaptivePid:
         self.config = config
         self.integral = 0.0
         self.prev_error: Optional[float] = None
-        self.last_output_ms = 0
+        self.last_output_ms = 0  # monotonic ms (time.monotonic() * 1000)
         self.emergency = False
         self.stats = PidStats()
         self.current_zone = PidZone.DEAD
+        # Начальные коэффициенты для autotune: нижняя граница = 10% от initial
+        self._init_zone_coeffs: Dict[PidZone, PidZoneCoeffs] = copy.deepcopy(config.zone_coeffs)
 
     def _select_zone(self, error: float) -> PidZone:
         abs_err = abs(error)
@@ -83,15 +89,24 @@ class AdaptivePid:
         # Ошибка растет -> усилить пропорциональную часть, ослабить интегральную
         if self.prev_error is not None and abs(error) > abs(self.prev_error):
             coeffs.kp *= 1.0 + rate
-            coeffs.ki *= max(0.0, 1.0 - rate)
+            coeffs.ki *= 1.0 - rate
         else:
-            coeffs.kp *= max(0.0, 1.0 - rate)
+            coeffs.kp *= 1.0 - rate
             coeffs.ki *= 1.0 + rate
 
-        # Ограничиваем коэффициенты разумными пределами
-        coeffs.kp = max(0.0, min(coeffs.kp, 10.0))
-        coeffs.ki = max(0.0, min(coeffs.ki, 1.0))
+        # Нижняя граница — 10% от начального значения (не обнуляем коэффициенты)
+        init = self._init_zone_coeffs[zone]
+        min_kp = max(init.kp * 0.1, 0.01)
+        min_ki = max(init.ki * 0.1, 0.001)
+
+        coeffs.kp = max(min_kp, min(coeffs.kp, 10.0))
+        coeffs.ki = max(min_ki, min(coeffs.ki, 1.0))
         coeffs.kd = max(0.0, min(coeffs.kd, 1.0))
+
+        logger.debug(
+            "PID autotune zone=%s kp=%.4f ki=%.4f kd=%.4f",
+            zone.value, coeffs.kp, coeffs.ki, coeffs.kd,
+        )
 
     def compute(self, current_value: float, dt_seconds: float) -> float:
         """
@@ -104,8 +119,9 @@ class AdaptivePid:
         if self.emergency:
             return 0.0
 
-        now_ms = int(time.time() * 1000)
-        if self.last_output_ms and (now_ms - self.last_output_ms) < self.config.min_interval_ms:
+        # Используем монотонные часы — не зависят от NTP-скачков и перевода системного времени
+        now_mono_ms = int(time.monotonic() * 1000)
+        if self.last_output_ms and (now_mono_ms - self.last_output_ms) < self.config.min_interval_ms:
             return 0.0
 
         error = self.config.setpoint - current_value
@@ -133,27 +149,9 @@ class AdaptivePid:
         if self.prev_error is not None and dt_seconds > 0:
             derivative = (error - self.prev_error) / dt_seconds
 
-        # Интеграл с антиwindup и clamping
-        # Clamping: если выход уже на максимуме, не накапливаем интеграл
-        # Сначала вычисляем предварительный выход для проверки
-        prev_output = (
-            coeffs.kp * error +
-            coeffs.ki * self.integral +
-            coeffs.kd * derivative
-        )
-        prev_output = abs(prev_output)
-        prev_output = max(self.config.min_output, min(prev_output, self.config.max_output))
-        
-        # Накапливаем интеграл только если выход не на пределе
-        if prev_output < self.config.max_output:
-            self.integral += error * dt_seconds
-            self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
-        else:
-            # Если выход на максимуме, не накапливаем интеграл (anti-windup)
-            # Небольшое затухание для предотвращения накопления
-            self.integral = self.integral * 0.95
-
-        self._apply_autotune(zone, error, derivative)
+        # Накапливаем интеграл с bounded clamping (anti-windup: max_integral ограничивает накопление)
+        self.integral += error * dt_seconds
+        self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
 
         output = (
             coeffs.kp * error +
@@ -172,9 +170,11 @@ class AdaptivePid:
             # бегущее среднее ошибки
             n = self.stats.corrections_count
             self.stats.avg_error = ((self.stats.avg_error * (n - 1)) + abs(error)) / n
-            self.last_output_ms = now_ms
+            self.last_output_ms = now_mono_ms
 
         self.prev_error = error
+        # Autotune применяется после финального вычисления — не влияет на текущий output
+        self._apply_autotune(zone, error, derivative)
         return output
 
     def update_setpoint(self, setpoint: float):

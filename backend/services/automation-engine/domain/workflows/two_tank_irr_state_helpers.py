@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 
 _logger = logging.getLogger(__name__)
 
@@ -225,6 +225,30 @@ def _build_irr_state_stale_result(
     }
 
 
+def _matches_expected_pattern(
+    snapshot: Dict[str, Optional[bool]],
+    expected: Dict[str, bool],
+) -> bool:
+    for field, expected_value in expected.items():
+        actual_value = _to_optional_bool(snapshot.get(field))
+        if actual_value is None or actual_value != bool(expected_value):
+            return False
+    return True
+
+
+def _is_startup_allowed_alternative_state(snapshot: Dict[str, Optional[bool]]) -> bool:
+    # Допускаем повторный startup, если контур уже в целевом state solution_fill.
+    # Это позволяет безопасно продолжить workflow после переинициализации цикла.
+    return _matches_expected_pattern(
+        snapshot,
+        {
+            "pump_main": True,
+            "valve_clean_supply": True,
+            "valve_solution_fill": True,
+        },
+    )
+
+
 async def validate_irr_state_expected_vs_actual(
     self,
     *,
@@ -323,6 +347,8 @@ async def validate_irr_state_expected_vs_actual(
             )
 
     if mismatches:
+        if workflow == "startup" and _is_startup_allowed_alternative_state(snapshot):
+            return None
         return _build_irr_state_mismatch_result(
             workflow=workflow,
             expected=expected,
@@ -361,14 +387,17 @@ async def request_irr_state_snapshot_best_effort(
         return None
 
     try:
-        cmd_id = f"ae-irr-state-{zone_id}-{uuid4().hex[:12]}"
-        published = await self.command_gateway.publish_command(
+        requested_cmd_id = f"ae-irr-state-{zone_id}-{uuid4().hex[:12]}"
+        command = {
+            "node_uid": irrig_node_uid,
+            "channel": "storage_state",
+            "cmd": "state",
+            "params": {"dedupe_ttl_sec": 10},
+            "cmd_id": requested_cmd_id,
+        }
+        published = await self.command_gateway.publish_controller_command(
             zone_id=zone_id,
-            node_uid=irrig_node_uid,
-            channel="storage_state",
-            cmd="state",
-            params={"dedupe_ttl_sec": 10},
-            cmd_id=cmd_id,
+            command=command,
         )
         if not published:
             _logger.warning(
@@ -378,7 +407,8 @@ async def request_irr_state_snapshot_best_effort(
                 irrig_node_uid,
             )
             return None
-        return cmd_id
+        effective_cmd_id = str(command.get("cmd_id") or "").strip() or None
+        return effective_cmd_id
     except Exception:
         _logger.warning(
             "Zone %s: irr/state request failed (workflow=%s node_uid=%s)",

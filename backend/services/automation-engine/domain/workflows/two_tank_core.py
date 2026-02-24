@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 from domain.workflows.two_tank_irr_state_helpers import (
     request_irr_state_snapshot_best_effort,
     validate_irr_state_expected_vs_actual,

@@ -147,6 +147,24 @@ async def apply_correction_with_events(
                 break
 
         if batch_aborted:
+            # Если хотя бы один компонент был успешно дозирован, регистрируем DOSING событие
+            # чтобы cooldown сработал в следующем цикле. Без этого automation-engine немедленно
+            # повторит полный EC batch, что приведёт к превышению целевого EC.
+            if successful_components:
+                await create_zone_event(
+                    zone_id,
+                    "DOSING",
+                    {
+                        "type": f"{correction_type_str}_correction",
+                        "correction_type": correction_type,
+                        f"current_{correction_type_str}": current_val,
+                        f"target_{correction_type_str}": target_val,
+                        "diff": diff,
+                        "correlation_id": correlation_id,
+                        "partial": True,
+                        "successful_components": successful_components,
+                    },
+                )
             return
     else:
         published = await controller._publish_controller_command_with_retry(
