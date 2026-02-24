@@ -39,6 +39,18 @@ actions:
     zone_id: ${zone_ctx.0.zone_id}
     greenhouse_id: ${zone_ctx.0.greenhouse_id}
 
+  # ─── 1.1 Включаем capability-флаги коррекции для зоны ───────────────────
+  - step: enable_zone_correction_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = COALESCE(capabilities, '{}'::jsonb)
+          || '{"ph_control": true, "ec_control": true, "recirculation": true}'::jsonb,
+          updated_at = NOW()
+      WHERE id = :zid
+    params:
+      zid: ${zone_id}
+
   # ─── 2. Чистим старые grow_cycles ────────────────────────────────────────
   - step: cleanup_grow_cycles
     type: database_execute
@@ -497,6 +509,23 @@ actions:
     endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
     payload: {}
 
+  # ─── 11.1 Сбрасываем in-memory dedupe в AE перед запуском цикла ─────────
+  - step: restart_automation_engine_stop
+    type: system_stop
+    service: automation-engine
+
+  - step: wait_after_automation_engine_stop
+    type: sleep
+    seconds: 2
+
+  - step: restart_automation_engine_start
+    type: system_start
+    service: automation-engine
+
+  - step: wait_after_automation_engine_start
+    type: sleep
+    seconds: 5
+
   - step: capture_run_started_at
     type: database_query
     query: SELECT NOW() AS started_at
@@ -725,6 +754,17 @@ cleanup:
       DELETE FROM sensors
       WHERE zone_id = :zid AND type = 'WATER_LEVEL'
         AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+    params:
+      zid: ${zone_id}
+    optional: true
+
+  - step: reset_zone_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = NULL,
+          updated_at = NOW()
+      WHERE id = :zid
     params:
       zid: ${zone_id}
     optional: true
