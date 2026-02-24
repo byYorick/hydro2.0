@@ -4,12 +4,16 @@ PID State Manager - управление состоянием PID контрол
 """
 import json
 import logging
+import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 from common.db import execute, fetch
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig
 
 logger = logging.getLogger(__name__)
+
+# Допуск для сравнения монотонных миллисекунд при восстановлении состояния.
+_MONO_TS_FUTURE_TOLERANCE_MS = 60_000
 
 
 class PidStateManager:
@@ -148,7 +152,26 @@ class PidStateManager:
             # Восстанавливаем состояние
             pid.integral = state['integral']
             pid.prev_error = state['prev_error']
-            pid.last_output_ms = state['last_output_ms']
+            restored_last_output_ms = int(state.get('last_output_ms') or 0)
+            now_mono_ms = int(time.monotonic() * 1000)
+            # Legacy состояния могли сохранять wall-clock ms; такие значения
+            # относительно monotonic всегда "в будущем" и блокируют дозирование.
+            if restored_last_output_ms < 0 or restored_last_output_ms > (now_mono_ms + _MONO_TS_FUTURE_TOLERANCE_MS):
+                logger.warning(
+                    "Zone %s: PID %s last_output_ms=%s is incompatible with monotonic clock (now=%s), resetting to 0",
+                    zone_id,
+                    pid_type,
+                    restored_last_output_ms,
+                    now_mono_ms,
+                    extra={
+                        'zone_id': zone_id,
+                        'pid_type': pid_type,
+                        'last_output_ms': restored_last_output_ms,
+                        'now_mono_ms': now_mono_ms,
+                    },
+                )
+                restored_last_output_ms = 0
+            pid.last_output_ms = restored_last_output_ms
             
             # Восстанавливаем статистику
             if state['stats']:
@@ -206,5 +229,4 @@ class PidStateManager:
             import asyncio
             await asyncio.gather(*tasks, return_exceptions=True)
             logger.info(f"Saved PID state for {len(ph_pids)} PH and {len(ec_pids)} EC controllers")
-
 

@@ -139,127 +139,150 @@ def build_ec_component_batch(
 
     nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
     components_cfg = get_nutrition_components(targets)
+    legacy_single_component_mode = False
     if any(component not in components_cfg for component in required_components):
-        logger.warning(
-            "EC component batch skipped: nutrition config missing for required components",
-            extra={
-                "required_components": required_components,
-                "available_nutrition_components": sorted(list(components_cfg.keys())),
-            },
-        )
-        return []
-    components_order = required_components
-
-    ratios = resolve_ec_component_ratios(targets, components_order)
-    if not ratios:
-        logger.warning(
-            "EC component batch skipped: invalid or empty component ratios",
-            extra={
-                "components_order": components_order,
-                "nutrition_mode_raw": nutrition.get("mode"),
-            },
-        )
-        return []
-
-    mode = resolve_nutrition_mode(nutrition)
-    solution_volume_l = resolve_solution_volume_l(nutrition)
-
-    k_values: Dict[str, Optional[float]] = {}
-    for component in components_order:
-        cfg_k = components_cfg.get(component, {}).get("k_ms_per_ml_l")
-        act_k = component_actuators[component].get("k_ms_per_ml_l")
-        try:
-            k_candidate = float(cfg_k if cfg_k is not None else act_k)
-        except (TypeError, ValueError):
-            k_candidate = None
-        if k_candidate is not None and k_candidate > 0:
-            k_values[component] = k_candidate
-        else:
-            k_values[component] = None
-
-    commands: List[Dict[str, Any]] = []
-    component_ml_map: Dict[str, float] = {}
-
-    if mode == "dose_ml_l_only":
-        if solution_volume_l is None or solution_volume_l <= 0:
+        # Backward compatibility for legacy recipes where nutrition.components
+        # is absent, but phase policy allows only npk dosing.
+        if required_components == ["npk"]:
+            legacy_single_component_mode = True
             logger.warning(
-                "EC component batch skipped: dose_ml_l_only requires positive solution volume",
-                extra={"solution_volume_l": solution_volume_l},
-            )
-            return []
-        for component in components_order:
-            dose_ml_l = components_cfg.get(component, {}).get("dose_ml_per_l")
-            try:
-                dose_value = float(dose_ml_l)
-            except (TypeError, ValueError):
-                dose_value = 0.0
-            if dose_value <= 0:
-                logger.warning(
-                    "EC component batch skipped: invalid dose_ml_per_l for component",
-                    extra={"component": component, "dose_ml_per_l": dose_ml_l},
-                )
-                return []
-            component_ml_map[component] = round(dose_value * solution_volume_l, 3)
-
-    if mode == "delta_ec_by_k":
-        delta_ec = max(0.0, target_ec - current_ec)
-        has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
-        if delta_ec <= 0 or solution_volume_l is None or solution_volume_l <= 0 or not has_all_k:
-            logger.warning(
-                "EC component batch skipped: delta_ec_by_k prerequisites not met",
+                "EC component batch fallback: legacy npk-only mode without nutrition.components",
                 extra={
-                    "delta_ec": delta_ec,
-                    "solution_volume_l": solution_volume_l,
-                    "has_all_k": has_all_k,
-                    "k_values": k_values,
+                    "required_components": required_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
+                    "total_ml": total_ml,
+                },
+            )
+        else:
+            logger.warning(
+                "EC component batch skipped: nutrition config missing for required components",
+                extra={
+                    "required_components": required_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
                 },
             )
             return []
-        for component in components_order:
-            ratio_pct = float(ratios.get(component, 0.0))
-            k_value = float(k_values[component] or 0.0)
-            delta_ec_component = delta_ec * (ratio_pct / 100.0)
-            ml_per_l = delta_ec_component / k_value if k_value > 0 else 0.0
-            component_ml_map[component] = round(max(0.0, ml_per_l * solution_volume_l), 3)
 
-    if mode == "ratio_ec_pid":
-        has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
-        if has_all_k:
-            weighted = {
-                component: float(ratios.get(component, 0.0)) / float(k_values[component] or 1.0)
-                for component in components_order
-            }
-            weighted_sum = sum(weighted.values())
-            if weighted_sum <= 0:
+    components_order = required_components
+    component_ml_map: Dict[str, float] = {}
+    mode = ""
+    ratios: Dict[str, float] = {}
+    k_values: Dict[str, Optional[float]] = {}
+
+    if legacy_single_component_mode:
+        mode = "legacy_single_component"
+        ratios = {"npk": 100.0}
+        component_ml_map = {"npk": round(max(0.0, float(total_ml)), 3)}
+    else:
+        components_order = required_components
+        ratios = resolve_ec_component_ratios(targets, components_order)
+        if not ratios:
+            logger.warning(
+                "EC component batch skipped: invalid or empty component ratios",
+                extra={
+                    "components_order": components_order,
+                    "nutrition_mode_raw": nutrition.get("mode"),
+                },
+            )
+            return []
+
+        mode = resolve_nutrition_mode(nutrition)
+        solution_volume_l = resolve_solution_volume_l(nutrition)
+
+        for component in components_order:
+            cfg_k = components_cfg.get(component, {}).get("k_ms_per_ml_l")
+            act_k = component_actuators[component].get("k_ms_per_ml_l")
+            try:
+                k_candidate = float(cfg_k if cfg_k is not None else act_k)
+            except (TypeError, ValueError):
+                k_candidate = None
+            if k_candidate is not None and k_candidate > 0:
+                k_values[component] = k_candidate
+            else:
+                k_values[component] = None
+
+        if mode == "dose_ml_l_only":
+            if solution_volume_l is None or solution_volume_l <= 0:
                 logger.warning(
-                    "EC component batch skipped: weighted_sum <= 0 in ratio_ec_pid mode",
-                    extra={"weighted": weighted, "k_values": k_values, "ratios": ratios},
+                    "EC component batch skipped: dose_ml_l_only requires positive solution volume",
+                    extra={"solution_volume_l": solution_volume_l},
                 )
                 return []
             for component in components_order:
-                component_ml_map[component] = round(max(0.0, total_ml * (weighted[component] / weighted_sum)), 3)
-        else:
-            remaining_ml = float(total_ml)
-            for idx, component in enumerate(components_order):
-                ratio_pct = float(ratios.get(component, 0.0))
-                if idx == len(components_order) - 1:
-                    component_ml = max(0.0, round(remaining_ml, 3))
-                else:
-                    component_ml = max(0.0, round((total_ml * ratio_pct) / 100.0, 3))
-                    remaining_ml -= component_ml
-                component_ml_map[component] = component_ml
+                dose_ml_l = components_cfg.get(component, {}).get("dose_ml_per_l")
+                try:
+                    dose_value = float(dose_ml_l)
+                except (TypeError, ValueError):
+                    dose_value = 0.0
+                if dose_value <= 0:
+                    logger.warning(
+                        "EC component batch skipped: invalid dose_ml_per_l for component",
+                        extra={"component": component, "dose_ml_per_l": dose_ml_l},
+                    )
+                    return []
+                component_ml_map[component] = round(dose_value * solution_volume_l, 3)
 
-    if not component_ml_map:
-        logger.warning(
-            "EC component batch skipped: component_ml_map is empty after mode calculation",
-            extra={
-                "mode": mode,
-                "components_order": components_order,
-                "total_ml": total_ml,
-                "ratios": ratios,
-            },
-        )
-        return []
+        if mode == "delta_ec_by_k":
+            delta_ec = max(0.0, target_ec - current_ec)
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if delta_ec <= 0 or solution_volume_l is None or solution_volume_l <= 0 or not has_all_k:
+                logger.warning(
+                    "EC component batch skipped: delta_ec_by_k prerequisites not met",
+                    extra={
+                        "delta_ec": delta_ec,
+                        "solution_volume_l": solution_volume_l,
+                        "has_all_k": has_all_k,
+                        "k_values": k_values,
+                    },
+                )
+                return []
+            for component in components_order:
+                ratio_pct = float(ratios.get(component, 0.0))
+                k_value = float(k_values[component] or 0.0)
+                delta_ec_component = delta_ec * (ratio_pct / 100.0)
+                ml_per_l = delta_ec_component / k_value if k_value > 0 else 0.0
+                component_ml_map[component] = round(max(0.0, ml_per_l * solution_volume_l), 3)
+
+        if mode == "ratio_ec_pid":
+            has_all_k = all((k_values.get(component) or 0) > 0 for component in components_order)
+            if has_all_k:
+                weighted = {
+                    component: float(ratios.get(component, 0.0)) / float(k_values[component] or 1.0)
+                    for component in components_order
+                }
+                weighted_sum = sum(weighted.values())
+                if weighted_sum <= 0:
+                    logger.warning(
+                        "EC component batch skipped: weighted_sum <= 0 in ratio_ec_pid mode",
+                        extra={"weighted": weighted, "k_values": k_values, "ratios": ratios},
+                    )
+                    return []
+                for component in components_order:
+                    component_ml_map[component] = round(max(0.0, total_ml * (weighted[component] / weighted_sum)), 3)
+            else:
+                remaining_ml = float(total_ml)
+                for idx, component in enumerate(components_order):
+                    ratio_pct = float(ratios.get(component, 0.0))
+                    if idx == len(components_order) - 1:
+                        component_ml = max(0.0, round(remaining_ml, 3))
+                    else:
+                        component_ml = max(0.0, round((total_ml * ratio_pct) / 100.0, 3))
+                        remaining_ml -= component_ml
+                    component_ml_map[component] = component_ml
+
+        if not component_ml_map:
+            logger.warning(
+                "EC component batch skipped: component_ml_map is empty after mode calculation",
+                extra={
+                    "mode": mode,
+                    "components_order": components_order,
+                    "total_ml": total_ml,
+                    "ratios": ratios,
+                },
+            )
+            return []
+
+    commands: List[Dict[str, Any]] = []
 
     for component in components_order:
         ratio_pct = float(ratios.get(component, 0.0))
@@ -352,4 +375,3 @@ def resolve_ec_component_ratios(
     for component in available_components:
         normalized[component] = round((raw_ratios[component] / total) * 100.0, 2)
     return normalized
-

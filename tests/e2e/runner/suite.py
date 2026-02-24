@@ -228,7 +228,8 @@ class TestSuite:
                 if yaml_path.exists():
                     scenarios.append(str(yaml_path))
 
-        return list(set(scenarios))  # Remove duplicates
+        # Keep input order stable while removing duplicates.
+        return list(dict.fromkeys(scenarios))
 
     def filter_scenarios_by_tags(self, scenarios: List[str], include_tags: List[str] = None,
                                 exclude_tags: List[str] = None) -> List[str]:

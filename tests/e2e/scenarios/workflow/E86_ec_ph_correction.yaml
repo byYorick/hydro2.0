@@ -45,7 +45,7 @@ actions:
     query: |
       UPDATE zones
       SET capabilities = COALESCE(capabilities, '{}'::jsonb)
-          || '{"ph_control": true, "ec_control": true, "recirculation": true}'::jsonb,
+          || '{"ph_control": true, "ec_control": true, "recirculation": true, "irrigation_control": true}'::jsonb,
           updated_at = NOW()
       WHERE id = :zid
     params:
@@ -55,6 +55,22 @@ actions:
   - step: cleanup_grow_cycles
     type: database_execute
     query: DELETE FROM grow_cycles WHERE zone_id = :zid
+    params:
+      zid: ${zone_id}
+
+  # ─── 2.1 Сбрасываем историю коррекций (cooldown) для детерминированного старта ──
+  - step: reset_correction_cooldown_history
+    type: database_execute
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zid
+        AND (
+          type IN ('EC_DOSING', 'EC_CORRECTED', 'PH_CORRECTED')
+          OR (
+            type = 'DOSING'
+            AND COALESCE(payload_json->>'type', '') IN ('ec_correction', 'ph_correction')
+          )
+        )
     params:
       zid: ${zone_id}
 
@@ -82,7 +98,54 @@ actions:
     type: set
     irrig_node_id: ${irrig_node_row.0.id}
 
-  # ─── 4. Upsert dosing node ────────────────────────────────────────────────
+  # ─── 4. Upsert required sensor nodes (ec/ph) ──────────────────────────────
+  - step: upsert_ec_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
+      VALUES (:zid, 'nd-ec-e2e', 'E2E EC Node', 'ec', 'online', NOW(), NOW(), NOW())
+      ON CONFLICT (uid) DO UPDATE SET
+        zone_id       = EXCLUDED.zone_id,
+        type          = 'ec',
+        status        = 'online',
+        last_seen_at  = NOW(),
+        updated_at    = NOW()
+    params:
+      zid: ${zone_id}
+
+  - step: get_ec_node
+    type: database_query
+    query: SELECT id FROM nodes WHERE uid = 'nd-ec-e2e' LIMIT 1
+    save: ec_node_row
+
+  - step: set_ec_node_id
+    type: set
+    ec_node_id: ${ec_node_row.0.id}
+
+  - step: upsert_ph_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
+      VALUES (:zid, 'nd-ph-e2e', 'E2E PH Node', 'ph', 'online', NOW(), NOW(), NOW())
+      ON CONFLICT (uid) DO UPDATE SET
+        zone_id       = EXCLUDED.zone_id,
+        type          = 'ph',
+        status        = 'online',
+        last_seen_at  = NOW(),
+        updated_at    = NOW()
+    params:
+      zid: ${zone_id}
+
+  - step: get_ph_node
+    type: database_query
+    query: SELECT id FROM nodes WHERE uid = 'nd-ph-e2e' LIMIT 1
+    save: ph_node_row
+
+  - step: set_ph_node_id
+    type: set
+    ph_node_id: ${ph_node_row.0.id}
+
+  # ─── 5. Upsert dosing node ────────────────────────────────────────────────
   - step: upsert_dosing_node
     type: database_execute
     query: |
@@ -106,7 +169,7 @@ actions:
     type: set
     dosing_node_id: ${dosing_node_row.0.id}
 
-  # ─── 5. Upsert actuator channels: irrig ───────────────────────────────────
+  # ─── 6. Upsert actuator channels: irrig ───────────────────────────────────
   - step: upsert_irrig_channels
     type: database_execute
     query: |
@@ -123,7 +186,7 @@ actions:
     params:
       nid: ${irrig_node_id}
 
-  # ─── 5.1 Сброс состояния irrig-ноды (детерминированный старт) ───────────
+  # ─── 6.1 Сброс состояния irrig-ноды (детерминированный старт) ───────────
   # Без явного reset relay-состояний startup может попасть в dedupe/no-effect
   # и затем упасть на solution_fill_check с irr_state_mismatch.
   - step: publish_reset_pump_main_off
@@ -256,7 +319,7 @@ actions:
       cmd_id: ${reset_valve_solution_supply_result.data.cmd_id}
     timeout: 15.0
 
-  # ─── 6. Upsert actuator channels: dosing (с калибровкой для ec_npk_pump) ──
+  # ─── 7. Upsert actuator channels: dosing (с калибровкой для ec_npk_pump) ──
   # ec_npk_pump: pump_calibration.ml_per_sec=2.0 (нужно для расчёта duration_ms)
   # acid_pump: нет калибровки (cmd=dose, не run_pump)
   - step: upsert_dosing_channels
@@ -277,7 +340,7 @@ actions:
     params:
       nid: ${dosing_node_id}
 
-  # ─── 7. Sensors уровня (WATER_LEVEL) ─────────────────────────────────────
+  # ─── 8. Sensors уровня (WATER_LEVEL) ─────────────────────────────────────
   - step: delete_old_level_sensors
     type: database_execute
     query: |
@@ -304,7 +367,7 @@ actions:
       zid: ${zone_id}
       nid: ${irrig_node_id}
 
-  # ─── 8. Sensors: EC и PH ──────────────────────────────────────────────────
+  # ─── 9. Sensors: EC и PH ──────────────────────────────────────────────────
   - step: disable_existing_ec_ph_sensors
     type: database_execute
     query: |
@@ -334,7 +397,7 @@ actions:
     params:
       ghid: ${greenhouse_id}
       zid: ${zone_id}
-      nid: ${dosing_node_id}
+      nid: ${ec_node_id}
 
   - step: insert_ph_sensor
     type: database_execute
@@ -344,9 +407,9 @@ actions:
     params:
       ghid: ${greenhouse_id}
       zid: ${zone_id}
-      nid: ${dosing_node_id}
+      nid: ${ph_node_id}
 
-  # ─── 9. Telemetry: ОБА БАКА ПОЛНЫЕ, EC низкий, pH высокий ────────────────
+  # ─── 10. Telemetry: ОБА БАКА ПОЛНЫЕ, EC низкий, pH высокий ───────────────
   # level_* = 1.0 → AE сразу переходит к prepare_recirculation
   # EC = 0.3 (target=1.8) → нужна коррекция NPK
   # pH = 7.5 (target=6.0) → нужна кислота (pH слишком высокий)
@@ -396,7 +459,7 @@ actions:
     params:
       zid: ${zone_id}
 
-  # ─── 10. Infrastructure: infrastructure_instance + channel_bindings ────────
+  # ─── 11. Infrastructure: infrastructure_instance + channel_bindings ───────
   # AE читает bindings через InfrastructureRepository.get_zone_bindings_by_role()
   # Нужны роли: ec_npk_pump → ec_npk_pump канал dosing ноды
   #             ph_acid_pump → acid_pump канал dosing ноды
@@ -457,7 +520,7 @@ actions:
       infra_id: ${infra_instance_id}
       dosing_id: ${dosing_node_id}
 
-  # ─── 11. Создаём рецепт с nutrition config → revision → phase → publish ───
+  # ─── 12. Создаём рецепт с nutrition config → revision → phase → publish ───
   # nutrient_mode=dose_ml_l_only: npk_dose=2ml/l × volume=10l = 20ml
   # Это активирует EC коррекцию в main loop (phase=tank_recirc)
   - step: create_plant
@@ -509,7 +572,7 @@ actions:
     endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
     payload: {}
 
-  # ─── 11.1 Сбрасываем in-memory dedupe в AE перед запуском цикла ─────────
+  # ─── 12.1 Сбрасываем in-memory dedupe в AE перед запуском цикла ─────────
   - step: restart_automation_engine_stop
     type: system_stop
     service: automation-engine
@@ -535,7 +598,7 @@ actions:
     type: set
     run_started_at: ${run_started_at_row.0.started_at}
 
-  # ─── 12. Создаём и запускаем grow cycle ────────────────────────────────────
+  # ─── 13. Создаём и запускаем grow cycle ───────────────────────────────────
   - step: create_grow_cycle
     type: api_post
     endpoint: /api/zones/${zone_id}/grow-cycles
@@ -555,7 +618,7 @@ actions:
     payload: {}
     save: start_response
 
-  # ─── 13. Ждём запуска solution_fill ───────────────────────────────────────
+  # ─── 14. Ждём запуска solution_fill ───────────────────────────────────────
   # AE: startup → clean_max=1, clean_min=1 → solution_fill_start
   - step: wait_for_solution_fill_start
     type: db.wait
@@ -573,7 +636,7 @@ actions:
     timeout: 30.0
     save: solution_fill_cmd
 
-  # ─── 14. Ждём запуска prepare_recirculation ───────────────────────────────
+  # ─── 15. Ждём запуска prepare_recirculation ───────────────────────────────
   # После AE_REFILL_CHECK_DELAY_SEC (10s): solution_max=1 → targets not reached →
   # prepare_recirculation_start (valve_solution_supply)
   - step: wait_for_prepare_recirculation
@@ -592,7 +655,7 @@ actions:
     timeout: 45.0
     save: prepare_recirc_cmd
 
-  # ─── 15. Ждём EC коррекцию (run_pump с add_nutrients) ────────────────────
+  # ─── 16. Ждём EC коррекцию (run_pump с add_nutrients) ────────────────────
   # Фаза tank_recirc открыта → main loop → ec_npk_pump → run_pump(add_nutrients)
   - step: wait_for_ec_correction
     type: db.wait
@@ -610,7 +673,7 @@ actions:
     timeout: 60.0
     save: ec_correction_cmd
 
-  # ─── 16. Ждём pH коррекцию (dose с add_acid) ──────────────────────────────
+  # ─── 17. Ждём pH коррекцию (dose с add_acid) ──────────────────────────────
   # pH=7.5 > target=6.0 → add_acid → cmd=dose (роль ph_acid_pump)
   - step: wait_for_ph_correction
     type: db.wait
@@ -801,6 +864,16 @@ cleanup:
   - step: delete_irrig_node
     type: database_execute
     query: DELETE FROM nodes WHERE uid = 'nd-irrig-e2e'
+    optional: true
+
+  - step: delete_ec_node
+    type: database_execute
+    query: DELETE FROM nodes WHERE uid = 'nd-ec-e2e'
+    optional: true
+
+  - step: delete_ph_node
+    type: database_execute
+    query: DELETE FROM nodes WHERE uid = 'nd-ph-e2e'
     optional: true
 
   - step: delete_recipe

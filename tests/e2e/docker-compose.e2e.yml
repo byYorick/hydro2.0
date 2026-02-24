@@ -349,6 +349,8 @@ services:
     - AE_REFILL_CHECK_DELAY_SEC=${AE_REFILL_CHECK_DELAY_SEC:-10}
     # Test mode для детерминированных ошибок
     - AE_TEST_MODE=${AE_TEST_MODE:-1}
+    # Для e2e рестарты AE должны очищать in-memory runtime state (dedupe/anomaly blocks).
+    - AE_RUNTIME_STATE_PERSIST_ENABLED=${AE_RUNTIME_STATE_PERSIST_ENABLED:-0}
     depends_on:
       mosquitto:
         condition: service_healthy

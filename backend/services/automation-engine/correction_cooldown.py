@@ -17,6 +17,22 @@ MIN_TREND_POINTS = 3
 TREND_IMPROVEMENT_THRESHOLD = 0.05  # 0.05 единицы улучшения за последние измерения
 
 
+def _resolve_correction_event_filters(correction_type: str) -> Optional[Tuple[list[str], list[str]]]:
+    """Возвращает event types и точные payload-маркеры для pH/EC cooldown."""
+    correction_key = str(correction_type or "").strip().lower()
+    if correction_key == "ph":
+        return (
+            ["PH_CORRECTED", "DOSING"],
+            ["add_acid", "add_base", "ph_correction", "ph"],
+        )
+    if correction_key == "ec":
+        return (
+            ["EC_DOSING", "EC_CORRECTED", "DOSING"],
+            ["add_nutrients", "dilute", "ec_correction", "ec"],
+        )
+    return None
+
+
 def _to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
     """Нормализует datetime к UTC без tzinfo для операций с БД (timestamp без TZ)."""
     if value is None:
@@ -34,31 +50,29 @@ def _now_naive_utc() -> datetime:
 
 async def get_last_correction_time(zone_id: int, correction_type: str) -> Optional[datetime]:
     """Возвращает timestamp последней корректировки pH/EC для зоны."""
-    # Ищем события корректировки по типу
-    if correction_type == "ph":
-        event_types = ['PH_CORRECTED', 'DOSING']
-        pattern = "%ph%"
-    elif correction_type == "ec":
-        event_types = ['EC_DOSING', 'EC_CORRECTED', 'DOSING']
-        pattern = "%ec%"
-    else:
+    filters = _resolve_correction_event_filters(correction_type)
+    if filters is None:
         return None
-    
+
+    event_types, payload_markers = filters
     rows = await fetch(
         """
         SELECT created_at
         FROM zone_events
         WHERE zone_id = $1
           AND type = ANY($2::text[])
-          AND (payload_json->>'correction_type' LIKE $3 OR payload_json->>'type' LIKE $3)
+          AND (
+            LOWER(COALESCE(payload_json->>'correction_type', '')) = ANY($3::text[])
+            OR LOWER(COALESCE(payload_json->>'type', '')) = ANY($3::text[])
+          )
         ORDER BY created_at DESC
         LIMIT 1
         """,
         zone_id,
         event_types,
-        pattern,
+        payload_markers,
     )
-    
+
     if rows and len(rows) > 0:
         return _to_naive_utc(rows[0]["created_at"])
     return None
