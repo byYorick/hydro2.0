@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from application.executor_constants import (
+from executor.executor_constants import (
     AUTO_LOGIC_TANK_STATE_MACHINE_V1,
     TELEMETRY_FRESHNESS_ENFORCE,
     TELEMETRY_FRESHNESS_MAX_AGE_SEC,
@@ -13,7 +13,7 @@ from application.executor_constants import (
     TWO_TANK_TOPOLOGIES,
     _runtime_scheduler_constant,
 )
-from application.workflow_phase_policy import (
+from executor.workflow_phase_policy import (
     build_workflow_state_payload as policy_build_workflow_state_payload,
     derive_workflow_phase as policy_derive_workflow_phase,
     extract_workflow_hint as policy_extract_workflow_hint,

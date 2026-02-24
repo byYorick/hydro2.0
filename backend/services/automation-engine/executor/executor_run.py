@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.decision_alerts import (
+from executor.decision_alerts import (
     emit_decision_alert as policy_emit_decision_alert,
     should_emit_decision_alert as policy_should_emit_decision_alert,
 )
-from application.execution_branches import execute_action_required_branch as policy_execute_action_required_branch
-from application.execution_decision import run_decision_phase as policy_run_decision_phase
-from application.execution_finalize import finalize_execution as policy_finalize_execution
-from application.execution_flow_policy import (
+from executor.execution_branches import execute_action_required_branch as policy_execute_action_required_branch
+from executor.execution_decision import run_decision_phase as policy_run_decision_phase
+from executor.execution_finalize import finalize_execution as policy_finalize_execution
+from executor.execution_flow_policy import (
     apply_decision_defaults as policy_apply_decision_defaults,
     build_decision_payload as policy_build_decision_payload,
     build_execution_finished_zone_event_payload as policy_build_execution_finished_zone_event_payload,
@@ -21,14 +21,14 @@ from application.execution_flow_policy import (
     build_task_finished_payload as policy_build_task_finished_payload,
     build_task_received_payload as policy_build_task_received_payload,
 )
-from application.execution_logging import (
+from executor.execution_logging import (
     log_execution_finished as policy_log_execution_finished,
     log_execution_started as policy_log_execution_started,
 )
-from application.execution_prepare import prepare_execution_inputs as policy_prepare_execution_inputs
-from application.execution_startup import emit_execution_started_events as policy_emit_execution_started_events
-from application.no_action_branch import execute_no_action_branch as policy_execute_no_action_branch
-from application.task_context import build_task_context as policy_build_task_context
+from executor.execution_prepare import prepare_execution_inputs as policy_prepare_execution_inputs
+from executor.execution_startup import emit_execution_started_events as policy_emit_execution_started_events
+from executor.no_action_branch import execute_no_action_branch as policy_execute_no_action_branch
+from executor.task_context import build_task_context as policy_build_task_context
 from domain.models.decision_models import DecisionOutcome
 
 PrepareExecutionInputsFn = Callable[..., tuple[str, Dict[str, Any], Any]]

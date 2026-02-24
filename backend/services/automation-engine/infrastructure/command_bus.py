@@ -19,7 +19,9 @@ from .command_bus_controller import publish_controller_command, publish_controll
 from .command_bus_dedupe import (
     bind_dedupe_cmd_id,
     build_dedupe_reference_key,
+    build_dedupe_scope_key,
     complete_command_dedupe,
+    evict_conflicting_scope_entries_locked,
     normalized_json_payload,
     prune_dedupe_store_locked,
     reserve_command_dedupe,
@@ -65,7 +67,9 @@ class CommandBus:
     _resolve_dedupe_ttl_sec = resolve_dedupe_ttl_sec
     _normalized_json_payload = staticmethod(normalized_json_payload)
     _build_dedupe_reference_key = build_dedupe_reference_key
+    _build_dedupe_scope_key = build_dedupe_scope_key
     _prune_dedupe_store_locked = prune_dedupe_store_locked
+    _evict_conflicting_scope_entries_locked = evict_conflicting_scope_entries_locked
     _reserve_command_dedupe = reserve_command_dedupe
     _bind_dedupe_cmd_id = bind_dedupe_cmd_id
     _complete_command_dedupe = complete_command_dedupe
@@ -162,4 +166,3 @@ __all__ = [
     "_TERMINAL_COMMAND_STATUSES",
     "_TRUE_VALUES",
 ]
-

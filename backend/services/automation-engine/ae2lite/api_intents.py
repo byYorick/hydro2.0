@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.api_contracts import SchedulerTaskRequest, StartCycleRequest
+from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
 
-DEFAULT_INTENT_TYPE = "IRRIGATE_ONCE"
-DEFAULT_INTENT_STATUS = "pending"
 TERMINAL_INTENT_STATUSES = {"completed", "failed", "cancelled"}
 
 
@@ -19,6 +18,11 @@ def _as_dict(value: Any) -> Dict[str, Any]:
 def _intent_task_type(intent_payload: Dict[str, Any]) -> str:
     raw = str(intent_payload.get("task_type") or "diagnostics").strip().lower()
     return raw if raw else "diagnostics"
+
+
+def _intent_correlation_id(*, intent_id: int, retry_count: int, idempotency_key: str) -> str:
+    digest = hashlib.sha256(str(idempotency_key or "").encode("utf-8")).hexdigest()[:16]
+    return f"start-cycle-intent:{max(intent_id, 0)}:{max(retry_count, 0)}:{digest}"
 
 
 def _intent_runtime_payload(
@@ -74,7 +78,11 @@ def build_scheduler_task_request_from_intent(
         scheduled_for=now.isoformat(),
         due_at=due_at.isoformat(),
         expires_at=expires_at.isoformat(),
-        correlation_id=f"start-cycle-intent:{intent_id}:{retry_count}:{req.idempotency_key}",
+        correlation_id=_intent_correlation_id(
+            intent_id=intent_id,
+            retry_count=retry_count,
+            idempotency_key=req.idempotency_key,
+        ),
     )
 
 
@@ -137,73 +145,20 @@ async def claim_start_cycle_intent(
             return {"decision": "deduplicated", "intent": existing}
         if status in TERMINAL_INTENT_STATUSES:
             return {"decision": "terminal", "intent": existing}
-
-    inserted = await fetch_fn(
+    cross_zone_rows = await fetch_fn(
         """
-        INSERT INTO zone_automation_intents (
-            zone_id,
-            intent_type,
-            payload,
-            idempotency_key,
-            status,
-            not_before,
-            retry_count,
-            max_retries,
-            created_at,
-            updated_at
-        )
-        VALUES (
-            $1,
-            $2,
-            $3::jsonb,
-            $4,
-            $5,
-            $6,
-            0,
-            3,
-            $6,
-            $6
-        )
-        ON CONFLICT (idempotency_key)
-        DO UPDATE SET updated_at = EXCLUDED.updated_at
-        RETURNING *
+        SELECT *
+        FROM zone_automation_intents
+        WHERE idempotency_key = $1
+        ORDER BY id DESC
+        LIMIT 1
         """,
-        zone_id,
-        DEFAULT_INTENT_TYPE,
-        {
-            "source": req.source,
-            "task_type": "diagnostics",
-            "workflow": "cycle_start",
-        },
         req.idempotency_key,
-        DEFAULT_INTENT_STATUS,
-        now,
     )
-    if not inserted:
-        raise RuntimeError("intent_insert_failed")
+    if cross_zone_rows:
+        return {"decision": "conflict_cross_zone", "intent": dict(cross_zone_rows[0])}
 
-    inserted_row = dict(inserted[0])
-    if str(inserted_row.get("status") or "").strip().lower() in {"claimed", "running", "completed"}:
-        return {"decision": "deduplicated", "intent": inserted_row}
-
-    claimed_after_insert = await fetch_fn(
-        """
-        UPDATE zone_automation_intents
-        SET status = 'claimed',
-            claimed_at = $3,
-            updated_at = $3
-        WHERE id = $1
-          AND zone_id = $2
-          AND status = 'pending'
-        RETURNING *
-        """,
-        int(inserted_row["id"]),
-        zone_id,
-        now,
-    )
-    if claimed_after_insert:
-        return {"decision": "claimed", "intent": dict(claimed_after_insert[0])}
-    return {"decision": "deduplicated", "intent": inserted_row}
+    return {"decision": "missing", "intent": {}}
 
 
 async def mark_intent_running(

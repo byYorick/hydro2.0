@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from application.diagnostics_execution import execute_diagnostics as policy_execute_diagnostics
-from application.executor_constants import (
+from executor.diagnostics_execution import execute_diagnostics as policy_execute_diagnostics
+from executor.executor_constants import (
     ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
     REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
 )

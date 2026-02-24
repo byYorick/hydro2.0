@@ -130,6 +130,7 @@ class CommandHandler:
             "set_relay": self._handle_set_relay,
             "run_pump": self._handle_run,
             "dose": self._handle_dose,
+            "state": self._handle_state,
             "set_pwm": self._handle_set_pwm,
             "light_on": self._handle_light_on,
             "light_off": self._handle_light_off,
@@ -353,6 +354,11 @@ class CommandHandler:
                 return f"Command {cmd} is only supported on channel 'system', got '{channel}'"
             if self._node_type_name() not in {"ph", "ec"}:
                 return f"Command {cmd} is only supported for ph/ec nodes, got '{self._node_type_name()}'"
+            return None
+
+        if cmd == "state":
+            if channel != "storage_state":
+                return f"Command {cmd} is only supported on channel 'storage_state', got '{channel}'"
             return None
 
         if cmd in {"set_relay", "run_pump", "dose", "set_pwm", "light_on", "light_off"}:
@@ -761,6 +767,48 @@ class CommandHandler:
         if applied:
             return CommandStatus.DONE, {"details": "Dose applied", **dose_details}
         return CommandStatus.NO_EFFECT, {"details": "Dose had no effect", **dose_details}
+
+    def _build_state_snapshot(self) -> Dict[str, Any]:
+        """Собрать snapshot состояния для channel=storage_state."""
+        snapshot: Dict[str, Any] = {}
+
+        for channel, act_state in sorted(self.node.actuator_states.items()):
+            snapshot[channel] = bool(getattr(act_state, "state", False))
+
+        # Алиасы для совместимости с обработкой IRR_STATE_SNAPSHOT в history-logger.
+        if "main_pump" in snapshot and "pump_main" not in snapshot:
+            snapshot["pump_main"] = bool(snapshot["main_pump"])
+        if "pump_main" in snapshot and "main_pump" not in snapshot:
+            snapshot["main_pump"] = bool(snapshot["pump_main"])
+
+        level_aliases = (
+            ("clean_level_max", "level_clean_max"),
+            ("clean_level_min", "level_clean_min"),
+            ("solution_level_max", "level_solution_max"),
+            ("solution_level_min", "level_solution_min"),
+        )
+        for canonical, legacy in level_aliases:
+            value: Optional[float] = None
+            if canonical in self.node.sensor_states:
+                value = self.node.sensor_states[canonical].value
+            elif legacy in self.node.sensor_states:
+                value = self.node.sensor_states[legacy].value
+            if value is None:
+                continue
+            is_triggered = bool(value >= 0.5)
+            snapshot[canonical] = is_triggered
+            snapshot[legacy] = is_triggered
+
+        return snapshot
+
+    def _handle_state(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать команду state для получения snapshot состояния контура."""
+        snapshot = self._build_state_snapshot()
+        return CommandStatus.DONE, {
+            "details": "State snapshot generated",
+            "snapshot": snapshot,
+            "state": snapshot,
+        }
     
     async def _stop_pump_after(self, channel: str, duration_ms: int):
         """Остановить насос через указанное время."""

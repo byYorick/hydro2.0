@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from common.db import create_scheduler_log, create_zone_event
@@ -19,6 +21,18 @@ SUPPORTED_SCHEDULER_TASK_TYPES = {
     "mist",
     "diagnostics",
 }
+
+
+def _env_true(name: str, default: str = "1") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+_AE_INTERNAL_ENQUEUE_RUNTIME_DISPATCH_ENABLED = _env_true("AE_INTERNAL_ENQUEUE_RUNTIME_DISPATCH_ENABLED", "1")
+_INTERNAL_ENQUEUE_DUE_SEC = max(5, int(os.getenv("AE_INTERNAL_ENQUEUE_DUE_SEC", "60")))
+_INTERNAL_ENQUEUE_EXPIRES_SEC = max(
+    _INTERNAL_ENQUEUE_DUE_SEC + 5,
+    int(os.getenv("AE_INTERNAL_ENQUEUE_EXPIRES_SEC", "900")),
+)
 
 
 def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -36,6 +50,143 @@ def parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
     if parsed.tzinfo:
         return parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
+
+
+async def _schedule_runtime_dispatch_if_possible(
+    *,
+    zone_id: int,
+    task_type: str,
+    payload: Dict[str, Any],
+    scheduled_for_dt: datetime,
+    expires_at_dt: Optional[datetime],
+    correlation_id: str,
+    enqueue_id: str,
+    task_name: str,
+) -> Optional[Dict[str, Any]]:
+    if not _AE_INTERNAL_ENQUEUE_RUNTIME_DISPATCH_ENABLED:
+        return None
+
+    try:
+        from ae2lite.api_contracts import SchedulerTaskRequest
+        import ae2lite.api_runtime as api_runtime
+        from utils.logging_context import get_trace_id
+    except Exception:
+        return None
+
+    create_task_fn = getattr(api_runtime, "_create_scheduler_task", None)
+    execute_task_fn = getattr(api_runtime, "_execute_scheduler_task", None)
+    spawn_task_fn = getattr(api_runtime, "_spawn_background_task", None)
+    command_bus = getattr(api_runtime, "_command_bus", None)
+    zone_service = getattr(api_runtime, "_zone_service", None)
+    if not callable(create_task_fn) or not callable(execute_task_fn) or not callable(spawn_task_fn):
+        return None
+    if command_bus is None:
+        return None
+    if str(task_type).strip().lower() == "diagnostics" and zone_service is None:
+        return None
+
+    due_at_dt = scheduled_for_dt + timedelta(seconds=_INTERNAL_ENQUEUE_DUE_SEC)
+    effective_expires_dt = expires_at_dt or (scheduled_for_dt + timedelta(seconds=_INTERNAL_ENQUEUE_EXPIRES_SEC))
+    if effective_expires_dt <= due_at_dt:
+        effective_expires_dt = due_at_dt + timedelta(seconds=5)
+
+    req = SchedulerTaskRequest(
+        zone_id=int(zone_id),
+        task_type=str(task_type).strip().lower(),
+        payload=payload,
+        scheduled_for=scheduled_for_dt.isoformat(),
+        due_at=due_at_dt.isoformat(),
+        expires_at=effective_expires_dt.isoformat(),
+        correlation_id=correlation_id,
+    )
+
+    async def _dispatch_when_due() -> None:
+        delay_sec = (scheduled_for_dt - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds()
+        if delay_sec > 0:
+            await asyncio.sleep(delay_sec)
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if expires_at_dt is not None and now >= expires_at_dt:
+            try:
+                await create_scheduler_log(
+                    task_name,
+                    "expired",
+                    {
+                        "enqueue_id": enqueue_id,
+                        "zone_id": int(zone_id),
+                        "task_type": str(task_type).strip().lower(),
+                        "status": "expired",
+                        "scheduled_for": scheduled_for_dt.isoformat(),
+                        "expires_at": expires_at_dt.isoformat(),
+                        "correlation_id": correlation_id,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to persist internal enqueue expiration snapshot: enqueue_id=%s zone_id=%s",
+                    enqueue_id,
+                    zone_id,
+                    exc_info=True,
+                )
+            return
+
+        task, is_duplicate = await create_task_fn(req)
+        task_id = str(task.get("task_id") or "").strip()
+        if not task_id:
+            logger.warning(
+                "Internal enqueue runtime dispatch skipped: task created without task_id (enqueue_id=%s zone_id=%s)",
+                enqueue_id,
+                zone_id,
+            )
+            return
+
+        dispatch_status = "deduplicated" if bool(is_duplicate) else "accepted"
+        try:
+            await create_scheduler_log(
+                task_name,
+                dispatch_status,
+                {
+                    "enqueue_id": enqueue_id,
+                    "zone_id": int(zone_id),
+                    "task_type": str(task_type).strip().lower(),
+                    "status": dispatch_status,
+                    "scheduled_for": scheduled_for_dt.isoformat(),
+                    "expires_at": expires_at_dt.isoformat() if expires_at_dt else None,
+                    "correlation_id": correlation_id,
+                    "scheduler_task_id": task_id,
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Failed to persist internal enqueue dispatch snapshot: enqueue_id=%s zone_id=%s task_id=%s",
+                enqueue_id,
+                zone_id,
+                task_id,
+                exc_info=True,
+            )
+
+        if bool(is_duplicate):
+            return
+
+        trace_id: Optional[str] = None
+        try:
+            trace_id = get_trace_id()
+        except Exception:
+            trace_id = None
+        await execute_task_fn(task_id, req, trace_id)
+
+    spawn_task_fn(
+        _dispatch_when_due(),
+        task_name=f"internal_enqueue_dispatch_{enqueue_id}",
+        zone_id=int(zone_id),
+        task_type=str(task_type).strip().lower(),
+    )
+    return {
+        "status": "scheduled",
+        "scheduled_for": scheduled_for_dt.isoformat(),
+        "due_at": due_at_dt.isoformat(),
+        "expires_at": effective_expires_dt.isoformat(),
+    }
 
 
 async def enqueue_internal_scheduler_task(
@@ -107,6 +258,17 @@ async def enqueue_internal_scheduler_task(
             exc_info=True,
         )
 
+    runtime_dispatch = await _schedule_runtime_dispatch_if_possible(
+        zone_id=int(zone_id),
+        task_type=normalized_task_type,
+        payload=details["payload"],
+        scheduled_for_dt=scheduled_for_dt,
+        expires_at_dt=expires_at_dt,
+        correlation_id=effective_correlation_id,
+        enqueue_id=enqueue_id,
+        task_name=task_name,
+    )
+
     return {
         "enqueue_id": enqueue_id,
         "status": "pending",
@@ -117,4 +279,5 @@ async def enqueue_internal_scheduler_task(
         "correlation_id": effective_correlation_id,
         "task_name": task_name,
         "details": details,
+        "runtime_dispatch": runtime_dispatch,
     }

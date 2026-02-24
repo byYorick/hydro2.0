@@ -6,13 +6,13 @@ smaller files below the 400 LOC limit.
 
 from __future__ import annotations
 
-from application.two_tank_phase_starters_recovery import start_two_tank_irrigation_recovery
-from application.two_tank_phase_starters_startup import (
+from executor.two_tank_phase_starters_recovery import start_two_tank_irrigation_recovery
+from executor.two_tank_phase_starters_startup import (
     start_two_tank_clean_fill,
     start_two_tank_prepare_recirculation,
     start_two_tank_solution_fill,
 )
-from application.two_tank_phase_starters_types import (
+from executor.two_tank_phase_starters_types import (
     CompensateStartEnqueueFailureFn,
     DispatchSensorModeFn,
     DispatchTwoTankCommandPlanFn,

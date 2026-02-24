@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 from services.resilience_contract import (
     INFRA_CYCLE_START_ENQUEUE_FAILED,
     INFRA_CYCLE_START_REFILL_COMMAND_FAILED,

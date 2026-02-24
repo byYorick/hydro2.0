@@ -67,11 +67,8 @@ AE_TWOTANK_SAFETY_GUARDS_ENABLED = _env_bool("AE_TWOTANK_SAFETY_GUARDS_ENABLED",
 
 
 TWO_TANK_TOPOLOGIES = {"two_tank_drip_substrate_trays", "two_tank"}
-THREE_TANK_TOPOLOGIES = {
-    "three_tank_drip_substrate_trays",
-    "three_tank_substrate_trays",
-    "three_tank",
-}
+# AE2-Lite v1 scope: only two-tank runtime is supported.
+THREE_TANK_TOPOLOGIES = set()
 CYCLE_START_WORKFLOWS = {"cycle_start", "refill_check"}
 
 

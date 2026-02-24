@@ -260,13 +260,34 @@ async def run_runtime_cycle(
                     scheduler_writer_active = await shared._is_scheduler_single_writer_active()
 
                 if scheduler_writer_active and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                    now_utc = utcnow()
-                    if shared._should_log_scheduler_single_writer_skip(now_utc):
-                        shared.logger.info(
-                            "Scheduler single-writer active: continuous loop side-effects are gated "
-                            "(set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)"
+                    now_mono = time.monotonic()
+                    if shared._scheduler_writer_active_since is None:
+                        shared._scheduler_writer_active_since = now_mono
+                    elapsed = now_mono - shared._scheduler_writer_active_since
+                    if elapsed >= shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC:
+                        # Watchdog сработал: scheduler-writer не освобождает блокировку слишком долго
+                        shared.logger.warning(
+                            "Scheduler writer watchdog expired after %.0fs (limit %.0fs), "
+                            "forcing fallback zone processing",
+                            elapsed,
+                            shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
                         )
+                        scheduler_writer_active = False
+                        shared._scheduler_writer_active_since = None
+                    else:
+                        now_utc = utcnow()
+                        if shared._should_log_scheduler_single_writer_skip(now_utc):
+                            shared.logger.info(
+                                "Scheduler single-writer active: continuous loop side-effects are gated "
+                                "(%.0fs / %.0fs watchdog, set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)",
+                                elapsed,
+                                shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
+                            )
                 else:
+                    # Scheduler не активен или fallback включён — сбрасываем watchdog
+                    shared._scheduler_writer_active_since = None
+
+                if not scheduler_writer_active or shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
                     if automation_settings.ADAPTIVE_CONCURRENCY:
                         optimal_concurrency = await calculate_optimal_concurrency(
                             total_zones=len(zones),

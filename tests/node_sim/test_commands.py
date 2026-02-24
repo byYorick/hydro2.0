@@ -147,3 +147,37 @@ def test_sensor_mode_commands_toggle_flags_for_ph_node():
     assert status == CommandStatus.DONE
     assert details["details"] == "sensor_mode_deactivated"
     assert node.ph_sensor_mode_active is False
+
+
+def test_state_command_returns_snapshot_for_storage_state_channel():
+    node = NodeModel(
+        gh_uid="gh-1",
+        zone_uid="zn-1",
+        node_uid="nd-irrig-1",
+        hardware_id="hw-irrig-1",
+        node_type=NodeType.IRRIG,
+        actuators=["valve_clean_fill", "pump_main"],
+        sensors=["level_clean_max"],
+    )
+    handler = CommandHandler(node, mqtt_client=None)
+
+    node.set_actuator("valve_clean_fill", True)
+    node.set_actuator("pump_main", False)
+    node.set_sensor_value("level_clean_max", 1.0)
+
+    status, details = handler._handle_state("state", {"channel": "storage_state"})
+
+    assert status == CommandStatus.DONE
+    assert details["snapshot"]["valve_clean_fill"] is True
+    assert details["snapshot"]["pump_main"] is False
+    assert details["snapshot"]["clean_level_max"] is True
+    assert details["state"]["level_clean_max"] is True
+
+
+def test_state_command_rejects_non_storage_state_channel():
+    node = _make_node(NodeType.IRRIG)
+    handler = CommandHandler(node, mqtt_client=None)
+
+    error = handler._validate_command_channel_compatibility("pump_main", "state")
+    assert error is not None
+    assert "storage_state" in error

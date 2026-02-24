@@ -1,0 +1,386 @@
+# E85: Two-Tank Workflow — Этап 3: Рециркуляция для подготовки раствора
+# DoD: Оба бака полные (clean+solution) → AE запускает solution_fill →
+#       solution_fill_check обнаруживает level_solution_max=1 triggered →
+#       evaluate EC/pH (EC/PH сенсоры временно неактивны = targets_reached=false) →
+#       запускает prepare_recirculation_start →
+#       set_relay(valve_solution_supply, valve_solution_fill, pump_main=true)
+#
+# Временные требования:
+#   AE_REFILL_CHECK_DELAY_SEC=10 (в docker-compose.e2e.yml)
+#   MAIN_LOOP_SLEEP_SECONDS=2
+#   Итого ожидание solution_fill_check: ~10-15 сек
+
+name: E85_recirculation_targets
+description: |
+  Проверяет третий этап two_tank_startup workflow: запуск рециркуляции.
+  - Оба бака полные: level_clean_max=1, level_clean_min=1, level_solution_max=1
+  - AE запускает solution_fill → через AE_REFILL_CHECK_DELAY_SEC (10s) solution_fill_check
+  - solution_fill_check: solution_max=1 triggered → stop solution_fill →
+    evaluate targets (EC/PH сенсоры временно неактивны = targets_reached=false) →
+    запускает prepare_recirculation
+  - В commands: set_relay(valve_solution_supply=true, valve_solution_fill=true, pump_main=true)
+
+actions:
+  # ─── 1. Получаем контекст зоны ────────────────────────────────────────────
+  - step: get_zone_context
+    type: database_query
+    query: |
+      SELECT z.id AS zone_id, z.greenhouse_id
+      FROM zones z
+      WHERE z.uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_ctx
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_ctx.0.zone_id}
+    greenhouse_id: ${zone_ctx.0.greenhouse_id}
+
+  # ─── 2. Чистим старые grow_cycles ────────────────────────────────────────
+  - step: cleanup_grow_cycles
+    type: database_execute
+    query: DELETE FROM grow_cycles WHERE zone_id = :zid
+    params:
+      zid: ${zone_id}
+
+  # ─── 3. Upsert irrig node ─────────────────────────────────────────────────
+  - step: upsert_irrig_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
+      VALUES (:zid, 'nd-irrig-e2e', 'E2E Irrig Node', 'irrig', 'online', NOW(), NOW(), NOW())
+      ON CONFLICT (uid) DO UPDATE SET
+        zone_id       = EXCLUDED.zone_id,
+        type          = 'irrig',
+        status        = 'online',
+        last_seen_at  = NOW(),
+        updated_at    = NOW()
+    params:
+      zid: ${zone_id}
+
+  - step: get_irrig_node
+    type: database_query
+    query: SELECT id FROM nodes WHERE uid = 'nd-irrig-e2e' LIMIT 1
+    save: irrig_node_row
+
+  - step: set_irrig_node_id
+    type: set
+    irrig_node_id: ${irrig_node_row.0.id}
+
+  # ─── 4. Upsert actuator channels ─────────────────────────────────────────
+  - step: upsert_actuator_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT :nid, ch, 'ACTUATOR', NOW(), NOW()
+      FROM (VALUES
+        ('valve_clean_fill'),
+        ('valve_clean_supply'),
+        ('valve_solution_fill'),
+        ('valve_solution_supply'),
+        ('pump_main')
+      ) AS t(ch)
+      ON CONFLICT (node_id, channel) DO UPDATE SET type = 'ACTUATOR', updated_at = NOW()
+    params:
+      nid: ${irrig_node_id}
+
+  # ─── 5. Sensors уровня (WATER_LEVEL) ─────────────────────────────────────
+  - step: delete_old_level_sensors
+    type: database_execute
+    query: |
+      DELETE FROM sensors
+      WHERE zone_id = :zid
+        AND type = 'WATER_LEVEL'
+        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+    params:
+      zid: ${zone_id}
+
+  - step: insert_level_sensors
+    type: database_execute
+    query: |
+      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+      SELECT :ghid, :zid, :nid, 'inside', 'WATER_LEVEL', label, true, NOW(), NOW()
+      FROM (VALUES
+        ('level_clean_max'),
+        ('level_clean_min'),
+        ('level_solution_max'),
+        ('level_solution_min')
+      ) AS t(label)
+    params:
+      ghid: ${greenhouse_id}
+      zid: ${zone_id}
+      nid: ${irrig_node_id}
+
+  # ─── 5.1 Временно отключаем EC/PH сенсоры для детерминированного recirculation ───
+  # read_latest_metric учитывает только sensors.is_active=true.
+  # Здесь тестируем ветку "нет доступных PH/EC данных => targets_reached=false".
+  - step: disable_ec_ph_sensors
+    type: database_execute
+    query: |
+      UPDATE sensors
+      SET is_active = FALSE,
+          updated_at = NOW()
+      WHERE zone_id = :zid
+        AND type IN ('EC', 'PH')
+    params:
+      zid: ${zone_id}
+
+  # ─── 6. Telemetry: ОБА БАКА ПОЛНЫЕ ───────────────────────────────────────
+  # Все 4 уровня = 1.0 (triggered)
+  # clean_max=1 + clean_min=1 → AE пропускает clean_fill, запускает solution_fill
+  # solution_max=1 → solution_fill_check немедленно обнаруживает "полный"
+  # EC/PH сенсоры временно неактивны → targets_reached=false → запускает prepare_recirculation
+  - step: set_all_tanks_full
+    type: database_execute
+    query: |
+      INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+      SELECT id, 1.0, NOW(), 'GOOD', NOW()
+      FROM sensors
+      WHERE zone_id = :zid AND type = 'WATER_LEVEL'
+        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+      ON CONFLICT (sensor_id) DO UPDATE SET
+        last_value   = 1.0,
+        last_ts      = NOW(),
+        last_quality = 'GOOD',
+        updated_at   = NOW()
+    params:
+      zid: ${zone_id}
+
+  # ─── 7. Создаём рецепт → revision → phase → publish ─────────────────────
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e85-${TIMESTAMP_S}
+      scientific_name: Test Plant E85
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e85-${TIMESTAMP_S}
+      description: Recipe for E85 recirculation test
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Revision for E85
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Growing
+      duration_hours: 168
+      ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
+      ec_target: 1.8
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  # ─── 8. Создаём и запускаем grow cycle ────────────────────────────────────
+  - step: create_grow_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: start_grow_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/start
+    payload: {}
+    save: start_response
+
+  # ─── 9. Ждём команды solution_fill_start ─────────────────────────────────
+  # AE: startup → clean_max=1, clean_min=1 → start solution_fill
+  # (solution_fill_start: valve_clean_supply, valve_solution_fill, pump_main)
+  - step: wait_for_solution_fill_start
+    type: db.wait
+    query: |
+      SELECT id, cmd, channel
+      FROM commands
+      WHERE zone_id = :zid
+        AND cmd = 'set_relay'
+        AND channel = 'valve_clean_supply'
+        AND created_at > NOW() - INTERVAL '3 minutes'
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+    timeout: 30.0
+    save: solution_fill_cmd_row
+
+  # ─── 10. Ждём команды prepare_recirculation_start ────────────────────────
+  # После solution_fill_check (ждёт AE_REFILL_CHECK_DELAY_SEC=10s):
+  #   solution_max=1.0 → triggered → stop solution_fill → evaluate targets
+  #   targets_reached=false (нет EC/pH данных) → start prepare_recirculation
+  #   (prepare_recirculation_start: valve_solution_supply, valve_solution_fill, pump_main)
+  - step: wait_for_prepare_recirculation_start
+    type: db.wait
+    query: |
+      SELECT id, cmd, channel, created_at
+      FROM commands
+      WHERE zone_id = :zid
+        AND cmd = 'set_relay'
+        AND channel = 'valve_solution_supply'
+        AND created_at > NOW() - INTERVAL '5 minutes'
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+    timeout: 45.0
+    save: prepare_recirc_cmd_row
+
+assertions:
+  # Проверка 1: Команда valve_solution_supply отправлена (prepare_recirculation_start)
+  - name: prepare_recirculation_valve_supply
+    type: database_query
+    query: |
+      SELECT id, cmd, channel
+      FROM commands
+      WHERE zone_id = :zid
+        AND cmd = 'set_relay'
+        AND channel = 'valve_solution_supply'
+        AND created_at > NOW() - INTERVAL '10 minutes'
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: channel
+        operator: equals
+        value: valve_solution_supply
+
+  # Проверка 2: Все 3 команды prepare_recirculation присутствуют
+  # (valve_solution_supply + valve_solution_fill + pump_main с недавними timestamp)
+  # Используем окно 10 минут с учётом задержки solution_fill_check
+  - name: prepare_recirculation_all_commands
+    type: database_query
+    query: |
+      SELECT COUNT(DISTINCT channel) AS cnt
+      FROM commands
+      WHERE zone_id = :zid
+        AND cmd = 'set_relay'
+        AND channel IN ('valve_solution_supply', 'valve_solution_fill', 'pump_main')
+        AND created_at > NOW() - INTERVAL '10 minutes'
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: equals
+        value: 3
+
+  # Проверка 3: Solution fill тоже был запущен (промежуточный этап)
+  - name: solution_fill_was_started
+    type: database_query
+    query: |
+      SELECT id, type
+      FROM zone_events
+      WHERE zone_id = :zid
+        AND type = 'SOLUTION_FILL_STARTED'
+        AND created_at > NOW() - INTERVAL '10 minutes'
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 4: Общее количество set_relay команд (solution_fill + prepare_recirculation)
+  # solution_fill_start: 3 + solution_fill_stop: 3 + prepare_recirculation_start: 3 = 9 минимум
+  # (Но с allow_no_effect некоторые могут быть пропущены, поэтому >= 3)
+  - name: multiple_relay_commands_sent
+    type: database_query
+    query: |
+      SELECT COUNT(*) AS cnt
+      FROM commands
+      WHERE zone_id = :zid
+        AND cmd = 'set_relay'
+        AND created_at > NOW() - INTERVAL '10 minutes'
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: greater_than_or_equal
+        value: 3
+
+cleanup:
+  - step: delete_grow_cycles
+    type: database_execute
+    query: DELETE FROM grow_cycles WHERE zone_id = :zid
+    params:
+      zid: ${zone_id}
+    optional: true
+
+  - step: delete_telemetry_last
+    type: database_execute
+    query: |
+      DELETE FROM telemetry_last
+      WHERE sensor_id IN (
+        SELECT id FROM sensors WHERE zone_id = :zid AND type = 'WATER_LEVEL'
+      )
+    params:
+      zid: ${zone_id}
+    optional: true
+
+  - step: delete_level_sensors
+    type: database_execute
+    query: |
+      DELETE FROM sensors
+      WHERE zone_id = :zid AND type = 'WATER_LEVEL'
+        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+    params:
+      zid: ${zone_id}
+    optional: true
+
+  - step: delete_node_channels
+    type: database_execute
+    query: DELETE FROM node_channels WHERE node_id = :nid
+    params:
+      nid: ${irrig_node_id}
+    optional: true
+
+  - step: delete_irrig_node
+    type: database_execute
+    query: DELETE FROM nodes WHERE uid = 'nd-irrig-e2e'
+    optional: true
+
+  - step: restore_ec_ph_sensors_active
+    type: database_execute
+    query: |
+      UPDATE sensors
+      SET is_active = TRUE,
+          updated_at = NOW()
+      WHERE zone_id = :zid
+        AND type IN ('EC', 'PH')
+    params:
+      zid: ${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

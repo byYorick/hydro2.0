@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import api
-from application.api_contracts import StartCycleRequest
+from ae2lite.api_contracts import StartCycleRequest
 
 
 @pytest.mark.asyncio

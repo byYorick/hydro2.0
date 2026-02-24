@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import uuid4
 
-from application.executor_constants import (
+from executor.executor_constants import (
     AUTO_LOGIC_DECISION_V1,
     AUTO_LOGIC_NEW_SENSORS_V1,
     TERMINAL_STATUS_ERROR_CODES,
 )
-from application.workflow_phase_policy import WORKFLOW_PHASE_VALUES, WORKFLOW_STAGES_CANONICAL
+from executor.workflow_phase_policy import WORKFLOW_PHASE_VALUES, WORKFLOW_STAGES_CANONICAL
 from config.scheduler_task_mapping import SchedulerTaskMapping
 from domain.models.decision_models import DecisionOutcome
 from domain.policies.command_mapping_policy import (
@@ -49,7 +49,7 @@ from domain.policies.outcome_policy import (
     build_decision_retry_correlation_id as policy_build_decision_retry_correlation_id,
     extract_two_tank_chemistry_orchestration as policy_extract_two_tank_chemistry_orchestration,
 )
-from application.workflow_phase_policy import (
+from executor.workflow_phase_policy import (
     normalize_workflow_phase as policy_normalize_workflow_phase,
     normalize_workflow_stage as policy_normalize_workflow_stage,
 )

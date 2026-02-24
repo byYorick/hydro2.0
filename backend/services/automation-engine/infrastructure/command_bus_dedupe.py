@@ -55,6 +55,43 @@ def build_dedupe_reference_key(
     return f"zone:{int(zone_id)}:cmd:{digest}"
 
 
+def build_dedupe_scope_key(
+    command_bus: Any,
+    *,
+    zone_id: int,
+    node_uid: str,
+    channel: str,
+    cmd: str,
+) -> str:
+    # Scope key groups commands by actuator endpoint regardless of params.
+    # This lets us invalidate stale dedupe entries after a state-flip command.
+    return "|".join(
+        [
+            str(int(zone_id)),
+            str(node_uid or "").strip().lower(),
+            str(channel or "").strip().lower(),
+            str(cmd or "").strip().lower(),
+        ]
+    )
+
+
+def evict_conflicting_scope_entries_locked(
+    command_bus: Any,
+    *,
+    scope_key: str,
+    reference_key: str,
+) -> None:
+    if not scope_key:
+        return
+    stale_keys = [
+        key
+        for key, entry in command_bus._dedupe_store.items()
+        if key != reference_key and str(entry.get("scope_key") or "") == scope_key
+    ]
+    for key in stale_keys:
+        command_bus._dedupe_store.pop(key, None)
+
+
 def prune_dedupe_store_locked(command_bus: Any, now_monotonic: float) -> None:
     stale_keys = [
         key
@@ -93,10 +130,17 @@ async def reserve_command_dedupe(
         cmd=cmd,
         params=params,
     )
+    scope_key = command_bus._build_dedupe_scope_key(
+        zone_id=zone_id,
+        node_uid=node_uid,
+        channel=channel,
+        cmd=cmd,
+    )
     if not command_bus.command_dedupe_enabled:
         return {
             "decision": "new",
             "reference_key": reference_key,
+            "scope_key": scope_key,
             "dedupe_ttl_sec": dedupe_ttl_sec,
             "reservation_token": None,
             "effective_cmd_id": cmd_id,
@@ -106,6 +150,10 @@ async def reserve_command_dedupe(
     now_iso = time.time()
     async with command_bus._dedupe_lock:
         command_bus._prune_dedupe_store_locked(now_monotonic)
+        command_bus._evict_conflicting_scope_entries_locked(
+            scope_key=scope_key,
+            reference_key=reference_key,
+        )
         existing = command_bus._dedupe_store.get(reference_key)
         if existing is not None and float(existing.get("expires_at_monotonic", 0.0)) > now_monotonic:
             status = str(existing.get("status") or "").strip().lower()
@@ -117,6 +165,7 @@ async def reserve_command_dedupe(
                 return {
                     "decision": "duplicate_blocked",
                     "reference_key": reference_key,
+                    "scope_key": scope_key,
                     "dedupe_ttl_sec": dedupe_ttl_sec,
                     "reservation_token": None,
                     "effective_cmd_id": effective_cmd_id,
@@ -126,6 +175,7 @@ async def reserve_command_dedupe(
             return {
                 "decision": "duplicate_no_effect",
                 "reference_key": reference_key,
+                "scope_key": scope_key,
                 "dedupe_ttl_sec": dedupe_ttl_sec,
                 "reservation_token": None,
                 "effective_cmd_id": effective_cmd_id,
@@ -138,11 +188,13 @@ async def reserve_command_dedupe(
             "created_at_monotonic": now_monotonic,
             "expires_at_monotonic": now_monotonic + float(dedupe_ttl_sec),
             "cmd_id": str(cmd_id or "").strip() or None,
+            "scope_key": scope_key,
         }
         COMMAND_DEDUPE_DECISIONS.labels(outcome="new").inc()
         return {
             "decision": "new",
             "reference_key": reference_key,
+            "scope_key": scope_key,
             "dedupe_ttl_sec": dedupe_ttl_sec,
             "reservation_token": reservation_token,
             "effective_cmd_id": str(cmd_id or "").strip() or None,
@@ -195,4 +247,3 @@ async def complete_command_dedupe(
             entry["expires_at_monotonic"] = now_monotonic + float(max(10, dedupe_ttl_sec))
         else:
             command_bus._dedupe_store.pop(reference_key, None)
-

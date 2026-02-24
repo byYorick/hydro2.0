@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
-from application.api_contracts import SchedulerTaskRequest, StartCycleRequest
+from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
 
 DEFAULT_START_CYCLE_WORKFLOW = "cycle_start"
 

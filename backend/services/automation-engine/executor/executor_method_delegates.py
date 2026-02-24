@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.executor_constants import (
+from executor.executor_constants import (
     ERR_COMMAND_BUSY,
     ERR_COMMAND_EFFECT_NOT_CONFIRMED,
     ERR_COMMAND_ERROR,
@@ -24,19 +24,19 @@ from application.executor_constants import (
     REASON_SOLUTION_FILL_STARTED,
     REASON_TANK_TO_TANK_CORRECTION_STARTED,
 )
-from application.two_tank_phase_starters import (
+from executor.two_tank_phase_starters import (
     start_two_tank_clean_fill as policy_start_two_tank_clean_fill,
     start_two_tank_irrigation_recovery as policy_start_two_tank_irrigation_recovery,
     start_two_tank_prepare_recirculation as policy_start_two_tank_prepare_recirculation,
     start_two_tank_solution_fill as policy_start_two_tank_solution_fill,
 )
-from application.two_tank_recovery_transition import (
+from executor.two_tank_recovery_transition import (
     try_start_two_tank_irrigation_recovery_from_irrigation_failure as policy_try_start_two_tank_irrigation_recovery_from_irrigation_failure,
 )
-from application.workflow_phase_sync_core import (
+from executor.workflow_phase_sync_core import (
     sync_zone_workflow_phase_core as policy_sync_zone_workflow_phase_core,
 )
-from application.workflow_phase_policy import (
+from executor.workflow_phase_policy import (
     WORKFLOW_PHASE_IRRIG_RECIRC,
     WORKFLOW_PHASE_TANK_FILLING,
     WORKFLOW_PHASE_TANK_RECIRC,

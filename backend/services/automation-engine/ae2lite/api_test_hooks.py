@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from application.workflow_phase_policy import WORKFLOW_PHASE_VALUES, normalize_workflow_phase
+from executor.workflow_phase_policy import WORKFLOW_PHASE_VALUES, normalize_workflow_phase
 from infrastructure import CommandBus
 
 

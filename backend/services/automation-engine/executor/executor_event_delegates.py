@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.task_events import build_task_event_payload as policy_build_task_event_payload
+from executor.task_events import build_task_event_payload as policy_build_task_event_payload
 from domain.models.decision_models import DecisionOutcome
 
 

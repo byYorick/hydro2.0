@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Sequence
 
-from application.executor_constants import (
+from executor.executor_constants import (
     AE_LEGACY_WORKFLOW_DEFAULT_ENABLED,
     REFILL_CHECK_DELAY_SEC,
     _runtime_scheduler_constant,
 )
-from application.two_tank_runtime_config import (
+from executor.two_tank_runtime_config import (
     default_two_tank_command_plan as policy_default_two_tank_command_plan,
     normalize_command_plan as policy_normalize_command_plan,
     resolve_two_tank_runtime_config as policy_resolve_two_tank_runtime_config,

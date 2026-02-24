@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.api_recovery_types import RecoverySummary
+from ae2lite.api_recovery_types import RecoverySummary
 from services.resilience_contract import (
     INFRA_SCHEDULER_TASK_RECOVERY_EVENT_FAILED,
     INFRA_SCHEDULER_TASK_RECOVERY_PERSIST_FAILED,

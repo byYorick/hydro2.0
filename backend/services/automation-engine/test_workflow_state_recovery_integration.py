@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from application.api_recovery import recover_zone_workflow_states
+from ae2lite.api_recovery import recover_zone_workflow_states
 
 
 class _WorkflowStore:

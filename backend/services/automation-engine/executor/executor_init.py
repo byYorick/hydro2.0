@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Sequence, Set
 
-from application.command_dispatch import CommandDispatch
-from application.workflow_router import WorkflowRouter
-from application.workflow_state_sync import WorkflowStateSync
-from application.workflow_validator import WorkflowValidator
+from executor.command_dispatch import CommandDispatch
+from executor.workflow_router import WorkflowRouter
+from executor.workflow_state_sync import WorkflowStateSync
+from executor.workflow_validator import WorkflowValidator
 from domain.workflows.cycle_start import CycleStartWorkflow
 from domain.workflows.three_tank import ThreeTankWorkflow
 from domain.workflows.two_tank import TwoTankWorkflow

@@ -12,49 +12,49 @@ from fastapi.responses import JSONResponse
 from prometheus_client import Gauge
 
 from ae2lite.api_runtime_zone_routes import bind_zone_routes
-from application.api_contracts import SchedulerTaskRequest, StartCycleRequest
-from application.api_health import build_readiness_payload as policy_build_readiness_payload
-from application.api_intents import (
+from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
+from ae2lite.api_health import build_readiness_payload as policy_build_readiness_payload
+from ae2lite.api_intents import (
     build_scheduler_task_request_from_intent as policy_build_scheduler_task_request_from_intent,
     claim_start_cycle_intent as policy_claim_start_cycle_intent,
     mark_intent_running as policy_mark_intent_running,
     mark_intent_terminal as policy_mark_intent_terminal,
 )
-from application.api_rate_limit import SlidingWindowRateLimiter
-from application.api_recovery import (
+from ae2lite.api_rate_limit import SlidingWindowRateLimiter
+from ae2lite.api_recovery import (
     recover_inflight_scheduler_tasks as policy_recover_inflight_scheduler_tasks,
     recover_zone_workflow_states as policy_recover_zone_workflow_states,
 )
-from application.api_runtime import (
+from ae2lite.policy_runtime import (
     process_trace_request as policy_process_trace_request,
     spawn_background_task as policy_spawn_background_task,
     update_command_effect_confirm_rate as policy_update_command_effect_confirm_rate,
 )
-from application.api_scheduler_execution import execute_scheduler_task as policy_execute_scheduler_task
-from application.api_scheduler_helpers import (
+from ae2lite.api_scheduler_execution import execute_scheduler_task as policy_execute_scheduler_task
+from ae2lite.api_scheduler_helpers import (
     build_execution_terminal_result as policy_build_execution_terminal_result,
     new_scheduler_task_id as policy_new_scheduler_task_id,
     normalize_failed_execution_result as policy_normalize_failed_execution_result,
     task_payload_fingerprint as policy_task_payload_fingerprint,
     task_payload_matches as policy_task_payload_matches,
 )
-from application.api_scheduler_security import (
+from ae2lite.api_scheduler_security import (
     validate_scheduler_security_baseline as policy_validate_scheduler_security_baseline,
 )
-from application.api_scheduler_store import (
+from ae2lite.api_scheduler_store import (
     cleanup_scheduler_tasks_locked as policy_cleanup_scheduler_tasks_locked,
     create_scheduler_task as policy_create_scheduler_task,
     load_scheduler_task_by_correlation_id as policy_load_scheduler_task_by_correlation_id,
     persist_scheduler_task_snapshot as policy_persist_scheduler_task_snapshot,
     update_scheduler_task as policy_update_scheduler_task,
 )
-from application.api_scheduler_validation import validate_scheduler_zone as policy_validate_scheduler_zone
-from application.api_start_cycle import build_start_cycle_response as policy_build_start_cycle_response
-from application.api_test_hooks import (
+from ae2lite.api_scheduler_validation import validate_scheduler_zone as policy_validate_scheduler_zone
+from ae2lite.api_start_cycle import build_start_cycle_response as policy_build_start_cycle_response
+from ae2lite.api_test_hooks import (
     get_test_hook_for_zone as policy_get_test_hook_for_zone,
     get_zone_state_override as policy_get_zone_state_override,
 )
-from application.api_zone_task_loader import load_latest_zone_task as policy_load_latest_zone_task
+from ae2lite.api_zone_task_loader import load_latest_zone_task as policy_load_latest_zone_task
 from common.db import create_scheduler_log, create_zone_event, execute, fetch
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.trace_context import extract_trace_id_from_headers
@@ -272,7 +272,7 @@ async def _load_latest_zone_task(zone_id: int) -> Optional[Dict[str, Any]]:
 async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)):
     await _validate_scheduler_zone(zone_id)
     await _validate_scheduler_security_baseline(request)
-    if _AE_START_CYCLE_RATE_LIMIT_ENABLED and not _start_cycle_rate_limiter.check(zone_id=zone_id, source=req.source):
+    if _AE_START_CYCLE_RATE_LIMIT_ENABLED and not _start_cycle_rate_limiter.check(zone_id=zone_id):
         raise HTTPException(status_code=429, detail={"error": "start_cycle_rate_limited", "zone_id": zone_id, "window_sec": _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC, "max_requests": _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS})
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -282,6 +282,28 @@ async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleReques
     if decision in {"deduplicated", "terminal"}:
         intent_id = int(intent.get("id") or 0)
         return policy_build_start_cycle_response(zone_id=zone_id, req=req, is_duplicate=True, task_id=f"intent-{intent_id}" if intent_id > 0 else "")
+    if decision == "conflict_cross_zone":
+        conflict_zone_id = int(intent.get("zone_id") or 0)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "start_cycle_idempotency_key_conflict",
+                "zone_id": zone_id,
+                "conflict_zone_id": conflict_zone_id,
+                "idempotency_key": req.idempotency_key,
+            },
+        )
+    if decision == "missing":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "start_cycle_intent_not_found",
+                "zone_id": zone_id,
+                "idempotency_key": req.idempotency_key,
+            },
+        )
+    if decision != "claimed":
+        raise HTTPException(status_code=503, detail={"error": "start_cycle_intent_claim_unavailable", "zone_id": zone_id})
 
     start_cycle_req = policy_build_scheduler_task_request_from_intent(zone_id=zone_id, req=req, intent_row=intent, now=now, due_in_sec=_START_CYCLE_DUE_SEC, expires_in_sec=_START_CYCLE_EXPIRES_SEC, default_topology=DEFAULT_TWO_TANK_TOPOLOGY)
     task, is_duplicate = await _create_scheduler_task(start_cycle_req)
@@ -330,6 +352,7 @@ def get_zone_state_override(zone_id: int) -> Optional[Dict[str, Any]]:
 (zone_automation_state, zone_automation_control_mode, zone_automation_set_control_mode, zone_automation_manual_step) = bind_zone_routes(
     app,
     validate_scheduler_zone_fn=_validate_scheduler_zone,
+    validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
     load_latest_zone_task_fn=_load_latest_zone_task,
     create_scheduler_task_fn=_create_scheduler_task,
     execute_scheduler_task_fn=_execute_scheduler_task,

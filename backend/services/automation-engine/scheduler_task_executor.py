@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from application import scheduler_executor_impl as _impl
-from application.scheduler_executor_wiring import (
+from executor import scheduler_executor_impl as _impl
+from executor.scheduler_executor_wiring import (
     SchedulerExecutorRuntimeBindings,
     apply_scheduler_executor_runtime_bindings,
     build_scheduler_executor_runtime_bindings,

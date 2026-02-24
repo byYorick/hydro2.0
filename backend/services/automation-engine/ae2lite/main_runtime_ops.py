@@ -359,8 +359,20 @@ def signal_handler(signum, frame):
 async def finish_current_zones(zone_service: ZoneAutomationService, active_zones: List[Dict[str, Any]]) -> None:
     if not active_zones:
         return
-    shared.logger.info("Finishing processing of %s zones...", len(active_zones))
-    await asyncio.sleep(2.0)
+    tracker = shared._command_tracker
+    if tracker is None:
+        return
+    pending = len(tracker.pending_commands)
+    if not pending:
+        return
+    shared.logger.info(
+        "Waiting for %s pending commands to settle before shutdown...", pending
+    )
+    # Ждём опустошения pending_commands с шагом 500ms.
+    # Таймаут (30s) управляется caller'ом через asyncio.wait_for в graceful_shutdown.
+    while tracker.pending_commands:
+        await asyncio.sleep(0.5)
+    shared.logger.info("All pending commands settled, proceeding with shutdown")
 
 
 __all__ = [

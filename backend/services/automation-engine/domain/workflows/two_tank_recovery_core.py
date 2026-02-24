@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from application.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.scheduler_executor_impl import *  # noqa: F401,F403
 
 
 async def execute_two_tank_recovery_branch(

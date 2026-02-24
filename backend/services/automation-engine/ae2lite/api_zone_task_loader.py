@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.api_task_snapshot import (
+from ae2lite.api_task_snapshot import (
     is_task_active,
     pick_preferred_zone_task,
     sanitize_scheduler_task_snapshot,
     task_sort_key,
 )
-from application.api_payload_parsing import coerce_datetime, to_optional_int
+from ae2lite.api_payload_parsing import coerce_datetime, to_optional_int
 
 
 def _task_id_from_log_name(task_name: Any) -> Optional[str]:

@@ -174,7 +174,7 @@ async def should_apply_correction(
         if last_correction:
             last_correction = _to_naive_utc(last_correction)
             time_since = _now_naive_utc() - last_correction
-            return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
+            return False, f"В cooldown периоде (последняя корректировка {int(time_since.total_seconds()) // 60} минут назад)"
         return False, "В cooldown периоде"
     
     # Если отклонение очень большое (> 0.5), корректируем независимо от тренда

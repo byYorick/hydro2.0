@@ -6,8 +6,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from application.api_recovery_types import RecoverySummary
-from application.api_recovery_workflow_helpers import (
+from ae2lite.api_recovery_types import RecoverySummary
+from ae2lite.api_recovery_workflow_helpers import (
     coerce_utc_naive,
     extract_recovery_correlation_id,
     log_workflow_recovery_action,

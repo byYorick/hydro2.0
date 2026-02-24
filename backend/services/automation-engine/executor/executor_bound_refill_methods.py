@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Optional, Sequence
 
-from application.refill_command_resolver import resolve_refill_command as policy_resolve_refill_command
-from application.executor_constants import (
+from executor.refill_command_resolver import resolve_refill_command as policy_resolve_refill_command
+from executor.executor_constants import (
     CLEAN_TANK_FULL_THRESHOLD,
     CYCLE_START_REQUIRED_NODE_TYPES,
     REFILL_COMMAND_DURATION_SEC,

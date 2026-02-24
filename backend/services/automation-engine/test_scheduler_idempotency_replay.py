@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from application.api_scheduler_helpers import (
+from ae2lite.api_scheduler_helpers import (
     task_payload_fingerprint as policy_task_payload_fingerprint,
     task_payload_matches as policy_task_payload_matches,
 )
-from application.api_scheduler_store import create_scheduler_task
+from ae2lite.api_scheduler_store import create_scheduler_task
 from services.resilience_contract import SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH
 
 

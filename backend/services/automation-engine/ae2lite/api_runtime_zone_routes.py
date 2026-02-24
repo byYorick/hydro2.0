@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 from uuid import uuid4
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 
-from application.api_automation_state import (
+from ae2lite.api_automation_state import (
     build_timeline_label as policy_build_timeline_label,
     derive_active_processes as policy_derive_active_processes,
     derive_automation_state as policy_derive_automation_state,
@@ -16,7 +16,7 @@ from application.api_automation_state import (
     extract_timeline_reason as policy_extract_timeline_reason,
     resolve_state_started_at as policy_resolve_state_started_at,
 )
-from application.api_automation_state_constants import (
+from ae2lite.api_automation_state_constants import (
     AUTOMATION_STATE_IDLE,
     AUTOMATION_STATE_IRRIGATING,
     AUTOMATION_STATE_IRRIG_RECIRC,
@@ -27,19 +27,19 @@ from application.api_automation_state_constants import (
     AUTOMATION_STATE_TANK_RECIRC,
     AUTOMATION_TIMELINE_EVENT_LABELS,
 )
-from application.api_contracts import SchedulerTaskRequest
-from application.api_payload_parsing import (
+from ae2lite.api_contracts import SchedulerTaskRequest
+from ae2lite.api_payload_parsing import (
     coerce_datetime as policy_coerce_datetime,
     extract_workflow as policy_extract_workflow,
     to_optional_int as policy_to_optional_int,
 )
-from application.api_zone_state import (
+from ae2lite.api_zone_state import (
     load_automation_timeline as policy_load_automation_timeline,
     load_latest_irr_node_state as policy_load_latest_irr_node_state,
     load_zone_current_levels as policy_load_zone_current_levels,
     load_zone_system_config as policy_load_zone_system_config,
 )
-from application.api_zone_state_payload import build_zone_automation_state_payload as policy_build_zone_automation_state_payload
+from ae2lite.api_zone_state_payload import build_zone_automation_state_payload as policy_build_zone_automation_state_payload
 
 AUTOMATION_CONTROL_MODE_VALUES = {"auto", "semi", "manual"}
 AUTOMATION_MANUAL_STEPS = (
@@ -58,6 +58,7 @@ def bind_zone_routes(
     app: FastAPI,
     *,
     validate_scheduler_zone_fn: Callable[[int], Awaitable[None]],
+    validate_scheduler_security_baseline_fn: Callable[[Request], Awaitable[None]],
     load_latest_zone_task_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
     create_scheduler_task_fn: Callable[..., Awaitable[Any]],
     execute_scheduler_task_fn: Callable[[str, SchedulerTaskRequest, Optional[str]], Awaitable[None]],
@@ -128,13 +129,18 @@ def bind_zone_routes(
         }
 
     @app.post("/zones/{zone_id}/control-mode")
-    async def zone_automation_set_control_mode(zone_id: int, request: Optional[Dict[str, Any]] = Body(default=None)):
+    async def zone_automation_set_control_mode(
+        zone_id: int,
+        request: Request,
+        payload: Optional[Dict[str, Any]] = Body(default=None),
+    ):
         await validate_scheduler_zone_fn(zone_id)
-        request = request if isinstance(request, dict) else {}
-        requested_mode = str(request.get("control_mode") or "").strip().lower()
+        await validate_scheduler_security_baseline_fn(request)
+        payload = payload if isinstance(payload, dict) else {}
+        requested_mode = str(payload.get("control_mode") or "").strip().lower()
         if requested_mode not in AUTOMATION_CONTROL_MODE_VALUES:
             raise HTTPException(status_code=422, detail={"code": "invalid_control_mode", "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES)})
-        source = str(request.get("source") or "frontend").strip() or "frontend"
+        source = str(payload.get("source") or "frontend").strip() or "frontend"
         previous_mode = await _load_zone_control_mode(zone_id)
         persisted = await _persist_zone_control_mode(zone_id, requested_mode)
         updated_at = persisted.get("updated_at") if isinstance(persisted, dict) else None
@@ -152,10 +158,15 @@ def bind_zone_routes(
         }
 
     @app.post("/zones/{zone_id}/manual-step")
-    async def zone_automation_manual_step(zone_id: int, request: Optional[Dict[str, Any]] = Body(default=None)):
+    async def zone_automation_manual_step(
+        zone_id: int,
+        request: Request,
+        payload: Optional[Dict[str, Any]] = Body(default=None),
+    ):
         await validate_scheduler_zone_fn(zone_id)
-        request = request if isinstance(request, dict) else {}
-        manual_step = str(request.get("manual_step") or "").strip().lower()
+        await validate_scheduler_security_baseline_fn(request)
+        payload = payload if isinstance(payload, dict) else {}
+        manual_step = str(payload.get("manual_step") or "").strip().lower()
         if manual_step not in AUTOMATION_MANUAL_STEPS:
             raise HTTPException(status_code=422, detail={"code": "manual_step_unsupported", "available_steps": list(AUTOMATION_MANUAL_STEPS)})
         control_mode = await _load_zone_control_mode(zone_id)
@@ -184,7 +195,7 @@ def bind_zone_routes(
         )
         task, is_duplicate = await create_scheduler_task_fn(req)
         if not is_duplicate:
-            await create_zone_event_fn(zone_id, "MANUAL_STEP_ACCEPTED", {"zone_id": zone_id, "task_id": task.get("task_id"), "manual_step": manual_step, "control_mode": control_mode, "source": str(request.get("source") or "frontend_manual_step").strip() or "frontend_manual_step", "reason_code": "manual_step_requested"})
+            await create_zone_event_fn(zone_id, "MANUAL_STEP_ACCEPTED", {"zone_id": zone_id, "task_id": task.get("task_id"), "manual_step": manual_step, "control_mode": control_mode, "source": str(payload.get("source") or "frontend_manual_step").strip() or "frontend_manual_step", "reason_code": "manual_step_requested"})
             spawn_background_task_fn(
                 execute_scheduler_task_fn(task["task_id"], req, get_trace_id_fn()),
                 task_name=f"scheduler_task_{task['task_id']}",
