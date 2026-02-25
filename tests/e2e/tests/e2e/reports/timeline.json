@@ -1,11 +1,11 @@
 {
-  "test_suite": "E87_ec_ph_correction_during_fill",
-  "generated_at": "2026-02-25T11:20:41.320294",
+  "test_suite": "E83_clean_water_fill",
+  "generated_at": "2026-02-25T15:31:37.285647",
   "test_cases": [
     {
       "name": "set_test_zone_uid",
       "status": "passed",
-      "duration": 1.9073486328125e-05,
+      "duration": 1.5497207641601562e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.319535"
+      "timestamp": "2026-02-25T15:29:44.636387"
     },
     {
       "name": "set_test_node_uid",
       "status": "passed",
-      "duration": 1.52587890625e-05,
+      "duration": 1.0728836059570312e-05,
       "error_message": null,
       "steps": [
         {
@@ -26,38 +26,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.319787"
+      "timestamp": "2026-02-25T15:29:44.636503"
     },
     {
-      "name": "set_test_ec_node_uid",
+      "name": "guard_test_node_uid_not_ph",
       "status": "passed",
-      "duration": 1.049041748046875e-05,
+      "duration": 0.0023813247680664062,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_ec_node_uid",
+          "name": "guard_test_node_uid_not_ph",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.319948"
-    },
-    {
-      "name": "set_test_ph_node_uid",
-      "status": "passed",
-      "duration": 1.239776611328125e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_test_ph_node_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:27.320015"
+      "timestamp": "2026-02-25T15:29:44.639020"
     },
     {
       "name": "get_zone_context",
       "status": "passed",
-      "duration": 0.005653858184814453,
+      "duration": 0.0008730888366699219,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.325883"
+      "timestamp": "2026-02-25T15:29:44.640078"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 5.245208740234375e-06,
+      "duration": 4.76837158203125e-06,
       "error_message": null,
       "steps": [
         {
@@ -78,25 +65,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.326146"
+      "timestamp": "2026-02-25T15:29:44.640279"
     },
     {
-      "name": "enable_zone_correction_capabilities",
+      "name": "set_zone_startup_capabilities",
       "status": "passed",
-      "duration": 0.0014064311981201172,
+      "duration": 0.0011229515075683594,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_zone_correction_capabilities",
+          "name": "set_zone_startup_capabilities",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.327680"
+      "timestamp": "2026-02-25T15:29:44.641535"
     },
     {
       "name": "cleanup_grow_cycles",
       "status": "passed",
-      "duration": 0.0018589496612548828,
+      "duration": 0.0012280941009521484,
       "error_message": null,
       "steps": [
         {
@@ -104,25 +91,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.329855"
+      "timestamp": "2026-02-25T15:29:44.642925"
     },
     {
-      "name": "reset_correction_cooldown_history",
+      "name": "upsert_irrig_node",
       "status": "passed",
-      "duration": 0.01561594009399414,
+      "duration": 0.0011713504791259766,
       "error_message": null,
       "steps": [
         {
-          "name": "reset_correction_cooldown_history",
+          "name": "upsert_irrig_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.345683"
+      "timestamp": "2026-02-25T15:29:44.644322"
     },
     {
       "name": "get_irrig_node",
       "status": "passed",
-      "duration": 0.0018572807312011719,
+      "duration": 0.0004153251647949219,
       "error_message": null,
       "steps": [
         {
@@ -130,12 +117,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.347948"
+      "timestamp": "2026-02-25T15:29:44.644883"
     },
     {
       "name": "set_irrig_node_id",
       "status": "passed",
-      "duration": 4.291534423828125e-06,
+      "duration": 4.0531158447265625e-06,
       "error_message": null,
       "steps": [
         {
@@ -143,77 +130,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.348151"
+      "timestamp": "2026-02-25T15:29:44.645014"
     },
     {
-      "name": "get_ec_node",
+      "name": "upsert_actuator_channels",
       "status": "passed",
-      "duration": 0.0016818046569824219,
+      "duration": 0.0017197132110595703,
       "error_message": null,
       "steps": [
         {
-          "name": "get_ec_node",
+          "name": "upsert_actuator_channels",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.350099"
-    },
-    {
-      "name": "set_ec_node_id",
-      "status": "passed",
-      "duration": 5.9604644775390625e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_ec_node_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:27.350525"
-    },
-    {
-      "name": "get_ph_node",
-      "status": "passed",
-      "duration": 0.0014216899871826172,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_ph_node",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:27.352582"
-    },
-    {
-      "name": "set_ph_node_id",
-      "status": "passed",
-      "duration": 2.5987625122070312e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_ph_node_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:27.354241"
-    },
-    {
-      "name": "upsert_irrig_channels",
-      "status": "passed",
-      "duration": 0.015210390090942383,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "upsert_irrig_channels",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:27.369748"
+      "timestamp": "2026-02-25T15:29:44.646868"
     },
     {
       "name": "publish_reset_pump_main_off",
       "status": "passed",
-      "duration": 0.33130311965942383,
+      "duration": 0.144362211227417,
       "error_message": null,
       "steps": [
         {
@@ -221,12 +156,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.702952"
+      "timestamp": "2026-02-25T15:29:44.791515"
     },
     {
       "name": "wait_reset_pump_main_done",
       "status": "passed",
-      "duration": 0.2405862808227539,
+      "duration": 0.016565322875976562,
       "error_message": null,
       "steps": [
         {
@@ -234,12 +169,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:27.943975"
+      "timestamp": "2026-02-25T15:29:44.808317"
     },
     {
       "name": "publish_reset_valve_clean_fill_off",
       "status": "passed",
-      "duration": 0.3163940906524658,
+      "duration": 0.14983916282653809,
       "error_message": null,
       "steps": [
         {
@@ -247,12 +182,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:28.261072"
+      "timestamp": "2026-02-25T15:29:44.958443"
     },
     {
       "name": "wait_reset_valve_clean_fill_done",
       "status": "passed",
-      "duration": 0.005099296569824219,
+      "duration": 0.001886606216430664,
       "error_message": null,
       "steps": [
         {
@@ -260,12 +195,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:28.266470"
+      "timestamp": "2026-02-25T15:29:44.960592"
     },
     {
       "name": "publish_reset_valve_clean_supply_off",
       "status": "passed",
-      "duration": 0.23856830596923828,
+      "duration": 0.14240288734436035,
       "error_message": null,
       "steps": [
         {
@@ -273,12 +208,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:28.505456"
+      "timestamp": "2026-02-25T15:29:45.103271"
     },
     {
       "name": "wait_reset_valve_clean_supply_done",
       "status": "passed",
-      "duration": 0.11380553245544434,
+      "duration": 0.0019190311431884766,
       "error_message": null,
       "steps": [
         {
@@ -286,12 +221,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:28.621638"
+      "timestamp": "2026-02-25T15:29:45.105398"
     },
     {
       "name": "publish_reset_valve_solution_fill_off",
       "status": "passed",
-      "duration": 0.2965667247772217,
+      "duration": 0.14473676681518555,
       "error_message": null,
       "steps": [
         {
@@ -299,12 +234,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:28.918699"
+      "timestamp": "2026-02-25T15:29:45.250400"
     },
     {
       "name": "wait_reset_valve_solution_fill_done",
       "status": "passed",
-      "duration": 0.11184525489807129,
+      "duration": 0.0019347667694091797,
       "error_message": null,
       "steps": [
         {
@@ -312,12 +247,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.031273"
+      "timestamp": "2026-02-25T15:29:45.252561"
     },
     {
       "name": "publish_reset_valve_solution_supply_off",
       "status": "passed",
-      "duration": 0.22838163375854492,
+      "duration": 0.15538525581359863,
       "error_message": null,
       "steps": [
         {
@@ -325,12 +260,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.259962"
+      "timestamp": "2026-02-25T15:29:45.408217"
     },
     {
       "name": "wait_reset_valve_solution_supply_done",
       "status": "passed",
-      "duration": 0.11737918853759766,
+      "duration": 0.0030732154846191406,
       "error_message": null,
       "steps": [
         {
@@ -338,64 +273,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.379863"
-    },
-    {
-      "name": "ensure_ec_channel_calibration",
-      "status": "passed",
-      "duration": 0.007872343063354492,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "ensure_ec_channel_calibration",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.388107"
-    },
-    {
-      "name": "upsert_ec_actuator_channel",
-      "status": "passed",
-      "duration": 0.0014028549194335938,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "upsert_ec_actuator_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.389976"
-    },
-    {
-      "name": "upsert_ph_actuator_channel",
-      "status": "passed",
-      "duration": 0.001299142837524414,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "upsert_ph_actuator_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.394306"
-    },
-    {
-      "name": "cleanup_ec_ph_role_bindings",
-      "status": "passed",
-      "duration": 0.0013496875762939453,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_ec_ph_role_bindings",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.395866"
+      "timestamp": "2026-02-25T15:29:45.411504"
     },
     {
       "name": "delete_old_level_sensors",
       "status": "passed",
-      "duration": 0.003947257995605469,
+      "duration": 0.00584864616394043,
       "error_message": null,
       "steps": [
         {
@@ -403,12 +286,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.400025"
+      "timestamp": "2026-02-25T15:29:45.417515"
     },
     {
       "name": "insert_level_sensors",
       "status": "passed",
-      "duration": 0.006465435028076172,
+      "duration": 0.0029451847076416016,
       "error_message": null,
       "steps": [
         {
@@ -416,51 +299,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.409947"
-    },
-    {
-      "name": "delete_old_ec_ph_sensors",
-      "status": "passed",
-      "duration": 0.005675077438354492,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "delete_old_ec_ph_sensors",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.416380"
-    },
-    {
-      "name": "insert_ec_sensor",
-      "status": "passed",
-      "duration": 0.0024785995483398438,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_ec_sensor",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.419537"
-    },
-    {
-      "name": "insert_ph_sensor",
-      "status": "passed",
-      "duration": 0.0020904541015625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_ph_sensor",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.423668"
+      "timestamp": "2026-02-25T15:29:45.420844"
     },
     {
       "name": "init_telemetry_all_empty",
       "status": "passed",
-      "duration": 0.005674839019775391,
+      "duration": 0.003439664840698242,
       "error_message": null,
       "steps": [
         {
@@ -468,169 +312,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:29.429879"
-    },
-    {
-      "name": "set_clean_tank_full",
-      "status": "passed",
-      "duration": 0.004201650619506836,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_clean_tank_full",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.434414"
-    },
-    {
-      "name": "set_solution_min_level_for_correction",
-      "status": "passed",
-      "duration": 0.007152557373046875,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_solution_min_level_for_correction",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.442247"
-    },
-    {
-      "name": "set_ec_low",
-      "status": "passed",
-      "duration": 0.0017986297607421875,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_ec_low",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.444392"
-    },
-    {
-      "name": "set_ph_high",
-      "status": "passed",
-      "duration": 0.003262042999267578,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_ph_high",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.448150"
-    },
-    {
-      "name": "insert_ec_ph_samples",
-      "status": "passed",
-      "duration": 0.010263442993164062,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_ec_ph_samples",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.461038"
-    },
-    {
-      "name": "delete_old_infra_instance",
-      "status": "passed",
-      "duration": 0.0026645660400390625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "delete_old_infra_instance",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.464105"
-    },
-    {
-      "name": "insert_infra_instance",
-      "status": "passed",
-      "duration": 0.001867532730102539,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_infra_instance",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.466427"
-    },
-    {
-      "name": "set_infra_instance_id",
-      "status": "passed",
-      "duration": 7.3909759521484375e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_infra_instance_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.467514"
-    },
-    {
-      "name": "bind_ec_npk_pump",
-      "status": "passed",
-      "duration": 0.020984411239624023,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "bind_ec_npk_pump",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.489942"
-    },
-    {
-      "name": "ensure_ec_npk_bound_channel_calibration",
-      "status": "passed",
-      "duration": 0.002249002456665039,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "ensure_ec_npk_bound_channel_calibration",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.494417"
-    },
-    {
-      "name": "bind_ph_acid_pump",
-      "status": "passed",
-      "duration": 0.004851579666137695,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "bind_ph_acid_pump",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:29.499896"
-    },
-    {
-      "name": "assert_ec_npk_calibration_ready",
-      "status": "skipped",
-      "duration": 5.0801122188568115,
-      "error_message": "Timeout waiting for DB condition: SELECT\n  nc.id,\n  nc.channel,\n  (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec\nFROM node_channels nc\nWHERE nc.node_id = :ec_nid\n  AND nc.channel = 'pump_a'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\\\.[0-9]+)?$'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0\nLIMIT 1\n",
-      "steps": [
-        {
-          "name": "assert_ec_npk_calibration_ready",
-          "status": "skipped",
-          "error": "Timeout waiting for DB condition: SELECT\n  nc.id,\n  nc.channel,\n  (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec\nFROM node_channels nc\nWHERE nc.node_id = :ec_nid\n  AND nc.channel = 'pump_a'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\\\.[0-9]+)?$'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0\nLIMIT 1\n"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:34.580486"
+      "timestamp": "2026-02-25T15:29:45.424520"
     },
     {
       "name": "create_plant",
       "status": "passed",
-      "duration": 0.08327078819274902,
+      "duration": 0.06789565086364746,
       "error_message": null,
       "steps": [
         {
@@ -638,12 +325,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:34.664569"
+      "timestamp": "2026-02-25T15:29:45.492644"
     },
     {
       "name": "create_recipe",
       "status": "passed",
-      "duration": 0.09099912643432617,
+      "duration": 0.05960488319396973,
       "error_message": null,
       "steps": [
         {
@@ -651,12 +338,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:34.755936"
+      "timestamp": "2026-02-25T15:29:45.552538"
     },
     {
       "name": "create_revision",
       "status": "passed",
-      "duration": 0.08405137062072754,
+      "duration": 0.05938911437988281,
       "error_message": null,
       "steps": [
         {
@@ -664,12 +351,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:34.840422"
+      "timestamp": "2026-02-25T15:29:45.612107"
     },
     {
       "name": "add_phase",
       "status": "passed",
-      "duration": 0.07587265968322754,
+      "duration": 0.0643301010131836,
       "error_message": null,
       "steps": [
         {
@@ -677,12 +364,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:34.916567"
+      "timestamp": "2026-02-25T15:29:45.676640"
     },
     {
       "name": "publish_revision",
       "status": "passed",
-      "duration": 0.08801937103271484,
+      "duration": 0.06665706634521484,
       "error_message": null,
       "steps": [
         {
@@ -690,195 +377,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:35.005310"
+      "timestamp": "2026-02-25T15:29:45.743520"
     },
     {
-      "name": "restart_automation_engine_stop",
+      "name": "seed_irr_state_snapshot_for_startup",
       "status": "passed",
-      "duration": 9.078691482543945,
+      "duration": 0.0036051273345947266,
       "error_message": null,
       "steps": [
         {
-          "name": "restart_automation_engine_stop",
+          "name": "seed_irr_state_snapshot_for_startup",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:18:44.084668"
-    },
-    {
-      "name": "wait_after_automation_engine_stop",
-      "status": "passed",
-      "duration": 2.0012707710266113,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_after_automation_engine_stop",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:46.086047"
-    },
-    {
-      "name": "restart_automation_engine_start",
-      "status": "passed",
-      "duration": 3.835101366043091,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "restart_automation_engine_start",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:49.921447"
-    },
-    {
-      "name": "wait_after_automation_engine_start",
-      "status": "passed",
-      "duration": 5.004500389099121,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_after_automation_engine_start",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:54.926046"
-    },
-    {
-      "name": "reset_correction_cooldown_history_prestart",
-      "status": "passed",
-      "duration": 0.007465362548828125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_correction_cooldown_history_prestart",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:54.934372"
-    },
-    {
-      "name": "reinforce_level_telemetry_before_start",
-      "status": "passed",
-      "duration": 0.003663778305053711,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reinforce_level_telemetry_before_start",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:54.938710"
-    },
-    {
-      "name": "reinforce_ec_ph_telemetry_before_start",
-      "status": "passed",
-      "duration": 0.001752614974975586,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reinforce_ec_ph_telemetry_before_start",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:54.940751"
-    },
-    {
-      "name": "reinforce_ec_ph_samples_before_start",
-      "status": "passed",
-      "duration": 0.0026929378509521484,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reinforce_ec_ph_samples_before_start",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:54.943987"
-    },
-    {
-      "name": "publish_prestart_reset_pump_main_off",
-      "status": "passed",
-      "duration": 0.2794468402862549,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_prestart_reset_pump_main_off",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:55.223986"
-    },
-    {
-      "name": "wait_prestart_reset_pump_main_done",
-      "status": "passed",
-      "duration": 0.34012866020202637,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_prestart_reset_pump_main_done",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:55.564387"
-    },
-    {
-      "name": "ensure_ec_npk_calibration_prestart",
-      "status": "passed",
-      "duration": 0.008379936218261719,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "ensure_ec_npk_calibration_prestart",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:18:55.573026"
-    },
-    {
-      "name": "assert_ec_npk_calibration_prestart",
-      "status": "skipped",
-      "duration": 5.082102298736572,
-      "error_message": "Timeout waiting for DB condition: SELECT\n  nc.id,\n  (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec\nFROM node_channels nc\nWHERE nc.node_id = :ec_nid\n  AND nc.channel = 'pump_a'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\\\.[0-9]+)?$'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0\nLIMIT 1\n",
-      "steps": [
-        {
-          "name": "assert_ec_npk_calibration_prestart",
-          "status": "skipped",
-          "error": "Timeout waiting for DB condition: SELECT\n  nc.id,\n  (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec\nFROM node_channels nc\nWHERE nc.node_id = :ec_nid\n  AND nc.channel = 'pump_a'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\\\.[0-9]+)?$'\n  AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0\nLIMIT 1\n"
-        }
-      ],
-      "timestamp": "2026-02-25T11:19:00.658038"
-    },
-    {
-      "name": "capture_run_started_at",
-      "status": "passed",
-      "duration": 0.0017998218536376953,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "capture_run_started_at",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:19:00.660139"
-    },
-    {
-      "name": "set_run_started_at",
-      "status": "passed",
-      "duration": 0.0001621246337890625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_run_started_at",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T11:19:00.661895"
+      "timestamp": "2026-02-25T15:29:45.747345"
     },
     {
       "name": "create_grow_cycle",
       "status": "passed",
-      "duration": 0.16519498825073242,
+      "duration": 0.10990500450134277,
       "error_message": null,
       "steps": [
         {
@@ -886,12 +403,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:19:00.828246"
+      "timestamp": "2026-02-25T15:29:45.857693"
     },
     {
       "name": "set_cycle_id",
       "status": "passed",
-      "duration": 4.291534423828125e-06,
+      "duration": 4.5299530029296875e-06,
       "error_message": null,
       "steps": [
         {
@@ -899,12 +416,90 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:19:00.828413"
+      "timestamp": "2026-02-25T15:29:45.857856"
+    },
+    {
+      "name": "restart_automation_engine_stop",
+      "status": "passed",
+      "duration": 10.303626775741577,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "restart_automation_engine_stop",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:29:56.161532"
+    },
+    {
+      "name": "wait_after_automation_engine_stop",
+      "status": "passed",
+      "duration": 2.0021228790283203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_automation_engine_stop",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:29:58.163718"
+    },
+    {
+      "name": "restart_automation_engine_start",
+      "status": "passed",
+      "duration": 3.765138864517212,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "restart_automation_engine_start",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:30:01.929001"
+    },
+    {
+      "name": "wait_after_automation_engine_start",
+      "status": "passed",
+      "duration": 5.002394437789917,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_automation_engine_start",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:30:06.931463"
+    },
+    {
+      "name": "capture_run_started_at",
+      "status": "passed",
+      "duration": 0.0015108585357666016,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_run_started_at",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:30:06.933413"
+    },
+    {
+      "name": "set_run_started_at",
+      "status": "passed",
+      "duration": 5.602836608886719e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_run_started_at",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:30:06.934351"
     },
     {
       "name": "start_grow_cycle",
       "status": "passed",
-      "duration": 0.14361310005187988,
+      "duration": 0.10921430587768555,
       "error_message": null,
       "steps": [
         {
@@ -912,54 +507,78 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T11:19:00.972163"
+      "timestamp": "2026-02-25T15:30:07.044216"
     },
     {
-      "name": "wait_for_solution_fill_start",
-      "status": "failed",
-      "duration": 90.08418726921082,
-      "error_message": "Timeout waiting for DB condition: SELECT id, cmd, channel\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_supply'\n  AND created_at > :started_at\nLIMIT 1\n",
+      "name": "wait_for_clean_fill_command",
+      "status": "skipped",
+      "duration": 30.01212215423584,
+      "error_message": "Timeout waiting for DB condition: SELECT id, cmd, channel, status, created_at\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_fill'\n  AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')\nLIMIT 1\n",
       "steps": [
         {
-          "name": "wait_for_solution_fill_start",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT id, cmd, channel\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_supply'\n  AND created_at > :started_at\nLIMIT 1\n"
+          "name": "wait_for_clean_fill_command",
+          "status": "skipped",
+          "error": "Timeout waiting for DB condition: SELECT id, cmd, channel, status, created_at\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_fill'\n  AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2026-02-25T11:20:31.057007"
+      "timestamp": "2026-02-25T15:30:37.056718"
     },
     {
-      "name": "solution_fill_started",
-      "status": "failed",
-      "duration": 10.046410083770752,
-      "error_message": "Timeout waiting for DB condition: SELECT id, type\nFROM zone_events\nWHERE zone_id = :zid\n  AND type = 'SOLUTION_FILL_STARTED'\n  AND created_at > :started_at\nLIMIT 1\n",
+      "name": "clean_fill_command_exists",
+      "status": "skipped",
+      "duration": 30.07896375656128,
+      "error_message": "Timeout waiting for DB condition: SELECT id, cmd, channel, status\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_fill'\n  AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')\nLIMIT 1\n",
       "steps": [
         {
-          "name": "solution_fill_started",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT id, type\nFROM zone_events\nWHERE zone_id = :zid\n  AND type = 'SOLUTION_FILL_STARTED'\n  AND created_at > :started_at\nLIMIT 1\n"
+          "name": "clean_fill_command_exists",
+          "status": "skipped",
+          "error": "Timeout waiting for DB condition: SELECT id, cmd, channel, status\nFROM commands\nWHERE zone_id = :zid\n  AND cmd = 'set_relay'\n  AND channel = 'valve_clean_fill'\n  AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2026-02-25T11:20:41.103536"
+      "timestamp": "2026-02-25T15:31:07.135760"
+    },
+    {
+      "name": "clean_fill_started_event",
+      "status": "skipped",
+      "duration": 30.005688667297363,
+      "error_message": "Timeout waiting for DB condition: SELECT id, type, created_at\nFROM zone_events\nWHERE zone_id = :zid\n  AND type = 'CLEAN_FILL_STARTED'\n  AND created_at > :run_started_at\nLIMIT 1\n",
+      "steps": [
+        {
+          "name": "clean_fill_started_event",
+          "status": "skipped",
+          "error": "Timeout waiting for DB condition: SELECT id, type, created_at\nFROM zone_events\nWHERE zone_id = :zid\n  AND type = 'CLEAN_FILL_STARTED'\n  AND created_at > :run_started_at\nLIMIT 1\n"
+        }
+      ],
+      "timestamp": "2026-02-25T15:31:37.141525"
+    },
+    {
+      "name": "tank_level_checked_event",
+      "status": "passed",
+      "duration": 0.0018515586853027344,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "tank_level_checked_event",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-25T15:31:37.143403"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E87_ec_ph_correction_during_fill": {
+    "E83_clean_water_fill": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 25,
+        "zone_id": 1,
         "zone_uid": "zn-test-1",
-        "node_id": 7,
+        "node_id": 1,
         "node_uid": "nd-ph-esp32una",
-        "greenhouse_id": 33,
-        "irrig_node_id": 7,
-        "ec_node_id": 4,
-        "ph_node_id": 2,
-        "infra_instance_id": 115,
-        "cycle_id": 138
+        "greenhouse_id": 1,
+        "irrig_node_id": 18,
+        "cycle_id": 14
       }
     }
   }

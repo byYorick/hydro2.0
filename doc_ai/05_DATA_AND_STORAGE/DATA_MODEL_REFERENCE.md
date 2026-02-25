@@ -1412,6 +1412,44 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 
 ---
 
+# 16. Pump Calibration Domain Model (2026-02-25)
+
+Добавлена выделенная доменная сущность калибровки насосов.  
+`node_channels.config.pump_calibration` сохранён как **legacy read-through fallback** на переходный период.
+
+### 16.1. Таблица `pump_calibrations`
+
+- Назначение: версионируемое хранение калибровок дозирующих каналов.
+- Ключевые поля:
+  - `node_channel_id` (FK -> `node_channels.id`)
+  - `ml_per_sec` (обязательный)
+  - `k_ms_per_ml_l` (опциональный)
+  - `valid_from`, `valid_to`, `is_active`
+  - `source`, `quality_score`, `sample_count`
+  - `component`, `meta`
+- Политика версии:
+  - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
+  - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
+
+### 16.2. Таблица `node_channels` (activity sync)
+
+Добавлены поля:
+- `last_seen_at` — последнее подтверждённое присутствие канала в `config_report`.
+- `is_active` — soft-state активности канала.
+
+Политика sync `config_report`:
+- destructive-delete заменён на soft-deactivate (`is_active=false`) при explicit full-snapshot prune;
+- по умолчанию prune отключён для transport-safe поведения.
+
+### 16.3. Совместимость чтения
+
+- Automation-Engine сначала читает активную запись из `pump_calibrations`.
+- При отсутствии записи используется fallback из `node_channels.config.pump_calibration`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
+
+---
+
 # 15. Правила для ИИ (после рефакторинга)
 
 **ИИ может:**

@@ -82,8 +82,12 @@ def build_pid_config_for_controller(controller: Any, settings: Any, setpoint: fl
             max_output=settings.PH_PID_MAX_OUTPUT,
             min_output=0.0,
             max_integral=100.0,
+            anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
+            back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
+            derivative_filter_alpha=settings.PID_DERIVATIVE_FILTER_ALPHA,
             min_interval_ms=settings.PH_PID_MIN_INTERVAL_MS,
             enable_autotune=settings.PH_PID_ENABLE_AUTOTUNE,
+            autotune_mode=settings.PID_AUTOTUNE_MODE,
             adaptation_rate=settings.PH_PID_ADAPTATION_RATE,
         )
 
@@ -100,8 +104,12 @@ def build_pid_config_for_controller(controller: Any, settings: Any, setpoint: fl
         max_output=settings.EC_PID_MAX_OUTPUT,
         min_output=0.0,
         max_integral=100.0,
+        anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
+        back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
+        derivative_filter_alpha=settings.PID_DERIVATIVE_FILTER_ALPHA,
         min_interval_ms=settings.EC_PID_MIN_INTERVAL_MS,
         enable_autotune=settings.EC_PID_ENABLE_AUTOTUNE,
+        autotune_mode=settings.PID_AUTOTUNE_MODE,
         adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
     )
 
@@ -236,4 +244,3 @@ def calculate_amount_for_diff(controller: Any, diff: float) -> float:
 def get_correction_event_type_for_controller(controller: Any) -> str:
     """Получить тип события для корректировки."""
     return "PH_CORRECTED" if controller.correction_type.value == "ph" else "EC_DOSING"
-

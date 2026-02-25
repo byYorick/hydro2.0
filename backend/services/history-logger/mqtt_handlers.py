@@ -1459,8 +1459,8 @@ async def sync_node_channels_from_payload(
 
         await execute(
             """
-            INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            INSERT INTO node_channels (node_id, channel, type, metric, unit, config, last_seen_at, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), TRUE, NOW(), NOW())
             ON CONFLICT (node_id, channel)
             DO UPDATE SET
                 type = COALESCE(EXCLUDED.type, node_channels.type),
@@ -1472,6 +1472,8 @@ async def sync_node_channels_from_payload(
                     WHEN node_channels.config IS NULL THEN EXCLUDED.config
                     ELSE node_channels.config || EXCLUDED.config
                 END,
+                last_seen_at = NOW(),
+                is_active = TRUE,
                 updated_at = NOW()
             """,
             node_id,
@@ -1487,15 +1489,18 @@ async def sync_node_channels_from_payload(
     if allow_prune and channel_names:
         await execute(
             """
-            DELETE FROM node_channels
+            UPDATE node_channels
+            SET is_active = FALSE,
+                updated_at = NOW()
             WHERE node_id = $1
               AND NOT (channel = ANY($2))
+              AND COALESCE(is_active, TRUE) = TRUE
             """,
             node_id,
             list(set(channel_names)),
         )
         logger.info(
-            "[CONFIG_REPORT] Pruned missing channels from config_report full-snapshot: node_uid=%s kept=%s",
+            "[CONFIG_REPORT] Soft-deactivated missing channels from config_report full-snapshot: node_uid=%s kept=%s",
             node_uid,
             sorted(list(set(channel_names))),
         )

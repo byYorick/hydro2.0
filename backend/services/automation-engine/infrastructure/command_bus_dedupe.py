@@ -41,6 +41,7 @@ def build_dedupe_reference_key(
     channel: str,
     cmd: str,
     params: Optional[Dict[str, Any]],
+    idempotency_key: Optional[str] = None,
 ) -> str:
     material = "|".join(
         [
@@ -48,6 +49,7 @@ def build_dedupe_reference_key(
             str(node_uid or "").strip().lower(),
             str(channel or "").strip().lower(),
             str(cmd or "").strip().lower(),
+            str(idempotency_key or "").strip().lower(),
             command_bus._normalized_json_payload(params),
         ]
     )
@@ -122,6 +124,7 @@ async def reserve_command_dedupe(
     params: Optional[Dict[str, Any]],
     cmd_id: Optional[str],
     dedupe_ttl_sec: int,
+    idempotency_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     reference_key = command_bus._build_dedupe_reference_key(
         zone_id=zone_id,
@@ -129,6 +132,7 @@ async def reserve_command_dedupe(
         channel=channel,
         cmd=cmd,
         params=params,
+        idempotency_key=idempotency_key,
     )
     scope_key = command_bus._build_dedupe_scope_key(
         zone_id=zone_id,

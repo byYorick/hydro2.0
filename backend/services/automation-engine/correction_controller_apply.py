@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import hashlib
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from correction_command_retry import (
     wait_command_done,
 )
 from correction_cooldown import record_correction
+from correction_state_machine import CorrectionStateMachine
 from decision_context import DecisionContext
 from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 
@@ -40,7 +42,27 @@ async def apply_correction_with_events(
         command.get("correlation_id")
         or f"corr:correction:{zone_id}:{correction_type_str}:{uuid4().hex[:12]}"
     )
+    idempotency_material = "|".join(
+        [
+            str(zone_id),
+            str(correction_type_str),
+            str(correction_type),
+            f"{float(current_val):.4f}",
+            f"{float(target_val):.4f}",
+            f"{float(diff):.4f}",
+            str(reason or ""),
+        ]
+    )
+    correction_idempotency_key = f"corr-cycle:{zone_id}:{hashlib.sha256(idempotency_material.encode('utf-8')).hexdigest()[:20]}"
     command["correlation_id"] = correlation_id
+    command["idempotency_key"] = correction_idempotency_key
+    state_machine = CorrectionStateMachine(
+        zone_id=zone_id,
+        metric=correction_type_str,
+        state=str((command.get("state_machine") or {}).get("state") or "plan"),
+        correlation_id=correlation_id,
+    )
+    await state_machine.transition("act", "plan_dispatch_started")
     published_cmd_ids: List[str] = []
 
     context = DecisionContext(
@@ -147,6 +169,7 @@ async def apply_correction_with_events(
                 break
 
         if batch_aborted:
+            await state_machine.transition("verify", "act_batch_partial_failure")
             # Если хотя бы один компонент был успешно дозирован, регистрируем DOSING событие
             # чтобы cooldown сработал в следующем цикле. Без этого automation-engine немедленно
             # повторит полный EC batch, что приведёт к превышению целевого EC.
@@ -165,6 +188,7 @@ async def apply_correction_with_events(
                         "successful_components": successful_components,
                     },
                 )
+            await state_machine.transition("cooldown", "verify_batch_partial_failure_exit")
             return
     else:
         published = await controller._publish_controller_command_with_retry(
@@ -175,6 +199,7 @@ async def apply_correction_with_events(
             correction_type=correction_type_str,
         )
         if not published:
+            await state_machine.transition("verify", "act_command_unconfirmed")
             await create_zone_event(
                 zone_id,
                 "CORRECTION_ABORTED_COMMAND_FAILURE",
@@ -186,6 +211,7 @@ async def apply_correction_with_events(
                     "reason": "command_unconfirmed",
                 },
             )
+            await state_machine.transition("cooldown", "verify_command_failure_exit")
             return
         cmd_id = str(command.get("cmd_id") or "").strip()
         if cmd_id:
@@ -202,9 +228,11 @@ async def apply_correction_with_events(
             "reason": reason,
         },
     )
+    await state_machine.transition("verify", "act_commands_confirmed")
 
     correction_event_details = dict(command.get("event_details") or {})
     correction_event_details["correlation_id"] = correlation_id
+    correction_event_details["idempotency_key"] = correction_idempotency_key
     correction_event_details["cmd_ids"] = published_cmd_ids
     if published_cmd_ids:
         correction_event_details["cmd_id"] = published_cmd_ids[-1]
@@ -215,6 +243,7 @@ async def apply_correction_with_events(
             "zone_id": zone_id,
             "correction_type": correction_type_str,
             "correlation_id": correlation_id,
+            "idempotency_key": correction_idempotency_key,
             "cmd_ids": published_cmd_ids,
             "event_type": command.get("event_type"),
         },
@@ -231,6 +260,7 @@ async def apply_correction_with_events(
             f"target_{correction_type_str}": target_val,
             "diff": diff,
             "correlation_id": correlation_id,
+            "idempotency_key": correction_idempotency_key,
             "cmd_ids": published_cmd_ids,
             "cmd_id": published_cmd_ids[-1] if published_cmd_ids else None,
         },
@@ -284,6 +314,7 @@ async def apply_correction_with_events(
             settings=get_controller_settings(),
             correlation_id=correlation_id,
         )
+    await state_machine.transition("cooldown", "verify_completed")
 
 
 async def publish_controller_command_with_retry_method(

@@ -887,7 +887,11 @@ async def calibrate_pump(
     gh_uid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Калибровка дозирующей помпы (ml/sec) с сохранением в node_channel.config.pump_calibration.
+    Калибровка дозирующей помпы (ml/sec).
+
+    Каноничная запись хранится в `pump_calibrations` (версионируемая доменная сущность).
+    Для переходного периода также обновляется legacy fallback
+    `node_channel.config.pump_calibration`.
     """
     if not HTTPX_AVAILABLE:
         raise RuntimeError("httpx is required for pump calibration")
@@ -1022,10 +1026,11 @@ async def calibrate_pump(
         if k_ms_per_ml_l <= 0:
             raise ValueError("Calculated k_ms_per_ml_l must be greater than 0")
 
+    calibrated_at_iso = utcnow().isoformat()
     current_config = channel_info.get("config") or {}
     if not isinstance(current_config, dict):
         current_config = {}
-    current_config["pump_calibration"] = {
+    calibration_payload = {
         "ml_per_sec": ml_per_sec,
         "duration_sec": duration_sec,
         "actual_ml": actual_ml_value,
@@ -1036,8 +1041,70 @@ async def calibrate_pump(
         "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
         "delta_ec_ms": ec_delta_ms,
         "temperature_c": float(temperature_c) if temperature_c is not None else None,
-        "calibrated_at": utcnow().isoformat(),
+        "calibrated_at": calibrated_at_iso,
     }
+    current_config["pump_calibration"] = calibration_payload
+
+    quality_score = 0.9 if k_ms_per_ml_l is not None else 0.75
+    await execute(
+        """
+        UPDATE pump_calibrations
+        SET is_active = FALSE,
+            valid_to = NOW(),
+            updated_at = NOW()
+        WHERE node_channel_id = $1
+          AND is_active = TRUE
+        """,
+        node_channel_id,
+    )
+    await execute(
+        """
+        INSERT INTO pump_calibrations (
+            node_channel_id,
+            component,
+            ml_per_sec,
+            k_ms_per_ml_l,
+            duration_sec,
+            actual_ml,
+            test_volume_l,
+            ec_before_ms,
+            ec_after_ms,
+            delta_ec_ms,
+            temperature_c,
+            source,
+            quality_score,
+            sample_count,
+            valid_from,
+            is_active,
+            meta,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, NOW(), TRUE, $15, NOW(), NOW()
+        )
+        """,
+        node_channel_id,
+        normalized_component,
+        ml_per_sec,
+        k_ms_per_ml_l,
+        duration_sec,
+        actual_ml_value,
+        float(test_volume_l) if test_volume_l is not None else None,
+        float(ec_before_ms) if ec_before_ms is not None else None,
+        float(ec_after_ms) if ec_after_ms is not None else None,
+        ec_delta_ms,
+        float(temperature_c) if temperature_c is not None else None,
+        "manual_calibration",
+        quality_score,
+        1,
+        {
+            "origin": "history_logger_calibrate_pump",
+            "compat_write_legacy_node_channel_config": True,
+            "component": normalized_component,
+        },
+    )
 
     from .env import get_settings
     from .trace_context import inject_trace_id_header

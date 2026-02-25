@@ -1,0 +1,93 @@
+# E89: Correction state-machine + duration-aware command wait (real node oriented)
+# DoD:
+# - в зоне появляются machine-readable переходы CORRECTION_STATE_TRANSITION
+# - нет раннего fail по фиксированному timeout при длинных run_pump:
+#   проверяем отсутствие reason=ack_done_timeout_5s в новых событиях
+
+name: E89_correction_state_machine_and_duration_aware
+description: |
+  Контрактный сценарий для реальной ноды после запуска коррекции (например, E86/E87):
+  - ожидает переходы state machine Sense->...->Cooldown;
+  - убеждается, что ранний fixed-timeout reason (ack_done_timeout_5s) не появляется.
+
+actions:
+  - step: set_test_zone_uid
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+
+  - step: capture_scenario_started_at
+    type: database_query
+    query: SELECT NOW() AS started_at
+    save: scenario_started_at_row
+
+  - step: set_scenario_started_at
+    type: set
+    scenario_started_at: ${scenario_started_at_row.0.started_at}
+
+  - step: get_zone_context
+    type: database_query
+    query: |
+      SELECT z.id AS zone_id
+      FROM zones z
+      WHERE z.uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_ctx
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_ctx.0.zone_id}
+
+  - step: wait_for_state_machine_act
+    type: db.wait
+    query: |
+      SELECT id, type, payload_json
+      FROM zone_events
+      WHERE zone_id = :zid
+        AND type = 'CORRECTION_STATE_TRANSITION'
+        AND COALESCE(payload_json->>'to_state', '') = 'act'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      started_at: ${scenario_started_at}
+    timeout: 60.0
+    optional: true
+
+  - step: wait_for_state_machine_cooldown
+    type: db.wait
+    query: |
+      SELECT id, type, payload_json
+      FROM zone_events
+      WHERE zone_id = :zid
+        AND type = 'CORRECTION_STATE_TRANSITION'
+        AND COALESCE(payload_json->>'to_state', '') = 'cooldown'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      started_at: ${scenario_started_at}
+    timeout: 90.0
+    optional: true
+
+  - step: assert_no_legacy_fixed_timeout_reason
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS bad_count
+      FROM zone_events
+      WHERE zone_id = :zid
+        AND type = 'CORRECTION_COMMAND_ATTEMPT_FAILED'
+        AND COALESCE(payload_json->>'reason', '') = 'ack_done_timeout_5s'
+        AND created_at >= :started_at
+    params:
+      zid: ${zone_id}
+      started_at: ${scenario_started_at}
+    save: timeout_reason_row
+
+assertions:
+  - name: assert_no_fixed_timeout_reason
+    type: custom_assert
+    condition: "int(context.get('timeout_reason_row', [{}])[0].get('bad_count', 1)) == 0"

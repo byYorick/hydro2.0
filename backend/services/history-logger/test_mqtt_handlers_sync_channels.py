@@ -51,6 +51,7 @@ async def test_sync_channels_prunes_only_with_explicit_flag():
 
     assert mock_execute.await_count == 3
     delete_sql, delete_node_id, kept_channels = mock_execute.await_args_list[-1].args
-    assert "DELETE FROM node_channels" in delete_sql
+    assert "UPDATE node_channels" in delete_sql
+    assert "is_active = FALSE" in delete_sql
     assert delete_node_id == 11
     assert sorted(kept_channels) == ["pump_a", "pump_b"]

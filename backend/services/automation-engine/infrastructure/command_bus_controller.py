@@ -81,6 +81,7 @@ async def publish_controller_command(
         params=params if isinstance(params, dict) else {},
         cmd_id=generated_cmd_id,
         dedupe_ttl_sec=dedupe_ttl_sec,
+        idempotency_key=str(command.get("idempotency_key") or "").strip() or None,
     )
     dedupe_decision = str(dedupe_state.get("decision") or "new").strip().lower()
     dedupe_reference_key = str(dedupe_state.get("reference_key") or "").strip()
@@ -295,4 +296,3 @@ async def _finish_not_confirmed(
         terminal_status=terminal_status,
         error=error,
     )
-

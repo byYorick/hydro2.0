@@ -2070,28 +2070,18 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
 
     if (job->sim_status_present) {
         if (strcmp(job->sim_status, "DONE") != 0) {
-            if (strcmp(job->sim_status, "NO_EFFECT") == 0 && is_water_contour_channel(job->channel)) {
-                cJSON_AddStringToObject(details, "note", "no_effect_overridden_for_water_contour");
-            } else if (strcmp(job->sim_status, "NO_EFFECT") == 0) {
-                cJSON_AddStringToObject(details, "note", "simulated_no_effect");
+            if (strcmp(job->sim_status, "NO_EFFECT") == 0) {
+                cJSON_AddStringToObject(details, "note", "simulated_no_effect_ignored");
             } else {
                 cJSON_AddStringToObject(details, "error", "simulated_terminal_status");
                 cJSON_AddStringToObject(details, "error_code", job->sim_status);
-            }
-            if (!(strcmp(job->sim_status, "NO_EFFECT") == 0 && is_water_contour_channel(job->channel))) {
                 *status_out = job->sim_status;
                 return;
             }
         }
     }
     if (job->sim_no_effect) {
-        if (is_water_contour_channel(job->channel)) {
-            cJSON_AddStringToObject(details, "note", "sim_no_effect_overridden_for_water_contour");
-        } else {
-            cJSON_AddStringToObject(details, "note", "sim_no_effect");
-            *status_out = "NO_EFFECT";
-            return;
-        }
+        cJSON_AddStringToObject(details, "note", "sim_no_effect_ignored");
     }
 
     if (strcmp(job->cmd, "set_relay") == 0 && !job->relay_state_present) {
@@ -2141,13 +2131,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         }
 
         if (has_state && current_state == job->relay_state) {
-            if (is_water_contour_channel(job->channel)) {
-                cJSON_AddStringToObject(details, "note", "already_in_requested_state_treated_as_done");
-            } else {
-                cJSON_AddStringToObject(details, "note", "already_in_requested_state");
-                *status_out = "NO_EFFECT";
-                return;
-            }
+            cJSON_AddStringToObject(details, "note", "already_in_requested_state_treated_as_done");
         }
 
     }
@@ -2161,9 +2145,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             pwm_value = 255;
         }
         if ((int)s_virtual_state.light_pwm == pwm_value) {
-            cJSON_AddStringToObject(details, "note", "already_in_requested_pwm");
-            *status_out = "NO_EFFECT";
-            return;
+            cJSON_AddStringToObject(details, "note", "already_in_requested_pwm_treated_as_done");
         }
     }
 
@@ -2391,38 +2373,38 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         } else if (strcmp(job->cmd, "activate_sensor_mode") == 0) {
             if (strstr(job->node_uid, "-ph-") != NULL) {
                 if (s_virtual_state.ph_sensor_mode_active) {
-                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
-                    *status_out = "NO_EFFECT";
-                    return;
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active_treated_as_done");
+                    handled = true;
+                } else {
+                    s_virtual_state.ph_sensor_mode_active = true;
+                    handled = true;
                 }
-                s_virtual_state.ph_sensor_mode_active = true;
-                handled = true;
             } else if (strstr(job->node_uid, "-ec-") != NULL) {
                 if (s_virtual_state.ec_sensor_mode_active) {
-                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active");
-                    *status_out = "NO_EFFECT";
-                    return;
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_active_treated_as_done");
+                    handled = true;
+                } else {
+                    s_virtual_state.ec_sensor_mode_active = true;
+                    handled = true;
                 }
-                s_virtual_state.ec_sensor_mode_active = true;
-                handled = true;
             }
         } else if (strcmp(job->cmd, "deactivate_sensor_mode") == 0) {
             if (strstr(job->node_uid, "-ph-") != NULL) {
                 if (!s_virtual_state.ph_sensor_mode_active) {
-                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive");
-                    *status_out = "NO_EFFECT";
-                    return;
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive_treated_as_done");
+                    handled = true;
+                } else {
+                    s_virtual_state.ph_sensor_mode_active = false;
+                    handled = true;
                 }
-                s_virtual_state.ph_sensor_mode_active = false;
-                handled = true;
             } else if (strstr(job->node_uid, "-ec-") != NULL) {
                 if (!s_virtual_state.ec_sensor_mode_active) {
-                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive");
-                    *status_out = "NO_EFFECT";
-                    return;
+                    cJSON_AddStringToObject(details, "note", "sensor_mode_already_inactive_treated_as_done");
+                    handled = true;
+                } else {
+                    s_virtual_state.ec_sensor_mode_active = false;
+                    handled = true;
                 }
-                s_virtual_state.ec_sensor_mode_active = false;
-                handled = true;
             }
         }
     }
@@ -3292,7 +3274,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 
     ESP_LOGI(
         TAG,
-        "Virtual nodes ONLINE published (preconfig=%u/%u)",
+        "Virtual nodes status published (preconfig=%u/%u)",
         (unsigned)preconfig_count,
         (unsigned)VIRTUAL_NODE_COUNT
     );

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Dict
@@ -32,7 +33,9 @@ class PidZoneCoeffs:
 
 @dataclass
 class PidStats:
+    compute_count: int = 0
     corrections_count: int = 0
+    saturation_count: int = 0
     total_output: float = 0.0
     max_error: float = 0.0
     avg_error: float = 0.0
@@ -51,8 +54,12 @@ class AdaptivePidConfig:
     max_output: float
     min_output: float = 0.0
     max_integral: float = 100.0
+    anti_windup_mode: str = "clamp"  # clamp|conditional|back_calculation
+    back_calculation_gain: float = 0.2
+    derivative_filter_alpha: float = 1.0  # 1.0 -> без фильтра, 0.0 -> полностью инерционный
     min_interval_ms: int = 60000  # safety: min interval between doses
     enable_autotune: bool = False
+    autotune_mode: str = "disabled"  # disabled|service
     adaptation_rate: float = 0.05  # 5% шаг изменения коэффициентов
 
 
@@ -67,8 +74,15 @@ class AdaptivePid:
         self.emergency = False
         self.stats = PidStats()
         self.current_zone = PidZone.DEAD
+        self.prev_derivative = 0.0
         # Начальные коэффициенты для autotune: нижняя граница = 10% от initial
         self._init_zone_coeffs: Dict[PidZone, PidZoneCoeffs] = copy.deepcopy(config.zone_coeffs)
+        self._autotune_guard_enabled = os.getenv("AE_PID_AUTOTUNE_SERVICE_MODE", "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     def _select_zone(self, error: float) -> PidZone:
         abs_err = abs(error)
@@ -82,9 +96,22 @@ class AdaptivePid:
         """Простейшая адаптация: если ошибка растет, чуть увеличиваем Kp, если падает — уменьшаем."""
         if not self.config.enable_autotune:
             return
+        if str(self.config.autotune_mode).strip().lower() != "service" or not self._autotune_guard_enabled:
+            logger.info(
+                "PID autotune skipped by guard",
+                extra={
+                    "autotune_mode": self.config.autotune_mode,
+                    "guard_enabled": self._autotune_guard_enabled,
+                    "zone": zone.value,
+                },
+            )
+            return
 
         coeffs = self.config.zone_coeffs[zone]
         rate = self.config.adaptation_rate
+        prev_kp = coeffs.kp
+        prev_ki = coeffs.ki
+        prev_kd = coeffs.kd
 
         # Ошибка растет -> усилить пропорциональную часть, ослабить интегральную
         if self.prev_error is not None and abs(error) > abs(self.prev_error):
@@ -106,6 +133,20 @@ class AdaptivePid:
         logger.debug(
             "PID autotune zone=%s kp=%.4f ki=%.4f kd=%.4f",
             zone.value, coeffs.kp, coeffs.ki, coeffs.kd,
+        )
+        logger.info(
+            "PID autotune coeff update",
+            extra={
+                "zone": zone.value,
+                "kp_before": prev_kp,
+                "kp_after": coeffs.kp,
+                "ki_before": prev_ki,
+                "ki_after": coeffs.ki,
+                "kd_before": prev_kd,
+                "kd_after": coeffs.kd,
+                "error": error,
+                "derivative": derivative,
+            },
         )
 
     def compute(self, current_value: float, dt_seconds: float) -> float:
@@ -152,6 +193,7 @@ class AdaptivePid:
             return 0.0
 
         error = self.config.setpoint - current_value
+        self.stats.compute_count += 1
         zone = self._select_zone(error)
         self.current_zone = zone
 
@@ -181,15 +223,30 @@ class AdaptivePid:
         coeffs = self.config.zone_coeffs.get(zone, self.config.zone_coeffs[PidZone.CLOSE])
 
         # Вычисляем производную
-        derivative = 0.0
+        derivative_raw = 0.0
         if self.prev_error is not None and dt_seconds > 0:
-            derivative = (error - self.prev_error) / dt_seconds
+            derivative_raw = (error - self.prev_error) / dt_seconds
+        alpha = max(0.0, min(1.0, float(self.config.derivative_filter_alpha)))
+        derivative = (alpha * derivative_raw) + ((1.0 - alpha) * self.prev_derivative)
+        self.prev_derivative = derivative
 
-        # Накапливаем интеграл с bounded clamping (anti-windup: max_integral ограничивает накопление)
         integral_before = self.integral
-        self.integral += error * dt_seconds
-        self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
-        if abs(self.integral - (integral_before + (error * dt_seconds))) > 1e-9:
+        integration_candidate = integral_before + (error * dt_seconds)
+        mode = str(self.config.anti_windup_mode).strip().lower() or "clamp"
+        if mode == "conditional":
+            candidate_output = (
+                coeffs.kp * error
+                + coeffs.ki * integration_candidate
+                + coeffs.kd * derivative
+            )
+            saturating_same_dir = (
+                abs(candidate_output) > self.config.max_output
+                and ((candidate_output > 0 and error > 0) or (candidate_output < 0 and error < 0))
+            )
+            if saturating_same_dir:
+                integration_candidate = integral_before
+        self.integral = max(-self.config.max_integral, min(integration_candidate, self.config.max_integral))
+        if abs(self.integral - integration_candidate) > 1e-9:
             logger.debug(
                 "PID integral clamped",
                 extra={
@@ -209,12 +266,23 @@ class AdaptivePid:
             integral_term +
             derivative_term
         )
+        if mode == "back_calculation" and coeffs.ki > 1e-9:
+            clamped_signed = max(-self.config.max_output, min(raw_output, self.config.max_output))
+            correction = float(self.config.back_calculation_gain) * (clamped_signed - raw_output) / coeffs.ki
+            if abs(correction) > 0:
+                self.integral = max(
+                    -self.config.max_integral,
+                    min(self.integral + correction, self.config.max_integral),
+                )
+                integral_term = coeffs.ki * self.integral
+                raw_output = proportional + integral_term + derivative_term
 
         # Выход — абсолютная доза
         output = abs(raw_output)
         unclamped_output = output
         output = max(self.config.min_output, min(output, self.config.max_output))
         if abs(output - unclamped_output) > 1e-9:
+            self.stats.saturation_count += 1
             logger.debug(
                 "PID output clamped",
                 extra={
@@ -245,6 +313,8 @@ class AdaptivePid:
                 "proportional": proportional,
                 "integral_term": integral_term,
                 "derivative_term": derivative_term,
+                "derivative_raw": derivative_raw,
+                "anti_windup_mode": mode,
                 "raw_output": raw_output,
                 "output": output,
                 "integral_state": self.integral,
@@ -268,6 +338,7 @@ class AdaptivePid:
     def reset(self):
         self.integral = 0.0
         self.prev_error = None
+        self.prev_derivative = 0.0
         self.last_output_ms = 0
         self.emergency = False
         self.stats = PidStats()
@@ -276,6 +347,7 @@ class AdaptivePid:
         self.emergency = True
         self.integral = 0.0
         self.prev_error = None
+        self.prev_derivative = 0.0
 
     def resume(self):
         self.emergency = False

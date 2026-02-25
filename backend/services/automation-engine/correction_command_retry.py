@@ -3,6 +3,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from prometheus_client import Counter
+
 from services.resilience_contract import (
     INFRA_CORRECTION_COMMAND_UNCONFIRMED,
     INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED,
@@ -10,6 +12,23 @@ from services.resilience_contract import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_COMPENSATION_TOPOLOGY = "two_tank_drip_substrate_trays"
+_NON_TERMINAL_STATUSES = {"QUEUED", "SENT", "ACK", "ACCEPTED", "RUNNING"}
+_TERMINAL_FAILURE_STATUSES = {"ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"}
+CORRECTION_ATTEMPTS_TOTAL = Counter(
+    "correction_attempts_total",
+    "Total correction command publish attempts",
+    ["result", "correction_type"],
+)
+CORRECTION_FALSE_TIMEOUT_TOTAL = Counter(
+    "correction_false_timeout_total",
+    "Timeouts where command remained non-terminal and was treated as in-flight",
+    ["correction_type"],
+)
+EC_BATCH_PARTIAL_FAIL_TOTAL = Counter(
+    "ec_batch_partial_fail_total",
+    "Total partial failures in EC component batch",
+    ["failed_component"],
+)
 
 
 def _resolve_compensation_topology(command: Dict[str, Any]) -> str:
@@ -100,6 +119,41 @@ async def get_command_outcome(*, tracker, cmd_id: str) -> Dict[str, Optional[str
         return empty
 
 
+def _resolve_duration_aware_timeout_sec(
+    *,
+    controller_command: Dict[str, Any],
+    base_timeout_sec: float,
+    timeout_buffer_sec: float,
+    min_timeout_sec: float,
+) -> float:
+    params = controller_command.get("params") if isinstance(controller_command.get("params"), dict) else {}
+
+    duration_ms = None
+    raw_duration = params.get("duration_ms")
+    try:
+        if raw_duration is not None:
+            duration_ms = max(1.0, float(raw_duration))
+    except (TypeError, ValueError):
+        duration_ms = None
+
+    if duration_ms is None:
+        ml = params.get("ml")
+        ml_per_sec = controller_command.get("ml_per_sec")
+        try:
+            ml_val = float(ml) if ml is not None else None
+            speed = float(ml_per_sec) if ml_per_sec is not None else None
+            if ml_val is not None and speed is not None and speed > 0:
+                duration_ms = max(1.0, (ml_val / speed) * 1000.0)
+        except (TypeError, ValueError):
+            duration_ms = None
+
+    if duration_ms is None:
+        return max(min_timeout_sec, base_timeout_sec)
+
+    expected_sec = (duration_ms / 1000.0) + timeout_buffer_sec
+    return max(min_timeout_sec, base_timeout_sec, expected_sec)
+
+
 async def publish_controller_command_with_retry(
     *,
     zone_id: int,
@@ -129,6 +183,8 @@ async def publish_controller_command_with_retry(
     settings = get_settings_fn()
     max_attempts = max(1, int(settings.CORRECTION_COMMAND_MAX_ATTEMPTS))
     timeout_sec = max(0.1, float(settings.CORRECTION_COMMAND_TIMEOUT_SEC))
+    timeout_buffer_sec = max(0.0, float(getattr(settings, "CORRECTION_COMMAND_TIMEOUT_BUFFER_SEC", 2.5)))
+    min_timeout_sec = max(0.1, float(getattr(settings, "CORRECTION_COMMAND_MIN_TIMEOUT_SEC", 3.0)))
     retry_delay_sec = max(0.0, float(settings.CORRECTION_COMMAND_RETRY_DELAY_SEC))
     tracker = getattr(publisher, "tracker", None)
 
@@ -137,21 +193,31 @@ async def publish_controller_command_with_retry(
     last_terminal_status: Optional[str] = None
     last_terminal_error_code: Optional[str] = None
     last_terminal_error_message: Optional[str] = None
+    last_effective_timeout_sec = timeout_sec
 
     for attempt in range(1, max_attempts + 1):
+        effective_timeout_sec = _resolve_duration_aware_timeout_sec(
+            controller_command=controller_command,
+            base_timeout_sec=timeout_sec,
+            timeout_buffer_sec=timeout_buffer_sec,
+            min_timeout_sec=min_timeout_sec,
+        )
+        last_effective_timeout_sec = effective_timeout_sec
         sent = await publisher.publish_controller_command(zone_id, controller_command, context)
         cmd_id = controller_command.get("cmd_id")
         last_cmd_id = str(cmd_id) if cmd_id else None
 
         if not sent:
             last_failure_reason = "publish_failed"
+            CORRECTION_ATTEMPTS_TOTAL.labels(result="publish_failed", correction_type=correction_type).inc()
         elif tracker and cmd_id:
             wait_result = await wait_command_done(
                 tracker=tracker,
                 cmd_id=str(cmd_id),
-                timeout_sec=timeout_sec,
+                timeout_sec=effective_timeout_sec,
             )
             if wait_result is True:
+                CORRECTION_ATTEMPTS_TOTAL.labels(result="done", correction_type=correction_type).inc()
                 return True
 
             outcome = await get_command_outcome(tracker=tracker, cmd_id=str(cmd_id))
@@ -160,34 +226,47 @@ async def publish_controller_command_with_retry(
             last_terminal_error_message = outcome.get("error_message")
 
             if wait_result is None:
-                last_failure_reason = f"ack_done_timeout_{timeout_sec}s"
-                try:
-                    await tracker.confirm_command_status(
-                        str(cmd_id),
-                        "TIMEOUT",
-                        error=last_failure_reason,
-                    )
-                except Exception as confirm_exc:
-                    logger.warning(
-                        "Zone %s: failed to mark correction timeout cmd_id=%s: %s",
+                if (last_terminal_status is None) or (last_terminal_status in _NON_TERMINAL_STATUSES):
+                    CORRECTION_FALSE_TIMEOUT_TOTAL.labels(correction_type=correction_type).inc()
+                    CORRECTION_ATTEMPTS_TOTAL.labels(
+                        result="pending_after_timeout",
+                        correction_type=correction_type,
+                    ).inc()
+                    await create_zone_event_fn(
                         zone_id,
-                        cmd_id,
-                        confirm_exc,
-                        extra={
-                            "component": "correction_command_retry",
-                            "zone_id": zone_id,
-                            "decision": "retry_or_fail",
-                            "reason_code": "timeout_status_confirm_failed",
-                            "cmd_id": cmd_id,
+                        "CORRECTION_COMMAND_PENDING_CONFIRMATION",
+                        {
+                            "correction_type": correction_type,
+                            "attempt": attempt,
+                            "max_attempts": max_attempts,
+                            "cmd_id": last_cmd_id,
+                            "cmd": controller_command.get("cmd"),
+                            "timeout_sec": effective_timeout_sec,
+                            "reason": "non_terminal_after_timeout",
+                            "status": last_terminal_status,
+                            "node_uid": controller_command.get("node_uid"),
+                            "channel": controller_command.get("channel"),
                         },
                     )
+                    return True
+                last_failure_reason = f"terminal_timeout_{effective_timeout_sec}s"
+                CORRECTION_ATTEMPTS_TOTAL.labels(result="terminal_timeout", correction_type=correction_type).inc()
             else:
-                if last_terminal_status:
+                if last_terminal_status in _TERMINAL_FAILURE_STATUSES:
                     last_failure_reason = f"terminal_{str(last_terminal_status).lower()}"
+                    CORRECTION_ATTEMPTS_TOTAL.labels(result="terminal_fail", correction_type=correction_type).inc()
+                elif last_terminal_status == "DONE":
+                    CORRECTION_ATTEMPTS_TOTAL.labels(result="done_late", correction_type=correction_type).inc()
+                    return True
                 else:
                     last_failure_reason = "command_failed_status"
+                    CORRECTION_ATTEMPTS_TOTAL.labels(
+                        result="failed_status_unknown",
+                        correction_type=correction_type,
+                    ).inc()
         elif tracker and not cmd_id:
             last_failure_reason = "cmd_id_missing_after_publish"
+            CORRECTION_ATTEMPTS_TOTAL.labels(result="cmd_id_missing", correction_type=correction_type).inc()
             logger.warning(
                 "Zone %s: correction command confirmation unavailable: tracker active but cmd_id missing",
                 zone_id,
@@ -200,6 +279,7 @@ async def publish_controller_command_with_retry(
             )
         else:
             last_failure_reason = "command_tracker_unavailable"
+            CORRECTION_ATTEMPTS_TOTAL.labels(result="tracker_missing", correction_type=correction_type).inc()
             logger.warning(
                 "Zone %s: correction command confirmation unavailable: command tracker is missing",
                 zone_id,
@@ -227,6 +307,7 @@ async def publish_controller_command_with_retry(
                 "terminal_status": last_terminal_status,
                 "terminal_error_code": last_terminal_error_code,
                 "terminal_error_message": last_terminal_error_message,
+                "effective_timeout_sec": effective_timeout_sec,
             },
         )
 
@@ -250,6 +331,7 @@ async def publish_controller_command_with_retry(
             "cmd_id": last_cmd_id,
             "max_attempts": max_attempts,
             "timeout_sec": timeout_sec,
+            "effective_timeout_sec": last_effective_timeout_sec,
             "reason": last_failure_reason,
             "terminal_status": last_terminal_status,
             "terminal_error_code": last_terminal_error_code,
@@ -270,6 +352,7 @@ async def trigger_ec_partial_batch_compensation(
     enqueue_internal_scheduler_task_fn: Callable[..., Awaitable[Dict[str, Any]]],
     send_infra_alert_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
+    EC_BATCH_PARTIAL_FAIL_TOTAL.labels(failed_component=str(failed_component or "unknown")).inc()
     topology = _resolve_compensation_topology(command)
     payload = {
         "topology": topology,

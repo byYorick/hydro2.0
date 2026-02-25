@@ -1065,15 +1065,84 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ->where('zone_id', $zoneIdInt)
                 ->with([
                     'zone:id,name',
-                    'channels:id,node_id,channel,type,metric,unit,config',
+                    'channels:id,node_id,channel,type,metric,unit,config,last_seen_at,is_active',
                 ])
-                ->get()
-                ->map(function (\App\Models\DeviceNode $device) {
-                    $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) {
+                ->get();
+
+            $channelIds = $devices
+                ->flatMap(fn (\App\Models\DeviceNode $device) => $device->channels->pluck('id'))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $calibrationByChannelId = collect();
+            if ($channelIds->isNotEmpty() && Schema::hasTable('pump_calibrations')) {
+                $calibrationByChannelId = DB::table('pump_calibrations as pc')
+                    ->select([
+                        'pc.id',
+                        'pc.node_channel_id',
+                        'pc.component',
+                        'pc.ml_per_sec',
+                        'pc.k_ms_per_ml_l',
+                        'pc.duration_sec',
+                        'pc.actual_ml',
+                        'pc.test_volume_l',
+                        'pc.ec_before_ms',
+                        'pc.ec_after_ms',
+                        'pc.delta_ec_ms',
+                        'pc.temperature_c',
+                        'pc.sample_count',
+                        'pc.quality_score',
+                        'pc.source',
+                        'pc.valid_from',
+                    ])
+                    ->whereIn('pc.node_channel_id', $channelIds->all())
+                    ->where('pc.is_active', true)
+                    ->whereRaw('pc.valid_from <= NOW()')
+                    ->where(function ($query) {
+                        $query->whereNull('pc.valid_to')
+                            ->orWhereRaw('pc.valid_to > NOW()');
+                    })
+                    ->orderBy('pc.node_channel_id')
+                    ->orderByDesc('pc.valid_from')
+                    ->orderByDesc('pc.id')
+                    ->get()
+                    ->groupBy('node_channel_id')
+                    ->map(fn ($rows) => $rows->first());
+            }
+
+            $devices = $devices->map(function (\App\Models\DeviceNode $device) use ($calibrationByChannelId) {
+                    $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) use ($calibrationByChannelId) {
                         $config = is_array($channel->config) ? $channel->config : [];
-                        $pumpCalibration = isset($config['pump_calibration']) && is_array($config['pump_calibration'])
+                        $legacyPumpCalibration = isset($config['pump_calibration']) && is_array($config['pump_calibration'])
                             ? $config['pump_calibration']
                             : null;
+
+                        $calibrationRow = $calibrationByChannelId->get($channel->id);
+                        $pumpCalibration = null;
+                        if ($calibrationRow) {
+                            $pumpCalibration = [
+                                'ml_per_sec' => $calibrationRow->ml_per_sec !== null ? (float) $calibrationRow->ml_per_sec : null,
+                                'k_ms_per_ml_l' => $calibrationRow->k_ms_per_ml_l !== null ? (float) $calibrationRow->k_ms_per_ml_l : null,
+                                'duration_sec' => $calibrationRow->duration_sec !== null ? (int) $calibrationRow->duration_sec : null,
+                                'actual_ml' => $calibrationRow->actual_ml !== null ? (float) $calibrationRow->actual_ml : null,
+                                'component' => $calibrationRow->component,
+                                'test_volume_l' => $calibrationRow->test_volume_l !== null ? (float) $calibrationRow->test_volume_l : null,
+                                'ec_before_ms' => $calibrationRow->ec_before_ms !== null ? (float) $calibrationRow->ec_before_ms : null,
+                                'ec_after_ms' => $calibrationRow->ec_after_ms !== null ? (float) $calibrationRow->ec_after_ms : null,
+                                'delta_ec_ms' => $calibrationRow->delta_ec_ms !== null ? (float) $calibrationRow->delta_ec_ms : null,
+                                'temperature_c' => $calibrationRow->temperature_c !== null ? (float) $calibrationRow->temperature_c : null,
+                                'sample_count' => $calibrationRow->sample_count !== null ? (int) $calibrationRow->sample_count : null,
+                                'quality_score' => $calibrationRow->quality_score !== null ? (float) $calibrationRow->quality_score : null,
+                                'source' => $calibrationRow->source,
+                                'calibrated_at' => optional($calibrationRow->valid_from)->toIso8601String()
+                                    ?? (is_string($calibrationRow->valid_from) ? $calibrationRow->valid_from : null),
+                            ];
+                        } elseif ($legacyPumpCalibration) {
+                            // Backward-compatible fallback на период миграции данных.
+                            $pumpCalibration = $legacyPumpCalibration;
+                            $pumpCalibration['source'] = $pumpCalibration['source'] ?? 'legacy_config_fallback';
+                        }
 
                         return [
                             'id' => $channel->id,
@@ -1083,6 +1152,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                             'metric' => $channel->metric,
                             'unit' => $channel->unit,
                             'pump_calibration' => $pumpCalibration,
+                            'last_seen_at' => $channel->last_seen_at?->toIso8601String(),
+                            'is_active' => (bool) ($channel->is_active ?? true),
                         ];
                     })->values();
 

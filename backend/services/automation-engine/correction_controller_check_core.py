@@ -4,9 +4,12 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from prometheus_client import Gauge
+
 from common.db import create_zone_event
 from config.settings import get_settings
 from correction_freshness import validate_freshness_or_skip
+from correction_state_machine import CorrectionStateMachine
 from services.targets_accessor import get_ec_target, get_ph_target
 
 from correction_controller_check_steps import (
@@ -16,6 +19,11 @@ from correction_controller_check_steps import (
 )
 
 logger = logging.getLogger(__name__)
+PID_SATURATION_RATIO = Gauge(
+    "pid_saturation_ratio",
+    "Share of PID computations that hit output saturation",
+    ["zone_id", "metric"],
+)
 
 
 async def check_and_correct_core(
@@ -34,6 +42,7 @@ async def check_and_correct_core(
     Проверка и корректировка параметра (pH или EC).
     """
     target_key = controller.correction_type.value
+    state_machine = CorrectionStateMachine(zone_id=zone_id, metric=target_key, state="sense")
     current = telemetry.get(controller.metric_name) or telemetry.get(target_key)
     if controller.correction_type.value == "ph":
         target, target_min, target_max = get_ph_target(targets, zone_id=zone_id)
@@ -41,6 +50,11 @@ async def check_and_correct_core(
         target, target_min, target_max = get_ec_target(targets, zone_id=zone_id)
 
     if target is None or current is None:
+        await state_machine.transition(
+            "cooldown",
+            "sense_missing_inputs",
+            {"target": target, "current": current},
+        )
         logger.debug(
             "Zone %s: %s correction skipped due to missing target/current",
             zone_id,
@@ -83,12 +97,14 @@ async def check_and_correct_core(
         event_prefix=controller.event_prefix,
     )
     if not freshness_ok:
+        await state_machine.transition("cooldown", "gate_freshness_failed")
         return None
 
     try:
         target_val = float(target)
         current_val = float(current)
     except (ValueError, TypeError) as exc:
+        await state_machine.transition("cooldown", "sense_invalid_target_or_current")
         controller._log_skip(
             zone_id=zone_id,
             reason_code="invalid_target_or_current",
@@ -120,6 +136,7 @@ async def check_and_correct_core(
         settings=settings,
     )
     if safety_result is None:
+        await state_machine.transition("cooldown", "gate_safety_target_blocked")
         return None
     target_val = float(safety_result["target_val"])
     safety_active = bool(safety_result["safety_active"])
@@ -127,6 +144,7 @@ async def check_and_correct_core(
     rate_limit_result = dict(safety_result["rate_limit_result"] or {})
 
     if target_min is not None and target_max is not None and target_min <= current_val <= target_max:
+        await state_machine.transition("cooldown", "gate_target_in_range")
         logger.debug(
             "Zone %s: %s correction skipped - value inside target range",
             zone_id,
@@ -154,12 +172,14 @@ async def check_and_correct_core(
         settings=settings,
     )
     if policy_result is None:
+        await state_machine.transition("cooldown", "gate_policy_blocked")
         return None
     proactive_mode = bool(policy_result["proactive_mode"])
     proactive_payload = dict(policy_result["proactive_payload"] or {})
     reason = str(policy_result["reason"] or "")
 
     if not water_level_ok:
+        await state_machine.transition("cooldown", "gate_water_level_not_ok")
         controller._log_skip(zone_id=zone_id, reason_code="water_level_not_ok")
         return None
 
@@ -167,6 +187,7 @@ async def check_and_correct_core(
     correction_type = controller._determine_correction_type(correction_type_diff)
     blocked_until = controller._resolve_anomaly_block_until(zone_id)
     if blocked_until is not None:
+        await state_machine.transition("cooldown", "gate_equipment_anomaly_block_active")
         block_remaining_sec = max(0, int(blocked_until - time.monotonic()))
         controller._log_skip(
             zone_id=zone_id,
@@ -187,8 +208,10 @@ async def check_and_correct_core(
         )
         return None
 
+    await state_machine.transition("plan", "gate_passed")
     actuator = controller._select_actuator(correction_type=correction_type, actuators=actuators, nodes=nodes)
     if not actuator:
+        await state_machine.transition("cooldown", "plan_actuator_unavailable")
         controller._log_skip(
             zone_id=zone_id,
             reason_code="actuator_unavailable",
@@ -199,6 +222,10 @@ async def check_and_correct_core(
 
     dt_seconds = controller._get_dt_seconds(zone_id)
     amount = pid.compute(current_val, dt_seconds)
+    compute_count = max(1, int(getattr(pid.stats, "compute_count", 0)))
+    saturation_count = int(getattr(pid.stats, "saturation_count", 0))
+    saturation_ratio = float(saturation_count) / float(compute_count)
+    PID_SATURATION_RATIO.labels(zone_id=str(zone_id), metric=controller.metric_name).set(saturation_ratio)
     logger.debug(
         "Zone %s: %s PID calculation",
         zone_id,
@@ -214,6 +241,7 @@ async def check_and_correct_core(
             "pid_integral": pid.integral,
             "pid_prev_error": pid.prev_error,
             "pid_dt": dt_seconds,
+            "pid_saturation_ratio": saturation_ratio,
             "pid_config": {
                 "dead_zone": pid.config.dead_zone,
                 "close_zone": pid.config.close_zone,
@@ -241,6 +269,7 @@ async def check_and_correct_core(
             },
         )
     else:
+        await state_machine.transition("cooldown", "plan_pid_output_zero")
         controller._log_skip(
             zone_id=zone_id,
             reason_code="pid_output_zero",
@@ -361,5 +390,7 @@ async def check_and_correct_core(
             "horizon_minutes": proactive_payload.get("horizon_minutes"),
             "samples_count": proactive_payload.get("samples_count"),
         }
+
+    command["state_machine"] = {"state": state_machine.state, "reason_code": "plan_ready"}
 
     return command

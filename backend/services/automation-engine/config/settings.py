@@ -62,8 +62,16 @@ class AutomationSettings:
     EC_COMPONENT_RECHECK_TOLERANCE: float = float(os.getenv("EC_COMPONENT_RECHECK_TOLERANCE", "0.05"))
     # Подтверждение команд дозирования (ACK/DONE) и повторы
     CORRECTION_COMMAND_TIMEOUT_SEC: float = float(os.getenv("CORRECTION_COMMAND_TIMEOUT_SEC", "5"))
+    CORRECTION_COMMAND_TIMEOUT_BUFFER_SEC: float = float(os.getenv("CORRECTION_COMMAND_TIMEOUT_BUFFER_SEC", "2.5"))
+    CORRECTION_COMMAND_MIN_TIMEOUT_SEC: float = float(os.getenv("CORRECTION_COMMAND_MIN_TIMEOUT_SEC", "3"))
     CORRECTION_COMMAND_MAX_ATTEMPTS: int = int(os.getenv("CORRECTION_COMMAND_MAX_ATTEMPTS", "2"))
     CORRECTION_COMMAND_RETRY_DELAY_SEC: float = float(os.getenv("CORRECTION_COMMAND_RETRY_DELAY_SEC", "0.5"))
+
+    # PID расширенные guards/стабилизация
+    PID_ANTI_WINDUP_MODE: str = os.getenv("PID_ANTI_WINDUP_MODE", "conditional")
+    PID_BACK_CALCULATION_GAIN: float = float(os.getenv("PID_BACK_CALCULATION_GAIN", "0.2"))
+    PID_DERIVATIVE_FILTER_ALPHA: float = float(os.getenv("PID_DERIVATIVE_FILTER_ALPHA", "0.35"))
+    PID_AUTOTUNE_MODE: str = os.getenv("PID_AUTOTUNE_MODE", "disabled")
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
