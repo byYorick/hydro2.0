@@ -11,9 +11,11 @@
 static const char *TAG = "test_node_main";
 
 void app_main(void) {
-    // В UART оставляем только лог команд test_node_cmd.
-    esp_log_level_set("*", ESP_LOG_NONE);
+    // Для тестов оставляем INFO для test_node_cmd и ERROR для остальных тегов.
+    // Так видно критические сбои, но без лишнего шума от сторонних компонентов.
+    esp_log_level_set("*", ESP_LOG_ERROR);
     esp_log_level_set("test_node_cmd", ESP_LOG_INFO);
+    esp_log_level_set("test_node_main", ESP_LOG_INFO);
 
     ESP_LOGI(TAG, "Test node starting...");
 

@@ -345,6 +345,37 @@ static virtual_state_t s_virtual_state = {
     .solution_fill_started_at = 0,
 };
 
+static bool should_emit_uart_log(const char *line) {
+    static const char *prefixes[] = {
+        "cmd",
+        "mqtt",
+        "status",
+        "hb",
+        "cfg_report",
+        "node_hello",
+        "config",
+        "setup",
+        "task",
+        "event",
+        "ui_sync",
+        "tel",
+    };
+    size_t i;
+
+    if (!line || line[0] == '\0') {
+        return false;
+    }
+
+    for (i = 0; i < (sizeof(prefixes) / sizeof(prefixes[0])); i++) {
+        size_t len = strlen(prefixes[i]);
+        if (strncmp(line, prefixes[i], len) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void ui_logf(const char *node_uid, const char *fmt, ...) {
     char line[96];
     const char *origin = (node_uid && node_uid[0] != '\0') ? node_uid : "SYS";
@@ -358,7 +389,7 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
     vsnprintf(line, sizeof(line), fmt, args);
     va_end(args);
 
-    if (strncmp(line, "cmd", 3) == 0) {
+    if (should_emit_uart_log(line)) {
         ESP_LOGI(CMD_TAG, "[%s] %s", origin, line);
     }
     test_node_ui_log_event(node_uid, line);

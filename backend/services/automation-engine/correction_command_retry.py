@@ -9,6 +9,23 @@ from services.resilience_contract import (
 )
 
 logger = logging.getLogger(__name__)
+DEFAULT_COMPENSATION_TOPOLOGY = "two_tank_drip_substrate_trays"
+
+
+def _resolve_compensation_topology(command: Dict[str, Any]) -> str:
+    event_details = command.get("event_details") if isinstance(command.get("event_details"), dict) else {}
+    config = command.get("config") if isinstance(command.get("config"), dict) else {}
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    raw_topology = (
+        command.get("topology")
+        or execution.get("topology")
+        or event_details.get("topology")
+        or ""
+    )
+    topology = str(raw_topology).strip().lower()
+    if topology:
+        return topology
+    return DEFAULT_COMPENSATION_TOPOLOGY
 
 
 async def wait_command_done(*, tracker, cmd_id: str, timeout_sec: float) -> Optional[bool]:
@@ -253,8 +270,16 @@ async def trigger_ec_partial_batch_compensation(
     enqueue_internal_scheduler_task_fn: Callable[..., Awaitable[Dict[str, Any]]],
     send_infra_alert_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
+    topology = _resolve_compensation_topology(command)
     payload = {
+        "topology": topology,
         "workflow": "irrigation_recovery",
+        "config": {
+            "execution": {
+                "topology": topology,
+                "workflow": "irrigation_recovery",
+            }
+        },
         "payload_contract_version": "v2",
         "source_reason": "ec_batch_partial_failure",
         "ec_batch_partial_failure": {

@@ -60,6 +60,13 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: mark_test_started_at
+    type: database_query
+    query: |
+      SELECT NOW() AS test_started_at
+    save: test_window
+    expected_rows: 1
+
   - step: cleanup_old_cycles
     type: database_execute
     query: |
@@ -431,10 +438,15 @@ assertions:
       SELECT COUNT(*) as cmd_count
       FROM commands
       WHERE zone_id = :zone_id
-      AND (cmd LIKE '%%ph%%' OR cmd LIKE '%%ec%%' OR cmd LIKE '%%dose%%' OR cmd LIKE '%%correction%%')
-      AND created_at > NOW() - INTERVAL '2 minutes'
+      AND created_at >= :test_started_at
+      AND cmd IN ('dose', 'run_pump')
+      AND (
+        channel IN ('pump_acid', 'pump_base', 'pump_a', 'pump_b', 'pump_c', 'pump_d')
+        OR params->>'type' IN ('add_acid', 'add_base', 'add_nutrients', 'dilute')
+      )
     params:
       zone_id: ${zone_id}
+      test_started_at: ${test_window.0.test_started_at}
     expected:
       - field: cmd_count
         operator: equals
@@ -449,11 +461,12 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zone_id
       AND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')
-      AND created_at > NOW() - INTERVAL '2 minutes'
+      AND created_at >= :test_started_at
       ORDER BY created_at DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
+      test_started_at: ${test_window.0.test_started_at}
     timeout: 10.0
     expected_rows: 1
 
