@@ -231,6 +231,42 @@ async def test_ensure_table_fails_when_required_columns_missing():
 
 
 @pytest.mark.asyncio
+async def test_ensure_table_revalidates_after_schema_error_backoff():
+    queue = AlertQueue()
+    queue._schema_retry_interval_sec = 5.0
+
+    bad_schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS - {"next_retry_at"}),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+    good_schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+    pool_mock = AsyncMock(
+        side_effect=[_PoolStub(bad_schema_conn), _PoolStub(good_schema_conn)]
+    )
+
+    with patch("common.alert_queue.get_pool", new=pool_mock), patch(
+        "common.alert_queue.time.monotonic",
+        side_effect=[100.0, 105.0, 106.0, 111.0],
+    ):
+        with pytest.raises(RuntimeError, match="pending_alerts"):
+            await queue.ensure_table()
+        with pytest.raises(RuntimeError, match="pending_alerts"):
+            await queue.ensure_table()
+        await queue.ensure_table()
+
+    assert pool_mock.await_count == 2
+    assert queue._initialized is True
+    assert queue._schema_error is None
+
+
+@pytest.mark.asyncio
 async def test_ensure_table_retries_after_transient_pool_error():
     queue = AlertQueue()
     schema_conn = _SchemaConnStub(

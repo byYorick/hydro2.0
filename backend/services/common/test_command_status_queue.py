@@ -261,6 +261,48 @@ async def test_ensure_table_fails_when_required_columns_missing():
 
 
 @pytest.mark.asyncio
+async def test_ensure_table_revalidates_after_schema_error_backoff():
+    queue = StatusUpdateQueue()
+    queue._schema_retry_interval_sec = 5.0
+
+    bad_schema_conn = _SchemaConnStub(
+        {
+            "pending_status_updates": sorted(
+                _PENDING_STATUS_UPDATES_REQUIRED_COLUMNS - {"moved_to_dlq_at"}
+            ),
+            "pending_status_updates_dlq": sorted(
+                _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS
+            ),
+        }
+    )
+    good_schema_conn = _SchemaConnStub(
+        {
+            "pending_status_updates": sorted(_PENDING_STATUS_UPDATES_REQUIRED_COLUMNS),
+            "pending_status_updates_dlq": sorted(
+                _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS
+            ),
+        }
+    )
+    pool_mock = AsyncMock(
+        side_effect=[_PoolStub(bad_schema_conn), _PoolStub(good_schema_conn)]
+    )
+
+    with patch("common.command_status_queue.get_pool", new=pool_mock), patch(
+        "common.command_status_queue.time.monotonic",
+        side_effect=[100.0, 105.0, 106.0, 111.0],
+    ):
+        with pytest.raises(RuntimeError, match="pending_status_updates"):
+            await queue.ensure_table()
+        with pytest.raises(RuntimeError, match="pending_status_updates"):
+            await queue.ensure_table()
+        await queue.ensure_table()
+
+    assert pool_mock.await_count == 2
+    assert queue._initialized is True
+    assert queue._schema_error is None
+
+
+@pytest.mark.asyncio
 async def test_ensure_table_retries_after_transient_pool_error():
     queue = StatusUpdateQueue()
     schema_conn = _SchemaConnStub(

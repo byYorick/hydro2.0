@@ -9,6 +9,8 @@
 import asyncio
 import json
 import logging
+import os
+import time
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 import asyncpg
@@ -120,6 +122,12 @@ class AlertQueue:
     def __init__(self):
         self._initialized = False
         self._schema_error: Optional[str] = None
+        # Если сервис стартовал раньше миграций, периодически пере-проверяем схему
+        # без необходимости ручного рестарта контейнера.
+        self._schema_retry_interval_sec = float(
+            os.getenv("QUEUE_SCHEMA_RETRY_INTERVAL_SEC", "10")
+        )
+        self._schema_retry_not_before: float = 0.0
 
     async def _load_columns(self, conn: asyncpg.Connection, table_name: str) -> set[str]:
         rows = await conn.fetch(
@@ -153,7 +161,8 @@ class AlertQueue:
         """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
-        if self._schema_error:
+        now_monotonic = time.monotonic()
+        if self._schema_error and now_monotonic < self._schema_retry_not_before:
             raise RuntimeError(self._schema_error)
         
         try:
@@ -165,8 +174,13 @@ class AlertQueue:
                 await self._validate_table_schema(
                     conn, "pending_alerts_dlq", _PENDING_ALERTS_DLQ_REQUIRED_COLUMNS
                 )
+            self._schema_error = None
+            self._schema_retry_not_before = 0.0
         except _SchemaValidationError as exc:
             self._schema_error = str(exc)
+            self._schema_retry_not_before = (
+                time.monotonic() + self._schema_retry_interval_sec
+            )
             logger.critical(
                 "[ALERT_QUEUE_SCHEMA_INVALID] %s",
                 self._schema_error,

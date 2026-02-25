@@ -1595,31 +1595,40 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
 
     if telemetry_last_updates:
         try:
-            values_list = []
-            params_list = []
-            param_index = 1
+            sensor_ids: list[int] = []
+            last_values: list[float] = []
+            last_ts_values: list[datetime] = []
+            last_quality_values: list[str] = []
+            updated_at_values: list[datetime] = []
             for sensor_id, update_data in telemetry_last_updates.items():
-                values_list.append(
-                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, "
-                    f"${param_index + 3}, ${param_index + 4})"
-                )
-                params_list.extend(
-                    [
-                        sensor_id,
-                        update_data["value"],
-                        update_data["ts"],
-                        update_data["quality"],
-                        update_data["updated_at"],
-                    ]
-                )
-                param_index += 5
+                sensor_ids.append(sensor_id)
+                last_values.append(update_data["value"])
+                last_ts_values.append(update_data["ts"])
+                last_quality_values.append(update_data["quality"])
+                updated_at_values.append(update_data["updated_at"])
 
-            if values_list:
-                query = f"""
+            if sensor_ids:
+                query = """
+                    WITH incoming AS (
+                        SELECT *
+                        FROM UNNEST(
+                            $1::integer[],
+                            $2::double precision[],
+                            $3::timestamp[],
+                            $4::text[],
+                            $5::timestamp[]
+                        ) AS t(sensor_id, last_value, last_ts, last_quality, updated_at)
+                    ),
+                    existing AS (
+                        SELECT i.sensor_id, i.last_value, i.last_ts, i.last_quality, i.updated_at
+                        FROM incoming i
+                        JOIN sensors s ON s.id = i.sensor_id
+                    )
                     INSERT INTO telemetry_last (
                         sensor_id, last_value, last_ts, last_quality, updated_at
                     )
-                    VALUES {', '.join(values_list)}
+                    SELECT sensor_id, last_value, last_ts, last_quality, updated_at
+                    FROM existing
                     ON CONFLICT (sensor_id)
                     DO UPDATE SET
                         last_value = EXCLUDED.last_value,
@@ -1627,7 +1636,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         last_quality = EXCLUDED.last_quality,
                         updated_at = EXCLUDED.updated_at
                 """
-                await execute(query, *params_list)
+                await execute(
+                    query,
+                    sensor_ids,
+                    last_values,
+                    last_ts_values,
+                    last_quality_values,
+                    updated_at_values,
+                )
                 logger.debug(
                     "Batch upserted %s telemetry_last records",
                     len(telemetry_last_updates),

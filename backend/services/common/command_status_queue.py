@@ -10,8 +10,10 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Optional, Dict, Any, Union, List
 from datetime import datetime, timedelta
+import time
 from .utils.time import utcnow
 from enum import Enum
 
@@ -209,6 +211,12 @@ class StatusUpdateQueue:
     def __init__(self):
         self._initialized = False
         self._schema_error: Optional[str] = None
+        # Если сервис стартовал раньше миграций, периодически пере-проверяем схему
+        # без необходимости ручного рестарта контейнера.
+        self._schema_retry_interval_sec = float(
+            os.getenv("QUEUE_SCHEMA_RETRY_INTERVAL_SEC", "10")
+        )
+        self._schema_retry_not_before: float = 0.0
 
     async def _load_columns(self, conn, table_name: str) -> set[str]:
         rows = await conn.fetch(
@@ -245,7 +253,8 @@ class StatusUpdateQueue:
         """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
-        if self._schema_error:
+        now_monotonic = time.monotonic()
+        if self._schema_error and now_monotonic < self._schema_retry_not_before:
             raise RuntimeError(self._schema_error)
         
         try:
@@ -261,8 +270,13 @@ class StatusUpdateQueue:
                     "pending_status_updates_dlq",
                     _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS,
                 )
+            self._schema_error = None
+            self._schema_retry_not_before = 0.0
         except _SchemaValidationError as exc:
             self._schema_error = str(exc)
+            self._schema_retry_not_before = (
+                time.monotonic() + self._schema_retry_interval_sec
+            )
             logger.critical(
                 "[STATUS_QUEUE_SCHEMA_INVALID] %s",
                 self._schema_error,
