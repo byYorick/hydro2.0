@@ -262,6 +262,17 @@ async def check_and_correct_core(
             allowed_ec_components=allowed_ec_components,
         )
         if not batch_commands:
+            ec_batch_debug: Dict[str, Any] = {}
+            for role in ("ec_npk_pump", "ec_calcium_pump", "ec_magnesium_pump", "ec_micro_pump"):
+                actuator_info = (actuators or {}).get(role)
+                if not isinstance(actuator_info, dict):
+                    continue
+                ec_batch_debug[role] = {
+                    "node_uid": actuator_info.get("node_uid"),
+                    "channel": actuator_info.get("channel"),
+                    "ml_per_sec": actuator_info.get("ml_per_sec"),
+                    "pump_calibration": actuator_info.get("pump_calibration"),
+                }
             logger.warning(
                 "Zone %s: Unable to build EC component batch; skipping dosing",
                 zone_id,
@@ -280,6 +291,11 @@ async def check_and_correct_core(
                 {
                     "reason": "ec_component_batch_unavailable",
                     "available_roles": sorted(list((actuators or {}).keys())),
+                    "allowed_ec_components": allowed_ec_components,
+                    "ec_batch_debug": ec_batch_debug,
+                    "target_ec": target_val,
+                    "current_ec": current_val,
+                    "total_ml": amount,
                 },
             )
             return None
@@ -347,4 +363,3 @@ async def check_and_correct_core(
         }
 
     return command
-

@@ -99,3 +99,42 @@ def test_build_ec_component_batch_legacy_fallback_works_for_ratio_mode_without_c
     assert commands[0]["mode"] == "legacy_single_component"
     assert commands[0]["component"] == "npk"
     assert commands[0]["ml"] == 12.5
+
+
+def test_build_ec_component_batch_fallback_to_npk_when_only_npk_role_available():
+    commands = build_ec_component_batch(
+        targets={
+            "nutrition": {
+                "mode": "ratio_ec_pid",
+                "solution_volume_l": 10.0,
+            }
+        },
+        actuators={
+            "ec_npk_pump": {
+                "role": "ec_npk_pump",
+                "node_uid": "nd-dosing-e2e",
+                "channel": "pump_a",
+                "ml_per_sec": 2.0,
+            },
+            "ph_acid_pump": {
+                "role": "ph_acid_pump",
+                "node_uid": "nd-ph",
+                "channel": "pump_acid",
+                "ml_per_sec": 2.0,
+            },
+        },
+        total_ml=15.0,
+        current_ec=0.3,
+        target_ec=1.8,
+        allowed_ec_components=None,
+        build_correction_command=_build_command,
+    )
+
+    assert len(commands) == 1
+    cmd = commands[0]
+    assert cmd["component"] == "npk"
+    assert cmd["mode"] == "legacy_single_component"
+    assert cmd["params"]["type"] == "add_nutrients"
+    assert cmd["params"]["component"] == "npk"
+    assert cmd["params"]["ratio_pct"] == 100.0
+    assert cmd["ml"] == 15.0

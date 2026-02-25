@@ -48,8 +48,20 @@ logger = logging.getLogger(__name__)
 
 _PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
 _PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_CONFIG_REPORT_DEFAULT_ALLOW_PRUNE = os.getenv(
+    "CONFIG_REPORT_PRUNE_MISSING_CHANNELS", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
 _ZONE_EVENT_TYPE_MAX_LEN = 255
 _ZONE_EVENT_TYPE_HASH_LEN = 10
+_PROTECTED_NODE_CHANNEL_CONFIG_KEYS = frozenset(
+    {
+        "pump_calibration",
+        "flow_calibration",
+        "pid",
+        "pid_config",
+        "pid_state",
+    }
+)
 _NODE_EVENT_METRIC_FALLBACK = "OTHER"
 _NODE_EVENT_METRIC_ALLOWED_CODES = {
     "NODE_EVENT",
@@ -1206,8 +1218,14 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         channels_payload = data.get("channels")
         if channels_payload is not None:
             try:
+                allow_prune = _CONFIG_REPORT_DEFAULT_ALLOW_PRUNE
+                for key in ("channels_replace", "channels_full_snapshot", "full_snapshot"):
+                    parsed = _to_optional_bool(data.get(key))
+                    if parsed is not None:
+                        allow_prune = parsed
+                        break
                 await sync_node_channels_from_payload(
-                    node_id, node_uid, channels_payload
+                    node_id, node_uid, channels_payload, allow_prune=allow_prune
                 )
             except Exception as sync_err:
                 logger.warning(
@@ -1356,7 +1374,7 @@ async def _complete_binding_after_config_report(
 
 
 async def sync_node_channels_from_payload(
-    node_id: int, node_uid: str, channels_payload: Any
+    node_id: int, node_uid: str, channels_payload: Any, *, allow_prune: bool = False
 ) -> None:
     if not node_id:
         logger.warning("[CONFIG_REPORT] Cannot sync channels: node_id missing")
@@ -1378,6 +1396,7 @@ async def sync_node_channels_from_payload(
 
     updated = 0
     skipped = 0
+    stripped_protected_keys = 0
     channel_names: list[str] = []
     for channel in channels_payload:
         if not isinstance(channel, dict):
@@ -1414,10 +1433,26 @@ async def sync_node_channels_from_payload(
             if not unit_value:
                 unit_value = None
 
-        config = {
+        raw_config = {
             key: value
             for key, value in channel.items()
             if key not in {"name", "channel", "type", "channel_type", "metric", "metrics", "unit"}
+        }
+        protected_keys_in_payload = [
+            key for key in raw_config.keys() if key in _PROTECTED_NODE_CHANNEL_CONFIG_KEYS
+        ]
+        if protected_keys_in_payload:
+            stripped_protected_keys += len(protected_keys_in_payload)
+            logger.warning(
+                "[CONFIG_REPORT] Ignoring protected channel config keys from node payload: node_uid=%s channel=%s keys=%s",
+                node_uid,
+                channel_name,
+                protected_keys_in_payload,
+            )
+        config = {
+            key: value
+            for key, value in raw_config.items()
+            if key not in _PROTECTED_NODE_CHANNEL_CONFIG_KEYS
         }
         if not config:
             config = None
@@ -1431,7 +1466,12 @@ async def sync_node_channels_from_payload(
                 type = COALESCE(EXCLUDED.type, node_channels.type),
                 metric = COALESCE(EXCLUDED.metric, node_channels.metric),
                 unit = COALESCE(EXCLUDED.unit, node_channels.unit),
-                config = COALESCE(EXCLUDED.config, node_channels.config),
+                -- Preserve local/runtime keys (e.g. pump_calibration) while applying fresh node config.
+                config = CASE
+                    WHEN EXCLUDED.config IS NULL THEN node_channels.config
+                    WHEN node_channels.config IS NULL THEN EXCLUDED.config
+                    ELSE node_channels.config || EXCLUDED.config
+                END,
                 updated_at = NOW()
             """,
             node_id,
@@ -1444,7 +1484,7 @@ async def sync_node_channels_from_payload(
         channel_names.append(channel_name)
         updated += 1
 
-    if channel_names:
+    if allow_prune and channel_names:
         await execute(
             """
             DELETE FROM node_channels
@@ -1454,18 +1494,33 @@ async def sync_node_channels_from_payload(
             node_id,
             list(set(channel_names)),
         )
+        logger.info(
+            "[CONFIG_REPORT] Pruned missing channels from config_report full-snapshot: node_uid=%s kept=%s",
+            node_uid,
+            sorted(list(set(channel_names))),
+        )
+    elif allow_prune and not channel_names:
+        logger.warning(
+            "[CONFIG_REPORT] Refused destructive prune: allow_prune=true but no valid channels were parsed for node_uid=%s",
+            node_uid,
+        )
     else:
-        await execute(
-            "DELETE FROM node_channels WHERE node_id = $1",
-            node_id,
+        logger.info(
+            "[CONFIG_REPORT] Channel prune disabled for node_uid=%s (transport-safe mode)",
+            node_uid,
         )
 
     logger.info(
-        "[CONFIG_REPORT] Synced %s channel(s) for node %s, skipped %s",
+        "[CONFIG_REPORT] Synced %s channel(s) for node %s, skipped %s, stripped_protected_keys=%s, allow_prune=%s",
         updated,
         node_uid,
         skipped,
+        stripped_protected_keys,
+        allow_prune,
     )
+
+    # Не удаляем все каналы даже при allow_prune=true, если payload пустой/невалидный.
+    # Это защищает от случайного разрушения конфигурации при частичном config_report.
 
 
 async def handle_command_response(topic: str, payload: bytes) -> None:

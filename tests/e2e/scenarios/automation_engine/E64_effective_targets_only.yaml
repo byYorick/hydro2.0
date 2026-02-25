@@ -66,21 +66,62 @@ actions:
   - step: ensure_zone_readiness_bindings
     type: database_execute
     query: |
+      WITH target_node AS (
+        SELECT id
+        FROM nodes
+        WHERE zone_id = :zone_id
+          AND uid = :node_uid
+        LIMIT 1
+      ),
+      main_candidate AS (
+        SELECT nc.id AS node_channel_id
+        FROM node_channels nc
+        JOIN target_node tn ON tn.id = nc.node_id
+        WHERE nc.type = 'ACTUATOR'
+        ORDER BY
+          CASE WHEN nc.channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END,
+          nc.id
+        LIMIT 1
+      ),
+      drain_candidate AS (
+        SELECT nc.id AS node_channel_id
+        FROM node_channels nc
+        JOIN target_node tn ON tn.id = nc.node_id
+        LEFT JOIN main_candidate mc ON mc.node_channel_id = nc.id
+        WHERE nc.type = 'ACTUATOR'
+          AND mc.node_channel_id IS NULL
+        ORDER BY
+          CASE
+            WHEN nc.channel IN (
+              'drain_pump',
+              'valve_solution_supply',
+              'valve_clean_supply',
+              'valve_irrigation',
+              'valve_solution_fill',
+              'valve_clean_fill'
+            ) THEN 0
+            ELSE 1
+          END,
+          nc.id
+        LIMIT 1
+      )
       UPDATE node_channels nc
       SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
         'zone_role',
         CASE
-          WHEN nc.channel = 'main_pump' THEN 'main_pump'
-          WHEN nc.channel = 'drain_pump' THEN 'drain'
-          ELSE nc.config->>'zone_role'
+          WHEN nc.id IN (SELECT node_channel_id FROM main_candidate) THEN 'main_pump'
+          WHEN nc.id IN (SELECT node_channel_id FROM drain_candidate) THEN 'drain'
+          ELSE COALESCE(nc.config->>'zone_role', '')
         END
       )
-      FROM nodes n
-      WHERE n.id = nc.node_id
-        AND n.zone_id = :zone_id
-        AND nc.channel IN ('main_pump', 'drain_pump');
+      WHERE nc.id IN (
+        SELECT node_channel_id FROM main_candidate
+        UNION ALL
+        SELECT node_channel_id FROM drain_candidate
+      );
     params:
       zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
 
   - step: ensure_main_and_drain_bindings
     type: database_execute
@@ -88,21 +129,70 @@ actions:
       WITH zone_ctx AS (
         SELECT :zone_id::bigint AS zone_id
       ),
+      target_node AS (
+        SELECT n.id
+        FROM nodes n
+        JOIN zone_ctx zc ON zc.zone_id = n.zone_id
+        WHERE n.uid = :node_uid
+        LIMIT 1
+      ),
+      main_candidate AS (
+        SELECT nc.id AS node_channel_id
+        FROM node_channels nc
+        JOIN target_node tn ON tn.id = nc.node_id
+        WHERE nc.type = 'ACTUATOR'
+        ORDER BY
+          CASE WHEN nc.channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END,
+          nc.id
+        LIMIT 1
+      ),
+      drain_candidate AS (
+        SELECT nc.id AS node_channel_id
+        FROM node_channels nc
+        JOIN target_node tn ON tn.id = nc.node_id
+        LEFT JOIN main_candidate mc ON mc.node_channel_id = nc.id
+        WHERE nc.type = 'ACTUATOR'
+          AND mc.node_channel_id IS NULL
+        ORDER BY
+          CASE
+            WHEN nc.channel IN (
+              'drain_pump',
+              'valve_solution_supply',
+              'valve_clean_supply',
+              'valve_irrigation',
+              'valve_solution_fill',
+              'valve_clean_fill'
+            ) THEN 0
+            ELSE 1
+          END,
+          nc.id
+        LIMIT 1
+      ),
+      selected_targets AS (
+        SELECT 'main_pump'::text AS role, 'E2E Main Pump'::text AS label, mc.node_channel_id
+        FROM main_candidate mc
+        UNION ALL
+        SELECT 'drain'::text AS role, 'E2E Drain Pump'::text AS label, dc.node_channel_id
+        FROM drain_candidate dc
+      ),
       ensure_instances AS (
         INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
-        SELECT 'zone', zc.zone_id, m.asset_type, m.label, true, NOW(), NOW()
+        SELECT
+          'zone',
+          zc.zone_id,
+          CASE WHEN st.role = 'main_pump' THEN 'PUMP' ELSE 'DRAIN' END,
+          st.label,
+          true,
+          NOW(),
+          NOW()
         FROM zone_ctx zc
-        CROSS JOIN (
-          VALUES
-            ('PUMP', 'E2E Main Pump'),
-            ('DRAIN', 'E2E Drain Pump')
-        ) AS m(asset_type, label)
+        JOIN selected_targets st ON TRUE
         WHERE NOT EXISTS (
           SELECT 1
           FROM infrastructure_instances ii
           WHERE ii.owner_type = 'zone'
             AND ii.owner_id = zc.zone_id
-            AND ii.label = m.label
+            AND ii.label = st.label
         )
         RETURNING id
       ),
@@ -112,25 +202,19 @@ actions:
           ii.id,
           nc.id,
           'actuator',
-          m.role,
+          st.role,
           NOW(),
           NOW()
         FROM zone_ctx zc
-        JOIN nodes n
-          ON n.zone_id = zc.zone_id
-        JOIN (
-          VALUES
-            ('main_pump', 'main_pump', 'E2E Main Pump'),
-            ('drain_pump', 'drain', 'E2E Drain Pump')
-        ) AS m(channel, role, label)
-          ON TRUE
+        JOIN selected_targets st ON TRUE
+        JOIN target_node tn ON TRUE
         JOIN node_channels nc
-          ON nc.node_id = n.id
-         AND nc.channel = m.channel
+          ON nc.id = st.node_channel_id
+         AND nc.node_id = tn.id
         JOIN infrastructure_instances ii
           ON ii.owner_type = 'zone'
          AND ii.owner_id = zc.zone_id
-         AND ii.label = m.label
+         AND ii.label = st.label
         ON CONFLICT (node_channel_id) DO UPDATE SET
           infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
           direction = EXCLUDED.direction,
@@ -141,6 +225,7 @@ actions:
       SELECT 1;
     params:
       zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
 
   - step: verify_main_and_drain_bindings_online
     type: db.wait

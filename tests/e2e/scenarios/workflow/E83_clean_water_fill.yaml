@@ -11,14 +11,24 @@ description: |
   - В zone_events появляется CLEAN_FILL_STARTED
 
 actions:
+  - step: set_test_zone_uid
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+
+  - step: set_test_node_uid
+    type: set
+    test_node_uid: ${TEST_NODE_UID}
+
   # ─── 1. Получаем контекст зоны ────────────────────────────────────────────
   - step: get_zone_context
     type: database_query
     query: |
       SELECT z.id AS zone_id, z.greenhouse_id
       FROM zones z
-      WHERE z.uid = 'zn-test-1'
+      WHERE z.uid = :zone_uid
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     save: zone_ctx
 
   - step: set_zone_id
@@ -38,7 +48,7 @@ actions:
     type: database_execute
     query: |
       INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
-      VALUES (:zid, 'nd-irrig-e2e', 'E2E Irrig Node', 'irrig', 'online', NOW(), NOW(), NOW())
+      VALUES (:zid, '${test_node_uid}', 'E2E Irrig Node', 'irrig', 'online', NOW(), NOW(), NOW())
       ON CONFLICT (uid) DO UPDATE SET
         zone_id       = EXCLUDED.zone_id,
         type          = 'irrig',
@@ -50,7 +60,7 @@ actions:
 
   - step: get_irrig_node
     type: database_query
-    query: SELECT id FROM nodes WHERE uid = 'nd-irrig-e2e' LIMIT 1
+    query: SELECT id FROM nodes WHERE uid = '${test_node_uid}' LIMIT 1
     save: irrig_node_row
 
   - step: set_irrig_node_id
@@ -84,7 +94,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: pump_main
       cmd: set_relay
       params:
@@ -110,7 +120,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_clean_fill
       cmd: set_relay
       params:
@@ -136,7 +146,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_clean_supply
       cmd: set_relay
       params:
@@ -162,7 +172,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_solution_fill
       cmd: set_relay
       params:
@@ -188,7 +198,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_solution_supply
       cmd: set_relay
       params:
@@ -453,14 +463,14 @@ cleanup:
 
   - step: delete_node_channels
     type: database_execute
-    query: DELETE FROM node_channels WHERE node_id = :nid
+    query: DELETE FROM node_channels WHERE 1=0
     params:
       nid: ${irrig_node_id}
     optional: true
 
   - step: delete_irrig_node
     type: database_execute
-    query: DELETE FROM nodes WHERE uid = 'nd-irrig-e2e'
+    query: DELETE FROM nodes WHERE 1=0
     optional: true
 
   - step: delete_recipe

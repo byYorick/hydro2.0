@@ -116,12 +116,39 @@ class AdaptivePid:
         - Если emergency, возвращает 0.
         - min_interval_ms: если с предыдущей дозы прошло меньше — 0.
         """
+        if dt_seconds <= 0:
+            logger.warning(
+                "PID compute skipped: non-positive dt",
+                extra={
+                    "dt_seconds": dt_seconds,
+                    "current_value": current_value,
+                    "setpoint": self.config.setpoint,
+                },
+            )
+            return 0.0
+
         if self.emergency:
+            logger.info(
+                "PID compute skipped: emergency mode active",
+                extra={"current_value": current_value, "setpoint": self.config.setpoint},
+            )
             return 0.0
 
         # Используем монотонные часы — не зависят от NTP-скачков и перевода системного времени
         now_mono_ms = int(time.monotonic() * 1000)
-        if self.last_output_ms and (now_mono_ms - self.last_output_ms) < self.config.min_interval_ms:
+        elapsed_ms = now_mono_ms - self.last_output_ms if self.last_output_ms else None
+        if self.last_output_ms and elapsed_ms is not None and elapsed_ms < self.config.min_interval_ms:
+            remaining_ms = self.config.min_interval_ms - elapsed_ms
+            logger.debug(
+                "PID compute skipped: min interval guard",
+                extra={
+                    "elapsed_ms": elapsed_ms,
+                    "remaining_ms": remaining_ms,
+                    "min_interval_ms": self.config.min_interval_ms,
+                    "current_value": current_value,
+                    "setpoint": self.config.setpoint,
+                },
+            )
             return 0.0
 
         error = self.config.setpoint - current_value
@@ -140,6 +167,15 @@ class AdaptivePid:
         # Dead zone — нулевая коррекция
         if zone == PidZone.DEAD:
             self.prev_error = error
+            logger.debug(
+                "PID compute skipped: dead zone",
+                extra={
+                    "error": error,
+                    "dead_zone": self.config.dead_zone,
+                    "current_value": current_value,
+                    "setpoint": self.config.setpoint,
+                },
+            )
             return 0.0
 
         coeffs = self.config.zone_coeffs.get(zone, self.config.zone_coeffs[PidZone.CLOSE])
@@ -150,18 +186,44 @@ class AdaptivePid:
             derivative = (error - self.prev_error) / dt_seconds
 
         # Накапливаем интеграл с bounded clamping (anti-windup: max_integral ограничивает накопление)
+        integral_before = self.integral
         self.integral += error * dt_seconds
         self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
+        if abs(self.integral - (integral_before + (error * dt_seconds))) > 1e-9:
+            logger.debug(
+                "PID integral clamped",
+                extra={
+                    "integral_before": integral_before,
+                    "integral_after": self.integral,
+                    "max_integral": self.config.max_integral,
+                    "error": error,
+                    "dt_seconds": dt_seconds,
+                },
+            )
 
-        output = (
-            coeffs.kp * error +
-            coeffs.ki * self.integral +
-            coeffs.kd * derivative
+        proportional = coeffs.kp * error
+        integral_term = coeffs.ki * self.integral
+        derivative_term = coeffs.kd * derivative
+        raw_output = (
+            proportional +
+            integral_term +
+            derivative_term
         )
 
         # Выход — абсолютная доза
-        output = abs(output)
+        output = abs(raw_output)
+        unclamped_output = output
         output = max(self.config.min_output, min(output, self.config.max_output))
+        if abs(output - unclamped_output) > 1e-9:
+            logger.debug(
+                "PID output clamped",
+                extra={
+                    "unclamped_output": unclamped_output,
+                    "clamped_output": output,
+                    "min_output": self.config.min_output,
+                    "max_output": self.config.max_output,
+                },
+            )
 
         if output > 0:
             self.stats.corrections_count += 1
@@ -171,6 +233,25 @@ class AdaptivePid:
             n = self.stats.corrections_count
             self.stats.avg_error = ((self.stats.avg_error * (n - 1)) + abs(error)) / n
             self.last_output_ms = now_mono_ms
+
+        logger.debug(
+            "PID compute result",
+            extra={
+                "zone": zone.value,
+                "error": error,
+                "current_value": current_value,
+                "setpoint": self.config.setpoint,
+                "dt_seconds": dt_seconds,
+                "proportional": proportional,
+                "integral_term": integral_term,
+                "derivative_term": derivative_term,
+                "raw_output": raw_output,
+                "output": output,
+                "integral_state": self.integral,
+                "prev_error": self.prev_error,
+                "autotune_enabled": self.config.enable_autotune,
+            },
+        )
 
         self.prev_error = error
         # Autotune применяется после финального вычисления — не влияет на текущий output
@@ -202,4 +283,3 @@ class AdaptivePid:
 
     def get_zone(self) -> PidZone:
         return self.current_zone
-

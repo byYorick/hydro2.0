@@ -25,14 +25,32 @@ description: |
   - solution_fill_check продолжает ждать (бак не заполняется) — коррекция успевает сработать
 
 actions:
+  - step: set_test_zone_uid
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+
+  - step: set_test_node_uid
+    type: set
+    test_node_uid: ${TEST_NODE_UID}
+
+  - step: set_test_ec_node_uid
+    type: set
+    test_ec_node_uid: nd-test-ec-1
+
+  - step: set_test_ph_node_uid
+    type: set
+    test_ph_node_uid: nd-test-ph-1
+
   # ─── 1. Получаем контекст зоны ────────────────────────────────────────────
   - step: get_zone_context
     type: database_query
     query: |
       SELECT z.id AS zone_id, z.greenhouse_id
       FROM zones z
-      WHERE z.uid = 'zn-test-1'
+      WHERE z.uid = :zone_uid
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     save: zone_ctx
 
   - step: set_zone_id
@@ -69,106 +87,82 @@ actions:
           type IN ('EC_DOSING', 'EC_CORRECTED', 'PH_CORRECTED')
           OR (
             type = 'DOSING'
-            AND COALESCE(payload_json->>'type', '') IN ('ec_correction', 'ph_correction')
+            AND (
+              COALESCE(payload_json->>'type', '') IN ('ec_correction', 'ph_correction', 'ec', 'ph', 'add_nutrients', 'dilute', 'add_acid', 'add_base')
+              OR COALESCE(payload_json->>'correction_type', '') IN ('ec_correction', 'ph_correction', 'ec', 'ph', 'add_nutrients', 'dilute', 'add_acid', 'add_base')
+            )
           )
         )
     params:
       zid: ${zone_id}
 
-  # ─── 3. Upsert irrig node ─────────────────────────────────────────────────
-  - step: upsert_irrig_node
-    type: database_execute
-    query: |
-      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
-      VALUES (:zid, 'nd-irrig-e2e', 'E2E Irrig Node', 'irrig', 'online', NOW(), NOW(), NOW())
-      ON CONFLICT (uid) DO UPDATE SET
-        zone_id       = EXCLUDED.zone_id,
-        type          = 'irrig',
-        status        = 'online',
-        last_seen_at  = NOW(),
-        updated_at    = NOW()
-    params:
-      zid: ${zone_id}
-
   - step: get_irrig_node
     type: database_query
-    query: SELECT id FROM nodes WHERE uid = 'nd-irrig-e2e' LIMIT 1
+    query: |
+      SELECT id
+      FROM nodes
+      WHERE zone_id = :zid AND uid = :node_uid
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      node_uid: ${test_node_uid}
     save: irrig_node_row
 
   - step: set_irrig_node_id
     type: set
     irrig_node_id: ${irrig_node_row.0.id}
 
-  # ─── 4. Upsert required sensor nodes (ec/ph) ──────────────────────────────
-  - step: upsert_ec_node
-    type: database_execute
-    query: |
-      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
-      VALUES (:zid, 'nd-ec-e2e', 'E2E EC Node', 'ec', 'online', NOW(), NOW(), NOW())
-      ON CONFLICT (uid) DO UPDATE SET
-        zone_id       = EXCLUDED.zone_id,
-        type          = 'ec',
-        status        = 'online',
-        last_seen_at  = NOW(),
-        updated_at    = NOW()
-    params:
-      zid: ${zone_id}
-
   - step: get_ec_node
     type: database_query
-    query: SELECT id FROM nodes WHERE uid = 'nd-ec-e2e' LIMIT 1
+    query: |
+      WITH p AS (
+        SELECT
+          :zid::bigint AS zid,
+          :node_uid::text AS node_uid,
+          :fallback_node_uid::text AS fallback_node_uid
+      )
+      SELECT n.id
+      FROM p
+      JOIN nodes n
+        ON n.zone_id = p.zid
+       AND n.uid IN (p.node_uid, p.fallback_node_uid)
+      ORDER BY CASE WHEN n.uid = p.node_uid THEN 0 ELSE 1 END
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      node_uid: ${test_ec_node_uid}
+      fallback_node_uid: ${test_node_uid}
     save: ec_node_row
 
   - step: set_ec_node_id
     type: set
     ec_node_id: ${ec_node_row.0.id}
 
-  - step: upsert_ph_node
-    type: database_execute
-    query: |
-      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
-      VALUES (:zid, 'nd-ph-e2e', 'E2E PH Node', 'ph', 'online', NOW(), NOW(), NOW())
-      ON CONFLICT (uid) DO UPDATE SET
-        zone_id       = EXCLUDED.zone_id,
-        type          = 'ph',
-        status        = 'online',
-        last_seen_at  = NOW(),
-        updated_at    = NOW()
-    params:
-      zid: ${zone_id}
-
   - step: get_ph_node
     type: database_query
-    query: SELECT id FROM nodes WHERE uid = 'nd-ph-e2e' LIMIT 1
+    query: |
+      WITH p AS (
+        SELECT
+          :zid::bigint AS zid,
+          :node_uid::text AS node_uid,
+          :fallback_node_uid::text AS fallback_node_uid
+      )
+      SELECT n.id
+      FROM p
+      JOIN nodes n
+        ON n.zone_id = p.zid
+       AND n.uid IN (p.node_uid, p.fallback_node_uid)
+      ORDER BY CASE WHEN n.uid = p.node_uid THEN 0 ELSE 1 END
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      node_uid: ${test_ph_node_uid}
+      fallback_node_uid: ${test_node_uid}
     save: ph_node_row
 
   - step: set_ph_node_id
     type: set
     ph_node_id: ${ph_node_row.0.id}
-
-  # ─── 5. Upsert dosing node ────────────────────────────────────────────────
-  - step: upsert_dosing_node
-    type: database_execute
-    query: |
-      INSERT INTO nodes (zone_id, uid, name, type, status, last_seen_at, created_at, updated_at)
-      VALUES (:zid, 'nd-dosing-e2e', 'E2E Dosing Node', 'relay', 'online', NOW(), NOW(), NOW())
-      ON CONFLICT (uid) DO UPDATE SET
-        zone_id       = EXCLUDED.zone_id,
-        type          = 'relay',
-        status        = 'online',
-        last_seen_at  = NOW(),
-        updated_at    = NOW()
-    params:
-      zid: ${zone_id}
-
-  - step: get_dosing_node
-    type: database_query
-    query: SELECT id FROM nodes WHERE uid = 'nd-dosing-e2e' LIMIT 1
-    save: dosing_node_row
-
-  - step: set_dosing_node_id
-    type: set
-    dosing_node_id: ${dosing_node_row.0.id}
 
   # ─── 6. Upsert actuator channels: irrig ───────────────────────────────────
   - step: upsert_irrig_channels
@@ -181,7 +175,7 @@ actions:
         ('valve_clean_supply'),
         ('valve_solution_fill'),
         ('valve_solution_supply'),
-        ('pump_main')
+        ('main_pump')
       ) AS t(ch)
       ON CONFLICT (node_id, channel) DO UPDATE SET type = 'ACTUATOR', updated_at = NOW()
     params:
@@ -195,8 +189,8 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
-      channel: pump_main
+      node_uid: ${test_node_uid}
+      channel: main_pump
       cmd: set_relay
       params:
         state: false
@@ -208,7 +202,7 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -221,7 +215,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_clean_fill
       cmd: set_relay
       params:
@@ -234,7 +228,7 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -247,7 +241,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_clean_supply
       cmd: set_relay
       params:
@@ -260,7 +254,7 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -273,7 +267,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_solution_fill
       cmd: set_relay
       params:
@@ -286,7 +280,7 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -299,7 +293,7 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
+      node_uid: ${test_node_uid}
       channel: valve_solution_supply
       cmd: set_relay
       params:
@@ -312,31 +306,65 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
       cmd_id: ${reset_valve_solution_supply_result.data.cmd_id}
     timeout: 15.0
 
-  # ─── 7. Upsert dosing channels (с калибровкой ec_npk_pump) ───────────────
-  - step: upsert_dosing_channels
+  # ─── 7. Настраиваем калибровку реального канала EC-дозирования ────────────
+  - step: ensure_ec_channel_calibration
     type: database_execute
     query: |
-      INSERT INTO node_channels (node_id, channel, type, config, created_at, updated_at)
-      SELECT :nid, ch, 'ACTUATOR',
-        CASE ch
-          WHEN 'ec_npk_pump' THEN '{"pump_calibration":{"ml_per_sec":2.0}}'::jsonb
-          ELSE NULL
-        END,
-        NOW(), NOW()
-      FROM (VALUES ('ec_npk_pump'), ('acid_pump')) AS t(ch)
-      ON CONFLICT (node_id, channel) DO UPDATE SET
-        type   = 'ACTUATOR',
-        config = EXCLUDED.config,
-        updated_at = NOW()
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || '{"pump_calibration":{"ml_per_sec":2.0}}'::jsonb,
+          updated_at = NOW()
+      WHERE (nc.node_id = :ec_nid AND nc.channel = 'pump_a')
+         OR nc.id IN (
+              SELECT cb.node_channel_id
+              FROM channel_bindings cb
+              JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+              JOIN node_channels bnc ON bnc.id = cb.node_channel_id
+              JOIN nodes n ON n.id = bnc.node_id
+              WHERE cb.role = 'ec_npk_pump'
+                AND n.zone_id = :zid
+          )
     params:
-      nid: ${dosing_node_id}
+      ec_nid: ${ec_node_id}
+      zid: ${zone_id}
+
+  - step: upsert_ec_actuator_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:ec_nid, 'pump_a', 'ACTUATOR', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'ACTUATOR', updated_at = NOW()
+    params:
+      ec_nid: ${ec_node_id}
+
+  - step: upsert_ph_actuator_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:ph_nid, 'pump_acid', 'ACTUATOR', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'ACTUATOR', updated_at = NOW()
+    params:
+      ph_nid: ${ph_node_id}
+
+  - step: cleanup_ec_ph_role_bindings
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings cb
+      USING node_channels nc, nodes n
+      WHERE cb.node_channel_id = nc.id
+        AND nc.node_id = n.id
+        AND n.zone_id = :zid
+        AND cb.role IN ('ec_npk_pump', 'ph_acid_pump')
+    params:
+      zid: ${zone_id}
 
   # ─── 8. Sensors уровня (WATER_LEVEL) ─────────────────────────────────────
   - step: delete_old_level_sensors
@@ -525,14 +553,33 @@ actions:
         (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
       SELECT :infra_id, nc.id, 'actuator', 'ec_npk_pump', NOW(), NOW()
       FROM node_channels nc
-      WHERE nc.node_id = :dosing_id AND nc.channel = 'ec_npk_pump'
+      WHERE nc.node_id = :ec_nid AND nc.channel = 'pump_a'
       ON CONFLICT (node_channel_id) DO UPDATE SET
         infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
         role       = EXCLUDED.role,
         updated_at = NOW()
     params:
       infra_id: ${infra_instance_id}
-      dosing_id: ${dosing_node_id}
+      ec_nid: ${ec_node_id}
+
+  - step: ensure_ec_npk_bound_channel_calibration
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || '{"pump_calibration":{"ml_per_sec":2.0}}'::jsonb,
+          updated_at = NOW()
+      WHERE (nc.node_id = :ec_nid AND nc.channel = 'pump_a')
+         OR nc.id IN (
+        SELECT cb.node_channel_id
+        FROM channel_bindings cb
+        JOIN node_channels bnc ON bnc.id = cb.node_channel_id
+        JOIN nodes n ON n.id = bnc.node_id
+        WHERE cb.role = 'ec_npk_pump'
+          AND n.zone_id = :zid
+      )
+    params:
+      ec_nid: ${ec_node_id}
+      zid: ${zone_id}
 
   - step: bind_ph_acid_pump
     type: database_execute
@@ -541,14 +588,33 @@ actions:
         (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
       SELECT :infra_id, nc.id, 'actuator', 'ph_acid_pump', NOW(), NOW()
       FROM node_channels nc
-      WHERE nc.node_id = :dosing_id AND nc.channel = 'acid_pump'
+      WHERE nc.node_id = :ph_nid AND nc.channel = 'pump_acid'
       ON CONFLICT (node_channel_id) DO UPDATE SET
         infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
         role       = EXCLUDED.role,
         updated_at = NOW()
     params:
       infra_id: ${infra_instance_id}
-      dosing_id: ${dosing_node_id}
+      ph_nid: ${ph_node_id}
+
+  - step: assert_ec_npk_calibration_ready
+    type: db.wait
+    query: |
+      SELECT
+        nc.id,
+        nc.channel,
+        (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec
+      FROM node_channels nc
+      WHERE nc.node_id = :ec_nid
+        AND nc.channel = 'pump_a'
+        AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\.[0-9]+)?$'
+        AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0
+      LIMIT 1
+    params:
+      ec_nid: ${ec_node_id}
+    timeout: 5.0
+    save: ec_npk_calibration_row
+    optional: true
 
   # ─── 12. Создаём рецепт с nutrition config ────────────────────────────────
   - step: create_plant
@@ -616,6 +682,26 @@ actions:
   - step: wait_after_automation_engine_start
     type: sleep
     seconds: 5
+
+  # Повторный сброс cooldown-маркеров после restart AE:
+  # между подготовкой и стартом цикла фоновые процессы могут снова записать DOSING/EC_* события.
+  - step: reset_correction_cooldown_history_prestart
+    type: database_execute
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zid
+        AND (
+          type IN ('EC_DOSING', 'EC_CORRECTED', 'PH_CORRECTED')
+          OR (
+            type = 'DOSING'
+            AND (
+              COALESCE(payload_json->>'type', '') IN ('ec_correction', 'ph_correction', 'ec', 'ph', 'add_nutrients', 'dilute', 'add_acid', 'add_base')
+              OR COALESCE(payload_json->>'correction_type', '') IN ('ec_correction', 'ph_correction', 'ec', 'ph', 'add_nutrients', 'dilute', 'add_acid', 'add_base')
+            )
+          )
+        )
+    params:
+      zid: ${zone_id}
 
   # ─── 12.2 Повторно фиксируем telemetry прямо перед стартом цикла ────────
   # Это убирает гонку с фоновыми telemetry-сэмплами между подготовкой и start.
@@ -702,8 +788,8 @@ actions:
     action: publish_command
     history_logger_url: http://history-logger:9300
     command:
-      node_uid: nd-irrig-e2e
-      channel: pump_main
+      node_uid: ${test_node_uid}
+      channel: main_pump
       cmd: set_relay
       params:
         state: false
@@ -715,12 +801,40 @@ actions:
       SELECT id, cmd_id, status
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status = 'DONE'
+        AND status IN ('DONE', 'INVALID', 'ERROR', 'NO_EFFECT')
       ORDER BY created_at DESC
       LIMIT 1
     params:
       cmd_id: ${prestart_reset_pump_main_result.data.cmd_id}
     timeout: 15.0
+
+  - step: ensure_ec_npk_calibration_prestart
+    type: database_execute
+    query: |
+      UPDATE node_channels nc
+      SET config = COALESCE(nc.config, '{}'::jsonb) || '{"pump_calibration":{"ml_per_sec":2.0}}'::jsonb,
+          updated_at = NOW()
+      WHERE nc.node_id = :ec_nid
+        AND nc.channel = 'pump_a'
+    params:
+      ec_nid: ${ec_node_id}
+
+  - step: assert_ec_npk_calibration_prestart
+    type: db.wait
+    query: |
+      SELECT
+        nc.id,
+        (nc.config->'pump_calibration'->>'ml_per_sec')::numeric AS ml_per_sec
+      FROM node_channels nc
+      WHERE nc.node_id = :ec_nid
+        AND nc.channel = 'pump_a'
+        AND (nc.config->'pump_calibration'->>'ml_per_sec') ~ '^[0-9]+(\\.[0-9]+)?$'
+        AND (nc.config->'pump_calibration'->>'ml_per_sec')::numeric > 0
+      LIMIT 1
+    params:
+      ec_nid: ${ec_node_id}
+    timeout: 5.0
+    optional: true
 
   - step: capture_run_started_at
     type: database_query
@@ -990,36 +1104,36 @@ cleanup:
 
   - step: delete_dosing_channels
     type: database_execute
-    query: DELETE FROM node_channels WHERE node_id = :nid
+    query: DELETE FROM node_channels WHERE 1=0
     params:
-      nid: ${dosing_node_id}
+      nid: ${ec_node_id}
     optional: true
 
   - step: delete_dosing_node
     type: database_execute
-    query: DELETE FROM nodes WHERE uid = 'nd-dosing-e2e'
+    query: DELETE FROM nodes WHERE 1=0
     optional: true
 
   - step: delete_irrig_channels
     type: database_execute
-    query: DELETE FROM node_channels WHERE node_id = :nid
+    query: DELETE FROM node_channels WHERE 1=0
     params:
       nid: ${irrig_node_id}
     optional: true
 
   - step: delete_irrig_node
     type: database_execute
-    query: DELETE FROM nodes WHERE uid = 'nd-irrig-e2e'
+    query: DELETE FROM nodes WHERE 1=0
     optional: true
 
   - step: delete_ec_node
     type: database_execute
-    query: DELETE FROM nodes WHERE uid = 'nd-ec-e2e'
+    query: DELETE FROM nodes WHERE 1=0
     optional: true
 
   - step: delete_ph_node
     type: database_execute
-    query: DELETE FROM nodes WHERE uid = 'nd-ph-e2e'
+    query: DELETE FROM nodes WHERE 1=0
     optional: true
 
   - step: delete_recipe

@@ -36,6 +36,7 @@ def build_ec_component_batch(
         return []
 
     all_components = ["npk", "calcium", "magnesium", "micro"]
+    requested_components: Optional[set[str]] = None
     required_components = all_components
     if allowed_ec_components is not None:
         requested = {
@@ -43,6 +44,7 @@ def build_ec_component_batch(
             for component in allowed_ec_components
             if str(component).strip()
         }
+        requested_components = requested
         required_components = [component for component in all_components if component in requested]
         if not required_components:
             logger.warning(
@@ -77,6 +79,26 @@ def build_ec_component_batch(
         for component in required_components
         if role_map[component] not in actuators
     ]
+    if missing_roles:
+        npk_role = role_map["npk"]
+        can_fallback_to_npk = (
+            npk_role in (actuators or {})
+            and npk_role not in missing_roles
+            and required_components != ["npk"]
+            and (requested_components is None or "npk" in requested_components)
+        )
+        if can_fallback_to_npk:
+            logger.warning(
+                "EC component batch fallback to npk-only: required multi-component roles missing",
+                extra={
+                    "required_components": required_components,
+                    "missing_roles": missing_roles,
+                    "available_roles": sorted(list((actuators or {}).keys())),
+                },
+            )
+            required_components = ["npk"]
+            missing_roles = []
+
     if missing_roles:
         logger.warning(
             "EC component batch skipped: required actuator roles missing",
@@ -116,9 +138,18 @@ def build_ec_component_batch(
         return []
 
     ml_per_sec_by_component: Dict[str, float] = {}
+    calibration_snapshot: Dict[str, Dict[str, Any]] = {}
     for component in required_components:
         actuator = component_actuators[component]
         ml_per_sec_raw = actuator.get("ml_per_sec")
+        calibration_snapshot[component] = {
+            "role": actuator.get("role"),
+            "node_uid": actuator.get("node_uid"),
+            "channel": actuator.get("channel"),
+            "ml_per_sec_raw": ml_per_sec_raw,
+            "k_ms_per_ml_l": actuator.get("k_ms_per_ml_l"),
+            "pump_calibration": actuator.get("pump_calibration"),
+        }
         try:
             ml_per_sec = float(ml_per_sec_raw)
         except (TypeError, ValueError):
@@ -132,10 +163,19 @@ def build_ec_component_batch(
                     "node_uid": actuator.get("node_uid"),
                     "channel": actuator.get("channel"),
                     "ml_per_sec": ml_per_sec_raw,
+                    "calibration_snapshot": calibration_snapshot,
                 },
             )
             return []
         ml_per_sec_by_component[component] = ml_per_sec
+
+    logger.debug(
+        "EC component calibration snapshot accepted",
+        extra={
+            "required_components": required_components,
+            "calibration_snapshot": calibration_snapshot,
+        },
+    )
 
     nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
     components_cfg = get_nutrition_components(targets)
