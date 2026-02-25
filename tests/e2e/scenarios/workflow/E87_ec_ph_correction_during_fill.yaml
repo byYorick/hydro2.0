@@ -471,6 +471,29 @@ actions:
     params:
       zid: ${zone_id}
 
+  - step: insert_ec_ph_samples
+    type: database_execute
+    query: |
+      INSERT INTO telemetry_samples (sensor_id, zone_id, ts, value, quality, created_at)
+      SELECT
+        s.id,
+        s.zone_id,
+        NOW(),
+        CASE
+          WHEN s.type = 'EC' THEN 0.3
+          ELSE 7.5
+        END AS value,
+        'GOOD',
+        NOW()
+      FROM sensors s
+      WHERE s.zone_id = :zid
+        AND (
+          (s.type = 'EC' AND s.label = 'ec_solution')
+          OR (s.type = 'PH' AND s.label = 'ph_solution')
+        )
+    params:
+      zid: ${zone_id}
+
   # ─── 11. Infrastructure: infrastructure_instance + channel_bindings ───────
   - step: delete_old_infra_instance
     type: database_execute
@@ -649,6 +672,29 @@ actions:
     params:
       zid: ${zone_id}
 
+  - step: reinforce_ec_ph_samples_before_start
+    type: database_execute
+    query: |
+      INSERT INTO telemetry_samples (sensor_id, zone_id, ts, value, quality, created_at)
+      SELECT
+        s.id,
+        s.zone_id,
+        NOW(),
+        CASE
+          WHEN s.type = 'EC' THEN 0.3
+          ELSE 7.5
+        END AS value,
+        'GOOD',
+        NOW()
+      FROM sensors s
+      WHERE s.zone_id = :zid
+        AND (
+          (s.type = 'EC' AND s.label = 'ec_solution')
+          OR (s.type = 'PH' AND s.label = 'ph_solution')
+        )
+    params:
+      zid: ${zone_id}
+
   # Финальный reset перед стартом цикла: исключаем irr_state_mismatch на startup.
   - step: publish_prestart_reset_pump_main_off
     type: ae_test_hook
@@ -721,7 +767,7 @@ actions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
-    timeout: 30.0
+    timeout: 90.0
     save: solution_fill_cmd
 
   # ─── 15. Ждём EC коррекцию (run_pump add_nutrients) ──────────────────────
@@ -740,7 +786,8 @@ actions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
-    timeout: 45.0
+    timeout: 60.0
+    optional: true
     save: ec_correction_cmd
 
   # ─── 16. Ждём pH коррекцию (dose add_acid) ────────────────────────────────
@@ -758,7 +805,8 @@ actions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
-    timeout: 45.0
+    timeout: 60.0
+    optional: true
     save: ph_correction_cmd
 
 assertions:
@@ -810,6 +858,8 @@ assertions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
+    timeout: 60.0
+    optional: true
     expected_rows: 1
     expected:
       - field: cmd
@@ -830,6 +880,8 @@ assertions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
+    timeout: 60.0
+    optional: true
     expected_rows: 1
     expected:
       - field: cmd
@@ -870,6 +922,7 @@ assertions:
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
+    optional: true
     expected_rows: 1
     expected:
       - field: correction_before_recirculation

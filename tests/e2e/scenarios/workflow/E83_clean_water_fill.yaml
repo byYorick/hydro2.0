@@ -358,7 +358,7 @@ actions:
     params:
       zid: ${zone_id}
       run_started_at: ${run_started_at}
-    timeout: 30.0
+    timeout: 120.0
     save: clean_fill_cmd_row
 
 assertions:
@@ -376,6 +376,7 @@ assertions:
     params:
       zid: ${zone_id}
       run_started_at: ${run_started_at}
+    timeout: 120.0
     expected_rows: 1
     expected:
       - field: cmd
@@ -398,6 +399,7 @@ assertions:
     params:
       zid: ${zone_id}
       run_started_at: ${run_started_at}
+    timeout: 120.0
     expected_rows: 1
     expected:
       - field: type
@@ -417,6 +419,7 @@ assertions:
     params:
       zid: ${zone_id}
       run_started_at: ${run_started_at}
+    timeout: 120.0
     expected_rows: 1
 
 cleanup:

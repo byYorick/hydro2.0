@@ -142,6 +142,8 @@ class E2ERunner:
             "TEST_NODE_ZONE_UID": os.getenv("TEST_NODE_ZONE_UID", "zn-test-1"),
             "TEST_NODE_UID": os.getenv("TEST_NODE_UID", "nd-ph-esp32una"),
             "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "esp32-test-001"),
+            "LARAVEL_URL": self.api_url,
+            "WS_URL": self.ws_url,
         }
         
         # Путь к docker-compose файлу для fault injection
@@ -1830,13 +1832,46 @@ class E2ERunner:
         if step_type == "http_request":
             import httpx
             method = (cfg.get("method") or "GET").upper()
-            url = cfg.get("url")
+            url = cfg.get("url") or cfg.get("endpoint") or cfg.get("path")
             if not url:
                 raise ValueError("http_request requires url")
-            headers = cfg.get("headers") or {}
-            body = cfg.get("body")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.request(method, url, headers=headers, json=body)
+            url = self._resolve_variables(url)
+            if not urlparse(str(url)).scheme:
+                rel_url = str(url).strip()
+                if not rel_url.startswith("/"):
+                    rel_url = f"/{rel_url}"
+                url = f"{self.api_url.rstrip('/')}{rel_url}"
+            headers = self._resolve_variables(cfg.get("headers") or {})
+            body = self._resolve_variables(cfg.get("body"))
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+
+            last_error = None
+            resp = None
+            for attempt in range(retries + 1):
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.request(method, url, headers=headers, json=body)
+                    break
+                except Exception as e:
+                    last_error = e
+                    if attempt >= retries:
+                        raise
+                    logger.warning(
+                        "http_request failed for %s %s (attempt %d/%d): %s; retrying in %.1fs",
+                        method,
+                        url,
+                        attempt + 1,
+                        retries + 1,
+                        str(e),
+                        retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+
+            if resp is None:
+                if last_error:
+                    raise last_error
+                raise RuntimeError(f"http_request failed for {method} {url}")
             self.context[cfg.get("capture_response", "last_http")] = {
                 "status_code": resp.status_code,
                 "text": resp.text,
@@ -1852,11 +1887,36 @@ class E2ERunner:
             # Разрешаем переменные в endpoint
             endpoint = self._resolve_variables(endpoint)
             payload = cfg.get("payload") or cfg.get("json") or cfg.get("data")
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+
+            async def _with_retries(call, call_name: str):
+                last_error = None
+                for attempt in range(retries + 1):
+                    try:
+                        return await call()
+                    except Exception as e:
+                        last_error = e
+                        if attempt >= retries:
+                            raise
+                        logger.warning(
+                            "%s failed for %s (attempt %d/%d): %s; retrying in %.1fs",
+                            call_name,
+                            endpoint,
+                            attempt + 1,
+                            retries + 1,
+                            str(e),
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                if last_error:
+                    raise last_error
+                raise RuntimeError(f"{call_name} failed for {endpoint}")
             # Разрешаем переменные в payload
             if payload:
                 payload = self._resolve_variables(payload)
             if step_type == "api_get":
-                res = await self.api.get(endpoint, params=cfg.get("params"))
+                res = await _with_retries(lambda: self.api.get(endpoint, params=cfg.get("params")), "api_get")
             elif step_type == "api_post":
                 expected_status = cfg.get("expected_status")
                 expected_statuses = self._normalize_expected_status(expected_status)
@@ -1881,20 +1941,20 @@ class E2ERunner:
                         'headers': dict(response.headers),
                     }
                 else:
-                    res = await self.api.post(endpoint, json=payload)
+                    res = await _with_retries(lambda: self.api.post(endpoint, json=payload), "api_post")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_put":
-                res = await self.api.put(endpoint, json=payload)
+                res = await _with_retries(lambda: self.api.put(endpoint, json=payload), "api_put")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_patch":
                 # APIClient doesn't have patch currently; use httpx under the hood
-                res = await self.api.request("PATCH", endpoint, json=payload)
+                res = await _with_retries(lambda: self.api.request("PATCH", endpoint, json=payload), "api_patch")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             else:
-                res = await self.api.delete(endpoint)
+                res = await _with_retries(lambda: self.api.delete(endpoint), "api_delete")
                 # Автозаполнение zone_id/node_id из API ответов (если DELETE возвращает данные)
                 self._auto_extract_ids_from_api_response(endpoint, res)
             # Проверяем expected_status, если указан (для случаев когда не было ошибки)
@@ -2293,13 +2353,36 @@ class E2ERunner:
                 import uuid
                 cmd_payload["cmd_id"] = f"e2e:{uuid.uuid4().hex[:24]}"
 
-            history_logger_url = cfg.get("history_logger_url")
-            if not history_logger_url:
-                host = os.getenv("HISTORY_LOGGER_HOST")
-                if not host:
-                    host = "history-logger" if os.getenv("E2E_CONTAINER") == "1" else "localhost"
-                port = os.getenv("HISTORY_LOGGER_PORT", "9302")
-                history_logger_url = f"http://{host}:{port}"
+            history_logger_urls: List[str] = []
+
+            def _add_history_logger_url(candidate: Optional[str]) -> None:
+                if not candidate:
+                    return
+                resolved = str(self._resolve_variables(candidate)).strip().rstrip("/")
+                if not resolved:
+                    return
+                if resolved not in history_logger_urls:
+                    history_logger_urls.append(resolved)
+
+            _add_history_logger_url(cfg.get("history_logger_url"))
+            _add_history_logger_url(os.getenv("HISTORY_LOGGER_URL"))
+
+            in_container = self._use_docker_cli()
+            host = os.getenv("HISTORY_LOGGER_HOST")
+            if not host:
+                host = "history-logger" if in_container else "localhost"
+            default_port = "9300" if in_container else "9302"
+            port = os.getenv("HISTORY_LOGGER_PORT", default_port)
+            _add_history_logger_url(f"http://{host}:{port}")
+
+            if in_container:
+                _add_history_logger_url("http://history-logger:9300")
+            else:
+                _add_history_logger_url("http://localhost:9302")
+                _add_history_logger_url("http://127.0.0.1:9302")
+
+            if not history_logger_urls:
+                raise ValueError("Unable to resolve history-logger URL for ae_test_hook")
 
             history_logger_token = str(
                 cfg.get("history_logger_token")
@@ -2311,47 +2394,89 @@ class E2ERunner:
             if history_logger_token:
                 headers["Authorization"] = f"Bearer {history_logger_token}"
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(f"{history_logger_url}/commands", json=cmd_payload, headers=headers)
-                upstream = resp.json() if resp.text else {}
-                command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+            resp = None
+            last_error = None
+            last_endpoint = None
 
-                # Для guard-сценариев 4xx является ожидаемым бизнес-результатом
-                # и должен возвращаться как published=false, а не runtime exception.
-                if 400 <= resp.status_code < 500:
-                    result = {
-                        "status": "ok",
-                        "data": {
-                            "published": False,
-                            "cmd_id": command_id or None,
-                            "zone_id": cmd_payload["zone_id"],
-                            "node_uid": cmd_payload["node_uid"],
-                            "channel": cmd_payload["channel"],
-                            "http_status": int(resp.status_code),
-                            "error": upstream.get("detail"),
-                        },
-                    }
-                    if "save" in cfg:
-                        self.context[cfg["save"]] = result
-                    return result
+            for history_logger_url in history_logger_urls:
+                endpoint = f"{history_logger_url}/commands"
+                last_endpoint = endpoint
+                for attempt in range(retries + 1):
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            resp = await client.post(
+                                endpoint,
+                                json=cmd_payload,
+                                headers=headers,
+                            )
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if attempt >= retries:
+                            break
+                        logger.warning(
+                            "ae_test_hook failed for %s (attempt %d/%d): %s; retrying in %.1fs",
+                            endpoint,
+                            attempt + 1,
+                            retries + 1,
+                            str(e),
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                if resp is not None:
+                    break
 
-                if resp.status_code != 200:
-                    raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
+            if resp is None:
+                if last_error:
+                    raise RuntimeError(
+                        f"ae_test_hook failed for endpoints={history_logger_urls}, "
+                        f"last_endpoint={last_endpoint}, error={last_error}"
+                    ) from last_error
+                raise RuntimeError(
+                    f"ae_test_hook failed: no response from history-logger (endpoints={history_logger_urls})"
+                )
 
+            upstream = resp.json() if resp.text else {}
+            command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
+
+            # Для guard-сценариев 4xx является ожидаемым бизнес-результатом
+            # и должен возвращаться как published=false, а не runtime exception.
+            if 400 <= resp.status_code < 500:
                 result = {
                     "status": "ok",
                     "data": {
-                        "published": bool(command_id),
-                        "cmd_id": command_id,
+                        "published": False,
+                        "cmd_id": command_id or None,
                         "zone_id": cmd_payload["zone_id"],
                         "node_uid": cmd_payload["node_uid"],
                         "channel": cmd_payload["channel"],
                         "http_status": int(resp.status_code),
+                        "error": upstream.get("detail"),
                     },
                 }
                 if "save" in cfg:
                     self.context[cfg["save"]] = result
                 return result
+
+            if resp.status_code != 200:
+                raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
+
+            result = {
+                "status": "ok",
+                "data": {
+                    "published": bool(command_id),
+                    "cmd_id": command_id,
+                    "zone_id": cmd_payload["zone_id"],
+                    "node_uid": cmd_payload["node_uid"],
+                    "channel": cmd_payload["channel"],
+                    "http_status": int(resp.status_code),
+                },
+            }
+            if "save" in cfg:
+                self.context[cfg["save"]] = result
+            return result
 
         # Node-sim fault modes
         if step_type == "node_sim_fault_mode":
@@ -2435,8 +2560,11 @@ class E2ERunner:
                         'False': False,
                         'None': None,
                     }
-                    eval_globals = {'context': self.context}
-                    ok = bool(eval(str(resolved), {"__builtins__": safe_builtins}, eval_globals))
+                    eval_globals = {
+                        "__builtins__": safe_builtins,
+                        "context": self.context,
+                    }
+                    ok = bool(eval(str(resolved), eval_globals, {}))
                 except Exception as e:
                     raise AssertionError(f"Failed to evaluate assert condition '{resolved}': {e}")
             if not ok:

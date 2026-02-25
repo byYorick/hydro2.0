@@ -92,19 +92,23 @@ actions:
 
   - step: wait_after_restore
     type: sleep
-    seconds: 5
+    seconds: 20
 
   # Получаем новый snapshot - опционально
   - step: get_final_snapshot
     type: api_get
     endpoint: /api/zones/${zone_id}
     optional: true
+    retries: 8
+    retry_delay_seconds: 2
     save: snapshot_after
 
   # Запрашиваем события после initial_last_event_id
   - step: get_missed_events
     type: api_get
     endpoint: /api/zones/${zone_id}/events
+    retries: 12
+    retry_delay_seconds: 2
     params:
       after_id: ${initial_last_event_id}
     save: missed_events

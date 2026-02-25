@@ -199,6 +199,8 @@ actions:
     type: http_request
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
+    retries: 10
+    retry_delay_seconds: 2
     capture_response: node_sim_session
 
   - step: wait_for_simulation_completion
@@ -218,6 +220,8 @@ actions:
     type: http_request
     method: GET
     url: http://localhost:9101/sessions/${node_sim_session_id}
+    retries: 10
+    retry_delay_seconds: 2
     capture_response: node_sim_session_after
 
 assertions:
@@ -236,7 +240,7 @@ assertions:
       LIMIT 1
     params:
       simulation_id: ${simulation_id}
-    timeout: 30.0
+    timeout: 90.0
     expected_rows: 1
     expected:
       - field: status

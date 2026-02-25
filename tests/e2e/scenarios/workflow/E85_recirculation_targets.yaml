@@ -222,11 +222,11 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_clean_supply'
-        AND created_at > NOW() - INTERVAL '3 minutes'
+        AND created_at > NOW() - INTERVAL '10 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
-    timeout: 30.0
+    timeout: 120.0
     save: solution_fill_cmd_row
 
   # ─── 10. Ждём команды prepare_recirculation_start ────────────────────────
@@ -242,11 +242,11 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_solution_supply'
-        AND created_at > NOW() - INTERVAL '5 minutes'
+        AND created_at > NOW() - INTERVAL '15 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
-    timeout: 45.0
+    timeout: 180.0
     save: prepare_recirc_cmd_row
 
 assertions:
@@ -259,7 +259,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_solution_supply'
-        AND created_at > NOW() - INTERVAL '10 minutes'
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -280,7 +280,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel IN ('valve_solution_supply', 'valve_solution_fill', 'pump_main')
-        AND created_at > NOW() - INTERVAL '10 minutes'
+        AND created_at > NOW() - INTERVAL '20 minutes'
     params:
       zid: ${zone_id}
     expected_rows: 1
@@ -297,7 +297,7 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'SOLUTION_FILL_STARTED'
-        AND created_at > NOW() - INTERVAL '10 minutes'
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}

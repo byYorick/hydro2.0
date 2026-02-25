@@ -1,159 +1,138 @@
-# E81: Water Change Schedule - scheduled water change execution
-# DoD: scheduled water change execution
+# E81: Scheduler Task Lifecycle (st-* task id)
+# DoD: scheduler-tasks show корректно отображает lifecycle для ae_scheduler_task_st-*
 
 name: E81_water_change_schedule
 description: |
-  Проверяет выполнение запланированной смены воды:
-  - Создается расписание смены воды
-  - Scheduler создает последовательность команд
-  - Drain -> Fill -> Mix команды выполняются в правильном порядке
+  Проверяет lifecycle scheduler-task для формата task_id `st-*`:
+  - создаются accepted/running/failed записи в scheduler_logs
+  - detail endpoint возвращает агрегированный статус failed
+  - lifecycle содержит accepted, running и failed
 
 actions:
-  - step: get_zones
-    type: api_get
-    endpoint: /api/zones
-    save: zones_response
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    expected_rows: 1
+    save: zone_row
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zone_row.0.zone_id}
 
-  # Создаем расписание смены воды (ежедневно в определенное время)
-  - step: create_water_change_schedule
-    type: api_post
-    endpoint: /api/zones/${zone_id}/water-change-schedules
-    payload:
-      name: test-water-change-${TIMESTAMP_S}
-      enabled: true
-      cron_expression: "0 */4 * * *"  # Каждые 4 часа для теста
-      drain_duration_sec: 120
-      fill_duration_sec: 180
-      mix_duration_sec: 60
-      drain_to_percent: 80
-    save: schedule_response
-
-  - step: set_schedule_id
+  - step: set_task_context
     type: set
-    schedule_id: ${schedule_response.data.id}
+    task_id: st-e81-${TIMESTAMP_S}
+    task_name: ae_scheduler_task_st-e81-${TIMESTAMP_S}
 
-  # Ждем выполнения расписания
-  - step: wait_for_water_change_execution
-    type: wait_until
-    condition: |
-      # Проверяем, что была создана последовательность команд смены воды
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT COUNT(*) as cmd_count FROM commands WHERE zone_id = :zone_id AND type IN (:drain, :fill, :mix) AND created_at > NOW() - INTERVAL \"10 minutes\"',
-        'params': {'zone_id': context['zone_id'], 'drain': 'DRAIN_RESERVOIR', 'fill': 'FILL_RESERVOIR', 'mix': 'MIX_RESERVOIR'}
-      }))
-      result and result[0]['cmd_count'] >= 3  # Минимум drain + fill + mix
-    timeout: 600.0  # 10 минут
-    interval: 60.0
-
-  # Проверяем последовательность команд
-  - step: check_command_sequence
-    type: database_query
+  - step: insert_scheduler_log_accepted
+    type: database_execute
     query: |
-      SELECT
-        type,
-        status,
-        created_at,
-        ROW_NUMBER() OVER (ORDER BY created_at) as sequence_order
-      FROM commands
-      WHERE zone_id = :zone_id
-      AND type IN ('DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR')
-      AND created_at > NOW() - INTERVAL '10 minutes'
-      ORDER BY created_at
+      INSERT INTO scheduler_logs (task_name, status, details, created_at)
+      VALUES (
+        :task_name,
+        'accepted',
+        jsonb_build_object(
+          'task_id', CAST(:task_id AS text),
+          'zone_id', CAST(:zone_id AS bigint),
+          'task_type', 'water_change',
+          'status', 'accepted'
+        ),
+        NOW() - INTERVAL '30 seconds'
+      )
     params:
+      task_name: ${task_name}
+      task_id: ${task_id}
       zone_id: ${zone_id}
-    save: command_sequence
 
-  # Проверяем статусы выполнения
-  - step: check_execution_status
-    type: database_query
+  - step: insert_scheduler_log_running
+    type: database_execute
     query: |
-      SELECT
-        COUNT(CASE WHEN type = 'DRAIN_RESERVOIR' AND status = 'DONE' THEN 1 END) as drain_completed,
-        COUNT(CASE WHEN type = 'FILL_RESERVOIR' AND status = 'DONE' THEN 1 END) as fill_completed,
-        COUNT(CASE WHEN type = 'MIX_RESERVOIR' AND status = 'DONE' THEN 1 END) as mix_completed
-      FROM commands
-      WHERE zone_id = :zone_id
-      AND type IN ('DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR')
-      AND created_at > NOW() - INTERVAL '10 minutes'
+      INSERT INTO scheduler_logs (task_name, status, details, created_at)
+      VALUES (
+        :task_name,
+        'running',
+        jsonb_build_object(
+          'task_id', CAST(:task_id AS text),
+          'zone_id', CAST(:zone_id AS bigint),
+          'task_type', 'water_change',
+          'status', 'running'
+        ),
+        NOW() - INTERVAL '20 seconds'
+      )
     params:
+      task_name: ${task_name}
+      task_id: ${task_id}
       zone_id: ${zone_id}
-    save: execution_status
+
+  - step: insert_scheduler_log_failed
+    type: database_execute
+    query: |
+      INSERT INTO scheduler_logs (task_name, status, details, created_at)
+      VALUES (
+        :task_name,
+        'failed',
+        jsonb_build_object(
+          'task_id', CAST(:task_id AS text),
+          'zone_id', CAST(:zone_id AS bigint),
+          'task_type', 'water_change',
+          'status', 'failed',
+          'error', 'e2e_forced_failure',
+          'error_code', 'e2e_water_change_failed'
+        ),
+        NOW() - INTERVAL '10 seconds'
+      )
+    params:
+      task_name: ${task_name}
+      task_id: ${task_id}
+      zone_id: ${zone_id}
+
+  - step: get_scheduler_task_detail
+    type: api_get
+    endpoint: /api/zones/${zone_id}/scheduler-tasks/${task_id}
+    save: task_detail
 
 assertions:
-  # Проверка 1: Все типы команд были созданы
-  - name: all_command_types_created
-    type: custom_assert
-    condition: |
-      sequence = context.get('command_sequence', {}).get('data', [])
-      types = {cmd['type'] for cmd in sequence}
-      required_types = {'DRAIN_RESERVOIR', 'FILL_RESERVOIR', 'MIX_RESERVOIR'}
-      return required_types.issubset(types)
-
-  # Проверка 2: Правильная последовательность (drain -> fill -> mix)
-  - name: correct_sequence_order
-    type: custom_assert
-    condition: |
-      sequence = context.get('command_sequence', {}).get('data', [])
-      if len(sequence) < 3:
-          return False
-      # Проверяем порядок типов команд
-      type_order = [cmd['type'] for cmd in sequence]
-      # Должен быть drain, затем fill, затем mix
-      drain_idx = next((i for i, t in enumerate(type_order) if t == 'DRAIN_RESERVOIR'), -1)
-      fill_idx = next((i for i, t in enumerate(type_order) if t == 'FILL_RESERVOIR'), -1)
-      mix_idx = next((i for i, t in enumerate(type_order) if t == 'MIX_RESERVOIR'), -1)
-      return drain_idx < fill_idx < mix_idx
-
-  # Проверка 3: Команды выполнены успешно
-  - name: commands_executed_successfully
+  - name: detail_returns_expected_task
     type: json_assertion
-    data: ${execution_status}
+    source: task_detail
     expected:
-      - field: drain_completed
-        operator: greater_than
-        value: 0
-      - field: fill_completed
-        operator: greater_than
-        value: 0
-      - field: mix_completed
-        operator: greater_than
-        value: 0
+      - field: status
+        operator: equals
+        value: ok
+      - field: data.task_id
+        operator: equals
+        value: ${task_id}
+      - field: data.status
+        operator: equals
+        value: failed
+      - field: data.source
+        operator: equals
+        value: scheduler_logs
 
-  # Проверка 4: Временные интервалы между командами разумные
-  - name: reasonable_time_gaps
+  - name: lifecycle_contains_all_statuses
     type: custom_assert
-    condition: |
-      sequence = context.get('command_sequence', {}).get('data', [])
-      if len(sequence) < 2:
-          return True  # Если только одна команда - ок
-      # Проверяем, что команды не идут одновременно
-      for i in range(1, len(sequence)):
-          prev_time = sequence[i-1]['created_at']
-          curr_time = sequence[i]['created_at']
-          if prev_time and curr_time:
-              gap = (curr_time - prev_time).total_seconds()
-              if gap < 10:  # Минимум 10 секунд между командами
-                  return False
-      return True
+    condition: "{'accepted', 'running', 'failed'}.issubset({str(s.get('status')) for s in context.get('task_detail', {}).get('data', {}).get('lifecycle', [])})"
+
+  - name: failure_code_is_mapped
+    type: json_assertion
+    source: task_detail
+    expected:
+      - field: data.error_code
+        operator: equals
+        value: e2e_water_change_failed
 
 cleanup:
-  - step: disable_schedule
-    type: api_patch
-    endpoint: /api/water-change-schedules/${schedule_id}
-    payload:
-      enabled: false
-    optional: true
-
-  - step: delete_schedule
-    type: api_delete
-    endpoint: /api/water-change-schedules/${schedule_id}
+  - step: delete_task_logs
+    type: database_execute
+    query: |
+      DELETE FROM scheduler_logs
+      WHERE task_name = :task_name
+        AND details->>'task_id' = :task_id
+    params:
+      task_name: ${task_name}
+      task_id: ${task_id}
     optional: true

@@ -116,6 +116,8 @@ actions:
     type: ae_test_hook
     zone_id: ${zone_id}
     action: publish_command
+    retries: 10
+    retry_delay_seconds: 2
     command:
       node_uid: ${test_node_uid}
       channel: main_pump

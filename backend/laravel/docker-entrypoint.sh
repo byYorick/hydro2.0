@@ -105,8 +105,22 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
             done
 
             if [ "$seeder_ok" != "1" ]; then
-                echo "✗ Failed to provision AutomationEngineE2ESeeder data after $seeder_attempts attempts"
-                exit 1
+                echo "⚠ Failed to provision AutomationEngineE2ESeeder data after $seeder_attempts attempts"
+                echo "  Checking if required E2E data already exists..."
+
+                E2E_DATA_OK=$(php artisan tinker --execute="
+                    \$ghExists = \App\Models\Greenhouse::where('uid', 'gh-test-1')->exists();
+                    \$zoneExists = \App\Models\Zone::where('uid', 'zn-test-1')->exists();
+                    \$nodeExists = \App\Models\DeviceNode::where('uid', 'nd-ph-esp32una')->exists();
+                    echo (\$ghExists && \$zoneExists && \$nodeExists) ? '1' : '0';
+                " 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
+
+                if [ "$E2E_DATA_OK" = "1" ]; then
+                    echo "✓ Required E2E seed data already present, continuing startup"
+                else
+                    echo "✗ Required E2E data missing and seeder failed"
+                    exit 1
+                fi
             fi
         fi
     fi
