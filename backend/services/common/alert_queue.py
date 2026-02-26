@@ -116,6 +116,19 @@ def _unpack_queue_details(details: Optional[Dict[str, Any]]) -> tuple[Optional[D
     return details_copy or None, meta_out
 
 
+def _normalize_delivery_status(status: Optional[str]) -> str:
+    """
+    Привести статус очереди к доменному контракту /api/python/alerts.
+
+    Laravel ingest принимает только ACTIVE|RESOLVED.
+    В queue-state возможны pending/failed/dlq, они должны доставляться как ACTIVE.
+    """
+    normalized = str(status or "").strip().upper()
+    if normalized == "RESOLVED":
+        return "RESOLVED"
+    return "ACTIVE"
+
+
 class AlertQueue:
     """Персистентная очередь для алертов."""
     
@@ -674,12 +687,22 @@ async def send_alert_to_laravel(
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     
+    delivery_status = _normalize_delivery_status(status)
+    if delivery_status != str(status or "").strip().upper():
+        logger.info(
+            "[ALERT_DELIVERY] Normalized queue status for delivery: original=%s normalized=%s code=%s zone_id=%s",
+            status,
+            delivery_status,
+            code,
+            zone_id,
+        )
+
     payload = {
         "zone_id": zone_id,
         "source": source,
         "code": code,
         "type": type,
-        "status": status,
+        "status": delivery_status,
         "details": details or None,
     }
     

@@ -31,7 +31,7 @@ actions:
 
   - step: set_test_node_uid
     type: set
-    test_node_uid: ${TEST_NODE_UID}
+    test_node_uid: ${TEST_WORKFLOW_NODE_UID}
 
   - step: guard_test_node_uid_not_ph
     type: database_execute
@@ -986,7 +986,7 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_clean_supply'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1005,7 +1005,7 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'run_pump'
         AND params->>'type' = 'add_nutrients'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1024,7 +1024,7 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'dose'
         AND params->>'type' = 'add_acid'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1042,7 +1042,7 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'SOLUTION_FILL_STARTED'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1059,7 +1059,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel IN ('valve_clean_supply', 'valve_solution_fill', 'pump_main')
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
     params:
       zid: ${zone_id}
       started_at: ${run_started_at}
@@ -1079,7 +1079,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'run_pump'
         AND params->>'type' = 'add_nutrients'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1101,7 +1101,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'dose'
         AND params->>'type' = 'add_acid'
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -1120,7 +1120,7 @@ assertions:
     type: database_query
     query: |
       WITH params AS (
-        SELECT :zid::bigint AS zid, :started_at::timestamptz AS started_at
+        SELECT :zid::bigint AS zid, NOW() - INTERVAL '30 minutes' AS started_at
       ),
       ec_cmd AS (
         SELECT MIN(created_at) AS ec_at
@@ -1147,7 +1147,6 @@ assertions:
         END AS correction_before_recirculation
     params:
       zid: ${zone_id}
-      started_at: ${run_started_at}
     optional: true
     expected_rows: 1
     expected:

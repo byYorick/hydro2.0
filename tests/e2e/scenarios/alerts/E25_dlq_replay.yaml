@@ -17,6 +17,17 @@ setup:
     - backend: Laravel is running
 
 actions:
+  - step: wait_laravel_health
+    type: api_get
+    endpoint: /api/system/health
+    expected_status: 200
+    retries: 30
+    retry_delay_seconds: 1
+
+  - step: settle_after_laravel_recovery
+    type: wait
+    seconds: 3
+
   - step: fetch_zone_id
     type: database_query
     query: |
@@ -72,6 +83,8 @@ actions:
     type: api_post
     endpoint: /api/alerts/dlq/${pending_alert_id}/replay
     expected_status: 200
+    retries: 10
+    retry_delay_seconds: 1
     wait_seconds: 1
 
 assertions:

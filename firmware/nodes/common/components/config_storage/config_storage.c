@@ -436,9 +436,20 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     }
 
     // Финальная валидация: к этому моменту добавлены сохраненные поля gh_uid/zone_uid/WiFi/MQTT
-    esp_err_t err = config_storage_validate(final_json, final_json_len, NULL, 0);
+    char validation_error[160] = {0};
+    esp_err_t err = config_storage_validate(
+        final_json,
+        final_json_len,
+        validation_error,
+        sizeof(validation_error)
+    );
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Final config validation failed");
+        ESP_LOGE(
+            TAG,
+            "Final config validation failed: err=%s, reason=%s",
+            esp_err_to_name(err),
+            validation_error[0] ? validation_error : "unknown"
+        );
         free(final_json);
         config_storage_unlock();
         return err;

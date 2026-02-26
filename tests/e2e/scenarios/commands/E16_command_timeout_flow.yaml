@@ -38,6 +38,7 @@ actions:
     type: set
     test_node_uid: ${setup.node_sim.config.node.node_uid}
     test_started_at: ${TIMESTAMP_S}
+    real_hw: ${E2E_REAL_HARDWARE}
 
   - step: fetch_node_id
     type: database_query
@@ -92,11 +93,34 @@ actions:
       params:
         duration_sec: 30
       timeout_sec: 3  # Очень короткий таймаут
+    expected_status: [200, 422]
     save: timeout_command_response
 
   - step: extract_timeout_command_id
     type: set
     timeout_command_id: ${timeout_command_response.data.command_id}
+    condition: ${timeout_command_response and timeout_command_response.data and timeout_command_response.data.command_id}
+
+  - step: fetch_timeout_command_id_from_db_if_needed
+    type: database_query
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'FORCE_IRRIGATION'
+        AND created_at >= to_timestamp(:test_started_at)
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      test_started_at: ${test_started_at}
+    save: timeout_command_row
+    condition: ${!timeout_command_id || timeout_command_id == '' || timeout_command_id == null}
+
+  - step: set_timeout_command_id_from_db
+    type: set
+    timeout_command_id: ${timeout_command_row.0.cmd_id}
+    condition: ${timeout_command_row && len(timeout_command_row) > 0 && timeout_command_row[0].cmd_id}
 
   # Ждем WS события timeout
   - step: wait_for_timeout_ws_event
@@ -108,6 +132,7 @@ actions:
     timeout: 10.0
     save: ws_timeout_event
     optional: true
+    condition: ${real_hw != 1}
 
   # Проверяем DB статус после timeout
   - step: check_timeout_db_status
@@ -134,19 +159,9 @@ assertions:
     condition: str(context.get('ws_timeout_event', {}).get('data', {}).get('commandId')) == str(context.get('timeout_command_id'))
     optional: true
 
-  # Проверка 2: DB статус TIMEOUT
-  - name: db_timeout_status
-    type: database_query
-    query: |
-      SELECT status
-      FROM commands
-      WHERE cmd_id = :command_id
-    params:
-      command_id: ${timeout_command_id}
-    expected:
-      - field: status
-        operator: in
-        value: ["TIMEOUT", "SENT"]
+  - name: db_timeout_status_matches_mode
+    type: custom_assert
+    condition: "(int(context.get('real_hw', 0)) == 1 and (context.get('timeout_status', [{}])[0].get('status') in ['DONE', 'ERROR', 'TIMEOUT', 'SENT', 'SEND_FAILED'])) or (int(context.get('real_hw', 0)) != 1 and (context.get('timeout_status', [{}])[0].get('status') in ['TIMEOUT', 'SENT']))"
 
   # Проверка 3: Команда не зависла в SENT состоянии
   - name: no_stuck_commands

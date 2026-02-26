@@ -48,6 +48,7 @@ AE2-Lite compatible automation-сценарии:
 - `automation_engine/E61_fail_closed_corrections.yaml`
 - `automation_engine/E64_effective_targets_only.yaml`
 - `automation_engine/E65_phase_transition_api.yaml`
+- `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml`
 - `automation_engine/E74_node_zone_mismatch_guard.yaml`
 
 ## Формат действий

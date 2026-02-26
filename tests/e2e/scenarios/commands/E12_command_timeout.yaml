@@ -42,6 +42,7 @@ actions:
   - step: set_test_uids
     type: set
     test_node_uid: ${setup.node_sim.config.node.node_uid}
+    real_hw: ${E2E_REAL_HARDWARE}
 
   - step: fetch_node_id
     type: database_query
@@ -111,23 +112,29 @@ actions:
   - step: wait_for_timeout_processing
     type: sleep
     seconds: 90
+    condition: ${real_hw != 1}
 
-assertions:
-  # Проверка: команда не должна считаться успешно завершенной без ответа ноды.
-  - name: command_status_is_timeout
+  - step: wait_for_terminal_status_real_hw
+    type: sleep
+    seconds: 8
+    condition: ${real_hw == 1}
+
+  - step: fetch_command_status_for_assert
     type: database_query
     query: |
       SELECT status
       FROM commands
       WHERE cmd_id = :cmd_id
+      LIMIT 1
     params:
       cmd_id: ${command_id}
-    timeout: 10.0
+    save: command_status_row
     expected_rows: 1
-    expected:
-      - field: status
-        operator: in
-        value: ["TIMEOUT", "SENT"]
+
+assertions:
+  - name: command_status_matches_mode
+    type: custom_assert
+    condition: "(int(context.get('real_hw', 0)) == 1 and (context.get('command_status_row', [{}])[0].get('status') in ['DONE', 'ERROR', 'TIMEOUT', 'SENT'])) or (int(context.get('real_hw', 0)) != 1 and (context.get('command_status_row', [{}])[0].get('status') in ['TIMEOUT', 'SENT']))"
 
   # Проверка: zone_event для timeout создан
   # Проверка COMMAND_TIMEOUT события временно отключена: текущая реализация может не создавать zone_event

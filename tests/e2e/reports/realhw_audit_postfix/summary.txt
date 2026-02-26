@@ -1,0 +1,21 @@
+=== E83_clean_water_fill (scenarios/workflow/E83_clean_water_fill.yaml) ===
+PASS | E83_clean_water_fill | container_err_lines=8 | zone_events_error_like=102;alerts_open=0;
+=== E84_solution_preparation (scenarios/workflow/E84_solution_preparation.yaml) ===
+PASS | E84_solution_preparation | container_err_lines=1 | zone_events_error_like=100;alerts_open=0;
+=== E85_recirculation_targets (scenarios/workflow/E85_recirculation_targets.yaml) ===
+PASS | E85_recirculation_targets | container_err_lines=5 | zone_events_error_like=115;alerts_open=0;
+=== E86_ec_ph_correction (scenarios/workflow/E86_ec_ph_correction.yaml) ===
+PASS | E86_ec_ph_correction | container_err_lines=6 | zone_events_error_like=98;alerts_open=0;
+=== E87_ec_ph_correction_during_fill (scenarios/workflow/E87_ec_ph_correction_during_fill.yaml) ===
+PASS | E87_ec_ph_correction_during_fill | container_err_lines=0 | zone_events_error_like=105;alerts_open=0;
+=== E88_config_report_soft_deactivate_channels (scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml) ===
+PASS | E88_config_report_soft_deactivate_channels | container_err_lines=1 | zone_events_error_like=104;alerts_open=0;
+=== E89_correction_state_machine_and_duration_aware (scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml) ===
+PASS | E89_correction_state_machine_and_duration_aware | container_err_lines=4 | zone_events_error_like=99;alerts_open=0;
+=== E61_fail_closed_corrections (scenarios/automation_engine/E61_fail_closed_corrections.yaml) ===
+PASS | E61_fail_closed_corrections | container_err_lines=4 | zone_events_error_like=101;alerts_open=0;
+=== E64_effective_targets_only (scenarios/automation_engine/E64_effective_targets_only.yaml) ===
+PASS | E64_effective_targets_only | container_err_lines=16 | zone_events_error_like=99;alerts_open=0;
+=== E65_phase_transition_api (scenarios/automation_engine/E65_phase_transition_api.yaml) ===
+PASS | E65_phase_transition_api | container_err_lines=4 | zone_events_error_like=102;alerts_open=0;
+DONE

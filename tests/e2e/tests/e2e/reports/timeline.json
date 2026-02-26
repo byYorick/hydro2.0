@@ -1,11 +1,11 @@
 {
-  "test_suite": "E88_config_report_soft_deactivate_channels",
-  "generated_at": "2026-02-25T15:59:50.115177",
+  "test_suite": "E67_nutrition_strict_contract",
+  "generated_at": "2026-02-26T13:57:11.738790",
   "test_cases": [
     {
       "name": "set_test_zone_uid",
       "status": "passed",
-      "duration": 2.2172927856445312e-05,
+      "duration": 1.6689300537109375e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,25 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:49.998466"
-    },
-    {
-      "name": "set_test_gh_uid",
-      "status": "passed",
-      "duration": 1.3113021850585938e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_test_gh_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T15:59:49.998623"
+      "timestamp": "2026-02-26T13:56:56.536432"
     },
     {
       "name": "set_test_node_uid",
       "status": "passed",
-      "duration": 1.0728836059570312e-05,
+      "duration": 1.1920928955078125e-05,
       "error_message": null,
       "steps": [
         {
@@ -39,25 +26,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:49.998681"
+      "timestamp": "2026-02-26T13:56:56.536645"
     },
     {
-      "name": "get_zone_context",
+      "name": "get_test_zone_id",
       "status": "passed",
-      "duration": 0.003057241439819336,
+      "duration": 0.007893800735473633,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zone_context",
+          "name": "get_test_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.001912"
+      "timestamp": "2026-02-26T13:56:56.544672"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 7.152557373046875e-06,
+      "duration": 4.76837158203125e-06,
       "error_message": null,
       "steps": [
         {
@@ -65,112 +52,98 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.002150"
+      "timestamp": "2026-02-26T13:56:56.544863"
     },
     {
-      "name": "upsert_test_node",
+      "name": "set_ec_only_capabilities_for_cycle_start",
       "status": "passed",
-      "duration": 0.001356363296508789,
+      "duration": 0.0020275115966796875,
       "error_message": null,
       "steps": [
         {
-          "name": "upsert_test_node",
+          "name": "set_ec_only_capabilities_for_cycle_start",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.003739"
+      "timestamp": "2026-02-26T13:56:56.547025"
     },
     {
-      "name": "get_test_node",
+      "name": "force_primary_node_online",
       "status": "passed",
-      "duration": 0.0007529258728027344,
+      "duration": 0.0036046504974365234,
       "error_message": null,
       "steps": [
         {
-          "name": "get_test_node",
+          "name": "force_primary_node_online",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.004725"
+      "timestamp": "2026-02-26T13:56:56.550939"
     },
     {
-      "name": "set_test_node_id",
+      "name": "ensure_zone_readiness_bindings",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 0.004708528518676758,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_node_id",
+          "name": "ensure_zone_readiness_bindings",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.004894"
+      "timestamp": "2026-02-26T13:56:56.555987"
     },
     {
-      "name": "seed_channels",
+      "name": "ensure_main_and_drain_bindings",
       "status": "passed",
-      "duration": 0.0019028186798095703,
+      "duration": 0.00558161735534668,
       "error_message": null,
       "steps": [
         {
-          "name": "seed_channels",
+          "name": "ensure_main_and_drain_bindings",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.007020"
+      "timestamp": "2026-02-26T13:56:56.561940"
     },
     {
-      "name": "node_sends_full_snapshot",
-      "status": "passed",
-      "duration": 0.00017786026000976562,
-      "error_message": null,
+      "name": "verify_main_and_drain_bindings_online",
+      "status": "failed",
+      "duration": 15.046759605407715,
+      "error_message": "Timeout waiting for DB condition: SELECT cb.role\nFROM channel_bindings cb\nJOIN node_channels nc ON nc.id = cb.node_channel_id\nJOIN nodes n ON n.id = nc.node_id\nWHERE n.zone_id = :zone_id\n  AND n.uid = :node_uid\n  AND n.status = 'online'\n  AND cb.role IN ('main_pump', 'drain')\nORDER BY cb.role\n",
       "steps": [
         {
-          "name": "node_sends_full_snapshot",
-          "status": "passed"
+          "name": "verify_main_and_drain_bindings_online",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT cb.role\nFROM channel_bindings cb\nJOIN node_channels nc ON nc.id = cb.node_channel_id\nJOIN nodes n ON n.id = nc.node_id\nWHERE n.zone_id = :zone_id\n  AND n.uid = :node_uid\n  AND n.status = 'online'\n  AND cb.role IN ('main_pump', 'drain')\nORDER BY cb.role\n"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.007638"
+      "timestamp": "2026-02-26T13:57:11.609253"
     },
     {
-      "name": "assert_present_channel_active",
-      "status": "passed",
-      "duration": 0.0015347003936767578,
-      "error_message": null,
+      "name": "nutrition_mode_and_components_present",
+      "status": "failed",
+      "duration": 9.250640869140625e-05,
+      "error_message": "Expected mode = delta_ec_by_k, got None",
       "steps": [
         {
-          "name": "assert_present_channel_active",
-          "status": "passed"
+          "name": "nutrition_mode_and_components_present",
+          "status": "failed",
+          "error": "Expected mode = delta_ec_by_k, got None"
         }
       ],
-      "timestamp": "2026-02-25T15:59:50.009389"
-    },
-    {
-      "name": "assert_missing_channel_soft_deactivated",
-      "status": "passed",
-      "duration": 0.10432100296020508,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "assert_missing_channel_soft_deactivated",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-25T15:59:50.113951"
+      "timestamp": "2026-02-26T13:57:11.609624"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E88_config_report_soft_deactivate_channels": {
+    "E67_nutrition_strict_contract": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "zone_uid": "zn-test-1",
-        "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "test_node_id": 15
+        "node_id": 2
       }
     }
   }

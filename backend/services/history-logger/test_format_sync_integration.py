@@ -161,6 +161,55 @@ class TestConfigReportFormatSync:
             mock_processed.inc.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_handle_config_report_fills_default_relay_type_for_relay_actuators(self):
+        """Для relay-like actuator в config_report должен проставляться relay_type=NO при отсутствии поля."""
+        from mqtt_handlers import handle_config_report
+
+        topic = "hydro/gh-1/zn-1/nd-irrig-1/config_report"
+        payload_data = {
+            "node_id": "nd-irrig-1",
+            "version": 3,
+            "channels": [
+                {"name": "pump_main", "type": "ACTUATOR", "actuator_type": "PUMP"},
+                {"name": "valve_clean_fill", "type": "ACTUATOR", "actuator_type": "RELAY"},
+                {"name": "fan_air", "type": "ACTUATOR", "actuator_type": "FAN"},
+            ],
+        }
+        payload = json.dumps(payload_data).encode("utf-8")
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
+             patch('mqtt_handlers.sync_node_channels_from_payload', new_callable=AsyncMock) as mock_sync, \
+             patch('mqtt_handlers._complete_binding_after_config_report', new_callable=AsyncMock), \
+             patch('mqtt_handlers.CONFIG_REPORT_RECEIVED'), \
+             patch('mqtt_handlers.CONFIG_REPORT_PROCESSED'):
+
+            mock_fetch.return_value = [
+                {
+                    "id": 1,
+                    "uid": "nd-irrig-1",
+                    "lifecycle_state": "REGISTERED_BACKEND",
+                    "zone_id": None,
+                    "pending_zone_id": 1,
+                }
+            ]
+
+            await handle_config_report(topic, payload)
+
+            stored_payload = mock_execute.call_args[0][1]
+            channels = stored_payload.get("channels", [])
+            relay_like = {c.get("name"): c for c in channels if isinstance(c, dict)}
+
+            assert relay_like["valve_clean_fill"].get("relay_type") == "NO"
+            assert relay_like["fan_air"].get("relay_type") == "NO"
+            assert "relay_type" not in relay_like["pump_main"]
+
+            sync_channels = mock_sync.call_args[0][2]
+            sync_map = {c.get("name"): c for c in sync_channels if isinstance(c, dict)}
+            assert sync_map["valve_clean_fill"].get("relay_type") == "NO"
+            assert sync_map["fan_air"].get("relay_type") == "NO"
+
+    @pytest.mark.asyncio
     async def test_handle_config_report_buffers_when_node_missing(self):
         """Тест буферизации config_report, если узел еще не зарегистрирован."""
         from mqtt_handlers import handle_config_report
@@ -252,6 +301,8 @@ class TestConfigReportFormatSync:
                 mock_fetch.return_value[0],
                 "nd-ph-esp32aa-1",
                 is_temp_topic=True,
+                topic_gh_uid="gh-temp",
+                topic_zone_uid="zn-temp",
             )
             mock_processed.inc.assert_called_once()
 
@@ -295,7 +346,7 @@ class TestConfigReportFormatSync:
                         "pending_zone_id": 1,
                     }
                 ],
-                [{"id": 1}],
+                [{"id": 1, "zone_uid": "zn-1", "greenhouse_uid": "gh-1"}],
                 [
                     {
                         "lifecycle_state": "ASSIGNED_TO_ZONE",
@@ -309,11 +360,77 @@ class TestConfigReportFormatSync:
             mock_settings.return_value.history_logger_api_token = "test-token"
             mock_settings.return_value.ingest_token = None
 
-            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
-            await _complete_binding_after_config_report(node_snapshot, "nd-ph-esp32aa-1")
+            await _complete_binding_after_config_report(
+                node_snapshot,
+                "nd-ph-esp32aa-1",
+                topic_gh_uid="gh-1",
+                topic_zone_uid="zn-1",
+            )
+            await _complete_binding_after_config_report(
+                node_snapshot,
+                "nd-ph-esp32aa-1",
+                topic_gh_uid="gh-1",
+                topic_zone_uid="zn-1",
+            )
 
         assert http_client.patch.await_count == 1
         assert http_client.post.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_complete_binding_deferred_on_stale_namespace_report(self):
+        from mqtt_handlers import (
+            _BINDING_COMPLETION_LOCKS,
+            _complete_binding_after_config_report,
+        )
+
+        _BINDING_COMPLETION_LOCKS.clear()
+
+        node_snapshot = {
+            "id": 8,
+            "uid": "nd-ec-esp32aa-1",
+            "lifecycle_state": "REGISTERED_BACKEND",
+            "zone_id": None,
+            "pending_zone_id": 2,
+        }
+
+        update_response = MagicMock(status_code=200, text="OK")
+        transition_response = MagicMock(status_code=200, text="OK")
+        http_client = AsyncMock()
+        http_client.patch = AsyncMock(return_value=update_response)
+        http_client.post = AsyncMock(return_value=transition_response)
+
+        client_ctx = AsyncMock()
+        client_ctx.__aenter__.return_value = http_client
+        client_ctx.__aexit__.return_value = False
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.get_settings') as mock_settings, \
+             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
+
+            mock_fetch.side_effect = [
+                [
+                    {
+                        "lifecycle_state": "REGISTERED_BACKEND",
+                        "zone_id": None,
+                        "pending_zone_id": 2,
+                    }
+                ],
+                [{"id": 2, "zone_uid": "zn-target-2", "greenhouse_uid": "gh-target-1"}],
+            ]
+
+            mock_settings.return_value.laravel_api_url = "http://laravel"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = None
+
+            await _complete_binding_after_config_report(
+                node_snapshot,
+                "nd-ec-esp32aa-1",
+                topic_gh_uid="gh-old-1",
+                topic_zone_uid="zn-old-2",
+            )
+
+        assert http_client.patch.await_count == 0
+        assert http_client.post.await_count == 0
 
 
 class TestHeartbeatFormatSync:

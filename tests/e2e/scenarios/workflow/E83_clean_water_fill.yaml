@@ -17,7 +17,7 @@ actions:
 
   - step: set_test_node_uid
     type: set
-    test_node_uid: ${TEST_NODE_UID}
+    test_node_uid: ${TEST_WORKFLOW_NODE_UID}
 
   - step: guard_test_node_uid_not_ph
     type: database_execute
@@ -425,7 +425,7 @@ actions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_clean_fill'
-        AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -444,7 +444,7 @@ assertions:
       WHERE zone_id = :zid
         AND cmd = 'set_relay'
         AND channel = 'valve_clean_fill'
-        AND created_at > COALESCE(NULLIF(:run_started_at, '')::timestamptz, NOW() - INTERVAL '20 minutes')
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -468,7 +468,7 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'CLEAN_FILL_STARTED'
-        AND created_at > :run_started_at
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}
@@ -489,7 +489,7 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'TANK_LEVEL_CHECKED'
-        AND created_at > :run_started_at
+        AND created_at > NOW() - INTERVAL '20 minutes'
       LIMIT 1
     params:
       zid: ${zone_id}

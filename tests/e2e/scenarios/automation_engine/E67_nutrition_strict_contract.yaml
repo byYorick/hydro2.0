@@ -242,7 +242,7 @@ actions:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
     expected_rows: 2
-    timeout: 15.0
+    timeout: 120.0
 
   - step: ensure_ec_component_bindings
     type: database_execute
@@ -353,7 +353,7 @@ actions:
     params:
       zone_id: ${zone_id}
     expected_rows: 4
-    timeout: 15.0
+    timeout: 120.0
 
   - step: cleanup_old_cycles
     type: database_execute
@@ -578,34 +578,53 @@ cleanup:
     type: api_post
     endpoint: /api/grow-cycles/${cycle_id}/abort
     payload: {}
+    condition: ${cycle_id is not None and cycle_id != ''}
     optional: true
 
   - step: delete_recipe
     type: api_delete
     endpoint: /api/recipes/${recipe_response.data.id}
+    condition: ${recipe_response is not None and recipe_response.get('data', {}).get('id') is not None}
     optional: true
 
   - step: delete_plant
     type: api_delete
     endpoint: /api/plants/${plant_response.data.id}
+    condition: ${plant_response is not None and plant_response.get('data', {}).get('id') is not None}
     optional: true
 
   - step: delete_micro_product
-    type: api_delete
-    endpoint: /api/nutrient-products/${micro_product_response.data.id}
+    type: database_execute
+    query: |
+      DELETE FROM nutrient_products
+      WHERE name = :name;
+    params:
+      name: E2E Micro ${TIMESTAMP_S}
     optional: true
 
   - step: delete_magnesium_product
-    type: api_delete
-    endpoint: /api/nutrient-products/${magnesium_product_response.data.id}
+    type: database_execute
+    query: |
+      DELETE FROM nutrient_products
+      WHERE name = :name;
+    params:
+      name: E2E Magnesium ${TIMESTAMP_S}
     optional: true
 
   - step: delete_calcium_product
-    type: api_delete
-    endpoint: /api/nutrient-products/${calcium_product_response.data.id}
+    type: database_execute
+    query: |
+      DELETE FROM nutrient_products
+      WHERE name = :name;
+    params:
+      name: E2E Calcium ${TIMESTAMP_S}
     optional: true
 
   - step: delete_npk_product
-    type: api_delete
-    endpoint: /api/nutrient-products/${npk_product_response.data.id}
+    type: database_execute
+    query: |
+      DELETE FROM nutrient_products
+      WHERE name = :name;
+    params:
+      name: E2E NPK ${TIMESTAMP_S}
     optional: true

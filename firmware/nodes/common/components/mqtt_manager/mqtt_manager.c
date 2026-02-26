@@ -718,8 +718,8 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
-        // При ошибке публикации не устанавливаем s_is_connected = false,
-        // так как это может быть временная проблема, и клиент сам обработает переподключение
+        // Не форсируем s_is_connected=false здесь:
+        // msg_id<0 может быть временной ошибкой очереди/outbox.
         // Обновление метрик диагностики (ошибка публикации)
         #if DIAGNOSTICS_AVAILABLE
         if (diagnostics_is_initialized()) {
@@ -1211,10 +1211,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 esp_mqtt_error_type_t err_type = event->error_handle->error_type;
                 if (err_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                     ESP_LOGE(TAG, "TCP transport error");
-                    // При ошибке транспорта (некорректное сообщение) не устанавливаем s_is_connected = false,
-                    // так как ESP-IDF MQTT клиент сам обработает переподключение.
-                    // Установка s_is_connected = false здесь может вызвать проблемы при попытке закрыть соединение.
-                    // Вместо этого, просто логируем ошибку и позволяем клиенту обработать ситуацию.
+                    // Для TCP ошибок считаем соединение потерянным и ждём reconnect
+                    // от ESP-IDF MQTT клиента.
+                    s_is_connected = false;
                 } else if (err_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
                     ESP_LOGE(TAG, "Connection refused");
                     s_is_connected = false;

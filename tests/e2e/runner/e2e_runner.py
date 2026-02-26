@@ -137,11 +137,17 @@ class E2ERunner:
 
         # Контекст для хранения переменных между шагами.
         # TEST_NODE_* задаются сразу, чтобы сценарии могли подхватывать real-hardware UID.
+        default_test_node_uid = os.getenv("TEST_NODE_UID", "nd-ph-esp32una")
+        real_hw_flag = "1" if os.getenv("E2E_REAL_HARDWARE", "0") == "1" else "0"
         self.context: Dict[str, Any] = {
             "TEST_NODE_GH_UID": os.getenv("TEST_NODE_GH_UID", "gh-test-1"),
             "TEST_NODE_ZONE_UID": os.getenv("TEST_NODE_ZONE_UID", "zn-test-1"),
-            "TEST_NODE_UID": os.getenv("TEST_NODE_UID", "nd-ph-esp32una"),
+            "TEST_NODE_UID": default_test_node_uid,
+            "TEST_PH_NODE_UID": os.getenv("TEST_PH_NODE_UID", default_test_node_uid),
+            "TEST_EC_NODE_UID": os.getenv("TEST_EC_NODE_UID", default_test_node_uid),
+            "TEST_WORKFLOW_NODE_UID": os.getenv("TEST_WORKFLOW_NODE_UID", "nd-irrig-e2e"),
             "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "esp32-test-001"),
+            "E2E_REAL_HARDWARE": real_hw_flag,
             "LARAVEL_URL": self.api_url,
             "WS_URL": self.ws_url,
         }
@@ -157,7 +163,40 @@ class E2ERunner:
         # Отмечаем, запускали ли инфраструктуру сами, чтобы корректно чистить
         self._infra_started_by_runner = False
         # Режим реального железа: не управлять node-sim контейнером из сценариев.
-        self.real_hardware_mode = os.getenv("E2E_REAL_HARDWARE", "0") == "1"
+        self.real_hardware_mode = real_hw_flag == "1"
+
+    def _apply_real_hardware_setup_overrides(self, setup: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        В real-hardware режиме принудительно переопределяет setup.node_sim.config.node.*
+        значениями TEST_NODE_* из контекста/env.
+
+        Это позволяет запускать legacy e2e-сценарии (которые опираются на setup.node_sim)
+        на реальной тест-ноде без ручной правки каждого YAML.
+        """
+        if not self.real_hardware_mode:
+            return setup
+        if not isinstance(setup, dict):
+            return setup
+
+        node_sim = setup.setdefault("node_sim", {})
+        config = node_sim.setdefault("config", {})
+        node = config.setdefault("node", {})
+
+        test_gh_uid = self.context.get("TEST_NODE_GH_UID")
+        test_zone_uid = self.context.get("TEST_NODE_ZONE_UID")
+        test_node_uid = self.context.get("TEST_NODE_UID")
+        test_hw_id = self.context.get("TEST_NODE_HW_ID")
+
+        if test_gh_uid:
+            node["gh_uid"] = test_gh_uid
+        if test_zone_uid:
+            node["zone_uid"] = test_zone_uid
+        if test_node_uid:
+            node["node_uid"] = test_node_uid
+        if test_hw_id and str(test_hw_id).lower() != "auto":
+            node["hardware_id"] = test_hw_id
+
+        return setup
 
     def _use_docker_cli(self) -> bool:
         """Use docker CLI instead of docker-compose (e.g., in container mode)."""
@@ -1500,6 +1539,7 @@ class E2ERunner:
 
         # setup (пока только сохраняем конфиг в контекст)
         setup = scenario.get("setup", {})
+        setup = self._apply_real_hardware_setup_overrides(setup)
         if setup:
             self.context["setup"] = setup
             # Попробуем вывести zone_id/node_id из API по uid (если доступно)
@@ -1655,16 +1695,30 @@ class E2ERunner:
         # cleanup (best-effort)
         cleanup = scenario.get("cleanup", [])
         for c in cleanup:
+            step_name = c.get("step", c.get("name", "cleanup"))
+            optional = bool(c.get("optional", False))
+            condition = c.get("condition")
             try:
+                if condition is not None and not self._evaluate_action_condition(condition):
+                    logger.info(f"Skipping cleanup step '{step_name}': condition is false ({condition})")
+                    continue
+
                 c_type = c.get("type")
                 wait_seconds = float(c.get("wait_seconds", 0) or 0)
-                c_cfg = {k: v for k, v in c.items() if k not in ("step", "name", "type", "wait_seconds")}
+                c_cfg = {
+                    k: v
+                    for k, v in c.items()
+                    if k not in ("step", "name", "type", "wait_seconds", "optional", "condition")
+                }
                 c_cfg = self._resolve_variables(c_cfg)
                 await self._execute_action_step(c_type, c_cfg, c)
                 if wait_seconds > 0:
                     await asyncio.sleep(wait_seconds)
-            except Exception:
-                pass
+            except Exception as e:
+                if optional:
+                    logger.warning(f"Optional cleanup step '{step_name}' failed: {e}")
+                else:
+                    logger.warning(f"Cleanup step '{step_name}' failed: {e}")
 
         # artifacts + reports
         ws_messages = self.ws.get_messages(50) if self.ws else []
@@ -1920,26 +1974,37 @@ class E2ERunner:
             elif step_type == "api_post":
                 expected_status = cfg.get("expected_status")
                 expected_statuses = self._normalize_expected_status(expected_status)
+                if expected_statuses and "retries" not in cfg:
+                    # В real-hw/chaos сценариях после рестарта сервиса возможен transient
+                    # disconnect без HTTP-статуса. Для expected_status делаем мягкий дефолт retry.
+                    retries = max(retries, 2)
                 # Если указан expected_status, делаем запрос напрямую через httpx
                 # чтобы получить ответ даже при ошибке
                 if expected_statuses:
                     import httpx
-                    headers = await self.api._get_headers()
-                    url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
-                    async with httpx.AsyncClient(timeout=self.api.timeout) as client:
-                        response = await client.post(url, json=payload, headers=headers)
-                        self.api._last_response = response
-                        if response.status_code in expected_statuses:
-                            res = response.json()
-                        else:
+
+                    async def _post_with_expected_status():
+                        headers = await self.api._get_headers()
+                        url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
+                        async with httpx.AsyncClient(timeout=self.api.timeout) as client:
+                            response = await client.post(url, json=payload, headers=headers)
+                            self.api._last_response = response
+
+                        if response.status_code not in expected_statuses:
                             response.raise_for_status()
-                            res = response.json()
-                    # Для expected_status сохраняем также response данные
-                    res = {
-                        'data': res,
-                        'status_code': response.status_code,
-                        'headers': dict(response.headers),
-                    }
+
+                        try:
+                            response_payload = response.json()
+                        except Exception:
+                            response_payload = response.text
+
+                        return {
+                            'data': response_payload,
+                            'status_code': response.status_code,
+                            'headers': dict(response.headers),
+                        }
+
+                    res = await _with_retries(_post_with_expected_status, "api_post")
                 else:
                     res = await _with_retries(lambda: self.api.post(endpoint, json=payload), "api_post")
                 # Автозаполнение zone_id/node_id из API ответов

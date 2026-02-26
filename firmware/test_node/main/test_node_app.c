@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <time.h>
 
@@ -989,7 +990,7 @@ static bool is_storage_system_channel(const char *channel) {
         );
 }
 
-static void publish_all_config_reports(const char *reason);
+static bool publish_all_config_reports(const char *reason);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
 static void persist_received_config_or_namespace(
@@ -1022,6 +1023,24 @@ static const char *resolve_actuator_type(const char *channel_name) {
         return "FAN";
     }
     return "RELAY";
+}
+
+static bool actuator_type_requires_relay_type(const char *actuator_type) {
+    if (!actuator_type || actuator_type[0] == '\0') {
+        return false;
+    }
+
+    return strcasecmp(actuator_type, "RELAY") == 0 ||
+           strcasecmp(actuator_type, "VALVE") == 0 ||
+           strcasecmp(actuator_type, "FAN") == 0 ||
+           strcasecmp(actuator_type, "HEATER") == 0;
+}
+
+static const char *resolve_relay_type_for_channel(const char *channel_name) {
+    (void)channel_name;
+    // Для test-node используем безопасное дефолтное реле для совместимости
+    // с backend-валидацией full config.
+    return "NO";
 }
 
 static esp_err_t publish_json_payload(const char *topic, cJSON *json, int qos, int retain) {
@@ -1208,7 +1227,7 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
     cJSON_Delete(json);
 }
 
-static void publish_config_report_for_node(const virtual_node_t *node) {
+static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {
     char topic[192];
     char gh_uid[64] = {0};
     char zone_uid[64] = {0};
@@ -1223,23 +1242,23 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
     size_t index;
 
     if (!node) {
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
 
     if (build_topic(topic, sizeof(topic), node->node_uid, NULL, "config_report") != ESP_OK) {
         ESP_LOGE(TAG, "Failed to build config_report topic for %s", node->node_uid);
-        return;
+        return ESP_FAIL;
     }
 
     json = cJSON_CreateObject();
     if (!json) {
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     if (!get_node_namespace(node->node_uid, gh_uid, sizeof(gh_uid), zone_uid, sizeof(zone_uid), &node_preconfig_mode)) {
         ESP_LOGW(TAG, "Failed to resolve namespace for config_report node=%s", node->node_uid);
         cJSON_Delete(json);
-        return;
+        return ESP_FAIL;
     }
 
     cJSON_AddStringToObject(json, "node_id", node->node_uid);
@@ -1251,7 +1270,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
     channels = cJSON_CreateArray();
     if (!channels) {
         cJSON_Delete(json);
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     for (index = 0; index < node->channels_count; index++) {
@@ -1267,7 +1286,15 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
 
         if (channel->is_actuator) {
             cJSON *safe_limits = cJSON_CreateObject();
-            cJSON_AddStringToObject(channel_json, "actuator_type", resolve_actuator_type(channel->name));
+            const char *actuator_type = resolve_actuator_type(channel->name);
+            cJSON_AddStringToObject(channel_json, "actuator_type", actuator_type);
+            if (actuator_type_requires_relay_type(actuator_type)) {
+                cJSON_AddStringToObject(
+                    channel_json,
+                    "relay_type",
+                    resolve_relay_type_for_channel(channel->name)
+                );
+            }
             if (safe_limits) {
                 cJSON_AddNumberToObject(safe_limits, "max_duration_ms", 10000);
                 cJSON_AddNumberToObject(safe_limits, "min_off_ms", 1000);
@@ -1320,6 +1347,7 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         vTaskDelay(pdMS_TO_TICKS(CONFIG_REPORT_RETRY_DELAY_MS));
     }
     if (publish_err != ESP_OK) {
+        s_config_report_on_connect_pending = true;
         if (mqtt_manager_is_connected()) {
             ui_logf(node->node_uid, "cfg_report err=%s", esp_err_to_name(publish_err));
             ESP_LOGW(
@@ -1353,19 +1381,25 @@ static void publish_config_report_for_node(const virtual_node_t *node) {
         free(payload_buf);
     }
     cJSON_Delete(json);
+    return publish_err;
 }
 
-static void publish_all_config_reports(const char *reason) {
+static bool publish_all_config_reports(const char *reason) {
     size_t index;
     const char *source = reason ? reason : "unknown";
+    bool all_published = true;
 
     if (!mqtt_manager_is_connected()) {
-        return;
+        return false;
     }
 
     for (index = 0; index < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0])); index++) {
-        publish_config_report_for_node(&VIRTUAL_NODES[index]);
+        esp_err_t report_err = publish_config_report_for_node(&VIRTUAL_NODES[index]);
+        if (report_err != ESP_OK) {
+            all_published = false;
+        }
         if (!mqtt_manager_is_connected()) {
+            all_published = false;
             break;
         }
         if ((index + 1) < (sizeof(VIRTUAL_NODES) / sizeof(VIRTUAL_NODES[0]))) {
@@ -1373,7 +1407,12 @@ static void publish_all_config_reports(const char *reason) {
         }
     }
 
-    ESP_LOGI(TAG, "config_report batch published for all virtual nodes (reason=%s)", source);
+    if (all_published) {
+        ESP_LOGI(TAG, "config_report batch published for all virtual nodes (reason=%s)", source);
+    } else {
+        ESP_LOGW(TAG, "config_report batch incomplete (reason=%s), will retry", source);
+    }
+    return all_published;
 }
 
 static const char *resolve_node_hello_type(const virtual_node_t *node) {
@@ -2834,6 +2873,7 @@ static void config_callback(const char *topic, const char *data, int data_len, v
     cJSON *gh_uid_item;
     cJSON *zone_uid_item;
     const virtual_node_t *node;
+    bool is_temp_topic = false;
     (void)user_ctx;
 
     if (!topic || !data || data_len <= 0) {
@@ -2869,8 +2909,11 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         return;
     }
 
+    is_temp_topic = (strcmp(topic_gh_uid, "gh-temp") == 0) && (strcmp(topic_zone_uid, "zn-temp") == 0);
+
     if (
         !current_preconfig_mode &&
+        !is_temp_topic &&
         (strcmp(topic_gh_uid, current_gh_uid) != 0 || strcmp(topic_zone_uid, current_zone_uid) != 0)
     ) {
         ESP_LOGW(
@@ -3170,8 +3213,8 @@ static void task_publish_telemetry(void *pv_parameters) {
 
         if (mqtt_connected) {
             if (s_config_report_on_connect_pending) {
-                s_config_report_on_connect_pending = false;
-                publish_all_config_reports("mqtt_connected_deferred");
+                bool batch_ok = publish_all_config_reports("mqtt_connected_deferred");
+                s_config_report_on_connect_pending = !batch_ok;
                 config_elapsed_ms = 0;
             }
 
@@ -3184,7 +3227,10 @@ static void task_publish_telemetry(void *pv_parameters) {
 
             config_elapsed_ms += TELEMETRY_INTERVAL_MS;
             if (config_elapsed_ms >= CONFIG_REPORT_INTERVAL_MS) {
-                publish_all_config_reports("periodic");
+                bool batch_ok = publish_all_config_reports("periodic");
+                if (!batch_ok) {
+                    s_config_report_on_connect_pending = true;
+                }
                 config_elapsed_ms = 0;
             }
         }
@@ -3220,7 +3266,9 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 
     if (!connected) {
         s_wildcard_subscriptions_ready = false;
-        s_config_report_on_connect_pending = false;
+        // При разрыве соединения сохраняем отложенный флаг,
+        // чтобы после reconnect гарантированно перепослать config_report.
+        s_config_report_on_connect_pending = true;
         test_node_ui_set_mqtt_status(false, "X");
         ui_logf(NULL, "mqtt disconnected");
         for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
@@ -3378,6 +3426,34 @@ static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_u
     return (strcmp(gh_uid, PRECONFIG_GH_UID) == 0) || (strcmp(zone_uid, PRECONFIG_ZONE_UID) == 0);
 }
 
+// True when payload contains a full NodeConfig (not namespace-only config nudge).
+static bool is_full_node_config_payload(const char *config_payload, int config_payload_len) {
+    if (!config_payload || config_payload_len <= 0) {
+        return false;
+    }
+
+    cJSON *root = cJSON_ParseWithLength(config_payload, (size_t)config_payload_len);
+    if (!root) {
+        return false;
+    }
+
+    cJSON *node_id = cJSON_GetObjectItem(root, "node_id");
+    cJSON *version = cJSON_GetObjectItem(root, "version");
+    cJSON *type = cJSON_GetObjectItem(root, "type");
+    cJSON *channels = cJSON_GetObjectItem(root, "channels");
+    cJSON *mqtt = cJSON_GetObjectItem(root, "mqtt");
+
+    bool is_full =
+        cJSON_IsString(node_id) &&
+        cJSON_IsNumber(version) &&
+        cJSON_IsString(type) &&
+        cJSON_IsArray(channels) &&
+        cJSON_IsObject(mqtt);
+
+    cJSON_Delete(root);
+    return is_full;
+}
+
 static void persist_received_config_or_namespace(
     const char *node_uid,
     const char *config_payload,
@@ -3385,31 +3461,29 @@ static void persist_received_config_or_namespace(
     const char *gh_uid,
     const char *zone_uid
 ) {
-    bool allow_full_config_save = false;
-    char *payload_copy = NULL;
+    bool allow_namespace_persist = false;
     esp_err_t save_err = ESP_ERR_INVALID_ARG;
 
     if (!node_uid || !gh_uid || !zone_uid || gh_uid[0] == '\0' || zone_uid[0] == '\0') {
         return;
     }
 
-    // Полный config в единственном NVS key сохраняем только для базовой виртуальной ноды,
-    // чтобы не перетирать node_id/type произвольной виртуалкой.
-    allow_full_config_save = (strcmp(node_uid, DEFAULT_MQTT_NODE_UID) == 0);
+    // test_node использует единый NVS key для всех виртуальных нод.
+    // Сохранение полного NodeConfig из runtime-MQTT приводит к периодическим
+    // валидационным конфликтам и шуму в логах, а также потенциально перетирает
+    // базовый конфиг тестовой ноды. Для real-hardware e2e нам нужен только
+    // persist namespace базовой виртуальной ноды.
+    allow_namespace_persist = (strcmp(node_uid, DEFAULT_MQTT_NODE_UID) == 0);
 
-    if (allow_full_config_save && config_payload && config_payload_len > 0) {
-        payload_copy = calloc(1, (size_t)config_payload_len + 1);
-        if (payload_copy) {
-            memcpy(payload_copy, config_payload, (size_t)config_payload_len);
-            payload_copy[config_payload_len] = '\0';
-            save_err = config_storage_save(payload_copy, (size_t)config_payload_len);
-            free(payload_copy);
-        } else {
-            save_err = ESP_ERR_NO_MEM;
-        }
-    } else if (!allow_full_config_save) {
-        save_err = ESP_ERR_NOT_SUPPORTED;
+    if (config_payload && config_payload_len > 0 &&
+        is_full_node_config_payload(config_payload, config_payload_len)) {
+        ESP_LOGI(
+            TAG,
+            "Full config payload received for node=%s; skip full config_storage save in test_node runtime path",
+            node_uid
+        );
     }
+    save_err = ESP_ERR_NOT_SUPPORTED;
 
     if (save_err == ESP_OK) {
         ui_logf(node_uid, "config persisted");
@@ -3420,7 +3494,7 @@ static void persist_received_config_or_namespace(
     // Если писать namespace сюда для любой виртуальной ноды, после reboot все виртуальные
     // ноды стартуют в одной и той же зоне. Поэтому fallback-персист namespace
     // разрешаем только для базовой виртуальной ноды.
-    if (allow_full_config_save) {
+    if (allow_namespace_persist) {
         save_err = config_storage_reset_namespace(gh_uid, zone_uid);
         if (save_err == ESP_OK) {
             ui_logf(node_uid, "namespace persisted");

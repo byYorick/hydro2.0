@@ -246,7 +246,7 @@ class NodeService
             }
             
             return $node->fresh();
-        });
+        }, maxRetries: 6, baseDelayMs: 75, useSerializable: false);
     }
 
     /**
