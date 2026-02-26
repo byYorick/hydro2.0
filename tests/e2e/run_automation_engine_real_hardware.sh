@@ -67,6 +67,9 @@ AUTOMATION_SCENARIOS=(
   "scenarios/automation_engine/E64_effective_targets_only.yaml"
   "scenarios/automation_engine/E65_phase_transition_api.yaml"
   "scenarios/automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml"
+  "scenarios/automation_engine/E67_nutrition_strict_contract.yaml"
+  "scenarios/automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml"
+  "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
 )
 WORKFLOW_SCENARIOS=(
   "scenarios/workflow/E83_clean_water_fill.yaml"

@@ -1,11 +1,11 @@
 {
-  "test_suite": "E67_nutrition_strict_contract",
-  "generated_at": "2026-02-26T13:57:11.738790",
+  "test_suite": "E89_correction_state_machine_and_duration_aware",
+  "generated_at": "2026-02-26T16:49:49.942164",
   "test_cases": [
     {
       "name": "set_test_zone_uid",
       "status": "passed",
-      "duration": 1.6689300537109375e-05,
+      "duration": 2.5272369384765625e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,38 +13,51 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.536432"
+      "timestamp": "2026-02-26T16:49:49.896036"
     },
     {
-      "name": "set_test_node_uid",
+      "name": "capture_scenario_started_at",
       "status": "passed",
-      "duration": 1.1920928955078125e-05,
+      "duration": 0.004637002944946289,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_node_uid",
+          "name": "capture_scenario_started_at",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.536645"
+      "timestamp": "2026-02-26T16:49:49.900763"
     },
     {
-      "name": "get_test_zone_id",
+      "name": "set_scenario_started_at",
       "status": "passed",
-      "duration": 0.007893800735473633,
+      "duration": 1.3113021850585938e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "get_test_zone_id",
+          "name": "set_scenario_started_at",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.544672"
+      "timestamp": "2026-02-26T16:49:49.900992"
+    },
+    {
+      "name": "get_zone_context",
+      "status": "passed",
+      "duration": 0.0062253475189208984,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zone_context",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-26T16:49:49.907355"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 5.4836273193359375e-06,
       "error_message": null,
       "steps": [
         {
@@ -52,98 +65,96 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.544863"
+      "timestamp": "2026-02-26T16:49:49.907592"
     },
     {
-      "name": "set_ec_only_capabilities_for_cycle_start",
+      "name": "get_state_machine_act_count",
       "status": "passed",
-      "duration": 0.0020275115966796875,
+      "duration": 0.015706300735473633,
       "error_message": null,
       "steps": [
         {
-          "name": "set_ec_only_capabilities_for_cycle_start",
+          "name": "get_state_machine_act_count",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.547025"
+      "timestamp": "2026-02-26T16:49:49.923459"
     },
     {
-      "name": "force_primary_node_online",
+      "name": "get_state_machine_cooldown_count",
       "status": "passed",
-      "duration": 0.0036046504974365234,
+      "duration": 0.008224964141845703,
       "error_message": null,
       "steps": [
         {
-          "name": "force_primary_node_online",
+          "name": "get_state_machine_cooldown_count",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.550939"
+      "timestamp": "2026-02-26T16:49:49.934669"
     },
     {
-      "name": "ensure_zone_readiness_bindings",
+      "name": "assert_no_legacy_fixed_timeout_reason",
       "status": "passed",
-      "duration": 0.004708528518676758,
+      "duration": 0.004820346832275391,
       "error_message": null,
       "steps": [
         {
-          "name": "ensure_zone_readiness_bindings",
+          "name": "assert_no_legacy_fixed_timeout_reason",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.555987"
+      "timestamp": "2026-02-26T16:49:49.941380"
     },
     {
-      "name": "ensure_main_and_drain_bindings",
+      "name": "assert_state_machine_act_present",
       "status": "passed",
-      "duration": 0.00558161735534668,
+      "duration": 0.00012636184692382812,
       "error_message": null,
       "steps": [
         {
-          "name": "ensure_main_and_drain_bindings",
+          "name": "assert_state_machine_act_present",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:56:56.561940"
+      "timestamp": "2026-02-26T16:49:49.941536"
     },
     {
-      "name": "verify_main_and_drain_bindings_online",
-      "status": "failed",
-      "duration": 15.046759605407715,
-      "error_message": "Timeout waiting for DB condition: SELECT cb.role\nFROM channel_bindings cb\nJOIN node_channels nc ON nc.id = cb.node_channel_id\nJOIN nodes n ON n.id = nc.node_id\nWHERE n.zone_id = :zone_id\n  AND n.uid = :node_uid\n  AND n.status = 'online'\n  AND cb.role IN ('main_pump', 'drain')\nORDER BY cb.role\n",
+      "name": "assert_state_machine_cooldown_present",
+      "status": "passed",
+      "duration": 8.082389831542969e-05,
+      "error_message": null,
       "steps": [
         {
-          "name": "verify_main_and_drain_bindings_online",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT cb.role\nFROM channel_bindings cb\nJOIN node_channels nc ON nc.id = cb.node_channel_id\nJOIN nodes n ON n.id = nc.node_id\nWHERE n.zone_id = :zone_id\n  AND n.uid = :node_uid\n  AND n.status = 'online'\n  AND cb.role IN ('main_pump', 'drain')\nORDER BY cb.role\n"
+          "name": "assert_state_machine_cooldown_present",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:57:11.609253"
+      "timestamp": "2026-02-26T16:49:49.941628"
     },
     {
-      "name": "nutrition_mode_and_components_present",
-      "status": "failed",
-      "duration": 9.250640869140625e-05,
-      "error_message": "Expected mode = delta_ec_by_k, got None",
+      "name": "assert_no_fixed_timeout_reason",
+      "status": "passed",
+      "duration": 5.53131103515625e-05,
+      "error_message": null,
       "steps": [
         {
-          "name": "nutrition_mode_and_components_present",
-          "status": "failed",
-          "error": "Expected mode = delta_ec_by_k, got None"
+          "name": "assert_no_fixed_timeout_reason",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T13:57:11.609624"
+      "timestamp": "2026-02-26T16:49:49.941693"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E67_nutrition_strict_contract": {
+    "E89_correction_state_machine_and_duration_aware": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "node_id": 2
+        "node_id": 1
       }
     }
   }

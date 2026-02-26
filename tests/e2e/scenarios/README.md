@@ -37,6 +37,8 @@
 - `automation_engine/E61_fail_closed_corrections.yaml` — fail-closed логика коррекций
 - `automation_engine/E64_effective_targets_only.yaml` — runtime только на effective targets
 - `automation_engine/E65_phase_transition_api.yaml` — переходы фаз через API
+- `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml` — полный продовый путь (zone/plant/recipe/bind/start)
+- `automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml` — полный путь + строгие EC/pH коррекции на real node
 - `automation_engine/E74_node_zone_mismatch_guard.yaml` — guard node/zone mismatch
 
 ## AE2-Lite совместимость
@@ -49,6 +51,7 @@ AE2-Lite compatible automation-сценарии:
 - `automation_engine/E64_effective_targets_only.yaml`
 - `automation_engine/E65_phase_transition_api.yaml`
 - `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml`
+- `automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml`
 - `automation_engine/E74_node_zone_mismatch_guard.yaml`
 
 ## Формат действий
