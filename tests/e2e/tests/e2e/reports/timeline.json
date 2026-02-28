@@ -1,63 +1,37 @@
 {
-  "test_suite": "E89_correction_state_machine_and_duration_aware",
-  "generated_at": "2026-02-26T16:49:49.942164",
+  "test_suite": "E93_start_cycle_intent_executor_path",
+  "generated_at": "2026-02-28T11:57:41.125247",
   "test_cases": [
     {
-      "name": "set_test_zone_uid",
+      "name": "set_test_context",
       "status": "passed",
-      "duration": 2.5272369384765625e-05,
+      "duration": 3.3855438232421875e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_zone_uid",
+          "name": "set_test_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.896036"
+      "timestamp": "2026-02-28T11:57:40.694563"
     },
     {
-      "name": "capture_scenario_started_at",
+      "name": "get_zone_row",
       "status": "passed",
-      "duration": 0.004637002944946289,
+      "duration": 0.002918243408203125,
       "error_message": null,
       "steps": [
         {
-          "name": "capture_scenario_started_at",
+          "name": "get_zone_row",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.900763"
-    },
-    {
-      "name": "set_scenario_started_at",
-      "status": "passed",
-      "duration": 1.3113021850585938e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_scenario_started_at",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-26T16:49:49.900992"
-    },
-    {
-      "name": "get_zone_context",
-      "status": "passed",
-      "duration": 0.0062253475189208984,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_zone_context",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-02-26T16:49:49.907355"
+      "timestamp": "2026-02-28T11:57:40.697637"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 5.4836273193359375e-06,
+      "duration": 3.552436828613281e-05,
       "error_message": null,
       "steps": [
         {
@@ -65,96 +39,230 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.907592"
+      "timestamp": "2026-02-28T11:57:40.697819"
     },
     {
-      "name": "get_state_machine_act_count",
+      "name": "capture_baseline",
       "status": "passed",
-      "duration": 0.015706300735473633,
+      "duration": 0.0026323795318603516,
       "error_message": null,
       "steps": [
         {
-          "name": "get_state_machine_act_count",
+          "name": "capture_baseline",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.923459"
+      "timestamp": "2026-02-28T11:57:40.700507"
     },
     {
-      "name": "get_state_machine_cooldown_count",
+      "name": "insert_scheduler_like_intent",
       "status": "passed",
-      "duration": 0.008224964141845703,
+      "duration": 0.004049062728881836,
       "error_message": null,
       "steps": [
         {
-          "name": "get_state_machine_cooldown_count",
+          "name": "insert_scheduler_like_intent",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.934669"
+      "timestamp": "2026-02-28T11:57:40.704858"
     },
     {
-      "name": "assert_no_legacy_fixed_timeout_reason",
+      "name": "start_cycle_http",
       "status": "passed",
-      "duration": 0.004820346832275391,
+      "duration": 0.024082183837890625,
       "error_message": null,
       "steps": [
         {
-          "name": "assert_no_legacy_fixed_timeout_reason",
+          "name": "start_cycle_http",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.941380"
+      "timestamp": "2026-02-28T11:57:40.729854"
     },
     {
-      "name": "assert_state_machine_act_present",
+      "name": "wait_intent_terminal",
       "status": "passed",
-      "duration": 0.00012636184692382812,
+      "duration": 0.10375785827636719,
       "error_message": null,
       "steps": [
         {
-          "name": "assert_state_machine_act_present",
+          "name": "wait_intent_terminal",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.941536"
+      "timestamp": "2026-02-28T11:57:40.833889"
     },
     {
-      "name": "assert_state_machine_cooldown_present",
+      "name": "wait_scheduler_task_running",
       "status": "passed",
-      "duration": 8.082389831542969e-05,
+      "duration": 0.0014142990112304688,
       "error_message": null,
       "steps": [
         {
-          "name": "assert_state_machine_cooldown_present",
+          "name": "wait_scheduler_task_running",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.941628"
+      "timestamp": "2026-02-28T11:57:40.835596"
     },
     {
-      "name": "assert_no_fixed_timeout_reason",
+      "name": "wait_scheduler_task_terminal",
       "status": "passed",
-      "duration": 5.53131103515625e-05,
+      "duration": 0.0007898807525634766,
       "error_message": null,
       "steps": [
         {
-          "name": "assert_no_fixed_timeout_reason",
+          "name": "wait_scheduler_task_terminal",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-26T16:49:49.941693"
+      "timestamp": "2026-02-28T11:57:40.836755"
+    },
+    {
+      "name": "set_scheduler_task_id",
+      "status": "passed",
+      "duration": 1.1444091796875e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_scheduler_task_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:40.836895"
+    },
+    {
+      "name": "get_scheduler_task_detail",
+      "status": "passed",
+      "duration": 0.2819092273712158,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_scheduler_task_detail",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.118948"
+    },
+    {
+      "name": "start_cycle_http_200",
+      "status": "passed",
+      "duration": 7.319450378417969e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_http_200",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119032"
+    },
+    {
+      "name": "start_cycle_response_status_ok",
+      "status": "passed",
+      "duration": 2.6702880859375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_response_status_ok",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119062"
+    },
+    {
+      "name": "start_cycle_returns_intent_task_id",
+      "status": "passed",
+      "duration": 3.933906555175781e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_returns_intent_task_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119104"
+    },
+    {
+      "name": "intent_terminal_status_valid",
+      "status": "passed",
+      "duration": 5.054473876953125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "intent_terminal_status_valid",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119158"
+    },
+    {
+      "name": "scheduler_task_id_has_st_prefix",
+      "status": "passed",
+      "duration": 4.4345855712890625e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "scheduler_task_id_has_st_prefix",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119207"
+    },
+    {
+      "name": "scheduler_task_terminal_status_valid",
+      "status": "passed",
+      "duration": 3.647804260253906e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "scheduler_task_terminal_status_valid",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119247"
+    },
+    {
+      "name": "scheduler_task_detail_terminal",
+      "status": "passed",
+      "duration": 0.00011777877807617188,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "scheduler_task_detail_terminal",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.119370"
+    },
+    {
+      "name": "intent_not_left_in_non_terminal",
+      "status": "passed",
+      "duration": 0.0013797283172607422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "intent_not_left_in_non_terminal",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-02-28T11:57:41.120756"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E89_correction_state_machine_and_duration_aware": {
+    "E93_start_cycle_intent_executor_path": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 1
+        "zone_id": 5,
+        "zone_uid": "zn-test-1",
+        "node_id": 25,
+        "node_uid": "nd-ph-esp32una",
+        "scheduler_trace_id": "e93-trace-1772279860000",
+        "scheduler_task_id": "st-29d70a0a324b4708b178909dbdeacea7"
       }
     }
   }

@@ -214,7 +214,7 @@ groups:
       - alert: SchedulerTaskFailureRateHigh
         expr: |
           sum(
-            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found"}[5m])
+            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found|rejected|expired|error|cancelled"}[5m])
           ) > 1
         for: 10m
         labels:

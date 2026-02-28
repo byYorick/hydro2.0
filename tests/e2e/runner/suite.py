@@ -154,6 +154,7 @@ class TestSuite:
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),
                 str(base_path / "scheduler" / "E81_water_change_schedule.yaml"),
                 str(base_path / "scheduler" / "E82_dry_run_protection.yaml"),
+                str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
             ],
             "snapshot": [
                 str(base_path / "snapshot" / "E30_snapshot_contains_last_event_id.yaml"),

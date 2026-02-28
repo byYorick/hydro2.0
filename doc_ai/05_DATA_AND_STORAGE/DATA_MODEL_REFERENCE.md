@@ -810,7 +810,10 @@ Payload-contract (`payload` JSONB, wake-up only):
 Lifecycle:
 - `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
 - повторный `idempotency_key` возвращает deduplicated wake-up без повторного исполнения;
-- `failed` intent может быть re-claimed только при `retry_count < max_retries`.
+- `failed` intent может быть re-claimed только при `retry_count < max_retries`;
+- stale `claimed` intent может быть re-claimed при
+  `claimed_at <= now - AE_START_CYCLE_CLAIM_STALE_SEC` (default: 180 sec),
+  при re-claim увеличивается `retry_count`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
@@ -837,6 +840,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Правило runtime:
 - `NOTIFY` используется как fast-path;
 - reconcile polling обязателен как fallback на случай пропуска notify-событий.
+- изменение runtime profile (`zone_automation_logic_profiles`) должно порождать `zone_events`
+  типа `AUTOMATION_LOGIC_PROFILE_UPDATED`, чтобы инициировать `ae_signal_update` по `kind=zone_event`.
 
 Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
 
@@ -941,6 +946,8 @@ zone_events_zone_id_id_idx
 - `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
 - Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event`) поле `type` получает нормализованный `event_code`;
   при длине >255 значение детерминированно усекается до 255 символов.
+- Для runtime invalidation effective targets используется событие
+  `AUTOMATION_LOGIC_PROFILE_UPDATED` (source: upsert active automation profile).
 
 ---
 
@@ -1047,10 +1054,15 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 
 ---
 
-## 8.5. laravel_scheduler_active_tasks (LEGACY / OPTIONAL)
+## 8.5. laravel_scheduler_active_tasks (ACTIVE: Laravel scheduler owner)
 
-Исторический durable state для старого scheduler-task транспорта.
-В AE2-Lite рекомендуется миграция на `zone_automation_intents`.
+Durable state Laravel dispatcher для reconcile/anti-overlap в цепочке
+`Scheduler -> /start-cycle -> intent -> executor`.
+
+Примечание:
+- `zone_automation_intents` — canonical lifecycle намерений;
+- `laravel_scheduler_active_tasks` — operational state external dispatcher-а
+  (busy arbitration, polling, recovery после рестартов Laravel).
 
 ```
 id BIGSERIAL PK

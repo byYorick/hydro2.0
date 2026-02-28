@@ -285,7 +285,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - endpoint не несет device-level payload (минимальный wake-up контракт);
 - endpoint принимает только `source` и `idempotency_key`;
 - фактические действия определяются pending intent-ами в БД;
-- повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение.
+- повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение;
+- при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
+  `task_status` и `reason=start_cycle_intent_terminal`.
 
 Минимальный request:
 ```json
@@ -310,6 +312,23 @@ Response:
 }
 ```
 
+Response (terminal intent):
+```json
+{
+  "status": "ok",
+  "data": {
+    "zone_id": 12,
+    "accepted": false,
+    "runner_state": "terminal",
+    "deduplicated": true,
+    "task_id": "intent-88",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z",
+    "task_status": "failed",
+    "reason": "start_cycle_intent_terminal"
+  }
+}
+```
+
 ### 18.3 Scheduler intents lifecycle (DB contract)
 
 `POST /zones/{id}/start-cycle` работает только как wake-up endpoint.
@@ -326,8 +345,12 @@ Lifecycle intents:
 Правила:
 - scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle`;
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
-- при повторном `idempotency_key` endpoint возвращает `accepted=true` + `deduplicated=true`
-  без повторного выполнения device-команд.
+- при повторном `idempotency_key` для active intent endpoint возвращает
+  `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
+- при повторном `idempotency_key` для terminal intent endpoint возвращает
+  `accepted=false` + `runner_state=terminal` + `task_status`;
+- stale `claimed` intent может быть re-claimed после таймаута
+  `AE_START_CYCLE_CLAIM_STALE_SEC` (по умолчанию 180 сек) c инкрементом `retry_count`.
 
 `zone_automation_intents.payload` (wake-up only):
 ```json

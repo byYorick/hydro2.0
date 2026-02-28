@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge, Histogram
 from services.resilience_contract import (
     SCHEDULER_IDEMPOTENCY_PAYLOAD_MISMATCH,
     SCHEDULER_STATUS_ACCEPTED,
@@ -17,6 +18,49 @@ SCHEDULER_DEDUPE_DECISIONS_TOTAL = Counter(
     "Scheduler dedupe/idempotency decisions",
     ["outcome"],
 )
+SCHEDULER_TASK_ACCEPT_LATENCY_SEC = Histogram(
+    "scheduler_task_accept_latency_sec",
+    "Time from scheduler request intake to task accept in automation-engine",
+    ["task_type"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0),
+)
+SCHEDULER_TASK_COMPLETION_LATENCY_SEC = Histogram(
+    "scheduler_task_completion_latency_sec",
+    "Time from task accepted to terminal status",
+    ["task_type", "status"],
+    buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0),
+)
+SCHEDULER_TASK_STATUS_TOTAL = Counter(
+    "scheduler_task_status_total",
+    "Scheduler task status transitions",
+    ["task_type", "status"],
+)
+SCHEDULER_ACTIVE_TASKS = Gauge(
+    "scheduler_active_tasks",
+    "Current in-memory scheduler tasks tracked by automation-engine API",
+)
+_TERMINAL_TASK_STATUSES = {"completed", "done", "failed", "rejected", "expired", "timeout", "error", "cancelled", "not_found"}
+
+
+def _coerce_utc_naive_dt(raw_value: Any) -> Optional[datetime]:
+    if isinstance(raw_value, datetime):
+        if raw_value.tzinfo is not None:
+            return raw_value.astimezone(timezone.utc).replace(tzinfo=None)
+        return raw_value
+    if not isinstance(raw_value, str):
+        return None
+    candidate = raw_value.strip()
+    if not candidate:
+        return None
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
 
 
 def scheduler_task_log_name(task_id: str) -> str:
@@ -123,6 +167,7 @@ async def cleanup_scheduler_tasks_locked(
         sortable.sort(key=lambda item: item[0])
         for _, task_id in sortable[:overflow]:
             scheduler_tasks.pop(task_id, None)
+    SCHEDULER_ACTIVE_TASKS.set(float(len(scheduler_tasks)))
 
 
 async def load_scheduler_task_by_correlation_id(
@@ -181,6 +226,7 @@ async def create_scheduler_task(
     initial_error: Optional[str] = None,
     initial_error_code: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], bool]:
+    started_at_monotonic = time.monotonic()
     now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     payload_fingerprint = task_payload_fingerprint_fn(req)
 
@@ -198,6 +244,7 @@ async def create_scheduler_task(
             existing = await load_scheduler_task_by_correlation_id_fn(req.correlation_id)
             if existing is not None:
                 scheduler_tasks[str(existing["task_id"])] = dict(existing)
+                SCHEDULER_ACTIVE_TASKS.set(float(len(scheduler_tasks)))
 
         if existing is not None:
             if not task_payload_matches_fn(req, existing, payload_fingerprint):
@@ -225,8 +272,12 @@ async def create_scheduler_task(
         }
         scheduler_tasks[task["task_id"]] = task
         SCHEDULER_DEDUPE_DECISIONS_TOTAL.labels(outcome="new").inc()
+        SCHEDULER_TASK_STATUS_TOTAL.labels(task_type=str(req.task_type), status=str(initial_status)).inc()
+        SCHEDULER_ACTIVE_TASKS.set(float(len(scheduler_tasks)))
 
     await persist_scheduler_task_snapshot_fn(task)
+    if str(initial_status).strip().lower() == SCHEDULER_STATUS_ACCEPTED:
+        SCHEDULER_TASK_ACCEPT_LATENCY_SEC.labels(task_type=str(req.task_type)).observe(max(0.0, time.monotonic() - started_at_monotonic))
     return task, False
 
 
@@ -241,10 +292,14 @@ async def update_scheduler_task(
     error: Optional[str] = None,
     error_code: Optional[str] = None,
 ) -> None:
+    completion_latency_sec: Optional[float] = None
+    task_type = "unknown"
+    normalized_status = str(status or "").strip().lower()
     async with scheduler_tasks_lock:
         task = scheduler_tasks.get(task_id)
         if not task:
             return
+        task_type = str(task.get("task_type") or "unknown")
         task["status"] = status
         task["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         if result is not None:
@@ -253,9 +308,22 @@ async def update_scheduler_task(
             task["error"] = error
         if error_code is not None:
             task["error_code"] = error_code
+        if normalized_status in _TERMINAL_TASK_STATUSES:
+            created_at = _coerce_utc_naive_dt(task.get("created_at"))
+            if created_at is not None:
+                completion_latency_sec = max(
+                    0.0,
+                    (
+                        datetime.now(timezone.utc).replace(tzinfo=None) - created_at
+                    ).total_seconds(),
+                )
         snapshot = dict(task)
+        SCHEDULER_ACTIVE_TASKS.set(float(len(scheduler_tasks)))
 
     await persist_scheduler_task_snapshot_fn(snapshot)
+    SCHEDULER_TASK_STATUS_TOTAL.labels(task_type=task_type, status=normalized_status or "unknown").inc()
+    if completion_latency_sec is not None:
+        SCHEDULER_TASK_COMPLETION_LATENCY_SEC.labels(task_type=task_type, status=normalized_status).observe(completion_latency_sec)
 
 
 __all__ = [

@@ -22,7 +22,7 @@ services:
     volumes:
       # Windows-совместимые пути (Docker Desktop автоматически конвертирует)
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./services/mqtt-bridge/passwords:/mosquitto/config/passwords:ro
+      - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log

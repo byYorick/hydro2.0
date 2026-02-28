@@ -332,8 +332,11 @@ jobs:
             backend/services/automation-engine/test_start_cycle_contract.py \
             backend/services/automation-engine/test_api_intents.py \
             backend/services/automation-engine/test_api_start_cycle.py \
+            backend/services/automation-engine/test_api_scheduler_security.py \
+            backend/services/automation-engine/test_api_scheduler_store_metrics.py \
             backend/services/automation-engine/test_command_tracker_notify.py \
             backend/services/automation-engine/test_start_cycle_rate_limit.py \
+            backend/services/automation-engine/test_start_cycle_security_integration.py \
             backend/services/automation-engine/test_start_cycle_intent_flow_integration.py \
             backend/services/automation-engine/test_workflow_phase_policy.py \
             backend/services/automation-engine/test_two_tank_runtime_config.py \

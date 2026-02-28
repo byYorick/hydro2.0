@@ -254,7 +254,27 @@ Response (accepted wake-up):
   "data": {
     "zone_id": 12,
     "accepted": true,
-    "runner_state": "active"
+    "runner_state": "active",
+    "deduplicated": false,
+    "task_id": "intent-505",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
+  }
+}
+```
+
+Response (terminal intent):
+```json
+{
+  "status": "ok",
+  "data": {
+    "zone_id": 12,
+    "accepted": false,
+    "runner_state": "terminal",
+    "deduplicated": true,
+    "task_id": "intent-88",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z",
+    "task_status": "failed",
+    "reason": "start_cycle_intent_terminal"
   }
 }
 ```
@@ -262,7 +282,9 @@ Response (accepted wake-up):
 Правила:
 - endpoint не принимает device-level steps/commands;
 - фактические действия берутся только из `zone_automation_intents`;
-- при повторе `idempotency_key` возвращается deduplicated accepted без двойного исполнения.
+- при повторе `idempotency_key` для active intent возвращается deduplicated accepted без двойного исполнения;
+- при повторе `idempotency_key` для terminal intent возвращается `accepted=false` + `runner_state=terminal` + `task_status`;
+- stale `claimed` intent допускается к re-claim после таймаута `AE_START_CYCLE_CLAIM_STALE_SEC`.
 
 ## 8.1 Scheduler intents contract (обязательный)
 

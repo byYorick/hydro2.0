@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-PASSWORDS_FILE="${1:-passwords}"
+PASSWORDS_FILE="${1:-passwords.txt}"
 
 # Colors
 RED='\033[0;31m'
@@ -23,6 +23,12 @@ error() {
 warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
+
+# Guard against historical wrong path type (directory named "passwords")
+if [ -d "${PASSWORDS_FILE}" ]; then
+    error "${PASSWORDS_FILE} is a directory. Expected a file path (e.g. passwords.txt)."
+    exit 1
+fi
 
 # Check if mosquitto_passwd is available
 if ! command -v mosquitto_passwd &> /dev/null; then
