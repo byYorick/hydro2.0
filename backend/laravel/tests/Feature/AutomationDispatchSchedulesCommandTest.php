@@ -70,6 +70,21 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'zone_id' => $zone->id,
             'status' => 'pending',
         ]);
+        $intentRow = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($intentRow);
+        $intentPayloadRaw = $intentRow->payload ?? null;
+        $intentPayload = is_string($intentPayloadRaw)
+            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
+        $this->assertIsArray($intentPayload);
+        $this->assertSame('laravel_scheduler', $intentPayload['source'] ?? null);
+        $this->assertSame('diagnostics', $intentPayload['task_type'] ?? null);
+        $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
+        $this->assertArrayNotHasKey('task_payload', $intentPayload);
+        $this->assertArrayNotHasKey('schedule_payload', $intentPayload);
 
         $task = LaravelSchedulerActiveTask::query()
             ->where('task_id', 'st-accepted-1')
@@ -209,6 +224,43 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->first();
         $this->assertNotNull($completedTask);
         $this->assertNotNull($completedTask->terminal_at);
+    }
+
+    public function test_command_uses_task_status_from_start_cycle_payload_even_if_accepted_false(): void
+    {
+        $this->enableSchedulerConfig();
+        [$zone, $cycle] = $this->createZoneAndCycle();
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'zone_id' => $zone->id,
+                        'accepted' => false,
+                        'runner_state' => 'terminal',
+                        'task_status' => 'completed',
+                        'deduplicated' => true,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        $task = LaravelSchedulerActiveTask::query()
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($task);
+        $this->assertMatchesRegularExpression('/^intent-\d+$/', (string) $task->task_id);
+        $this->assertSame('completed', $task->status);
+        $this->assertNotNull($task->terminal_at);
     }
 
     private function enableSchedulerConfig(): void

@@ -4,7 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
+use App\Models\User;
 use App\Services\ZoneAutomationLogicProfileService;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -89,5 +91,43 @@ class ZoneAutomationLogicProfileServiceTest extends TestCase
         $this->assertNull($resolved);
         $this->assertNull($payload['active_mode']);
     }
-}
 
+    public function test_it_emits_zone_event_after_profile_upsert(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create();
+        $subsystems = [
+            'irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 120]],
+            'ph' => ['enabled' => true, 'execution' => ['target' => 5.8]],
+            'ec' => ['enabled' => true, 'execution' => ['target' => 1.7]],
+        ];
+
+        $profile = $this->service->upsertProfile(
+            zone: $zone,
+            mode: ZoneAutomationLogicProfile::MODE_SETUP,
+            subsystems: $subsystems,
+            activate: true,
+            userId: (int) $user->id,
+        );
+
+        $this->assertDatabaseHas('zone_events', [
+            'zone_id' => $zone->id,
+            'type' => 'AUTOMATION_LOGIC_PROFILE_UPDATED',
+            'entity_type' => 'automation_logic_profile',
+            'entity_id' => (string) $profile->id,
+        ]);
+
+        $event = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'AUTOMATION_LOGIC_PROFILE_UPDATED')
+            ->orderByDesc('id')
+            ->first(['payload_json']);
+
+        $this->assertNotNull($event);
+        $payloadRaw = $event->payload_json ?? null;
+        $payload = is_string($payloadRaw) ? json_decode($payloadRaw, true) : (is_array($payloadRaw) ? $payloadRaw : null);
+        $this->assertIsArray($payload);
+        $this->assertSame((int) $user->id, $payload['user_id'] ?? null);
+        $this->assertSame(ZoneAutomationLogicProfile::MODE_SETUP, $payload['mode'] ?? null);
+    }
+}

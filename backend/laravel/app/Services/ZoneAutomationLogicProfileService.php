@@ -53,6 +53,14 @@ class ZoneAutomationLogicProfileService
             $profile->updated_by = $userId;
             $profile->save();
 
+            $this->emitProfileUpdatedZoneEvent(
+                zoneId: (int) $zone->id,
+                profileId: (int) ($profile->id ?? 0),
+                mode: $mode,
+                subsystems: $normalizedSubsystems,
+                userId: $userId,
+            );
+
             return $profile->fresh() ?? $profile;
         });
     }
@@ -164,5 +172,33 @@ class ZoneAutomationLogicProfileService
         }
 
         return $normalized;
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    protected function emitProfileUpdatedZoneEvent(
+        int $zoneId,
+        int $profileId,
+        string $mode,
+        array $subsystems,
+        ?int $userId,
+    ): void {
+        $payload = [
+            'profile_id' => $profileId > 0 ? $profileId : null,
+            'mode' => $mode,
+            'subsystems' => $subsystems,
+            'user_id' => $userId,
+        ];
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zoneId,
+            'type' => 'AUTOMATION_LOGIC_PROFILE_UPDATED',
+            'entity_type' => 'automation_logic_profile',
+            'entity_id' => $profileId > 0 ? (string) $profileId : null,
+            'server_ts' => (int) floor(microtime(true) * 1000),
+            'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now('UTC'),
+        ]);
     }
 }

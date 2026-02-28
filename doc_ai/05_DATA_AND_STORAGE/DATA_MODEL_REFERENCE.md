@@ -791,10 +791,28 @@ status IN ('pending','claimed','running','completed','failed','cancelled')
 - идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
 - арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
 
+Payload-contract (`payload` JSONB, wake-up only):
+```json
+{
+  "source": "laravel_scheduler",
+  "task_type": "diagnostics",
+  "workflow": "cycle_start",
+  "topology": "two_tank_drip_substrate_trays",
+  "grow_cycle_id": 123
+}
+```
+
+Ограничения:
+- `task_payload` запрещен;
+- `schedule_payload` запрещен;
+- любые device-level команды/steps в payload запрещены.
+
 Lifecycle:
 - `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
 - повторный `idempotency_key` возвращает deduplicated wake-up без повторного исполнения;
 - `failed` intent может быть re-claimed только при `retry_count < max_retries`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 ## 6.9. PostgreSQL NOTIFY triggers (AE2-Lite)
 

@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 import ae2lite.main_runtime_shared as shared
+from ae2lite.effective_targets_notify_runtime import (
+    start_effective_targets_notify_listener,
+    stop_effective_targets_notify_listener,
+)
 from ae2lite.main_runtime_ops import (
     calculate_optimal_concurrency,
     extract_gh_uid_from_config,
@@ -130,234 +134,248 @@ async def run_runtime_cycle(
     last_config: Optional[Dict[str, Any]] = None
     last_config_ts = 0.0
     next_system_state_log_at = time.monotonic() + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
+    signal_listener = None
+    signal_listener_task = None
 
-    while not shared._shutdown_event.is_set():
-        simulation_clocks: Dict[int, Any] = {}
-        skip_cycle_sleep = False
-        try:
-            now_mono = time.monotonic()
-            cfg, last_config, last_config_ts, _ = await _get_config_with_cache(
-                client=client,
-                laravel_api_url=laravel_api_url,
-                laravel_api_token=laravel_api_token,
-                api_circuit_breaker=api_circuit_breaker,
-                automation_settings=automation_settings,
-                last_config=last_config,
-                last_config_ts=last_config_ts,
-                now_mono=now_mono,
-            )
-            if not cfg:
-                continue
+    signal_listener, signal_listener_task = await start_effective_targets_notify_listener(
+        invalidate_cache_fn=laravel_api_repo.invalidate_effective_targets_cache,
+        shutdown_event=shared._shutdown_event,
+        logger=shared.logger,
+    )
 
-            is_valid, error_msg = validate_config(cfg)
-            if not is_valid:
-                handle_automation_error(InvalidConfigurationError(error_msg, cfg), {"action": "config_validation"})
-                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                continue
-
-            gh_uid = extract_gh_uid_from_config(cfg)
-            if not gh_uid:
-                shared.logger.warning("No greenhouse UID found in config, sleeping before retry")
-                if shared._should_emit_missing_gh_uid_alert(utcnow()):
-                    await send_infra_alert(
-                        code=INFRA_CONFIG_MISSING_GREENHOUSE_UID,
-                        alert_type="Config Missing Greenhouse UID",
-                        message="Config does not contain greenhouse UID",
-                        severity="error",
-                        zone_id=None,
-                        service="automation-engine",
-                        component="config_validation",
-                        error_type="MissingGreenhouseUid",
-                        details={"throttle_seconds": shared._MISSING_GH_UID_ALERT_THROTTLE_SECONDS},
-                    )
-                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                continue
-
-            zone_repo = ZoneRepository()
-            telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
-            node_repo = NodeRepository()
-            recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
-            grow_cycle_repo = GrowCycleRepository(laravel_api_repo=laravel_api_repo, db_circuit_breaker=db_circuit_breaker)
-            infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
-
-            if shared._command_bus is None:
-                history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
-                history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-                shared._command_bus = CommandBus(
-                    mqtt=None,
-                    gh_uid=gh_uid,
-                    history_logger_url=history_logger_url,
-                    history_logger_token=history_logger_token,
-                    command_validator=command_validator,
-                    command_tracker=shared._command_tracker,
-                    command_audit=CommandAudit(),
-                    api_circuit_breaker=command_api_circuit_breaker,
-                    enforce_node_zone_assignment=True,
-                )
-                await shared._command_bus.start()
-                shared.logger.info("CommandBus initialized with long-lived HTTP client")
-
+    try:
+        while not shared._shutdown_event.is_set():
+            simulation_clocks: Dict[int, Any] = {}
+            skip_cycle_sleep = False
             try:
-                from api import set_command_bus
-
-                set_command_bus(shared._command_bus, gh_uid, loop_id=id(asyncio.get_running_loop()))
-            except ImportError:
-                shared.logger.warning("API module not available, scheduler endpoint will not work")
-
-            if shared._zone_service is None:
-                shared._zone_service = ZoneAutomationService(
-                    zone_repo,
-                    telemetry_repo,
-                    node_repo,
-                    recipe_repo,
-                    grow_cycle_repo,
-                    infrastructure_repo,
-                    shared._command_bus,
-                    pid_state_manager,
+                now_mono = time.monotonic()
+                cfg, last_config, last_config_ts, _ = await _get_config_with_cache(
+                    client=client,
+                    laravel_api_url=laravel_api_url,
+                    laravel_api_token=laravel_api_token,
+                    api_circuit_breaker=api_circuit_breaker,
+                    automation_settings=automation_settings,
+                    last_config=last_config,
+                    last_config_ts=last_config_ts,
+                    now_mono=now_mono,
                 )
-                try:
-                    from api import set_zone_service
+                if not cfg:
+                    continue
 
-                    set_zone_service(shared._zone_service, loop_id=id(asyncio.get_running_loop()))
-                except ImportError:
-                    shared.logger.warning("API module not available, scheduler task executor fallback is disabled")
+                is_valid, error_msg = validate_config(cfg)
+                if not is_valid:
+                    handle_automation_error(InvalidConfigurationError(error_msg, cfg), {"action": "config_validation"})
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                    continue
 
-            if shared._zone_service is not None and not shared._runtime_state_restored:
-                shared._runtime_state_restored = shared._restore_zone_runtime_state_snapshot(shared._zone_service, automation_settings)
-
-            try:
-                zones = await db_circuit_breaker.call(zone_repo.get_active_zones)
-            except CircuitBreakerOpenError:
-                shared.logger.warning("Database Circuit Breaker is OPEN, skipping zone processing")
-                now = utcnow()
-                if shared._should_emit_db_circuit_open_alert(now):
-                    await send_infra_alert(
-                        code=INFRA_DB_CIRCUIT_OPEN,
-                        alert_type="Database Circuit Breaker Open",
-                        message="Database circuit breaker is OPEN, zone processing is skipped",
-                        severity="critical",
-                        zone_id=None,
-                        service="automation-engine",
-                        component="main_loop",
-                        error_type="CircuitBreakerOpenError",
-                        details={
-                            "throttle_seconds": shared._DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
-                            "detected_at": now.isoformat(),
-                        },
-                    )
-                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                continue
-
-            zones = prioritize_zones(zones)
-            active_zones = zones
-            zone_ids = [zone.get("id") for zone in zones if zone.get("id")]
-            if zone_ids:
-                simulation_clocks = await get_simulation_clocks(zone_ids)
-
-            if zones:
-                scheduler_writer_active = False
-                if shared._AE2_RUNTIME_SINGLE_WRITER_ENFORCE and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                    scheduler_writer_active = await shared._is_scheduler_single_writer_active()
-
-                if scheduler_writer_active and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                    now_mono = time.monotonic()
-                    if shared._scheduler_writer_active_since is None:
-                        shared._scheduler_writer_active_since = now_mono
-                    elapsed = now_mono - shared._scheduler_writer_active_since
-                    if elapsed >= shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC:
-                        # Watchdog сработал: scheduler-writer не освобождает блокировку слишком долго
-                        shared.logger.warning(
-                            "Scheduler writer watchdog expired after %.0fs (limit %.0fs), "
-                            "forcing fallback zone processing",
-                            elapsed,
-                            shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
+                gh_uid = extract_gh_uid_from_config(cfg)
+                if not gh_uid:
+                    shared.logger.warning("No greenhouse UID found in config, sleeping before retry")
+                    if shared._should_emit_missing_gh_uid_alert(utcnow()):
+                        await send_infra_alert(
+                            code=INFRA_CONFIG_MISSING_GREENHOUSE_UID,
+                            alert_type="Config Missing Greenhouse UID",
+                            message="Config does not contain greenhouse UID",
+                            severity="error",
+                            zone_id=None,
+                            service="automation-engine",
+                            component="config_validation",
+                            error_type="MissingGreenhouseUid",
+                            details={"throttle_seconds": shared._MISSING_GH_UID_ALERT_THROTTLE_SECONDS},
                         )
-                        scheduler_writer_active = False
-                        shared._scheduler_writer_active_since = None
-                    else:
-                        now_utc = utcnow()
-                        if shared._should_log_scheduler_single_writer_skip(now_utc):
-                            shared.logger.info(
-                                "Scheduler single-writer active: continuous loop side-effects are gated "
-                                "(%.0fs / %.0fs watchdog, set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)",
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                    continue
+
+                zone_repo = ZoneRepository()
+                telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
+                node_repo = NodeRepository()
+                recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
+                grow_cycle_repo = GrowCycleRepository(laravel_api_repo=laravel_api_repo, db_circuit_breaker=db_circuit_breaker)
+                infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
+
+                if shared._command_bus is None:
+                    history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+                    history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+                    shared._command_bus = CommandBus(
+                        mqtt=None,
+                        gh_uid=gh_uid,
+                        history_logger_url=history_logger_url,
+                        history_logger_token=history_logger_token,
+                        command_validator=command_validator,
+                        command_tracker=shared._command_tracker,
+                        command_audit=CommandAudit(),
+                        api_circuit_breaker=command_api_circuit_breaker,
+                        enforce_node_zone_assignment=True,
+                    )
+                    await shared._command_bus.start()
+                    shared.logger.info("CommandBus initialized with long-lived HTTP client")
+
+                try:
+                    from api import set_command_bus
+
+                    set_command_bus(shared._command_bus, gh_uid, loop_id=id(asyncio.get_running_loop()))
+                except ImportError:
+                    shared.logger.warning("API module not available, scheduler endpoint will not work")
+
+                if shared._zone_service is None:
+                    shared._zone_service = ZoneAutomationService(
+                        zone_repo,
+                        telemetry_repo,
+                        node_repo,
+                        recipe_repo,
+                        grow_cycle_repo,
+                        infrastructure_repo,
+                        shared._command_bus,
+                        pid_state_manager,
+                    )
+                    try:
+                        from api import set_zone_service
+
+                        set_zone_service(shared._zone_service, loop_id=id(asyncio.get_running_loop()))
+                    except ImportError:
+                        shared.logger.warning("API module not available, scheduler task executor fallback is disabled")
+
+                if shared._zone_service is not None and not shared._runtime_state_restored:
+                    shared._runtime_state_restored = shared._restore_zone_runtime_state_snapshot(shared._zone_service, automation_settings)
+
+                try:
+                    zones = await db_circuit_breaker.call(zone_repo.get_active_zones)
+                except CircuitBreakerOpenError:
+                    shared.logger.warning("Database Circuit Breaker is OPEN, skipping zone processing")
+                    now = utcnow()
+                    if shared._should_emit_db_circuit_open_alert(now):
+                        await send_infra_alert(
+                            code=INFRA_DB_CIRCUIT_OPEN,
+                            alert_type="Database Circuit Breaker Open",
+                            message="Database circuit breaker is OPEN, zone processing is skipped",
+                            severity="critical",
+                            zone_id=None,
+                            service="automation-engine",
+                            component="main_loop",
+                            error_type="CircuitBreakerOpenError",
+                            details={
+                                "throttle_seconds": shared._DB_CIRCUIT_OPEN_ALERT_THROTTLE_SECONDS,
+                                "detected_at": now.isoformat(),
+                            },
+                        )
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                    continue
+
+                zones = prioritize_zones(zones)
+                active_zones = zones
+                zone_ids = [zone.get("id") for zone in zones if zone.get("id")]
+                if zone_ids:
+                    simulation_clocks = await get_simulation_clocks(zone_ids)
+
+                if zones:
+                    scheduler_writer_active = False
+                    if shared._AE2_RUNTIME_SINGLE_WRITER_ENFORCE and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                        scheduler_writer_active = await shared._is_scheduler_single_writer_active()
+
+                    if scheduler_writer_active and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                        now_mono = time.monotonic()
+                        if shared._scheduler_writer_active_since is None:
+                            shared._scheduler_writer_active_since = now_mono
+                        elapsed = now_mono - shared._scheduler_writer_active_since
+                        if elapsed >= shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC:
+                            # Watchdog сработал: scheduler-writer не освобождает блокировку слишком долго
+                            shared.logger.warning(
+                                "Scheduler writer watchdog expired after %.0fs (limit %.0fs), "
+                                "forcing fallback zone processing",
                                 elapsed,
                                 shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
                             )
-                else:
-                    # Scheduler не активен или fallback включён — сбрасываем watchdog
-                    shared._scheduler_writer_active_since = None
-
-                if not scheduler_writer_active or shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                    if automation_settings.ADAPTIVE_CONCURRENCY:
-                        optimal_concurrency = await calculate_optimal_concurrency(
-                            total_zones=len(zones),
-                            target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
-                            avg_zone_processing_time=shared._avg_processing_time,
-                        )
-                        shared.OPTIMAL_CONCURRENCY.set(optimal_concurrency)
-                        max_concurrent = optimal_concurrency
+                            scheduler_writer_active = False
+                            shared._scheduler_writer_active_since = None
+                        else:
+                            now_utc = utcnow()
+                            if shared._should_log_scheduler_single_writer_skip(now_utc):
+                                shared.logger.info(
+                                    "Scheduler single-writer active: continuous loop side-effects are gated "
+                                    "(%.0fs / %.0fs watchdog, set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)",
+                                    elapsed,
+                                    shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
+                                )
                     else:
-                        max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
+                        # Scheduler не активен или fallback включён — сбрасываем watchdog
+                        shared._scheduler_writer_active_since = None
 
-                    results = await process_zones_parallel(
-                        zones,
-                        shared._zone_service,
-                        max_concurrent=max_concurrent,
-                        simulation_clocks=simulation_clocks,
-                        per_zone_timeout_sec=shared.AE_ZONE_PROCESS_TIMEOUT_SEC,
-                    )
+                    if not scheduler_writer_active or shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                        if automation_settings.ADAPTIVE_CONCURRENCY:
+                            optimal_concurrency = await calculate_optimal_concurrency(
+                                total_zones=len(zones),
+                                target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
+                                avg_zone_processing_time=shared._avg_processing_time,
+                            )
+                            shared.OPTIMAL_CONCURRENCY.set(optimal_concurrency)
+                            max_concurrent = optimal_concurrency
+                        else:
+                            max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
 
-                    if results["failed"] > 0:
-                        shared.logger.warning(
-                            "Zone processing completed with errors: %s/%s success, %s failed",
-                            results["success"],
-                            results["total"],
-                            results["failed"],
-                        )
-
-                    now_mono = time.monotonic()
-                    if now_mono >= next_system_state_log_at:
-                        await log_system_state(
-                            shared._zone_service,
+                        results = await process_zones_parallel(
                             zones,
-                            shared._command_tracker,
-                            db_circuit_breaker,
-                            api_circuit_breaker,
-                            mqtt_circuit_breaker,
+                            shared._zone_service,
+                            max_concurrent=max_concurrent,
+                            simulation_clocks=simulation_clocks,
+                            per_zone_timeout_sec=shared.AE_ZONE_PROCESS_TIMEOUT_SEC,
                         )
-                        next_system_state_log_at = now_mono + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
-        except KeyboardInterrupt:
-            shared.logger.info("Received interrupt signal, shutting down")
-            shared._shutdown_event.set()
-            break
-        except Exception as exc:
-            handle_automation_error(exc, {"action": "main_loop"})
-            await send_infra_exception_alert(
-                error=exc,
-                code=INFRA_AUTOMATION_LOOP_ERROR,
-                alert_type="Automation Loop Error",
-                severity="error",
-                zone_id=None,
-                service="automation-engine",
-                component="main_loop",
-            )
-            await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-            skip_cycle_sleep = True
 
-        if shared._shutdown_event.is_set():
-            break
-        if skip_cycle_sleep:
-            continue
+                        if results["failed"] > 0:
+                            shared.logger.warning(
+                                "Zone processing completed with errors: %s/%s success, %s failed",
+                                results["success"],
+                                results["total"],
+                                results["failed"],
+                            )
 
-        sleep_seconds = automation_settings.MAIN_LOOP_SLEEP_SECONDS
-        if simulation_clocks:
-            try:
-                max_scale = max(clock.time_scale for clock in simulation_clocks.values())
-                if max_scale > 1:
-                    sleep_seconds = max(1.0, sleep_seconds / max_scale)
-            except ValueError:
-                pass
-        await asyncio.sleep(sleep_seconds)
+                        now_mono = time.monotonic()
+                        if now_mono >= next_system_state_log_at:
+                            await log_system_state(
+                                shared._zone_service,
+                                zones,
+                                shared._command_tracker,
+                                db_circuit_breaker,
+                                api_circuit_breaker,
+                                mqtt_circuit_breaker,
+                            )
+                            next_system_state_log_at = now_mono + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
+            except KeyboardInterrupt:
+                shared.logger.info("Received interrupt signal, shutting down")
+                shared._shutdown_event.set()
+                break
+            except Exception as exc:
+                handle_automation_error(exc, {"action": "main_loop"})
+                await send_infra_exception_alert(
+                    error=exc,
+                    code=INFRA_AUTOMATION_LOOP_ERROR,
+                    alert_type="Automation Loop Error",
+                    severity="error",
+                    zone_id=None,
+                    service="automation-engine",
+                    component="main_loop",
+                )
+                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                skip_cycle_sleep = True
+
+            if shared._shutdown_event.is_set():
+                break
+            if skip_cycle_sleep:
+                continue
+
+            sleep_seconds = automation_settings.MAIN_LOOP_SLEEP_SECONDS
+            if simulation_clocks:
+                try:
+                    max_scale = max(clock.time_scale for clock in simulation_clocks.values())
+                    if max_scale > 1:
+                        sleep_seconds = max(1.0, sleep_seconds / max_scale)
+                except ValueError:
+                    pass
+            await asyncio.sleep(sleep_seconds)
+    finally:
+        await stop_effective_targets_notify_listener(
+            listener=signal_listener,
+            task=signal_listener_task,
+        )
 
     return active_zones
 

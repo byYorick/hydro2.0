@@ -305,6 +305,12 @@ def build_base_targets(phase: Dict[str, Any]) -> Dict[str, Any]:
         climate_request["co2_target"] = phase["co2_target"]
     if climate_request:
         targets["climate_request"] = climate_request
+    if phase.get("mist_interval_sec") is not None or phase.get("mist_duration_sec") is not None:
+        targets["mist"] = {
+            "interval_sec": phase.get("mist_interval_sec"),
+            "duration_sec": phase.get("mist_duration_sec"),
+            "mode": phase.get("mist_mode"),
+        }
     if isinstance(phase.get("extensions"), dict):
         targets["extensions"] = dict(phase["extensions"])
     return targets

@@ -28,6 +28,17 @@ class EffectiveTargetsSqlReadModel:
         self._cache_ttl_sec = max(0.0, float(cache_ttl_sec))
         self._cache: Dict[int, Tuple[Optional[Dict[str, Any]], float]] = {}
 
+    def invalidate_cache(self, zone_id: Optional[int] = None) -> None:
+        """Invalidate cached effective targets.
+
+        Args:
+            zone_id: Zone to invalidate. When ``None``, the entire cache is cleared.
+        """
+        if zone_id is None:
+            self._cache.clear()
+        else:
+            self._cache.pop(zone_id, None)
+
     def _lookup_cache(self, zone_id: int, now_monotonic: float) -> Tuple[bool, Optional[Dict[str, Any]]]:
         cached = self._cache.get(zone_id)
         if not cached:
@@ -90,6 +101,9 @@ class EffectiveTargetsSqlReadModel:
                 temp_air_target,
                 humidity_target,
                 co2_target,
+                mist_interval_sec,
+                mist_duration_sec,
+                mist_mode,
                 extensions
             FROM grow_cycle_phases
             WHERE id = ANY($1::bigint[])

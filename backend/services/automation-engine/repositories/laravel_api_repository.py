@@ -45,6 +45,10 @@ class LaravelApiRepository:
     async def get_effective_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         return await self._effective_targets_reader.get_effective_targets(zone_id)
 
+    def invalidate_effective_targets_cache(self, zone_id: Optional[int] = None) -> None:
+        """Invalidate effective-targets SQL read-model cache for one zone or all zones."""
+        self._effective_targets_reader.invalidate_cache(zone_id)
+
     async def advance_grow_cycle_phase(self, grow_cycle_id: int) -> bool:
         """Продвинуть фазу цикла выращивания через Laravel internal API."""
         url = f"{self.base_url}/api/internal/grow-cycles/{grow_cycle_id}/advance-phase"

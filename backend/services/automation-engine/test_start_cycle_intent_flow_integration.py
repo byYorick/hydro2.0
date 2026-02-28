@@ -21,7 +21,7 @@ async def test_start_cycle_intent_claim_to_completion_flow(monkeypatch):
     async def fake_validate_security(_request):
         return None
 
-    async def fake_claim_intent(*, zone_id, req, now, fetch_fn):
+    async def fake_claim_intent(*, zone_id, req, now, claimed_stale_after_sec, fetch_fn):
         return {
             "decision": "claimed",
             "intent": {
@@ -96,3 +96,92 @@ async def test_start_cycle_intent_claim_to_completion_flow(monkeypatch):
     assert terminal_calls[0]["intent_id"] == 505
     assert terminal_calls[0]["success"] is True
     assert terminal_calls[0]["error_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_start_cycle_intent_marks_terminal_when_mark_running_fails(monkeypatch):
+    terminal_calls = []
+    update_calls = []
+    spawned_tasks = []
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_intent(*, zone_id, req, now, claimed_stale_after_sec, fetch_fn):
+        return {
+            "decision": "claimed",
+            "intent": {
+                "id": 506,
+                "zone_id": zone_id,
+                "retry_count": 0,
+                "payload": {},
+            },
+        }
+
+    async def fake_create_scheduler_task(_req):
+        return {"task_id": "st-506"}, False
+
+    async def fake_mark_running(*, intent_id, now, execute_fn):
+        raise RuntimeError(f"mark_running_failed_{intent_id}")
+
+    async def fake_mark_terminal(*, intent_id, now, success, error_code, error_message, execute_fn):
+        terminal_calls.append(
+            {
+                "intent_id": intent_id,
+                "success": success,
+                "error_code": error_code,
+                "error_message": error_message,
+            }
+        )
+
+    async def fake_update_scheduler_task(*, task_id, status, result=None, error=None, error_code=None):
+        update_calls.append(
+            {
+                "task_id": task_id,
+                "status": status,
+                "error": error,
+                "error_code": error_code,
+                "result": result,
+            }
+        )
+
+    def fake_spawn_background_task(coro, **_kwargs):
+        task = asyncio.create_task(coro)
+        spawned_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_intent)
+    monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
+    monkeypatch.setattr(api, "policy_mark_intent_running", fake_mark_running)
+    monkeypatch.setattr(api, "policy_mark_intent_terminal", fake_mark_terminal)
+    monkeypatch.setattr(api, "_update_scheduler_task", fake_update_scheduler_task)
+    monkeypatch.setattr(api, "_spawn_background_task", fake_spawn_background_task)
+
+    response = await api.zone_start_cycle(
+        zone_id=9,
+        request=SimpleNamespace(headers={"x-trace-id": "trace-int-flow-fail"}),
+        req=StartCycleRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z9:irrigation:2026-02-22T11:00:01Z",
+        ),
+    )
+
+    assert response["status"] == "ok"
+    assert response["data"]["task_id"] == "intent-506"
+
+    await asyncio.gather(*spawned_tasks)
+
+    assert len(update_calls) == 1
+    assert update_calls[0]["task_id"] == "st-506"
+    assert update_calls[0]["status"] == "failed"
+    assert update_calls[0]["error_code"] is not None
+
+    assert len(terminal_calls) == 1
+    assert terminal_calls[0]["intent_id"] == 506
+    assert terminal_calls[0]["success"] is False
+    assert terminal_calls[0]["error_code"] is not None

@@ -123,6 +123,7 @@ _AE_SCHEDULER_REQUIRE_TRACE_ID = _env_true("AE_SCHEDULER_REQUIRE_TRACE_ID", "1")
 _AE_SCHEDULER_API_TOKEN = str(os.getenv("SCHEDULER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN") or os.getenv("PY_API_TOKEN") or "").strip()
 _START_CYCLE_DUE_SEC = max(5, int(os.getenv("AE_START_CYCLE_DUE_SEC", "60")))
 _START_CYCLE_EXPIRES_SEC = max(_START_CYCLE_DUE_SEC + 5, int(os.getenv("AE_START_CYCLE_EXPIRES_SEC", "900")))
+_START_CYCLE_CLAIM_STALE_SEC = max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE_SEC", "180")))
 _AE_START_CYCLE_RATE_LIMIT_ENABLED = _env_true("AE_START_CYCLE_RATE_LIMIT_ENABLED", "1")
 _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS = max(0, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS", "30")))
 _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC = max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10")))
@@ -290,12 +291,31 @@ async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleReques
         raise HTTPException(status_code=429, detail={"error": "start_cycle_rate_limited", "zone_id": zone_id, "window_sec": _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC, "max_requests": _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS})
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    intent_claim = await policy_claim_start_cycle_intent(zone_id=zone_id, req=req, now=now, fetch_fn=fetch)
+    intent_claim = await policy_claim_start_cycle_intent(
+        zone_id=zone_id,
+        req=req,
+        now=now,
+        claimed_stale_after_sec=_START_CYCLE_CLAIM_STALE_SEC,
+        fetch_fn=fetch,
+    )
     intent = intent_claim.get("intent") if isinstance(intent_claim, dict) and isinstance(intent_claim.get("intent"), dict) else {}
     decision = str(intent_claim.get("decision") if isinstance(intent_claim, dict) else "").strip().lower()
-    if decision in {"deduplicated", "terminal"}:
+    if decision == "deduplicated":
         intent_id = int(intent.get("id") or 0)
         return policy_build_start_cycle_response(zone_id=zone_id, req=req, is_duplicate=True, task_id=f"intent-{intent_id}" if intent_id > 0 else "")
+    if decision == "terminal":
+        intent_id = int(intent.get("id") or 0)
+        intent_status = str(intent.get("status") or "").strip().lower()
+        return policy_build_start_cycle_response(
+            zone_id=zone_id,
+            req=req,
+            is_duplicate=True,
+            task_id=f"intent-{intent_id}" if intent_id > 0 else "",
+            accepted=False,
+            runner_state="terminal",
+            task_status=intent_status or "failed",
+            reason="start_cycle_intent_terminal",
+        )
     if decision == "conflict_cross_zone":
         conflict_zone_id = int(intent.get("zone_id") or 0)
         raise HTTPException(
@@ -327,12 +347,69 @@ async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleReques
         trace_id = get_trace_id()
 
         async def _run_start_cycle_intent() -> None:
-            if intent_id > 0:
-                await policy_mark_intent_running(intent_id=intent_id, now=datetime.now(timezone.utc).replace(tzinfo=None), execute_fn=execute)
-            await _execute_scheduler_task(task_id, start_cycle_req, trace_id)
-            snapshot = _scheduler_tasks.get(task_id) if isinstance(_scheduler_tasks.get(task_id), dict) else {}
-            if intent_id > 0:
-                await policy_mark_intent_terminal(intent_id=intent_id, now=datetime.now(timezone.utc).replace(tzinfo=None), success=str(snapshot.get("status") or "").strip().lower() == "completed", error_code=str(snapshot.get("error_code") or "") or None, error_message=str(snapshot.get("error") or "") or None, execute_fn=execute)
+            success = False
+            terminal_error_code: Optional[str] = None
+            terminal_error_message: Optional[str] = None
+            try:
+                if intent_id > 0:
+                    await policy_mark_intent_running(
+                        intent_id=intent_id,
+                        now=datetime.now(timezone.utc).replace(tzinfo=None),
+                        execute_fn=execute,
+                    )
+                await _execute_scheduler_task(task_id, start_cycle_req, trace_id)
+                snapshot = _scheduler_tasks.get(task_id) if isinstance(_scheduler_tasks.get(task_id), dict) else {}
+                success = str(snapshot.get("status") or "").strip().lower() == "completed"
+                terminal_error_code = str(snapshot.get("error_code") or "") or None
+                terminal_error_message = str(snapshot.get("error") or "") or None
+            except Exception as exc:
+                logger.error(
+                    "Start-cycle intent runner failed: zone_id=%s intent_id=%s task_id=%s error=%s",
+                    zone_id,
+                    intent_id,
+                    task_id,
+                    exc,
+                    exc_info=True,
+                )
+                failure_result = _build_execution_terminal_result(
+                    error_code=SCHEDULER_ERR_EXECUTION_EXCEPTION,
+                    reason="Во время выполнения start-cycle intent произошло необработанное исключение",
+                    mode="execution_exception",
+                )
+                terminal_error_code = str(failure_result.get("error_code") or SCHEDULER_ERR_EXECUTION_EXCEPTION)
+                terminal_error_message = str(failure_result.get("error") or str(exc))
+                try:
+                    await _update_scheduler_task(
+                        task_id=task_id,
+                        status="failed",
+                        result=failure_result,
+                        error=terminal_error_message,
+                        error_code=terminal_error_code,
+                    )
+                except Exception:
+                    logger.error(
+                        "Failed to mark scheduler task failed after intent runner error: task_id=%s",
+                        task_id,
+                        exc_info=True,
+                    )
+            finally:
+                if intent_id > 0:
+                    try:
+                        await policy_mark_intent_terminal(
+                            intent_id=intent_id,
+                            now=datetime.now(timezone.utc).replace(tzinfo=None),
+                            success=success,
+                            error_code=terminal_error_code,
+                            error_message=terminal_error_message,
+                            execute_fn=execute,
+                        )
+                    except Exception:
+                        logger.error(
+                            "Failed to mark intent terminal: zone_id=%s intent_id=%s",
+                            zone_id,
+                            intent_id,
+                            exc_info=True,
+                        )
 
         _spawn_background_task(_run_start_cycle_intent(), task_name=f"start_cycle_intent_{intent_id or task_id}", zone_id=zone_id)
 

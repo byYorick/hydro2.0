@@ -283,6 +283,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Инварианты `POST /zones/{id}/start-cycle`:
 - endpoint не несет device-level payload (минимальный wake-up контракт);
+- endpoint принимает только `source` и `idempotency_key`;
 - фактические действия определяются pending intent-ами в БД;
 - повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение.
 
@@ -327,3 +328,21 @@ Lifecycle intents:
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
 - при повторном `idempotency_key` endpoint возвращает `accepted=true` + `deduplicated=true`
   без повторного выполнения device-команд.
+
+`zone_automation_intents.payload` (wake-up only):
+```json
+{
+  "source": "laravel_scheduler",
+  "task_type": "diagnostics",
+  "workflow": "cycle_start",
+  "topology": "two_tank_drip_substrate_trays",
+  "grow_cycle_id": 123
+}
+```
+
+Ограничения payload:
+- `task_payload` и `schedule_payload` запрещены;
+- любые device-level steps/commands запрещены;
+- при наличии legacy-ключей runtime трактует их как невалидные для контракта wake-up only.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0

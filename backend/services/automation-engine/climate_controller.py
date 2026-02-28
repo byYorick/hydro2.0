@@ -5,7 +5,7 @@ Climate Controller - управление температурой, влажно
 from typing import Optional, Dict, Any, List, Tuple
 from common.db import fetch, execute, create_zone_event
 from alerts_manager import ensure_alert
-from services.targets_accessor import get_climate_request
+from services.targets_accessor import get_climate_request, get_ventilation_pwm_params
 
 
 # Пороги для алертов
@@ -14,6 +14,7 @@ TEMP_LOW_THRESHOLD = 2.0  # °C ниже цели
 HUMIDITY_HIGH_THRESHOLD = 15  # % выше цели
 HUMIDITY_LOW_THRESHOLD = 15  # % ниже цели
 CO2_LOW_THRESHOLD = 400  # ppm - минимальный порог CO₂
+FAN_PWM_HIGH_DEFAULT = 100
 
 # Гистерезис для предотвращения "дребезга"
 TEMP_HYSTERESIS = 0.5  # °C
@@ -100,7 +101,10 @@ async def check_and_control_climate(
     co2 = telemetry.get("CO2")
     
     # Получаем целевые значения
-    target_temp, target_humidity, _ = get_climate_request(targets, zone_id=zone_id)
+    target_temp, target_humidity, target_co2 = get_climate_request(targets, zone_id=zone_id)
+    fan_pwm_high, _ = get_ventilation_pwm_params(targets, zone_id=zone_id)
+    if fan_pwm_high is None:
+        fan_pwm_high = FAN_PWM_HIGH_DEFAULT
     
     # Получаем bindings по ролям
     nodes = get_climate_bindings(zone_id, bindings)
@@ -206,70 +210,65 @@ async def check_and_control_climate(
                 }
             )
     
+    # Собираем node_uid/channel вентиляторов, для которых уже выдана команда
+    # (чтобы блок влажности не конфликтовал с блоком температуры)
+    fan_commanded: set = set()
+    for cmd in commands:
+        if nodes['fan'] and cmd.get('node_uid') == nodes['fan']['node_uid'] and cmd.get('channel') == nodes['fan']['channel']:
+            fan_commanded.add((cmd['node_uid'], cmd['channel']))
+
     # Контроль влажности
     if target_humidity is not None and humidity is not None:
         humidity_val = float(humidity)
         target_humidity_val = float(target_humidity)
-        
+
         # Проверка алертов
         await check_humidity_alerts(zone_id, humidity_val, target_humidity_val)
-        
+
         # Логика: if humidity > target.max → increase ventilation
         humidity_max = target_humidity_val + HUMIDITY_HYSTERESIS
-        
+
+        # Не перезаписываем команду вентилятора, если температурный блок уже ею управляет
+        fan_already_commanded = nodes['fan'] and (nodes['fan']['node_uid'], nodes['fan']['channel']) in fan_commanded
+
         if humidity_val > humidity_max:
-            if nodes['fan']:
-                # Увеличиваем вентиляцию
+            if nodes['fan'] and not fan_already_commanded:
                 commands.append({
                     'node_uid': nodes['fan']['node_uid'],
                     'channel': nodes['fan']['channel'],
                     'cmd': 'set_pwm',
-                    'params': {'value': 100},  # Максимальная вентиляция
+                    'params': {'value': fan_pwm_high},
                     'event_type': 'FAN_ON',
                     'event_details': {
                         'humidity': humidity_val,
                         'target_humidity': target_humidity_val,
-                        'action': 'increase_ventilation'
+                        'action': 'increase_ventilation',
+                        'pwm_value': fan_pwm_high,
                     }
                 })
-            else:
-                # Нет binding для вентилятора
+            elif not nodes['fan']:
                 await ensure_alert(zone_id, 'MISSING_BINDING', {
                     'binding_role': 'vent',
                     'required_for': 'humidity_control',
                     'current_humidity': humidity_val,
                     'target_humidity': target_humidity_val,
                 })
-        elif humidity_val <= target_humidity_val:
-            if nodes['fan']:
-                # Нормальная вентиляция (средняя)
-                commands.append({
-                    'node_uid': nodes['fan']['node_uid'],
-                    'channel': nodes['fan']['channel'],
-                    'cmd': 'set_pwm',
-                    'params': {'value': 50},  # Средняя вентиляция
-                    'event_type': 'FAN_ON',  # Вентилятор все еще работает
-                    'event_details': {
-                        'humidity': humidity_val,
-                        'target_humidity': target_humidity_val,
-                        'action': 'normal_ventilation'
-                    }
-                })
-    
-    # Контроль CO₂ (опционально)
+
+    # Контроль CO₂
     if co2 is not None:
         co2_val = float(co2)
-        if co2_val < CO2_LOW_THRESHOLD:
-            # Создаем событие при низком CO₂
+        co2_threshold = float(target_co2) if target_co2 is not None else CO2_LOW_THRESHOLD
+        if co2_val < co2_threshold:
             await create_zone_event(
                 zone_id,
                 'CO2_LOW',
                 {
                     'co2': co2_val,
-                    'threshold': CO2_LOW_THRESHOLD
+                    'threshold': co2_threshold,
+                    'target_co2': target_co2,
                 }
             )
-    
+
     return commands
 
 

@@ -17,10 +17,11 @@ async def test_zone_start_cycle_claims_intent_and_enqueues_execution(monkeypatch
     async def fake_validate_security(_request):
         captured["security_checked"] = True
 
-    async def fake_claim_start_cycle_intent(*, zone_id, req, now, fetch_fn):
+    async def fake_claim_start_cycle_intent(*, zone_id, req, now, claimed_stale_after_sec, fetch_fn):
         captured["claim_zone_id"] = zone_id
         captured["claim_req"] = req
         captured["claim_now"] = now
+        captured["claim_stale_after_sec"] = claimed_stale_after_sec
         captured["claim_fetch_fn"] = fetch_fn
         return {
             "decision": "claimed",
@@ -60,6 +61,7 @@ async def test_zone_start_cycle_claims_intent_and_enqueues_execution(monkeypatch
 
     assert captured["validated_zone_id"] == 12
     assert captured["security_checked"] is True
+    assert int(captured["claim_stale_after_sec"]) >= 30
     scheduler_req = captured["scheduler_req"]
     assert scheduler_req.zone_id == 12
     assert scheduler_req.task_type == "diagnostics"
@@ -114,6 +116,43 @@ async def test_zone_start_cycle_marks_deduplicated_when_intent_already_claimed(m
     assert response["data"]["runner_state"] == "active"
     assert response["data"]["deduplicated"] is True
     assert response["data"]["task_id"] == "intent-77"
+
+
+@pytest.mark.asyncio
+async def test_zone_start_cycle_returns_terminal_payload_when_intent_is_terminal(monkeypatch):
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "terminal",
+            "intent": {"id": 88, "status": "failed"},
+        }
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+
+    response = await api.zone_start_cycle(
+        zone_id=12,
+        request=SimpleNamespace(headers={"x-trace-id": "trace-terminal"}),
+        req=StartCycleRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z12:irrigation:2026-02-22T05:05:00Z",
+        ),
+    )
+
+    assert response["status"] == "ok"
+    assert response["data"]["zone_id"] == 12
+    assert response["data"]["accepted"] is False
+    assert response["data"]["runner_state"] == "terminal"
+    assert response["data"]["deduplicated"] is True
+    assert response["data"]["task_id"] == "intent-88"
+    assert response["data"]["task_status"] == "failed"
+    assert response["data"]["reason"] == "start_cycle_intent_terminal"
 
 
 @pytest.mark.asyncio

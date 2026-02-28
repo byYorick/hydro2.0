@@ -9,15 +9,12 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
 
 TERMINAL_INTENT_STATUSES = {"completed", "failed", "cancelled"}
+_START_CYCLE_TASK_TYPE = "diagnostics"
+_START_CYCLE_WORKFLOW = "cycle_start"
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
-
-
-def _intent_task_type(intent_payload: Dict[str, Any]) -> str:
-    raw = str(intent_payload.get("task_type") or "diagnostics").strip().lower()
-    return raw if raw else "diagnostics"
 
 
 def _intent_correlation_id(*, intent_id: int, retry_count: int, idempotency_key: str) -> str:
@@ -32,22 +29,22 @@ def _intent_runtime_payload(
     intent_payload: Dict[str, Any],
     default_topology: str,
 ) -> Dict[str, Any]:
-    payload = _as_dict(intent_payload.get("task_payload"))
-    if payload:
-        return dict(payload)
-
     execution = {
-        "topology": str(intent_payload.get("topology") or default_topology),
-        "workflow": str(intent_payload.get("workflow") or "cycle_start"),
+        "topology": str(default_topology),
+        "workflow": _START_CYCLE_WORKFLOW,
     }
-    return {
-        "workflow": execution["workflow"],
+    payload: Dict[str, Any] = {
+        "workflow": _START_CYCLE_WORKFLOW,
         "topology": execution["topology"],
         "source": str(intent_payload.get("source") or req.source),
         "config": {"execution": execution},
         "trigger": "start_cycle_api",
         "intent_zone_id": zone_id,
     }
+    grow_cycle_id = intent_payload.get("grow_cycle_id")
+    if grow_cycle_id is not None:
+        payload["grow_cycle_id"] = grow_cycle_id
+    return payload
 
 
 def build_scheduler_task_request_from_intent(
@@ -68,7 +65,7 @@ def build_scheduler_task_request_from_intent(
 
     return SchedulerTaskRequest(
         zone_id=zone_id,
-        task_type=_intent_task_type(intent_payload),
+        task_type=_START_CYCLE_TASK_TYPE,
         payload=_intent_runtime_payload(
             zone_id=zone_id,
             req=req,
@@ -91,8 +88,10 @@ async def claim_start_cycle_intent(
     zone_id: int,
     req: StartCycleRequest,
     now: datetime,
+    claimed_stale_after_sec: int = 180,
     fetch_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
+    stale_claimed_before = now - timedelta(seconds=max(1, int(claimed_stale_after_sec)))
     rows = await fetch_fn(
         """
         WITH candidate AS (
@@ -100,7 +99,10 @@ async def claim_start_cycle_intent(
             FROM zone_automation_intents
             WHERE zone_id = $1
               AND idempotency_key = $2
-              AND status IN ('pending', 'failed')
+              AND (
+                    status IN ('pending', 'failed')
+                    OR (status = 'claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4)
+              )
               AND (not_before IS NULL OR not_before <= $3)
               AND (status <> 'failed' OR retry_count < max_retries)
             ORDER BY id DESC
@@ -111,7 +113,7 @@ async def claim_start_cycle_intent(
         SET status = 'claimed',
             claimed_at = $3,
             retry_count = CASE
-                WHEN intents.status = 'failed' THEN intents.retry_count + 1
+                WHEN intents.status IN ('failed', 'claimed') THEN intents.retry_count + 1
                 ELSE intents.retry_count
             END,
             updated_at = $3
@@ -122,6 +124,7 @@ async def claim_start_cycle_intent(
         zone_id,
         req.idempotency_key,
         now,
+        stale_claimed_before,
     )
     if rows:
         return {"decision": "claimed", "intent": dict(rows[0])}

@@ -76,6 +76,11 @@ Scheduler модель:
 3. AE2-Lite claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
 4. AE2-Lite обновляет intent lifecycle (`claimed/running/completed/failed/cancelled`).
 
+Контракт intent payload (wake-up only):
+- разрешены только поля metadata: `source`, `task_type=diagnostics`, `workflow=cycle_start`, `topology`, `grow_cycle_id` (опционально);
+- `task_payload` и `schedule_payload` не используются и считаются legacy;
+- runtime path `start-cycle` не принимает и не исполняет device-level payload из intent.
+
 Legacy endpoint-ы:
 - `POST /scheduler/task` — удален.
 - `GET /scheduler/task/{task_id}` — удален.

@@ -234,11 +234,14 @@ class AutomationDispatchSchedules extends Command
                 $crossings = $this->scheduleCrossings($last, $now, $scheduleTime);
                 $plannedTriggers = $this->applyCatchupPolicy($crossings, $now, $cfg['catchup_policy'], $cfg['catchup_max_windows']);
                 $hadDispatchSuccess = false;
+                $hadRetryableFailure = false;
+                $deferredByReplayBudget = false;
 
                 foreach ($plannedTriggers as $triggerTime) {
                     $isReplay = $triggerTime->lt($now);
                     if ($isReplay) {
                         if ($replayBudget <= 0) {
+                            $deferredByReplayBudget = true;
                             break;
                         }
                         $replayBudget--;
@@ -274,9 +277,12 @@ class AutomationDispatchSchedules extends Command
                         $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
                         break;
                     }
+                    if ($dispatchResult['retryable']) {
+                        $hadRetryableFailure = true;
+                    }
                 }
 
-                if ($plannedTriggers !== [] && ! $hadDispatchSuccess) {
+                if ($plannedTriggers !== [] && ! $hadDispatchSuccess && ($hadRetryableFailure || $deferredByReplayBudget)) {
                     $zonesWithPendingTimeDispatch[$zoneId] = true;
                 }
                 if ($plannedTriggers !== []) {

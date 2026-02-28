@@ -260,13 +260,6 @@ class GrowCycleService
             'workflow' => 'cycle_start',
             'topology' => 'two_tank_drip_substrate_trays',
             'grow_cycle_id' => $cycleId,
-            'task_payload' => [
-                'workflow' => 'cycle_start',
-                'topology' => 'two_tank_drip_substrate_trays',
-                'source' => 'laravel_grow_cycle_start',
-                'trigger' => 'grow_cycle_start_api',
-                'grow_cycle_id' => $cycleId,
-            ],
         ];
 
         DB::table('zone_automation_intents')->upsert(

@@ -8,7 +8,7 @@ from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.water_flow import check_water_level
 from alerts_manager import ensure_alert
-from services.targets_accessor import get_irrigation_params
+from services.targets_accessor import get_irrigation_params, get_recirculation_params
 from common.simulation_clock import SimulationClock
 
 
@@ -257,22 +257,19 @@ async def check_and_control_recirculation(
     Returns:
         Команда для запуска рециркуляции или None
     """
-    # Получаем параметры рециркуляции из targets
-    recirculation_enabled = targets.get("recirculation_enabled", False)
-    
+    # Получаем параметры рециркуляции из targets (через accessor)
+    recirculation_enabled, recirculation_interval_min, recirculation_duration_sec = get_recirculation_params(
+        targets, zone_id=zone_id,
+    )
+
     if not recirculation_enabled:
-        # Рециркуляция отключена
         return None
-    
-    recirculation_interval_min = targets.get("recirculation_interval_min")
-    recirculation_duration_sec = targets.get("recirculation_duration_sec", 300)  # По умолчанию 5 минут
-    
+
     if recirculation_interval_min is None:
-        # Интервал не задан
         return None
-    
-    recirculation_interval_min = int(recirculation_interval_min)
-    recirculation_duration_sec = int(recirculation_duration_sec)
+
+    if recirculation_duration_sec is None:
+        recirculation_duration_sec = 300
     
     # Получаем binding для рециркуляции (role resolver + fallback)
     recirculation_binding = None

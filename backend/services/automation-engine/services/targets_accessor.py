@@ -4,6 +4,7 @@ Legacy keys trigger warnings but are ignored.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, Optional, Tuple
 import logging
@@ -18,7 +19,8 @@ TARGETS_SCHEMA_ERRORS = Counter(
     ["controller"],
 )
 
-_WARNED_SCHEMA_KEYS: set[tuple[int, str, str]] = set()
+_WARNED_SCHEMA_KEYS_MAX_SIZE = 2048
+_WARNED_SCHEMA_KEYS: "OrderedDict[tuple[int, str, str], None]" = OrderedDict()
 
 
 def _warn_schema_mismatch(controller: str, zone_id: Optional[int], detail: str) -> None:
@@ -26,7 +28,9 @@ def _warn_schema_mismatch(controller: str, zone_id: Optional[int], detail: str) 
     key = (zone_key, controller, detail)
     if key in _WARNED_SCHEMA_KEYS:
         return
-    _WARNED_SCHEMA_KEYS.add(key)
+    _WARNED_SCHEMA_KEYS[key] = None
+    if len(_WARNED_SCHEMA_KEYS) > _WARNED_SCHEMA_KEYS_MAX_SIZE:
+        _WARNED_SCHEMA_KEYS.popitem(last=False)
     TARGETS_SCHEMA_ERRORS.labels(controller=controller).inc()
     if zone_id is not None:
         logger.warning(
@@ -214,3 +218,107 @@ def get_climate_request(
     if targets.get("temp_air") is not None or targets.get("humidity_air") is not None or targets.get("co2_target") is not None:
         _warn_schema_mismatch("climate", zone_id, "climate target uses legacy format")
     return None, None, None
+
+
+def _coerce_percent(value: Any) -> Optional[int]:
+    parsed = _coerce_int(value)
+    if parsed is None:
+        return None
+    if parsed < 0 or parsed > 100:
+        return None
+    return parsed
+
+
+def get_ventilation_pwm_params(
+    targets: Dict[str, Any],
+    zone_id: Optional[int] = None,
+) -> Tuple[Optional[int], Optional[int]]:
+    """Extract humidity-driven ventilation PWM values from targets."""
+    ventilation = targets.get("ventilation")
+    if not isinstance(ventilation, dict):
+        return None, None
+
+    execution = ventilation.get("execution")
+    execution = execution if isinstance(execution, dict) else {}
+    params = execution.get("params")
+    params = params if isinstance(params, dict) else {}
+
+    def _first_percent(*candidates: Any) -> Optional[int]:
+        for candidate in candidates:
+            value = _coerce_percent(candidate)
+            if value is not None:
+                return value
+        return None
+
+    high = _first_percent(
+        params.get("humidity_high_pwm"),
+        params.get("fan_pwm_high"),
+        params.get("pwm_high"),
+        ventilation.get("humidity_high_pwm"),
+        ventilation.get("fan_pwm_high"),
+        ventilation.get("pwm_high"),
+    )
+    normal = _first_percent(
+        params.get("humidity_normal_pwm"),
+        params.get("fan_pwm_normal"),
+        params.get("pwm_normal"),
+        ventilation.get("humidity_normal_pwm"),
+        ventilation.get("fan_pwm_normal"),
+        ventilation.get("pwm_normal"),
+    )
+
+    if high is None and (
+        params.get("humidity_high_pwm") is not None
+        or params.get("fan_pwm_high") is not None
+        or params.get("pwm_high") is not None
+        or ventilation.get("humidity_high_pwm") is not None
+        or ventilation.get("fan_pwm_high") is not None
+        or ventilation.get("pwm_high") is not None
+    ):
+        _warn_schema_mismatch("climate", zone_id, "ventilation pwm_high is invalid")
+
+    if normal is None and (
+        params.get("humidity_normal_pwm") is not None
+        or params.get("fan_pwm_normal") is not None
+        or params.get("pwm_normal") is not None
+        or ventilation.get("humidity_normal_pwm") is not None
+        or ventilation.get("fan_pwm_normal") is not None
+        or ventilation.get("pwm_normal") is not None
+    ):
+        _warn_schema_mismatch("climate", zone_id, "ventilation pwm_normal is invalid")
+
+    return high, normal
+
+
+def get_recirculation_params(
+    targets: Dict[str, Any],
+    zone_id: Optional[int] = None,
+) -> Tuple[bool, Optional[int], Optional[int]]:
+    """Extract recirculation parameters from effective targets.
+
+    Recirculation settings live under ``irrigation.recirculation_*`` or
+    under a dedicated ``recirculation`` section in extensions.
+
+    Returns:
+        (enabled, interval_min, duration_sec)
+    """
+    irrigation = targets.get("irrigation")
+    if isinstance(irrigation, dict):
+        enabled = irrigation.get("recirculation_enabled")
+        if enabled is not None:
+            interval = _coerce_int(irrigation.get("recirculation_interval_min"))
+            duration = _coerce_int(irrigation.get("recirculation_duration_sec"))
+            return bool(enabled), interval, duration
+
+    extensions = targets.get("extensions")
+    if isinstance(extensions, dict):
+        recirc = extensions.get("recirculation")
+        if isinstance(recirc, dict):
+            enabled = recirc.get("enabled", False)
+            interval = _coerce_int(recirc.get("interval_min"))
+            duration = _coerce_int(recirc.get("duration_sec"))
+            return bool(enabled), interval, duration
+
+    if targets.get("recirculation_enabled") is not None:
+        _warn_schema_mismatch("recirculation", zone_id, "recirculation uses legacy top-level format")
+    return False, None, None

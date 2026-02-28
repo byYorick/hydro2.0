@@ -80,6 +80,41 @@ async def test_claim_start_cycle_intent_returns_deduplicated_for_running_intent(
 
 
 @pytest.mark.asyncio
+async def test_claim_start_cycle_intent_reclaims_stale_claimed_intent():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z12:irrigation:stale-claimed")
+    calls = {"candidate": 0}
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            calls["candidate"] += 1
+            return [
+                {
+                    "id": 901,
+                    "zone_id": 12,
+                    "status": "claimed",
+                    "retry_count": 1,
+                    "payload": {},
+                }
+            ]
+        raise AssertionError(f"unexpected query: {q}")
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=12,
+        req=req,
+        now=now,
+        claimed_stale_after_sec=60,
+        fetch_fn=fake_fetch,
+    )
+
+    assert calls["candidate"] == 1
+    assert claimed["decision"] == "claimed"
+    assert claimed["intent"]["id"] == 901
+    assert claimed["intent"]["status"] == "claimed"
+
+
+@pytest.mark.asyncio
 async def test_claim_start_cycle_intent_returns_missing_when_scheduler_intent_absent():
     now = datetime(2026, 2, 22, 12, 0, 0)
     req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:new")
@@ -184,3 +219,91 @@ def test_build_scheduler_task_request_from_intent_handles_max_idempotency_key_le
 
     assert scheduler_req.correlation_id.startswith("start-cycle-intent:42:0:")
     assert len(scheduler_req.correlation_id) <= 128
+
+
+def test_build_scheduler_task_request_from_intent_ignores_legacy_task_payload():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z3:irrigation:wakeup-only")
+    intent = {
+        "id": 900,
+        "retry_count": 0,
+        "payload": {
+            "source": "laravel_scheduler",
+            "workflow": "legacy_workflow_must_be_ignored",
+            "topology": "legacy_topology_must_be_ignored",
+            "task_payload": {
+                "workflow": "legacy_payload_workflow",
+                "topology": "legacy_payload_topology",
+                "config": {"execution": {"force_execute": True}},
+            },
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=3,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "diagnostics"
+    assert scheduler_req.payload["workflow"] == "cycle_start"
+    assert scheduler_req.payload["topology"] == "two_tank_drip_substrate_trays"
+    assert scheduler_req.payload["config"]["execution"]["workflow"] == "cycle_start"
+    assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
+
+
+def test_build_scheduler_task_request_from_intent_forces_diagnostics_task_type():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:lighting:wakeup-only")
+    intent = {
+        "id": 77,
+        "retry_count": 1,
+        "payload": {
+            "task_type": "lighting",
+            "source": "laravel_scheduler",
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=7,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "diagnostics"
+    assert scheduler_req.payload["workflow"] == "cycle_start"
+    assert scheduler_req.payload["config"]["execution"]["workflow"] == "cycle_start"
+
+
+def test_build_scheduler_task_request_from_intent_preserves_grow_cycle_id_metadata():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_grow_cycle_start", idempotency_key="gcs:z1:c55:test")
+    intent = {
+        "id": 55,
+        "retry_count": 0,
+        "payload": {
+            "source": "laravel_grow_cycle_start",
+            "grow_cycle_id": 55,
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=1,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "diagnostics"
+    assert scheduler_req.payload["grow_cycle_id"] == 55

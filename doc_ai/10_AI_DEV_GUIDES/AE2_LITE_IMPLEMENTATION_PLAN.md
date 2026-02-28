@@ -269,6 +269,11 @@ Response (accepted wake-up):
 Scheduler не отправляет device-команды в AE.  
 Scheduler пишет intent и будит зону через `start-cycle`.
 
+Wake-up only payload policy:
+- `zone_automation_intents.payload` содержит только metadata wake-up;
+- `task_payload` и `schedule_payload` запрещены;
+- task-level runtime payload для исполнения формируется внутри AE2-Lite по canonical правилам (`diagnostics` + `cycle_start`).
+
 Рекомендуемая таблица:
 - `zone_automation_intents`
   - `id`

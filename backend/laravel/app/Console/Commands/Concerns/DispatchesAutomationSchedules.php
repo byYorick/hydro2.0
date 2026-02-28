@@ -74,7 +74,6 @@ trait DispatchesAutomationSchedules
         $intentSnapshot = $this->upsertSchedulerIntent(
             zoneId: $zoneId,
             taskType: $taskType,
-            payload: $payload,
             correlationId: $correlationId,
             triggerTime: $triggerTime,
         );
@@ -145,7 +144,13 @@ trait DispatchesAutomationSchedules
         if ($taskId === '' && ($intentSnapshot['intent_id'] ?? null) !== null) {
             $taskId = 'intent-'.(string) $intentSnapshot['intent_id'];
         }
-        $taskStatus = (bool) (is_array($data) ? ($data['accepted'] ?? true) : true) ? 'accepted' : 'rejected';
+        $apiTaskStatus = is_array($data)
+            ? strtolower(trim((string) (($data['task_status'] ?? null) ?? ($data['status'] ?? ''))))
+            : '';
+        $taskStatus = $this->normalizeSubmittedTaskStatus(
+            submittedStatus: $apiTaskStatus,
+            accepted: (bool) (is_array($data) ? ($data['accepted'] ?? true) : true),
+        );
         $isDuplicate = (bool) (is_array($data) ? ($data['deduplicated'] ?? false) : false);
 
         if ($taskId === '') {
@@ -200,7 +205,7 @@ trait DispatchesAutomationSchedules
 
             return [
                 'dispatched' => $normalizedStatus === 'completed',
-                'retryable' => $normalizedStatus !== 'completed',
+                'retryable' => false,
                 'reason' => 'terminal_'.$normalizedStatus,
             ];
         }
@@ -497,6 +502,20 @@ trait DispatchesAutomationSchedules
         return $status;
     }
 
+    private function normalizeSubmittedTaskStatus(string $submittedStatus, bool $accepted): string
+    {
+        $status = strtolower(trim($submittedStatus));
+        if ($status === '') {
+            return $accepted ? 'accepted' : 'rejected';
+        }
+
+        if (in_array($status, ['pending', 'claimed', 'running', 'accepted', 'queued'], true)) {
+            return 'accepted';
+        }
+
+        return $this->normalizeTerminalStatus($status);
+    }
+
     private function isTerminalStatus(string $status): bool
     {
         return in_array($status, self::TERMINAL_STATUSES, true);
@@ -521,13 +540,11 @@ trait DispatchesAutomationSchedules
     }
 
     /**
-     * @param array<string, mixed> $payload
      * @return array{ok: bool, intent_id: int|null}
      */
     private function upsertSchedulerIntent(
         int $zoneId,
         string $taskType,
-        array $payload,
         string $correlationId,
         CarbonImmutable $triggerTime,
     ): array {
@@ -537,7 +554,6 @@ trait DispatchesAutomationSchedules
                 'task_type' => 'diagnostics',
                 'workflow' => 'cycle_start',
                 'topology' => 'two_tank_drip_substrate_trays',
-                'schedule_payload' => $payload,
             ];
             $intentType = $this->mapTaskTypeToIntentType($taskType);
             $now = $this->nowUtc();
