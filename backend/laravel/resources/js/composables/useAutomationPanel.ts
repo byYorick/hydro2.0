@@ -1,5 +1,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { AutomationState, AutomationStateType, AutomationTimelineEvent, IrrNodeState, SetupStageStatus, SetupStageView } from '@/types/Automation'
+import type {
+  AutomationControlMode,
+  AutomationManualStep,
+  AutomationState,
+  AutomationStateType,
+  AutomationTimelineEvent,
+  IrrNodeState,
+  SetupStageCode,
+  SetupStageStatus,
+  SetupStageView,
+} from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 import { readBooleanEnv } from '@/utils/env'
 import { getEchoInstance, onWsStateChange } from '@/utils/echoClient'
@@ -83,6 +93,17 @@ export interface AutomationPanelProps {
   fallbackSystemType?: IrrigationSystem
 }
 
+const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
+  'clean_fill_start',
+  'clean_fill_stop',
+  'solution_fill_start',
+  'solution_fill_stop',
+  'prepare_recirculation_start',
+  'prepare_recirculation_stop',
+  'irrigation_recovery_start',
+  'irrigation_recovery_stop',
+])
+
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
 function clampPercent(value: unknown): number {
@@ -113,6 +134,19 @@ function pickFirstDefined(source: Record<string, unknown>, keys: string[]): unkn
     }
   }
   return undefined
+}
+
+function normalizeControlMode(value: unknown): AutomationControlMode {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'semi' || normalized === 'manual') return normalized
+  return 'auto'
+}
+
+function normalizeManualSteps(value: unknown): AutomationManualStep[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item ?? '').trim().toLowerCase())
+    .filter((item): item is AutomationManualStep => AUTOMATION_MANUAL_STEPS_SET.has(item as AutomationManualStep))
 }
 
 function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
@@ -150,6 +184,54 @@ function extractReasonCodeFromEventLabel(label: string): string | null {
   const match = label.match(/\(([^()]+)\)\s*$/)
   if (!match || !match[1]) return null
   return normalizeReasonCode(match[1])
+}
+
+function setupStageCodeFromReason(reasonCode: string | null): SetupStageCode | null {
+  if (!reasonCode) return null
+
+  if (reasonCode.startsWith('clean_fill_') || reasonCode.startsWith('tank_refill_')) {
+    return 'clean_fill'
+  }
+  if (reasonCode.startsWith('solution_fill_')) {
+    return 'solution_fill'
+  }
+  if (
+    reasonCode.startsWith('prepare_')
+    || reasonCode.includes('correction')
+    || reasonCode.startsWith('irrigation_recovery_')
+  ) {
+    return 'parallel_correction'
+  }
+  if (
+    reasonCode.startsWith('setup_')
+    || reasonCode.includes('working_mode')
+    || reasonCode.includes('setup_to_working')
+  ) {
+    return 'setup_transition'
+  }
+
+  return null
+}
+
+function setupStageCodeFromEvent(eventCode: string): SetupStageCode | null {
+  const normalized = eventCode.trim().toUpperCase()
+  if (normalized === 'CLEAN_FILL_COMPLETED') return 'clean_fill'
+  if (normalized === 'SOLUTION_FILL_COMPLETED') return 'solution_fill'
+  if (normalized === 'PREPARE_TARGETS_REACHED') return 'parallel_correction'
+  return null
+}
+
+function isRunningReasonCode(reasonCode: string | null): boolean {
+  if (!reasonCode) return false
+
+  return (
+    reasonCode.endsWith('_started')
+    || reasonCode.endsWith('_in_progress')
+    || reasonCode.endsWith('_retry_started')
+    || reasonCode.endsWith('_check')
+    || reasonCode.includes('not_reached')
+    || reasonCode.includes('recovery')
+  )
 }
 
 function stagePrefixForEvent(eventCode: string, reasonCode: string | null): string | null {
@@ -194,7 +276,10 @@ function formatTimelineLabel(event: AutomationTimelineEvent): string {
 
 export function useAutomationPanel(
   props: AutomationPanelProps,
-  emit: (e: 'state-change', state: AutomationStateType) => void
+  emit: {
+    (e: 'state-change', state: AutomationStateType): void
+    (e: 'state-snapshot', snapshot: AutomationState): void
+  }
 ) {
   const { get } = useApi()
   const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
@@ -275,6 +360,16 @@ export function useAutomationPanel(
       next_state: source.next_state ?? null,
       estimated_completion_sec: source.estimated_completion_sec ?? null,
       irr_node_state: irrNodeState,
+      control_mode: normalizeControlMode(sourceAny.control_mode),
+      control_mode_available: ['auto', 'semi', 'manual'],
+      allowed_manual_steps: normalizeManualSteps(sourceAny.allowed_manual_steps),
+      state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'
+        ? {
+            source: String((sourceAny.state_meta as Record<string, unknown>).source ?? ''),
+            is_stale: Boolean((sourceAny.state_meta as Record<string, unknown>).is_stale),
+            served_at: String((sourceAny.state_meta as Record<string, unknown>).served_at ?? ''),
+          }
+        : null,
     }
   }
 
@@ -293,7 +388,6 @@ export function useAutomationPanel(
       const response = await get(`/api/zones/${props.zoneId}/state`)
       const normalized = normalizeState(response.data)
       automationState.value = normalized
-      emit('state-change', normalized.state)
       errorMessage.value = null
       connectivityWarning.value = null
     } catch (error) {
@@ -520,33 +614,92 @@ export function useAutomationPanel(
     return stateCode.value === 'READY' || stateCode.value === 'IRRIGATING' || stateCode.value === 'IRRIG_RECIRC'
   })
 
+  const activeSetupStageCode = computed<SetupStageCode | null>(() => {
+    if (hasSetupTransitionCompleted.value) return null
+
+    const timeline = automationState.value?.timeline ?? []
+    for (let index = timeline.length - 1; index >= 0; index -= 1) {
+      const event = timeline[index]
+      const eventCode = String(event?.event ?? '').trim()
+      const label = String(event?.label ?? '')
+      const reasonCode = extractReasonCodeFromEventLabel(label)
+      const stageByReason = setupStageCodeFromReason(reasonCode)
+      if (stageByReason && isRunningReasonCode(reasonCode)) {
+        return stageByReason
+      }
+      const stageByEvent = setupStageCodeFromEvent(eventCode)
+      if (stageByEvent && isRunningReasonCode(reasonCode)) {
+        return stageByEvent
+      }
+    }
+
+    if (stateCode.value === 'TANK_RECIRC') return 'parallel_correction'
+    if (stateCode.value === 'TANK_FILLING') {
+      const cleanDone = cleanTankLevel.value >= 90
+      return cleanDone ? 'solution_fill' : 'clean_fill'
+    }
+    return null
+  })
+
   const setupStages = computed<SetupStageView[]>(() => {
-    const isCleanDone = cleanTankLevel.value >= 90 || stateCode.value === 'TANK_RECIRC' || hasSetupTransitionCompleted.value
-    const isSolutionDone = nutrientTankLevel.value >= 90 || stateCode.value === 'TANK_RECIRC' || hasSetupTransitionCompleted.value
-    const isCorrectionRunning = stateCode.value === 'TANK_RECIRC' || isPhCorrectionActive.value || isEcCorrectionActive.value
-    const isCorrectionDone = hasSetupTransitionCompleted.value
+    const stageOrder: SetupStageCode[] = ['clean_fill', 'solution_fill', 'parallel_correction', 'setup_transition']
+    const doneByStage: Record<SetupStageCode, boolean> = {
+      clean_fill: cleanTankLevel.value >= 90 || stateCode.value === 'TANK_RECIRC' || hasSetupTransitionCompleted.value,
+      solution_fill: nutrientTankLevel.value >= 90 || stateCode.value === 'TANK_RECIRC' || hasSetupTransitionCompleted.value,
+      parallel_correction: hasSetupTransitionCompleted.value,
+      setup_transition: hasSetupTransitionCompleted.value,
+    }
 
-    const cleanFillStatus: SetupStageStatus = hasFailedState.value
-      ? (isCleanDone ? 'completed' : 'failed')
-      : (stateCode.value === 'TANK_FILLING' && !isCleanDone ? 'running' : (isCleanDone ? 'completed' : 'pending'))
+    const statuses: Record<SetupStageCode, SetupStageStatus> = {
+      clean_fill: 'pending',
+      solution_fill: 'pending',
+      parallel_correction: 'pending',
+      setup_transition: 'pending',
+    }
 
-    const solutionFillStatus: SetupStageStatus = hasFailedState.value
-      ? (isSolutionDone ? 'completed' : 'failed')
-      : (stateCode.value === 'TANK_FILLING' && !isSolutionDone ? 'running' : (isSolutionDone ? 'completed' : 'pending'))
+    const activeStage = activeSetupStageCode.value
+    const activeIndex = activeStage ? stageOrder.indexOf(activeStage) : -1
 
-    const correctionStatus: SetupStageStatus = hasFailedState.value
-      ? (isCorrectionDone ? 'completed' : 'failed')
-      : (isCorrectionRunning ? 'running' : (isCorrectionDone ? 'completed' : 'pending'))
+    stageOrder.forEach((stageCode, index) => {
+      if (hasFailedState.value) {
+        if (activeIndex >= 0) {
+          if (index < activeIndex || doneByStage[stageCode]) {
+            statuses[stageCode] = 'completed'
+          } else if (index === activeIndex) {
+            statuses[stageCode] = 'failed'
+          } else {
+            statuses[stageCode] = 'pending'
+          }
+          return
+        }
+        statuses[stageCode] = doneByStage[stageCode] ? 'completed' : 'failed'
+        return
+      }
 
-    const transitionStatus: SetupStageStatus = hasFailedState.value
-      ? (hasSetupTransitionCompleted.value ? 'completed' : 'failed')
-      : (hasSetupTransitionCompleted.value ? 'completed' : (stateCode.value === 'TANK_RECIRC' ? 'running' : 'pending'))
+      if (hasSetupTransitionCompleted.value) {
+        statuses[stageCode] = 'completed'
+        return
+      }
+
+      if (activeIndex >= 0) {
+        if (index < activeIndex || doneByStage[stageCode]) {
+          statuses[stageCode] = 'completed'
+        } else if (index === activeIndex) {
+          statuses[stageCode] = 'running'
+        } else {
+          statuses[stageCode] = 'pending'
+        }
+        return
+      }
+
+      statuses[stageCode] = doneByStage[stageCode] ? 'completed' : 'pending'
+    })
 
     return [
-      { code: 'clean_fill', label: 'Набор бака с чистой водой', status: cleanFillStatus },
-      { code: 'solution_fill', label: 'Набор бака с раствором', status: solutionFillStatus },
-      { code: 'parallel_correction', label: 'Параллельная коррекция pH/EC', status: correctionStatus },
-      { code: 'setup_transition', label: 'Завершение setup и переход в рабочий режим', status: transitionStatus },
+      { code: 'clean_fill', label: 'Набор бака с чистой водой', status: statuses.clean_fill },
+      { code: 'solution_fill', label: 'Набор бака с раствором', status: statuses.solution_fill },
+      { code: 'parallel_correction', label: 'Параллельная коррекция pH/EC', status: statuses.parallel_correction },
+      { code: 'setup_transition', label: 'Завершение setup и переход в рабочий режим', status: statuses.setup_transition },
     ]
   })
 
@@ -594,6 +747,11 @@ export function useAutomationPanel(
 
   watch(stateCode, (value) => {
     emit('state-change', value)
+  })
+
+  watch(automationState, (value) => {
+    if (!value) return
+    emit('state-snapshot', value)
   })
 
   watch(() => props.zoneId, (newZoneId, oldZoneId) => {

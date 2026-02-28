@@ -20,6 +20,30 @@ def _normalize_phase(raw_phase: Any) -> str:
     return value if value in WORKFLOW_PHASE_VALUES else "idle"
 
 
+def _normalize_payload(raw_payload: Any) -> Dict[str, Any]:
+    if isinstance(raw_payload, dict):
+        return dict(raw_payload)
+
+    if isinstance(raw_payload, (bytes, bytearray)):
+        try:
+            raw_payload = raw_payload.decode("utf-8")
+        except Exception:
+            return {}
+
+    if isinstance(raw_payload, str):
+        source = raw_payload.strip()
+        if source == "":
+            return {}
+        try:
+            decoded = json.loads(source)
+        except Exception:
+            return {}
+        if isinstance(decoded, dict):
+            return decoded
+
+    return {}
+
+
 class WorkflowStateStore:
     """DB-backed storage for workflow phase recovery."""
 
@@ -36,9 +60,7 @@ class WorkflowStateStore:
         if not rows:
             return None
         row = rows[0]
-        payload = row.get("payload")
-        if not isinstance(payload, dict):
-            payload = {}
+        payload = _normalize_payload(row.get("payload"))
         return {
             "zone_id": int(row["zone_id"]),
             "workflow_phase_raw": row.get("workflow_phase"),
@@ -71,7 +93,7 @@ class WorkflowStateStore:
                 continue
 
             payload = row.get("payload")
-            normalized_payload = payload if isinstance(payload, dict) else {}
+            normalized_payload = _normalize_payload(payload)
             result.append(
                 {
                     "zone_id": zone_id,

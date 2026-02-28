@@ -6,6 +6,18 @@ export type AutomationStateType =
   | 'IRRIGATING'
   | 'IRRIG_RECIRC'
 
+export type AutomationControlMode = 'auto' | 'semi' | 'manual'
+
+export type AutomationManualStep =
+  | 'clean_fill_start'
+  | 'clean_fill_stop'
+  | 'solution_fill_start'
+  | 'solution_fill_stop'
+  | 'prepare_recirculation_start'
+  | 'prepare_recirculation_stop'
+  | 'irrigation_recovery_start'
+  | 'irrigation_recovery_stop'
+
 export interface AutomationTimelineEvent {
   event: string
   timestamp: string
@@ -60,6 +72,14 @@ export interface AutomationState {
   next_state: AutomationStateType | null
   estimated_completion_sec: number | null
   irr_node_state?: IrrNodeState | null
+  control_mode?: AutomationControlMode
+  control_mode_available?: AutomationControlMode[]
+  allowed_manual_steps?: AutomationManualStep[]
+  state_meta?: {
+    source?: string
+    is_stale?: boolean
+    served_at?: string
+  } | null
 }
 
 export interface HoveredElement {

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -38,6 +39,8 @@ class ZoneAutomationManualStepControllerTest extends TestCase
 
     public function test_manual_step_proxies_payload_from_automation_engine(): void
     {
+        config()->set('services.automation_engine.scheduler_api_token', 'test-scheduler-token');
+
         $user = User::factory()->create(['role' => 'operator']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
@@ -65,6 +68,12 @@ class ZoneAutomationManualStepControllerTest extends TestCase
             ->assertJsonPath('data.zone_id', $zone->id)
             ->assertJsonPath('data.task_id', 'st-manual-step-1')
             ->assertJsonPath('data.manual_step', 'clean_fill_start');
+
+        Http::assertSent(function (HttpRequest $request) use ($zone): bool {
+            return $request->url() === "http://automation-engine:9405/zones/{$zone->id}/manual-step"
+                && $request->hasHeader('Authorization', 'Bearer test-scheduler-token')
+                && $request->hasHeader('X-Trace-Id');
+        });
     }
 
     public function test_manual_step_validates_step_name(): void

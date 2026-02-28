@@ -115,6 +115,7 @@
             :fallback-tanks-count="waterForm.tanksCount"
             :fallback-system-type="waterForm.systemType"
             @state-change="handleProcessStateChange"
+            @state-snapshot="handleProcessStateSnapshot"
           />
         </div>
       </section>
@@ -254,6 +255,12 @@
             </div>
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
               <code>auto</code> — только по расписанию, <code>semi</code>/<code>manual</code> — доступны ручные шаги.
+            </p>
+            <p
+              v-if="automationStateMetaLabel"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
+            >
+              {{ automationStateMetaLabel }}
             </p>
           </div>
           <div class="w-full lg:w-auto">
@@ -593,7 +600,7 @@ import type {
   LightingFormState,
   WaterFormState,
 } from '@/composables/zoneAutomationTypes'
-import type { AutomationStateType } from '@/types/Automation'
+import type { AutomationState, AutomationStateType } from '@/types/Automation'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
@@ -658,6 +665,7 @@ const {
   schedulerTasksUpdatedAt,
   fetchRecentSchedulerTasks,
   setAutomationControlMode,
+  syncControlModeFromAutomationState,
   lookupSchedulerTask,
   runManualStep,
   schedulerTaskStatusVariant,
@@ -680,13 +688,26 @@ const zoneId = toRef(props, 'zoneId')
 const showEditWizard = ref(false)
 const processExpanded = ref(true)
 const processState = ref<AutomationStateType>('IDLE')
+const lastAutomationSnapshot = ref<AutomationState | null>(null)
 const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
 const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
 const isProcessActive = computed(() => processState.value !== 'IDLE' && processState.value !== 'READY')
+const automationStateMetaLabel = computed(() => {
+  const snapshot = lastAutomationSnapshot.value
+  if (!snapshot?.state_meta) return null
+  const source = snapshot.state_meta.source === 'cache' ? 'кэш' : 'live'
+  const stale = snapshot.state_meta.is_stale ? ' (stale)' : ''
+  return `Состояние: ${snapshot.state_label || snapshot.state} · источник ${source}${stale}`
+})
 
 function handleProcessStateChange(state: AutomationStateType): void {
   processState.value = state
+}
+
+function handleProcessStateSnapshot(snapshot: AutomationState): void {
+  lastAutomationSnapshot.value = snapshot
+  syncControlModeFromAutomationState(snapshot)
 }
 
 async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Promise<void> {

@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ZoneAutomationManualStepController extends Controller
 {
@@ -97,6 +98,7 @@ class ZoneAutomationManualStepController extends Controller
         /** @var Response $response */
         $response = Http::acceptJson()
             ->timeout($timeout)
+            ->withHeaders($this->automationEngineHeaders())
             ->post("{$apiUrl}/zones/{$zoneId}/manual-step", $payload);
 
         $response->throw();
@@ -139,5 +141,23 @@ class ZoneAutomationManualStepController extends Controller
             'code' => 'UPSTREAM_ERROR',
             'message' => 'Ошибка upstream сервиса automation-engine.',
         ], $status);
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function automationEngineHeaders(): array
+    {
+        $headers = [
+            'X-Trace-Id' => Str::lower((string) Str::uuid()),
+            'X-Scheduler-Id' => (string) config('services.automation_engine.scheduler_id', 'laravel-api'),
+        ];
+
+        $token = trim((string) config('services.automation_engine.scheduler_api_token', ''));
+        if ($token !== '') {
+            $headers['Authorization'] = 'Bearer '.$token;
+        }
+
+        return $headers;
     }
 }

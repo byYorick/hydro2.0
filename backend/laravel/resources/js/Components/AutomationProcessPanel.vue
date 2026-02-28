@@ -37,7 +37,7 @@
 import AutomationStatusHeader from '@/Components/AutomationStatusHeader.vue'
 import AutomationProcessDiagram from '@/Components/AutomationProcessDiagram.vue'
 import AutomationTimeline from '@/Components/AutomationTimeline.vue'
-import type { AutomationStateType } from '@/types/Automation'
+import type { AutomationState, AutomationStateType } from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 import { useAutomationPanel } from '@/composables/useAutomationPanel'
 
@@ -54,6 +54,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'state-change', state: AutomationStateType): void
+  (e: 'state-snapshot', snapshot: AutomationState): void
 }>()
 
 const {

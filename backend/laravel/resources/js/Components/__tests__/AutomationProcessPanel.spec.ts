@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+const apiGetMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Components/StatusIndicator.vue', () => ({
   default: {
@@ -24,16 +25,19 @@ vi.mock('@/utils/logger', () => ({
     warn: vi.fn(),
   },
 }))
+vi.mock('@/composables/useApi', () => ({
+  useApi: () => ({
+    get: apiGetMock,
+  }),
+}))
 
 import AutomationProcessPanel from '../AutomationProcessPanel.vue'
 
 describe('AutomationProcessPanel', () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
+    apiGetMock.mockReset()
+    apiGetMock.mockResolvedValue({
+      data: {
           zone_id: 5,
           state: 'TANK_RECIRC',
           state_label: 'Рециркуляция бака',
@@ -76,13 +80,12 @@ describe('AutomationProcessPanel', () => {
           ],
           next_state: 'READY',
           estimated_completion_sec: 90,
-        }),
-      })
-    )
+      },
+    })
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('показывает setup-этапы и человеко-понятный timeline', async () => {
@@ -102,5 +105,64 @@ describe('AutomationProcessPanel', () => {
     expect(wrapper.text()).toContain('Параллельная коррекция: Финиш исполнения scheduler-task')
     expect(wrapper.text()).toContain('Целевые pH/EC достигнуты')
   })
-})
 
+  it('не показывает одновременно running для clean_fill и solution_fill', async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: {
+          zone_id: 5,
+          state: 'TANK_FILLING',
+          state_label: 'Набор бака с раствором',
+          state_details: {
+            started_at: '2026-02-14T18:00:00Z',
+            elapsed_sec: 80,
+            progress_percent: 42,
+          },
+          system_config: {
+            tanks_count: 2,
+            system_type: 'drip',
+            clean_tank_capacity_l: 300,
+            nutrient_tank_capacity_l: 280,
+          },
+          current_levels: {
+            clean_tank_level_percent: 95,
+            nutrient_tank_level_percent: 30,
+            ph: 5.8,
+            ec: 1.5,
+          },
+          active_processes: {
+            pump_in: true,
+            circulation_pump: false,
+            ph_correction: true,
+            ec_correction: true,
+          },
+          timeline: [
+            {
+              event: 'TASK_STARTED',
+              label: 'Automation-engine: выполнение начато (clean_fill_started)',
+              timestamp: '2026-02-14T18:00:10Z',
+              active: false,
+            },
+            {
+              event: 'TASK_STARTED',
+              label: 'Automation-engine: выполнение начато (solution_fill_in_progress)',
+              timestamp: '2026-02-14T18:01:20Z',
+              active: true,
+            },
+          ],
+          next_state: 'TANK_RECIRC',
+          estimated_completion_sec: 120,
+      },
+    })
+
+    const wrapper = mount(AutomationProcessPanel, {
+      props: {
+        zoneId: 5,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Сейчас: Набор бака с раствором')
+    expect((wrapper.text().match(/Выполняется/g) ?? []).length).toBe(1)
+  })
+})

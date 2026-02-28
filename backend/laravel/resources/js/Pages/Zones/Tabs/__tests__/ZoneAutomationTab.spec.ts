@@ -17,9 +17,6 @@ vi.mock('@inertiajs/vue3', () => ({
 vi.mock('@/Components/AIPredictionsSection.vue', () => ({
   default: { name: 'AIPredictionsSection', template: '<div />' },
 }))
-vi.mock('@/Components/AutomationEngine.vue', () => ({
-  default: { name: 'AutomationEngine', template: '<div />' },
-}))
 vi.mock('@/Components/Badge.vue', () => ({
   default: {
     name: 'Badge',

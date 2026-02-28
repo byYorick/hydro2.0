@@ -3,6 +3,7 @@ import { logger } from '@/utils/logger'
 import type { ToastHandler } from '@/composables/useApi'
 import type { AutomationLogicMode } from '@/composables/zoneAutomationUtils'
 import { useWebSocket } from '@/composables/useWebSocket'
+import type { AutomationControlMode, AutomationManualStep, AutomationState } from '@/types/Automation'
 import type {
   ZoneAutomationTabProps,
   SchedulerTaskStatus,
@@ -29,16 +30,16 @@ import {
   type SchedulerTaskResponse,
 } from '@/composables/zoneSchedulerFormatters'
 
-export type AutomationControlMode = 'auto' | 'semi' | 'manual'
-export type AutomationManualStep =
-  | 'clean_fill_start'
-  | 'clean_fill_stop'
-  | 'solution_fill_start'
-  | 'solution_fill_stop'
-  | 'prepare_recirculation_start'
-  | 'prepare_recirculation_stop'
-  | 'irrigation_recovery_start'
-  | 'irrigation_recovery_stop'
+const MANUAL_STEPS_SET = new Set<AutomationManualStep>([
+  'clean_fill_start',
+  'clean_fill_stop',
+  'solution_fill_start',
+  'solution_fill_stop',
+  'prepare_recirculation_start',
+  'prepare_recirculation_stop',
+  'irrigation_recovery_start',
+  'irrigation_recovery_stop',
+])
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
@@ -128,19 +129,17 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
 
   function normalizeManualSteps(value: unknown): AutomationManualStep[] {
     if (!Array.isArray(value)) return []
-    const allowed = new Set<AutomationManualStep>([
-      'clean_fill_start',
-      'clean_fill_stop',
-      'solution_fill_start',
-      'solution_fill_stop',
-      'prepare_recirculation_start',
-      'prepare_recirculation_stop',
-      'irrigation_recovery_start',
-      'irrigation_recovery_stop',
-    ])
     return value
       .map((item) => String(item ?? '').trim().toLowerCase())
-      .filter((item): item is AutomationManualStep => allowed.has(item as AutomationManualStep))
+      .filter((item): item is AutomationManualStep => MANUAL_STEPS_SET.has(item as AutomationManualStep))
+  }
+
+  function syncControlModeFromAutomationState(snapshot: AutomationState | null): void {
+    if (!snapshot || automationControlModeSaving.value) {
+      return
+    }
+    automationControlMode.value = normalizeControlMode(snapshot.control_mode)
+    allowedManualSteps.value = normalizeManualSteps(snapshot.allowed_manual_steps)
   }
 
   function extractApiErrorMessage(error: unknown, fallback: string): string {
@@ -552,6 +551,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     fetchAutomationControlMode,
     lookupSchedulerTask,
     setAutomationControlMode,
+    syncControlModeFromAutomationState,
     runManualStep,
     clearSchedulerTasksPollTimer,
     hasActiveSchedulerTask,
