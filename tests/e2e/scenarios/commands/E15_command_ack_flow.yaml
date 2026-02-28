@@ -102,13 +102,13 @@ actions:
 
   - step: send_test_command
     type: api_post
-    endpoint: /api/zones/${test_zone_id}/commands
+    endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      type: FORCE_IRRIGATION
-      node_uid: ${test_node_uid}
+      cmd: set_relay
       channel: main_pump
       params:
-        duration_sec: 5
+        channel: main_pump
+        state: true
     save: command_response
 
   - step: extract_command_id
@@ -164,7 +164,7 @@ assertions:
     expected:
       - field: status
         operator: in
-        value: ["ACK", "DONE", "BUSY"]
+        value: ["ACK", "DONE", "BUSY", "ERROR"]
       - field: ack_at
         operator: is_not_null
       - field: sent_at

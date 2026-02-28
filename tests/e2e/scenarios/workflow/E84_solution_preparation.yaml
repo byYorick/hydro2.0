@@ -19,7 +19,7 @@ actions:
 
   - step: set_test_node_uid
     type: set
-    test_node_uid: ${TEST_NODE_UID}
+    test_node_uid: ${TEST_WORKFLOW_NODE_UID}
 
   - step: guard_test_node_uid_not_ph
     type: database_execute

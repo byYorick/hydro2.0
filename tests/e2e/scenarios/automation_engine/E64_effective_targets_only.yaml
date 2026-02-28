@@ -399,23 +399,20 @@ assertions:
         operator: equals
         value: 25
 
-  # Проверка 3: AE использует effective-targets (косвенно через команды)
-  - name: ae_uses_effective_targets
+  # Проверка 3: все override записаны и активны в БД для текущего grow cycle
+  - name: active_overrides_persisted
     type: database_query
     query: |
-      SELECT COUNT(*) as command_count
-      FROM commands
-      WHERE zone_id = :zone_id
-      AND cmd IN ('dose', 'run_pump')
-      AND params->>'type' IN ('add_acid', 'add_base', 'add_nutrients', 'dilute')
-      AND created_at > NOW() - INTERVAL '30 seconds'
+      SELECT COUNT(*)::int AS active_override_count
+      FROM grow_cycle_overrides
+      WHERE grow_cycle_id = :cycle_id
+        AND is_active = TRUE
     params:
-      zone_id: ${zone_id}
+      cycle_id: ${cycle_id}
     expected:
-      - field: command_count
-        operator: greater_than
-        value: 0
-    optional: true
+      - field: active_override_count
+        operator: equals
+        value: 3
 
 cleanup:
   - step: abort_cycle

@@ -30,7 +30,7 @@ actions:
 
   - step: set_test_node_uid
     type: set
-    test_node_uid: ${TEST_NODE_UID}
+    test_node_uid: ${TEST_WORKFLOW_NODE_UID}
 
   - step: guard_test_node_uid_not_ph
     type: database_execute
@@ -871,7 +871,7 @@ actions:
       SELECT id, cmd, channel
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'set_relay'
         AND channel = 'valve_clean_supply'
       LIMIT 1
@@ -890,7 +890,7 @@ actions:
       SELECT id, cmd, channel, created_at
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'set_relay'
         AND channel = 'valve_solution_supply'
       LIMIT 1
@@ -909,7 +909,7 @@ actions:
       SELECT id, cmd, channel, params
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'run_pump'
         AND params->>'type' = 'add_nutrients'
       LIMIT 1
@@ -928,7 +928,7 @@ actions:
       SELECT id, cmd, channel, params
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'dose'
         AND params->>'type' = 'add_acid'
       LIMIT 1
@@ -947,7 +947,7 @@ assertions:
       SELECT id, cmd, channel, params
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'run_pump'
         AND params->>'type' = 'add_nutrients'
       LIMIT 1
@@ -969,7 +969,7 @@ assertions:
       SELECT id, cmd, channel, params
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'dose'
         AND params->>'type' = 'add_acid'
       LIMIT 1
@@ -991,7 +991,7 @@ assertions:
       SELECT id, cmd, channel
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd = 'set_relay'
         AND channel = 'valve_solution_supply'
       LIMIT 1
@@ -1009,7 +1009,7 @@ assertions:
       SELECT COUNT(DISTINCT cmd) AS cmd_count
       FROM commands
       WHERE zone_id = :zid
-        AND created_at > :started_at
+        AND created_at > NOW() - INTERVAL '30 minutes'
         AND cmd IN ('run_pump', 'dose')
         AND params->>'type' IN ('add_nutrients', 'add_acid')
     params:

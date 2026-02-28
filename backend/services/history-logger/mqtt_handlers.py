@@ -1203,6 +1203,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             node_id = node.get("id")
 
         CONFIG_REPORT_RECEIVED.inc()
+        data = _normalize_config_report_channels_for_storage(data)
 
         await execute(
             """
@@ -1239,6 +1240,8 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             node,
             node_uid,
             is_temp_topic=is_temp_topic,
+            topic_gh_uid=gh_uid,
+            topic_zone_uid=zone_uid,
         )
 
         CONFIG_REPORT_PROCESSED.inc()
@@ -1253,8 +1256,47 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         clear_trace_id()
 
 
+def _normalize_config_report_channels_for_storage(config: Dict[str, Any]) -> Dict[str, Any]:
+    channels = config.get("channels")
+    if not isinstance(channels, list):
+        return config
+
+    normalized_channels: list[Any] = []
+    mutated = False
+    relay_required_types = {"RELAY", "VALVE", "FAN", "HEATER"}
+
+    for channel in channels:
+        if not isinstance(channel, dict):
+            normalized_channels.append(channel)
+            continue
+
+        normalized_channel = dict(channel)
+        channel_type = str(normalized_channel.get("type") or "").strip().upper()
+        actuator_type = str(normalized_channel.get("actuator_type") or "").strip().upper()
+
+        if channel_type == "ACTUATOR" and actuator_type in relay_required_types:
+            relay_type = str(normalized_channel.get("relay_type") or "").strip().upper()
+            if relay_type not in {"NC", "NO"}:
+                normalized_channel["relay_type"] = "NO"
+                mutated = True
+
+        normalized_channels.append(normalized_channel)
+
+    if not mutated:
+        return config
+
+    normalized_config = dict(config)
+    normalized_config["channels"] = normalized_channels
+    return normalized_config
+
+
 async def _complete_binding_after_config_report(
-    node: Dict[str, Any], node_uid: str, *, is_temp_topic: bool = False
+    node: Dict[str, Any],
+    node_uid: str,
+    *,
+    is_temp_topic: bool = False,
+    topic_gh_uid: Optional[str] = None,
+    topic_zone_uid: Optional[str] = None,
 ) -> None:
     node_id = node.get("id")
     if not node_id:
@@ -1290,7 +1332,15 @@ async def _complete_binding_after_config_report(
         if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
             return
 
-        zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
+        zone_check = await fetch(
+            """
+            SELECT z.id, z.uid AS zone_uid, g.uid AS greenhouse_uid
+            FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE z.id = $1
+            """,
+            target_zone_id,
+        )
         if not zone_check:
             logger.warning(
                 "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
@@ -1298,6 +1348,30 @@ async def _complete_binding_after_config_report(
                 node_uid,
             )
             return
+        target_zone_uid = str(zone_check[0].get("zone_uid") or "").strip()
+        target_gh_uid = str(zone_check[0].get("greenhouse_uid") or "").strip()
+
+        # Fail-closed: подтверждаем binding только config_report-ом из целевого namespace.
+        # Это защищает от ложной финализации при периодическом config_report из старой зоны.
+        if pending_zone_id and not zone_id:
+            report_zone_uid = str(topic_zone_uid or "").strip()
+            report_gh_uid = str(topic_gh_uid or "").strip()
+            if (
+                not report_zone_uid
+                or not report_gh_uid
+                or report_zone_uid != target_zone_uid
+                or report_gh_uid != target_gh_uid
+            ):
+                logger.info(
+                    "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): namespace mismatch report=%s/%s target=%s/%s",
+                    node_uid,
+                    node_id,
+                    report_gh_uid or "-",
+                    report_zone_uid or "-",
+                    target_gh_uid or "-",
+                    target_zone_uid or "-",
+                )
+                return
 
         s = get_settings()
         laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None

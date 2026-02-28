@@ -17,6 +17,7 @@ async def execute_scheduler_task(
     command_bus_loop_id: Optional[int],
     zone_service: Any,
     zone_service_loop_id: Optional[int],
+    validate_zone_exists_fn: Callable[[int], Awaitable[bool]],
     is_loop_affinity_mismatch_fn: Callable[[Optional[int]], bool],
     update_scheduler_task_fn: Callable[..., Awaitable[None]],
     update_command_effect_confirm_rate_fn: Callable[[str, Dict[str, Any]], None],
@@ -29,6 +30,7 @@ async def execute_scheduler_task(
     err_command_bus_unavailable: str,
     err_command_bus_loop_mismatch: str,
     err_zone_service_loop_mismatch: str,
+    err_zone_not_found: str,
     err_execution_exception: str,
 ) -> None:
     if trace_id:
@@ -54,6 +56,36 @@ async def execute_scheduler_task(
             error_code=err_command_bus_loop_mismatch,
             reason="CommandBus создан в другом event loop, выполнение задачи отклонено",
             mode="dispatch_unavailable",
+        )
+        await update_scheduler_task_fn(
+            task_id=task_id,
+            status="failed",
+            result=failure_result,
+            error=str(failure_result["error"]),
+            error_code=str(failure_result["error_code"]),
+        )
+        return
+
+    zone_exists = True
+    try:
+        zone_exists = bool(await validate_zone_exists_fn(int(req.zone_id)))
+    except Exception as exc:
+        logger.warning(
+            "Scheduler task zone existence check failed, continue execution: task_id=%s zone_id=%s error=%s",
+            task_id,
+            req.zone_id,
+            exc,
+            exc_info=True,
+        )
+
+    if not zone_exists:
+        failure_result = build_execution_terminal_result_fn(
+            error_code=err_zone_not_found,
+            reason="Зона удалена или отсутствует, выполнение scheduler-task пропущено",
+            mode="execution_skipped",
+            action_required=False,
+            decision="skip",
+            reason_code=err_zone_not_found,
         )
         await update_scheduler_task_fn(
             task_id=task_id,

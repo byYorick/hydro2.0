@@ -11,6 +11,16 @@ SendInfraAlertFn = Callable[..., Awaitable[Any]]
 LogWarningFn = Callable[..., Any]
 
 
+def _is_zone_fk_missing_violation(exc: Exception) -> bool:
+    sqlstate = str(getattr(exc, "sqlstate", "") or "").strip()
+    if sqlstate != "23503":
+        return False
+    text = str(exc).lower()
+    return "zone_events_zone_id_foreign" in text or (
+        "zone_events" in text and "zone_id" in text and "foreign key" in text
+    )
+
+
 async def persist_zone_event_safe(
     *,
     zone_id: int,
@@ -28,6 +38,15 @@ async def persist_zone_event_safe(
     except Exception as exc:
         task_id = str(context.get("task_id") or "") or None
         correlation_id = str(context.get("correlation_id") or "") or None
+        if _is_zone_fk_missing_violation(exc):
+            log_warning(
+                "Skip scheduler task zone event persist for deleted zone: zone_id=%s task_type=%s task_id=%s event_type=%s",
+                zone_id,
+                task_type,
+                task_id,
+                event_type,
+            )
+            return False
         log_warning(
             "Failed to persist scheduler task zone event: zone_id=%s task_type=%s task_id=%s event_type=%s error=%s",
             zone_id,

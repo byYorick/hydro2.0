@@ -67,6 +67,7 @@ from services.resilience_contract import (
     SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE,
     SCHEDULER_ERR_EXECUTION_EXCEPTION,
     SCHEDULER_ERR_TASK_EXECUTION_FAILED,
+    SCHEDULER_ERR_ZONE_NOT_FOUND,
     SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH,
 )
 from utils.logging_context import get_trace_id, set_trace_id
@@ -200,6 +201,19 @@ async def _validate_scheduler_zone(zone_id: int) -> None:
     await policy_validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
 
 
+async def _scheduler_zone_exists(zone_id: int) -> bool:
+    rows = await fetch(
+        """
+        SELECT 1
+        FROM zones
+        WHERE id = $1
+        LIMIT 1
+        """,
+        zone_id,
+    )
+    return bool(rows)
+
+
 async def _validate_scheduler_security_baseline(request: Request) -> None:
     policy_validate_scheduler_security_baseline(headers=request.headers, enforce=_AE_SCHEDULER_SECURITY_BASELINE_ENFORCE, scheduler_api_token=_AE_SCHEDULER_API_TOKEN, require_trace_id=_AE_SCHEDULER_REQUIRE_TRACE_ID, extract_trace_id_from_headers_fn=extract_trace_id_from_headers)
 
@@ -261,7 +275,7 @@ def _build_scheduler_task_executor(*, command_bus: CommandBus, zone_service: Opt
 
 
 async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace_id: Optional[str]) -> None:
-    await policy_execute_scheduler_task(task_id, req, trace_id, command_bus=_command_bus, command_bus_loop_id=_command_bus_loop_id, zone_service=_zone_service, zone_service_loop_id=_zone_service_loop_id, is_loop_affinity_mismatch_fn=_is_loop_affinity_mismatch, update_scheduler_task_fn=_update_scheduler_task, update_command_effect_confirm_rate_fn=_update_command_effect_confirm_rate, normalize_failed_execution_result_fn=_normalize_failed_execution_result, build_execution_terminal_result_fn=_build_execution_terminal_result, send_infra_exception_alert_fn=send_infra_exception_alert, scheduler_task_executor_factory=_build_scheduler_task_executor, set_trace_id_fn=set_trace_id, logger=logger, err_command_bus_unavailable=SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE, err_command_bus_loop_mismatch=SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH, err_zone_service_loop_mismatch=SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH, err_execution_exception=SCHEDULER_ERR_EXECUTION_EXCEPTION)
+    await policy_execute_scheduler_task(task_id, req, trace_id, command_bus=_command_bus, command_bus_loop_id=_command_bus_loop_id, zone_service=_zone_service, zone_service_loop_id=_zone_service_loop_id, validate_zone_exists_fn=_scheduler_zone_exists, is_loop_affinity_mismatch_fn=_is_loop_affinity_mismatch, update_scheduler_task_fn=_update_scheduler_task, update_command_effect_confirm_rate_fn=_update_command_effect_confirm_rate, normalize_failed_execution_result_fn=_normalize_failed_execution_result, build_execution_terminal_result_fn=_build_execution_terminal_result, send_infra_exception_alert_fn=send_infra_exception_alert, scheduler_task_executor_factory=_build_scheduler_task_executor, set_trace_id_fn=set_trace_id, logger=logger, err_command_bus_unavailable=SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE, err_command_bus_loop_mismatch=SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH, err_zone_service_loop_mismatch=SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH, err_zone_not_found=SCHEDULER_ERR_ZONE_NOT_FOUND, err_execution_exception=SCHEDULER_ERR_EXECUTION_EXCEPTION)
 
 
 async def _load_latest_zone_task(zone_id: int) -> Optional[Dict[str, Any]]:

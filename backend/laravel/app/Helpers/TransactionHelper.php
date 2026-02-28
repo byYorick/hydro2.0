@@ -4,7 +4,6 @@ namespace App\Helpers;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Database\QueryException;
 
 /**
  * Helper для работы с транзакциями и retry логикой при serialization failures.
@@ -19,13 +18,15 @@ class TransactionHelper
      * @param callable $callback Функция для выполнения в транзакции
      * @param int $maxRetries Максимальное количество попыток (по умолчанию 5)
      * @param int $baseDelayMs Базовая задержка между попытками в миллисекундах (по умолчанию 50ms)
+     * @param bool $useSerializable Принудительно устанавливать SERIALIZABLE isolation level
      * @return mixed Результат выполнения callback
      * @throws \Exception Если все попытки исчерпаны или произошла другая ошибка
      */
     public static function withSerializableRetry(
         callable $callback,
         int $maxRetries = 5,
-        int $baseDelayMs = 50
+        int $baseDelayMs = 50,
+        bool $useSerializable = true
     ) {
         $attempt = 0;
         $lastException = null;
@@ -38,13 +39,15 @@ class TransactionHelper
                     });
                 }
 
-                return DB::transaction(function () use ($callback) {
-                    // Устанавливаем SERIALIZABLE isolation level для критичных операций
-                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                return DB::transaction(function () use ($callback, $useSerializable) {
+                    if ($useSerializable) {
+                        // Устанавливаем SERIALIZABLE isolation level для критичных операций
+                        DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                    }
 
                     return $callback();
                 });
-            } catch (QueryException $e) {
+            } catch (\Throwable $e) {
                 $lastException = $e;
                 
                 // Проверяем, является ли это serialization failure
@@ -72,9 +75,6 @@ class TransactionHelper
                 
                 // Если это не serialization failure или попытки исчерпаны, пробрасываем исключение
                 throw $e;
-            } catch (\Exception $e) {
-                // Для других исключений не делаем retry
-                throw $e;
             }
         }
         
@@ -90,10 +90,10 @@ class TransactionHelper
     /**
      * Проверить, является ли исключение serialization failure.
      * 
-     * @param QueryException $e
+     * @param \Throwable $e
      * @return bool
      */
-    private static function isSerializationFailure(QueryException $e): bool
+    private static function isSerializationFailure(\Throwable $e): bool
     {
         // PostgreSQL error code для serialization failure
         $serializationErrorCodes = ['40001', '40P01', 40001];
@@ -109,7 +109,7 @@ class TransactionHelper
         }
         
         // Проверяем SQLSTATE из деталей ошибки (если доступно)
-        $errorInfo = $e->errorInfo ?? null;
+        $errorInfo = property_exists($e, 'errorInfo') ? ($e->errorInfo ?? null) : null;
         if ($errorInfo && isset($errorInfo[0])) {
             $sqlState = $errorInfo[0];
             if (in_array($sqlState, ['40001', '40P01'], true)) {

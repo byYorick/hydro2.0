@@ -124,6 +124,36 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 ./tools/testing/run_e2e.sh clean
 ```
 
+## Запуск на реальной ноде
+
+Для прогона на реальной ESP32-ноде используйте:
+
+```bash
+# Показать, какие сценарии будут запущены
+tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
+
+# Полный прогон всех YAML сценариев из tests/e2e/scenarios
+tests/e2e/run_automation_engine_real_hardware.sh --set=full
+
+# Только workflow сценарии E83-E89
+tests/e2e/run_automation_engine_real_hardware.sh --set=workflow
+
+# Только automation_engine сценарии
+tests/e2e/run_automation_engine_real_hardware.sh --set=automation
+```
+
+Опциональные фильтры:
+
+```bash
+# Включать только сценарии по regex
+E2E_SCENARIO_INCLUDE_REGEX='scenarios/(workflow|automation_engine)/' \
+  tests/e2e/run_automation_engine_real_hardware.sh --set=full
+
+# Исключать сценарии по regex
+E2E_SCENARIO_EXCLUDE_REGEX='scenarios/chaos/' \
+  tests/e2e/run_automation_engine_real_hardware.sh --set=full
+```
+
 ## Отчеты
 
 После выполнения тестов генерируются отчеты:

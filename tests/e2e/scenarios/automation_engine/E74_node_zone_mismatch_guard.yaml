@@ -13,8 +13,8 @@ description: |
 actions:
   - step: set_test_context
     type: set
-    test_zone_uid: zn-test-1
-    test_node_uid: nd-ph-esp32una
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: ${TEST_PH_NODE_UID}
     mismatch_zone_uid: zn-e74-mismatch-${TIMESTAMP_S}
     mismatch_marker: e74-node-zone-${TIMESTAMP_S}
 

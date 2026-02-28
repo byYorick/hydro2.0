@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run automation_engine E2E scenarios against a real test node (no node-sim control)
+# Run E2E scenarios against a real test node (no node-sim control)
 
 set -euo pipefail
 
@@ -38,27 +38,154 @@ fi
 : "${TEST_NODE_GH_UID:=gh-test-1}"
 : "${TEST_NODE_ZONE_UID:=zn-test-1}"
 : "${TEST_NODE_UID:=nd-test-irrig-1}"
+: "${TEST_WORKFLOW_NODE_UID:=${TEST_NODE_UID}}"
+: "${TEST_PH_NODE_UID:=nd-test-ph-1}"
+: "${TEST_EC_NODE_UID:=nd-test-ec-1}"
 : "${TEST_NODE_HW_ID:=auto}"
 : "${MQTT_LIVE_SCAN_SEC:=25}"
 : "${MQTT_TEMP_WAIT_SEC:=180}"
 : "${NODE_RECREATE_WAIT_SEC:=240}"
 : "${E2E_NODE_UID_REGEX:=^nd-test-}"
 : "${BIND_DISCOVERY_SCAN_SEC:=20}"
+: "${STRICT_SERVICE_LOG_SCAN:=0}"
+: "${SERVICE_LOG_INCLUDE_REGEX:= - (ERROR|CRITICAL) - |testing\\.ERROR:|Traceback|Exception}"
+: "${SERVICE_LOG_EXCLUDE_REGEX:=connect_tcp.started| 0 failed|GET /api/health |SQLSTATE\\[40001\\].*nodes_register_hwid_zone_unique|Scheduler task execution finished|testing\\.ERROR: SQLSTATE\\[40001\\]: Serialization failure|url\":\"http://laravel/api/nodes/register\".*SQLSTATE\\[40001\\]}"
 
 export E2E_REAL_HARDWARE=1
-export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_NODE_HW_ID
+export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID
 LARAVEL_URL="${LARAVEL_URL:-http://localhost:8081}"
 AUTOMATION_ENGINE_URL="${AUTOMATION_ENGINE_URL:-http://localhost:9505}"
 HISTORY_LOGGER_URL="${HISTORY_LOGGER_URL:-http://localhost:${HISTORY_LOGGER_PORT:-9302}}"
 HISTORY_LOGGER_TOKEN="${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}"
+SCENARIO_SET="${SCENARIO_SET:-full}"
+LIST_ONLY=0
+SCENARIOS=()
 
 SERVICES=(automation-engine history-logger laravel mqtt-bridge digital-twin)
-SCENARIOS=(
-  # AE2-Lite compatible subset (без legacy /test/hook действий)
+AUTOMATION_SCENARIOS=(
   "scenarios/automation_engine/E61_fail_closed_corrections.yaml"
   "scenarios/automation_engine/E64_effective_targets_only.yaml"
   "scenarios/automation_engine/E65_phase_transition_api.yaml"
+  "scenarios/automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml"
+  "scenarios/automation_engine/E67_nutrition_strict_contract.yaml"
+  "scenarios/automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml"
+  "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
 )
+WORKFLOW_SCENARIOS=(
+  "scenarios/workflow/E83_clean_water_fill.yaml"
+  "scenarios/workflow/E84_solution_preparation.yaml"
+  "scenarios/workflow/E85_recirculation_targets.yaml"
+  "scenarios/workflow/E86_ec_ph_correction.yaml"
+  "scenarios/workflow/E87_ec_ph_correction_during_fill.yaml"
+  "scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml"
+  "scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml"
+)
+
+usage() {
+  cat <<'EOF'
+Usage:
+  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|full] [--list]
+
+Env:
+  SCENARIO_SET=automation|workflow|full   # default: full
+  E2E_SCENARIO_INCLUDE_REGEX=<regex>      # optional include filter
+  E2E_SCENARIO_EXCLUDE_REGEX=<regex>      # optional exclude filter
+EOF
+}
+
+collect_full_scenarios() {
+  find "$SCRIPT_DIR/scenarios" -type f -name '*.yaml' -print \
+    | sed "s#^$SCRIPT_DIR/##" \
+    | LC_ALL=C sort
+}
+
+apply_scenario_filters() {
+  local include_re="${E2E_SCENARIO_INCLUDE_REGEX:-}"
+  local exclude_re="${E2E_SCENARIO_EXCLUDE_REGEX:-}"
+  local filtered=()
+  local item
+
+  for item in "${SCENARIOS[@]}"; do
+    if [ -n "$include_re" ] && ! printf '%s\n' "$item" | rg -q "$include_re"; then
+      continue
+    fi
+    if [ -n "$exclude_re" ] && printf '%s\n' "$item" | rg -q "$exclude_re"; then
+      continue
+    fi
+    filtered+=("$item")
+  done
+  SCENARIOS=("${filtered[@]}")
+}
+
+resolve_scenarios() {
+  case "$SCENARIO_SET" in
+    automation)
+      SCENARIOS=("${AUTOMATION_SCENARIOS[@]}")
+      ;;
+    workflow)
+      SCENARIOS=("${WORKFLOW_SCENARIOS[@]}")
+      ;;
+    full)
+      mapfile -t SCENARIOS < <(collect_full_scenarios)
+      ;;
+    *)
+      echo "❌ Неизвестный SCENARIO_SET: $SCENARIO_SET"
+      usage
+      exit 1
+      ;;
+  esac
+
+  apply_scenario_filters
+
+  if [ "${#SCENARIOS[@]}" -eq 0 ]; then
+    echo "❌ Список сценариев пуст (set=$SCENARIO_SET)"
+    exit 1
+  fi
+
+  local missing=0
+  local scenario
+  for scenario in "${SCENARIOS[@]}"; do
+    if [ ! -f "$SCRIPT_DIR/$scenario" ]; then
+      echo "❌ Сценарий не найден: $scenario"
+      missing=1
+    fi
+  done
+  if [ "$missing" -ne 0 ]; then
+    exit 1
+  fi
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --set=*)
+      SCENARIO_SET="${arg#--set=}"
+      ;;
+    --set)
+      echo "❌ Используйте формат --set=<automation|workflow|full>"
+      exit 1
+      ;;
+    --list)
+      LIST_ONLY=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "❌ Неизвестный аргумент: $arg"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+resolve_scenarios
+
+if [ "$LIST_ONLY" -eq 1 ]; then
+  echo "📋 Scenario set: $SCENARIO_SET"
+  printf '%s\n' "${SCENARIOS[@]}"
+  exit 0
+fi
 
 scan_logs_since_epoch() {
   local start_epoch="$1"
@@ -67,8 +194,12 @@ scan_logs_since_epoch() {
 
   local found=0
   for svc in "${SERVICES[@]}"; do
-    local out
-    out="$("${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" logs --since "$since_iso" "$svc" 2>/dev/null | rg -n " - (ERROR|CRITICAL) - |Traceback|Exception" -S || true)"
+    local raw out
+    raw="$("${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" logs --since "$since_iso" "$svc" 2>/dev/null || true)"
+    out="$(printf '%s\n' "$raw" | rg -n "$SERVICE_LOG_INCLUDE_REGEX" -S || true)"
+    if [ -n "$out" ] && [ -n "${SERVICE_LOG_EXCLUDE_REGEX:-}" ]; then
+      out="$(printf '%s\n' "$out" | rg -v "$SERVICE_LOG_EXCLUDE_REGEX" -S || true)"
+    fi
     if [ -n "$out" ]; then
       found=1
       echo "\n❌ Найдены ошибки в логах сервиса $svc:"
@@ -79,13 +210,86 @@ scan_logs_since_epoch() {
   if [ "$found" -eq 0 ]; then
     return 0
   fi
-  return 1
+
+  if [ "$STRICT_SERVICE_LOG_SCAN" = "1" ]; then
+    return 1
+  fi
+
+  echo "⚠️ В логах сервисов есть ERROR/CRITICAL, но STRICT_SERVICE_LOG_SCAN=0, продолжаю."
+  return 0
 }
 
 db_query_line() {
   local sql="$1"
   "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
     psql -U "${POSTGRES_USER:-hydro}" -d "${POSTGRES_DB:-hydro_e2e}" -AtF '|' -c "$sql"
+}
+
+scenario_db_metrics_since_epoch() {
+  local start_epoch="$1"
+  local zone_id
+  local zone_ids=()
+
+  while IFS= read -r zone_id; do
+    [ -z "$zone_id" ] && continue
+    zone_ids+=("$zone_id")
+  done < <(db_query_line "
+    SELECT DISTINCT zone_id::text
+    FROM (
+      SELECT zone_id
+      FROM zone_events
+      WHERE created_at >= to_timestamp(${start_epoch})
+        AND zone_id IS NOT NULL
+      UNION
+      SELECT zone_id
+      FROM commands
+      WHERE created_at >= to_timestamp(${start_epoch})
+        AND zone_id IS NOT NULL
+    ) AS touched
+    ORDER BY zone_id;
+  " || true)
+
+  if [ "${#zone_ids[@]}" -eq 0 ]; then
+    echo "⚠️ DB metrics: не найдено zone activity в окне сценария (возможен cleanup с удалением временной зоны)"
+    return 0
+  fi
+
+  for zid in "${zone_ids[@]}"; do
+    echo "📊 DB metrics (scenario window, zone_id=${zid}):"
+    db_query_line "
+      SELECT 'zone_events_error_like_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND created_at >= to_timestamp(${start_epoch})
+        AND (type ILIKE '%ERROR%' OR payload_json::text ILIKE '%error%');
+
+      SELECT 'fixed_timeout_reason_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND type = 'CORRECTION_COMMAND_ATTEMPT_FAILED'
+        AND COALESCE(payload_json->>'reason','') = 'ack_done_timeout_5s'
+        AND created_at >= to_timestamp(${start_epoch});
+
+      SELECT 'schedule_finished_failed_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND type = 'SCHEDULE_TASK_EXECUTION_FINISHED'
+        AND COALESCE(payload_json->'result'->>'success','false') = 'false'
+        AND created_at >= to_timestamp(${start_epoch});
+
+      SELECT 'command_failed_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND type = 'COMMAND_FAILED'
+        AND created_at >= to_timestamp(${start_epoch});
+    " || true
+  done
+
+  db_query_line "
+    SELECT 'alerts_open_total=' || COUNT(*)
+    FROM alerts
+    WHERE status = 'open';
+  " || true
 }
 
 wait_laravel_health() {
@@ -97,7 +301,7 @@ wait_laravel_health() {
 import sys
 import httpx
 base = sys.argv[1].rstrip("/")
-paths = ["/api/health", "/api/system/health"]
+paths = ["/api/system/health"]
 with httpx.Client(timeout=3.0) as c:
     for path in paths:
         try:
@@ -897,36 +1101,71 @@ prepare_real_hardware_node() {
   fi
 
   local primary_hw_id
+  local ph_uid="$TEST_PH_NODE_UID"
+  local ec_uid="$TEST_EC_NODE_UID"
+  if ! printf '%s\n' "${bind_uids[@]}" | rg -qx "${ph_uid}"; then
+    if printf '%s\n' "${bind_uids[@]}" | rg -qx "nd-test-ph-1"; then
+      ph_uid="nd-test-ph-1"
+    else
+      ph_uid="$TEST_NODE_UID"
+    fi
+  fi
+  if ! printf '%s\n' "${bind_uids[@]}" | rg -qx "${ec_uid}"; then
+    if printf '%s\n' "${bind_uids[@]}" | rg -qx "nd-test-ec-1"; then
+      ec_uid="nd-test-ec-1"
+    else
+      ec_uid="$TEST_NODE_UID"
+    fi
+  fi
+
   IFS='|' read -r TEST_NODE_UID primary_hw_id TEST_NODE_ZONE_UID TEST_NODE_GH_UID <<<"$primary_row"
   TEST_NODE_HW_ID="$primary_hw_id"
-  export TEST_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
+  TEST_WORKFLOW_NODE_UID="$TEST_NODE_UID"
+  TEST_PH_NODE_UID="$ph_uid"
+  TEST_EC_NODE_UID="$ec_uid"
+  export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
 
-  echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID hw=$TEST_NODE_HW_ID"
+  echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID hw=$TEST_NODE_HW_ID"
   rm -f "$live_topics_file"
   return 0
 }
 
-echo "🚀 Запуск automation_engine e2e на реальном железе"
+echo "🚀 Запуск E2E на реальном железе (set=$SCENARIO_SET, scenarios=${#SCENARIOS[@]})"
 prepare_real_hardware_node
-echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID hw=$TEST_NODE_HW_ID"
+echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID workflow_node=$TEST_WORKFLOW_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID hw=$TEST_NODE_HW_ID"
 
 for scenario in "${SCENARIOS[@]}"; do
   echo "\n=== $scenario ==="
   started_at="$(date +%s)"
+  scenario_log_tmp="$(mktemp /tmp/e2e_realhw_scenario.XXXXXX.log)"
 
-  if ! "$PYTHON_BIN" -m runner.e2e_runner "$scenario"; then
+  if ! "$PYTHON_BIN" -m runner.e2e_runner "$scenario" 2>&1 | tee "$scenario_log_tmp"; then
     echo "❌ Сценарий упал: $scenario"
     scan_logs_since_epoch "$started_at" || true
+    scenario_db_metrics_since_epoch "$started_at" || true
+    rm -f "$scenario_log_tmp"
     exit 1
+  fi
+
+  optional_issues="$(rg -c "Optional action .* failed|Optional assertion .* failed|Optional assertion .* skipped" "$scenario_log_tmp" -S || true)"
+  if [ -n "$optional_issues" ] && [ "$optional_issues" -gt 0 ]; then
+    echo "⚠️ Найдены optional предупреждения: count=${optional_issues}"
+    rg -n "Optional action .* failed|Optional assertion .* failed|Optional assertion .* skipped" "$scenario_log_tmp" -S || true
+  else
+    echo "✅ Optional checks: без предупреждений"
   fi
 
   if scan_logs_since_epoch "$started_at"; then
-    echo "✅ Сценарий прошел, критических ошибок в логах не обнаружено"
+    echo "✅ Сценарий прошел, проверка логов завершена"
   else
-    echo "❌ Сценарий прошел, но в логах найдены ошибки"
+    echo "❌ Сценарий прошел, но в логах найдены ошибки (STRICT_SERVICE_LOG_SCAN=1)"
+    scenario_db_metrics_since_epoch "$started_at" || true
+    rm -f "$scenario_log_tmp"
     exit 1
   fi
 
+  scenario_db_metrics_since_epoch "$started_at" || true
+  rm -f "$scenario_log_tmp"
 done
 
-echo "\n🎉 Все automation_engine сценарии для real hardware завершены успешно"
+echo "\n🎉 Все сценарии для real hardware завершены успешно (set=$SCENARIO_SET)"

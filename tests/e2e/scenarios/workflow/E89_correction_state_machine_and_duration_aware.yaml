@@ -39,39 +39,31 @@ actions:
     type: set
     zone_id: ${zone_ctx.0.zone_id}
 
-  - step: wait_for_state_machine_act
-    type: db.wait
+  - step: get_state_machine_act_count
+    type: database_query
     query: |
-      SELECT id, type, payload_json
+      SELECT COUNT(*)::int AS act_count
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'CORRECTION_STATE_TRANSITION'
         AND COALESCE(payload_json->>'to_state', '') = 'act'
-        AND created_at >= :started_at
-      ORDER BY created_at DESC
-      LIMIT 1
+        AND created_at > NOW() - INTERVAL '60 minutes'
     params:
       zid: ${zone_id}
-      started_at: ${scenario_started_at}
-    timeout: 60.0
-    optional: true
+    save: state_machine_act_row
 
-  - step: wait_for_state_machine_cooldown
-    type: db.wait
+  - step: get_state_machine_cooldown_count
+    type: database_query
     query: |
-      SELECT id, type, payload_json
+      SELECT COUNT(*)::int AS cooldown_count
       FROM zone_events
       WHERE zone_id = :zid
         AND type = 'CORRECTION_STATE_TRANSITION'
         AND COALESCE(payload_json->>'to_state', '') = 'cooldown'
-        AND created_at >= :started_at
-      ORDER BY created_at DESC
-      LIMIT 1
+        AND created_at > NOW() - INTERVAL '60 minutes'
     params:
       zid: ${zone_id}
-      started_at: ${scenario_started_at}
-    timeout: 90.0
-    optional: true
+    save: state_machine_cooldown_row
 
   - step: assert_no_legacy_fixed_timeout_reason
     type: database_query
@@ -88,6 +80,14 @@ actions:
     save: timeout_reason_row
 
 assertions:
+  - name: assert_state_machine_act_present
+    type: custom_assert
+    condition: "int(context.get('state_machine_act_row', [{}])[0].get('act_count', 0)) > 0"
+
+  - name: assert_state_machine_cooldown_present
+    type: custom_assert
+    condition: "int(context.get('state_machine_cooldown_row', [{}])[0].get('cooldown_count', 0)) > 0"
+
   - name: assert_no_fixed_timeout_reason
     type: custom_assert
     condition: "int(context.get('timeout_reason_row', [{}])[0].get('bad_count', 1)) == 0"

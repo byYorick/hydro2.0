@@ -87,7 +87,7 @@ class NodeConfigService
 
         if (isset($config['channels']) && is_array($config['channels'])) {
             $config['channels'] = array_map(function ($entry) {
-                return is_array($entry) ? $this->stripForbiddenChannelFields($entry) : $entry;
+                return is_array($entry) ? $this->normalizeChannelForFirmware($entry) : $entry;
             }, $config['channels']);
         }
 
@@ -112,8 +112,25 @@ class NodeConfigService
             $extra = is_array($channel->config) ? $channel->config : [];
             $merged = array_merge($extra, array_filter($base, static fn ($value) => $value !== null));
 
-            return $this->stripForbiddenChannelFields($merged);
+            return $this->normalizeChannelForFirmware($merged);
         })->values()->all();
+    }
+
+    private function normalizeChannelForFirmware(array $config): array
+    {
+        $config = $this->stripForbiddenChannelFields($config);
+
+        $type = strtoupper((string) ($config['type'] ?? ''));
+        $actuatorType = strtoupper((string) ($config['actuator_type'] ?? ''));
+
+        if ($type === 'ACTUATOR' && in_array($actuatorType, ['RELAY', 'VALVE', 'FAN', 'HEATER'], true)) {
+            $relayType = strtoupper((string) ($config['relay_type'] ?? ''));
+            if (!in_array($relayType, ['NC', 'NO'], true)) {
+                $config['relay_type'] = 'NO';
+            }
+        }
+
+        return $config;
     }
 
     private function stripForbiddenChannelFields(array $config): array

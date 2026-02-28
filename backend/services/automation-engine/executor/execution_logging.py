@@ -49,9 +49,11 @@ def log_execution_finished(
     decision: DecisionOutcome,
     execute_started_at: datetime,
 ) -> None:
+    # Failed execution is expected for a subset of safety/guardrail paths.
+    # Keep it visible, but do not escalate as hard ERROR by default.
     log_structured_fn(
         logger_obj,
-        logging.INFO if result.get("success") else logging.ERROR,
+        logging.INFO if result.get("success") else logging.WARNING,
         "Scheduler task execution finished",
         component="scheduler_task_executor",
         zone_id=zone_id,
