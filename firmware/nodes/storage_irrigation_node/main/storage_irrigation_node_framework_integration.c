@@ -42,6 +42,7 @@ static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *us
 #define STORAGE_IRRIGATION_NODE_DONE_QUEUE_MAX 8
 #define STORAGE_IRRIGATION_NODE_CMD_ID_LEN 64
 #define STORAGE_IRRIGATION_NODE_IRR_STATE_MAX_AGE_SEC 30
+#define STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_US ((int64_t)STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_MS * 1000LL)
 
 typedef struct {
     const storage_irrigation_node_actuator_channel_t *cfg;
@@ -69,6 +70,13 @@ typedef struct {
     bool current_valid;
 } storage_irrigation_node_done_event_t;
 
+typedef struct {
+    bool initialized;
+    bool stable_state;
+    bool candidate_state;
+    int64_t candidate_since_us;
+} storage_irrigation_node_level_switch_debounce_t;
+
 static storage_irrigation_node_cmd_t s_cmd_queue[STORAGE_IRRIGATION_NODE_CMD_QUEUE_MAX] = {0};
 static size_t s_cmd_queue_head = 0;
 static size_t s_cmd_queue_tail = 0;
@@ -80,7 +88,9 @@ static TimerHandle_t s_cmd_retry_timer = NULL;
 static storage_irrigation_node_done_entry_t s_done_entries[STORAGE_IRRIGATION_NODE_DONE_QUEUE_MAX] = {0};
 static QueueHandle_t s_done_queue = NULL;
 static SemaphoreHandle_t s_actuator_mutex = NULL;
+static SemaphoreHandle_t s_level_switch_mutex = NULL;
 static storage_irrigation_node_actuator_runtime_t s_actuator_runtime[PUMP_DRIVER_MAX_CHANNELS] = {0};
+static storage_irrigation_node_level_switch_debounce_t s_level_switch_debounce[GPIO_NUM_MAX] = {0};
 static size_t s_actuator_runtime_count = 0;
 
 static void storage_irrigation_node_cmd_queue_task(void *pvParameters);
@@ -629,14 +639,21 @@ static esp_err_t handle_storage_state(const char *channel, const cJSON *params, 
 
 static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
     uint64_t mask = 0;
+    bool used_gpio[GPIO_NUM_MAX] = {0};
 
     for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
         int gpio = STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i].gpio;
-        if (gpio < 0 || gpio >= GPIO_NUM_MAX) {
+        if (gpio < 0 || gpio >= GPIO_NUM_MAX || !GPIO_IS_VALID_GPIO(gpio)) {
             ESP_LOGE(TAG, "Invalid level-switch GPIO for channel %s: %d",
                      STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i].name, gpio);
             return ESP_ERR_INVALID_ARG;
         }
+        if (used_gpio[gpio]) {
+            ESP_LOGE(TAG, "Duplicate level-switch GPIO for channel %s: %d",
+                     STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i].name, gpio);
+            return ESP_ERR_INVALID_ARG;
+        }
+        used_gpio[gpio] = true;
         mask |= (1ULL << (uint32_t)gpio);
     }
 
@@ -658,6 +675,31 @@ static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
         return err;
     }
 
+    if (!s_level_switch_mutex) {
+        s_level_switch_mutex = xSemaphoreCreateMutex();
+        if (!s_level_switch_mutex) {
+            ESP_LOGE(TAG, "Failed to create level-switch mutex");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (xSemaphoreTake(s_level_switch_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        int64_t now_us = esp_timer_get_time();
+        for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
+            const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+            int raw = gpio_get_level((gpio_num_t)sensor->gpio);
+            bool active = sensor->active_low ? (raw == 0) : (raw != 0);
+            storage_irrigation_node_level_switch_debounce_t *state = &s_level_switch_debounce[sensor->gpio];
+            state->initialized = true;
+            state->stable_state = active;
+            state->candidate_state = active;
+            state->candidate_since_us = now_us;
+        }
+        xSemaphoreGive(s_level_switch_mutex);
+    } else {
+        ESP_LOGW(TAG, "Level-switch debounce init skipped due to mutex timeout");
+    }
+
     s_level_switch_inputs_ready = true;
     return ESP_OK;
 }
@@ -668,18 +710,47 @@ static float storage_irrigation_node_read_level_switch(
 ) {
     int raw = 0;
     bool active = false;
+    bool filtered = false;
+    int64_t now_us = 0;
 
     if (!sensor) {
         return 0.0f;
     }
 
     raw = gpio_get_level((gpio_num_t)sensor->gpio);
-    if (raw_out) {
-        *raw_out = raw;
+    active = sensor->active_low ? (raw == 0) : (raw != 0);
+    filtered = active;
+
+    if (s_level_switch_mutex &&
+        xSemaphoreTake(s_level_switch_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        storage_irrigation_node_level_switch_debounce_t *state = &s_level_switch_debounce[sensor->gpio];
+        now_us = esp_timer_get_time();
+
+        if (!state->initialized) {
+            state->initialized = true;
+            state->stable_state = active;
+            state->candidate_state = active;
+            state->candidate_since_us = now_us;
+        } else if (active != state->stable_state) {
+            if (active != state->candidate_state) {
+                state->candidate_state = active;
+                state->candidate_since_us = now_us;
+            } else if ((now_us - state->candidate_since_us) >= STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_US) {
+                state->stable_state = state->candidate_state;
+            }
+        } else {
+            state->candidate_state = active;
+            state->candidate_since_us = now_us;
+        }
+
+        filtered = state->stable_state;
+        xSemaphoreGive(s_level_switch_mutex);
     }
 
-    active = sensor->active_low ? (raw == 0) : (raw != 0);
-    return active ? 1.0f : 0.0f;
+    if (raw_out) {
+        *raw_out = filtered ? 1 : 0;
+    }
+    return filtered ? 1.0f : 0.0f;
 }
 
 /**

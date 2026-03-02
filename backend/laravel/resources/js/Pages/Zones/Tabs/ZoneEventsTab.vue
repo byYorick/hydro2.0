@@ -62,7 +62,7 @@
               </Badge>
               <div class="flex-1 min-w-0">
                 <div class="text-xs text-[color:var(--text-dim)]">
-                  {{ new Date(item.occurred_at).toLocaleString('ru-RU') }}
+                  {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
                 </div>
                 <div class="text-sm">
                   {{ item.message }}
@@ -88,7 +88,7 @@
             </Badge>
             <div class="flex-1 min-w-0">
               <div class="text-xs text-[color:var(--text-dim)]">
-                {{ new Date(item.occurred_at).toLocaleString('ru-RU') }}
+                {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
               </div>
               <div class="text-sm">
                 {{ item.message }}
@@ -106,7 +106,7 @@ import { computed, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import VirtualList from '@/Components/VirtualList.vue'
-import { translateEventKind } from '@/utils/i18n'
+import { translateEventKind, classifyEventKind } from '@/utils/i18n'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
 interface Props {
@@ -132,9 +132,11 @@ const queryLower = computed(() => query.value.toLowerCase())
 const filteredEvents = computed(() => {
   const list = Array.isArray(props.events) ? props.events : []
   return list.filter((event) => {
-    const matchesKind = selectedKind.value === 'ALL' ? true : event.kind === selectedKind.value
+    // kind в БД — это raw тип (ALERT_CREATED, CYCLE_STARTED и т.д.)
+    // Классифицируем его в категорию фильтра через classifyEventKind
+    const matchesKind = selectedKind.value === 'ALL' ? true : classifyEventKind(event.kind) === selectedKind.value
     const matchesQuery = queryLower.value
-      ? event.message?.toLowerCase().includes(queryLower.value)
+      ? (event.message?.toLowerCase().includes(queryLower.value) || event.kind?.toLowerCase().includes(queryLower.value))
       : true
     return matchesKind && matchesQuery
   })
@@ -143,9 +145,10 @@ const filteredEvents = computed(() => {
 const useVirtual = computed(() => filteredEvents.value.length > 200)
 
 function getEventVariant(kind: string): 'danger' | 'warning' | 'info' | 'neutral' {
-  if (kind === 'ALERT') return 'danger'
-  if (kind === 'WARNING') return 'warning'
-  if (kind === 'INFO') return 'info'
+  const category = classifyEventKind(kind)
+  if (category === 'ALERT') return 'danger'
+  if (category === 'WARNING') return 'warning'
+  if (category === 'INFO') return 'info'
   return 'neutral'
 }
 

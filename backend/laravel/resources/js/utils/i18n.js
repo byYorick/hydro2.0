@@ -26,20 +26,57 @@ export function translateStatus(status) {
 }
 
 /**
+ * Классифицирует тип события в одну из категорий фильтра.
+ * Реальные типы из БД (ALERT_CREATED, CYCLE_STARTED и т.д.) группируются
+ * по смыслу, чтобы фильтры на фронтенде работали корректно.
+ * @param {string} kind - Тип события из БД
+ * @returns {'ALERT'|'WARNING'|'INFO'|'ACTION'}
+ */
+export function classifyEventKind(kind) {
+  if (!kind) return 'INFO'
+  if (kind === 'ALERT' || kind.startsWith('ALERT_') || kind === 'WATER_LEVEL_LOW') return 'ALERT'
+  if (kind === 'WARNING' || kind.startsWith('WARNING_')) return 'WARNING'
+  if (
+    kind === 'ACTION' ||
+    kind === 'ZONE_COMMAND' ||
+    kind.startsWith('SCHEDULE_') ||
+    kind.startsWith('SELF_TASK_')
+  ) return 'ACTION'
+  return 'INFO'
+}
+
+/**
  * Переводит тип события на русский язык
- * @param {string} kind - Тип события (ALERT, WARNING, INFO, ACTION, SENSOR)
+ * @param {string} kind - Тип события (ALERT_CREATED, CYCLE_STARTED и т.д.)
  * @returns {string} Переведенный тип события
  */
 export function translateEventKind(kind) {
   const translations = {
     'ALERT': 'Тревога',
+    'ALERT_CREATED': 'Тревога создана',
+    'ALERT_UPDATED': 'Тревога обновлена',
+    'ALERT_RESOLVED': 'Тревога закрыта',
     'WARNING': 'Предупреждение',
+    'WATER_LEVEL_LOW': 'Низкий уровень воды',
     'INFO': 'Информация',
     'ACTION': 'Действие',
     'SENSOR': 'Датчик',
+    'CYCLE_CREATED': 'Цикл создан',
     'CYCLE_STARTED': 'Цикл запущен',
+    'CYCLE_PAUSED': 'Цикл приостановлен',
+    'CYCLE_RESUMED': 'Цикл возобновлён',
+    'CYCLE_HARVESTED': 'Урожай собран',
+    'CYCLE_ABORTED': 'Цикл прерван',
     'CYCLE_ADJUSTED': 'Цикл скорректирован',
-    'CYCLE_CONFIG': 'Цикл (конфигурация)',
+    'CYCLE_PHASE_ADVANCED': 'Переход фазы',
+    'CYCLE_PHASE_SET': 'Фаза установлена',
+    'CYCLE_RECIPE_REVISION_CHANGED': 'Смена ревизии',
+    'CYCLE_CONFIG': 'Конфигурация цикла',
+    'PHASE_TRANSITION': 'Смена фазы',
+    'RECIPE_PHASE_CHANGED': 'Смена фазы',
+    'ZONE_COMMAND': 'Команда зоны',
+    'SCHEDULE_TASK_FAILED': 'Ошибка задачи',
+    'SELF_TASK_DISPATCH_RETRY_SCHEDULED': 'Повтор задачи',
   }
   return translations[kind] || kind
 }
