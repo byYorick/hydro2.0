@@ -300,7 +300,7 @@ Legacy endpoint `POST /zones/{id}/automation/manual-resume` удален и не
 - из `command_response`:
   - при `cmd=state`;
   - fail-safe: также при `channel=storage_state` (даже если в записи команды `cmd` не восстановлен).
-- из `storage_state/event`, если payload содержит объект `snapshot`.
+- из `storage_state/event`, если payload содержит объект `snapshot` (или `state` как fallback).
 
 Для snapshot допускается частичный набор bool-полей (не только строго полный): critical guard в AE
 сравнивает только поля, обязательные для текущего этапа, а отсутствующие трактуются как mismatch, а не unavailable.

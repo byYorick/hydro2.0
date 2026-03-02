@@ -463,6 +463,13 @@ Payload:
 {
   "event_code": "clean_fill_completed",
   "ts": 1710012930,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": true,
+    "solution_level_min": false,
+    "solution_level_max": false,
+    "pump_main": false
+  },
   "state": {
     "level_clean_min": 1,
     "level_clean_max": 1,
@@ -518,6 +525,7 @@ Payload:
 Backend обязан:
 - принимать оба канала подтверждения (response + event);
 - сохранять событие в `zone_events`;
+- для `storage_state/event` извлекать `IRR_STATE_SNAPSHOT` из `snapshot` (основное поле) или `state` (fallback);
 - использовать poll как fallback-контроль при потере event.
 
 ---

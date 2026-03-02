@@ -949,6 +949,13 @@ Payload:
 {
   "event_code": "clean_fill_completed",
   "ts": 1710003399,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": true,
+    "solution_level_min": false,
+    "solution_level_max": false,
+    "pump_main": false
+  },
   "state": {
     "level_clean_min": 1,
     "level_clean_max": 1,
@@ -973,6 +980,7 @@ Payload:
 Назначение:
 - automation-engine использует это событие как fast-path подтверждение;
 - scheduler/automation сохраняют периодический poll как резервный канал контроля.
+- history-logger извлекает snapshot состояния из `snapshot` (предпочтительно) или `state` (legacy fallback).
 
 ---
 # 9. Дополнительные системные топики

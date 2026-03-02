@@ -43,7 +43,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `valve_clean_supply` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO27`)
 - `valve_solution_fill` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO32`)
 - `valve_solution_supply` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO33`)
-- `valve_irrigation` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO4`)
+- `valve_irrigation` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO23`)
 - `level_clean_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO16`)
 - `level_clean_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO17`)
 - `level_solution_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO18`)

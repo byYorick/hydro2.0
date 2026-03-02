@@ -61,7 +61,7 @@
       "name": "valve_irrigation",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
-      "gpio": 4,
+      "gpio": 23,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000

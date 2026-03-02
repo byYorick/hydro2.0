@@ -14,10 +14,6 @@ async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
     payload = json.dumps(
         {
             "event_code": "clean_fill_completed",
-            "state": {
-                "level_clean_min": 1,
-                "level_clean_max": 1,
-            },
         }
     ).encode("utf-8")
 
@@ -34,6 +30,51 @@ async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
         assert call_args[1] == "CLEAN_FILL_COMPLETED"
         assert call_args[2]["channel"] == "storage_state"
         assert call_args[2]["node_uid"] == "nd-irrig-1"
+        mock_event_received.labels.assert_called_once_with(event_code="CLEAN_FILL_COMPLETED")
+        mock_event_unknown.inc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_node_event_storage_state_state_fallback_persists_irr_snapshot_event():
+    """storage_state/event со state (без snapshot) должен писать IRR_STATE_SNAPSHOT."""
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-7/nd-irrig-1/storage_state/event"
+    payload = json.dumps(
+        {
+            "event_code": "clean_fill_completed",
+            "cmd_id": "cmd-state-event-legacy",
+            "ts": 1737979200014,
+            "state": {
+                "level_clean_min": 1,
+                "level_clean_max": 1,
+                "level_solution_min": 0,
+                "level_solution_max": 0,
+                "pump_main": 0,
+            },
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
+         patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        assert mock_create_zone_event.await_count == 2
+
+        first_args = mock_create_zone_event.await_args_list[0].args
+        assert first_args[0] == 7
+        assert first_args[1] == "CLEAN_FILL_COMPLETED"
+
+        snapshot_args = mock_create_zone_event.await_args_list[1].args
+        assert snapshot_args[0] == 7
+        assert snapshot_args[1] == "IRR_STATE_SNAPSHOT"
+        assert snapshot_args[2]["cmd_id"] == "cmd-state-event-legacy"
+        assert snapshot_args[2]["snapshot"]["clean_level_max"] is True
+        assert snapshot_args[2]["snapshot"]["pump_main"] is False
+
         mock_event_received.labels.assert_called_once_with(event_code="CLEAN_FILL_COMPLETED")
         mock_event_unknown.inc.assert_not_called()
 

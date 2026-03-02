@@ -20,6 +20,7 @@
 #include "pump_driver.h"
 #include "ina209.h"
 #include "mqtt_manager.h"
+#include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
@@ -116,6 +117,7 @@ static bool storage_irrigation_node_is_solution_fill_active_locked(void);
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void);
 static void storage_irrigation_node_append_main_pump_interlock_error(cJSON *details);
 static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor_name, bool *state_out);
+static void storage_irrigation_node_update_oled_runtime(void);
 static cJSON *storage_irrigation_node_build_irr_state_snapshot(void);
 static cJSON *storage_irrigation_node_build_legacy_state_payload(void);
 static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
@@ -396,6 +398,78 @@ static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor
     return false;
 }
 
+static void storage_irrigation_node_oled_push_bool_channel(
+    oled_ui_model_t *model,
+    size_t *index,
+    const char *name,
+    bool state
+) {
+    if (!model || !index || !name || *index >= 8) {
+        return;
+    }
+    strncpy(model->channels[*index].name, name, sizeof(model->channels[*index].name) - 1);
+    model->channels[*index].name[sizeof(model->channels[*index].name) - 1] = '\0';
+    model->channels[*index].value = state ? 1.0f : 0.0f;
+    model->channels[*index].active = state;
+    (*index)++;
+}
+
+static void storage_irrigation_node_update_oled_runtime(void) {
+    if (!oled_ui_is_initialized()) {
+        return;
+    }
+
+    oled_ui_model_t model = {0};
+    size_t channel_index = 0;
+    bool state = false;
+
+    model.sensor_status.has_error = false;
+    model.sensor_status.i2c_connected = true;
+    model.sensor_status.using_stub = false;
+
+    if (storage_irrigation_node_read_switch_state_by_name("level_clean_min", &state)) {
+        storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "level_clean_min", state);
+    }
+    if (storage_irrigation_node_read_switch_state_by_name("level_clean_max", &state)) {
+        storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "level_clean_max", state);
+    }
+    if (storage_irrigation_node_read_switch_state_by_name("level_solution_min", &state)) {
+        storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "level_solution_min", state);
+    }
+    if (storage_irrigation_node_read_switch_state_by_name("level_solution_max", &state)) {
+        storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "level_solution_max", state);
+    }
+
+    if (s_actuator_mutex && xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (storage_irrigation_node_get_actuator_state_locked("pump_main", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "pump_main", state);
+        }
+        if (storage_irrigation_node_get_actuator_state_locked("valve_clean_fill", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "valve_clean_fill", state);
+        }
+        if (storage_irrigation_node_get_actuator_state_locked("valve_clean_supply", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "valve_clean_supply", state);
+        }
+        if (storage_irrigation_node_get_actuator_state_locked("valve_solution_fill", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "valve_solution_fill", state);
+        }
+        if (storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "valve_solution_supply", state);
+        }
+        if (storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &state)) {
+            storage_irrigation_node_oled_push_bool_channel(&model, &channel_index, "valve_irrigation", state);
+        }
+        xSemaphoreGive(s_actuator_mutex);
+    }
+
+    if (channel_index == 0) {
+        return;
+    }
+
+    model.channel_count = channel_index;
+    (void)oled_ui_update_model(&model);
+}
+
 static cJSON *storage_irrigation_node_build_irr_state_snapshot(void) {
     bool clean_level_max = false;
     bool clean_level_min = false;
@@ -568,6 +642,8 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
     }
 
     xSemaphoreGive(s_actuator_mutex);
+
+    storage_irrigation_node_update_oled_runtime();
 
     cJSON *extra = cJSON_CreateObject();
     if (extra) {
@@ -774,6 +850,7 @@ esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx) {
     }
 
     storage_irrigation_node_check_fill_completion_events();
+    storage_irrigation_node_update_oled_runtime();
 
     return ESP_OK;
 }
@@ -819,6 +896,10 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
     cJSON *snapshot = storage_irrigation_node_build_irr_state_snapshot();
     if (snapshot) {
         cJSON_AddItemToObject(payload, "snapshot", snapshot);
+    }
+    cJSON *legacy_state = storage_irrigation_node_build_legacy_state_payload();
+    if (legacy_state) {
+        cJSON_AddItemToObject(payload, "state", legacy_state);
     }
 
     char *json_str = cJSON_PrintUnformatted(payload);
@@ -897,6 +978,7 @@ static void storage_irrigation_node_check_fill_completion_events(void) {
     }
 
     xSemaphoreGive(s_actuator_mutex);
+    storage_irrigation_node_update_oled_runtime();
 
     if (emit_clean_completed) {
         (void)storage_irrigation_node_publish_storage_event("clean_fill_completed", NULL);
@@ -1245,6 +1327,7 @@ esp_err_t storage_irrigation_node_framework_init_integration(void) {
         ESP_LOGE(TAG, "Failed to initialize actuator outputs: %s", esp_err_to_name(err));
         return err;
     }
+    storage_irrigation_node_update_oled_runtime();
 
     if (!s_cmd_queue_mutex) {
         s_cmd_queue_mutex = xSemaphoreCreateMutex();
@@ -1321,6 +1404,7 @@ static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *us
         (void)storage_irrigation_node_set_actuator_state_locked(i, false);
     }
     xSemaphoreGive(s_actuator_mutex);
+    storage_irrigation_node_update_oled_runtime();
     return ESP_OK;
 }
 

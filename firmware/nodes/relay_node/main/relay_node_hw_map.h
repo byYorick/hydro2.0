@@ -31,9 +31,9 @@ typedef struct {
 // - drain_valve: дренаж (только для субстрата)
 // TODO: скорректировать GPIO под реальную плату.
 #define RELAY_NODE_HW_CHANNELS_DEF                     \
-    { "fill_valve",    4,  false, RELAY_TYPE_NO },     \
-    { "water_control", 5,  false, RELAY_TYPE_NO },     \
-    { "drain_valve",   18, false, RELAY_TYPE_NO }
+    { "fill_valve",    25, false, RELAY_TYPE_NO },     \
+    { "water_control", 26, false, RELAY_TYPE_NO },     \
+    { "drain_valve",   27, false, RELAY_TYPE_NO }
 #endif
 
 extern const relay_node_hw_channel_t RELAY_NODE_HW_CHANNELS[];

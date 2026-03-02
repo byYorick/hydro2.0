@@ -9,7 +9,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Выполняет команды `set_relay` для 6 IRR-актуаторов (`pump_main`, `valve_*`) с firmware-locked GPIO.
 - Поддерживает сервисную команду `state` на канале `storage_state` с `snapshot` для `IRR_STATE_SNAPSHOT`.
 - Публикует телеметрию по level-switch каналам 2-бакового контура.
-- Публикует `storage_state/event` со snapshot при событиях заполнения (`clean_fill_completed`, `solution_fill_completed`).
+- Публикует `storage_state/event` со `snapshot` (и `state` alias) при событиях заполнения (`clean_fill_completed`, `solution_fill_completed`).
 - Работает через `node_framework` с HMAC-проверкой команд (если `allow_legacy_hmac=false`).
 
 ## Канонический контракт
@@ -40,7 +40,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `valve_clean_supply` -> `GPIO27`
 - `valve_solution_fill` -> `GPIO32`
 - `valve_solution_supply` -> `GPIO33`
-- `valve_irrigation` -> `GPIO4`
+- `valve_irrigation` -> `GPIO23`
 - `level_clean_min` -> `GPIO16`
 - `level_clean_max` -> `GPIO17`
 - `level_solution_min` -> `GPIO18`

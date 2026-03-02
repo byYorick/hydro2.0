@@ -1078,7 +1078,10 @@ async def handle_node_event(topic: str, payload: bytes) -> None:
 
         channel_normalized = str(channel or "").strip().lower()
         if channel_normalized == "storage_state":
-            snapshot = _normalize_irr_state_snapshot(data.get("snapshot"))
+            snapshot_source = data.get("snapshot")
+            if not isinstance(snapshot_source, dict):
+                snapshot_source = data.get("state")
+            snapshot = _normalize_irr_state_snapshot(snapshot_source)
             if snapshot is not None:
                 snapshot_payload = {
                     "source": "node_event_storage_state",
