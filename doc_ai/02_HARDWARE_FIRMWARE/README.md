@@ -77,6 +77,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - сопоставление команд `test -> real`;
 - обязательные адаптеры/алиасы перед production rollout.
 
+#### [STORAGE_IRRIGATION_NODE_PROD_SPEC.md](STORAGE_IRRIGATION_NODE_PROD_SPEC.md)
+Production-спецификация `storage_irrigation_node`:
+- канонический контракт `type=irrig`;
+- GPIO-профиль (фиксированные и динамические пины);
+- режимы, ограничения и checklist для боевого запуска.
+
 ### Wi‑Fi и подключение
 
 #### [WIFI_CONNECTIVITY_ENGINE.md](WIFI_CONNECTIVITY_ENGINE.md)

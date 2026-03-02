@@ -3,8 +3,8 @@
     <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)] mb-2">Timeline</h4>
     <ul class="space-y-2 max-h-44 overflow-y-auto pr-1">
       <li
-        v-for="event in events"
-        :key="`${event.event}-${event.timestamp}`"
+        v-for="(event, index) in events"
+        :key="`${index}-${event.event}-${event.timestamp}`"
         class="timeline-item"
         :class="{ 'timeline-item--active': event.active }"
       >

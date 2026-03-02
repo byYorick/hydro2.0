@@ -1,0 +1,70 @@
+/**
+ * @file storage_irrigation_node_defaults.h
+ * @brief Централизованные значения по умолчанию для storage_irrigation_node
+ * 
+ * Все дефолтные значения собраны здесь для избежания дублирования
+ * и упрощения обновления конфигурации.
+ */
+
+#ifndef STORAGE_IRRIGATION_NODE_DEFAULTS_H
+#define STORAGE_IRRIGATION_NODE_DEFAULTS_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "driver/gpio.h"
+
+// Node identification defaults
+#define STORAGE_IRRIGATION_NODE_DEFAULT_NODE_ID      "nd-irrig-1"
+#define STORAGE_IRRIGATION_NODE_DEFAULT_GH_UID       "gh-1"
+#define STORAGE_IRRIGATION_NODE_DEFAULT_ZONE_UID     "zn-3"
+
+// MQTT defaults
+#define STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_HOST    "192.168.1.10"
+#define STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_PORT    1883
+#define STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_KEEPALIVE 30
+
+// I2C bus defaults (для INA209 и OLED)
+#define STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA        21  // ESP32 стандартный SDA (INA209 + OLED)
+#define STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL        22  // ESP32 стандартный SCL
+#define STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED      100000
+
+// IRR actuator defaults (firmware-locked, matching test_node IRR profile)
+#define STORAGE_IRRIGATION_NODE_PUMP_MAIN_GPIO            25
+#define STORAGE_IRRIGATION_NODE_VALVE_CLEAN_FILL_GPIO     26
+#define STORAGE_IRRIGATION_NODE_VALVE_CLEAN_SUPPLY_GPIO   27
+#define STORAGE_IRRIGATION_NODE_VALVE_SOLUTION_FILL_GPIO  32
+#define STORAGE_IRRIGATION_NODE_VALVE_SOLUTION_SUPPLY_GPIO 33
+#define STORAGE_IRRIGATION_NODE_VALVE_IRRIGATION_GPIO     4
+#define STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC    0
+#define STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS 30000U
+#define STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS      5000U
+#define STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND   2.0f
+
+// IRR level-switch sensor defaults (firmware-locked, matching test_node IRR profile)
+#define STORAGE_IRRIGATION_NODE_LEVEL_CLEAN_MIN_GPIO      16
+#define STORAGE_IRRIGATION_NODE_LEVEL_CLEAN_MAX_GPIO      17
+#define STORAGE_IRRIGATION_NODE_LEVEL_SOLUTION_MIN_GPIO   18
+#define STORAGE_IRRIGATION_NODE_LEVEL_SOLUTION_MAX_GPIO   19
+#define STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW    0
+#define STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS 5000U
+
+// OLED defaults (опционально)
+#define STORAGE_IRRIGATION_NODE_OLED_I2C_ADDRESS    0x3C
+#define STORAGE_IRRIGATION_NODE_OLED_UPDATE_INTERVAL_MS 1500
+
+// Setup portal defaults
+#define STORAGE_IRRIGATION_NODE_SETUP_AP_PASSWORD    "hydro2025"
+
+// Factory reset (long-press) defaults
+#define STORAGE_IRRIGATION_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits
+#define STORAGE_IRRIGATION_NODE_FACTORY_RESET_ACTIVE_LOW     1
+#define STORAGE_IRRIGATION_NODE_FACTORY_RESET_HOLD_MS        20000U
+#define STORAGE_IRRIGATION_NODE_FACTORY_RESET_POLL_INTERVAL  50U
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // STORAGE_IRRIGATION_NODE_DEFAULTS_H

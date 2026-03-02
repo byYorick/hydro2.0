@@ -1,11 +1,13 @@
 idf_component_register(
     SRCS 
         "main.c"
-        "pump_node_app.c"
-        "pump_node_tasks.c"
-        "pump_node_framework_integration.c"
-        "pump_node_init.c"
-        "pump_node_init_steps.c"
+        "storage_irrigation_node_app.c"
+        "storage_irrigation_node_tasks.c"
+        "storage_irrigation_node_framework_integration.c"
+        "storage_irrigation_node_init.c"
+        "storage_irrigation_node_init_steps.c"
+        "storage_irrigation_node_channel_map.c"
+        "storage_irrigation_node_config_utils.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 

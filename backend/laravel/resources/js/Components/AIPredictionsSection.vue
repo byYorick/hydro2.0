@@ -101,7 +101,10 @@ const expanded = ref(props.defaultExpanded)
 
 const metrics = computed(() => {
   const targets = props.targets || {}
-  
+
+  // Включаем только метрики с настроенными целевыми диапазонами.
+  // Без фильтрации массив всегда содержит 4 элемента и v-if="metrics.length === 0"
+  // (блок «Прогнозы недоступны») никогда не срабатывает.
   return [
     {
       type: 'PH' as const,
@@ -131,6 +134,6 @@ const metrics = computed(() => {
         max: targets.humidity_air.max || 100,
       } : undefined,
     },
-  ]
+  ].filter((m) => m.targetRange !== undefined)
 })
 </script>

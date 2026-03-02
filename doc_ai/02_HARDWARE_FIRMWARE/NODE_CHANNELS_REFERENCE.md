@@ -376,6 +376,10 @@ hydro/{gh}/{zone}/{node}/system/command
 - Команды влияют на поведение всей ноды, а не отдельного канала
 - Используется для управления режимами работы сенсорных нод
 
+Runtime-оговорка:
+- `test_node` в текущей реализации распознаёт `activate_sensor_mode`/`deactivate_sensor_mode`
+  по `cmd` + `node_uid` и не требует жёсткой привязки к `system` channel.
+
 ### 4.2. Команда activate_sensor_mode
 
 **Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
@@ -398,20 +402,23 @@ hydro/{gh}/{zone}/{node}/system/command
 }
 ```
 
-**Параметры:**
-- `stabilization_time_sec` (integer, обязательно) — время стабилизации сенсора в секундах
+**Параметры (целевой контракт):**
+- `stabilization_time_sec` (integer, рекомендуется) — время стабилизации сенсора в секундах
 
-**Поведение ноды:**
+Текущий runtime `test_node` не требует этот параметр как обязательный.
+
+**Поведение ноды (целевой контракт orchestration):**
 1. Переход из режима IDLE в режим ACTIVE
 2. Запуск таймера стабилизации
-3. Начало измерений и публикации телеметрии с расширенными флагами:
-   - `flow_active: true`
-   - `stable: false` (до истечения stabilization_time_sec)
-   - `stabilization_progress_sec` — прогресс стабилизации
-   - `corrections_allowed: false` (до истечения stabilization_time_sec)
-4. После стабилизации: `stable: true`, `corrections_allowed: true`
+3. До завершения стабилизации: `stable=false`, `corrections_allowed=false`
+4. После стабилизации: `stable=true`, `corrections_allowed=true`
 
-**Command Response:**
+**Текущий runtime `test_node`:**
+- команда активирует sensor mode сразу;
+- `stabilization_time_sec` принимается как параметр протокола, но отдельно не отрабатывается таймером;
+- telemetry-флаги переключаются immediately вместе с sensor mode.
+
+**Command Response (пример целевого ответа):**
 ```json
 {
   "cmd_id": "cmd-activate-123",
@@ -423,6 +430,9 @@ hydro/{gh}/{zone}/{node}/system/command
   "ts": 1710001235000
 }
 ```
+
+Текущий runtime `test_node` обычно возвращает `DONE` с базовыми runtime-`details`
+(`virtual`, `node_uid`, `channel`, `cmd`, `exec_delay_ms`) без отдельного поля `mode`.
 
 ### 4.3. Команда deactivate_sensor_mode
 
@@ -450,7 +460,7 @@ hydro/{gh}/{zone}/{node}/system/command
 1. Переход из режима ACTIVE в режим IDLE
 2. Остановка измерений
 3. Прекращение публикации телеметрии
-4. Публикация только heartbeat и LWT (status)
+4. Продолжение heartbeat/status; LWT публикуется только брокером при disconnect MQTT-сессии
 
 **Command Response:**
 ```json
@@ -466,40 +476,28 @@ hydro/{gh}/{zone}/{node}/system/command
 
 ### 4.4. Расширенная телеметрия в ACTIVE режиме
 
-В режиме ACTIVE pH/EC ноды (или их тестовый эмулятор) публикуют стандартную телеметрию
-с дополнительными полями:
+В ACTIVE режиме telemetry может содержать дополнительные флаги:
+- `flow_active` (boolean)
+- `stable` (boolean)
+- `corrections_allowed` (boolean)
 
-**Во время стабилизации:**
-```json
-{
-  "metric_type": "PH",
-  "value": 5.86,
-  "ts": 1710001250,
-  "flow_active": true,
-  "stable": false,
-  "stabilization_progress_sec": 15,
-  "corrections_allowed": false
-}
-```
+**Текущий runtime `test_node`:**
+- для `ph_sensor`/`ec_sensor` эти флаги публикуются;
+- `stable` и `corrections_allowed` равны состоянию sensor mode (без промежуточного этапа стабилизации);
+- `stabilization_progress_sec` сейчас не публикуется.
 
-**После стабилизации:**
+Пример runtime-payload:
 ```json
 {
   "metric_type": "PH",
   "value": 5.86,
   "ts": 1710001300,
+  "stub": true,
   "flow_active": true,
   "stable": true,
-  "stabilization_progress_sec": 60,
   "corrections_allowed": true
 }
 ```
-
-**Новые поля:**
-- `flow_active` (boolean) — индикатор наличия потока через сенсор
-- `stable` (boolean) — true после истечения stabilization_time_sec
-- `stabilization_progress_sec` (integer) — прогресс стабилизации (секунды с момента активации)
-- `corrections_allowed` (boolean) — разрешение на коррекции
 
 ### 4.5. Применение в Correction Cycle
 

@@ -492,6 +492,9 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     allowedManualSteps.value = []
     automationControlModeLoading.value = false
     automationControlModeSaving.value = false
+    // Сбрасываем флаг in-flight: иначе WS-рефреш новой зоны будет заблокирован
+    // до завершения запроса старой зоны (schedulerRealtimeRefreshInFlight остался true)
+    schedulerRealtimeRefreshInFlight = false
     for (const step of Object.keys(manualStepLoading.value) as AutomationManualStep[]) {
       manualStepLoading.value[step] = false
     }

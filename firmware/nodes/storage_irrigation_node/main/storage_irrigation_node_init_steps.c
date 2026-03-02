@@ -1,6 +1,6 @@
 /**
- * @file pump_node_init_steps.c
- * @brief Реализация модульных шагов инициализации pump_node
+ * @file storage_irrigation_node_init_steps.c
+ * @brief Реализация модульных шагов инициализации storage_irrigation_node
  * 
  * Каждый шаг инициализации вынесен в отдельную функцию,
  * что позволяет:
@@ -9,8 +9,9 @@
  * - Упростить отладку и логирование
  */
 
-#include "pump_node_init_steps.h"
-#include "pump_node_defaults.h"
+#include "storage_irrigation_node_init_steps.h"
+#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config_utils.h"
 #include "init_steps_utils.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
@@ -24,10 +25,10 @@
 #include "freertos/task.h"
 #include <string.h>
 
-static const char *TAG = "pump_node_init_steps";
+static const char *TAG = "storage_irrigation_node_init_steps";
 
-esp_err_t pump_node_init_step_config_storage(pump_node_init_context_t *ctx, 
-                                             pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_config_storage(storage_irrigation_node_init_context_t *ctx, 
+                                             storage_irrigation_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 1/7] Loading config...");
     
@@ -59,8 +60,8 @@ esp_err_t pump_node_init_step_config_storage(pump_node_init_context_t *ctx,
     return ESP_OK;
 }
 
-esp_err_t pump_node_init_step_wifi(pump_node_init_context_t *ctx,
-                                   pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_wifi(storage_irrigation_node_init_context_t *ctx,
+                                   storage_irrigation_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 2/7] Wi-Fi manager init...");
     
@@ -99,8 +100,8 @@ esp_err_t pump_node_init_step_wifi(pump_node_init_context_t *ctx,
     return ESP_OK;
 }
 
-esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
-                                   pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_i2c(storage_irrigation_node_init_context_t *ctx,
+                                   storage_irrigation_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 3/7] I2C init...");
     
@@ -115,9 +116,9 @@ esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
         ESP_LOGI(TAG, "Initializing I2C bus 0 (INA209)...");
         i2c_bus_config_t i2c0_config = {
-            .sda_pin = PUMP_NODE_I2C_BUS_0_SDA,
-            .scl_pin = PUMP_NODE_I2C_BUS_0_SCL,
-            .clock_speed = PUMP_NODE_I2C_CLOCK_SPEED,
+            .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
+            .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
+            .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
             .pullup_enable = true
         };
         err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
@@ -138,8 +139,8 @@ esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
     return ESP_OK;
 }
 
-esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
-                                    pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_pumps(storage_irrigation_node_init_context_t *ctx,
+                                    storage_irrigation_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 4/7] Pumps init...");
     
@@ -148,6 +149,14 @@ esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
+    bool channels_patched = false;
+    esp_err_t patch_err = storage_irrigation_node_patch_stored_config(true, &channels_patched);
+    if (patch_err == ESP_OK && channels_patched) {
+        ESP_LOGI(TAG, "NodeConfig channels normalized to firmware map");
+    } else if (patch_err != ESP_OK && patch_err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to normalize channels in NodeConfig: %s", esp_err_to_name(patch_err));
+    }
+
     esp_err_t err = pump_driver_init_from_config();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Pump driver initialized successfully from config");
@@ -170,8 +179,8 @@ esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
     return err;
 }
 
-esp_err_t pump_node_init_step_oled(pump_node_init_context_t *ctx,
-                                   pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_oled(storage_irrigation_node_init_context_t *ctx,
+                                   storage_irrigation_node_init_step_result_t *result) {
     ESP_LOGI(TAG, "[Step 5/7] OLED UI init...");
     
     if (result) {
@@ -190,12 +199,12 @@ esp_err_t pump_node_init_step_oled(pump_node_init_context_t *ctx,
     
     // Получаем node_id из config_storage или используем дефолт
     char node_id[64];
-    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), PUMP_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), STORAGE_IRRIGATION_NODE_DEFAULT_NODE_ID);
     ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
     
     oled_ui_config_t oled_config = {
-        .i2c_address = PUMP_NODE_OLED_I2C_ADDRESS,
-        .update_interval_ms = PUMP_NODE_OLED_UPDATE_INTERVAL_MS,
+        .i2c_address = STORAGE_IRRIGATION_NODE_OLED_I2C_ADDRESS,
+        .update_interval_ms = STORAGE_IRRIGATION_NODE_OLED_UPDATE_INTERVAL_MS,
         .enable_task = true
     };
     
@@ -230,8 +239,8 @@ esp_err_t pump_node_init_step_oled(pump_node_init_context_t *ctx,
     return err;
 }
 
-esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
-                                    pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_mqtt(storage_irrigation_node_init_context_t *ctx,
+                                    storage_irrigation_node_init_step_result_t *result) {
     (void)ctx;
     ESP_LOGI(TAG, "[Step 6/7] MQTT init...");
     
@@ -276,12 +285,12 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
         mqtt_config.use_tls = mqtt_cfg.use_tls;
         ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
     } else {
-        // Default values из pump_node_defaults.h
-        strncpy(mqtt_host, PUMP_NODE_DEFAULT_MQTT_HOST, sizeof(mqtt_host) - 1);
+        // Default values из storage_irrigation_node_defaults.h
+        strncpy(mqtt_host, STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_HOST, sizeof(mqtt_host) - 1);
         mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;
-        mqtt_config.port = PUMP_NODE_DEFAULT_MQTT_PORT;
-        mqtt_config.keepalive = PUMP_NODE_DEFAULT_MQTT_KEEPALIVE;
+        mqtt_config.port = STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_PORT;
+        mqtt_config.keepalive = STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_KEEPALIVE;
         mqtt_config.client_id = NULL;
         mqtt_config.username = NULL;
         mqtt_config.password = NULL;
@@ -290,9 +299,9 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
     }
     
     // Получение node_id, gh_uid, zone_uid
-    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), PUMP_NODE_DEFAULT_NODE_ID);
-    init_steps_utils_get_config_string("gh_uid", gh_uid, sizeof(gh_uid), PUMP_NODE_DEFAULT_GH_UID);
-    init_steps_utils_get_config_string("zone_uid", zone_uid, sizeof(zone_uid), PUMP_NODE_DEFAULT_ZONE_UID);
+    init_steps_utils_get_config_string("node_id", node_id, sizeof(node_id), STORAGE_IRRIGATION_NODE_DEFAULT_NODE_ID);
+    init_steps_utils_get_config_string("gh_uid", gh_uid, sizeof(gh_uid), STORAGE_IRRIGATION_NODE_DEFAULT_GH_UID);
+    init_steps_utils_get_config_string("zone_uid", zone_uid, sizeof(zone_uid), STORAGE_IRRIGATION_NODE_DEFAULT_ZONE_UID);
     
     node_info.node_uid = node_id;
     node_info.gh_uid = gh_uid;
@@ -307,8 +316,8 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
         return err;
     }
     
-    // Callbacks будут зарегистрированы в pump_node_init.c перед pump_node_init_step_finalize
-    // MQTT старт перенесен в pump_node_init_step_finalize, чтобы callbacks были зарегистрированы до старта
+    // Callbacks будут зарегистрированы в storage_irrigation_node_init.c перед storage_irrigation_node_init_step_finalize
+    // MQTT старт перенесен в storage_irrigation_node_init_step_finalize, чтобы callbacks были зарегистрированы до старта
     
     if (result) {
         result->err = ESP_OK;
@@ -318,8 +327,8 @@ esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
     return ESP_OK;
 }
 
-esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
-                                       pump_node_init_step_result_t *result) {
+esp_err_t storage_irrigation_node_init_step_finalize(storage_irrigation_node_init_context_t *ctx,
+                                       storage_irrigation_node_init_step_result_t *result) {
     ESP_LOGI(TAG, "[Step 7/7] Starting...");
     
     if (result) {
@@ -327,7 +336,7 @@ esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
         result->component_initialized = true;
     }
     
-    // Запускаем MQTT после регистрации callbacks (которые происходят в pump_node_init.c)
+    // Запускаем MQTT после регистрации callbacks (которые происходят в storage_irrigation_node_init.c)
     // Это гарантирует, что ранние входящие команды/config не будут дропнуты
     esp_err_t err = mqtt_manager_start();
     if (err != ESP_OK) {

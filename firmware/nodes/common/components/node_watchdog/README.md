@@ -86,7 +86,7 @@ if (node_watchdog_get_task_runtime(xTaskGetCurrentTaskHandle(), &runtime_ms) == 
 - ✅ `ph_node` - все задачи используют `node_watchdog_*`
 - ✅ `ec_node` - все задачи используют `node_watchdog_*`
 - ✅ `climate_node` - все задачи используют `node_watchdog_*`
-- ✅ `pump_node` - все задачи используют `node_watchdog_*`
+- ✅ `storage_irrigation_node` - все задачи используют `node_watchdog_*`
 - ✅ `heartbeat_task` - использует `node_watchdog_*`
 
 ## Статус

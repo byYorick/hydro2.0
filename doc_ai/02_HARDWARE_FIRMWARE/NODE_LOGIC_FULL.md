@@ -289,12 +289,21 @@ on_command_received for pump_channel:
 Таким образом, узел подтверждает не только факт приёма команды,
 но и реальное включение насосов по показаниям суммарного тока.
 ## 4.3. Ответы
-### Успех
+### Успех (быстрый ACK)
 ```json
 {
  "cmd_id": "cmd-19292",
  "status": "ACK",
  "ts": 1710012345000
+}
+```
+
+### Успех (terminal)
+```json
+{
+ "cmd_id": "cmd-19292",
+ "status": "DONE",
+ "ts": 1710012345200
 }
 ```
 
@@ -310,6 +319,7 @@ on_command_received for pump_channel:
 ```
 
 `command_response.ts` публикуется в миллисекундах.
+Для long-running команд рекомендуется `ACK -> terminal (DONE/ERROR/INVALID/BUSY/NO_EFFECT)`.
 
 ---
 

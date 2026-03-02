@@ -33,7 +33,7 @@ Backend принимает решения → узлы исполняют.
 
 ## 1.1. Термины (во избежание путаницы)
 
-- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `pump_node`).
+- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `storage_irrigation_node`).
 - `node_type` — бизнес-тип узла в payload/БД (`nodes.type`), только канонические значения:
   `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
 - Имена `*_node` используются только как идентификаторы прошивочных модулей и не должны передаваться в `node_type`.
@@ -321,6 +321,11 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 
 `status` + `ts` — целевой прод-формат; `online` и диагностические поля (`ip`, `rssi`, `fw`) опциональны.
 
+Runtime-оговорка:
+- при подключении `mqtt_manager` публикует канонический `{"status":"ONLINE","ts":...}`;
+- на части real-node поверх этого публикуется node-specific legacy payload (`online/ip/rssi/fw` без `status`/`ts`),
+  что считается техническим долгом для production hardening.
+
 ## 8.2. LWT (offline)
 ```
 payload: "offline"
@@ -383,7 +388,7 @@ payload: "offline"
 - Поддержка управления через relay_driver (для NC-реле)
 - Безопасные лимиты (max_duration_ms, min_off_time_ms)
 - Дозирование по объёму (ml_per_second)
-- Используется в `ec_node` и `pump_node`
+- Используется в `ec_node` и `storage_irrigation_node`
 
 **API:**
 - `pump_driver_init_from_config()` — инициализация из NodeConfig
@@ -433,7 +438,7 @@ payload: "offline"
 - `ph_node`
 - `ec_node`
 - `climate_node`
-- `pump_node`
+- `storage_irrigation_node`
 
 **Компонент:** `firmware/nodes/common/components/setup_portal/`
 
@@ -480,12 +485,12 @@ payload: "offline"
 
 ✅ **pump_driver** — управление насосами
 - Интеграция INA209 для проверки тока
-- Периодический опрос тока в `pump_node`
-- Интеграция в `ec_node` и `pump_node`
+- Периодический опрос тока в `storage_irrigation_node`
+- Интеграция в `ec_node` и `storage_irrigation_node`
 
 ✅ **Graceful переподключение Wi-Fi/MQTT**
 - Автоматическое переподключение при изменении NodeConfig
-- Реализовано в `pump_node`
+- Реализовано в `storage_irrigation_node`
 
 ## 15.2. Backend компоненты
 

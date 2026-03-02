@@ -32,7 +32,7 @@ esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size)
 /**
  * @brief Сохранить тип ноды для использования в утилитах
  *
- * @param node_type Тип ноды ("ph", "ec", "climate", "pump", "relay", "light")
+ * @param node_type Тип ноды (канонический: "ph", "ec", "climate", "irrig", "relay", "light")
  */
 void node_utils_set_node_type(const char *node_type);
 
@@ -159,7 +159,7 @@ esp_err_t node_utils_bootstrap_network_stack(void);
 /**
  * @brief Публикация node_hello сообщения для регистрации узла
  * 
- * @param node_type Тип ноды ("ph", "ec", "pump", "climate")
+ * @param node_type Тип ноды (канонический: "ph", "ec", "climate", "irrig", "relay", "light")
  * @param capabilities Массив capabilities (например, ["ph", "temperature"])
  * @param capabilities_count Количество capabilities
  * @return ESP_OK при успехе

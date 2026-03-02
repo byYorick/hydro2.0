@@ -1,6 +1,6 @@
 /**
- * @file pump_node_app.c
- * @brief Main application logic for pump_node
+ * @file storage_irrigation_node_app.c
+ * @brief Main application logic for storage_irrigation_node
  * 
  * Pump node for controlling pumps and monitoring current via INA209
  * According to NODE_ARCH_FULL.md and MQTT_SPEC_FULL.md
@@ -8,9 +8,9 @@
  * Тонкий слой координации - вся логика делегируется в компоненты
  */
 
-#include "pump_node_app.h"
-#include "pump_node_init.h"
-#include "pump_node_defaults.h"
+#include "storage_irrigation_node_app.h"
+#include "storage_irrigation_node_init.h"
+#include "storage_irrigation_node_defaults.h"
 #include "pump_driver.h"
 #include "config_storage.h"
 #include "factory_reset_button.h"
@@ -21,7 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 
-static const char *TAG = "pump_node";
+static const char *TAG = "storage_irrigation_node";
 
 // Кеш для node_id (опционально, для быстрого доступа)
 static char s_node_id_cache[64] = {0};
@@ -29,7 +29,7 @@ static bool s_node_id_cache_valid = false;
 static SemaphoreHandle_t s_node_id_cache_mutex = NULL;  // Mutex для защиты кеша node_id
 
 // State getters/setters - делегируют в компоненты
-bool pump_node_is_pump_control_initialized(void) {
+bool storage_irrigation_node_is_pump_control_initialized(void) {
     return pump_driver_is_initialized();
 }
 
@@ -45,7 +45,7 @@ static void init_node_id_cache_mutex(void) {
     }
 }
 
-const char* pump_node_get_node_id(void) {
+const char* storage_irrigation_node_get_node_id(void) {
     // Инициализация mutex при первом вызове
     init_node_id_cache_mutex();
     
@@ -68,7 +68,7 @@ const char* pump_node_get_node_id(void) {
         
         // Если не найдено, возвращаем дефолтное значение
         if (s_node_id_cache[0] == '\0') {
-            strncpy(s_node_id_cache, PUMP_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
+            strncpy(s_node_id_cache, STORAGE_IRRIGATION_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
             s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
         }
         
@@ -81,7 +81,7 @@ const char* pump_node_get_node_id(void) {
             if (config_storage_get_node_id(s_node_id_cache, sizeof(s_node_id_cache)) == ESP_OK) {
                 s_node_id_cache_valid = true;
             } else if (s_node_id_cache[0] == '\0') {
-                strncpy(s_node_id_cache, PUMP_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
+                strncpy(s_node_id_cache, STORAGE_IRRIGATION_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
                 s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
             }
         }
@@ -89,7 +89,7 @@ const char* pump_node_get_node_id(void) {
     }
 }
 
-void pump_node_set_node_id(const char *node_id) {
+void storage_irrigation_node_set_node_id(const char *node_id) {
     if (node_id) {
         // Инициализация mutex при первом вызове
         init_node_id_cache_mutex();
@@ -113,25 +113,25 @@ void pump_node_set_node_id(const char *node_id) {
 }
 
 /**
- * @brief Initialize pump_node application
+ * @brief Initialize storage_irrigation_node application
  */
-void pump_node_app_init(void) {
-    ESP_LOGI(TAG, "Initializing pump_node application...");
+void storage_irrigation_node_app_init(void) {
+    ESP_LOGI(TAG, "Initializing storage_irrigation_node application...");
 
     factory_reset_button_config_t reset_cfg = {
-        .gpio_num = PUMP_NODE_FACTORY_RESET_GPIO,
-        .active_level_low = PUMP_NODE_FACTORY_RESET_ACTIVE_LOW,
+        .gpio_num = STORAGE_IRRIGATION_NODE_FACTORY_RESET_GPIO,
+        .active_level_low = STORAGE_IRRIGATION_NODE_FACTORY_RESET_ACTIVE_LOW,
         .pull_up = true,
         .pull_down = false,
-        .hold_time_ms = PUMP_NODE_FACTORY_RESET_HOLD_MS,
-        .poll_interval_ms = PUMP_NODE_FACTORY_RESET_POLL_INTERVAL
+        .hold_time_ms = STORAGE_IRRIGATION_NODE_FACTORY_RESET_HOLD_MS,
+        .poll_interval_ms = STORAGE_IRRIGATION_NODE_FACTORY_RESET_POLL_INTERVAL
     };
     esp_err_t reset_err = factory_reset_button_init(&reset_cfg);
     if (reset_err != ESP_OK) {
         ESP_LOGW(TAG, "Factory reset button not armed: %s", esp_err_to_name(reset_err));
     }
     
-    esp_err_t err = pump_node_init_components();
+    esp_err_t err = storage_irrigation_node_init_components();
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
         ESP_LOGE(TAG, "Failed to initialize components: %s", esp_err_to_name(err));
         return;
@@ -142,8 +142,8 @@ void pump_node_app_init(void) {
         return;
     }
     
-    ESP_LOGI(TAG, "pump_node application initialized");
+    ESP_LOGI(TAG, "storage_irrigation_node application initialized");
     
     // Start FreeRTOS tasks for current polling and heartbeat
-    pump_node_start_tasks();
+    storage_irrigation_node_start_tasks();
 }

@@ -713,8 +713,10 @@ export function taskMatchesSearch(task: SchedulerTaskStatus, rawQuery: string): 
     task.task_type,
     task.status,
     task.decision,
-    task.reason_code,
-    task.error_code,
+    // Используем те же fallback-цепочки, что и taskMatchesPreset, чтобы свободный поиск
+    // находил task.result.reason_code/error_code так же, как фильтрация по пресету
+    task.reason_code ?? task.result?.reason_code,
+    task.error_code ?? task.result?.error_code,
     task.reason,
     task.error,
   ]

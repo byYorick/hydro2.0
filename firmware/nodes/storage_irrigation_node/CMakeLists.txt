@@ -7,5 +7,5 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}/../common/components/sensors"
 )
 
-project(pump_node)
+project(storage_irrigation_node)
 

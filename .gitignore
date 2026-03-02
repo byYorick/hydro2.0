@@ -22,6 +22,7 @@ venv/
 .idea/
 .vscode/
 .cache/clangd/
+**/.cache/clangd/
 
 # CMake / ESP-IDF
 build/
@@ -34,4 +35,3 @@ CMakeBuilds.json
 
 # Environment
 .env
-

@@ -1,22 +1,21 @@
 /**
- * @file pump_node_tasks.c
- * @brief FreeRTOS задачи для pump_node
+ * @file storage_irrigation_node_tasks.c
+ * @brief FreeRTOS задачи для storage_irrigation_node
  * 
  * Реализует периодические задачи согласно FIRMWARE_STRUCTURE.md:
  * - heartbeat_task_start_default - публикация heartbeat (общий компонент)
- * - task_current_poll - периодический опрос INA209
+ * - task_current_poll - периодическая публикация level-switch telemetry
  * - task_pump_health - health-метрики насосов
  * 
- * Примечание: pump_node не имеет периодических сенсоров,
- * телеметрия публикуется только при выполнении команд (ток насоса)
+ * Примечание: уровень баков публикуется через level-switch каналы.
  */
 
-#include "pump_node_app.h"
+#include "storage_irrigation_node_app.h"
+#include "storage_irrigation_node_defaults.h"
 #include "mqtt_manager.h"
-#include "ina209.h"
 #include "config_storage.h"
 #include "pump_driver.h"
-#include "pump_node_framework_integration.h"
+#include "storage_irrigation_node_framework_integration.h"
 #include "node_telemetry_engine.h"
 #include "node_utils.h"
 #include "node_watchdog.h"
@@ -33,14 +32,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-static const char *TAG = "pump_node_tasks";
+static const char *TAG = "storage_irrigation_node_tasks";
 
 // Периоды задач (в миллисекундах)
-#define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
+#define DEFAULT_CURRENT_POLL_MS   STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS
 #define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
 #define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 
-// Глобальная переменная для интервала опроса тока (потокобезопасно)
+// Глобальная переменная для интервала публикации level-switch (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
 static SemaphoreHandle_t s_current_poll_interval_mutex = NULL;
 
@@ -83,10 +82,9 @@ static void set_current_poll_interval(uint32_t interval_ms) {
 }
 
 /**
- * @brief Задача опроса тока насоса (INA209)
+ * @brief Задача публикации level-switch телеметрии
  * 
- * Периодически опрашивает INA209 и публикует телеметрию pump_bus_current
- * Интервал опроса берется из NodeConfig для канала "pump_bus_current"
+ * Интервал публикации берется из NodeConfig для канала "level_clean_min"
  */
 static void task_current_poll(void *pvParameters) {
     ESP_LOGI(TAG, "Current poll task started");
@@ -109,21 +107,8 @@ static void task_current_poll(void *pvParameters) {
         // Сбрасываем watchdog
         node_watchdog_reset();
         
-        if (!mqtt_manager_is_connected()) {
-            ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
-            continue;
-        }
-        
-        // Чтение тока из INA209
-        ina209_reading_t reading;
-        esp_err_t err = ina209_read(&reading);
-        
-        if (err == ESP_OK && reading.valid) {
-            // Публикация телеметрии через node_framework
-            pump_node_publish_telemetry_callback(NULL);
-        } else {
-            ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
-        }
+        // Публикация телеметрии level-switch через node_framework
+        storage_irrigation_node_publish_telemetry_callback(NULL);
     }
 }
 
@@ -261,7 +246,7 @@ static void task_status(void *pvParameters) {
             
             if (mqtt_manager_is_connected()) {
                 // Публикация STATUS
-                pump_node_publish_status();
+                storage_irrigation_node_publish_status();
             }
             
             // Сбрасываем watchdog после выполнения работы
@@ -279,7 +264,7 @@ static void task_status(void *pvParameters) {
  * 
  * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
  */
-void pump_node_publish_status(void) {
+void storage_irrigation_node_publish_status(void) {
     if (!mqtt_manager_is_connected()) {
         return;
     }
@@ -322,11 +307,11 @@ void pump_node_publish_status(void) {
 }
 
 /**
- * @brief Обновление интервала опроса тока из NodeConfig
+ * @brief Обновление интервала опроса из NodeConfig
  * 
- * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
+ * Ищет канал "level_clean_min" в NodeConfig и обновляет s_current_poll_interval_ms
  */
-void pump_node_update_current_poll_interval(void) {
+void storage_irrigation_node_update_current_poll_interval(void) {
     // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
@@ -348,7 +333,7 @@ void pump_node_update_current_poll_interval(void) {
             if (ch != NULL && cJSON_IsObject(ch)) {
                 cJSON *name = cJSON_GetObjectItem(ch, "name");
                 if (name != NULL && cJSON_IsString(name) && 
-                    strcmp(name->valuestring, "pump_bus_current") == 0) {
+                    strcmp(name->valuestring, "level_clean_min") == 0) {
                     cJSON *poll_interval = cJSON_GetObjectItem(ch, "poll_interval_ms");
                     if (poll_interval != NULL && cJSON_IsNumber(poll_interval)) {
                         uint32_t new_interval = (uint32_t)cJSON_GetNumberValue(poll_interval);
@@ -367,9 +352,9 @@ void pump_node_update_current_poll_interval(void) {
 /**
  * @brief Запуск FreeRTOS задач
  */
-void pump_node_start_tasks(void) {
+void storage_irrigation_node_start_tasks(void) {
     // Обновляем интервал опроса из конфигурации
-    pump_node_update_current_poll_interval();
+    storage_irrigation_node_update_current_poll_interval();
     
     // Задача опроса тока насоса (если INA209 инициализирован)
     // Проверяем, что INA209 доступен через pump_driver

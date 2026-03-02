@@ -14,7 +14,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Зафиксировать точное соответствие между:
 
 - каналами/командами `firmware/test_node`;
-- фактическими каналами/командами боевых прошивок (`ph_node`, `ec_node`, `climate_node`, `light_node`, `pump_node`, `relay_node`).
+- фактическими каналами/командами боевых прошивок (`ph_node`, `ec_node`, `climate_node`, `light_node`, `storage_irrigation_node`, `relay_node`).
 
 Документ нужен для безопасного перевода E2E/HIL сценариев в production-runtime без скрытых несовместимостей.
 
@@ -30,7 +30,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `firmware/nodes/climate_node/main/climate_node_framework_integration.c`
 - `firmware/nodes/light_node/main/light_node_channel_map.c`
 - `firmware/nodes/light_node/main/light_node_framework_integration.c`
-- `firmware/nodes/pump_node/main/pump_node_framework_integration.c`
+- `firmware/nodes/storage_irrigation_node/main/storage_irrigation_node_framework_integration.c`
 - `firmware/nodes/relay_node/main/relay_node_hw_map.h`
 - `firmware/nodes/relay_node/main/relay_node_framework_integration.c`
 - `firmware/nodes/common/components/node_framework/node_command_handler.c`
@@ -53,26 +53,26 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
-| `pump_main` | `pump_node` (`run_pump`) | `Partial` | В test-node канал принимает `set_relay` и `run_pump/dose`; в `pump_node` основной контракт — `run_pump` с `duration_ms`. Для on/off семантики нужен adapter. |
-| `main_pump` (alias) | `pump_node` (`pump_main`) | `Alias/Adapter` | Alias есть только в test-node; в real-node нужно канонизировать имя в одном месте. |
-| `valve_clean_fill` | `relay_node` (`fill_valve`) | `Alias/Adapter` | Прямого канала нет в default HW map; есть `fill_valve`. Нужен mapping `valve_clean_fill -> fill_valve`. |
-| `valve_clean_supply` | `relay_node` | `Missing` | В default `relay_node` канала нет. |
-| `valve_solution_fill` | `relay_node` | `Missing` | В default `relay_node` канала нет. |
-| `valve_solution_supply` | `relay_node` | `Missing` | В default `relay_node` канала нет. |
-| `valve_irrigation` | `relay_node` | `Missing` | В default `relay_node` канала нет. |
-| `level_clean_min` | отдельная sensor-node / расширение irrig-node | `Missing` | В боевых прошивках из текущего набора нет готового источника этой телеметрии. |
-| `level_clean_max` | отдельная sensor-node / расширение irrig-node | `Missing` | Аналогично. |
-| `level_solution_min` | отдельная sensor-node / расширение irrig-node | `Missing` | Аналогично. |
-| `level_solution_max` | отдельная sensor-node / расширение irrig-node | `Missing` | Аналогично. |
-| `pump_in` (service alias) | `pump_node` | `Alias/Adapter` | Поддерживается как пример pump-канала через NodeConfig, но в test-node это alias fill-контура. |
+| `pump_main` | `storage_irrigation_node` (`run_pump`) | `Partial` | В test-node канал принимает `set_relay` и `run_pump/dose`; в `storage_irrigation_node` основной контракт — `run_pump` с `duration_ms`. Для on/off семантики нужен adapter. |
+| `main_pump` (alias) | `storage_irrigation_node` (`pump_main`) | `Alias/Adapter` | Alias есть только в test-node; в real-node нужно канонизировать имя в одном месте. |
+| `valve_clean_fill` | `storage_irrigation_node/valve_clean_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `valve_clean_supply` | `storage_irrigation_node/valve_clean_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `valve_solution_fill` | `storage_irrigation_node/valve_solution_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `valve_solution_supply` | `storage_irrigation_node/valve_solution_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `valve_irrigation` | `storage_irrigation_node/valve_irrigation` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `level_clean_min` | `storage_irrigation_node/level_clean_min` | `Direct` | Реализован как дискретный level-switch канал. |
+| `level_clean_max` | `storage_irrigation_node/level_clean_max` | `Direct` | Реализован как дискретный level-switch канал. |
+| `level_solution_min` | `storage_irrigation_node/level_solution_min` | `Direct` | Реализован как дискретный level-switch канал. |
+| `level_solution_max` | `storage_irrigation_node/level_solution_max` | `Direct` | Реализован как дискретный level-switch канал. |
+| `pump_in` (service alias) | `storage_irrigation_node` | `Missing` | Сервисный alias отсутствует; используется канонический набор IRR-каналов. |
 | `fill_valve` (service alias) | `relay_node` | `Direct` | Есть в default HW map `relay_node`. |
 | `water_control` (service alias) | `relay_node` | `Direct` | Есть в default HW map `relay_node`. |
 | `drain_valve` (service alias) | `relay_node` | `Direct` | Есть в default HW map `relay_node`. |
 | `drain_main`/`drain_pump`/`drain` | `relay_node` | `Missing` | В default HW map отсутствуют. |
-| `pump_irrigation` (service alias) | `pump_node` | `Alias/Adapter` | В real-node нужен явный канал в NodeConfig; в test-node это внутренний transient-контур. |
-| `pump_bus_current` (service/probe) | `pump_node/pump_bus_current` | `Partial` | В test-node доступен в `probe/state`, но не как полноценный periodic channel в `config_report`; в `pump_node` публикуется как telemetry. |
+| `pump_irrigation` (service alias) | `storage_irrigation_node` | `Alias/Adapter` | В real-node нужен явный канал в NodeConfig; в test-node это внутренний transient-контур. |
+| `pump_bus_current` (service/probe) | `storage_irrigation_node` | `Missing` | В каноническом IRR-профиле `storage_irrigation_node` этот канал не публикуется; используются `level_*` switch-каналы. |
 | `water_level` / `flow_present` (service/probe) | отдельная sensor-node / расширение irrig-node | `Missing` | В текущих real-node прошивках нет готового прямого канала с такой семантикой. |
-| `storage_state` | `relay_node`/`pump_node` | `Missing` | Специальный event-channel test-node; в real-node эквивалент не реализован. |
+| `storage_state` | `relay_node`/`storage_irrigation_node` | `Missing` | Специальный event-channel test-node; в real-node эквивалент не реализован. |
 
 Критично:
 
@@ -83,8 +83,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
 | `ph_sensor` | `ph_node/ph_sensor` | `Direct` | Канал совпадает. |
-| `pump_acid` | `ph_node/ph_doser_down` или `pump_node/pump_acid` | `Alias/Adapter` | В коде `ph_node` актуаторы называются `ph_doser_up`/`ph_doser_down`, не `pump_acid`/`pump_base`. |
-| `pump_base` | `ph_node/ph_doser_up` или `pump_node/pump_base` | `Alias/Adapter` | Нужен явный mapping направлений дозирования. |
+| `pump_acid` | `ph_node/ph_doser_down` или `storage_irrigation_node/pump_acid` | `Alias/Adapter` | В коде `ph_node` актуаторы называются `ph_doser_up`/`ph_doser_down`, не `pump_acid`/`pump_base`. |
+| `pump_base` | `ph_node/ph_doser_up` или `storage_irrigation_node/pump_base` | `Alias/Adapter` | Нужен явный mapping направлений дозирования. |
 | `system` (sensor-mode service) | `ph_node` | `Missing` | Команды `activate/deactivate_sensor_mode` в боевой `ph_node` не зарегистрированы. |
 
 ## 4.3. `nd-test-ec-1` (`type=ec`)

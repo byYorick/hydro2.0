@@ -17,8 +17,8 @@ _NODE_TYPE_MAP = {
     NodeType.PH: "ph_node",
     NodeType.EC: "ec_node",
     NodeType.CLIMATE: "climate_node",
-    NodeType.PUMP: "pump_node",
-    NodeType.IRRIG: "pump_node",
+    NodeType.PUMP: "storage_irrigation_node",
+    NodeType.IRRIG: "storage_irrigation_node",
     NodeType.LIGHT: "lighting_node",
     NodeType.UNKNOWN: "unknown",
 }

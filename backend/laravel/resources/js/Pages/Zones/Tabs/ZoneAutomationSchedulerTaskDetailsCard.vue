@@ -220,7 +220,6 @@
             raw payload
           </summary>
           <pre
-            v-if="formatSchedulerTimelineRawDetails(step)"
             class="max-h-52 overflow-auto border-t border-[color:var(--border-muted)]/40 px-2 py-2 text-[10px] leading-4 text-[color:var(--text-muted)]"
           >{{ formatSchedulerTimelineRawDetails(step) }}</pre>
         </details>

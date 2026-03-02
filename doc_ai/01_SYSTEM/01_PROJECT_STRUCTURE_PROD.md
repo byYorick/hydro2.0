@@ -125,7 +125,7 @@ hydro2.0/
 Здесь живут все ESP-прошивки, на чистом C, под ESP-IDF.
 
 Важно по терминологии:
-- `firmware_module` (например, `pump_node`, `ph_node`, `ec_node`, `climate_node`) — имя папки/проекта прошивки.
+- `firmware_module` (например, `storage_irrigation_node`, `ph_node`, `ec_node`, `climate_node`) — имя папки/проекта прошивки.
 - `node_type` в MQTT payload и в БД (`nodes.type`) использует только канонику:
   `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
 - Имена `*_node` не являются значениями `node_type`.
@@ -153,11 +153,11 @@ firmware/
 │  │  │  ├─ setup_portal/       # Setup portal для provisioning
 │  │  │  └─ oled_ui/            # OLED UI
 │  │  └─ README.md
-│  ├─ pump_node/               # Нода насосов с INA209
+│  ├─ storage_irrigation_node/               # Нода насосов с INA209
 │  │  ├─ main/
 │  │  │  ├─ main.c
-│  │  │  ├─ pump_node_app.c
-│  │  │  └─ pump_node_tasks.c
+│  │  │  ├─ storage_irrigation_node_app.c
+│  │  │  └─ storage_irrigation_node_tasks.c
 │  │  ├─ components/           # Специфические компоненты, если нужны
 │  │  ├─ sdkconfig.defaults
 │  │  ├─ CMakeLists.txt
@@ -195,7 +195,7 @@ firmware/
    - есть `sdkconfig.defaults` с боевыми дефолтами,
    - есть `Kconfig` для выбора настроек,
    - есть `NodeConfig` (через JSON/NVS) для параметров: ID ноды, тип, каналы, предельные токи, пороги pH/EC и т.п.
-4. Вся логика **подтверждения команд насосной нодой через INA209** реализуется в `pump_node_app.c` / `pump_node_tasks.c` с использованием компонента `ina209`.
+4. Вся логика **подтверждения команд насосной нодой через INA209** реализуется в `storage_irrigation_node_app.c` / `storage_irrigation_node_tasks.c` с использованием компонента `ina209`.
 
 ---
 
@@ -321,7 +321,7 @@ infra/
 ```text
 configs/
 ├─ nodes/
-│  ├─ pump_node_template.json
+│  ├─ storage_irrigation_node_template.json
 │  ├─ ph_node_template.json
 │  ├─ ec_node_template.json
 │  ├─ climate_node_template.json
@@ -391,7 +391,7 @@ tools/
    - все ключевые спеки по нодам, MQTT и backend,
    - индексы и README отражают текущую структуру и код.
 2. В `firmware/`:
-   - есть рабочие проекты `pump_node`, `ph_node`, `ec_node`, `climate_node`,
+   - есть рабочие проекты `storage_irrigation_node`, `ph_node`, `ec_node`, `climate_node`,
    - реализован и протестирован `ina209`-драйвер,
    - насосная нода **гарантированно**:
      - включает насос по команде,
