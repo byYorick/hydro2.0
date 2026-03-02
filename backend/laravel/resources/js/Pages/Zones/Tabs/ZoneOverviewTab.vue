@@ -305,15 +305,11 @@ const props = defineProps<Props>()
 const displayCycle = computed(() => props.activeGrowCycle ?? props.activeCycle ?? null)
 
 const hasTargets = computed(() => {
-  // ZoneTargets использует ph_min/ec_min/temp_min/humidity_min, а не ph/ec/temp/humidity —
-  // неправильные имена полей давали всегда undefined → hasTargets всегда false → ZoneTargets никогда не рендерился
-  return Boolean(
-    props.targets &&
-    (props.targets.ph_min !== undefined ||
-      props.targets.ec_min !== undefined ||
-      props.targets.temp_min !== undefined ||
-      props.targets.humidity_min !== undefined)
-  )
+  // Бэкенд присылает вложенный формат: { ph: {...}, ec: {...}, climate_request: {...} }
+  // Плоских полей ph_min / ec_min в runtime нет — проверяем вложенные ключи
+  if (!props.targets) return false
+  const t = props.targets as Record<string, unknown>
+  return Boolean(t.ph !== undefined || t.ec !== undefined || t.climate_request !== undefined)
 })
 
 const recentEvents = computed(() => {
