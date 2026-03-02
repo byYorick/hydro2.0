@@ -82,8 +82,6 @@ static QueueHandle_t s_done_queue = NULL;
 static SemaphoreHandle_t s_actuator_mutex = NULL;
 static storage_irrigation_node_actuator_runtime_t s_actuator_runtime[PUMP_DRIVER_MAX_CHANNELS] = {0};
 static size_t s_actuator_runtime_count = 0;
-static bool s_clean_fill_stage_active = false;
-static bool s_solution_fill_stage_active = false;
 
 static void storage_irrigation_node_cmd_queue_task(void *pvParameters);
 static void storage_irrigation_node_done_task(void *pvParameters);
@@ -103,6 +101,8 @@ static int storage_irrigation_node_find_actuator_index(const char *channel);
 static bool storage_irrigation_node_parse_relay_state(const cJSON *item, bool *state_out);
 static esp_err_t storage_irrigation_node_set_actuator_state_locked(size_t index, bool state);
 static bool storage_irrigation_node_get_actuator_state_locked(const char *channel, bool *state_out);
+static bool storage_irrigation_node_is_clean_fill_active_locked(void);
+static bool storage_irrigation_node_is_solution_fill_active_locked(void);
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void);
 static void storage_irrigation_node_append_main_pump_interlock_error(cJSON *details);
 static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor_name, bool *state_out);
@@ -313,6 +313,30 @@ static bool storage_irrigation_node_get_actuator_state_locked(const char *channe
     return true;
 }
 
+static bool storage_irrigation_node_is_clean_fill_active_locked(void) {
+    bool valve_clean_fill = false;
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_clean_fill", &valve_clean_fill)) {
+        return false;
+    }
+    return valve_clean_fill;
+}
+
+static bool storage_irrigation_node_is_solution_fill_active_locked(void) {
+    bool pump_main = false;
+    bool valve_clean_supply = false;
+    bool valve_solution_fill = false;
+    if (!storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_clean_supply", &valve_clean_supply)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_solution_fill", &valve_solution_fill)) {
+        return false;
+    }
+    return pump_main && valve_clean_supply && valve_solution_fill;
+}
+
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void) {
     bool valve_clean_supply = false;
     bool valve_solution_supply = false;
@@ -367,47 +391,64 @@ static cJSON *storage_irrigation_node_build_irr_state_snapshot(void) {
     bool clean_level_min = false;
     bool solution_level_max = false;
     bool solution_level_min = false;
+    bool clean_level_max_ok = false;
+    bool clean_level_min_ok = false;
+    bool solution_level_max_ok = false;
+    bool solution_level_min_ok = false;
     bool pump_main = false;
     bool valve_clean_fill = false;
     bool valve_clean_supply = false;
     bool valve_solution_fill = false;
     bool valve_solution_supply = false;
     bool valve_irrigation = false;
+    bool actuators_ok = false;
 
     cJSON *snapshot = cJSON_CreateObject();
     if (!snapshot) {
         return NULL;
     }
 
-    (void)storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
-    (void)storage_irrigation_node_read_switch_state_by_name("level_clean_min", &clean_level_min);
-    (void)storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
-    (void)storage_irrigation_node_read_switch_state_by_name("level_solution_min", &solution_level_min);
+    clean_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
+    clean_level_min_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_min", &clean_level_min);
+    solution_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
+    solution_level_min_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_min", &solution_level_min);
 
-    if (s_actuator_mutex && xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(250)) == pdTRUE) {
-        (void)storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main);
-        (void)storage_irrigation_node_get_actuator_state_locked("valve_clean_fill", &valve_clean_fill);
-        (void)storage_irrigation_node_get_actuator_state_locked("valve_clean_supply", &valve_clean_supply);
-        (void)storage_irrigation_node_get_actuator_state_locked("valve_solution_fill", &valve_solution_fill);
-        (void)storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &valve_solution_supply);
-        (void)storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &valve_irrigation);
+    if (s_actuator_mutex && xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        bool ok = true;
+        ok = storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main) && ok;
+        ok = storage_irrigation_node_get_actuator_state_locked("valve_clean_fill", &valve_clean_fill) && ok;
+        ok = storage_irrigation_node_get_actuator_state_locked("valve_clean_supply", &valve_clean_supply) && ok;
+        ok = storage_irrigation_node_get_actuator_state_locked("valve_solution_fill", &valve_solution_fill) && ok;
+        ok = storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &valve_solution_supply) && ok;
+        ok = storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &valve_irrigation) && ok;
+        actuators_ok = ok;
         xSemaphoreGive(s_actuator_mutex);
     }
 
-    cJSON_AddBoolToObject(snapshot, "clean_level_max", clean_level_max);
-    cJSON_AddBoolToObject(snapshot, "clean_level_min", clean_level_min);
-    cJSON_AddBoolToObject(snapshot, "solution_level_max", solution_level_max);
-    cJSON_AddBoolToObject(snapshot, "solution_level_min", solution_level_min);
-    cJSON_AddBoolToObject(snapshot, "level_clean_max", clean_level_max);
-    cJSON_AddBoolToObject(snapshot, "level_clean_min", clean_level_min);
-    cJSON_AddBoolToObject(snapshot, "level_solution_max", solution_level_max);
-    cJSON_AddBoolToObject(snapshot, "level_solution_min", solution_level_min);
-    cJSON_AddBoolToObject(snapshot, "pump_main", pump_main);
-    cJSON_AddBoolToObject(snapshot, "valve_clean_fill", valve_clean_fill);
-    cJSON_AddBoolToObject(snapshot, "valve_clean_supply", valve_clean_supply);
-    cJSON_AddBoolToObject(snapshot, "valve_solution_fill", valve_solution_fill);
-    cJSON_AddBoolToObject(snapshot, "valve_solution_supply", valve_solution_supply);
-    cJSON_AddBoolToObject(snapshot, "valve_irrigation", valve_irrigation);
+    if (clean_level_max_ok) {
+        cJSON_AddBoolToObject(snapshot, "clean_level_max", clean_level_max);
+        cJSON_AddBoolToObject(snapshot, "level_clean_max", clean_level_max);
+    }
+    if (clean_level_min_ok) {
+        cJSON_AddBoolToObject(snapshot, "clean_level_min", clean_level_min);
+        cJSON_AddBoolToObject(snapshot, "level_clean_min", clean_level_min);
+    }
+    if (solution_level_max_ok) {
+        cJSON_AddBoolToObject(snapshot, "solution_level_max", solution_level_max);
+        cJSON_AddBoolToObject(snapshot, "level_solution_max", solution_level_max);
+    }
+    if (solution_level_min_ok) {
+        cJSON_AddBoolToObject(snapshot, "solution_level_min", solution_level_min);
+        cJSON_AddBoolToObject(snapshot, "level_solution_min", solution_level_min);
+    }
+    if (actuators_ok) {
+        cJSON_AddBoolToObject(snapshot, "pump_main", pump_main);
+        cJSON_AddBoolToObject(snapshot, "valve_clean_fill", valve_clean_fill);
+        cJSON_AddBoolToObject(snapshot, "valve_clean_supply", valve_clean_supply);
+        cJSON_AddBoolToObject(snapshot, "valve_solution_fill", valve_solution_fill);
+        cJSON_AddBoolToObject(snapshot, "valve_solution_supply", valve_solution_supply);
+        cJSON_AddBoolToObject(snapshot, "valve_irrigation", valve_irrigation);
+    }
     return snapshot;
 }
 
@@ -514,13 +555,6 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
             );
             return set_err;
         }
-    }
-
-    if (strcmp(channel, "valve_clean_fill") == 0) {
-        s_clean_fill_stage_active = target_state;
-    }
-    if (strcmp(channel, "valve_solution_fill") == 0) {
-        s_solution_fill_stage_active = target_state;
     }
 
     xSemaphoreGive(s_actuator_mutex);
@@ -729,46 +763,66 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
 static void storage_irrigation_node_check_fill_completion_events(void) {
     bool clean_level_max = false;
     bool solution_level_max = false;
+    bool clean_level_max_ok = false;
+    bool solution_level_max_ok = false;
     bool emit_clean_completed = false;
     bool emit_solution_completed = false;
 
-    if (!storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max)) {
-        clean_level_max = false;
-    }
-    if (!storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max)) {
-        solution_level_max = false;
-    }
+    clean_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
+    solution_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
 
     if (!s_actuator_mutex || xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return;
     }
 
-    int valve_clean_fill_idx = storage_irrigation_node_find_actuator_index("valve_clean_fill");
-    if (s_clean_fill_stage_active &&
-        clean_level_max &&
-        valve_clean_fill_idx >= 0 &&
-        s_actuator_runtime[(size_t)valve_clean_fill_idx].state) {
-        (void)storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_fill_idx, false);
-        s_clean_fill_stage_active = false;
-        emit_clean_completed = true;
+    bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
+    if (clean_level_max_ok && clean_level_max && clean_fill_active) {
+        int valve_clean_fill_idx = storage_irrigation_node_find_actuator_index("valve_clean_fill");
+        if (valve_clean_fill_idx >= 0) {
+            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_fill_idx, false);
+            if (stop_err == ESP_OK) {
+                emit_clean_completed = true;
+            } else {
+                ESP_LOGE(TAG, "Failed to stop valve_clean_fill on level_clean_max: %s", esp_err_to_name(stop_err));
+            }
+        }
     }
 
-    int valve_solution_fill_idx = storage_irrigation_node_find_actuator_index("valve_solution_fill");
-    int valve_clean_supply_idx = storage_irrigation_node_find_actuator_index("valve_clean_supply");
-    int pump_main_idx = storage_irrigation_node_find_actuator_index("pump_main");
-    if (s_solution_fill_stage_active &&
-        solution_level_max &&
-        valve_solution_fill_idx >= 0 &&
-        s_actuator_runtime[(size_t)valve_solution_fill_idx].state) {
-        (void)storage_irrigation_node_set_actuator_state_locked((size_t)valve_solution_fill_idx, false);
+    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
+    if (solution_level_max_ok && solution_level_max && solution_fill_active) {
+        bool shutdown_ok = true;
+        int valve_solution_fill_idx = storage_irrigation_node_find_actuator_index("valve_solution_fill");
+        int valve_clean_supply_idx = storage_irrigation_node_find_actuator_index("valve_clean_supply");
+        int pump_main_idx = storage_irrigation_node_find_actuator_index("pump_main");
+
+        if (valve_solution_fill_idx >= 0) {
+            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_solution_fill_idx, false);
+            if (stop_err != ESP_OK) {
+                shutdown_ok = false;
+                ESP_LOGE(TAG, "Failed to stop valve_solution_fill on level_solution_max: %s", esp_err_to_name(stop_err));
+            }
+        } else {
+            shutdown_ok = false;
+        }
+
         if (valve_clean_supply_idx >= 0 && s_actuator_runtime[(size_t)valve_clean_supply_idx].state) {
-            (void)storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_supply_idx, false);
+            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_supply_idx, false);
+            if (stop_err != ESP_OK) {
+                shutdown_ok = false;
+                ESP_LOGE(TAG, "Failed to stop valve_clean_supply on level_solution_max: %s", esp_err_to_name(stop_err));
+            }
         }
         if (pump_main_idx >= 0 && s_actuator_runtime[(size_t)pump_main_idx].state) {
-            (void)storage_irrigation_node_set_actuator_state_locked((size_t)pump_main_idx, false);
+            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)pump_main_idx, false);
+            if (stop_err != ESP_OK) {
+                shutdown_ok = false;
+                ESP_LOGE(TAG, "Failed to stop pump_main on level_solution_max: %s", esp_err_to_name(stop_err));
+            }
         }
-        s_solution_fill_stage_active = false;
-        emit_solution_completed = true;
+
+        if (shutdown_ok) {
+            emit_solution_completed = true;
+        }
     }
 
     xSemaphoreGive(s_actuator_mutex);
@@ -1195,8 +1249,6 @@ static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *us
     for (size_t i = 0; i < s_actuator_runtime_count; i++) {
         (void)storage_irrigation_node_set_actuator_state_locked(i, false);
     }
-    s_clean_fill_stage_active = false;
-    s_solution_fill_stage_active = false;
     xSemaphoreGive(s_actuator_mutex);
     return ESP_OK;
 }

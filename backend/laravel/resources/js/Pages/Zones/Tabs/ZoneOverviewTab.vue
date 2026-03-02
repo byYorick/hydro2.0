@@ -305,7 +305,15 @@ const props = defineProps<Props>()
 const displayCycle = computed(() => props.activeGrowCycle ?? props.activeCycle ?? null)
 
 const hasTargets = computed(() => {
-  return Boolean(props.targets && (props.targets.ph || props.targets.ec || props.targets.temp || props.targets.humidity))
+  // ZoneTargets использует ph_min/ec_min/temp_min/humidity_min, а не ph/ec/temp/humidity —
+  // неправильные имена полей давали всегда undefined → hasTargets всегда false → ZoneTargets никогда не рендерился
+  return Boolean(
+    props.targets &&
+    (props.targets.ph_min !== undefined ||
+      props.targets.ec_min !== undefined ||
+      props.targets.temp_min !== undefined ||
+      props.targets.humidity_min !== undefined)
+  )
 })
 
 const recentEvents = computed(() => {

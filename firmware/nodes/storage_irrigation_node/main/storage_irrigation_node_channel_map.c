@@ -184,5 +184,17 @@ cJSON *storage_irrigation_node_build_config_channels(void) {
         cJSON_AddItemToArray(channels, entry);
     }
 
+    // Service channel for two-tank state snapshots/events. No GPIO binding.
+    cJSON *service_entry = cJSON_CreateObject();
+    if (!service_entry) {
+        cJSON_Delete(channels);
+        return NULL;
+    }
+    cJSON_AddStringToObject(service_entry, "name", "storage_state");
+    cJSON_AddStringToObject(service_entry, "channel", "storage_state");
+    cJSON_AddStringToObject(service_entry, "type", "ACTUATOR");
+    cJSON_AddStringToObject(service_entry, "actuator_type", "SYSTEM");
+    cJSON_AddItemToArray(channels, service_entry);
+
     return channels;
 }

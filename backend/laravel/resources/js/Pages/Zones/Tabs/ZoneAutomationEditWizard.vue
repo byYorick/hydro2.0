@@ -559,6 +559,9 @@ watch(
     if (isOpen) {
       syncDraftFromProps()
       step.value = 1
+      // Сбрасываем ошибку: иначе ошибка со предыдущей сессии остаётся видна
+      // при повторном открытии мастера на шаге 1
+      stepError.value = null
     }
   },
 )

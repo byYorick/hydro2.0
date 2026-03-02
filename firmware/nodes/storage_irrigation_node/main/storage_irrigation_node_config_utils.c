@@ -7,18 +7,20 @@
 #include <stdlib.h>
 
 static bool storage_irrigation_node_channels_match(const cJSON *channels) {
+    static const char *SERVICE_CHANNEL_NAME = "storage_state";
     if (!channels || !cJSON_IsArray(channels)) {
         return false;
     }
 
     const int expected_count =
-        (int)(STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT + STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT);
+        (int)(STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT + STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT + 1);
     if (cJSON_GetArraySize(channels) != expected_count) {
         return false;
     }
 
     bool found_sensor[STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT];
     bool found_actuator[STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT];
+    bool found_service_channel = false;
     for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
         found_sensor[i] = false;
     }
@@ -37,11 +39,20 @@ static bool storage_irrigation_node_channels_match(const cJSON *channels) {
         const cJSON *channel_item = cJSON_GetObjectItem(entry, "channel");
         const cJSON *gpio_item = cJSON_GetObjectItem(entry, "gpio");
         const cJSON *active_low_item = cJSON_GetObjectItem(entry, "active_low");
+        const cJSON *actuator_type_item = cJSON_GetObjectItem(entry, "actuator_type");
 
         const char *name = cJSON_IsString(name_item) ? name_item->valuestring : NULL;
         const char *channel = cJSON_IsString(channel_item) ? channel_item->valuestring : NULL;
         const char *key = name ? name : channel;
         if (!key) {
+            continue;
+        }
+
+        if (strcmp(key, SERVICE_CHANNEL_NAME) == 0) {
+            if (cJSON_IsString(actuator_type_item) &&
+                strcmp(actuator_type_item->valuestring, "SYSTEM") == 0) {
+                found_service_channel = true;
+            }
             continue;
         }
 
@@ -75,6 +86,9 @@ static bool storage_irrigation_node_channels_match(const cJSON *channels) {
         if (!found_actuator[i]) {
             return false;
         }
+    }
+    if (!found_service_channel) {
+        return false;
     }
 
     return true;
