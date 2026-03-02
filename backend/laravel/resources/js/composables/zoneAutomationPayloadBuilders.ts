@@ -1,6 +1,12 @@
 import { clamp, syncSystemToTankLayout } from './zoneAutomationTargetsParser'
 import type { ZoneAutomationForms } from './zoneAutomationTypes'
 
+function isValidTimeHHMM(value: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false
+  const [h, m] = value.split(':').map(Number)
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59
+}
+
 function normalizeNumber(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
@@ -30,6 +36,10 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
 
   if (waterForm.cleanTankFullThreshold <= 0 || waterForm.cleanTankFullThreshold > 1) {
     return 'Порог полного бака должен быть в диапазоне (0;1].'
+  }
+
+  if (!isValidTimeHHMM(waterForm.fillWindowStart) || !isValidTimeHHMM(waterForm.fillWindowEnd)) {
+    return 'Укажите корректное время окна заполнения (формат HH:MM, 00:00–23:59).'
   }
 
   return null
@@ -267,16 +277,8 @@ export function buildGrowthCycleConfigPayload(
         enabled: waterForm.diagnosticsEnabled,
         execution: {
           interval_sec: diagnosticsIntervalSec,
-          workflow: diagnosticsWorkflow,
-          clean_tank_full_threshold: cleanTankFullThreshold,
-          required_node_types: requiredNodeTypes,
-          refill_duration_sec: refillDurationSec,
-          refill_timeout_sec: refillTimeoutSec,
-          refill: {
-            duration_sec: refillDurationSec,
-            timeout_sec: refillTimeoutSec,
-            ...(refillPreferredChannel ? { channel: refillPreferredChannel } : {}),
-          },
+          // Все остальные поля берутся из diagnosticsExecution: workflow, clean_tank_full_threshold,
+          // required_node_types, refill_*, topology, startup, two_tank_commands (для 2-tank)
           ...diagnosticsExecution,
         },
       },

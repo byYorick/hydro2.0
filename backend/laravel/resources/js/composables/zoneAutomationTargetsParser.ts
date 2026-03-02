@@ -102,6 +102,12 @@ function toTimeHHmm(value: unknown): string | null {
     return null
   }
 
+  const h = Number(match[1])
+  const m = Number(match[2])
+  if (h < 0 || h > 23 || m < 0 || m > 59) {
+    return null
+  }
+
   return `${match[1].padStart(2, '0')}:${match[2]}`
 }
 
@@ -424,7 +430,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     asRecord(diagnostics?.execution)?.workflow
   )
   if (diagnosticsWorkflow) {
-    waterForm.cycleStartWorkflowEnabled = diagnosticsWorkflow === 'cycle_start' || diagnosticsWorkflow === 'refill_check'
+    waterForm.cycleStartWorkflowEnabled = diagnosticsWorkflow === 'cycle_start' || diagnosticsWorkflow === 'startup'
   }
 
   const cleanTankThreshold = readNumber(

@@ -1,11 +1,11 @@
 {
   "test_suite": "E93_start_cycle_intent_executor_path",
-  "generated_at": "2026-02-28T11:57:41.125247",
+  "generated_at": "2026-03-02T09:42:47.639005",
   "test_cases": [
     {
       "name": "set_test_context",
       "status": "passed",
-      "duration": 3.3855438232421875e-05,
+      "duration": 2.47955322265625e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.694563"
+      "timestamp": "2026-03-02T09:42:46.582856"
     },
     {
       "name": "get_zone_row",
       "status": "passed",
-      "duration": 0.002918243408203125,
+      "duration": 0.012229204177856445,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.697637"
+      "timestamp": "2026-03-02T09:42:46.595248"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 3.552436828613281e-05,
+      "duration": 6.9141387939453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -39,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.697819"
+      "timestamp": "2026-03-02T09:42:46.595507"
     },
     {
       "name": "capture_baseline",
       "status": "passed",
-      "duration": 0.0026323795318603516,
+      "duration": 0.004576206207275391,
       "error_message": null,
       "steps": [
         {
@@ -52,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.700507"
+      "timestamp": "2026-03-02T09:42:46.600170"
     },
     {
       "name": "insert_scheduler_like_intent",
       "status": "passed",
-      "duration": 0.004049062728881836,
+      "duration": 0.00882863998413086,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +65,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.704858"
+      "timestamp": "2026-03-02T09:42:46.609592"
     },
     {
       "name": "start_cycle_http",
       "status": "passed",
-      "duration": 0.024082183837890625,
+      "duration": 0.06206846237182617,
       "error_message": null,
       "steps": [
         {
@@ -78,12 +78,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.729854"
+      "timestamp": "2026-03-02T09:42:46.672841"
     },
     {
       "name": "wait_intent_terminal",
       "status": "passed",
-      "duration": 0.10375785827636719,
+      "duration": 0.828890323638916,
       "error_message": null,
       "steps": [
         {
@@ -91,12 +91,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.833889"
+      "timestamp": "2026-03-02T09:42:47.502227"
     },
     {
       "name": "wait_scheduler_task_running",
       "status": "passed",
-      "duration": 0.0014142990112304688,
+      "duration": 0.0033016204833984375,
       "error_message": null,
       "steps": [
         {
@@ -104,12 +104,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.835596"
+      "timestamp": "2026-03-02T09:42:47.505798"
     },
     {
       "name": "wait_scheduler_task_terminal",
       "status": "passed",
-      "duration": 0.0007898807525634766,
+      "duration": 0.0017788410186767578,
       "error_message": null,
       "steps": [
         {
@@ -117,12 +117,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.836755"
+      "timestamp": "2026-03-02T09:42:47.507835"
     },
     {
       "name": "set_scheduler_task_id",
       "status": "passed",
-      "duration": 1.1444091796875e-05,
+      "duration": 1.2159347534179688e-05,
       "error_message": null,
       "steps": [
         {
@@ -130,12 +130,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:40.836895"
+      "timestamp": "2026-03-02T09:42:47.507991"
     },
     {
       "name": "get_scheduler_task_detail",
       "status": "passed",
-      "duration": 0.2819092273712158,
+      "duration": 0.12128567695617676,
       "error_message": null,
       "steps": [
         {
@@ -143,12 +143,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.118948"
+      "timestamp": "2026-03-02T09:42:47.629438"
     },
     {
       "name": "start_cycle_http_200",
       "status": "passed",
-      "duration": 7.319450378417969e-05,
+      "duration": 8.463859558105469e-05,
       "error_message": null,
       "steps": [
         {
@@ -156,12 +156,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119032"
+      "timestamp": "2026-03-02T09:42:47.629540"
     },
     {
       "name": "start_cycle_response_status_ok",
       "status": "passed",
-      "duration": 2.6702880859375e-05,
+      "duration": 3.504753112792969e-05,
       "error_message": null,
       "steps": [
         {
@@ -169,12 +169,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119062"
+      "timestamp": "2026-03-02T09:42:47.629583"
     },
     {
       "name": "start_cycle_returns_intent_task_id",
       "status": "passed",
-      "duration": 3.933906555175781e-05,
+      "duration": 6.270408630371094e-05,
       "error_message": null,
       "steps": [
         {
@@ -182,12 +182,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119104"
+      "timestamp": "2026-03-02T09:42:47.629651"
     },
     {
       "name": "intent_terminal_status_valid",
       "status": "passed",
-      "duration": 5.054473876953125e-05,
+      "duration": 6.198883056640625e-05,
       "error_message": null,
       "steps": [
         {
@@ -195,12 +195,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119158"
+      "timestamp": "2026-03-02T09:42:47.629719"
     },
     {
       "name": "scheduler_task_id_has_st_prefix",
       "status": "passed",
-      "duration": 4.4345855712890625e-05,
+      "duration": 3.337860107421875e-05,
       "error_message": null,
       "steps": [
         {
@@ -208,12 +208,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119207"
+      "timestamp": "2026-03-02T09:42:47.629759"
     },
     {
       "name": "scheduler_task_terminal_status_valid",
       "status": "passed",
-      "duration": 3.647804260253906e-05,
+      "duration": 4.863739013671875e-05,
       "error_message": null,
       "steps": [
         {
@@ -221,12 +221,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119247"
+      "timestamp": "2026-03-02T09:42:47.629813"
     },
     {
       "name": "scheduler_task_detail_terminal",
       "status": "passed",
-      "duration": 0.00011777877807617188,
+      "duration": 0.00014162063598632812,
       "error_message": null,
       "steps": [
         {
@@ -234,12 +234,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.119370"
+      "timestamp": "2026-03-02T09:42:47.629960"
     },
     {
       "name": "intent_not_left_in_non_terminal",
       "status": "passed",
-      "duration": 0.0013797283172607422,
+      "duration": 0.0012555122375488281,
       "error_message": null,
       "steps": [
         {
@@ -247,7 +247,7 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-02-28T11:57:41.120756"
+      "timestamp": "2026-03-02T09:42:47.631222"
     }
   ],
   "timeline": [],
@@ -257,12 +257,10 @@
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 5,
-        "zone_uid": "zn-test-1",
-        "node_id": 25,
-        "node_uid": "nd-ph-esp32una",
-        "scheduler_trace_id": "e93-trace-1772279860000",
-        "scheduler_task_id": "st-29d70a0a324b4708b178909dbdeacea7"
+        "zone_id": 1,
+        "node_id": 5,
+        "scheduler_trace_id": "e93-trace-1772433766000",
+        "scheduler_task_id": "st-77d23eda0ddd4728ad3ecec9af8ff2bc"
       }
     }
   }

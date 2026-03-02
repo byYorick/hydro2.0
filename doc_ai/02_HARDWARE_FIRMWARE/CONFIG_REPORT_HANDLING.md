@@ -1,6 +1,6 @@
 # Обработка config_report от ноды
 
-**Дата:** 2025-11-23
+**Дата:** 2026-03-02
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -10,51 +10,54 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## Изменение логики привязки ноды
 
-### Новая логика:
-Нода считается привязанной к зоне **только после получения config_report** от ноды, который содержит актуальный NodeConfig.
+Нода считается привязанной к зоне только после фактического подтверждения от устройства через
+`config_report` из целевого namespace.
 
 ---
 
 ## Поток привязки ноды
 
 1. **Пользователь привязывает ноду к зоне** через UI
-   - `NodeService::update()` устанавливает `zone_id`
-   - Нода остается в состоянии `REGISTERED_BACKEND`
+   - backend выставляет intent (`pending_zone_id` / `zone_id` в зависимости от сценария)
+   - запускается publish NodeConfig в устройство через pipeline:
+     `Laravel -> PublishNodeConfigJob -> history-logger -> MQTT .../config -> node`
 
-2. **Нода подключается и отправляет `config_report`**
-   - Топик: `hydro/{gh}/{zone}/{node}/config_report`
-   - Содержит полный NodeConfig из прошивки/NVS
+2. **Нода принимает `.../config`, применяет и публикует `config_report`**
+   - входной топик config: `hydro/{gh}/{zone}/{node}/config` (или temp namespace)
+   - исходящий snapshot: `hydro/{gh}/{zone}/{node}/config_report`
+   - payload содержит полный актуальный NodeConfig из NVS
 
 3. **history-logger обрабатывает `config_report`**
    - Сохраняет конфиг в `nodes.config`
    - Синхронизирует `node_channels` из payload
-   - Если нода в `REGISTERED_BACKEND` и есть `zone_id`/`pending_zone_id` → переводит в `ASSIGNED_TO_ZONE` через Laravel API
+   - Завершает binding только если `config_report` пришёл из целевого namespace и соответствует intent
 
-4. **Нода переводится в `ASSIGNED_TO_ZONE`**
-   - Только после успешного подтверждения от ноды
-   - Нода считается привязанной к зоне
+4. **Нода переводится в целевое состояние binding**
+   - только после подтверждённого `config_report`
+   - fail-closed: без подтверждения binding не финализируется
 
 ---
 
 ## Измененные файлы
 
-### 1. history-logger/main.py
-- ✅ Добавлена подписка на `hydro/+/+/+/config_report`
-- ✅ Создан обработчик `handle_config_report()`
+### 1. history-logger
+- ✅ Подписка и обработка `hydro/+/+/+/config_report`
 - ✅ Сохранение `nodes.config` и синхронизация `node_channels`
+- ✅ Endpoint публикации config в ноду: `POST /nodes/{node_uid}/config`
 
-### 2. Laravel / UI
-- ✅ Отключена публикация конфига с сервера (`/api/nodes/{id}/config/publish` возвращает 410)
-- ✅ UI переведён в режим просмотра конфига (read-only)
+### 2. Laravel
+- ✅ Endpoint `POST /api/nodes/{node}/config/publish` активен
+- ✅ Публикация выполняется асинхронно через `PublishNodeConfigJob`
+- ✅ Job вызывает history-logger API, прямой MQTT publish из Laravel отсутствует
 
 ---
 
 ## Преимущества
 
-1. ✅ **Единый источник** — конфиг формируется в прошивке, сервер только хранит
+1. ✅ **Источник факта на устройстве** — итоговый config подтверждается `config_report` от ноды
 2. ✅ **Надежность** — привязка подтверждается фактом получения config_report
 3. ✅ **Согласованность** — каналы синхронизируются из реального payload ноды
-4. ✅ **Безопасность** — сервер не редактирует и не отправляет конфиг
+4. ✅ **Управляемость** — backend может инициировать publish config без обхода защищённого pipeline
 
 ---
 
@@ -66,5 +69,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## Важные замечания
 
-- Если нода не отправила `config_report`, она не будет переведена в `ASSIGNED_TO_ZONE`
-- Нода должна быть в состоянии `REGISTERED_BACKEND` и иметь `zone_id`/`pending_zone_id` для перевода
+- Если нода не отправила `config_report`, binding не финализируется.
+- `config_report` остаётся источником подтверждения фактической конфигурации на устройстве.
+- Endpoint `config/publish` не заменяет `config_report`; он только инициирует доставку config к ноде.

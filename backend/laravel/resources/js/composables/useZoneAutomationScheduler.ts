@@ -2,6 +2,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { logger } from '@/utils/logger'
 import type { ToastHandler } from '@/composables/useApi'
 import type { AutomationLogicMode } from '@/composables/zoneAutomationUtils'
+import {
+  normalizeAutomationControlMode,
+  normalizeAutomationManualSteps,
+} from '@/composables/zoneAutomationUtils'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { AutomationControlMode, AutomationManualStep, AutomationState } from '@/types/Automation'
 import type {
@@ -29,17 +33,6 @@ import {
   type SchedulerTasksResponse,
   type SchedulerTaskResponse,
 } from '@/composables/zoneSchedulerFormatters'
-
-const MANUAL_STEPS_SET = new Set<AutomationManualStep>([
-  'clean_fill_start',
-  'clean_fill_stop',
-  'solution_fill_start',
-  'solution_fill_stop',
-  'prepare_recirculation_start',
-  'prepare_recirculation_stop',
-  'irrigation_recovery_start',
-  'irrigation_recovery_stop',
-])
 
 // ─── Composable ───────────────────────────────────────────────────────────────
 
@@ -121,25 +114,12 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     return ''
   }
 
-  function normalizeControlMode(value: unknown): AutomationControlMode {
-    const normalized = String(value ?? '').trim().toLowerCase()
-    if (normalized === 'semi' || normalized === 'manual') return normalized
-    return 'auto'
-  }
-
-  function normalizeManualSteps(value: unknown): AutomationManualStep[] {
-    if (!Array.isArray(value)) return []
-    return value
-      .map((item) => String(item ?? '').trim().toLowerCase())
-      .filter((item): item is AutomationManualStep => MANUAL_STEPS_SET.has(item as AutomationManualStep))
-  }
-
   function syncControlModeFromAutomationState(snapshot: AutomationState | null): void {
     if (!snapshot || automationControlModeSaving.value) {
       return
     }
-    automationControlMode.value = normalizeControlMode(snapshot.control_mode)
-    allowedManualSteps.value = normalizeManualSteps(snapshot.allowed_manual_steps)
+    automationControlMode.value = normalizeAutomationControlMode(snapshot.control_mode)
+    allowedManualSteps.value = normalizeAutomationManualSteps(snapshot.allowed_manual_steps)
   }
 
   function extractApiErrorMessage(error: unknown, fallback: string): string {
@@ -232,20 +212,25 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       automationControlModeLoading.value = false
       return
     }
+    const requestedZoneId = props.zoneId
     automationControlModeLoading.value = true
     try {
       const response = await get<{ data?: { control_mode?: string; allowed_manual_steps?: unknown[] } }>(
-        `/api/zones/${props.zoneId}/control-mode`
+        `/api/zones/${requestedZoneId}/control-mode`
       )
+      if (props.zoneId !== requestedZoneId) return
       const payload = response.data?.data ?? {}
-      automationControlMode.value = normalizeControlMode(payload.control_mode)
-      allowedManualSteps.value = normalizeManualSteps(payload.allowed_manual_steps)
+      automationControlMode.value = normalizeAutomationControlMode(payload.control_mode)
+      allowedManualSteps.value = normalizeAutomationManualSteps(payload.allowed_manual_steps)
     } catch (error) {
-      logger.warn('[ZoneAutomationTab] Failed to fetch automation control mode', { error, zoneId: props.zoneId })
+      if (props.zoneId !== requestedZoneId) return
+      logger.warn('[ZoneAutomationTab] Failed to fetch automation control mode', { error, zoneId: requestedZoneId })
       automationControlMode.value = 'auto'
       allowedManualSteps.value = []
     } finally {
-      automationControlModeLoading.value = false
+      if (props.zoneId === requestedZoneId) {
+        automationControlModeLoading.value = false
+      }
     }
   }
 
@@ -262,8 +247,8 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
         }
       )
       const payload = response.data?.data ?? {}
-      automationControlMode.value = normalizeControlMode(payload.control_mode ?? mode)
-      allowedManualSteps.value = normalizeManualSteps(payload.allowed_manual_steps)
+      automationControlMode.value = normalizeAutomationControlMode(payload.control_mode ?? mode)
+      allowedManualSteps.value = normalizeAutomationManualSteps(payload.allowed_manual_steps)
       showToast('Режим управления автоматикой обновлён.', 'success')
       return true
     } catch (error: unknown) {

@@ -106,12 +106,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Модуль `oled_ui.c` должен предоставлять API:
 
-- `ui_init(node_type, node_uid)`;
-- `ui_set_state(UI_STATE_xxx)`;
-- `ui_update_model(struct UiModel *model)`;
-- обработчики событий ввода (`ui_handle_encoder`, `ui_handle_button`).
+- `oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid, const oled_ui_config_t *config)`;
+- `oled_ui_set_state(oled_ui_state_t state)`;
+- `oled_ui_update_model(const oled_ui_model_t *model)`;
+- обработчики событий ввода (`oled_ui_handle_encoder`, `oled_ui_handle_button`).
 
-`UiModel` содержит:
+`oled_ui_model_t` содержит:
 
 - текущие измерения (pH, EC, температуру);
 - статус соединений (Wi-Fi/MQTT);

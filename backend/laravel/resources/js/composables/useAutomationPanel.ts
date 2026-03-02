@@ -16,6 +16,10 @@ import { getEchoInstance, onWsStateChange } from '@/utils/echoClient'
 import { logger } from '@/utils/logger'
 import type { EchoChannelLike, WsEventPayload } from '@/ws/subscriptionTypes'
 import { useApi } from '@/composables/useApi'
+import {
+  normalizeAutomationControlMode,
+  normalizeAutomationManualSteps,
+} from '@/composables/zoneAutomationUtils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -93,17 +97,6 @@ export interface AutomationPanelProps {
   fallbackSystemType?: IrrigationSystem
 }
 
-const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
-  'clean_fill_start',
-  'clean_fill_stop',
-  'solution_fill_start',
-  'solution_fill_stop',
-  'prepare_recirculation_start',
-  'prepare_recirculation_stop',
-  'irrigation_recovery_start',
-  'irrigation_recovery_stop',
-])
-
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
 function clampPercent(value: unknown): number {
@@ -134,19 +127,6 @@ function pickFirstDefined(source: Record<string, unknown>, keys: string[]): unkn
     }
   }
   return undefined
-}
-
-function normalizeControlMode(value: unknown): AutomationControlMode {
-  const normalized = String(value ?? '').trim().toLowerCase()
-  if (normalized === 'semi' || normalized === 'manual') return normalized
-  return 'auto'
-}
-
-function normalizeManualSteps(value: unknown): AutomationManualStep[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((item) => String(item ?? '').trim().toLowerCase())
-    .filter((item): item is AutomationManualStep => AUTOMATION_MANUAL_STEPS_SET.has(item as AutomationManualStep))
 }
 
 function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
@@ -360,9 +340,9 @@ export function useAutomationPanel(
       next_state: source.next_state ?? null,
       estimated_completion_sec: source.estimated_completion_sec ?? null,
       irr_node_state: irrNodeState,
-      control_mode: normalizeControlMode(sourceAny.control_mode),
+      control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
       control_mode_available: ['auto', 'semi', 'manual'],
-      allowed_manual_steps: normalizeManualSteps(sourceAny.allowed_manual_steps),
+      allowed_manual_steps: normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
       state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'
         ? {
             source: String((sourceAny.state_meta as Record<string, unknown>).source ?? ''),
@@ -383,14 +363,17 @@ export function useAutomationPanel(
       return
     }
 
+    const requestedZoneId = props.zoneId
     fetchInFlight = true
     try {
-      const response = await get(`/api/zones/${props.zoneId}/state`)
+      const response = await get(`/api/zones/${requestedZoneId}/state`)
+      if (props.zoneId !== requestedZoneId) return
       const normalized = normalizeState(response.data)
       automationState.value = normalized
       errorMessage.value = null
       connectivityWarning.value = null
     } catch (error) {
+      if (props.zoneId !== requestedZoneId) return
       const message = error instanceof Error ? error.message : 'unknown_error'
       if (automationState.value) {
         errorMessage.value = null
@@ -553,15 +536,16 @@ export function useAutomationPanel(
   const irrNodeState = computed(() => automationState.value?.irr_node_state ?? null)
   const cleanTankLevel = computed(() => {
     const state = irrNodeState.value
+    // max=true — бак точно заполнен до верхней отметки
     if (state?.clean_level_max === true) return 100
-    if (state?.clean_level_min === true) return 50
+    // оба false — уровень ниже нижней отметки (бак пустой или почти пустой)
     if (state?.clean_level_max === false && state?.clean_level_min === false) return 0
+    // min=true без max — выше нижней отметки, точное значение неизвестно; используем raw %
     return automationState.value?.current_levels.clean_tank_level_percent ?? 0
   })
   const nutrientTankLevel = computed(() => {
     const state = irrNodeState.value
     if (state?.solution_level_max === true) return 100
-    if (state?.solution_level_min === true) return 50
     if (state?.solution_level_max === false && state?.solution_level_min === false) return 0
     return automationState.value?.current_levels.nutrient_tank_level_percent ?? 0
   })
@@ -602,12 +586,14 @@ export function useAutomationPanel(
 
   const hasFailedState = computed(() => {
     if (automationState.value?.state_details.failed) return true
-    // Fallback: проверяем последнее событие таймлайна (для обратной совместимости)
+    // Fallback: только terminal-события провала всего процесса.
+    // Намеренно НЕ проверяем COMMAND_FAILED и *_TIMEOUT — они могут идти с retry и не означают
+    // гибель процесса целиком.
     const timeline = automationState.value?.timeline ?? []
     const latest = timeline[timeline.length - 1]
     if (!latest) return false
     const eventCode = String(latest.event ?? '').toUpperCase()
-    return eventCode.includes('FAILED') || eventCode.includes('TIMEOUT')
+    return eventCode === 'SCHEDULE_TASK_FAILED' || eventCode === 'TASK_FAILED'
   })
 
   const hasSetupTransitionCompleted = computed(() => {

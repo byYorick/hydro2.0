@@ -77,6 +77,9 @@ run_test_with_retry "scenarios/automation_engine/E64_effective_targets_only.yaml
 run_test_with_retry "scenarios/automation_engine/E65_phase_transition_api.yaml"
 run_test_with_retry "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
 
+echo "=== SCHEDULER ТЕСТЫ ==="
+run_test_with_retry "scenarios/scheduler/E93_start_cycle_intent_executor_path.yaml"
+
 echo "=== SNAPSHOT ТЕСТЫ ==="
 run_test_with_retry "scenarios/snapshot/E30_snapshot_contains_last_event_id.yaml"
 run_test_with_retry "scenarios/snapshot/E31_reconnect_replay_gap.yaml"

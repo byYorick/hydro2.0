@@ -27,19 +27,16 @@ Node Diagnostics Engine выполняет:
 
 # 2. Архитектура Node Diagnostics
 
-Файлы:
+Текущая реализация (production baseline):
 
 ```
-diagnostics/
- ├── diag_core.c
- ├── diag_wifi.c
- ├── diag_sensors.c
- ├── diag_actuators.c
- ├── diag_memory.c
- ├── diag_mqtt.c
- ├── diag_recovery.c
- └── diag_report.c
+firmware/nodes/common/components/diagnostics/
+ ├── diagnostics.c
+ ├── include/diagnostics.h
+ └── README.md
 ```
+
+Примечание: разбиение на `diag_*`-модули является целевым вариантом декомпозиции и пока не выделено в отдельные файлы.
 
 ---
 
@@ -81,9 +78,9 @@ GOOD, MEDIUM, BAD, CRITICAL
 Отслеживает:
 
 - количество reconnects,
-- ping-loop hangs,
+- connected/messages_sent/messages_received/publish_errors/reconnect_count,
 - publish failures,
-- пропущенные ACK команд.
+- ошибки подписки/доставки (через MQTT метрики).
 
 Если MQTT нестабилен → флаг:
 
@@ -109,6 +106,9 @@ MQTT_UNSTABLE
 heap_free < 20 KB → WARNING
 heap_free < 10 KB → CRITICAL
 ```
+
+Текущий runtime-статус: компонент публикует фактические метрики памяти (`free_heap`, `min_free_heap`,
+`largest_free_block`), но эти пороги не зашиты как автоматические уровни alarm в текущей реализации.
 
 ---
 

@@ -150,6 +150,24 @@ class TestSuite:
                 str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
                 str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
+            "automation_engine_realhw": [
+                str(base_path / "automation_engine" / "E61_fail_closed_corrections.yaml"),
+                str(base_path / "automation_engine" / "E64_effective_targets_only.yaml"),
+                str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
+                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
+                str(base_path / "automation_engine" / "E67_nutrition_strict_contract.yaml"),
+                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
+                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
+            ],
+            "workflow": [
+                str(base_path / "workflow" / "E83_clean_water_fill.yaml"),
+                str(base_path / "workflow" / "E84_solution_preparation.yaml"),
+                str(base_path / "workflow" / "E85_recirculation_targets.yaml"),
+                str(base_path / "workflow" / "E86_ec_ph_correction.yaml"),
+                str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
+                str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
+                str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
+            ],
             "scheduler": [
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),
                 str(base_path / "scheduler" / "E81_water_change_schedule.yaml"),
@@ -165,6 +183,18 @@ class TestSuite:
                 str(base_path / "chaos" / "E70_mqtt_down_recovery.yaml"),
                 str(base_path / "chaos" / "E71_db_flaky.yaml"),
                 str(base_path / "chaos" / "E72_ws_down_snapshot_recover.yaml"),
+            ],
+            "prod_readiness_realhw": [
+                str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
+                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
+                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
+                str(base_path / "workflow" / "E83_clean_water_fill.yaml"),
+                str(base_path / "workflow" / "E84_solution_preparation.yaml"),
+                str(base_path / "workflow" / "E85_recirculation_targets.yaml"),
+                str(base_path / "workflow" / "E86_ec_ph_correction.yaml"),
+                str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
+                str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
+                str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
             ],
             "full": self._get_all_scenarios()
         }
@@ -203,7 +233,9 @@ class TestSuite:
         for path in paths:
             # Check if it's a predefined suite
             if path in ["smoke", "core", "commands", "alerts", "infrastructure",
-                       "grow_cycle", "automation_engine", "snapshot", "chaos", "full"]:
+                       "grow_cycle", "automation_engine", "automation_engine_realhw",
+                       "workflow", "scheduler", "snapshot", "chaos",
+                       "prod_readiness_realhw", "full"]:
                 scenarios.extend(self._get_suite_scenarios(path))
                 continue
 
@@ -303,6 +335,11 @@ class TestSuite:
             tags.append('grow_cycle')
         if 'automation_engine' in path_parts:
             tags.append('automation_engine')
+        if 'workflow' in path_parts:
+            tags.append('workflow')
+        if 'scheduler' in path_parts:
+            tags.append('scheduler')
+            tags.append('start_cycle')
         if 'chaos' in path_parts:
             tags.append('chaos')
 
@@ -389,7 +426,9 @@ Examples:
         parser.add_argument(
             "--suite", "-s",
             choices=["smoke", "core", "commands", "alerts", "infrastructure",
-                    "grow_cycle", "automation_engine", "snapshot", "chaos", "full"],
+                    "grow_cycle", "automation_engine", "automation_engine_realhw",
+                    "workflow", "scheduler", "snapshot", "chaos",
+                    "prod_readiness_realhw", "full"],
             help="Run predefined test suite"
         )
 
@@ -609,7 +648,9 @@ Examples:
         """Handle --list command."""
         print("Available test suites:")
         suites = ["smoke", "core", "commands", "alerts", "infrastructure",
-                 "grow_cycle", "automation_engine", "snapshot", "chaos", "full"]
+                 "grow_cycle", "automation_engine", "automation_engine_realhw",
+                 "workflow", "scheduler", "snapshot", "chaos",
+                 "prod_readiness_realhw", "full"]
         for suite in suites:
             scenarios = self._get_suite_scenarios(suite)
             print(f"  {suite}: {len(scenarios)} scenarios")

@@ -382,6 +382,9 @@ main() {
                 "automation_engine/E64_effective_targets_only"
                 "automation_engine/E65_phase_transition_api"
                 "automation_engine/E74_node_zone_mismatch_guard"
+
+                # SCHEDULER
+                "scheduler/E93_start_cycle_intent_executor_path"
             )
             
             log_info "Запуск полного набора E2E сценариев (${#SCENARIOS[@]} сценариев, без CHAOS)..."

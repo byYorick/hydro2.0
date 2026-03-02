@@ -562,8 +562,17 @@ export function schedulerTaskSlaMeta(task: SchedulerTaskStatus | null | undefine
   const status = normalizeTargetSchedulerStatus(task.status)
   const dueAt = parseIsoDate(task.due_at)
   const expiresAt = parseIsoDate(task.expires_at)
-  const updatedAt = parseIsoDate(task.updated_at)
   const scheduledFor = parseIsoDate(task.scheduled_for)
+  // Используем время terminal lifecycle-записи как время фактического завершения задачи.
+  // updated_at отражает время последнего обновления записи в БД, которое может быть позже
+  // реального завершения (доп. события, агрегация). lifecycle точнее для SLA-сравнения.
+  const completedLifecycleEntry = task.lifecycle?.find((item) => {
+    const s = normalizeTargetSchedulerStatus(item.status)
+    return s === 'completed' || s === 'failed' || s === 'rejected' || s === 'expired'
+  })
+  const completedAt = completedLifecycleEntry
+    ? parseIsoDate(completedLifecycleEntry.at)
+    : parseIsoDate(task.updated_at)
   const now = new Date()
 
   const windowParts: string[] = []
@@ -597,7 +606,7 @@ export function schedulerTaskSlaMeta(task: SchedulerTaskStatus | null | undefine
   }
 
   if (status === 'completed') {
-    if (dueAt && updatedAt && updatedAt.getTime() > dueAt.getTime()) {
+    if (dueAt && completedAt && completedAt.getTime() > dueAt.getTime()) {
       return {
         variant: 'warning',
         label: 'SLA пограничный: завершена после due_at',
@@ -683,11 +692,13 @@ export function taskMatchesPreset(task: SchedulerTaskStatus, preset: SchedulerTa
   }
 
   if (preset === 'done_confirmed') {
-    return status === 'completed' && commandsTotal !== 0 && effectConfirmed === true
+    // commandsTotal !== null guard обязателен: null !== 0 → true, что даёт ложные срабатывания
+    return status === 'completed' && commandsTotal !== null && commandsTotal !== 0 && effectConfirmed === true
   }
 
   if (preset === 'done_unconfirmed') {
-    return status === 'completed' && commandsTotal !== 0 && actionRequired !== false && effectConfirmed !== true
+    // commandsTotal !== null guard обязателен: null !== 0 → true, что даёт ложные срабатывания
+    return status === 'completed' && commandsTotal !== null && commandsTotal !== 0 && actionRequired !== false && effectConfirmed !== true
   }
 
   return true

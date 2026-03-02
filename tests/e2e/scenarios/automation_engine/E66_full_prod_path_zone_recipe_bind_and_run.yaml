@@ -480,6 +480,45 @@ actions:
     save: automation_cmd_status_row
     expected_rows: 1
 
+  - step: wait_for_actuator_command
+    type: db.wait
+    query: |
+      SELECT cmd_id, status, source, channel, cmd, node_id
+      FROM commands
+      WHERE zone_id = :zid
+        AND node_id IN (:irrig_nid, :ph_nid, :ec_nid)
+        AND cmd IN ('set_relay', 'run_pump', 'dose')
+        AND created_at >= :started_at
+      ORDER BY created_at ASC
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      irrig_nid: ${irrig_node_row.0.id}
+      ph_nid: ${ph_node_row.0.id}
+      ec_nid: ${ec_node_row.0.id}
+      started_at: ${test_window.0.started_at}
+    timeout: 120.0
+    save: actuator_cmd_row
+    expected_rows: 1
+
+  - step: set_actuator_command_id
+    type: set
+    actuator_cmd_id: ${actuator_cmd_row.0.cmd_id}
+
+  - step: wait_for_actuator_command_terminal
+    type: db.wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status IN ('DONE', 'ERROR', 'INVALID', 'BUSY', 'NO_EFFECT', 'TIMEOUT', 'SEND_FAILED')
+      LIMIT 1
+    params:
+      cmd_id: ${actuator_cmd_id}
+    timeout: 60.0
+    save: actuator_cmd_status_row
+    expected_rows: 1
+
   - step: wait_for_automation_task_finish
     type: db.wait
     query: |
@@ -608,9 +647,46 @@ assertions:
     type: custom_assert
     condition: "context.get('automation_cmd_row', [{}])[0].get('cmd') in ['state', 'set_relay', 'run_pump', 'dose', 'activate_sensor_mode', 'deactivate_sensor_mode']"
 
+  - name: actuator_command_exists
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM commands
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${actuator_cmd_id}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: equals
+        value: 1
+
+  - name: actuator_command_source_is_automation_layer
+    type: custom_assert
+    condition: "str(context.get('actuator_cmd_row', [{}])[0].get('source', '')).lower() in ['automation', 'automation-engine', 'automation_engine']"
+
+  - name: actuator_command_has_no_forbidden_source
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS bad_count
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND LOWER(COALESCE(source, '')) IN ('web', 'api', 'laravel', 'laravel_scheduler', 'scheduler')
+    params:
+      cmd_id: ${actuator_cmd_id}
+    expected_rows: 1
+    expected:
+      - field: bad_count
+        operator: equals
+        value: 0
+
   - name: automation_command_terminal_not_timeout
     type: custom_assert
     condition: "context.get('automation_cmd_status_row', [{}])[0].get('status') in ['DONE', 'NO_EFFECT']"
+
+  - name: actuator_command_terminal_not_timeout
+    type: custom_assert
+    condition: "context.get('actuator_cmd_status_row', [{}])[0].get('status') in ['DONE', 'NO_EFFECT']"
 
   - name: automation_task_finished_without_failed_event
     type: custom_assert

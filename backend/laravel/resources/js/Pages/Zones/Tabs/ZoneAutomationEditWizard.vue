@@ -367,6 +367,12 @@
           />
         </label>
       </section>
+      <p
+        v-if="stepError"
+        class="text-xs text-red-500 mt-2"
+      >
+        {{ stepError }}
+      </p>
     </div>
 
     <template #footer>
@@ -408,7 +414,7 @@
 import { reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import { resetToRecommended as resetFormsToRecommended, syncSystemToTankLayout } from '@/composables/zoneAutomationFormLogic'
+import { resetToRecommended as resetFormsToRecommended, syncSystemToTankLayout, validateForms } from '@/composables/zoneAutomationFormLogic'
 import type {
   ClimateFormState,
   LightingFormState,
@@ -444,6 +450,7 @@ const steps = [
 ] as const
 
 const step = ref<1 | 2 | 3>(1)
+const stepError = ref<string | null>(null)
 const draftClimateForm = reactive<ClimateFormState>({ ...props.climateForm })
 const draftWaterForm = reactive<WaterFormState>({ ...props.waterForm })
 const draftLightingForm = reactive<LightingFormState>({ ...props.lightingForm })
@@ -466,10 +473,23 @@ function goPrevStep(): void {
 
 function goNextStep(): void {
   if (step.value === 1) {
+    // Шаг 1 содержит только климат: проверяем только ventMin/ventMax
+    if (draftClimateForm.ventMinPercent > draftClimateForm.ventMaxPercent) {
+      stepError.value = 'Минимум открытия форточек не может быть больше максимума.'
+      return
+    }
+    stepError.value = null
     step.value = 2
     return
   }
   if (step.value === 2) {
+    // Шаг 2 содержит водный узел: валидируем его поля через validateForms
+    const waterError = validateForms({ climateForm: draftClimateForm, waterForm: draftWaterForm })
+    if (waterError) {
+      stepError.value = waterError
+      return
+    }
+    stepError.value = null
     step.value = 3
   }
 }
@@ -480,6 +500,8 @@ function resetDraft(): void {
     waterForm: draftWaterForm,
     lightingForm: draftLightingForm,
   })
+  step.value = 1
+  stepError.value = null
 }
 
 function emitApply(): void {

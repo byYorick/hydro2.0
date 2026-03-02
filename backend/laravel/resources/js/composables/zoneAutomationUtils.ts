@@ -3,7 +3,35 @@
  * Keep this file free of Vue reactivity imports.
  */
 
+import type { AutomationControlMode, AutomationManualStep } from '@/types/Automation'
+
 export type AutomationLogicMode = 'setup' | 'working'
+
+// ─── Automation control mode / manual steps ───────────────────────────────────
+
+export const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
+  'clean_fill_start',
+  'clean_fill_stop',
+  'solution_fill_start',
+  'solution_fill_stop',
+  'prepare_recirculation_start',
+  'prepare_recirculation_stop',
+  'irrigation_recovery_start',
+  'irrigation_recovery_stop',
+])
+
+export function normalizeAutomationControlMode(value: unknown): AutomationControlMode {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'semi' || normalized === 'manual') return normalized
+  return 'auto'
+}
+
+export function normalizeAutomationManualSteps(value: unknown): AutomationManualStep[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => String(item ?? '').trim().toLowerCase())
+    .filter((item): item is AutomationManualStep => AUTOMATION_MANUAL_STEPS_SET.has(item as AutomationManualStep))
+}
 
 export function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number') {

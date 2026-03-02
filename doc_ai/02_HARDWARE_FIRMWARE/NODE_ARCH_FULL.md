@@ -149,7 +149,9 @@ component_name/
 
 # 4. NodeConfig
 
-NodeConfig полностью формируется на backend.
+NodeConfig поддерживается на стороне ноды:
+- базовый шаблон задаётся прошивкой;
+- рабочая версия хранится в NVS и может обновляться через MQTT `.../config`.
 
 ## 4.1. Формат
 ```json
@@ -259,7 +261,8 @@ NodeConfig полностью формируется на backend.
 - `stub` (boolean) — флаг симулированного значения
 - `stable` (boolean) — флаг стабильности значения
 
-> **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim.
+> **Важно:** поля `node_uid` и `channel` не включаются в JSON payload, так как они уже есть в MQTT topic.
+> До синхронизации времени `ts` может быть uptime-секундами; после синхронизации — Unix timestamp.
 
 ## 6.2. Отправка
 Топик:
@@ -290,12 +293,9 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```
 
 ## 7.2. Поддерживаемые команды
-- run_pump 
-- set_pwm 
-- set_relay 
-- calibrate 
-- reboot 
-- measure_now 
+- Набор команд зависит от типа ноды и зарегистрированных handler'ов.
+- Базовые команды фреймворка: `restart`, `set_time`, `exit_safe_mode`.
+- Типичные node-specific команды: `run_pump`, `set_pwm`, `set_relay`, `calibrate`, `test_sensor`.
 
 ## 7.3. Ответ узла
 ```json
@@ -314,9 +314,12 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```json
 {
  "status": "ONLINE",
+ "online": true,
  "ts": 1710001555
 }
 ```
+
+`status` + `ts` — целевой прод-формат; `online` и диагностические поля (`ip`, `rssi`, `fw`) опциональны.
 
 ## 8.2. LWT (offline)
 ```

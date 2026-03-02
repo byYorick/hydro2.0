@@ -10,6 +10,11 @@
 - безопасный откат при неудаче;
 - минимальное влияние на работу теплицы.
 
+Текущий runtime-статус:
+- в текущем production baseline (`firmware/nodes/*`, `firmware/test_node`) OTA-команды и OTA-download flow
+  по этому документу не реализованы как активный runtime-контракт;
+- документ задаёт целевую спецификацию для последующего внедрения OTA-пайплайна.
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -65,6 +70,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ```text
 hydro/system/ota/{node_uid}
 ```
+
+Примечание: использование этого topик-контракта в текущем runtime не включено по умолчанию;
+перед запуском OTA в production требуется отдельная реализация и e2e/HIL-валидация.
 
 Payload (пример):
 

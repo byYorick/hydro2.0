@@ -330,7 +330,11 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
       lastAppliedAt: lastAppliedAt.value,
     }
 
-    window.localStorage.setItem(profileStorageKey.value, JSON.stringify(payload))
+    try {
+      window.localStorage.setItem(profileStorageKey.value, JSON.stringify(payload))
+    } catch (error) {
+      logger.warn('[ZoneAutomationTab] Failed to save automation profile to storage', { error })
+    }
   }
 
   function loadProfileFromStorage(): void {

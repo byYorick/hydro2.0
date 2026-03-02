@@ -24,12 +24,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Главного цикла (main loop)
 - Системы безопасности (SafeMode)
 
-Узел **не принимает решений**:
+Узел **не принимает агрономических решений**:
 - не рассчитывает pH/EC дозировки,
 - не оценивает климат,
 - не управляет рецептами.
 
-Вся логика → только на backend.
+Domain-логика — на backend; на ноде остаются runtime/safety проверки и исполнение команд.
 
 ---
 
@@ -294,7 +294,7 @@ on_command_received for pump_channel:
 {
  "cmd_id": "cmd-19292",
  "status": "ACK",
- "ts": 1710012345
+ "ts": 1710012345000
 }
 ```
 
@@ -303,9 +303,13 @@ on_command_received for pump_channel:
 {
  "cmd_id": "cmd-19292",
  "status": "ERROR",
- "error": "cooldown_active"
+ "error_code": "cooldown_active",
+ "error_message": "Cooldown window is active",
+ "ts": 1710012345678
 }
 ```
+
+`command_response.ts` публикуется в миллисекундах.
 
 ---
 
@@ -320,13 +324,14 @@ on_command_received for pump_channel:
 }
 ```
 
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
+> **Важно:** поля `node_uid` и `channel` не включаются в JSON, так как они уже есть в топике.
+> `metric_type` в UPPERCASE, `ts` в секундах (до time sync допускается uptime-seconds).
 
 ## 5.2. Правила:
 - отправка с QoS=1
-- interval определяет backend
+- interval задаётся NodeConfig (`poll_interval_ms`) и может переопределяться серверным config apply
 - raw значение сохраняется для диагностики
-- timestamp обязан быть UNIX time или millis()
+- timestamp в секундах (uptime до синхронизации времени, Unix time после `set_time`)
 
 ---
 
@@ -337,9 +342,8 @@ on_command_received for pump_channel:
 ```json
 {
  "uptime": 58222,
- "heap": 102300,
- "rssi": -59,
- "ts": 1710012711
+ "free_heap": 102300,
+ "rssi": -59
 }
 ```
 
@@ -424,11 +428,11 @@ Command Parser → Actuator Channel → command_response
 
 ---
 
-# 11. Debug режим (опционально)
+# 11. Diagnostics режим (опционально)
 
 Топик:
 ```
-hydro/{node}/debug
+hydro/{gh}/{zone}/{node}/diagnostics
 ```
 
 Публикует:
@@ -444,12 +448,13 @@ hydro/{node}/debug
 Цепочка:
 
 ```
-firmware → build NodeConfig
+backend (Laravel) → trigger publish config via history-logger
+history-logger → publish MQTT .../{node}/config
 node → validate config
-node → save in NVS
-node → restart sensor loops
+node → apply + save in NVS
+node → restart affected components/sensor loops
 node → publish config_report
-backend → store NodeConfig + sync channels
+backend → store фактический config_report + sync channels
 ```
 
 Если ошибка: логировать причину и оставить текущую конфигурацию.

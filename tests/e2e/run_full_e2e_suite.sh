@@ -143,6 +143,10 @@ run_test_with_retry "scenarios/automation_engine/E65_phase_transition_api.yaml"
 run_test_with_retry "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
 
 echo ""
+echo "=== SCHEDULER ТЕСТЫ ==="
+run_test_with_retry "scenarios/scheduler/E93_start_cycle_intent_executor_path.yaml"
+
+echo ""
 echo "=== SIMULATION ТЕСТЫ ==="
 run_test_with_retry "scenarios/simulation/E90_live_simulation_stop_commands.yaml"
 
@@ -159,6 +163,5 @@ run_test_with_retry "scenarios/chaos/E71_db_flaky.yaml"
 echo ""
 echo "🎉 ПОЛНЫЙ E2E-НАБОР ЗАВЕРШЕН!"
 echo "Время окончания: $(date)"
-
 
 

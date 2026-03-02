@@ -282,7 +282,7 @@
                 @click="onControlModeSelect(mode)"
               >
                 <span
-                  v-if="automationControlModeSaving && automationControlMode !== mode"
+                  v-if="automationControlModeSaving && pendingControlModeValue === mode"
                   class="inline-block animate-spin mr-1 opacity-60"
                 >⟳</span>
                 {{ mode }}
@@ -600,7 +600,7 @@ import type {
   LightingFormState,
   WaterFormState,
 } from '@/composables/zoneAutomationTypes'
-import type { AutomationState, AutomationStateType } from '@/types/Automation'
+import type { AutomationManualStep, AutomationState, AutomationStateType } from '@/types/Automation'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
@@ -611,16 +611,6 @@ interface ZoneAutomationWizardApplyPayload {
   waterForm: WaterFormState
   lightingForm: LightingFormState
 }
-
-type ManualStepCode =
-  | 'clean_fill_start'
-  | 'clean_fill_stop'
-  | 'solution_fill_start'
-  | 'solution_fill_stop'
-  | 'prepare_recirculation_start'
-  | 'prepare_recirculation_stop'
-  | 'irrigation_recovery_start'
-  | 'irrigation_recovery_stop'
 
 const props = defineProps<ZoneAutomationTabProps>()
 
@@ -689,6 +679,7 @@ const showEditWizard = ref(false)
 const processExpanded = ref(true)
 const processState = ref<AutomationStateType>('IDLE')
 const lastAutomationSnapshot = ref<AutomationState | null>(null)
+const pendingControlModeValue = ref<'auto' | 'semi' | 'manual' | null>(null)
 const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
 const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
 const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
@@ -721,12 +712,17 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
   }
 }
 
-function isManualStepAllowed(step: ManualStepCode): boolean {
+function isManualStepAllowed(step: AutomationManualStep): boolean {
   return allowedManualSteps.value.includes(step)
 }
 
 async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {
   if (mode === automationControlMode.value || automationControlModeSaving.value) return
-  await setAutomationControlMode(mode)
+  pendingControlModeValue.value = mode
+  try {
+    await setAutomationControlMode(mode)
+  } finally {
+    pendingControlModeValue.value = null
+  }
 }
 </script>

@@ -20,6 +20,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - единицами измерения (для сенсоров);
 - допустимым диапазоном значений.
 
+### 1.1. Важно: два уровня имён каналов
+
+В системе одновременно используются два уровня именования:
+
+- **Domain logical key** (уровень backend/рецептов/UI), например `ph_main`, `ec_main`, `temp_air`.
+- **Firmware channel id** (уровень NodeConfig/MQTT topic), например `ph_sensor`, `ec_sensor`, `temperature`.
+
+Этот документ фиксирует оба уровня. Для runtime-команд и telemetry по MQTT ориентироваться нужно
+на **firmware channel id**.
+
 Все каналы используют MQTT-паттерн:
 
 ```text
@@ -32,7 +42,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ### 2.1. pH
 
-- Ключ: `ph_main`
+- Domain key: `ph_main`
+- Firmware channel id: `ph_sensor`
 - Тип: `SENSOR`
 - Единицы: pH
 - Диапазон: 3.0–9.0
@@ -42,13 +53,14 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
  "value": 5.78,
  "metric_type": "PH",
- "ts": 1737355600456
+ "ts": 1737355600
 }
 ```
 
 ### 2.2. EC (электропроводность)
 
-- Ключ: `ec_main`
+- Domain key: `ec_main`
+- Firmware channel id: `ec_sensor`
 - Тип: `SENSOR`
 - Единицы: mS/cm или µS/cm (фиксируется в конфиге зоны)
 - Telemetry payload:
@@ -57,31 +69,35 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
  "value": 1.6,
  "metric_type": "EC",
- "ts": 1737355600456
+ "ts": 1737355600
 }
 ```
 
 ### 2.3. Температура воздуха
 
-- Ключ: `temp_air`
+- Domain key: `temp_air`
+- Firmware channel id: `temperature` (real climate-node), `air_temp_c` (test_node)
 - Тип: `SENSOR`
 - Единицы: °C
 
 ### 2.4. Температура раствора
 
-- Ключ: `temp_water`
+- Domain key: `temp_water`
+- Firmware channel id: `solution_temp_c`
 - Тип: `SENSOR`
 - Единицы: °C
 
 ### 2.5. Влажность воздуха
 
-- Ключ: `humidity_air`
+- Domain key: `humidity_air`
+- Firmware channel id: `humidity` (real climate-node), `air_rh` (test_node)
 - Тип: `SENSOR`
 - Единицы: %
 
 ### 2.6. Освещённость
 
-- Ключ: `lux_main`
+- Domain key: `lux_main`
+- Firmware channel id: `light` (real light-node), `light_level` (test_node)
 - Тип: `SENSOR`
 - Единицы: lux или PPFD (фиксируется в конфиге).
 
@@ -119,7 +135,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "WATER_LEVEL_SWITCH",
   "value": 1,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -143,7 +159,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "SOIL_MOISTURE",
   "value": 41.2,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -167,7 +183,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "OUTSIDE_TEMP",
   "value": 7.8,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -182,27 +198,28 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ### 3.1. Насосы pH
 
-- `pump_acid` — насос дозирования кислоты;
-- `pump_base` — насос дозирования щёлочи.
+- Domain keys: `pump_acid`, `pump_base`.
+- Firmware channel id:
+  - `ph_doser_down` / `ph_doser_up` (real `ph_node`);
+  - `pump_acid` / `pump_base` (test_node и часть orchestration-контрактов).
 
 Тип: `ACTUATOR`.
 
-Базовые команды (JSON-payload):
-
-1. Дозирование по объёму:
+Базовая команда для real-node:
 
 ```json
 {
   "cmd_id": "cmd-19292",
-  "cmd": "dose",
+  "cmd": "run_pump",
   "params": {
-    "ml": 1.0,
-    "ttl_ms": 5000
+    "duration_ms": 800
   }
 }
 ```
 
-2. Прямое управление состоянием (например, сервисные режимы):
+Примечание: `dose` может использоваться как orchestration alias и требует adapter/firmware support.
+
+Сервисные команды (если поддерживаются конкретной нодой):
 
 ```json
 {
@@ -225,20 +242,21 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Тип: `ACTUATOR`.
 
-Команды аналогичны:
+Базовая команда для real-node:
 
 ```json
 {
   "cmd_id": "cmd-20101",
-  "cmd": "dose",
+  "cmd": "run_pump",
   "params": {
-    "ml": 5.0,
-    "ttl_ms": 10000
+    "duration_ms": 1500
   }
 }
 ```
 
-или
+Alias-команды (`dose` и т.д.) допускаются только при явной поддержке в прошивке/adapter.
+
+Для релейных/клапанных каналов используется:
 
 ```json
 {
@@ -259,7 +277,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `valve_solution_supply` — клапан забора из бака раствора;
 - `pump_main` — главный насос контура подготовки/полива;
 - `fan_air` — вентилятор;
-- `heater_air` — нагреватель воздуха;
+- `heater_air` / `heater` — нагреватель воздуха (имя зависит от прошивки);
 - `white_light` — основное освещение;
 - `uv_light` — УФ-лампы.
 
@@ -324,7 +342,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "PUMP_CURRENT",
   "value": 220.5,
-  "timestamp": 1710005555
+  "ts": 1710005555
 }
 ```
 
@@ -354,7 +372,7 @@ hydro/{gh}/{zone}/{node}/system/command
 ```
 
 **Отличия от канальных команд:**
-- Топик не содержит имя канала между `{node}` и `command`
+- Используется service-channel `system` между `{node}` и `command`
 - Команды влияют на поведение всей ноды, а не отдельного канала
 - Используется для управления режимами работы сенсорных нод
 
@@ -362,7 +380,10 @@ hydro/{gh}/{zone}/{node}/system/command
 
 **Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
 
-**Применимость:** pH ноды, EC ноды (узлы с сенсорами, зависящими от потока раствора).
+**Применимость (целевой контракт orchestration):** pH/EC ноды, зависящие от потока раствора.
+Фактическая реализация:
+- `test_node`: поддерживается;
+- production `ph_node/ec_node`: на текущий момент не зарегистрировано (см. матрицу соответствия).
 
 **Payload:**
 ```json
@@ -407,7 +428,10 @@ hydro/{gh}/{zone}/{node}/system/command
 
 **Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
 
-**Применимость:** pH ноды, EC ноды.
+**Применимость (целевой контракт orchestration):** pH/EC ноды.
+Фактическая реализация:
+- `test_node`: поддерживается;
+- production `ph_node/ec_node`: на текущий момент не зарегистрировано.
 
 **Payload:**
 ```json
@@ -442,7 +466,8 @@ hydro/{gh}/{zone}/{node}/system/command
 
 ### 4.4. Расширенная телеметрия в ACTIVE режиме
 
-В режиме ACTIVE pH/EC ноды публикуют стандартную телеметрию с дополнительными полями:
+В режиме ACTIVE pH/EC ноды (или их тестовый эмулятор) публикуют стандартную телеметрию
+с дополнительными полями:
 
 **Во время стабилизации:**
 ```json
@@ -478,7 +503,8 @@ hydro/{gh}/{zone}/{node}/system/command
 
 ### 4.5. Применение в Correction Cycle
 
-Системные команды используются automation-engine для управления state machine коррекции:
+Системные команды используются automation-engine для управления state machine коррекции
+(целевой сценарий):
 
 | Переход состояний | Команда | Применимость |
 |------------------|---------|-------------|
@@ -486,6 +512,9 @@ hydro/{gh}/{zone}/{node}/system/command
 | READY → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
 | READY → IRRIGATING | `activate_sensor_mode` | pH, EC ноды (если не активны) |
 | IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
+
+Текущий статус реализации по прошивкам см. в:
+- `TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md`
 
 **См. также:**
 - `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle

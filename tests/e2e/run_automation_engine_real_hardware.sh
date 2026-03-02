@@ -61,6 +61,31 @@ SCENARIO_SET="${SCENARIO_SET:-full}"
 LIST_ONLY=0
 SCENARIOS=()
 
+sync_automation_engine_env() {
+  local url host_port parsed_host parsed_port
+
+  url="${AUTOMATION_ENGINE_URL#http://}"
+  url="${url#https://}"
+  host_port="${url%%/*}"
+  parsed_host="${host_port%%:*}"
+  parsed_port="${host_port##*:}"
+
+  if [ -z "${AUTOMATION_ENGINE_HOST:-}" ]; then
+    AUTOMATION_ENGINE_HOST="${parsed_host:-localhost}"
+  fi
+
+  if [ -z "${AUTOMATION_ENGINE_API_PORT:-}" ]; then
+    if [ "$parsed_port" = "$host_port" ]; then
+      AUTOMATION_ENGINE_API_PORT=9505
+    else
+      AUTOMATION_ENGINE_API_PORT="$parsed_port"
+    fi
+  fi
+}
+
+sync_automation_engine_env
+export AUTOMATION_ENGINE_HOST AUTOMATION_ENGINE_API_PORT
+
 SERVICES=(automation-engine history-logger laravel mqtt-bridge digital-twin)
 AUTOMATION_SCENARIOS=(
   "scenarios/automation_engine/E61_fail_closed_corrections.yaml"

@@ -25,6 +25,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Справочник каналов узлов**
 - Типы каналов (SENSOR, ACTUATOR, VIRTUAL)
 - Сенсорные каналы (pH, EC, температура, влажность)
+- Разделение domain-ключей и firmware channel id
 - Актуаторные каналы (насосы, клапаны, свет)
 - Форматы payload
 
@@ -63,6 +64,18 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 #### [DEVICE_NODE_PROTOCOL.md](DEVICE_NODE_PROTOCOL.md)
 Протокол взаимодействия с узлами
+
+#### [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md)
+Спецификация `firmware/test_node` для HIL/E2E и доведения реальных нод до production-ready режима:
+- фактические каналы и топики;
+- режимы (`configured`/`preconfig`, sensor mode);
+- ограничения runtime и чек-лист для боевого rollout.
+
+#### [TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md](TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md)
+Матрица соответствия `test_node` и боевых прошивок:
+- сопоставление каналов `test -> real`;
+- сопоставление команд `test -> real`;
+- обязательные адаптеры/алиасы перед production rollout.
 
 ### Wi‑Fi и подключение
 

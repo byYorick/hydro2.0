@@ -173,11 +173,14 @@ export function useZoneAutomationApi(
   async function fetchAutomationLogicProfileFromServer(): Promise<void> {
     if (!props.zoneId) return
 
+    const requestedZoneId = props.zoneId
     try {
-      const response = await get<AutomationLogicProfilesResponse>(`/api/zones/${props.zoneId}/automation-logic-profile`)
+      const response = await get<AutomationLogicProfilesResponse>(`/api/zones/${requestedZoneId}/automation-logic-profile`)
+      if (props.zoneId !== requestedZoneId) return
       applyServerProfileToForms((response.data as AutomationLogicProfilesResponse)?.data)
     } catch (error) {
-      logger.warn('[ZoneAutomationTab] Failed to fetch automation logic profile', { error, zoneId: props.zoneId })
+      if (props.zoneId !== requestedZoneId) return
+      logger.warn('[ZoneAutomationTab] Failed to fetch automation logic profile', { error, zoneId: requestedZoneId })
     }
   }
 
