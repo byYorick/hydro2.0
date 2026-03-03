@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Concerns;
 
+use App\Models\LaravelSchedulerActiveTask;
 use App\Models\SchedulerLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
@@ -12,6 +13,51 @@ use Illuminate\Support\Facades\Log;
 
 trait DispatchesAutomationSchedules
 {
+    /**
+     * @param  array<string, mixed>  $cfg
+     * @param  array<string, string>  $headers
+     */
+    private function reconcilePendingActiveTasks(array $cfg, array $headers): void
+    {
+        $pollLimit = max(1, (int) ($cfg['active_task_poll_batch'] ?? 500));
+        $pendingTasks = $this->activeTaskStore->listPendingForPolling($pollLimit);
+        if ($pendingTasks->isEmpty()) {
+            return;
+        }
+
+        $now = $this->nowUtc();
+        foreach ($pendingTasks as $task) {
+            if (! $task instanceof LaravelSchedulerActiveTask) {
+                continue;
+            }
+
+            $taskId = trim((string) $task->task_id);
+            if ($taskId === '') {
+                continue;
+            }
+
+            $scheduleKey = trim((string) $task->schedule_key);
+            $isBusy = $this->reconcilePersistedActiveTask(
+                task: $task,
+                now: $now,
+                cfg: $cfg,
+                headers: $headers,
+            );
+
+            if ($scheduleKey === '') {
+                continue;
+            }
+
+            $cacheKey = $this->activeTaskCacheKey($scheduleKey);
+            if ($isBusy) {
+                Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
+                continue;
+            }
+
+            Cache::forget($cacheKey);
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $schedule
      * @param  array<string, mixed>  $cfg
@@ -289,10 +335,40 @@ trait DispatchesAutomationSchedules
             return false;
         }
 
-        $persistedStatus = strtolower(trim((string) $task->status));
-        if ($this->isTerminalStatus($persistedStatus)) {
+        $isBusy = $this->reconcilePersistedActiveTask(
+            task: $task,
+            now: $now,
+            cfg: $cfg,
+            headers: $headers,
+        );
+        if (! $isBusy) {
             Cache::forget($cacheKey);
 
+            return false;
+        }
+
+        Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     * @param  array<string, string>  $headers
+     */
+    private function reconcilePersistedActiveTask(
+        LaravelSchedulerActiveTask $task,
+        CarbonImmutable $now,
+        array $cfg,
+        array $headers,
+    ): bool {
+        $taskId = trim((string) $task->task_id);
+        if ($taskId === '') {
+            return false;
+        }
+
+        $persistedStatus = strtolower(trim((string) $task->status));
+        if ($this->isTerminalStatus($persistedStatus)) {
             return false;
         }
 
@@ -320,7 +396,6 @@ trait DispatchesAutomationSchedules
                     'terminal_source' => 'laravel_dispatcher_local_expiry',
                     'terminal_at' => $this->toIso($now),
                 ]);
-                Cache::forget($cacheKey);
 
                 return false;
             }
@@ -328,7 +403,6 @@ trait DispatchesAutomationSchedules
 
         $status = $this->fetchTaskStatus($taskId, $cfg, $headers);
         if ($status === null) {
-            Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
             $this->activeTaskStore->touchPolledAt($taskId, $now, null);
 
             return true;
@@ -354,12 +428,10 @@ trait DispatchesAutomationSchedules
                 'terminal_source' => 'automation_engine_status_poll',
                 'terminal_at' => $this->toIso($now),
             ]);
-            Cache::forget($cacheKey);
 
             return false;
         }
 
-        Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
         $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
 
         return true;

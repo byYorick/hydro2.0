@@ -80,16 +80,21 @@ async def _recover_zone_workflow_row(
             return {"recovered": 0, "stale_stopped": 0, "skipped": 1, "failed": 0}
 
         raw_payload = row.get("payload")
-        if not isinstance(raw_payload, dict):
-            logger.warning(
-                "Workflow recovery skipped invalid payload: zone_id=%s payload_type=%s",
-                zone_id,
-                type(raw_payload).__name__,
-            )
-            _log(action="skip_invalid", reason="invalid_payload", level=logging.WARNING)
-            return {"recovered": 0, "stale_stopped": 0, "skipped": 1, "failed": 0}
-
-        payload = dict(raw_payload)
+        if isinstance(raw_payload, dict):
+            payload = dict(raw_payload)
+        else:
+            normalized_payload = row.get("payload_normalized")
+            if isinstance(normalized_payload, dict):
+                payload = dict(normalized_payload)
+            else:
+                logger.warning(
+                    "Workflow recovery skipped invalid payload: zone_id=%s payload_type=%s normalized_payload_type=%s",
+                    zone_id,
+                    type(raw_payload).__name__,
+                    type(normalized_payload).__name__,
+                )
+                _log(action="skip_invalid", reason="invalid_payload", level=logging.WARNING)
+                return {"recovered": 0, "stale_stopped": 0, "skipped": 1, "failed": 0}
         correlation_id = extract_recovery_correlation_id(payload)
         phase, phase_source, phase_error = resolve_recovery_phase(row, payload)
         if phase_error is not None:

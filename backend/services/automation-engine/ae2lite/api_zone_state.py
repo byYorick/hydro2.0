@@ -6,6 +6,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+_TIMELINE_COMPACT_EVENT_TYPES = {"SCHEDULE_TASK_EXECUTION_STARTED", "SCHEDULE_TASK_EXECUTION_FINISHED", "TASK_RECEIVED", "TASK_STARTED", "DECISION_MADE", "TASK_FINISHED", "TWO_TANK_STARTUP_INITIATED", "SELF_TASK_ENQUEUED", "WORKFLOW_PHASE_UPDATED", "COMMAND_DISPATCHED", "COMMAND_DEDUPE_SKIPPED"}
+def _timeline_second_bucket(timestamp: str) -> str:
+    if "." in timestamp:
+        return timestamp.split(".", 1)[0]
+    return timestamp
+
 
 def system_config_from_task_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
@@ -323,6 +329,8 @@ async def load_automation_timeline(
         return []
 
     timeline: list[Dict[str, Any]] = []
+    compact_index_by_key: Dict[tuple[str, str, str], int] = {}
+    current_bucket: Optional[str] = None
     for row in reversed(rows):
         payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
         event_type = str(payload.get("event_type") or row.get("type") or "").strip()
@@ -335,17 +343,44 @@ async def load_automation_timeline(
             if isinstance(created_at, datetime)
             else datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         )
+        base_label = build_timeline_label_fn(event_type, reason_code)
+        compact_key = (
+            event_type,
+            reason_code or "",
+            _timeline_second_bucket(timestamp),
+        )
+        bucket = compact_key[2]
+        if current_bucket != bucket:
+            compact_index_by_key.clear()
+            current_bucket = bucket
+
+        if event_type in _TIMELINE_COMPACT_EVENT_TYPES and compact_key in compact_index_by_key:
+            prev = timeline[compact_index_by_key[compact_key]]
+            prev_count = int(prev.get("count") or 1) + 1
+            prev["count"] = prev_count
+            prev["label"] = f"{str(prev.get('_base_label') or base_label)} ×{prev_count}"
+            prev["timestamp"] = timestamp
+            continue
+
         timeline.append(
             {
                 "event": event_type,
-                "label": build_timeline_label_fn(event_type, reason_code),
+                "label": base_label,
                 "timestamp": timestamp,
+                "count": 1,
                 "active": False,
+                "_base_label": base_label,
+                "_compact_key": compact_key if event_type in _TIMELINE_COMPACT_EVENT_TYPES else None,
             }
         )
+        if event_type in _TIMELINE_COMPACT_EVENT_TYPES:
+            compact_index_by_key[compact_key] = len(timeline) - 1
 
     if timeline:
         timeline[-1]["active"] = True
+    for item in timeline:
+        item.pop("_base_label", None)
+        item.pop("_compact_key", None)
     return timeline
 
 

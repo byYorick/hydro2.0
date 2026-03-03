@@ -4,9 +4,13 @@ namespace Database\Seeders;
 
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Models\Sensor;
+use App\Models\TelemetryLast;
+use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZonePidConfig;
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -35,6 +39,7 @@ class SingleZoneServiceSeeder extends Seeder
 
         $this->tuneZoneForServices($zone->id, $greenhouse->id);
         $this->seedPidConfigs($zone->id);
+        $this->seedPredictionTelemetry($zone, $node);
         $this->pruneToSingleTopology($greenhouse->id, $zone->id, $node->id);
 
         $this->command->info('=== Single-zone service dataset complete ===');
@@ -52,6 +57,15 @@ class SingleZoneServiceSeeder extends Seeder
                 'status' => 'RUNNING',
                 'health_status' => 'good',
                 'health_score' => 90,
+                'capabilities' => [
+                    'ph_control' => true,
+                    'ec_control' => true,
+                    'climate_control' => true,
+                    'light_control' => true,
+                    'irrigation_control' => true,
+                    'recirculation' => true,
+                    'flow_sensor' => true,
+                ],
                 'settings' => [
                     'ph_control' => ['strategy' => 'periodic', 'interval_sec' => 300],
                     'ec_control' => ['strategy' => 'periodic', 'interval_sec' => 300],
@@ -116,5 +130,54 @@ class SingleZoneServiceSeeder extends Seeder
             Greenhouse::query()->where('id', '!=', $greenhouseId)->delete();
         });
     }
-}
 
+    private function seedPredictionTelemetry(Zone $zone, DeviceNode $node): void
+    {
+        $sensor = Sensor::query()->updateOrCreate(
+            [
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'scope' => 'inside',
+                'type' => 'PH',
+                'label' => 'ph_sensor',
+            ],
+            [
+                'greenhouse_id' => $zone->greenhouse_id,
+                'unit' => 'pH',
+                'specs' => ['seeded_by' => 'SingleZoneServiceSeeder'],
+                'is_active' => true,
+                'last_read_at' => now(),
+            ]
+        );
+
+        $baseTime = Carbon::now()->subMinutes(75);
+        $values = [5.92, 5.98, 6.03, 6.08];
+
+        foreach ($values as $index => $value) {
+            $ts = $baseTime->copy()->addMinutes($index * 25);
+
+            TelemetrySample::query()->updateOrCreate(
+                [
+                    'sensor_id' => $sensor->id,
+                    'ts' => $ts,
+                ],
+                [
+                    'zone_id' => $zone->id,
+                    'cycle_id' => null,
+                    'value' => $value,
+                    'quality' => 'GOOD',
+                    'metadata' => ['source' => 'single-zone-seeder'],
+                ]
+            );
+        }
+
+        TelemetryLast::query()->updateOrCreate(
+            ['sensor_id' => $sensor->id],
+            [
+                'last_value' => end($values),
+                'last_ts' => $baseTime->copy()->addMinutes((count($values) - 1) * 25),
+                'last_quality' => 'GOOD',
+            ]
+        );
+    }
+}

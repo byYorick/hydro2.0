@@ -130,6 +130,7 @@ class AutomationDispatchSchedules extends Command
         }
 
         $headers = $this->schedulerHeaders($cfg, $traceId);
+        $this->reconcilePendingActiveTasks($cfg, $headers);
         $zoneIds = $this->loadActiveZoneIds($zoneFilter);
 
         if ($zoneIds === []) {

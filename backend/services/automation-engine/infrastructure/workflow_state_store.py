@@ -138,7 +138,6 @@ class WorkflowStateStore:
         if "control_mode" not in next_payload and "control_mode" in existing_payload:
             next_payload["control_mode"] = existing_payload["control_mode"]
 
-        payload_json = json.dumps(next_payload)
         await execute(
             """
             INSERT INTO zone_workflow_state (
@@ -160,6 +159,6 @@ class WorkflowStateStore:
             zone_id,
             normalized_phase,
             started_at,
-            payload_json,
+            next_payload,
             scheduler_task_id,
         )

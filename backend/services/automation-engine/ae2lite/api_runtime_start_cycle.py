@@ -20,6 +20,7 @@ def bind_start_cycle_route(
     claim_start_cycle_intent_fn: Callable[..., Awaitable[Dict[str, Any]]],
     start_cycle_claim_stale_sec_fn: Callable[[], int],
     load_latest_zone_task_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
+    load_zone_workflow_state_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
     build_scheduler_task_request_from_intent_fn: Callable[..., SchedulerTaskRequest],
     start_cycle_due_sec_fn: Callable[[], int],
     start_cycle_expires_sec_fn: Callable[[], int],
@@ -42,6 +43,23 @@ def bind_start_cycle_route(
     scheduler_err_execution_exception: str,
     logger: Any,
 ) -> Callable[..., Awaitable[Dict[str, Any]]]:
+    async def _reset_claimed_intent_to_pending(zone_id: int, intent_id: int) -> None:
+        if intent_id <= 0:
+            return
+        try:
+            await mark_intent_pending_fn(
+                intent_id=intent_id,
+                now=datetime.now(timezone.utc).replace(tzinfo=None),
+                execute_fn=execute_fn,
+            )
+        except Exception:
+            logger.error(
+                "Failed to reset claimed intent back to pending: zone_id=%s intent_id=%s",
+                zone_id,
+                intent_id,
+                exc_info=True,
+            )
+
     @app.post("/zones/{zone_id}/start-cycle")
     async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)):
         await validate_scheduler_zone_fn(zone_id)
@@ -121,23 +139,25 @@ def bind_start_cycle_route(
             raise HTTPException(status_code=503, detail={"error": "start_cycle_intent_claim_unavailable", "zone_id": zone_id})
 
         intent_id = int(intent.get("id") or 0)
+        workflow_state = await load_zone_workflow_state_fn(zone_id)
+        workflow_phase = str(workflow_state.get("workflow_phase") or "").strip().lower() if isinstance(workflow_state, dict) else ""
+        workflow_scheduler_task_id = str(workflow_state.get("scheduler_task_id") or "").strip() or None if isinstance(workflow_state, dict) else None
+        if workflow_phase not in {"", "idle", "ready"}:
+            await _reset_claimed_intent_to_pending(zone_id, intent_id)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "start_cycle_zone_busy",
+                    "zone_id": zone_id,
+                    "active_workflow_phase": workflow_phase,
+                    "active_workflow_scheduler_task_id": workflow_scheduler_task_id,
+                },
+            )
+
         latest_task = await load_latest_zone_task_fn(zone_id)
         latest_status = str(latest_task.get("status") or "").strip().lower() if isinstance(latest_task, dict) else ""
         if latest_status in {"accepted", "running"}:
-            if intent_id > 0:
-                try:
-                    await mark_intent_pending_fn(
-                        intent_id=intent_id,
-                        now=datetime.now(timezone.utc).replace(tzinfo=None),
-                        execute_fn=execute_fn,
-                    )
-                except Exception:
-                    logger.error(
-                        "Failed to reset claimed intent back to pending: zone_id=%s intent_id=%s",
-                        zone_id,
-                        intent_id,
-                        exc_info=True,
-                    )
+            await _reset_claimed_intent_to_pending(zone_id, intent_id)
             raise HTTPException(
                 status_code=409,
                 detail={

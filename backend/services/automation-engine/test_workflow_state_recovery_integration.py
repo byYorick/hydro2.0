@@ -80,3 +80,53 @@ async def test_recover_zone_workflow_states_enqueues_continuation():
     assert len(store.set_calls) == 1
     assert store.set_calls[0]["scheduler_task_id"] == "enq-21"
     assert any(event_type == "WORKFLOW_RECOVERY_ENQUEUED" for _, event_type, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_recover_zone_workflow_states_uses_normalized_payload_when_raw_payload_is_string():
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    store = _WorkflowStore(
+        [
+            {
+                "zone_id": 22,
+                "workflow_phase": "tank_recirc",
+                "workflow_phase_raw": "tank_recirc",
+                "payload": "{\"workflow\":\"prepare_recirculation_check\"}",
+                "payload_normalized": {
+                    "workflow": "prepare_recirculation_check",
+                    "prepare_recirculation_started_at": (now - timedelta(minutes=1)).isoformat(),
+                    "payload_contract_version": "v2",
+                },
+                "updated_at": now - timedelta(seconds=20),
+                "scheduler_task_id": "st-old-2",
+            }
+        ]
+    )
+    enqueue_calls = []
+
+    async def create_zone_event_fn(_zone_id, _event_type, _details):
+        return None
+
+    async def enqueue_internal_scheduler_task_fn(**kwargs):
+        enqueue_calls.append(kwargs)
+        return {"enqueue_id": "enq-22", "correlation_id": "corr-22"}
+
+    async def send_infra_exception_alert_fn(**kwargs):
+        return None
+
+    summary = await recover_zone_workflow_states(
+        enabled=True,
+        stale_timeout_sec=300,
+        workflow_state_store=store,
+        logger=logging.getLogger("test.workflow_recovery.normalized"),
+        create_zone_event_fn=create_zone_event_fn,
+        enqueue_internal_scheduler_task_fn=enqueue_internal_scheduler_task_fn,
+        send_infra_exception_alert_fn=send_infra_exception_alert_fn,
+        get_trace_id_fn=lambda: "trace-recovery-2",
+    )
+
+    assert summary["active"] == 1
+    assert summary["recovered"] == 1
+    assert summary["failed"] == 0
+    assert len(enqueue_calls) == 1
+    assert enqueue_calls[0]["payload"]["workflow"] == "prepare_recirculation_check"

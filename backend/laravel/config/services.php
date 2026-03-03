@@ -74,6 +74,7 @@ return [
         'scheduler_active_task_ttl_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_TTL_SEC', 180),
         'scheduler_active_task_retention_days' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS', 60),
         'scheduler_active_task_cleanup_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH', 500),
+        'scheduler_active_task_poll_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_POLL_BATCH', 500),
         'scheduler_cursor_persist_enabled' => env('AUTOMATION_LARAVEL_SCHEDULER_CURSOR_PERSIST_ENABLED', true),
     ],
 

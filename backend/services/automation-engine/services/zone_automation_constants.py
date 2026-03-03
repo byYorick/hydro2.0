@@ -43,7 +43,7 @@ CORRECTION_FLAGS_REQUIRE_TIMESTAMPS = bool(
 CORRECTION_REQUIRED_FLAG_NAMES = ("flow_active", "stable", "corrections_allowed")
 WORKFLOW_PHASE_EVENT_TYPE = "WORKFLOW_PHASE_UPDATED"
 WORKFLOW_PHASE_VALUES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
-WORKFLOW_CORRECTION_OPEN_PHASES = {"tank_filling", "tank_recirc"}
+WORKFLOW_CORRECTION_OPEN_PHASES = {"tank_filling", "tank_recirc", "irrigating"}
 WORKFLOW_SENSOR_MODE_EXTERNAL_PHASES = {"tank_filling", "tank_recirc", "irrig_recirc"}
 WORKFLOW_EC_COMPONENTS_BY_PHASE = {
     "tank_filling": ["npk"],

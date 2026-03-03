@@ -67,6 +67,7 @@ trait ConfiguresAutomationDispatch
             'active_task_ttl_sec' => max(30, (int) config('services.automation_engine.scheduler_active_task_ttl_sec', $expiresAfterSec)),
             'active_task_retention_days' => max(1, (int) config('services.automation_engine.scheduler_active_task_retention_days', 60)),
             'active_task_cleanup_batch' => max(1, (int) config('services.automation_engine.scheduler_active_task_cleanup_batch', 500)),
+            'active_task_poll_batch' => max(1, (int) config('services.automation_engine.scheduler_active_task_poll_batch', 500)),
             'cursor_persist_enabled' => (bool) config('services.automation_engine.scheduler_cursor_persist_enabled', true),
         ];
     }

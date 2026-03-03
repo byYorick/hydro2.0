@@ -41,6 +41,11 @@ const WS_COMMAND_EVENT_NAMES = [
   '.App\\Events\\CommandFailed',
 ] as const
 
+const WS_GLOBAL_EVENT_NAMES = [
+  '.EventCreated',
+  '.App\\Events\\EventCreated',
+] as const
+
 const AUTOMATION_EVENT_LABELS: Record<string, string> = {
   SCHEDULE_TASK_ACCEPTED: 'Scheduler: задача принята',
   SCHEDULE_TASK_COMPLETED: 'Scheduler: задача завершена',
@@ -282,12 +287,15 @@ export function useAutomationPanel(
   let wsStateListenerCleanup: (() => void) | null = null
   let zoneChannel: EchoChannelLike | null = null
   let commandsChannel: EchoChannelLike | null = null
+  let eventsChannel: EchoChannelLike | null = null
   let zoneChannelName: string | null = null
   let commandsChannelName: string | null = null
+  let eventsChannelName: string | null = null
   let lastRealtimeRefreshAt = 0
 
   const zoneEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
   const commandEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
+  const globalEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
 
   // ─── Normalize ────────────────────────────────────────────────────────────
 
@@ -450,13 +458,23 @@ export function useAutomationPanel(
       commandEventHandlers.clear()
     }
 
+    if (eventsChannel) {
+      globalEventHandlers.forEach((handler, eventName) => {
+        eventsChannel?.stopListening(eventName, handler)
+      })
+      globalEventHandlers.clear()
+    }
+
     if (echo && zoneChannelName) echo.leave?.(zoneChannelName)
     if (echo && commandsChannelName) echo.leave?.(commandsChannelName)
+    if (echo && eventsChannelName) echo.leave?.(eventsChannelName)
 
     zoneChannel = null
     commandsChannel = null
+    eventsChannel = null
     zoneChannelName = null
     commandsChannelName = null
+    eventsChannelName = null
   }
 
   function subscribeRealtimeChannels(): boolean {
@@ -486,10 +504,28 @@ export function useAutomationPanel(
         commandsChannel?.listen(eventName, handler)
       })
 
+      eventsChannelName = 'hydro.events.global'
+      eventsChannel = echo.private(eventsChannelName)
+
+      WS_GLOBAL_EVENT_NAMES.forEach((eventName) => {
+        const handler = (payload: WsEventPayload) => {
+          const zoneValue = payload.zoneId ?? payload.zone_id
+          const zoneId = Number(zoneValue)
+          if (!Number.isFinite(zoneId) || zoneId !== props.zoneId) {
+            return
+          }
+
+          scheduleRealtimeRefresh()
+        }
+        globalEventHandlers.set(eventName, handler)
+        eventsChannel?.listen(eventName, handler)
+      })
+
       logger.debug('[AutomationProcessPanel] Realtime subscriptions started', {
         zoneId: props.zoneId,
         zoneChannel: zoneChannelName,
         commandsChannel: commandsChannelName,
+        eventsChannel: eventsChannelName,
       })
 
       return true

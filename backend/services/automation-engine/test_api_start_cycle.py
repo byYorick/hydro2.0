@@ -8,6 +8,15 @@ import api
 from ae2lite.api_contracts import StartCycleRequest
 
 
+@pytest.fixture(autouse=True)
+def _stub_workflow_state_store(monkeypatch):
+    class _WorkflowStateStoreStub:
+        async def get(self, _zone_id: int):
+            return {"workflow_phase": "idle", "scheduler_task_id": None}
+
+    monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
+
+
 @pytest.mark.asyncio
 async def test_zone_start_cycle_claims_intent_and_enqueues_execution(monkeypatch):
     captured = {}
@@ -310,6 +319,65 @@ async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_revert
     assert captured["create_called"] is False
     assert len(captured["pending_calls"]) == 1
     assert captured["pending_calls"][0]["intent_id"] == 901
+
+
+@pytest.mark.asyncio
+async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active(monkeypatch):
+    captured = {"create_called": False, "pending_calls": []}
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "claimed",
+            "intent": {"id": 902, "zone_id": 12, "status": "claimed", "retry_count": 0, "payload": {}},
+        }
+
+    async def fake_load_latest_zone_task(_zone_id: int):
+        return {"task_id": "st-completed", "status": "completed"}
+
+    async def fake_mark_intent_pending(*, intent_id, now, execute_fn):
+        captured["pending_calls"].append({"intent_id": intent_id, "now": now, "execute_fn": execute_fn})
+
+    async def fake_create_scheduler_task(_req):
+        captured["create_called"] = True
+        return {"task_id": "st-should-not-run"}, False
+
+    class _WorkflowStateStoreStub:
+        async def get(self, _zone_id: int):
+            return {"workflow_phase": "tank_filling", "scheduler_task_id": "st-existing"}
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+    monkeypatch.setattr(api, "_load_latest_zone_task", fake_load_latest_zone_task)
+    monkeypatch.setattr(api, "policy_mark_intent_pending", fake_mark_intent_pending)
+    monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
+    monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
+
+    with pytest.raises(HTTPException) as exc:
+        await api.zone_start_cycle(
+            zone_id=12,
+            request=SimpleNamespace(headers={"x-trace-id": "trace-active-phase"}),
+            req=StartCycleRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z12:irrigation:2026-02-22T05:32:00Z",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail.get("error") == "start_cycle_zone_busy"
+    assert detail.get("zone_id") == 12
+    assert detail.get("active_workflow_phase") == "tank_filling"
+    assert detail.get("active_workflow_scheduler_task_id") == "st-existing"
+    assert captured["create_called"] is False
+    assert len(captured["pending_calls"]) == 1
+    assert captured["pending_calls"][0]["intent_id"] == 902
 
 
 def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():

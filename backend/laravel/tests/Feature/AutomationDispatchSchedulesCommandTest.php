@@ -155,8 +155,9 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->where('task_id', 'st-recovery-old')
             ->first();
         $this->assertNotNull($oldTask);
-        $this->assertSame('accepted', $oldTask->status);
-        $this->assertNull($oldTask->terminal_at);
+        $this->assertSame('timeout', $oldTask->status);
+        $this->assertNotNull($oldTask->terminal_at);
+        $this->assertSame('laravel_dispatcher_local_expiry', $oldTask->details['terminal_source'] ?? null);
 
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
             'task_id' => 'st-recovery-new',
