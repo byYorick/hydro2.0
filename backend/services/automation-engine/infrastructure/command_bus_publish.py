@@ -85,6 +85,7 @@ async def publish_command(
                 "dedupe_ttl_sec": dedupe_ttl_value,
             },
         )
+        publish_success = True
         return True
 
     try:
@@ -392,4 +393,3 @@ async def publish_command(
         return False
     finally:
         await command_bus._complete_command_dedupe(active_dedupe_state, success=publish_success)
-

@@ -1,4 +1,5 @@
 from executor.workflow_phase_policy import (
+    WORKFLOW_PHASE_IDLE,
     WORKFLOW_PHASE_IRRIGATING,
     WORKFLOW_PHASE_IRRIG_RECIRC,
     WORKFLOW_PHASE_READY,
@@ -22,6 +23,38 @@ def test_derive_workflow_phase_for_diagnostics_transitions():
         result={"success": True, "mode": "two_tank_prepare_recirculation_completed"},
     )
     assert phase_ready == WORKFLOW_PHASE_READY
+
+
+def test_derive_workflow_phase_for_diagnostics_terminal_failure_moves_to_idle():
+    phase_failed = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "startup"},
+        result={
+            "success": False,
+            "mode": "two_tank_solution_fill_command_failed",
+            "reason_code": "cycle_start_refill_command_failed",
+            "action_required": True,
+            "decision": "run",
+        },
+    )
+    assert phase_failed == WORKFLOW_PHASE_IDLE
+
+
+def test_derive_workflow_phase_for_diagnostics_transient_retry_keeps_phase():
+    phase_retry = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "prepare_recirculation_check"},
+        result={
+            "success": False,
+            "mode": "two_tank_prepare_recirculation_irr_state_retry",
+            "reason_code": "irr_state_stale",
+            "action_required": True,
+            "decision": "run",
+            "irr_state_retry": True,
+            "next_check": {"task_id": "st-next"},
+        },
+    )
+    assert phase_retry is None
 
 
 def test_derive_workflow_phase_for_irrigation_recovery_and_run():

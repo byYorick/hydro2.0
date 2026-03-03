@@ -5,7 +5,9 @@ This module is imported lazily from SchedulerTaskExecutor to keep startup import
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 from domain.workflows.two_tank_irr_state_helpers import (
     request_irr_state_snapshot_best_effort,
@@ -68,6 +70,98 @@ _MANUAL_STEP_TO_COMMAND_PLAN: Dict[str, str] = {
     "irrigation_recovery_start": "irrigation_recovery_start",
     "irrigation_recovery_stop": "irrigation_recovery_stop",
 }
+
+_logger = logging.getLogger(__name__)
+
+# Транзиентные ошибки irr_state, после которых нужно повторить check через poll_interval
+_IRR_STATE_TRANSIENT_REASONS = frozenset({"irr_state_unavailable", "irr_state_stale"})
+
+# Ключи payload с таймингами для check-workflows, которые поддерживают retry
+_CHECK_WORKFLOW_TIMING_KEYS: Dict[str, tuple] = {
+    "prepare_recirculation_check": (
+        "prepare_recirculation_started_at",
+        "prepare_recirculation_timeout_at",
+    ),
+    "irrigation_recovery_check": (
+        "irrigation_recovery_started_at",
+        "irrigation_recovery_timeout_at",
+    ),
+}
+
+_CHECK_WORKFLOW_TIMEOUT_CFG_KEY: Dict[str, str] = {
+    "prepare_recirculation_check": "prepare_recirculation_timeout_sec",
+    "irrigation_recovery_check": "irrigation_recovery_timeout_sec",
+}
+
+
+async def _maybe_reenqueue_on_irr_state_transient(
+    self,
+    *,
+    zone_id: int,
+    workflow: str,
+    payload: Dict[str, Any],
+    runtime_cfg: Dict[str, Any],
+    irr_state_guard_result: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Если irr_state транзиентно недоступен/устарел — повторно ставим в очередь check-задачу.
+
+    Возвращает dict с результатом retry или None (не нужно повторять).
+    """
+    reason_code = irr_state_guard_result.get("reason_code", "")
+    if reason_code not in _IRR_STATE_TRANSIENT_REASONS:
+        return None
+
+    timing_keys = _CHECK_WORKFLOW_TIMING_KEYS.get(workflow)
+    if not timing_keys:
+        return None
+
+    from scheduler_internal_enqueue import parse_iso_datetime
+
+    started_key, timeout_key = timing_keys
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    phase_started_at = parse_iso_datetime(str(payload.get(started_key) or "")) or now
+    phase_timeout_at = parse_iso_datetime(str(payload.get(timeout_key) or ""))
+    if phase_timeout_at is None:
+        timeout_cfg_key = _CHECK_WORKFLOW_TIMEOUT_CFG_KEY.get(workflow, "prepare_recirculation_timeout_sec")
+        timeout_sec = int(runtime_cfg.get(timeout_cfg_key) or 1800)
+        phase_timeout_at = phase_started_at + timedelta(seconds=timeout_sec)
+
+    if now >= phase_timeout_at:
+        # Таймаут вышел — не ре-энкью, отдаём ошибку вызывающей стороне
+        return None
+
+    try:
+        enqueue_result = await self._enqueue_two_tank_check(
+            zone_id=zone_id,
+            payload=payload,
+            workflow=workflow,
+            phase_started_at=phase_started_at,
+            phase_timeout_at=phase_timeout_at,
+            poll_interval_sec=int(runtime_cfg.get("poll_interval_sec") or 60),
+        )
+    except Exception:
+        _logger.warning(
+            "Zone %s: failed to re-enqueue %s after irr_state transient error (%s)",
+            zone_id,
+            workflow,
+            reason_code,
+            exc_info=True,
+        )
+        return None
+
+    _logger.info(
+        "Zone %s: irr_state transient error (%s) — re-enqueued %s check",
+        zone_id,
+        reason_code,
+        workflow,
+    )
+    return {
+        **irr_state_guard_result,
+        "mode": f"two_tank_{workflow.replace('_check', '')}_irr_state_retry",
+        "irr_state_retry": True,
+        "next_check": enqueue_result,
+    }
+
 
 _MANUAL_STEP_TO_PHASE: Dict[str, str] = {
     "clean_fill_start": "tank_filling",
@@ -289,6 +383,16 @@ async def execute_two_tank_startup_workflow_core(
         requested_state_cmd_id=state_cmd_id,
     )
     if irr_state_guard_result is not None:
+        retry_result = await _maybe_reenqueue_on_irr_state_transient(
+            self,
+            zone_id=zone_id,
+            workflow=workflow,
+            payload=payload,
+            runtime_cfg=runtime_cfg,
+            irr_state_guard_result=irr_state_guard_result,
+        )
+        if retry_result is not None:
+            return retry_result
         return irr_state_guard_result
 
     if workflow in TWO_TANK_STARTUP_WORKFLOWS:

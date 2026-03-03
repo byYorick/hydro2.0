@@ -76,14 +76,12 @@ async def _schedule_runtime_dispatch_if_possible(
     create_task_fn = getattr(api_runtime, "_create_scheduler_task", None)
     execute_task_fn = getattr(api_runtime, "_execute_scheduler_task", None)
     spawn_task_fn = getattr(api_runtime, "_spawn_background_task", None)
-    command_bus = getattr(api_runtime, "_command_bus", None)
-    zone_service = getattr(api_runtime, "_zone_service", None)
     if not callable(create_task_fn) or not callable(execute_task_fn) or not callable(spawn_task_fn):
         return None
-    if command_bus is None:
-        return None
-    if str(task_type).strip().lower() == "diagnostics" and zone_service is None:
-        return None
+    # NOTE: We intentionally do NOT abort here if command_bus/zone_service are None.
+    # At startup, workflow-state recovery runs before run_runtime_cycle initialises these.
+    # _dispatch_when_due will poll for readiness instead.
+    _task_type_normalized = str(task_type).strip().lower()
 
     due_at_dt = scheduled_for_dt + timedelta(seconds=_INTERNAL_ENQUEUE_DUE_SEC)
     effective_expires_dt = expires_at_dt or (scheduled_for_dt + timedelta(seconds=_INTERNAL_ENQUEUE_EXPIRES_SEC))
@@ -104,6 +102,31 @@ async def _schedule_runtime_dispatch_if_possible(
         delay_sec = (scheduled_for_dt - datetime.now(timezone.utc).replace(tzinfo=None)).total_seconds()
         if delay_sec > 0:
             await asyncio.sleep(delay_sec)
+
+        # Wait for runtime services to become available.
+        # This handles the startup race: workflow-state recovery may run during FastAPI lifespan
+        # before run_runtime_cycle has initialised _command_bus / _zone_service.
+        _svc_wait_timeout_sec = 30.0
+        _svc_waited = 0.0
+        while True:
+            _cb = getattr(api_runtime, "_command_bus", None)
+            _zs = getattr(api_runtime, "_zone_service", None)
+            if _cb is not None and (_task_type_normalized != "diagnostics" or _zs is not None):
+                break
+            if _svc_waited >= _svc_wait_timeout_sec:
+                logger.warning(
+                    "Internal enqueue dispatch aborted: runtime services not ready after %.0fs "
+                    "(enqueue_id=%s zone_id=%s task_type=%s command_bus=%s zone_service=%s)",
+                    _svc_wait_timeout_sec,
+                    enqueue_id,
+                    zone_id,
+                    _task_type_normalized,
+                    "ready" if _cb is not None else "None",
+                    "ready" if _zs is not None else "None",
+                )
+                return
+            await asyncio.sleep(0.5)
+            _svc_waited += 0.5
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if expires_at_dt is not None and now >= expires_at_dt:

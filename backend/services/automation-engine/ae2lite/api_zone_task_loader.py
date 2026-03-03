@@ -33,6 +33,10 @@ def _task_sort_key(task: Dict[str, Any]) -> tuple[int, datetime]:
     )
 
 
+def _task_recency(task: Dict[str, Any]) -> datetime:
+    return coerce_datetime(task.get("updated_at")) or coerce_datetime(task.get("created_at")) or datetime.now()
+
+
 async def load_latest_zone_task_from_db(
     zone_id: int,
     *,
@@ -63,7 +67,7 @@ async def load_latest_zone_task_from_db(
         )
         return None
 
-    candidates: list[Dict[str, Any]] = []
+    latest_by_task_id: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         details = row.get("details") if isinstance(row.get("details"), dict) else None
         if not isinstance(details, dict):
@@ -78,9 +82,14 @@ async def load_latest_zone_task_from_db(
             fallback_task_id=fallback_task_id,
         )
         if task is not None:
-            candidates.append(task)
+            task_id = str(task.get("task_id") or "").strip()
+            if not task_id:
+                continue
+            current = latest_by_task_id.get(task_id)
+            if current is None or _task_recency(task) >= _task_recency(current):
+                latest_by_task_id[task_id] = task
 
-    return pick_preferred_zone_task(candidates, task_sort_key_fn=_task_sort_key)
+    return pick_preferred_zone_task(list(latest_by_task_id.values()), task_sort_key_fn=_task_sort_key)
 
 
 async def load_latest_zone_task(
@@ -106,6 +115,16 @@ async def load_latest_zone_task(
 
     preferred = pick_preferred_zone_task(in_memory_candidates, task_sort_key_fn=_task_sort_key)
     if preferred is not None:
+        if is_task_active(preferred):
+            from_db = await load_latest_zone_task_from_db(zone_id, fetch_fn=fetch_fn, logger=logger)
+            if (
+                from_db is not None
+                and str(from_db.get("task_id") or "") == str(preferred.get("task_id") or "")
+                and not is_task_active(from_db)
+            ):
+                async with scheduler_tasks_lock:
+                    scheduler_tasks[str(from_db["task_id"])] = dict(from_db)
+                return from_db
         return preferred
 
     from_db = await load_latest_zone_task_from_db(zone_id, fetch_fn=fetch_fn, logger=logger)

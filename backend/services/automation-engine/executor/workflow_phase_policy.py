@@ -113,9 +113,24 @@ def derive_workflow_phase(
 
     if normalized_task_type == "diagnostics":
         if not success:
+            if bool(result.get("irr_state_retry")):
+                if logger is not None:
+                    logger.info(
+                        "Diagnostics workflow phase unchanged: transient irr_state retry keeps active phase",
+                        extra={
+                            "task_type": normalized_task_type,
+                            "mode": mode or None,
+                            "workflow": workflow or None,
+                            "decision": decision or None,
+                            "reason_code": reason_code or None,
+                            "action_required": action_required,
+                            "success": success,
+                        },
+                    )
+                return None
             if logger is not None:
                 logger.info(
-                    "Diagnostics workflow phase unchanged: terminal failure does not derive active phase",
+                    "Diagnostics workflow phase fallback to idle after terminal failure",
                     extra={
                         "task_type": normalized_task_type,
                         "mode": mode or None,
@@ -126,7 +141,7 @@ def derive_workflow_phase(
                         "success": success,
                     },
                 )
-            return None
+            return WORKFLOW_PHASE_IDLE
         if mode in WORKFLOW_PHASE_READY_MODES:
             return WORKFLOW_PHASE_READY
         if mode in WORKFLOW_PHASE_IRRIGATING_MODES:

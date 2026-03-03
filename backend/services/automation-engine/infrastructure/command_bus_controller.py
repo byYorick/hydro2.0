@@ -182,6 +182,7 @@ async def publish_controller_command_closed_loop(
 
     submitted = await command_bus.publish_controller_command(zone_id, command, context)
     cmd_id = str(command.get("cmd_id") or "").strip() or None
+    dedupe_decision = str(command.get("dedupe_decision") or "").strip().lower()
     result["command_submitted"] = bool(submitted)
     result["cmd_id"] = cmd_id
 
@@ -199,6 +200,36 @@ async def publish_controller_command_closed_loop(
             error="publish_failed",
         )
         return result
+
+    if dedupe_decision == "duplicate_no_effect":
+        if tracker is None or cmd_id is None:
+            result["command_effect_confirmed"] = True
+            result["terminal_status"] = "NO_EFFECT"
+            return result
+        terminal_status_raw = await tracker._get_command_status_from_db(cmd_id)  # noqa: SLF001
+        normalized_status = str(terminal_status_raw or "").strip().upper()
+        if normalized_status == "DONE":
+            result["command_effect_confirmed"] = True
+            result["terminal_status"] = "DONE"
+            return result
+        if normalized_status in _TERMINAL_COMMAND_STATUSES:
+            await _finish_not_confirmed(
+                command_bus,
+                result,
+                zone_id=zone_id,
+                cmd_id=cmd_id,
+                cmd=cmd,
+                node_uid=node_uid,
+                channel=channel,
+                terminal_status=normalized_status,
+                reason="terminal_status_not_done",
+                error=f"command_terminal_status_{normalized_status.lower()}",
+            )
+            return result
+        if cmd_id not in tracker.pending_commands:
+            result["command_effect_confirmed"] = True
+            result["terminal_status"] = "NO_EFFECT"
+            return result
 
     if tracker is None or cmd_id is None:
         await _finish_not_confirmed(
