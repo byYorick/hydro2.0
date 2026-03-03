@@ -84,6 +84,79 @@ WORKFLOW_STAGE_TO_PHASE = {
 
 WORKFLOW_PHASE_EVENT_TYPE = "WORKFLOW_PHASE_UPDATED"
 
+WORKFLOW_PHASE_VALID_TRANSITIONS: Dict[str, frozenset[str]] = {
+    WORKFLOW_PHASE_IDLE: frozenset(
+        {
+            WORKFLOW_PHASE_TANK_FILLING,
+        }
+    ),
+    WORKFLOW_PHASE_TANK_FILLING: frozenset(
+        {
+            WORKFLOW_PHASE_TANK_RECIRC,
+            WORKFLOW_PHASE_READY,
+            WORKFLOW_PHASE_IDLE,
+        }
+    ),
+    WORKFLOW_PHASE_TANK_RECIRC: frozenset(
+        {
+            WORKFLOW_PHASE_READY,
+            WORKFLOW_PHASE_IDLE,
+        }
+    ),
+    WORKFLOW_PHASE_READY: frozenset(
+        {
+            WORKFLOW_PHASE_IRRIGATING,
+            WORKFLOW_PHASE_IDLE,
+        }
+    ),
+    WORKFLOW_PHASE_IRRIGATING: frozenset(
+        {
+            WORKFLOW_PHASE_IRRIG_RECIRC,
+            WORKFLOW_PHASE_IDLE,
+        }
+    ),
+    WORKFLOW_PHASE_IRRIG_RECIRC: frozenset(
+        {
+            WORKFLOW_PHASE_IRRIGATING,
+            WORKFLOW_PHASE_IDLE,
+        }
+    ),
+}
+
+
+def is_valid_phase_transition(from_phase: str, to_phase: str) -> bool:
+    """Return True when target phase is allowed from the source phase."""
+    allowed = WORKFLOW_PHASE_VALID_TRANSITIONS.get(
+        normalize_workflow_phase(from_phase),
+        frozenset(),
+    )
+    return normalize_workflow_phase(to_phase) in allowed
+
+
+def validate_phase_transition(
+    from_phase: str,
+    to_phase: str,
+    *,
+    zone_id: int,
+    logger: Optional[logging.Logger] = None,
+) -> bool:
+    """Soft FSM enforcement.
+
+    Invalid transitions are logged as warnings and should be ignored by caller.
+    """
+    normalized_from = normalize_workflow_phase(from_phase)
+    normalized_to = normalize_workflow_phase(to_phase)
+    if is_valid_phase_transition(normalized_from, normalized_to):
+        return True
+    if logger is not None:
+        logger.warning(
+            "Zone %s: invalid workflow phase transition %s -> %s (ignored)",
+            zone_id,
+            normalized_from,
+            normalized_to,
+        )
+    return False
+
 
 def normalize_workflow_phase(raw_phase: Any, *, allowed_values: Optional[Set[str]] = None) -> str:
     allowed = allowed_values or WORKFLOW_PHASE_VALUES
@@ -279,13 +352,16 @@ __all__ = [
     "WORKFLOW_PHASE_READY",
     "WORKFLOW_PHASE_TANK_FILLING",
     "WORKFLOW_PHASE_TANK_RECIRC",
+    "WORKFLOW_PHASE_VALID_TRANSITIONS",
     "WORKFLOW_PHASE_VALUES",
     "WORKFLOW_STAGE_TO_PHASE",
     "WORKFLOW_STAGES_CANONICAL",
     "build_workflow_state_payload",
     "derive_workflow_phase",
     "extract_workflow_hint",
+    "is_valid_phase_transition",
     "normalize_workflow_phase",
     "normalize_workflow_stage",
     "resolve_workflow_stage_for_state_sync",
+    "validate_phase_transition",
 ]

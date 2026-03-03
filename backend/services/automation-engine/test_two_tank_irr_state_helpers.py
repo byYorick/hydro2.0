@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from domain.workflows.two_tank_core import _CRITICAL_IRR_STATE_EXPECTATIONS
 from domain.workflows.two_tank_irr_state_helpers import (
     request_irr_state_snapshot_best_effort,
     validate_irr_state_expected_vs_actual,
@@ -145,3 +146,7 @@ async def test_validate_startup_keeps_mismatch_for_non_allowed_state() -> None:
 
     assert isinstance(result, dict)
     assert result.get("error_code") == "two_tank_irr_state_mismatch"
+
+
+def test_critical_irr_expectations_include_clean_fill_check() -> None:
+    assert _CRITICAL_IRR_STATE_EXPECTATIONS["clean_fill_check"]["pump_main"] is False

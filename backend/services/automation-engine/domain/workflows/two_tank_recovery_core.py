@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from domain.models.decision_models import DecisionOutcome
+from domain.workflows.two_tank_deps import TwoTankDeps
+from domain.workflows.two_tank_result import two_tank_error, two_tank_success
 from executor.executor_constants import (
     ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
     ERR_TWO_TANK_COMMAND_FAILED,
@@ -22,17 +24,17 @@ from scheduler_internal_enqueue import parse_iso_datetime
 
 
 async def execute_two_tank_recovery_branch(
-    self,
+    deps: TwoTankDeps,
     *,
-    zone_id: int,
     payload: Dict[str, Any],
     context: Dict[str, Any],
     runtime_cfg: Dict[str, Any],
     workflow: str,
 ) -> Dict[str, Any]:
+    zone_id = deps.zone_id
     if workflow == "irrigation_recovery":
-        attempt = self._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
-        return await self._start_two_tank_irrigation_recovery(
+        attempt = deps._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
+        return await deps._start_two_tank_irrigation_recovery(
             zone_id=zone_id,
             payload=payload,
             context=context,
@@ -42,20 +44,20 @@ async def execute_two_tank_recovery_branch(
 
     if workflow == "irrigation_recovery_check":
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        attempt = self._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
+        attempt = deps._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
         phase_started_at = parse_iso_datetime(str(payload.get("irrigation_recovery_started_at") or "")) or now
         phase_timeout_at = parse_iso_datetime(str(payload.get("irrigation_recovery_timeout_at") or ""))
         if phase_timeout_at is None:
             phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["irrigation_recovery_timeout_sec"])
 
-        recovery_state = await self._evaluate_ph_ec_targets(
+        recovery_state = await deps._evaluate_ph_ec_targets(
             zone_id=zone_id,
             target_ph=float(runtime_cfg["target_ph"]),
             target_ec=float(runtime_cfg["target_ec"]),
             tolerance=runtime_cfg["recovery_tolerance"],
         )
         if recovery_state["targets_reached"]:
-            stop_result = await self._dispatch_two_tank_command_plan(
+            stop_result = await deps._dispatch_two_tank_command_plan(
                 zone_id=zone_id,
                 command_plan=runtime_cfg["commands"]["irrigation_recovery_stop"],
                 context=context,
@@ -66,53 +68,47 @@ async def execute_two_tank_recovery_branch(
                     reason="Остановка irrigation recovery по достижению цели",
                 ),
             )
-            stop_result = await self._merge_with_sensor_mode_deactivate(
+            stop_result = await deps._merge_with_sensor_mode_deactivate(
                 zone_id=zone_id,
                 context=context,
                 stop_result=stop_result,
                 reason_code=REASON_IRRIGATION_RECOVERY_RECOVERED,
             )
             if not stop_result.get("success"):
-                return {
-                    "success": False,
-                    "task_type": "diagnostics",
-                    "mode": "two_tank_irrigation_recovery_stop_failed",
-                    "workflow": workflow,
-                    "commands_total": stop_result.get("commands_total", 0),
-                    "commands_failed": stop_result.get("commands_failed", 1),
-                    "command_statuses": stop_result.get("command_statuses", []),
-                    "action_required": True,
-                    "decision": "run",
-                    "reason_code": REASON_IRRIGATION_RECOVERY_FAILED,
-                    "reason": "Не удалось остановить irrigation recovery",
-                    "error": str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
-                    "error_code": str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
-                }
-            await self._update_zone_workflow_phase(
+                return two_tank_error(
+                    mode="two_tank_irrigation_recovery_stop_failed",
+                    workflow=workflow,
+                    reason_code=REASON_IRRIGATION_RECOVERY_FAILED,
+                    reason="Не удалось остановить irrigation recovery",
+                    error_code=str(stop_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                    error=str(stop_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                    commands_total=stop_result.get("commands_total", 0),
+                    commands_failed=stop_result.get("commands_failed", 1),
+                    command_statuses=stop_result.get("command_statuses", []),
+                )
+            await deps._update_zone_workflow_phase(
                 zone_id=zone_id,
                 workflow_phase=WORKFLOW_PHASE_IRRIGATING,
                 workflow_stage="irrigation_recovery_check",
                 reason_code=REASON_IRRIGATION_RECOVERY_RECOVERED,
                 context=context,
             )
-            return {
-                "success": True,
-                "task_type": "diagnostics",
-                "mode": "two_tank_irrigation_recovery_completed",
-                "workflow": workflow,
-                "commands_total": stop_result.get("commands_total", 0),
-                "commands_failed": stop_result.get("commands_failed", 0),
-                "command_statuses": stop_result.get("command_statuses", []),
-                "action_required": False,
-                "decision": "skip",
-                "reason_code": REASON_IRRIGATION_RECOVERY_RECOVERED,
-                "reason": "Irrigation recovery успешно завершен",
-                "irrigation_recovery_attempt": attempt,
-                "targets_state": recovery_state,
-            }
+            return two_tank_success(
+                mode="two_tank_irrigation_recovery_completed",
+                workflow=workflow,
+                reason_code=REASON_IRRIGATION_RECOVERY_RECOVERED,
+                reason="Irrigation recovery успешно завершен",
+                action_required=False,
+                decision="skip",
+                commands_total=stop_result.get("commands_total", 0),
+                commands_failed=stop_result.get("commands_failed", 0),
+                command_statuses=stop_result.get("command_statuses", []),
+                irrigation_recovery_attempt=attempt,
+                targets_state=recovery_state,
+            )
 
         if now >= phase_timeout_at:
-            stop_result = await self._dispatch_two_tank_command_plan(
+            stop_result = await deps._dispatch_two_tank_command_plan(
                 zone_id=zone_id,
                 command_plan=runtime_cfg["commands"]["irrigation_recovery_stop"],
                 context=context,
@@ -123,57 +119,69 @@ async def execute_two_tank_recovery_branch(
                     reason="Остановка irrigation recovery по таймауту попытки",
                 ),
             )
-            stop_result = await self._merge_with_sensor_mode_deactivate(
+            stop_result = await deps._merge_with_sensor_mode_deactivate(
                 zone_id=zone_id,
                 context=context,
                 stop_result=stop_result,
                 reason_code=REASON_IRRIGATION_RECOVERY_FAILED,
             )
-            if self._two_tank_safety_guards_enabled() and not stop_result.get("success"):
-                self._log_two_tank_safety_guard(
+            if deps.safety_config.stop_confirmation_required and not stop_result.get("success"):
+                deps._log_two_tank_safety_guard(
                     zone_id=zone_id,
                     context=context,
                     phase="irrigation_recovery_timeout",
                     stop_result=stop_result,
                 )
-                return self._build_two_tank_stop_not_confirmed_result(
+                return deps._build_two_tank_stop_not_confirmed_result(
                     workflow=workflow,
                     mode="two_tank_irrigation_recovery_timeout_stop_not_confirmed",
                     reason="Таймаут irrigation recovery: stop не подтверждён, retry запрещён",
                     stop_result=stop_result,
                 )
-            degraded_state = await self._evaluate_ph_ec_targets(
+            degraded_state = await deps._evaluate_ph_ec_targets(
                 zone_id=zone_id,
                 target_ph=float(runtime_cfg["target_ph"]),
                 target_ec=float(runtime_cfg["target_ec"]),
                 tolerance=runtime_cfg["degraded_tolerance"],
             )
             if degraded_state["targets_reached"]:
-                await self._update_zone_workflow_phase(
+                await deps._emit_task_event(
+                    zone_id=zone_id,
+                    task_type="diagnostics",
+                    context=context,
+                    event_type="IRRIGATION_RECOVERY_DEGRADED",
+                    payload={
+                        "irrigation_recovery_attempt": attempt,
+                        "targets_state": degraded_state,
+                        "reason_code": REASON_IRRIGATION_RECOVERY_DEGRADED,
+                        "reason": "Полив возобновлен в degraded tolerance - pH/EC вне нормальных допусков",
+                        "action_required_human": True,
+                    },
+                )
+                await deps._update_zone_workflow_phase(
                     zone_id=zone_id,
                     workflow_phase=WORKFLOW_PHASE_IRRIGATING,
                     workflow_stage="irrigation_recovery_check",
                     reason_code=REASON_IRRIGATION_RECOVERY_DEGRADED,
                     context=context,
                 )
-                return {
-                    "success": True,
-                    "task_type": "diagnostics",
-                    "mode": "two_tank_irrigation_recovery_degraded",
-                    "workflow": workflow,
-                    "commands_total": stop_result.get("commands_total", 0),
-                    "commands_failed": stop_result.get("commands_failed", 0),
-                    "command_statuses": stop_result.get("command_statuses", []),
-                    "action_required": False,
-                    "decision": "skip",
-                    "reason_code": REASON_IRRIGATION_RECOVERY_DEGRADED,
-                    "reason": "Irrigation recovery завершен в degraded tolerance",
-                    "irrigation_recovery_attempt": attempt,
-                    "targets_state": degraded_state,
-                }
+                return two_tank_success(
+                    mode="two_tank_irrigation_recovery_degraded",
+                    workflow=workflow,
+                    reason_code=REASON_IRRIGATION_RECOVERY_DEGRADED,
+                    reason="Irrigation recovery завершен в degraded tolerance",
+                    action_required=True,
+                    decision="skip",
+                    commands_total=stop_result.get("commands_total", 0),
+                    commands_failed=stop_result.get("commands_failed", 0),
+                    command_statuses=stop_result.get("command_statuses", []),
+                    degraded=True,
+                    irrigation_recovery_attempt=attempt,
+                    targets_state=degraded_state,
+                )
 
             if attempt < runtime_cfg["irrigation_recovery_max_attempts"]:
-                return await self._start_two_tank_irrigation_recovery(
+                return await deps._start_two_tank_irrigation_recovery(
                     zone_id=zone_id,
                     payload={**payload, "irrigation_recovery_attempt": attempt + 1},
                     context=context,
@@ -181,27 +189,22 @@ async def execute_two_tank_recovery_branch(
                     attempt=attempt + 1,
                 )
 
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_irrigation_recovery_failed",
-                "workflow": workflow,
-                "commands_total": stop_result.get("commands_total", 0),
-                "commands_failed": stop_result.get("commands_failed", 0),
-                "command_statuses": stop_result.get("command_statuses", []),
-                "action_required": True,
-                "decision": "run",
-                "reason_code": REASON_MANUAL_ACK_REQUIRED_AFTER_RETRIES,
-                "reason": "Превышено число автопопыток irrigation recovery, требуется ручное подтверждение",
-                "error": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
-                "error_code": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
-                "irrigation_recovery_attempt": attempt,
-                "targets_state": recovery_state,
-                "manual_ack_required": True,
-            }
+            return two_tank_error(
+                mode="two_tank_irrigation_recovery_failed",
+                workflow=workflow,
+                reason_code=REASON_MANUAL_ACK_REQUIRED_AFTER_RETRIES,
+                reason="Превышено число автопопыток irrigation recovery, требуется ручное подтверждение",
+                error_code=ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
+                commands_total=stop_result.get("commands_total", 0),
+                commands_failed=stop_result.get("commands_failed", 0),
+                command_statuses=stop_result.get("command_statuses", []),
+                irrigation_recovery_attempt=attempt,
+                targets_state=recovery_state,
+                manual_ack_required=True,
+            )
 
         try:
-            enqueue_result = await self._enqueue_two_tank_check(
+            enqueue_result = await deps._enqueue_two_tank_check(
                 zone_id=zone_id,
                 payload={**payload, "irrigation_recovery_attempt": attempt},
                 workflow="irrigation_recovery_check",
@@ -211,50 +214,34 @@ async def execute_two_tank_recovery_branch(
                 phase_cycle=attempt,
             )
         except ValueError as exc:
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_irrigation_recovery_enqueue_failed",
-                "workflow": workflow,
-                "commands_total": 0,
-                "commands_failed": 0,
-                "action_required": True,
-                "decision": "run",
-                "reason_code": REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
-                "reason": "Не удалось запланировать следующую проверку irrigation recovery",
-                "error": str(exc),
-                "error_code": ERR_TWO_TANK_ENQUEUE_FAILED,
-            }
+            return two_tank_error(
+                mode="two_tank_irrigation_recovery_enqueue_failed",
+                workflow=workflow,
+                reason_code=REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+                reason="Не удалось запланировать следующую проверку irrigation recovery",
+                error_code=ERR_TWO_TANK_ENQUEUE_FAILED,
+                error=str(exc),
+            )
 
-        return {
-            "success": True,
-            "task_type": "diagnostics",
-            "mode": "two_tank_irrigation_recovery_in_progress",
-            "workflow": workflow,
-            "commands_total": 0,
-            "commands_failed": 0,
-            "action_required": True,
-            "decision": "run",
-            "reason_code": REASON_IRRIGATION_RECOVERY_STARTED,
-            "reason": "Irrigation recovery продолжается",
-            "irrigation_recovery_attempt": attempt,
-            "irrigation_recovery_started_at": phase_started_at.isoformat(),
-            "irrigation_recovery_timeout_at": phase_timeout_at.isoformat(),
-            "next_check": enqueue_result,
-            "targets_state": recovery_state,
-        }
+        return two_tank_success(
+            mode="two_tank_irrigation_recovery_in_progress",
+            workflow=workflow,
+            reason_code=REASON_IRRIGATION_RECOVERY_STARTED,
+            reason="Irrigation recovery продолжается",
+            action_required=True,
+            decision="run",
+            irrigation_recovery_attempt=attempt,
+            irrigation_recovery_started_at=phase_started_at.isoformat(),
+            irrigation_recovery_timeout_at=phase_timeout_at.isoformat(),
+            next_check=enqueue_result,
+            targets_state=recovery_state,
+        )
 
-    return {
-        "success": False,
-        "task_type": "diagnostics",
-        "mode": "two_tank_unknown_workflow",
-        "workflow": workflow,
-        "commands_total": 0,
-        "commands_failed": 0,
-        "action_required": True,
-        "decision": "run",
-        "reason_code": "unsupported_workflow",
-        "reason": f"Неподдерживаемый workflow для топологии two_tank: {workflow}",
-        "error": "unsupported_workflow",
-        "error_code": "unsupported_workflow",
-    }
+    return two_tank_error(
+        mode="two_tank_unknown_workflow",
+        workflow=workflow,
+        reason_code="unsupported_workflow",
+        reason=f"Неподдерживаемый workflow для топологии two_tank: {workflow}",
+        error_code="unsupported_workflow",
+        error="unsupported_workflow",
+    )

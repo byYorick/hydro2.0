@@ -1,4 +1,7 @@
-"""Типизированный Protocol для executor context, передаваемого в workflow-функции."""
+"""Типизированный Protocol для executor context, передаваемого в workflow-функции.
+
+# DEPRECATED: use TwoTankDeps instead.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 @runtime_checkable
 class WorkflowExecutorProtocol(Protocol):
-    """Интерфейс, который ожидают two-tank workflow-функции от executor'а.
+    """DEPRECATED: интерфейс, который ожидали two-tank workflow-функции от executor'а.
 
     Workflow-функции (execute_two_tank_startup_workflow_core и т.д.) принимают
     `executor: WorkflowExecutorProtocol` как первый аргумент вместо `self`.

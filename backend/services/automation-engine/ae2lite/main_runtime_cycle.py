@@ -27,6 +27,7 @@ from exceptions import InvalidConfigurationError
 from infrastructure import CommandBus
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from infrastructure.command_audit import CommandAudit
+from infrastructure.zone_event_trigger import ZoneEventTrigger
 from repositories import (
     GrowCycleRepository,
     InfrastructureRepository,
@@ -206,11 +207,13 @@ async def run_runtime_cycle(
     next_system_state_log_at = time.monotonic() + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
     signal_listener = None
     signal_listener_task = None
+    zone_event_trigger = ZoneEventTrigger()
 
     signal_listener, signal_listener_task = await start_effective_targets_notify_listener(
         invalidate_cache_fn=laravel_api_repo.invalidate_effective_targets_cache,
         shutdown_event=shared._shutdown_event,
         logger=shared.logger,
+        zone_event_trigger=zone_event_trigger,
     )
 
     try:

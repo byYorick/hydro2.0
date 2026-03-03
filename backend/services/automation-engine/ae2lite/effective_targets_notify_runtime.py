@@ -7,8 +7,9 @@ import json
 import logging
 from typing import Any, Callable, Optional, Tuple
 
-from ae2lite.pg_notify_listener import PgNotifyListener
+from ae2lite.pg_notify_listener import PgNotifyListener, handle_two_tank_zone_event_payload
 from common.env import get_settings
+from infrastructure.zone_event_trigger import ZoneEventTrigger
 
 InvalidateCacheFn = Callable[[int], None]
 
@@ -44,6 +45,7 @@ async def handle_ae_signal_update_payload(
     *,
     invalidate_cache_fn: InvalidateCacheFn,
     logger: logging.Logger,
+    zone_event_trigger: Optional[ZoneEventTrigger] = None,
 ) -> None:
     try:
         event = json.loads(payload) if payload else {}
@@ -59,9 +61,21 @@ async def handle_ae_signal_update_payload(
         return
 
     if not should_invalidate_for_kind(event.get("kind")):
+        pass
+    else:
+        invalidate_cache_fn(zone_id)
+
+    if zone_event_trigger is None:
         return
 
-    invalidate_cache_fn(zone_id)
+    try:
+        await handle_two_tank_zone_event_payload(
+            payload,
+            zone_event_trigger=zone_event_trigger,
+            logger=logger,
+        )
+    except Exception as exc:
+        logger.warning("Failed to handle two-tank zone event notify payload: %s", exc, exc_info=True)
 
 
 async def start_effective_targets_notify_listener(
@@ -69,6 +83,7 @@ async def start_effective_targets_notify_listener(
     invalidate_cache_fn: InvalidateCacheFn,
     shutdown_event: asyncio.Event,
     logger: logging.Logger,
+    zone_event_trigger: Optional[ZoneEventTrigger] = None,
 ) -> Tuple[Optional[PgNotifyListener], Optional[asyncio.Task[None]]]:
     settings = get_settings()
     dsn = (
@@ -83,6 +98,7 @@ async def start_effective_targets_notify_listener(
             payload,
             invalidate_cache_fn=invalidate_cache_fn,
             logger=logger,
+            zone_event_trigger=zone_event_trigger,
         ),
     )
 

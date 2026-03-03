@@ -4,6 +4,7 @@ import pytest
 
 from domain.models.decision_models import DecisionOutcome
 from executor.two_tank_command_plan_core import dispatch_two_tank_command_plan_core
+from executor.two_tank_common import resolve_primary_pump_channel
 
 
 @pytest.mark.asyncio
@@ -52,3 +53,26 @@ async def test_dispatch_two_tank_command_plan_passes_dedupe_bypass_to_publish_ba
 
     assert result["success"] is True
     assert captured["dedupe_bypass"] is True
+
+
+def test_resolve_primary_pump_channel_uses_first_pump_channel():
+    channel = resolve_primary_pump_channel(
+        [
+            {"channel": "valve_solution_fill"},
+            {"channel": "pump_aux"},
+            {"channel": "pump_main"},
+        ]
+    )
+
+    assert channel == "pump_aux"
+
+
+def test_resolve_primary_pump_channel_falls_back_to_main():
+    channel = resolve_primary_pump_channel(
+        [
+            {"channel": "valve_solution_fill"},
+            {"channel": "valve_solution_supply"},
+        ]
+    )
+
+    assert channel == "pump_main"

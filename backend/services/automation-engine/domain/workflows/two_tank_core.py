@@ -13,6 +13,8 @@ from domain.workflows.two_tank_irr_state_helpers import (
     request_irr_state_snapshot_best_effort,
     validate_irr_state_expected_vs_actual,
 )
+from domain.workflows.two_tank_deps import TwoTankDeps
+from domain.workflows.two_tank_result import two_tank_error, two_tank_success
 from domain.models.decision_models import DecisionOutcome
 from executor.executor_constants import (
     ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
@@ -40,6 +42,9 @@ TWO_TANK_SUPPORTED_WORKFLOWS = TWO_TANK_STARTUP_WORKFLOWS | TWO_TANK_RECOVERY_WO
 
 _CRITICAL_IRR_STATE_EXPECTATIONS: Dict[str, Dict[str, bool]] = {
     "startup": {
+        "pump_main": False,
+    },
+    "clean_fill_check": {
         "pump_main": False,
     },
     "solution_fill_check": {
@@ -95,9 +100,8 @@ _CHECK_WORKFLOW_TIMEOUT_CFG_KEY: Dict[str, str] = {
 
 
 async def _maybe_reenqueue_on_irr_state_transient(
-    self,
+    deps: TwoTankDeps,
     *,
-    zone_id: int,
     workflow: str,
     payload: Dict[str, Any],
     runtime_cfg: Dict[str, Any],
@@ -107,6 +111,7 @@ async def _maybe_reenqueue_on_irr_state_transient(
 
     Возвращает dict с результатом retry или None (не нужно повторять).
     """
+    zone_id = deps.zone_id
     reason_code = irr_state_guard_result.get("reason_code", "")
     if reason_code not in _IRR_STATE_TRANSIENT_REASONS:
         return None
@@ -131,7 +136,7 @@ async def _maybe_reenqueue_on_irr_state_transient(
         return None
 
     try:
-        enqueue_result = await self._enqueue_two_tank_check(
+        enqueue_result = await deps._enqueue_two_tank_check(
             zone_id=zone_id,
             payload=payload,
             workflow=workflow,
@@ -176,40 +181,34 @@ _MANUAL_STEP_TO_PHASE: Dict[str, str] = {
 
 
 async def execute_two_tank_startup_workflow_core(
-    self,
+    deps: TwoTankDeps,
     *,
-    zone_id: int,
     payload: Dict[str, Any],
     context: Dict[str, Any],
     decision: DecisionOutcome,
 ) -> Dict[str, Any]:
-    runtime_cfg = self._resolve_two_tank_runtime_config(payload)
-    workflow = self._normalize_two_tank_workflow(payload)
+    zone_id = deps.zone_id
+    runtime_cfg = deps._resolve_two_tank_runtime_config(payload)
+    workflow = deps._normalize_two_tank_workflow(payload)
 
     if workflow not in TWO_TANK_SUPPORTED_WORKFLOWS:
-        return {
-            "success": False,
-            "task_type": "diagnostics",
-            "mode": "two_tank_unknown_workflow",
-            "workflow": workflow,
-            "commands_total": 0,
-            "commands_failed": 0,
-            "action_required": True,
-            "decision": "run",
-            "reason_code": "unsupported_workflow",
-            "reason": f"Неподдерживаемый workflow для топологии two_tank: {workflow or '<missing>'}",
-            "error": "unsupported_workflow",
-            "error_code": "unsupported_workflow",
-        }
+        return two_tank_error(
+            mode="two_tank_unknown_workflow",
+            workflow=workflow,
+            reason_code="unsupported_workflow",
+            reason=f"Неподдерживаемый workflow для топологии two_tank: {workflow or '<missing>'}",
+            error_code="unsupported_workflow",
+            error="unsupported_workflow",
+        )
 
-    await self._emit_task_event(
+    await deps._emit_task_event(
         zone_id=zone_id,
         task_type="diagnostics",
         context=context,
         event_type="TWO_TANK_STARTUP_INITIATED",
         payload={
             "workflow": workflow,
-            "topology": self._extract_topology(payload),
+            "topology": deps._extract_topology(payload),
             "action_required": decision.action_required,
             "decision": decision.decision,
             "reason_code": decision.reason_code,
@@ -218,7 +217,7 @@ async def execute_two_tank_startup_workflow_core(
 
     stage_phase = WORKFLOW_STAGE_TO_PHASE.get(workflow)
     if stage_phase:
-        await self._update_zone_workflow_phase(
+        await deps._update_zone_workflow_phase(
             zone_id=zone_id,
             workflow_phase=stage_phase,
             workflow_stage=workflow,
@@ -226,47 +225,34 @@ async def execute_two_tank_startup_workflow_core(
             context=context,
         )
 
-    nodes_state = await self._check_required_nodes_online(zone_id, runtime_cfg["required_node_types"])
+    nodes_state = await deps._check_required_nodes_online(zone_id, runtime_cfg["required_node_types"])
     if nodes_state["missing_types"]:
-        return {
-            "success": False,
-            "task_type": "diagnostics",
-            "mode": "two_tank_required_nodes_missing",
-            "workflow": workflow,
-            "commands_total": 0,
-            "commands_failed": 0,
-            "action_required": True,
-            "decision": "run",
-            "reason_code": REASON_CYCLE_BLOCKED_NODES_UNAVAILABLE,
-            "reason": "Нет online-нод, необходимых для startup 2-бакового контура",
-            "error": ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
-            "error_code": ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
-            "missing_node_types": nodes_state["missing_types"],
-        }
+        return two_tank_error(
+            mode="two_tank_required_nodes_missing",
+            workflow=workflow,
+            reason_code=REASON_CYCLE_BLOCKED_NODES_UNAVAILABLE,
+            reason="Нет online-нод, необходимых для startup 2-бакового контура",
+            error_code=ERR_CYCLE_REQUIRED_NODES_UNAVAILABLE,
+            missing_node_types=nodes_state["missing_types"],
+        )
 
     if workflow == "manual_step":
         manual_step = str(payload.get("manual_step") or "").strip().lower()
         command_plan_name = _MANUAL_STEP_TO_COMMAND_PLAN.get(manual_step)
         if not command_plan_name:
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_manual_step_unsupported",
-                "workflow": workflow,
-                "commands_total": 0,
-                "commands_failed": 0,
-                "action_required": True,
-                "decision": "run",
-                "reason_code": "manual_step_unsupported",
-                "reason": f"Неподдерживаемый manual_step: {manual_step or '<missing>'}",
-                "error": "manual_step_unsupported",
-                "error_code": "manual_step_unsupported",
-                "manual_step": manual_step or None,
-            }
+            return two_tank_error(
+                mode="two_tank_manual_step_unsupported",
+                workflow=workflow,
+                reason_code="manual_step_unsupported",
+                reason=f"Неподдерживаемый manual_step: {manual_step or '<missing>'}",
+                error_code="manual_step_unsupported",
+                error="manual_step_unsupported",
+                manual_step=manual_step or None,
+            )
 
         phase = _MANUAL_STEP_TO_PHASE.get(manual_step)
         if phase:
-            await self._update_zone_workflow_phase(
+            await deps._update_zone_workflow_phase(
                 zone_id=zone_id,
                 workflow_phase=phase,
                 workflow_stage="manual_step",
@@ -274,7 +260,7 @@ async def execute_two_tank_startup_workflow_core(
                 context=context,
             )
 
-        await self._emit_task_event(
+        await deps._emit_task_event(
             zone_id=zone_id,
             task_type="diagnostics",
             context=context,
@@ -289,24 +275,18 @@ async def execute_two_tank_startup_workflow_core(
 
         command_plan = runtime_cfg["commands"].get(command_plan_name)
         if not isinstance(command_plan, list) or not command_plan:
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_manual_step_failed",
-                "workflow": workflow,
-                "commands_total": 0,
-                "commands_failed": 0,
-                "action_required": True,
-                "decision": "run",
-                "reason_code": "manual_step_command_plan_missing",
-                "reason": f"Не найден command plan для manual step: {manual_step}",
-                "error": "manual_step_command_plan_missing",
-                "error_code": "manual_step_command_plan_missing",
-                "manual_step": manual_step,
-                "workflow_phase": phase,
-            }
+            return two_tank_error(
+                mode="two_tank_manual_step_failed",
+                workflow=workflow,
+                reason_code="manual_step_command_plan_missing",
+                reason=f"Не найден command plan для manual step: {manual_step}",
+                error_code="manual_step_command_plan_missing",
+                error="manual_step_command_plan_missing",
+                manual_step=manual_step,
+                workflow_phase=phase,
+            )
 
-        plan_result = await self._dispatch_two_tank_command_plan(
+        plan_result = await deps._dispatch_two_tank_command_plan(
             zone_id=zone_id,
             command_plan=command_plan,
             context=context,
@@ -318,25 +298,21 @@ async def execute_two_tank_startup_workflow_core(
             ),
         )
         if not plan_result.get("success"):
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_manual_step_failed",
-                "workflow": workflow,
-                "commands_total": plan_result.get("commands_total", 0),
-                "commands_failed": plan_result.get("commands_failed", 1),
-                "command_statuses": plan_result.get("command_statuses", []),
-                "action_required": True,
-                "decision": "run",
-                "reason_code": "manual_step_failed",
-                "reason": f"Не удалось выполнить manual step: {manual_step}",
-                "error": str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
-                "error_code": str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
-                "manual_step": manual_step,
-                "workflow_phase": phase,
-            }
+            return two_tank_error(
+                mode="two_tank_manual_step_failed",
+                workflow=workflow,
+                reason_code="manual_step_failed",
+                reason=f"Не удалось выполнить manual step: {manual_step}",
+                error_code=str(plan_result.get("error_code") or ERR_TWO_TANK_COMMAND_FAILED),
+                error=str(plan_result.get("error") or ERR_TWO_TANK_COMMAND_FAILED),
+                commands_total=plan_result.get("commands_total", 0),
+                commands_failed=plan_result.get("commands_failed", 1),
+                command_statuses=plan_result.get("command_statuses", []),
+                manual_step=manual_step,
+                workflow_phase=phase,
+            )
 
-        await self._emit_task_event(
+        await deps._emit_task_event(
             zone_id=zone_id,
             task_type="diagnostics",
             context=context,
@@ -352,55 +328,52 @@ async def execute_two_tank_startup_workflow_core(
             },
         )
 
-        return {
-            "success": True,
-            "task_type": "diagnostics",
-            "mode": "two_tank_manual_step_executed",
-            "workflow": workflow,
-            "manual_step": manual_step,
-            "workflow_phase": phase,
-            "commands_total": plan_result.get("commands_total", 0),
-            "commands_failed": plan_result.get("commands_failed", 0),
-            "commands_effect_confirmed": plan_result.get("commands_effect_confirmed", 0),
-            "command_statuses": plan_result.get("command_statuses", []),
-            "action_required": True,
-            "decision": "run",
-            "reason_code": "manual_step_executed",
-            "reason": f"Manual step выполнен: {manual_step}",
-        }
+        return two_tank_success(
+            mode="two_tank_manual_step_executed",
+            workflow=workflow,
+            reason_code="manual_step_executed",
+            reason=f"Manual step выполнен: {manual_step}",
+            action_required=True,
+            decision="run",
+            commands_total=plan_result.get("commands_total", 0),
+            commands_failed=plan_result.get("commands_failed", 0),
+            command_statuses=plan_result.get("command_statuses", []),
+            manual_step=manual_step,
+            workflow_phase=phase,
+            commands_effect_confirmed=plan_result.get("commands_effect_confirmed", 0),
+        )
 
-    state_cmd_id = await request_irr_state_snapshot_best_effort(
-        self,
-        zone_id=zone_id,
-        workflow=workflow,
-    )
-    irr_state_guard_result = await validate_irr_state_expected_vs_actual(
-        self,
-        zone_id=zone_id,
-        workflow=workflow,
-        runtime_cfg=runtime_cfg,
-        critical_expectations=_CRITICAL_IRR_STATE_EXPECTATIONS,
-        requested_state_cmd_id=state_cmd_id,
-    )
-    if irr_state_guard_result is not None:
-        retry_result = await _maybe_reenqueue_on_irr_state_transient(
-            self,
+    if deps.safety_config.irr_state_validation:
+        state_cmd_id = await request_irr_state_snapshot_best_effort(
+            deps,
             zone_id=zone_id,
             workflow=workflow,
-            payload=payload,
-            runtime_cfg=runtime_cfg,
-            irr_state_guard_result=irr_state_guard_result,
         )
-        if retry_result is not None:
-            return retry_result
-        return irr_state_guard_result
+        irr_state_guard_result = await validate_irr_state_expected_vs_actual(
+            deps,
+            zone_id=zone_id,
+            workflow=workflow,
+            runtime_cfg=runtime_cfg,
+            critical_expectations=_CRITICAL_IRR_STATE_EXPECTATIONS,
+            requested_state_cmd_id=state_cmd_id,
+        )
+        if irr_state_guard_result is not None:
+            retry_result = await _maybe_reenqueue_on_irr_state_transient(
+                deps,
+                workflow=workflow,
+                payload=payload,
+                runtime_cfg=runtime_cfg,
+                irr_state_guard_result=irr_state_guard_result,
+            )
+            if retry_result is not None:
+                return retry_result
+            return irr_state_guard_result
 
     if workflow in TWO_TANK_STARTUP_WORKFLOWS:
         from domain.workflows.two_tank_startup_core import execute_two_tank_startup_branch
 
         return await execute_two_tank_startup_branch(
-            self,
-            zone_id=zone_id,
+            deps,
             payload=payload,
             context=context,
             runtime_cfg=runtime_cfg,
@@ -411,25 +384,18 @@ async def execute_two_tank_startup_workflow_core(
         from domain.workflows.two_tank_recovery_core import execute_two_tank_recovery_branch
 
         return await execute_two_tank_recovery_branch(
-            self,
-            zone_id=zone_id,
+            deps,
             payload=payload,
             context=context,
             runtime_cfg=runtime_cfg,
             workflow=workflow,
         )
 
-    return {
-        "success": False,
-        "task_type": "diagnostics",
-        "mode": "two_tank_unknown_workflow",
-        "workflow": workflow,
-        "commands_total": 0,
-        "commands_failed": 0,
-        "action_required": True,
-        "decision": "run",
-        "reason_code": "unsupported_workflow",
-        "reason": f"Неподдерживаемый workflow для топологии two_tank: {workflow}",
-        "error": "unsupported_workflow",
-        "error_code": "unsupported_workflow",
-    }
+    return two_tank_error(
+        mode="two_tank_unknown_workflow",
+        workflow=workflow,
+        reason_code="unsupported_workflow",
+        reason=f"Неподдерживаемый workflow для топологии two_tank: {workflow}",
+        error_code="unsupported_workflow",
+        error="unsupported_workflow",
+    )

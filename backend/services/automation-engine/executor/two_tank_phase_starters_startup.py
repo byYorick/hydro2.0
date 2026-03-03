@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from common.pump_safety import can_run_pump
+from executor.two_tank_common import resolve_primary_pump_channel
 from executor.two_tank_phase_starters_prepare import start_two_tank_prepare_recirculation
 from executor.two_tank_phase_starters_types import (
     CompensateStartEnqueueFailureFn,
@@ -18,17 +19,6 @@ from executor.two_tank_phase_starters_types import (
     UpdateWorkflowPhaseFn,
 )
 from domain.models.decision_models import DecisionOutcome
-
-
-def _resolve_primary_pump_channel(command_plan: Any) -> str:
-    if isinstance(command_plan, list):
-        for item in command_plan:
-            if not isinstance(item, dict):
-                continue
-            channel = str(item.get("channel") or "").strip().lower()
-            if channel.startswith("pump"):
-                return channel
-    return "pump_main"
 
 
 async def start_two_tank_clean_fill(
@@ -169,29 +159,26 @@ async def start_two_tank_solution_fill(
     err_two_tank_command_failed: str,
     err_two_tank_enqueue_failed: str,
 ) -> Dict[str, Any]:
-    safety_guards_enabled = bool(two_tank_safety_guards_enabled_fn())
-    if safety_guards_enabled:
-        pump_channel = _resolve_primary_pump_channel(runtime_cfg["commands"].get("solution_fill_start"))
-        can_run, safety_error = await can_run_pump(zone_id=zone_id, pump_channel=pump_channel)
-        if not can_run:
-            return {
-                "success": False,
-                "task_type": "diagnostics",
-                "mode": "two_tank_solution_fill_safety_blocked",
-                "workflow": "startup",
-                "commands_total": 0,
-                "commands_failed": 0,
-                "command_statuses": [],
-                "action_required": True,
-                "decision": "run",
-                "reason_code": "safety_blocked",
-                "reason": "Запуск solution_fill заблокирован safety policy",
-                "error": str(safety_error or "two_tank_pump_safety_blocked"),
-                "error_code": "two_tank_pump_safety_blocked",
-                "pump_channel": pump_channel,
-                "safety_error": str(safety_error or ""),
-                "feature_flag_state": safety_guards_enabled,
-            }
+    pump_channel = resolve_primary_pump_channel(runtime_cfg["commands"].get("solution_fill_start"))
+    can_run, safety_error = await can_run_pump(zone_id=zone_id, pump_channel=pump_channel)
+    if not can_run:
+        return {
+            "success": False,
+            "task_type": "diagnostics",
+            "mode": "two_tank_solution_fill_safety_blocked",
+            "workflow": "startup",
+            "commands_total": 0,
+            "commands_failed": 0,
+            "command_statuses": [],
+            "action_required": True,
+            "decision": "run",
+            "reason_code": "safety_blocked",
+            "reason": "Запуск solution_fill заблокирован safety policy",
+            "error": str(safety_error or "two_tank_pump_safety_blocked"),
+            "error_code": "two_tank_pump_safety_blocked",
+            "pump_channel": pump_channel,
+            "safety_error": str(safety_error or ""),
+        }
 
     plan_result = await dispatch_two_tank_command_plan_fn(
         zone_id=zone_id,

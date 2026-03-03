@@ -10,6 +10,7 @@ from executor.executor_constants import (
     ERR_DIAGNOSTICS_SERVICE_UNAVAILABLE,
     REASON_DIAGNOSTICS_SERVICE_UNAVAILABLE,
 )
+from infrastructure.zone_execution_lock import zone_execution_context
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,17 @@ async def bound_execute_two_tank_startup_workflow(
     context: Dict[str, Any],
     decision: Any,
 ) -> Dict[str, Any]:
-    return await self.two_tank_workflow.execute(
+    async with zone_execution_context(
         zone_id=zone_id,
-        payload=payload,
-        context=context,
-        decision=decision,
-    )
+        task_type=str(context.get("task_type") or "diagnostics"),
+        workflow=str(payload.get("workflow") or ""),
+    ):
+        return await self.two_tank_workflow.execute(
+            zone_id=zone_id,
+            payload=payload,
+            context=context,
+            decision=decision,
+        )
 
 
 async def bound_execute_two_tank_startup_workflow_core(
@@ -40,9 +46,9 @@ async def bound_execute_two_tank_startup_workflow_core(
 ) -> Dict[str, Any]:
     from domain.workflows.two_tank_core import execute_two_tank_startup_workflow_core
 
+    deps = self._build_two_tank_deps(zone_id)
     return await execute_two_tank_startup_workflow_core(
-        self,
-        zone_id=zone_id,
+        deps,
         payload=payload,
         context=context,
         decision=decision,

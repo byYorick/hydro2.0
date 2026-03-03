@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, List, Sequence
 
 ExtractExecutionConfigFn = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -9,6 +10,8 @@ NormalizeNodeTypeListFn = Callable[[Any, Sequence[str]], List[str]]
 ResolveIntFn = Callable[[Any, int, int], int]
 ResolveFloatFn = Callable[[Any, float, float, float], float]
 NormalizeLabelsFn = Callable[[Any, Sequence[str]], List[str]]
+
+_logger = logging.getLogger(__name__)
 
 
 def default_two_tank_command_plan(plan_name: str) -> List[Dict[str, Any]]:
@@ -49,6 +52,7 @@ def default_two_tank_command_plan(plan_name: str) -> List[Dict[str, Any]]:
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
         ],
     }
     return [dict(item) for item in defaults.get(plan_name, [])]
@@ -208,6 +212,13 @@ def resolve_two_tank_runtime_config(
         target_ec_raw = ec_payload.get("target")
     target_ph = resolve_float_fn(target_ph_raw, 5.8, 0.1, 14.0)
     target_ec = resolve_float_fn(target_ec_raw, 1.6, 0.0, 20.0)
+    if target_ph_raw is None and target_ec_raw is None:
+        _logger.warning(
+            "Zone two_tank: both target_ph and target_ec resolved to defaults "
+            "(ph=%.2f ec=%.3f) - targets not configured in payload or execution config",
+            target_ph,
+            target_ec,
+        )
     npk_ratio_raw = execution.get("nutrient_npk_ratio_pct")
     if npk_ratio_raw is None:
         npk_ratio_raw = execution.get("npk_ratio_pct")

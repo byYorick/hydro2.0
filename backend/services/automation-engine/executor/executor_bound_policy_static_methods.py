@@ -52,6 +52,7 @@ from domain.policies.outcome_policy import (
 from executor.workflow_phase_policy import (
     normalize_workflow_phase as policy_normalize_workflow_phase,
     normalize_workflow_stage as policy_normalize_workflow_stage,
+    validate_phase_transition as policy_validate_phase_transition,
 )
 from domain.policies.workflow_input_policy import (
     extract_execution_config as policy_extract_execution_config,
@@ -132,6 +133,21 @@ def bound_normalize_workflow_stage(raw: Any) -> str:
 
 def bound_normalize_workflow_phase(raw: Any) -> str:
     return policy_normalize_workflow_phase(raw, allowed_values=WORKFLOW_PHASE_VALUES)
+
+
+def bound_validate_phase_transition(
+    from_phase: str,
+    to_phase: str,
+    *,
+    zone_id: int,
+    logger: Optional[Any] = None,
+) -> bool:
+    return policy_validate_phase_transition(
+        from_phase=from_phase,
+        to_phase=to_phase,
+        zone_id=zone_id,
+        logger=logger,
+    )
 
 
 def bound_terminal_status_to_error_code(status: str) -> str:
@@ -231,6 +247,7 @@ __all__ = [
     "bound_normalize_text_list",
     "bound_normalize_workflow_phase",
     "bound_normalize_workflow_stage",
+    "bound_validate_phase_transition",
     "bound_resolve_command_name",
     "bound_resolve_command_params",
     "bound_resolve_float",

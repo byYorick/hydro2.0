@@ -1,4 +1,8 @@
-from executor.two_tank_runtime_config import normalize_command_plan, resolve_two_tank_runtime_config
+from executor.two_tank_runtime_config import (
+    default_two_tank_command_plan,
+    normalize_command_plan,
+    resolve_two_tank_runtime_config,
+)
 
 
 def _normalize_node_types(raw, default):
@@ -97,3 +101,32 @@ def test_resolve_two_tank_runtime_config_uses_payload_overrides():
     assert cfg["target_ec"] == 1.8
     assert cfg["commands"]["clean_fill_start"][0]["channel"] == "valve_clean_fill"
     assert cfg["commands"]["clean_fill_start"][0]["dedupe_bypass"] is True
+
+
+def test_default_irrigation_recovery_stop_restores_irrigation_valve_last():
+    plan = default_two_tank_command_plan("irrigation_recovery_stop")
+
+    assert plan[-1] == {
+        "channel": "valve_irrigation",
+        "cmd": "set_relay",
+        "params": {"state": True},
+    }
+
+
+def test_resolve_two_tank_runtime_config_warns_when_targets_use_defaults(caplog):
+    payload = {"config": {"execution": {}}}
+
+    with caplog.at_level("WARNING", logger="executor.two_tank_runtime_config"):
+        cfg = resolve_two_tank_runtime_config(
+            payload,
+            refill_check_delay_sec=60,
+            extract_execution_config_fn=lambda p: p.get("config", {}).get("execution", {}),
+            normalize_node_type_list_fn=_normalize_node_types,
+            resolve_int_fn=_resolve_int,
+            resolve_float_fn=_resolve_float,
+            normalize_labels_fn=_normalize_labels,
+        )
+
+    assert cfg["target_ph"] == 5.8
+    assert cfg["target_ec"] == 1.6
+    assert "both target_ph and target_ec resolved to defaults" in caplog.text

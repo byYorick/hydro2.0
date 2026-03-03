@@ -18,13 +18,10 @@ def apply_scheduler_executor_bindings(cls: Type[Any], symbols: Dict[str, Any]) -
     cls._dispatch_diagnostics_workflow = symbols["bound_dispatch_diagnostics_workflow"]
     cls._compensate_two_tank_start_enqueue_failure = symbols["bound_compensate_two_tank_start_enqueue_failure"]
     cls._merge_with_sensor_mode_deactivate = symbols["bound_merge_with_sensor_mode_deactivate"]
+    cls._build_two_tank_deps = symbols["bound_build_two_tank_deps"]
     cls._try_start_two_tank_irrigation_recovery_from_irrigation_failure = (
         symbols["bound_try_start_two_tank_irrigation_recovery_from_irrigation_failure"]
     )
-    cls._start_two_tank_clean_fill = symbols["bound_start_two_tank_clean_fill"]
-    cls._start_two_tank_solution_fill = symbols["bound_start_two_tank_solution_fill"]
-    cls._start_two_tank_prepare_recirculation = symbols["bound_start_two_tank_prepare_recirculation"]
-    cls._start_two_tank_irrigation_recovery = symbols["bound_start_two_tank_irrigation_recovery"]
     cls._execute_two_tank_startup_workflow = symbols["bound_execute_two_tank_startup_workflow"]
     cls._execute_two_tank_startup_workflow_core = symbols["bound_execute_two_tank_startup_workflow_core"]
     cls._execute_three_tank_startup_workflow = symbols["bound_execute_three_tank_startup_workflow"]
@@ -112,6 +109,7 @@ def apply_scheduler_executor_bindings(cls: Type[Any], symbols: Dict[str, Any]) -
     cls._derive_workflow_phase = staticmethod(symbols["bound_derive_workflow_phase"])
     cls._build_workflow_state_payload = staticmethod(symbols["bound_build_workflow_state_payload"])
     cls._resolve_workflow_stage_for_state_sync = staticmethod(symbols["bound_resolve_workflow_stage_for_state_sync"])
+    cls._validate_phase_transition = staticmethod(symbols["bound_validate_phase_transition"])
     cls._sync_zone_workflow_phase = symbols["bound_sync_zone_workflow_phase"]
 
 

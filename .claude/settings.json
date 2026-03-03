@@ -4,7 +4,12 @@
       "Bash(grep:*)",
       "Bash(ls:*)",
       "Read(//home/georgiy/esp/hydro/hydro2.0/**)",
-      "Bash(./node_modules/.bin/vue-tsc:*)"
+      "Bash(./node_modules/.bin/vue-tsc:*)",
+      "Bash(python -m pytest test_two_tank_runtime_config.py test_two_tank_command_plan_core.py test_two_tank_irr_state_helpers.py test_workflow_phase_policy.py test_zone_execution_lock.py test_zone_sensor_mode_orchestrator.py -x -q)",
+      "Bash(python -m pytest test_two_tank_runtime_config.py test_two_tank_command_plan_core.py test_workflow_phase_policy.py test_zone_execution_lock.py test_zone_sensor_mode_orchestrator.py -x -q)"
+    ],
+    "additionalDirectories": [
+      "/home/georgiy/.claude/projects/-home-georgiy-esp-hydro-hydro2-0/memory"
     ]
   }
 }

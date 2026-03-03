@@ -42,6 +42,7 @@ async def update_zone_workflow_phase(
         workflow_phase_event_type=workflow_phase_event_type,
         normalize_workflow_phase_fn=executor._normalize_workflow_phase,
         normalize_workflow_stage_fn=executor._normalize_workflow_stage,
+        validate_phase_transition_fn=executor._validate_phase_transition,
         create_zone_event_safe_fn=executor._create_zone_event_safe,
         log_warning=log_warning,
     )

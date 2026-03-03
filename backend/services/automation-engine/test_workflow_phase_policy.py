@@ -1,3 +1,5 @@
+import logging
+
 from executor.workflow_phase_policy import (
     WORKFLOW_PHASE_IDLE,
     WORKFLOW_PHASE_IRRIGATING,
@@ -5,8 +7,11 @@ from executor.workflow_phase_policy import (
     WORKFLOW_PHASE_READY,
     WORKFLOW_PHASE_TANK_FILLING,
     WORKFLOW_PHASE_TANK_RECIRC,
+    WORKFLOW_PHASE_VALID_TRANSITIONS,
     derive_workflow_phase,
+    is_valid_phase_transition,
     resolve_workflow_stage_for_state_sync,
+    validate_phase_transition,
 )
 
 
@@ -118,3 +123,23 @@ def test_resolve_workflow_stage_for_state_sync_from_mode_and_payload():
         workflow_phase=WORKFLOW_PHASE_TANK_FILLING,
     )
     assert stage_from_payload == "prepare_recirculation_check"
+
+
+def test_is_valid_phase_transition_accepts_all_declared_transitions():
+    for from_phase, to_phases in WORKFLOW_PHASE_VALID_TRANSITIONS.items():
+        for to_phase in to_phases:
+            assert is_valid_phase_transition(from_phase, to_phase) is True
+
+
+def test_validate_phase_transition_logs_warning_for_invalid_transition(caplog):
+    logger = logging.getLogger("test_workflow_phase_policy")
+    with caplog.at_level(logging.WARNING):
+        ok = validate_phase_transition(
+            from_phase=WORKFLOW_PHASE_IDLE,
+            to_phase=WORKFLOW_PHASE_IRRIGATING,
+            zone_id=15,
+            logger=logger,
+        )
+
+    assert ok is False
+    assert "invalid workflow phase transition idle -> irrigating" in caplog.text

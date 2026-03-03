@@ -267,6 +267,9 @@ async def test_notify_payload_invalidates_zone_cache():
         def debug(self, *_args, **_kwargs):
             return None
 
+        def warning(self, *_args, **_kwargs):
+            return None
+
     await handle_ae_signal_update_payload(
         '{"zone_id": 7, "kind": "zone_event"}',
         invalidate_cache_fn=lambda zone_id: invalidated.append(zone_id),
@@ -284,6 +287,9 @@ async def test_notify_payload_ignores_telemetry_kind():
         def debug(self, *_args, **_kwargs):
             return None
 
+        def warning(self, *_args, **_kwargs):
+            return None
+
     await handle_ae_signal_update_payload(
         '{"zone_id": 7, "kind": "telemetry_last"}',
         invalidate_cache_fn=lambda zone_id: invalidated.append(zone_id),
@@ -291,3 +297,57 @@ async def test_notify_payload_ignores_telemetry_kind():
     )
 
     assert invalidated == []
+
+
+@pytest.mark.asyncio
+async def test_notify_payload_triggers_two_tank_event_hook_for_supported_event():
+    invalidated = []
+    calls = []
+
+    class _Logger:
+        def debug(self, *_args, **_kwargs):
+            return None
+
+        def warning(self, *_args, **_kwargs):
+            return None
+
+    class _Trigger:
+        async def on_zone_event(self, *, zone_id, event_type, payload):
+            calls.append((zone_id, event_type, dict(payload)))
+            return {"ok": True}
+
+    await handle_ae_signal_update_payload(
+        '{"zone_id": 7, "kind": "zone_event", "event_type": "CLEAN_FILL_COMPLETED", "payload": {"source": "test"}}',
+        invalidate_cache_fn=lambda zone_id: invalidated.append(zone_id),
+        logger=_Logger(),
+        zone_event_trigger=_Trigger(),
+    )
+
+    assert invalidated == [7]
+    assert calls == [(7, "CLEAN_FILL_COMPLETED", {"source": "test"})]
+
+
+@pytest.mark.asyncio
+async def test_notify_payload_does_not_trigger_two_tank_hook_for_unsupported_event():
+    calls = []
+
+    class _Logger:
+        def debug(self, *_args, **_kwargs):
+            return None
+
+        def warning(self, *_args, **_kwargs):
+            return None
+
+    class _Trigger:
+        async def on_zone_event(self, *, zone_id, event_type, payload):
+            calls.append((zone_id, event_type, dict(payload)))
+            return {"ok": True}
+
+    await handle_ae_signal_update_payload(
+        '{"zone_id": 7, "kind": "zone_event", "event_type": "UNRELATED_EVENT"}',
+        invalidate_cache_fn=lambda _zone_id: None,
+        logger=_Logger(),
+        zone_event_trigger=_Trigger(),
+    )
+
+    assert calls == []
