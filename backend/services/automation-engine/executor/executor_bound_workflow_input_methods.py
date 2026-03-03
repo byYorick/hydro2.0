@@ -70,12 +70,14 @@ def bound_normalize_command_plan(
     default_plan: Sequence[Dict[str, Any]],
     default_node_types: Sequence[str],
     default_allow_no_effect: bool = False,
+    default_dedupe_bypass: bool = True,
 ) -> List[Dict[str, Any]]:
     return policy_normalize_command_plan(
         raw,
         default_plan=default_plan,
         default_node_types=default_node_types,
         default_allow_no_effect=default_allow_no_effect,
+        default_dedupe_bypass=default_dedupe_bypass,
         normalize_node_type_list_fn=self._normalize_node_type_list,
     )
 

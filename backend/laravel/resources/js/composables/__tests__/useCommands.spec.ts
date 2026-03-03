@@ -110,4 +110,34 @@ describe('useCommands', () => {
     expect(command?.status).toBe('DONE')
     wrapper.unmount()
   })
+
+  it('should send sensor mode commands via system channel', async () => {
+    const { useApi } = await import('../useApi')
+    const mockApi = {
+      api: {
+        post: vi.fn().mockResolvedValue({
+          data: { data: { id: 7, status: 'QUEUED' } }
+        })
+      }
+    }
+    vi.mocked(useApi).mockReturnValue(mockApi)
+
+    const { wrapper, api } = mountUseCommands()
+
+    await api.sendNodeCommand(42, 'activate_sensor_mode', {})
+    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
+      type: 'activate_sensor_mode',
+      channel: 'system',
+      params: {},
+    })
+
+    await api.sendNodeCommand(42, 'deactivate_sensor_mode', {})
+    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
+      type: 'deactivate_sensor_mode',
+      channel: 'system',
+      params: {},
+    })
+
+    wrapper.unmount()
+  })
 })

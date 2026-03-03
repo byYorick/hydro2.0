@@ -60,6 +60,7 @@ async def publish_batch(
     emit_task_event_fn: Callable[..., Awaitable[None]],
     params: Optional[Dict[str, Any]] = None,
     accepted_terminal_statuses: Optional[Sequence[str]] = None,
+    dedupe_bypass: bool = False,
 ) -> Dict[str, Any]:
     return await policy_publish_batch(
         zone_id=zone_id,
@@ -70,6 +71,7 @@ async def publish_batch(
         context=context,
         decision=decision,
         accepted_terminal_statuses=accepted_terminal_statuses,
+        dedupe_bypass=dedupe_bypass,
         command_gateway=getattr(executor, "command_gateway", None),
         command_bus=executor.command_bus,
         task_execute_closed_loop_enforce=TASK_EXECUTE_CLOSED_LOOP_ENFORCE,

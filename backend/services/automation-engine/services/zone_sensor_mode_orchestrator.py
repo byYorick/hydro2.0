@@ -124,6 +124,7 @@ async def set_sensor_mode(
             "channel": "system",
             "cmd": cmd,
             "params": params,
+            "dedupe_bypass": True,
         }
         try:
             published = await command_gateway.publish_controller_command(zone_id, command)

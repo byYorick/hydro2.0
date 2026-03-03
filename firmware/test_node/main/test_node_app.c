@@ -990,6 +990,50 @@ static bool is_storage_system_channel(const char *channel) {
         );
 }
 
+static bool is_supported_actuator_command(const char *channel, const char *cmd) {
+    if (!channel || !cmd || channel[0] == '\0' || cmd[0] == '\0') {
+        return false;
+    }
+
+    if (strcmp(channel, "pump_irrigation") == 0 || is_main_pump_channel(channel)) {
+        return strcmp(cmd, "set_relay") == 0 ||
+               strcmp(cmd, "run_pump") == 0 ||
+               strcmp(cmd, "dose") == 0;
+    }
+
+    if (strcmp(channel, "valve_clean_fill") == 0 ||
+        strcmp(channel, "valve_clean_supply") == 0 ||
+        strcmp(channel, "valve_solution_fill") == 0 ||
+        strcmp(channel, "valve_solution_supply") == 0 ||
+        strcmp(channel, "valve_irrigation") == 0 ||
+        strcmp(channel, "fan_air") == 0 ||
+        strcmp(channel, "fan") == 0 ||
+        strcmp(channel, "heater") == 0) {
+        return strcmp(cmd, "set_relay") == 0;
+    }
+
+    if (strcmp(channel, "white_light") == 0) {
+        return strcmp(cmd, "set_relay") == 0 || strcmp(cmd, "set_pwm") == 0;
+    }
+
+    if (is_fill_channel(channel) || is_drain_channel(channel) || is_ph_correction_channel(channel) || is_ec_correction_channel(channel)) {
+        return strcmp(cmd, "set_relay") == 0 ||
+               strcmp(cmd, "run_pump") == 0 ||
+               strcmp(cmd, "dose") == 0;
+    }
+
+    if (is_storage_system_channel(channel)) {
+        return strcmp(cmd, "reset_state") == 0 ||
+               strcmp(cmd, "emit_event") == 0 ||
+               strcmp(cmd, "set_fault_mode") == 0 ||
+               strcmp(cmd, "reset_binding") == 0 ||
+               strcmp(cmd, "activate_sensor_mode") == 0 ||
+               strcmp(cmd, "deactivate_sensor_mode") == 0;
+    }
+
+    return false;
+}
+
 static bool publish_all_config_reports(const char *reason);
 static void handle_ui_settings_action(test_node_ui_settings_action_t action, void *user_ctx);
 static bool should_boot_in_preconfig_mode(const char *gh_uid, const char *zone_uid);
@@ -2510,6 +2554,13 @@ static void execute_pending_command(const pending_command_t *job) {
     cJSON_AddStringToObject(details, "cmd", job->cmd);
     cJSON_AddNumberToObject(details, "exec_delay_ms", job->execute_delay_ms);
     ui_logf(job->node_uid, "cmd run %s/%s dly=%d", job->channel, job->cmd, job->execute_delay_ms);
+
+    if (job->kind == COMMAND_KIND_ACTUATOR && !is_supported_actuator_command(job->channel, job->cmd)) {
+        cJSON_AddStringToObject(details, "error", "unsupported_channel_cmd");
+        publish_command_response(job->node_uid, job->channel, job->cmd_id, "INVALID", details);
+        cJSON_Delete(details);
+        return;
+    }
 
     if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
         if (strcmp(job->channel, "pump_irrigation") == 0 && s_virtual_state.irrigation_on) {

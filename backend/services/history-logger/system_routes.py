@@ -10,6 +10,12 @@ from common.command_status_queue import get_status_queue
 from common.infra_monitor import check_db_health, check_mqtt_health
 from common.mqtt import get_mqtt_client
 from common.pipeline_metrics import (
+    COMMAND_ACK_TO_DONE_LATENCY,
+    COMMAND_E2E_LATENCY,
+    COMMAND_SENT_TO_ACK_LATENCY,
+    ERROR_DELIVERY_LATENCY,
+    ERROR_LARAVEL_TO_WS_LATENCY,
+    ERROR_MQTT_TO_LARAVEL_LATENCY,
     update_db_health,
     update_mqtt_health,
     update_queue_health,
@@ -37,6 +43,15 @@ class WsEventMetricPayload(BaseModel):
     channel_type: Optional[str] = Field(default=None, min_length=1, max_length=64)
     result: Optional[str] = Field(default=None, min_length=1, max_length=32)
     count: int = Field(default=1, ge=1, le=1000)
+
+
+class CommandLatencyMetricPayload(BaseModel):
+    cmd_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    metrics: dict[str, float] = Field(default_factory=dict)
+
+
+class ErrorDeliveryLatencyMetricPayload(BaseModel):
+    metrics: dict[str, float] = Field(default_factory=dict)
 
 
 @router.get("/health")
@@ -190,6 +205,52 @@ async def ws_event_metrics(payload: WsEventMetricPayload):
     except Exception as e:
         logger.error(f"Failed to update ws metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="failed_to_update_ws_metric")
+
+
+@router.post("/internal/metrics/command-latency")
+async def command_latency_metrics(payload: CommandLatencyMetricPayload):
+    """Accept command latency metrics from Laravel and map to Prometheus histograms."""
+    try:
+        metrics = payload.metrics if isinstance(payload.metrics, dict) else {}
+        sent_to_ack = metrics.get("sent_to_accepted_seconds")
+        if isinstance(sent_to_ack, (int, float)) and sent_to_ack >= 0:
+            COMMAND_SENT_TO_ACK_LATENCY.observe(float(sent_to_ack))
+
+        ack_to_done = metrics.get("accepted_to_done_seconds")
+        if isinstance(ack_to_done, (int, float)) and ack_to_done >= 0:
+            COMMAND_ACK_TO_DONE_LATENCY.observe(float(ack_to_done))
+
+        e2e = metrics.get("e2e_latency_seconds")
+        if isinstance(e2e, (int, float)) and e2e >= 0:
+            COMMAND_E2E_LATENCY.observe(float(e2e))
+
+        return {"status": "ok"}
+    except Exception:
+        logger.error("Failed to update command latency metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed_to_update_command_latency_metrics")
+
+
+@router.post("/internal/metrics/error-delivery-latency")
+async def error_delivery_latency_metrics(payload: ErrorDeliveryLatencyMetricPayload):
+    """Accept error delivery latency metrics from Laravel and map to Prometheus histograms."""
+    try:
+        metrics = payload.metrics if isinstance(payload.metrics, dict) else {}
+        mqtt_to_laravel = metrics.get("mqtt_to_laravel_seconds")
+        if isinstance(mqtt_to_laravel, (int, float)) and mqtt_to_laravel >= 0:
+            ERROR_MQTT_TO_LARAVEL_LATENCY.observe(float(mqtt_to_laravel))
+
+        laravel_to_ws = metrics.get("laravel_to_ws_seconds")
+        if isinstance(laravel_to_ws, (int, float)) and laravel_to_ws >= 0:
+            ERROR_LARAVEL_TO_WS_LATENCY.observe(float(laravel_to_ws))
+
+        total_latency = metrics.get("total_latency_seconds")
+        if isinstance(total_latency, (int, float)) and total_latency >= 0:
+            ERROR_DELIVERY_LATENCY.observe(float(total_latency))
+
+        return {"status": "ok"}
+    except Exception:
+        logger.error("Failed to update error delivery latency metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed_to_update_error_delivery_latency_metrics")
 
 
 @router.get("/api/dlq/alerts")

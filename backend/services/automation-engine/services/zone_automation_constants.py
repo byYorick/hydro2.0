@@ -57,6 +57,5 @@ SENSOR_MODE_POLICY = {
     "flow_inactive": "deactivate",
     "sensor_unstable": "deactivate",
     "corrections_not_allowed": "deactivate",
-    REASON_CORRECTION_STALE_FLAGS: "deactivate",
+    REASON_CORRECTION_STALE_FLAGS: "activate",
 }
-

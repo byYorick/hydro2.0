@@ -37,19 +37,27 @@ def test_normalize_command_plan_filters_invalid_items_and_applies_defaults():
             {"channel": " pump_main ", "cmd": "set_relay", "params": {"state": True}},
             {"channel": "", "cmd": "set_relay"},
             "bad-item",
-            {"channel": "valve_solution_fill", "params": {"state": False}, "allow_no_effect": True},
+            {
+                "channel": "valve_solution_fill",
+                "params": {"state": False},
+                "allow_no_effect": True,
+                "dedupe_bypass": False,
+            },
         ],
         default_plan=[{"channel": "fallback", "cmd": "set_relay", "params": {"state": False}}],
         default_node_types=["irrig"],
         default_allow_no_effect=False,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=_normalize_node_types,
     )
 
     assert len(normalized) == 2
     assert normalized[0]["channel"] == "pump_main"
     assert normalized[0]["allow_no_effect"] is False
+    assert normalized[0]["dedupe_bypass"] is True
     assert normalized[1]["channel"] == "valve_solution_fill"
     assert normalized[1]["allow_no_effect"] is True
+    assert normalized[1]["dedupe_bypass"] is False
 
 
 def test_resolve_two_tank_runtime_config_uses_payload_overrides():
@@ -88,3 +96,4 @@ def test_resolve_two_tank_runtime_config_uses_payload_overrides():
     assert cfg["target_ph"] == 6.1
     assert cfg["target_ec"] == 1.8
     assert cfg["commands"]["clean_fill_start"][0]["channel"] == "valve_clean_fill"
+    assert cfg["commands"]["clean_fill_start"][0]["dedupe_bypass"] is True

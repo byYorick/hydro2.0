@@ -47,6 +47,11 @@ WORKFLOW_PHASE_ACTIVE_MODES = {
     "cycle_start_refill_in_progress": WORKFLOW_PHASE_TANK_FILLING,
 }
 
+WORKFLOW_PHASE_BLOCKING_FAILURE_REASONS = {
+    "irr_state_mismatch",
+    "safety_blocked",
+}
+
 WORKFLOW_PHASE_IRRIGATING_MODES = {
     "two_tank_irrigation_recovery_completed",
     "two_tank_irrigation_recovery_degraded",
@@ -126,8 +131,26 @@ def derive_workflow_phase(
                             "action_required": action_required,
                             "success": success,
                         },
-                    )
+                )
                 return None
+            if reason_code in WORKFLOW_PHASE_BLOCKING_FAILURE_REASONS:
+                blocked_phase = WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW.get(workflow)
+                if blocked_phase:
+                    if logger is not None:
+                        logger.warning(
+                            "Diagnostics workflow failure keeps blocking phase (manual intervention required)",
+                            extra={
+                                "task_type": normalized_task_type,
+                                "mode": mode or None,
+                                "workflow": workflow or None,
+                                "decision": decision or None,
+                                "reason_code": reason_code or None,
+                                "action_required": action_required,
+                                "success": success,
+                                "blocked_phase": blocked_phase,
+                            },
+                        )
+                    return blocked_phase
             if logger is not None:
                 logger.info(
                     "Diagnostics workflow phase fallback to idle after terminal failure",

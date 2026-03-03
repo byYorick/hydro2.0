@@ -150,6 +150,53 @@ def test_ws_event_metrics_endpoint_invalid_payload(client):
     assert response.json()["detail"] == "invalid_ws_event_metric_payload"
 
 
+def test_command_latency_metrics_endpoint(client):
+    """Test command latency metrics endpoint."""
+    with patch("system_routes.COMMAND_SENT_TO_ACK_LATENCY") as sent_to_ack, \
+         patch("system_routes.COMMAND_ACK_TO_DONE_LATENCY") as ack_to_done, \
+         patch("system_routes.COMMAND_E2E_LATENCY") as e2e:
+        response = client.post(
+            "/internal/metrics/command-latency",
+            json={
+                "cmd_id": "cmd-1",
+                "metrics": {
+                    "sent_to_accepted_seconds": 1.2,
+                    "accepted_to_done_seconds": 0.8,
+                    "e2e_latency_seconds": 2.0,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    sent_to_ack.observe.assert_called_once_with(1.2)
+    ack_to_done.observe.assert_called_once_with(0.8)
+    e2e.observe.assert_called_once_with(2.0)
+
+
+def test_error_delivery_latency_metrics_endpoint(client):
+    """Test error delivery latency metrics endpoint."""
+    with patch("system_routes.ERROR_MQTT_TO_LARAVEL_LATENCY") as mqtt_to_laravel, \
+         patch("system_routes.ERROR_LARAVEL_TO_WS_LATENCY") as laravel_to_ws, \
+         patch("system_routes.ERROR_DELIVERY_LATENCY") as total:
+        response = client.post(
+            "/internal/metrics/error-delivery-latency",
+            json={
+                "metrics": {
+                    "mqtt_to_laravel_seconds": 0.4,
+                    "laravel_to_ws_seconds": 0.2,
+                    "total_latency_seconds": 0.6,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mqtt_to_laravel.observe.assert_called_once_with(0.4)
+    laravel_to_ws.observe.assert_called_once_with(0.2)
+    total.observe.assert_called_once_with(0.6)
+
+
 def test_ingest_telemetry_endpoint(client):
     """Test telemetry ingestion endpoint."""
     with patch("ingest_routes.process_telemetry_batch") as mock_process:

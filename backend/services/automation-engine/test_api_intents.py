@@ -8,11 +8,37 @@ from ae2lite.api_contracts import StartCycleRequest
 from ae2lite.api_intents import (
     build_scheduler_task_request_from_intent,
     claim_start_cycle_intent,
+    mark_intent_pending,
 )
 
 
 def _norm(query: str) -> str:
     return " ".join(str(query).split()).lower()
+
+
+@pytest.mark.asyncio
+async def test_mark_intent_pending_clears_claimed_at():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    captured = {"query": "", "args": ()}
+
+    async def fake_execute(query, *args):
+        captured["query"] = _norm(query)
+        captured["args"] = args
+        return None
+
+    await mark_intent_pending(
+        intent_id=321,
+        now=now,
+        execute_fn=fake_execute,
+    )
+
+    assert "set status = 'pending'" in captured["query"]
+    assert "claimed_at = null" in captured["query"]
+    assert "not_before = greatest(coalesce(not_before, $2), $3)" in captured["query"]
+    assert len(captured["args"]) == 3
+    assert captured["args"][0] == 321
+    assert captured["args"][1] == now
+    assert captured["args"][2] > now
 
 
 @pytest.mark.asyncio

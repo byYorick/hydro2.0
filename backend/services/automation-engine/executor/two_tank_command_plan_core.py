@@ -44,6 +44,7 @@ async def dispatch_two_tank_command_plan_core(
         cmd = str(entry.get("cmd") or "set_relay").strip() or "set_relay"
         params = entry.get("params") if isinstance(entry.get("params"), dict) else {}
         allow_no_effect = bool(entry.get("allow_no_effect"))
+        dedupe_bypass = bool(entry.get("dedupe_bypass"))
         node_types = entry.get("node_types") if isinstance(entry.get("node_types"), Sequence) else ()
         node = await resolve_online_node_for_channel_fn(
             zone_id=zone_id,
@@ -78,6 +79,7 @@ async def dispatch_two_tank_command_plan_core(
             context=context,
             decision=decision,
             accepted_terminal_statuses=("DONE", "NO_EFFECT") if allow_no_effect else ("DONE",),
+            dedupe_bypass=dedupe_bypass,
         )
         commands_total += int(step_result.get("commands_total") or 0)
         commands_failed += int(step_result.get("commands_failed") or 0)

@@ -195,12 +195,21 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
+      const commandTypeLower = String(type || '').toLowerCase()
+      const isSensorModeCommand =
+        commandTypeLower === 'activate_sensor_mode' ||
+        commandTypeLower === 'deactivate_sensor_mode'
+      const requestPayload: { type: CommandType; params: CommandParams; channel?: string } = {
+        type,
+        params,
+      }
+      if (isSensorModeCommand) {
+        requestPayload.channel = 'system'
+      }
+
       const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
         `/api/nodes/${nodeId}/commands`,
-        {
-          type,
-          params
-        }
+        requestPayload
       )
 
       const raw = response.data as CommandRawResponse

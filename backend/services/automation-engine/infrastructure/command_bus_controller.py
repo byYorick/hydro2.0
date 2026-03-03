@@ -12,6 +12,16 @@ from .command_bus_shared import _DEFAULT_CLOSED_LOOP_TIMEOUT_SEC, _TERMINAL_COMM
 logger = logging.getLogger(__name__)
 
 
+def _is_truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 async def publish_controller_command(
     command_bus: Any,
     zone_id: int,
@@ -26,6 +36,7 @@ async def publish_controller_command(
     incoming_cmd_id = str(incoming_cmd_id_raw).strip() if isinstance(incoming_cmd_id_raw, str) else None
     if incoming_cmd_id == "":
         incoming_cmd_id = None
+    dedupe_bypass = _is_truthy(command.get("dedupe_bypass"))
     cmd_id = None
     normalized_context = normalize_context(context)
 
@@ -73,16 +84,37 @@ async def publish_controller_command(
     if generated_cmd_id is None and command_bus.tracker is not None:
         generated_cmd_id = new_command_id()
 
-    dedupe_state = await command_bus._reserve_command_dedupe(
-        zone_id=zone_id,
-        node_uid=str(node_uid),
-        channel=str(channel),
-        cmd=str(cmd),
-        params=params if isinstance(params, dict) else {},
-        cmd_id=generated_cmd_id,
-        dedupe_ttl_sec=dedupe_ttl_sec,
-        idempotency_key=str(command.get("idempotency_key") or "").strip() or None,
-    )
+    if dedupe_bypass:
+        dedupe_state = {
+            "decision": "bypass",
+            "reference_key": "",
+            "scope_key": "",
+            "dedupe_ttl_sec": dedupe_ttl_sec,
+            "reservation_token": None,
+            "effective_cmd_id": generated_cmd_id,
+        }
+        await command_bus._safe_create_zone_event(
+            zone_id,
+            "COMMAND_DEDUPE_BYPASSED",
+            {
+                "node_uid": node_uid,
+                "channel": channel,
+                "cmd": cmd,
+                "cmd_id": generated_cmd_id,
+                "reason": "explicit_bypass_flag",
+            },
+        )
+    else:
+        dedupe_state = await command_bus._reserve_command_dedupe(
+            zone_id=zone_id,
+            node_uid=str(node_uid),
+            channel=str(channel),
+            cmd=str(cmd),
+            params=params if isinstance(params, dict) else {},
+            cmd_id=generated_cmd_id,
+            dedupe_ttl_sec=dedupe_ttl_sec,
+            idempotency_key=str(command.get("idempotency_key") or "").strip() or None,
+        )
     dedupe_decision = str(dedupe_state.get("decision") or "new").strip().lower()
     dedupe_reference_key = str(dedupe_state.get("reference_key") or "").strip()
     dedupe_ttl_value = int(dedupe_state.get("dedupe_ttl_sec") or dedupe_ttl_sec)
@@ -91,6 +123,7 @@ async def publish_controller_command(
     command["dedupe_decision"] = dedupe_decision
     command["dedupe_reference_key"] = dedupe_reference_key
     command["dedupe_ttl_sec"] = dedupe_ttl_value
+    command["dedupe_bypass"] = dedupe_bypass
 
     if dedupe_decision in {"duplicate_blocked", "duplicate_no_effect"}:
         if effective_cmd_id:

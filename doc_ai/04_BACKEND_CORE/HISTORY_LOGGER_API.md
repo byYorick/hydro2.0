@@ -253,6 +253,59 @@ curl http://localhost:9300/health
 
 ---
 
+### 2.5. POST /internal/metrics/command-latency
+
+**Описание:** Internal endpoint для приёма latency-метрик команд от Laravel и обновления Prometheus histogram’ов.
+
+**URL:** `POST /internal/metrics/command-latency`
+
+**Request Body:**
+```json
+{
+  "cmd_id": "cmd-123456",
+  "metrics": {
+    "sent_to_accepted_seconds": 1.2,
+    "accepted_to_done_seconds": 0.8,
+    "e2e_latency_seconds": 2.0
+  }
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### 2.6. POST /internal/metrics/error-delivery-latency
+
+**Описание:** Internal endpoint для приёма latency-метрик доставки ошибок (MQTT -> Laravel -> WS).
+
+**URL:** `POST /internal/metrics/error-delivery-latency`
+
+**Request Body:**
+```json
+{
+  "metrics": {
+    "mqtt_to_laravel_seconds": 0.4,
+    "laravel_to_ws_seconds": 0.2,
+    "total_latency_seconds": 0.6
+  }
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
 ## 3. Типы команд
 
 История-logger поддерживает все типы команд из MQTT спецификации. Основные типы:

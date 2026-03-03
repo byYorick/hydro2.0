@@ -60,6 +60,7 @@ def normalize_command_plan(
     default_plan: Sequence[Dict[str, Any]],
     default_node_types: Sequence[str],
     default_allow_no_effect: bool,
+    default_dedupe_bypass: bool,
     normalize_node_type_list_fn: NormalizeNodeTypeListFn,
 ) -> List[Dict[str, Any]]:
     if not isinstance(raw, Sequence):
@@ -79,6 +80,11 @@ def normalize_command_plan(
             if "allow_no_effect" in item
             else bool(default_allow_no_effect)
         )
+        dedupe_bypass = (
+            bool(item.get("dedupe_bypass"))
+            if "dedupe_bypass" in item
+            else bool(default_dedupe_bypass)
+        )
         normalized.append(
             {
                 "channel": channel,
@@ -86,6 +92,7 @@ def normalize_command_plan(
                 "params": dict(params),
                 "node_types": node_types,
                 "allow_no_effect": allow_no_effect,
+                "dedupe_bypass": dedupe_bypass,
             }
         )
     return normalized
@@ -120,6 +127,7 @@ def resolve_two_tank_runtime_config(
         default_plan=clean_fill_start_default,
         default_node_types=required_node_types,
         default_allow_no_effect=True,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     clean_fill_stop = normalize_command_plan(
@@ -127,6 +135,7 @@ def resolve_two_tank_runtime_config(
         default_plan=clean_fill_stop_default,
         default_node_types=required_node_types,
         default_allow_no_effect=False,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     solution_fill_start = normalize_command_plan(
@@ -134,6 +143,7 @@ def resolve_two_tank_runtime_config(
         default_plan=solution_fill_start_default,
         default_node_types=required_node_types,
         default_allow_no_effect=True,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     solution_fill_stop = normalize_command_plan(
@@ -141,6 +151,7 @@ def resolve_two_tank_runtime_config(
         default_plan=solution_fill_stop_default,
         default_node_types=required_node_types,
         default_allow_no_effect=False,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     prepare_recirculation_start = normalize_command_plan(
@@ -148,6 +159,7 @@ def resolve_two_tank_runtime_config(
         default_plan=prepare_recirculation_start_default,
         default_node_types=required_node_types,
         default_allow_no_effect=True,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     prepare_recirculation_stop = normalize_command_plan(
@@ -155,6 +167,7 @@ def resolve_two_tank_runtime_config(
         default_plan=prepare_recirculation_stop_default,
         default_node_types=required_node_types,
         default_allow_no_effect=False,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     irrigation_recovery_start = normalize_command_plan(
@@ -162,6 +175,7 @@ def resolve_two_tank_runtime_config(
         default_plan=irrigation_recovery_start_default,
         default_node_types=required_node_types,
         default_allow_no_effect=True,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
     irrigation_recovery_stop = normalize_command_plan(
@@ -169,6 +183,7 @@ def resolve_two_tank_runtime_config(
         default_plan=irrigation_recovery_stop_default,
         default_node_types=required_node_types,
         default_allow_no_effect=False,
+        default_dedupe_bypass=True,
         normalize_node_type_list_fn=normalize_node_type_list_fn,
     )
 

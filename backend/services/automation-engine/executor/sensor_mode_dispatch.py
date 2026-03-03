@@ -54,6 +54,7 @@ async def dispatch_sensor_mode_command_for_nodes(
         context=context,
         decision=decision,
         accepted_terminal_statuses=("DONE", "NO_EFFECT"),
+        dedupe_bypass=True,
     )
 
 

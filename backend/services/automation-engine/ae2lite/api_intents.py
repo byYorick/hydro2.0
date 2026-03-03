@@ -254,16 +254,20 @@ async def mark_intent_pending(
     now: datetime,
     execute_fn: Callable[..., Awaitable[Any]],
 ) -> None:
+    not_before = now + timedelta(seconds=15)
     await execute_fn(
         """
         UPDATE zone_automation_intents
         SET status = 'pending',
+            claimed_at = NULL,
+            not_before = GREATEST(COALESCE(not_before, $2), $3),
             updated_at = $2
         WHERE id = $1
           AND status = 'claimed'
         """,
         intent_id,
         now,
+        not_before,
     )
 
 

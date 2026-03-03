@@ -20,6 +20,7 @@ async def publish_batch(
     context: Dict[str, Any],
     decision: DecisionOutcome,
     accepted_terminal_statuses: Optional[Sequence[str]],
+    dedupe_bypass: bool,
     task_execute_closed_loop_enforce: bool,
     task_execute_closed_loop_timeout_sec: int,
     err_command_send_failed: str,
@@ -80,6 +81,7 @@ async def publish_batch(
                 "action_required": decision.action_required,
                 "decision": decision.decision,
                 "reason_code": decision.reason_code,
+                "dedupe_bypass": bool(dedupe_bypass),
             },
         )
 
@@ -90,6 +92,8 @@ async def publish_batch(
             "cmd": cmd,
             "params": params or {},
         }
+        if dedupe_bypass:
+            controller_command["dedupe_bypass"] = True
 
         submitted = False
         effect_confirmed = False
@@ -176,6 +180,7 @@ async def publish_batch(
                     "decision": decision.decision,
                     "reason_code": decision.reason_code,
                     "accepted_terminal_statuses": sorted(accepted_statuses),
+                    "dedupe_bypass": bool(dedupe_bypass),
                 },
             )
 

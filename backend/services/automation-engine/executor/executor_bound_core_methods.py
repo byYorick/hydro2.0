@@ -136,6 +136,7 @@ async def bound_publish_batch(
     context: Dict[str, Any],
     decision: Any,
     accepted_terminal_statuses: Optional[Sequence[str]] = None,
+    dedupe_bypass: bool = False,
 ) -> Dict[str, Any]:
     return await policy_delegate_publish_batch(
         executor=self,
@@ -147,6 +148,7 @@ async def bound_publish_batch(
         context=context,
         decision=decision,
         accepted_terminal_statuses=accepted_terminal_statuses,
+        dedupe_bypass=dedupe_bypass,
         terminal_status_to_error_code_fn=self._terminal_status_to_error_code,
         emit_task_event_fn=self._emit_task_event,
     )
