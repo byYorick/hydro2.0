@@ -312,8 +312,8 @@ window.addEventListener('echo:teardown', () => {
 // Reconnect управляется исключительно через echoClient.ts
 initializeEchoOnLoad();
 
-// Подписки на WebSocket каналы (зоны, алерты) перенесены в ws/subscriptions.ts
-// Используйте: import { subscribeZone, subscribeAlerts } from '@/ws/subscriptions'
+// Подписки на WebSocket каналы (зоны, алерты, команды, global events)
+// выполняются через composable useWebSocket.ts (единый публичный API).
 
 // Обработка глобальных ошибок с логированием, но без блокировки стандартного поведения
 // Сохраняем ссылки на обработчики в глобальной области для очистки при HMR

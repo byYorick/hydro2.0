@@ -173,8 +173,20 @@ def bind_zone_routes(
         if control_mode == "auto":
             raise HTTPException(status_code=409, detail={"code": "manual_step_forbidden_in_auto_mode", "control_mode": control_mode})
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
         latest_task = await load_latest_zone_task_fn(zone_id)
+        latest_status = str(latest_task.get("status") or "").strip().lower() if isinstance(latest_task, dict) else ""
+        if latest_status in {"accepted", "running"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "manual_step_zone_busy",
+                    "zone_id": zone_id,
+                    "active_task_id": str(latest_task.get("task_id") or "").strip() or None,
+                    "active_task_status": latest_status,
+                },
+            )
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         latest_payload = latest_task.get("payload") if isinstance(latest_task, dict) and isinstance(latest_task.get("payload"), dict) else {}
         latest_config = latest_payload.get("config") if isinstance(latest_payload.get("config"), dict) else {}
         latest_execution = latest_config.get("execution") if isinstance(latest_config.get("execution"), dict) else {}

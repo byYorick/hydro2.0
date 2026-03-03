@@ -5,8 +5,8 @@ import { readBooleanEnv } from '@/utils/env'
 import { logger } from '@/utils/logger'
 import type { EchoLike } from '@/ws/subscriptionTypes'
 
-export const GLOBAL_EVENTS_CHANNEL = 'events.global'
-const COMMANDS_GLOBAL_CHANNEL = 'commands.global'
+export const GLOBAL_EVENTS_CHANNEL = 'hydro.events.global'
+const COMMANDS_GLOBAL_CHANNEL = 'hydro.commands.global'
 const WS_DISABLED_MESSAGE = 'Realtime отключен в этой сборке'
 
 export function isGlobalChannel(channelName: string): boolean {

@@ -85,7 +85,7 @@ _SCHEDULER_SINGLE_WRITER_SKIP_LOG_THROTTLE_SECONDS = 120
 _SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC: float = max(
     60.0, float(os.getenv("AE2_SCHEDULER_WRITER_WATCHDOG_SEC", "600"))
 )
-_scheduler_writer_active_since: Optional[float] = None  # time.monotonic(), None если не активен
+_scheduler_writer_active_since: Dict[int, float] = {}  # time.monotonic() per zone_id
 
 
 def _serialize_optional_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -269,18 +269,48 @@ def _should_log_scheduler_single_writer_skip(now: datetime) -> bool:
     return False
 
 
-async def _is_scheduler_single_writer_active() -> bool:
+async def _is_scheduler_single_writer_active(zone_id: Optional[int] = None) -> bool:
     if not _AE2_RUNTIME_SINGLE_WRITER_ENFORCE:
         return False
+    allow_fallback_writer = bool(_AE2_FALLBACK_LOOP_WRITER_ENABLED)
     try:
         from api import is_scheduler_single_writer_active
-    except Exception:
-        return False
-    try:
-        return bool(await is_scheduler_single_writer_active())
     except Exception as exc:
-        logger.warning("Failed to check scheduler single-writer state: %s", exc, exc_info=True)
-        return False
+        if allow_fallback_writer:
+            logger.warning(
+                "Scheduler writer probe unavailable, fallback loop writer is enabled: %s",
+                exc,
+                exc_info=True,
+            )
+            return False
+        logger.error(
+            "Scheduler writer probe unavailable and fallback loop writer is disabled; "
+            "forcing scheduler_writer_active=True (fail-closed): %s",
+            exc,
+            exc_info=True,
+        )
+        return True
+    try:
+        try:
+            return bool(await is_scheduler_single_writer_active(zone_id=zone_id))
+        except TypeError:
+            # Backward-compat for tests/legacy probes without zone_id kwarg.
+            return bool(await is_scheduler_single_writer_active())
+    except Exception as exc:
+        if allow_fallback_writer:
+            logger.warning(
+                "Failed to check scheduler single-writer state, fallback loop writer is enabled: %s",
+                exc,
+                exc_info=True,
+            )
+            return False
+        logger.error(
+            "Failed to check scheduler single-writer state and fallback loop writer is disabled; "
+            "forcing scheduler_writer_active=True (fail-closed): %s",
+            exc,
+            exc_info=True,
+        )
+        return True
 
 
 async def _emit_config_fetch_failure_alert(*, error_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:

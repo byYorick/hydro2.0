@@ -51,7 +51,7 @@ class EventBroadcastingTest extends TestCase
             return $e->commandId === 101
                 && $e->status === 'completed'
                 && $e->zoneId === 5
-                && $e->broadcastOn()->name === 'private-commands.5';
+                && $e->broadcastOn()->name === 'private-hydro.commands.5';
         });
     }
 
@@ -74,7 +74,7 @@ class EventBroadcastingTest extends TestCase
 
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
             return $e->commandId === 202
-                && $e->broadcastOn()->name === 'private-commands.global';
+                && $e->broadcastOn()->name === 'private-hydro.commands.global';
         });
     }
 
@@ -187,7 +187,7 @@ class EventBroadcastingTest extends TestCase
             return $e->commandId === 303
                 && $e->error === 'Connection timeout'
                 && $e->zoneId === 7
-                && $e->broadcastOn()->name === 'private-commands.7';
+                && $e->broadcastOn()->name === 'private-hydro.commands.7';
         });
     }
 
@@ -208,7 +208,7 @@ class EventBroadcastingTest extends TestCase
 
         Event::assertDispatched(EventCreated::class, function ($e) {
             return $e->id === 1001
-                && $e->broadcastOn()->name === 'private-events.global';
+                && $e->broadcastOn()->name === 'private-hydro.events.global';
         });
     }
 

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -221,6 +222,96 @@ async def test_zone_start_cycle_returns_409_when_cross_zone_idempotency_conflict
     assert detail.get("conflict_zone_id") == 77
 
 
+@pytest.mark.asyncio
+async def test_zone_start_cycle_returns_409_when_zone_busy(monkeypatch):
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "zone_busy",
+            "intent": {"id": 889, "zone_id": 12, "status": "running"},
+        }
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+
+    with pytest.raises(HTTPException) as exc:
+        await api.zone_start_cycle(
+            zone_id=12,
+            request=SimpleNamespace(headers={"x-trace-id": "trace-busy"}),
+            req=StartCycleRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z12:irrigation:2026-02-22T05:30:00Z",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail.get("error") == "start_cycle_zone_busy"
+    assert detail.get("zone_id") == 12
+    assert detail.get("active_intent_id") == 889
+    assert detail.get("active_status") == "running"
+
+
+@pytest.mark.asyncio
+async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_reverts_intent(monkeypatch):
+    captured = {"create_called": False, "pending_calls": []}
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "claimed",
+            "intent": {"id": 901, "zone_id": 12, "status": "claimed", "retry_count": 0, "payload": {}},
+        }
+
+    async def fake_load_latest_zone_task(_zone_id: int):
+        return {"task_id": "st-running", "status": "running"}
+
+    async def fake_mark_intent_pending(*, intent_id, now, execute_fn):
+        captured["pending_calls"].append({"intent_id": intent_id, "now": now, "execute_fn": execute_fn})
+
+    async def fake_create_scheduler_task(_req):
+        captured["create_called"] = True
+        return {"task_id": "st-should-not-run"}, False
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+    monkeypatch.setattr(api, "_load_latest_zone_task", fake_load_latest_zone_task)
+    monkeypatch.setattr(api, "policy_mark_intent_pending", fake_mark_intent_pending)
+    monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
+
+    with pytest.raises(HTTPException) as exc:
+        await api.zone_start_cycle(
+            zone_id=12,
+            request=SimpleNamespace(headers={"x-trace-id": "trace-active-task"}),
+            req=StartCycleRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z12:irrigation:2026-02-22T05:31:00Z",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail.get("error") == "start_cycle_zone_busy"
+    assert detail.get("zone_id") == 12
+    assert detail.get("active_task_id") == "st-running"
+    assert detail.get("active_task_status") == "running"
+    assert captured["create_called"] is False
+    assert len(captured["pending_calls"]) == 1
+    assert captured["pending_calls"][0]["intent_id"] == 901
+
+
 def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():
     route_paths = {route.path for route in api.app.routes}
 
@@ -241,3 +332,17 @@ def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():
     assert "/scheduler/integration/contracts" not in route_paths
     assert "/scheduler/observability/contracts" not in route_paths
     assert "/scheduler/internal/enqueue" not in route_paths
+
+
+def test_start_cycle_route_is_bound_once_from_split_module():
+    assert api.zone_start_cycle.__module__ == "ae2lite.api_runtime_start_cycle"
+
+    start_cycle_routes = [route for route in api.app.routes if route.path == "/zones/{zone_id}/start-cycle"]
+    assert len(start_cycle_routes) == 1
+    assert sorted(start_cycle_routes[0].methods) == ["POST"]
+
+
+def test_api_runtime_module_stays_below_400_lines_guard():
+    runtime_path = Path(api.__file__).resolve()
+    line_count = sum(1 for _ in runtime_path.open("r", encoding="utf-8"))
+    assert line_count < 400, f"api_runtime.py line budget exceeded: {line_count}"

@@ -477,7 +477,7 @@ export function useAutomationPanel(
         zoneChannel?.listen(eventName, handler)
       })
 
-      commandsChannelName = `commands.${props.zoneId}`
+      commandsChannelName = `hydro.commands.${props.zoneId}`
       commandsChannel = echo.private(commandsChannelName)
 
       WS_COMMAND_EVENT_NAMES.forEach((eventName) => {

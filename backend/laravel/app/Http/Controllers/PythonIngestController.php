@@ -56,6 +56,20 @@ class PythonIngestController extends Controller
         Log::info('[COMMAND_ACK_AUTH] Token validated successfully');
     }
 
+    /**
+     * Принять single telemetry sample и немедленно транслировать в WebSocket.
+     *
+     * DUAL DISPATCH: Этот endpoint немедленно диспатчит TelemetryBatchUpdated
+     * (для мгновенного обновления UI), и одновременно пересылает данные в history-logger.
+     * History-logger накапливает телеметрию и независимо вызывает
+     * POST /api/internal/realtime/telemetry-batch каждые ~100ms.
+     *
+     * Это означает, что один telemetry sample может прийти на фронт ДВАЖДЫ
+     * с разными event_id. Frontend обрабатывает это корректно (значения идемпотентны,
+     * последнее значение побеждает), но важно учитывать при отладке.
+     *
+     * Вызывается: mqtt-bridge (или другие Python сервисы) через Bearer token.
+     */
     public function telemetry(Request $request)
     {
         $this->ensureToken($request);

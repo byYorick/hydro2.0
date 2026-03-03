@@ -35,19 +35,19 @@ class AllEventsBroadcastingTest extends TestCase
         // CommandStatusUpdated - канал команд зоны
         event(new CommandStatusUpdated(1, 'DONE', null, null, $zone->id));
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) use ($zone) {
-            return $e->broadcastOn()->name === "private-commands.{$zone->id}";
+            return $e->broadcastOn()->name === "private-hydro.commands.{$zone->id}";
         });
 
         // CommandStatusUpdated - глобальный канал команд
         event(new CommandStatusUpdated(2, 'ERROR', null, 'Error', null));
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
-            return $e->broadcastOn()->name === 'private-commands.global';
+            return $e->broadcastOn()->name === 'private-hydro.commands.global';
         });
 
         // CommandFailed - канал команд зоны
         event(new CommandFailed(3, 'Failed', 'Error', Command::STATUS_ERROR, $zone->id));
         Event::assertDispatched(CommandFailed::class, function ($e) use ($zone) {
-            return $e->broadcastOn()->name === "private-commands.{$zone->id}";
+            return $e->broadcastOn()->name === "private-hydro.commands.{$zone->id}";
         });
 
         // ZoneUpdated - канал зоны
@@ -83,7 +83,7 @@ class AllEventsBroadcastingTest extends TestCase
         // EventCreated - глобальный канал событий
         event(new EventCreated(1, 'INFO', 'Test event'));
         Event::assertDispatched(EventCreated::class, function ($e) {
-            return $e->broadcastOn()->name === 'private-events.global';
+            return $e->broadcastOn()->name === 'private-hydro.events.global';
         });
     }
 

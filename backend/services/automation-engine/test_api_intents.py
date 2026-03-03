@@ -61,6 +61,8 @@ async def test_claim_start_cycle_intent_returns_deduplicated_for_running_intent(
         if "with candidate as" in q:
             calls["candidate"] += 1
             return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return []
         if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
             calls["existing"] += 1
             return [{"id": 777, "zone_id": 12, "status": "running", "payload": {}}]
@@ -77,6 +79,32 @@ async def test_claim_start_cycle_intent_returns_deduplicated_for_running_intent(
     assert calls["existing"] == 1
     assert claimed["decision"] == "deduplicated"
     assert claimed["intent"]["id"] == 777
+
+
+@pytest.mark.asyncio
+async def test_claim_start_cycle_intent_returns_terminal_for_completed_intent():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z12:irrigation:completed")
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return []
+        if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
+            return [{"id": 778, "zone_id": 12, "status": "completed", "payload": {}}]
+        return []
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=12,
+        req=req,
+        now=now,
+        fetch_fn=fake_fetch,
+    )
+
+    assert claimed["decision"] == "terminal"
+    assert claimed["intent"]["id"] == 778
 
 
 @pytest.mark.asyncio
@@ -125,6 +153,8 @@ async def test_claim_start_cycle_intent_returns_missing_when_scheduler_intent_ab
         if "with candidate as" in q:
             calls["candidate"] += 1
             return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return []
         if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
             if "where zone_id = $1" in q:
                 calls["existing"] += 1
@@ -154,6 +184,8 @@ async def test_claim_start_cycle_intent_returns_cross_zone_conflict_for_same_ide
         q = _norm(query)
         if "with candidate as" in q:
             return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return []
         if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
             if "where zone_id = $1" in q:
                 return []
@@ -169,6 +201,69 @@ async def test_claim_start_cycle_intent_returns_cross_zone_conflict_for_same_ide
 
     assert claimed["decision"] == "conflict_cross_zone"
     assert claimed["intent"]["zone_id"] == 99
+
+
+@pytest.mark.asyncio
+async def test_claim_start_cycle_intent_returns_zone_busy_for_other_active_intent():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:busy")
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            return []
+        if "where zone_id = $1" in q and "idempotency_key = $2" in q:
+            return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return [{"id": 911, "zone_id": 5, "status": "running", "retry_count": 1, "payload": {}}]
+        if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
+            return []
+        raise AssertionError(f"unexpected query: {q}")
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=5,
+        req=req,
+        now=now,
+        fetch_fn=fake_fetch,
+    )
+
+    assert claimed["decision"] == "zone_busy"
+    assert claimed["intent"]["id"] == 911
+    assert claimed["intent"]["zone_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_claim_start_cycle_intent_candidate_query_contains_active_intent_guard():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:race-guard")
+    captured_candidate_query = {"sql": ""}
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            captured_candidate_query["sql"] = q
+            return []
+        if "where zone_id = $1" in q and "idempotency_key = $2" in q:
+            return []
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return [{"id": 1002, "zone_id": 5, "status": "running", "retry_count": 1, "payload": {}}]
+        if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
+            return []
+        raise AssertionError(f"unexpected query: {q}")
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=5,
+        req=req,
+        now=now,
+        fetch_fn=fake_fetch,
+    )
+
+    candidate_sql = captured_candidate_query["sql"]
+    assert "and not exists" in candidate_sql
+    assert "active_intent.idempotency_key <> $2" in candidate_sql
+    assert "for update" in candidate_sql
+    assert claimed["decision"] == "zone_busy"
+    assert claimed["intent"]["id"] == 1002
 
 
 def test_build_scheduler_task_request_from_intent_uses_intent_identity():

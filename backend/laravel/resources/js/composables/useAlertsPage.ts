@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
-import { subscribeAlerts } from '@/ws/subscriptions'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -39,6 +39,7 @@ export function useAlertsPage() {
   const alertsStore = useAlertsStore()
   const { api } = useApi()
   const { showToast } = useToast()
+  const { subscribeToAlerts } = useWebSocket()
 
   // ── Toast suppression ────────────────────────────────────────────────────
   const toastSuppressionSec = ref(30)
@@ -570,7 +571,7 @@ export function useAlertsPage() {
   onMounted(() => {
     loadToastSuppressionPreference()
     loadAlertCatalog()
-    unsubscribeAlerts = subscribeAlerts((event) => {
+    unsubscribeAlerts = subscribeToAlerts((event) => {
       const payload = event as AlertRecord
       if (payload?.id) {
         alertsStore.upsert(payload as Alert)

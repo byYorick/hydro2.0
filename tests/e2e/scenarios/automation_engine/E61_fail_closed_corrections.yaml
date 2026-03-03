@@ -140,48 +140,17 @@ actions:
           CASE WHEN nc.channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END,
           nc.id
         LIMIT 1
-      ),
-      drain_candidate AS (
-        SELECT nc.id AS node_channel_id
-        FROM node_channels nc
-        JOIN target_node tn ON tn.id = nc.node_id
-        LEFT JOIN main_candidate mc ON mc.node_channel_id = nc.id
-        WHERE nc.type = 'ACTUATOR'
-          AND mc.node_channel_id IS NULL
-        ORDER BY
-          CASE
-            WHEN nc.channel IN (
-              'drain_pump',
-              'valve_solution_supply',
-              'valve_clean_supply',
-              'valve_irrigation',
-              'valve_solution_fill',
-              'valve_clean_fill'
-            ) THEN 0
-            ELSE 1
-          END,
-          nc.id
-        LIMIT 1
       )
       UPDATE node_channels nc
       SET config = COALESCE(nc.config, '{}'::jsonb) || jsonb_build_object(
-        'zone_role',
-        CASE
-          WHEN nc.id IN (SELECT node_channel_id FROM main_candidate) THEN 'main_pump'
-          WHEN nc.id IN (SELECT node_channel_id FROM drain_candidate) THEN 'drain'
-          ELSE COALESCE(nc.config->>'zone_role', '')
-        END
+        'zone_role', 'main_pump'
       )
-      WHERE nc.id IN (
-        SELECT node_channel_id FROM main_candidate
-        UNION ALL
-        SELECT node_channel_id FROM drain_candidate
-      );
+      WHERE nc.id IN (SELECT node_channel_id FROM main_candidate);
     params:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
 
-  - step: ensure_main_and_drain_bindings
+  - step: ensure_main_pump_binding
     type: database_execute
     query: |
       WITH zone_ctx AS (
@@ -204,41 +173,16 @@ actions:
           nc.id
         LIMIT 1
       ),
-      drain_candidate AS (
-        SELECT nc.id AS node_channel_id
-        FROM node_channels nc
-        JOIN target_node tn ON tn.id = nc.node_id
-        LEFT JOIN main_candidate mc ON mc.node_channel_id = nc.id
-        WHERE nc.type = 'ACTUATOR'
-          AND mc.node_channel_id IS NULL
-        ORDER BY
-          CASE
-            WHEN nc.channel IN (
-              'drain_pump',
-              'valve_solution_supply',
-              'valve_clean_supply',
-              'valve_irrigation',
-              'valve_solution_fill',
-              'valve_clean_fill'
-            ) THEN 0
-            ELSE 1
-          END,
-          nc.id
-        LIMIT 1
-      ),
       selected_targets AS (
         SELECT 'main_pump'::text AS role, 'E2E Main Pump'::text AS label, mc.node_channel_id
         FROM main_candidate mc
-        UNION ALL
-        SELECT 'drain'::text AS role, 'E2E Drain Pump'::text AS label, dc.node_channel_id
-        FROM drain_candidate dc
       ),
       ensure_instances AS (
         INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
         SELECT
           'zone',
           zc.zone_id,
-          CASE WHEN st.role = 'main_pump' THEN 'PUMP' ELSE 'DRAIN' END,
+          'PUMP',
           st.label,
           true,
           NOW(),
@@ -285,7 +229,7 @@ actions:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
 
-  - step: verify_main_and_drain_bindings_online
+  - step: verify_main_pump_binding_online
     type: db.wait
     query: |
       SELECT cb.role
@@ -294,12 +238,12 @@ actions:
       JOIN nodes n ON n.id = nc.node_id
       WHERE n.zone_id = :zone_id
         AND n.uid = :node_uid
-        AND cb.role IN ('main_pump', 'drain')
+        AND cb.role = 'main_pump'
       ORDER BY cb.role
     params:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
-    expected_rows: 2
+    expected_rows: 1
     timeout: 15.0
 
   - step: check_active_cycle

@@ -286,6 +286,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - endpoint принимает только `source` и `idempotency_key`;
 - фактические действия определяются pending intent-ами в БД;
 - повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение;
+- при активном intent этой же зоны (другой `idempotency_key`) endpoint возвращает `409 start_cycle_zone_busy`;
+- при активной scheduler-задаче зоны (`accepted|running`) endpoint возвращает `409 start_cycle_zone_busy`
+  с `active_task_id` и `active_task_status`;
 - при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
   `task_status` и `reason=start_cycle_intent_terminal`.
 
@@ -329,6 +332,30 @@ Response (terminal intent):
 }
 ```
 
+Response (zone busy, active intent):
+```json
+{
+  "detail": {
+    "error": "start_cycle_zone_busy",
+    "zone_id": 12,
+    "active_intent_id": 889,
+    "active_status": "running"
+  }
+}
+```
+
+Response (zone busy, active task):
+```json
+{
+  "detail": {
+    "error": "start_cycle_zone_busy",
+    "zone_id": 12,
+    "active_task_id": "st-running",
+    "active_task_status": "running"
+  }
+}
+```
+
 ### 18.3 Scheduler intents lifecycle (DB contract)
 
 `POST /zones/{id}/start-cycle` работает только как wake-up endpoint.
@@ -347,6 +374,8 @@ Lifecycle intents:
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
 - при повторном `idempotency_key` для active intent endpoint возвращает
   `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
+- если после claim обнаружена активная scheduler-задача зоны, intent переводится обратно в `pending`,
+  а endpoint возвращает `409 start_cycle_zone_busy`;
 - при повторном `idempotency_key` для terminal intent endpoint возвращает
   `accepted=false` + `runner_state=terminal` + `task_status`;
 - stale `claimed` intent может быть re-claimed после таймаута

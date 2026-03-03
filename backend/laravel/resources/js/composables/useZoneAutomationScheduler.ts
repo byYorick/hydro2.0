@@ -134,6 +134,10 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       if (typeof message === 'string' && message.trim() !== '') {
         return message.trim()
       }
+      const payloadError = payload.error
+      if (typeof payloadError === 'string' && payloadError.trim() !== '') {
+        return payloadError.trim()
+      }
       const code = payload.code
       if (typeof code === 'string' && code.trim() !== '') {
         return code.trim()
@@ -147,6 +151,10 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
         const detailMessage = detailPayload.message
         if (typeof detailMessage === 'string' && detailMessage.trim() !== '') {
           return detailMessage.trim()
+        }
+        const detailError = detailPayload.error
+        if (typeof detailError === 'string' && detailError.trim() !== '') {
+          return detailError.trim()
         }
         const detailCode = detailPayload.code
         if (typeof detailCode === 'string' && detailCode.trim() !== '') {

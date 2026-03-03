@@ -38,6 +38,13 @@ Breaking-change: legacy scheduler-task transport удален из runtime.
 - внешний wake-up endpoint только один: `POST /zones/{id}/start-cycle`;
 - scheduler передает намерение через `zone_automation_intents`;
 - workflow шаги выполняются последовательно: `send -> await terminal -> next`.
+- single-writer на уровне зоны: одновременно допускается только один активный `start-cycle` runner на зону;
+- при активном intent/active task endpoint возвращает `409 start_cycle_zone_busy`.
+
+Single-writer fallback:
+- default режим (без `AE2_FALLBACK_LOOP_WRITER_ENABLED`) — fail-closed: при недоступной проверке writer-state
+  continuous loop side-effects блокируются;
+- fallback разрешается только явно через `AE2_FALLBACK_LOOP_WRITER_ENABLED=1`.
 
 ---
 

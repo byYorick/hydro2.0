@@ -1,37 +1,50 @@
 {
-  "test_suite": "E93_start_cycle_intent_executor_path",
-  "generated_at": "2026-03-02T09:42:47.639005",
+  "test_suite": "E15_command_ack_flow",
+  "generated_at": "2026-03-03T14:29:11.812528",
   "test_cases": [
     {
-      "name": "set_test_context",
+      "name": "set_test_uids",
       "status": "passed",
-      "duration": 2.47955322265625e-05,
+      "duration": 2.6226043701171875e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_context",
+          "name": "set_test_uids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.582856"
+      "timestamp": "2026-03-03T14:27:59.770227"
     },
     {
-      "name": "get_zone_row",
+      "name": "fetch_node_id",
       "status": "passed",
-      "duration": 0.012229204177856445,
+      "duration": 0.009086132049560547,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zone_row",
+          "name": "fetch_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.595248"
+      "timestamp": "2026-03-03T14:27:59.779459"
+    },
+    {
+      "name": "get_zones",
+      "status": "passed",
+      "duration": 0.08926558494567871,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zones",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-03-03T14:27:59.868864"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 6.9141387939453125e-06,
+      "duration": 1.1682510375976562e-05,
       "error_message": null,
       "steps": [
         {
@@ -39,228 +52,163 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.595507"
+      "timestamp": "2026-03-03T14:27:59.873442"
     },
     {
-      "name": "capture_baseline",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 0.004576206207275391,
+      "duration": 0.07924365997314453,
       "error_message": null,
       "steps": [
         {
-          "name": "capture_baseline",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.600170"
+      "timestamp": "2026-03-03T14:27:59.952797"
     },
     {
-      "name": "insert_scheduler_like_intent",
+      "name": "set_node_id",
       "status": "passed",
-      "duration": 0.00882863998413086,
+      "duration": 2.09808349609375e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "insert_scheduler_like_intent",
+          "name": "set_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.609592"
+      "timestamp": "2026-03-03T14:27:59.953787"
     },
     {
-      "name": "start_cycle_http",
+      "name": "ensure_pump_off",
       "status": "passed",
-      "duration": 0.06206846237182617,
+      "duration": 0.21008038520812988,
       "error_message": null,
       "steps": [
         {
-          "name": "start_cycle_http",
+          "name": "ensure_pump_off",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:46.672841"
+      "timestamp": "2026-03-03T14:28:00.164372"
     },
     {
-      "name": "wait_intent_terminal",
+      "name": "wait_pre_command_done",
+      "status": "skipped",
+      "duration": 30.012009382247925,
+      "error_message": "Timeout waiting for DB condition: SELECT status\nFROM commands\nWHERE cmd_id = :cmd_id\nAND status IN ('DONE', 'ERROR')\n",
+      "steps": [
+        {
+          "name": "wait_pre_command_done",
+          "status": "skipped",
+          "error": "Timeout waiting for DB condition: SELECT status\nFROM commands\nWHERE cmd_id = :cmd_id\nAND status IN ('DONE', 'ERROR')\n"
+        }
+      ],
+      "timestamp": "2026-03-03T14:28:30.177054"
+    },
+    {
+      "name": "subscribe_commands_channel",
       "status": "passed",
-      "duration": 0.828890323638916,
+      "duration": 0.25453615188598633,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_intent_terminal",
+          "name": "subscribe_commands_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.502227"
+      "timestamp": "2026-03-03T14:28:30.431973"
     },
     {
-      "name": "wait_scheduler_task_running",
+      "name": "send_test_command",
       "status": "passed",
-      "duration": 0.0033016204833984375,
+      "duration": 0.25180625915527344,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_scheduler_task_running",
+          "name": "send_test_command",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.505798"
+      "timestamp": "2026-03-03T14:28:30.684134"
     },
     {
-      "name": "wait_scheduler_task_terminal",
+      "name": "extract_command_id",
       "status": "passed",
-      "duration": 0.0017788410186767578,
+      "duration": 2.2649765014648438e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_scheduler_task_terminal",
+          "name": "extract_command_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.507835"
+      "timestamp": "2026-03-03T14:28:30.685542"
     },
     {
-      "name": "set_scheduler_task_id",
+      "name": "node_sends_ack",
       "status": "passed",
-      "duration": 1.2159347534179688e-05,
+      "duration": 1.0008368492126465,
       "error_message": null,
       "steps": [
         {
-          "name": "set_scheduler_task_id",
+          "name": "node_sends_ack",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.507991"
+      "timestamp": "2026-03-03T14:28:31.689069"
     },
     {
-      "name": "get_scheduler_task_detail",
-      "status": "passed",
-      "duration": 0.12128567695617676,
-      "error_message": null,
+      "name": "wait_for_ack_ws_event",
+      "status": "failed",
+      "duration": 10.047396183013916,
+      "error_message": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated",
       "steps": [
         {
-          "name": "get_scheduler_task_detail",
-          "status": "passed"
+          "name": "wait_for_ack_ws_event",
+          "status": "failed",
+          "error": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.629438"
+      "timestamp": "2026-03-03T14:28:41.737414"
     },
     {
-      "name": "start_cycle_http_200",
-      "status": "passed",
-      "duration": 8.463859558105469e-05,
-      "error_message": null,
+      "name": "ws_ack_event_data",
+      "status": "failed",
+      "duration": 0.0002944469451904297,
+      "error_message": "Assertion condition is false: context.get('ws_ack_event', {}).get('data', {}).get('status') in ['ACK', 'DONE'] and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))",
       "steps": [
         {
-          "name": "start_cycle_http_200",
-          "status": "passed"
+          "name": "ws_ack_event_data",
+          "status": "failed",
+          "error": "Assertion condition is false: context.get('ws_ack_event', {}).get('data', {}).get('status') in ['ACK', 'DONE'] and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))"
         }
       ],
-      "timestamp": "2026-03-02T09:42:47.629540"
-    },
-    {
-      "name": "start_cycle_response_status_ok",
-      "status": "passed",
-      "duration": 3.504753112792969e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "start_cycle_response_status_ok",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629583"
-    },
-    {
-      "name": "start_cycle_returns_intent_task_id",
-      "status": "passed",
-      "duration": 6.270408630371094e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "start_cycle_returns_intent_task_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629651"
-    },
-    {
-      "name": "intent_terminal_status_valid",
-      "status": "passed",
-      "duration": 6.198883056640625e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "intent_terminal_status_valid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629719"
-    },
-    {
-      "name": "scheduler_task_id_has_st_prefix",
-      "status": "passed",
-      "duration": 3.337860107421875e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "scheduler_task_id_has_st_prefix",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629759"
-    },
-    {
-      "name": "scheduler_task_terminal_status_valid",
-      "status": "passed",
-      "duration": 4.863739013671875e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "scheduler_task_terminal_status_valid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629813"
-    },
-    {
-      "name": "scheduler_task_detail_terminal",
-      "status": "passed",
-      "duration": 0.00014162063598632812,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "scheduler_task_detail_terminal",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.629960"
-    },
-    {
-      "name": "intent_not_left_in_non_terminal",
-      "status": "passed",
-      "duration": 0.0012555122375488281,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "intent_not_left_in_non_terminal",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-02T09:42:47.631222"
+      "timestamp": "2026-03-03T14:28:41.737900"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E93_start_cycle_intent_executor_path": {
-      "ws_messages": [],
+    "E15_command_ack_flow": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-commands.10"
+          },
+          "timestamp": "2026-03-03T14:28:30.336521"
+        }
+      ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 5,
-        "scheduler_trace_id": "e93-trace-1772433766000",
-        "scheduler_task_id": "st-77d23eda0ddd4728ad3ecec9af8ff2bc"
+        "zone_id": 10,
+        "node_id": 1,
+        "test_zone_id": 10,
+        "test_node_id": 1,
+        "command_id": "adc234bb-5125-4ef9-8a49-30c9ee93e0c8"
       }
     }
   }

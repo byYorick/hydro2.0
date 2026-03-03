@@ -75,7 +75,7 @@ describe('useWebSocket - Integration Tests', () => {
 
     mockEcho = {
       private: vi.fn((channelName: string) => {
-        if (channelName === 'events.global') {
+        if (channelName === 'hydro.events.global') {
           pusherChannels[channelName] = mockGlobalChannel
           return mockGlobalChannel
         }
@@ -168,8 +168,8 @@ describe('useWebSocket - Integration Tests', () => {
       const unsubscribe2 = subscribeToZoneCommands(2, handler2)
 
       // Get listeners for both channels
-      const channel1 = mockEcho.private.mock.calls.find((call: any[]) => call[0] === 'commands.1')?.[0]
-      const channel2 = mockEcho.private.mock.calls.find((call: any[]) => call[0] === 'commands.2')?.[0]
+      const channel1 = mockEcho.private.mock.calls.find((call: any[]) => call[0] === 'hydro.commands.1')?.[0]
+      const channel2 = mockEcho.private.mock.calls.find((call: any[]) => call[0] === 'hydro.commands.2')?.[0]
 
       // Simulate events for zone 1
       const statusListener1 = mockZoneChannel.listen.mock.calls.find(
@@ -181,8 +181,8 @@ describe('useWebSocket - Integration Tests', () => {
       }
 
       // Both zones should be subscribed
-      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-      expect(mockEcho.private).toHaveBeenCalledWith('commands.2')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.2')
 
       unsubscribe1()
       unsubscribe2()
@@ -208,8 +208,8 @@ describe('useWebSocket - Integration Tests', () => {
       resubscribeAllChannels()
 
       // Should recreate channels
-      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-      expect(mockEcho.private).toHaveBeenCalledWith('events.global')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
 
       // Should reattach listeners
       expect(mockZoneChannel.listen).toHaveBeenCalled()
@@ -232,13 +232,13 @@ describe('useWebSocket - Integration Tests', () => {
       unsubscribe1()
 
       // Second component should still be subscribed
-      expect(mockEcho.leave).not.toHaveBeenCalledWith('commands.1')
+      expect(mockEcho.leave).not.toHaveBeenCalledWith('hydro.commands.1')
 
       // Second component unmounts
       unsubscribe2()
 
       // Now channel should be left
-      expect(mockEcho.leave).toHaveBeenCalledWith('commands.1')
+      expect(mockEcho.leave).toHaveBeenCalledWith('hydro.commands.1')
     })
 
     it('should handle errors in event handlers gracefully', () => {
@@ -277,7 +277,7 @@ describe('useWebSocket - Integration Tests', () => {
       })
 
       // Subscription should still be valid (will resubscribe on reconnect)
-      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
     })
 
     it('should handle rapid subscribe/unsubscribe cycles', () => {
@@ -291,7 +291,7 @@ describe('useWebSocket - Integration Tests', () => {
       }
 
       // Should not cause errors or memory leaks
-      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
     })
 
     it('should handle missing Echo gracefully', () => {

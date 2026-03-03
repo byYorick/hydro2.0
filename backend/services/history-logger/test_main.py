@@ -72,6 +72,84 @@ def test_health_endpoint(client):
     assert "components" in data
 
 
+def test_ws_broadcast_metrics_endpoint(client):
+    """Test WS broadcast metrics endpoint."""
+    with patch("system_routes.WS_BROADCAST_TOTAL") as mock_metric:
+        response = client.post("/internal/metrics/ws-broadcast", json={
+            "event_type": "command_status_updated",
+        })
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_metric.labels.assert_called_once_with(event_type="command_status_updated")
+
+
+def test_ws_broadcast_metrics_endpoint_validation_error(client):
+    """Test WS broadcast metrics endpoint payload validation."""
+    response = client.post("/internal/metrics/ws-broadcast", json={
+        "event_type": "",
+    })
+
+    assert response.status_code == 422
+
+
+def test_ws_auth_metrics_endpoint(client):
+    """Test WS auth metrics endpoint."""
+    with patch("system_routes.WS_AUTH_TOTAL") as mock_metric:
+        response = client.post("/internal/metrics/ws-auth", json={
+            "channel_type": "zone",
+            "result": "success",
+        })
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_metric.labels.assert_called_once_with(channel_type="zone", result="success")
+
+
+def test_ws_auth_metrics_endpoint_validation_error(client):
+    """Test WS auth metrics endpoint payload validation."""
+    response = client.post("/internal/metrics/ws-auth", json={
+        "channel_type": "zone",
+        "result": "",
+    })
+
+    assert response.status_code == 422
+
+
+def test_ws_event_metrics_endpoint_broadcast(client):
+    """Test unified WS metrics endpoint for broadcast payload."""
+    with patch("system_routes.WS_BROADCAST_TOTAL") as mock_metric:
+        response = client.post("/internal/metrics/ws-event", json={
+            "event_type": "telemetry.batch.updated",
+            "count": 2,
+        })
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_metric.labels.assert_called_once_with(event_type="telemetry.batch.updated")
+
+
+def test_ws_event_metrics_endpoint_auth(client):
+    """Test unified WS metrics endpoint for auth payload."""
+    with patch("system_routes.WS_AUTH_TOTAL") as mock_metric:
+        response = client.post("/internal/metrics/ws-event", json={
+            "channel_type": "commands",
+            "result": "success",
+            "count": 3,
+        })
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    mock_metric.labels.assert_called_once_with(channel_type="commands", result="success")
+
+
+def test_ws_event_metrics_endpoint_invalid_payload(client):
+    """Test unified WS metrics endpoint payload validation."""
+    response = client.post("/internal/metrics/ws-event", json={"count": 1})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "invalid_ws_event_metric_payload"
+
+
 def test_ingest_telemetry_endpoint(client):
     """Test telemetry ingestion endpoint."""
     with patch("ingest_routes.process_telemetry_batch") as mock_process:

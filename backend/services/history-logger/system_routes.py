@@ -1,7 +1,9 @@
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel, Field
 
 from common.alert_queue import get_alert_queue
 from common.command_status_queue import get_status_queue
@@ -14,10 +16,27 @@ from common.pipeline_metrics import (
     update_queue_metrics,
 )
 from common.db import get_pool
+from metrics import WS_AUTH_TOTAL, WS_BROADCAST_TOTAL
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class WsBroadcastMetricPayload(BaseModel):
+    event_type: str = Field(..., min_length=1, max_length=128)
+
+
+class WsAuthMetricPayload(BaseModel):
+    channel_type: str = Field(..., min_length=1, max_length=64)
+    result: str = Field(..., min_length=1, max_length=32)
+
+
+class WsEventMetricPayload(BaseModel):
+    event_type: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    channel_type: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    result: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    count: int = Field(default=1, ge=1, le=1000)
 
 
 @router.get("/health")
@@ -122,6 +141,55 @@ def metrics():
         else metrics_data,
         media_type=CONTENT_TYPE_LATEST,
     )
+
+
+@router.post("/internal/metrics/ws-broadcast")
+async def ws_broadcast_metrics(payload: WsBroadcastMetricPayload):
+    """Increment WebSocket broadcast counter."""
+    return await ws_event_metrics(
+        WsEventMetricPayload(
+            event_type=payload.event_type,
+            count=1,
+        )
+    )
+
+
+@router.post("/internal/metrics/ws-auth")
+async def ws_auth_metrics(payload: WsAuthMetricPayload):
+    """Increment WebSocket channel authorization counter."""
+    return await ws_event_metrics(
+        WsEventMetricPayload(
+            channel_type=payload.channel_type,
+            result=payload.result,
+            count=1,
+        )
+    )
+
+
+@router.post("/internal/metrics/ws-event")
+async def ws_event_metrics(payload: WsEventMetricPayload):
+    """Increment WebSocket broadcast/auth counters via unified payload."""
+    try:
+        if payload.event_type:
+            WS_BROADCAST_TOTAL.labels(event_type=payload.event_type).inc(payload.count)
+            return {"status": "ok"}
+
+        if payload.channel_type and payload.result:
+            WS_AUTH_TOTAL.labels(
+                channel_type=payload.channel_type,
+                result=payload.result,
+            ).inc(payload.count)
+            return {"status": "ok"}
+
+        raise HTTPException(
+            status_code=422,
+            detail="invalid_ws_event_metric_payload",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update ws metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed_to_update_ws_metric")
 
 
 @router.get("/api/dlq/alerts")

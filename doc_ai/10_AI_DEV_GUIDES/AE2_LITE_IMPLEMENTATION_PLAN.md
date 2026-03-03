@@ -183,29 +183,37 @@ DoD read-model:
 automation-engine/
   ae2lite/
     main.py
-    runtime.py
-    settings.py
     api.py
-    api_models.py
-    zone_registry.py
-    zone_runner.py
-    two_tank_workflow.py
+    api_runtime.py
+    api_runtime_zone_routes.py
+    api_contracts.py
+    api_intents.py
+    api_start_cycle.py
+    api_scheduler_*.py
+    api_recovery*.py
+    api_zone_state*.py
+    api_health.py
+    api_rate_limit.py
+    api_payload_parsing.py
+    api_task_snapshot.py
+    main_runtime.py
+    main_runtime_cycle.py
+    main_runtime_ops.py
+    main_runtime_shared.py
+    main_runtime_shutdown.py
+    settings.py
     plan_executor.py
-    correction_controller.py
-    pid.py
-    gating.py
-    command_gateway.py
     pg_notify_listener.py
-    reconcile_poller.py
+    policy_runtime.py
+    effective_targets_notify_runtime.py
     repositories.py
-    state_store.py
-    models.py
     config/limits.yaml
 ```
 
 Требование:
 - каждый файл < 400 строк;
 - отказ от монолитных модулей 1k+ строк.
+- неиспользуемые compatibility-фасады удаляются в той же итерации cleanup.
 
 ---
 

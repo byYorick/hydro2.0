@@ -19,9 +19,16 @@ interface SubscriptionLifecycleDeps {
 }
 
 function resolveEventName(kind: ActiveSubscription['kind']): string {
-  return kind === 'zoneCommands'
-    ? '.App\\Events\\CommandStatusUpdated'
-    : '.App\\Events\\EventCreated'
+  if (kind === 'zoneCommands') {
+    return '.App\\Events\\CommandStatusUpdated'
+  }
+  if (kind === 'zoneUpdates') {
+    return '.App\\Events\\ZoneUpdated'
+  }
+  if (kind === 'alerts') {
+    return '.App\\Events\\AlertCreated'
+  }
+  return '.App\\Events\\EventCreated'
 }
 
 export function createSubscriptionLifecycle(deps: SubscriptionLifecycleDeps) {

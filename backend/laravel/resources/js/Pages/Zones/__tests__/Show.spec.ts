@@ -458,6 +458,16 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 vi.mock('@/utils/i18n', () => ({
+  classifyEventKind: (kind: string) => {
+    const normalized = String(kind || '').toUpperCase()
+    if (normalized === 'ALARM' || normalized === 'ERROR') {
+      return 'ALERT'
+    }
+    if (normalized === 'WARNING') {
+      return 'WARNING'
+    }
+    return 'INFO'
+  },
   translateStatus: (status: string) => {
     const map: Record<string, string> = {
       RUNNING: 'Запущено',

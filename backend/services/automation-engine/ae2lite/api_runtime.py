@@ -4,19 +4,30 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Coroutine, Dict, Optional, Set
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import Gauge
 
+from ae2lite.api_runtime_start_cycle import bind_start_cycle_route
 from ae2lite.api_runtime_zone_routes import bind_zone_routes
+from ae2lite.api_runtime_concurrency import (
+    build_scheduler_single_writer_lease_key as policy_build_scheduler_single_writer_lease_key,
+    drain_background_tasks as policy_drain_background_tasks,
+    execute_scheduler_task_with_single_writer_lease as policy_execute_scheduler_task_with_single_writer_lease,
+    is_scheduler_single_writer_active as policy_is_scheduler_single_writer_active,
+    release_scheduler_single_writer_lease as policy_release_scheduler_single_writer_lease,
+    set_scheduler_single_writer_lease as policy_set_scheduler_single_writer_lease,
+    spawn_background_task as policy_spawn_runtime_background_task,
+)
 from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
 from ae2lite.api_health import build_readiness_payload as policy_build_readiness_payload
 from ae2lite.api_intents import (
     build_scheduler_task_request_from_intent as policy_build_scheduler_task_request_from_intent,
     claim_start_cycle_intent as policy_claim_start_cycle_intent,
+    mark_intent_pending as policy_mark_intent_pending,
     mark_intent_running as policy_mark_intent_running,
     mark_intent_terminal as policy_mark_intent_terminal,
 )
@@ -127,6 +138,8 @@ _START_CYCLE_CLAIM_STALE_SEC = max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE
 _AE_START_CYCLE_RATE_LIMIT_ENABLED = _env_true("AE_START_CYCLE_RATE_LIMIT_ENABLED", "1")
 _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS = max(0, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS", "30")))
 _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC = max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10")))
+_AE2_SCHEDULER_SINGLE_WRITER_LEASE_TTL_SEC = max(30, int(os.getenv("AE2_SCHEDULER_SINGLE_WRITER_LEASE_TTL_SEC", "300")))
+_AE2_SCHEDULER_SINGLE_WRITER_LEASE_REFRESH_SEC = max(5, min(_AE2_SCHEDULER_SINGLE_WRITER_LEASE_TTL_SEC - 1, int(os.getenv("AE2_SCHEDULER_SINGLE_WRITER_LEASE_REFRESH_SEC", "15"))))
 _scheduler_bootstrap_leases: Dict[str, Dict[str, Any]] = {}
 _scheduler_bootstrap_lock = asyncio.Lock()
 _AE_TASK_RECOVERY_ENABLED = _env_true("AE_TASK_RECOVERY_ENABLED", "1")
@@ -146,26 +159,25 @@ _start_cycle_rate_limiter = SlidingWindowRateLimiter(max_requests=_AE_START_CYCL
 
 
 async def _drain_background_tasks(timeout_sec: float = 5.0) -> None:
-    if not _background_tasks:
-        return
-    pending = [t for t in list(_background_tasks) if not t.done()]
-    for task in pending:
-        task.cancel()
-    try:
-        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=max(float(timeout_sec), 0.1))
-    except asyncio.TimeoutError:
-        logger.warning("Background task shutdown timeout: pending=%s", sum(1 for t in pending if not t.done()))
-    finally:
-        for task in list(_background_tasks):
-            if task.done():
-                _background_tasks.discard(task)
+    await policy_drain_background_tasks(
+        background_tasks=_background_tasks,
+        logger=logger,
+        timeout_sec=timeout_sec,
+    )
 
 
 def _spawn_background_task(coro: Coroutine[Any, Any, Any], *, task_name: str, zone_id: Optional[int] = None, task_id: Optional[str] = None, task_type: Optional[str] = None) -> asyncio.Task:
-    task = policy_spawn_background_task(coro, task_name=task_name, zone_id=zone_id, task_id=task_id, task_type=task_type, send_infra_exception_alert_fn=send_infra_exception_alert, logger=logger)
-    _background_tasks.add(task)
-    task.add_done_callback(lambda done_task: _background_tasks.discard(done_task))
-    return task
+    return policy_spawn_runtime_background_task(
+        coro,
+        task_name=task_name,
+        zone_id=zone_id,
+        task_id=task_id,
+        task_type=task_type,
+        background_tasks=_background_tasks,
+        spawn_policy_fn=policy_spawn_background_task,
+        send_infra_exception_alert_fn=send_infra_exception_alert,
+        logger=logger,
+    )
 
 
 def set_command_bus(command_bus: Optional[CommandBus], gh_uid: str, loop_id: Optional[int] = None) -> None:
@@ -178,17 +190,62 @@ def set_zone_service(zone_service: Any, loop_id: Optional[int] = None) -> None:
     _zone_service, _zone_service_loop_id = zone_service, loop_id
 
 
-async def is_scheduler_single_writer_active() -> bool:
-    if not _env_true("AE2_RUNTIME_SINGLE_WRITER_ENFORCE", "1"):
-        return False
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    async with _scheduler_bootstrap_lock:
-        stale = [k for k, v in _scheduler_bootstrap_leases.items() if not isinstance(v.get("expires_at"), datetime) or v.get("expires_at") <= now]
-        for key in stale:
-            _scheduler_bootstrap_leases.pop(key, None)
-        return bool(_scheduler_bootstrap_leases)
+async def is_scheduler_single_writer_active(zone_id: Optional[int] = None) -> bool:
+    return await policy_is_scheduler_single_writer_active(
+        enforce=_env_true("AE2_RUNTIME_SINGLE_WRITER_ENFORCE", "1"),
+        scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
+        scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
+        now=datetime.now(timezone.utc).replace(tzinfo=None),
+        zone_id=zone_id,
+    )
 
 
+def _build_scheduler_single_writer_lease_key(*, zone_id: int, intent_id: int, task_id: str) -> str:
+    return policy_build_scheduler_single_writer_lease_key(
+        zone_id=zone_id,
+        intent_id=intent_id,
+        task_id=task_id,
+    )
+
+
+async def _set_scheduler_single_writer_lease(*, lease_key: str, zone_id: int, intent_id: int, task_id: str) -> None:
+    await policy_set_scheduler_single_writer_lease(
+        lease_key=lease_key,
+        zone_id=zone_id,
+        intent_id=intent_id,
+        task_id=task_id,
+        lease_ttl_sec=_AE2_SCHEDULER_SINGLE_WRITER_LEASE_TTL_SEC,
+        scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
+        scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
+    )
+
+
+async def _release_scheduler_single_writer_lease(lease_key: str) -> None:
+    await policy_release_scheduler_single_writer_lease(
+        lease_key=lease_key,
+        scheduler_bootstrap_lock=_scheduler_bootstrap_lock,
+        scheduler_bootstrap_leases=_scheduler_bootstrap_leases,
+    )
+async def _execute_scheduler_task_with_single_writer_lease(
+    task_id: str,
+    req: SchedulerTaskRequest,
+    trace_id: Optional[str],
+    *,
+    lease_key: str,
+    zone_id: int,
+    intent_id: int,
+) -> None:
+    await policy_execute_scheduler_task_with_single_writer_lease(
+        task_id,
+        req,
+        trace_id,
+        lease_key=lease_key,
+        zone_id=zone_id,
+        intent_id=intent_id,
+        execute_scheduler_task_fn=_execute_scheduler_task,
+        set_scheduler_single_writer_lease_fn=_set_scheduler_single_writer_lease,
+        lease_refresh_sec=_AE2_SCHEDULER_SINGLE_WRITER_LEASE_REFRESH_SEC,
+    )
 def _is_loop_affinity_mismatch(assigned_loop_id: Optional[int]) -> bool:
     if assigned_loop_id is None:
         return False
@@ -196,12 +253,8 @@ def _is_loop_affinity_mismatch(assigned_loop_id: Optional[int]) -> bool:
         return assigned_loop_id != id(asyncio.get_running_loop())
     except RuntimeError:
         return False
-
-
 async def _validate_scheduler_zone(zone_id: int) -> None:
     await policy_validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
-
-
 async def _scheduler_zone_exists(zone_id: int) -> bool:
     rows = await fetch(
         """
@@ -213,207 +266,83 @@ async def _scheduler_zone_exists(zone_id: int) -> bool:
         zone_id,
     )
     return bool(rows)
-
-
 async def _validate_scheduler_security_baseline(request: Request) -> None:
     policy_validate_scheduler_security_baseline(headers=request.headers, enforce=_AE_SCHEDULER_SECURITY_BASELINE_ENFORCE, scheduler_api_token=_AE_SCHEDULER_API_TOKEN, require_trace_id=_AE_SCHEDULER_REQUIRE_TRACE_ID, extract_trace_id_from_headers_fn=extract_trace_id_from_headers)
-
-
 def _normalize_cleanup_timestamp(raw_value: Any, fallback: datetime) -> datetime:
     try:
         parsed = datetime.fromisoformat(str(raw_value))
     except Exception:
         return fallback
     return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo is not None else parsed
-
-
 async def _cleanup_scheduler_tasks_locked(now: datetime) -> None:
     await policy_cleanup_scheduler_tasks_locked(now, scheduler_tasks=_scheduler_tasks, scheduler_task_ttl_seconds=_SCHEDULER_TASK_TTL_SECONDS, scheduler_task_max_in_memory=_SCHEDULER_TASK_MAX_IN_MEMORY, normalize_cleanup_timestamp_fn=_normalize_cleanup_timestamp)
-
-
 async def _load_scheduler_task_by_correlation_id(correlation_id: str) -> Optional[Dict[str, Any]]:
     return await policy_load_scheduler_task_by_correlation_id(correlation_id, fetch_fn=fetch, scheduler_dedupe_window_sec=_SCHEDULER_DEDUPE_WINDOW_SEC, logger=logger)
-
-
-def _new_scheduler_task_id() -> str:
-    return policy_new_scheduler_task_id()
-
-
-def _task_payload_fingerprint(req: SchedulerTaskRequest) -> str:
-    return policy_task_payload_fingerprint(req)
-
-
-def _task_payload_matches(req: SchedulerTaskRequest, existing_task: Dict[str, Any], expected_fingerprint: str) -> bool:
-    return policy_task_payload_matches(req, existing_task, expected_fingerprint)
-
-
+_new_scheduler_task_id = policy_new_scheduler_task_id
+_task_payload_fingerprint = policy_task_payload_fingerprint
+_task_payload_matches = policy_task_payload_matches
 async def _persist_scheduler_task_snapshot(task: Dict[str, Any]) -> None:
     await policy_persist_scheduler_task_snapshot(task, create_scheduler_log_fn=create_scheduler_log, logger=logger)
-
-
 async def _create_scheduler_task(req: SchedulerTaskRequest, *, initial_status: str = "accepted", initial_result: Optional[Dict[str, Any]] = None, initial_error: Optional[str] = None, initial_error_code: Optional[str] = None):
     return await policy_create_scheduler_task(req, scheduler_tasks=_scheduler_tasks, scheduler_tasks_lock=_scheduler_tasks_lock, cleanup_scheduler_tasks_locked_fn=_cleanup_scheduler_tasks_locked, load_scheduler_task_by_correlation_id_fn=_load_scheduler_task_by_correlation_id, task_payload_fingerprint_fn=_task_payload_fingerprint, task_payload_matches_fn=_task_payload_matches, new_scheduler_task_id_fn=_new_scheduler_task_id, persist_scheduler_task_snapshot_fn=_persist_scheduler_task_snapshot, initial_status=initial_status, initial_result=initial_result, initial_error=initial_error, initial_error_code=initial_error_code)
-
-
 async def _update_scheduler_task(*, task_id: str, status: str, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None, error_code: Optional[str] = None) -> None:
     await policy_update_scheduler_task(task_id=task_id, status=status, scheduler_tasks=_scheduler_tasks, scheduler_tasks_lock=_scheduler_tasks_lock, persist_scheduler_task_snapshot_fn=_persist_scheduler_task_snapshot, result=result, error=error, error_code=error_code)
-
-
 def _build_execution_terminal_result(*, error_code: str, reason: str, mode: str, action_required: bool = True, decision: str = "fail", reason_code: Optional[str] = None, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return policy_build_execution_terminal_result(error_code=error_code, reason=reason, mode=mode, action_required=action_required, decision=decision, reason_code=reason_code, extra=extra)
-
-
 def _normalize_failed_execution_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return policy_normalize_failed_execution_result(result, err_task_execution_failed=SCHEDULER_ERR_TASK_EXECUTION_FAILED)
-
-
 def _update_command_effect_confirm_rate(task_type: str, result: Dict[str, Any]) -> None:
     policy_update_command_effect_confirm_rate(task_type, result, command_effect_totals=_command_effect_totals, command_effect_confirmed_totals=_command_effect_confirmed_totals, command_effect_confirm_rate_metric=COMMAND_EFFECT_CONFIRM_RATE)
-
-
 def _build_scheduler_task_executor(*, command_bus: CommandBus, zone_service: Optional[Any]) -> SchedulerTaskExecutor:
     return SchedulerTaskExecutor(command_bus=command_bus, zone_service=zone_service)
-
-
 async def _execute_scheduler_task(task_id: str, req: SchedulerTaskRequest, trace_id: Optional[str]) -> None:
     await policy_execute_scheduler_task(task_id, req, trace_id, command_bus=_command_bus, command_bus_loop_id=_command_bus_loop_id, zone_service=_zone_service, zone_service_loop_id=_zone_service_loop_id, validate_zone_exists_fn=_scheduler_zone_exists, is_loop_affinity_mismatch_fn=_is_loop_affinity_mismatch, update_scheduler_task_fn=_update_scheduler_task, update_command_effect_confirm_rate_fn=_update_command_effect_confirm_rate, normalize_failed_execution_result_fn=_normalize_failed_execution_result, build_execution_terminal_result_fn=_build_execution_terminal_result, send_infra_exception_alert_fn=send_infra_exception_alert, scheduler_task_executor_factory=_build_scheduler_task_executor, set_trace_id_fn=set_trace_id, logger=logger, err_command_bus_unavailable=SCHEDULER_ERR_COMMAND_BUS_UNAVAILABLE, err_command_bus_loop_mismatch=SCHEDULER_ERR_COMMAND_BUS_LOOP_MISMATCH, err_zone_service_loop_mismatch=SCHEDULER_ERR_ZONE_SERVICE_LOOP_MISMATCH, err_zone_not_found=SCHEDULER_ERR_ZONE_NOT_FOUND, err_execution_exception=SCHEDULER_ERR_EXECUTION_EXCEPTION)
-
-
 async def _load_latest_zone_task(zone_id: int) -> Optional[Dict[str, Any]]:
     return await policy_load_latest_zone_task(zone_id, scheduler_tasks_lock=_scheduler_tasks_lock, scheduler_tasks=_scheduler_tasks, cleanup_scheduler_tasks_locked_fn=_cleanup_scheduler_tasks_locked, fetch_fn=fetch, logger=logger)
 
 
-@app.post("/zones/{zone_id}/start-cycle")
-async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)):
-    await _validate_scheduler_zone(zone_id)
-    await _validate_scheduler_security_baseline(request)
-    if _AE_START_CYCLE_RATE_LIMIT_ENABLED and not _start_cycle_rate_limiter.check(zone_id=zone_id):
-        raise HTTPException(status_code=429, detail={"error": "start_cycle_rate_limited", "zone_id": zone_id, "window_sec": _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC, "max_requests": _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS})
+_is_start_cycle_rate_limit_enabled = lambda: bool(_AE_START_CYCLE_RATE_LIMIT_ENABLED)
+_start_cycle_rate_limit_check = lambda zone_id: bool(_start_cycle_rate_limiter.check(zone_id=zone_id))
+_start_cycle_rate_limit_window_sec = lambda: int(_AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC)
+_start_cycle_rate_limit_max_requests = lambda: int(_AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS)
+_start_cycle_claim_stale_sec = lambda: int(_START_CYCLE_CLAIM_STALE_SEC)
+_start_cycle_due_sec = lambda: int(_START_CYCLE_DUE_SEC)
+_start_cycle_expires_sec = lambda: int(_START_CYCLE_EXPIRES_SEC)
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    intent_claim = await policy_claim_start_cycle_intent(
-        zone_id=zone_id,
-        req=req,
-        now=now,
-        claimed_stale_after_sec=_START_CYCLE_CLAIM_STALE_SEC,
-        fetch_fn=fetch,
-    )
-    intent = intent_claim.get("intent") if isinstance(intent_claim, dict) and isinstance(intent_claim.get("intent"), dict) else {}
-    decision = str(intent_claim.get("decision") if isinstance(intent_claim, dict) else "").strip().lower()
-    if decision == "deduplicated":
-        intent_id = int(intent.get("id") or 0)
-        return policy_build_start_cycle_response(zone_id=zone_id, req=req, is_duplicate=True, task_id=f"intent-{intent_id}" if intent_id > 0 else "")
-    if decision == "terminal":
-        intent_id = int(intent.get("id") or 0)
-        intent_status = str(intent.get("status") or "").strip().lower()
-        return policy_build_start_cycle_response(
-            zone_id=zone_id,
-            req=req,
-            is_duplicate=True,
-            task_id=f"intent-{intent_id}" if intent_id > 0 else "",
-            accepted=False,
-            runner_state="terminal",
-            task_status=intent_status or "failed",
-            reason="start_cycle_intent_terminal",
-        )
-    if decision == "conflict_cross_zone":
-        conflict_zone_id = int(intent.get("zone_id") or 0)
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "start_cycle_idempotency_key_conflict",
-                "zone_id": zone_id,
-                "conflict_zone_id": conflict_zone_id,
-                "idempotency_key": req.idempotency_key,
-            },
-        )
-    if decision == "missing":
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "start_cycle_intent_not_found",
-                "zone_id": zone_id,
-                "idempotency_key": req.idempotency_key,
-            },
-        )
-    if decision != "claimed":
-        raise HTTPException(status_code=503, detail={"error": "start_cycle_intent_claim_unavailable", "zone_id": zone_id})
 
-    start_cycle_req = policy_build_scheduler_task_request_from_intent(zone_id=zone_id, req=req, intent_row=intent, now=now, due_in_sec=_START_CYCLE_DUE_SEC, expires_in_sec=_START_CYCLE_EXPIRES_SEC, default_topology=DEFAULT_TWO_TANK_TOPOLOGY)
-    task, is_duplicate = await _create_scheduler_task(start_cycle_req)
-    task_id = str(task.get("task_id") or "")
-    intent_id = int(intent.get("id") or 0)
-    if not is_duplicate and task_id:
-        trace_id = get_trace_id()
-
-        async def _run_start_cycle_intent() -> None:
-            success = False
-            terminal_error_code: Optional[str] = None
-            terminal_error_message: Optional[str] = None
-            try:
-                if intent_id > 0:
-                    await policy_mark_intent_running(
-                        intent_id=intent_id,
-                        now=datetime.now(timezone.utc).replace(tzinfo=None),
-                        execute_fn=execute,
-                    )
-                await _execute_scheduler_task(task_id, start_cycle_req, trace_id)
-                snapshot = _scheduler_tasks.get(task_id) if isinstance(_scheduler_tasks.get(task_id), dict) else {}
-                success = str(snapshot.get("status") or "").strip().lower() == "completed"
-                terminal_error_code = str(snapshot.get("error_code") or "") or None
-                terminal_error_message = str(snapshot.get("error") or "") or None
-            except Exception as exc:
-                logger.error(
-                    "Start-cycle intent runner failed: zone_id=%s intent_id=%s task_id=%s error=%s",
-                    zone_id,
-                    intent_id,
-                    task_id,
-                    exc,
-                    exc_info=True,
-                )
-                failure_result = _build_execution_terminal_result(
-                    error_code=SCHEDULER_ERR_EXECUTION_EXCEPTION,
-                    reason="Во время выполнения start-cycle intent произошло необработанное исключение",
-                    mode="execution_exception",
-                )
-                terminal_error_code = str(failure_result.get("error_code") or SCHEDULER_ERR_EXECUTION_EXCEPTION)
-                terminal_error_message = str(failure_result.get("error") or str(exc))
-                try:
-                    await _update_scheduler_task(
-                        task_id=task_id,
-                        status="failed",
-                        result=failure_result,
-                        error=terminal_error_message,
-                        error_code=terminal_error_code,
-                    )
-                except Exception:
-                    logger.error(
-                        "Failed to mark scheduler task failed after intent runner error: task_id=%s",
-                        task_id,
-                        exc_info=True,
-                    )
-            finally:
-                if intent_id > 0:
-                    try:
-                        await policy_mark_intent_terminal(
-                            intent_id=intent_id,
-                            now=datetime.now(timezone.utc).replace(tzinfo=None),
-                            success=success,
-                            error_code=terminal_error_code,
-                            error_message=terminal_error_message,
-                            execute_fn=execute,
-                        )
-                    except Exception:
-                        logger.error(
-                            "Failed to mark intent terminal: zone_id=%s intent_id=%s",
-                            zone_id,
-                            intent_id,
-                            exc_info=True,
-                        )
-
-        _spawn_background_task(_run_start_cycle_intent(), task_name=f"start_cycle_intent_{intent_id or task_id}", zone_id=zone_id)
-
-    return policy_build_start_cycle_response(zone_id=zone_id, req=req, is_duplicate=bool(is_duplicate), task_id=f"intent-{intent_id}" if intent_id > 0 else task_id)
+zone_start_cycle = bind_start_cycle_route(
+    app,
+    validate_scheduler_zone_fn=lambda zone_id: _validate_scheduler_zone(zone_id),
+    validate_scheduler_security_baseline_fn=lambda request: _validate_scheduler_security_baseline(request),
+    is_start_cycle_rate_limit_enabled_fn=_is_start_cycle_rate_limit_enabled,
+    start_cycle_rate_limit_check_fn=_start_cycle_rate_limit_check,
+    start_cycle_rate_limit_window_sec_fn=_start_cycle_rate_limit_window_sec,
+    start_cycle_rate_limit_max_requests_fn=_start_cycle_rate_limit_max_requests,
+    claim_start_cycle_intent_fn=lambda *, zone_id, req, now, claimed_stale_after_sec: policy_claim_start_cycle_intent(zone_id=zone_id, req=req, now=now, claimed_stale_after_sec=claimed_stale_after_sec, fetch_fn=fetch),
+    start_cycle_claim_stale_sec_fn=_start_cycle_claim_stale_sec,
+    load_latest_zone_task_fn=lambda zone_id: _load_latest_zone_task(zone_id),
+    build_scheduler_task_request_from_intent_fn=policy_build_scheduler_task_request_from_intent,
+    start_cycle_due_sec_fn=_start_cycle_due_sec,
+    start_cycle_expires_sec_fn=_start_cycle_expires_sec,
+    default_topology=DEFAULT_TWO_TANK_TOPOLOGY,
+    create_scheduler_task_fn=lambda req: _create_scheduler_task(req),
+    get_trace_id_fn=get_trace_id,
+    build_scheduler_single_writer_lease_key_fn=lambda *, zone_id, intent_id, task_id: _build_scheduler_single_writer_lease_key(zone_id=zone_id, intent_id=intent_id, task_id=task_id),
+    set_scheduler_single_writer_lease_fn=lambda *, lease_key, zone_id, intent_id, task_id: _set_scheduler_single_writer_lease(lease_key=lease_key, zone_id=zone_id, intent_id=intent_id, task_id=task_id),
+    execute_scheduler_task_with_single_writer_lease_fn=lambda task_id, req, trace_id, *, lease_key, zone_id, intent_id: _execute_scheduler_task_with_single_writer_lease(task_id, req, trace_id, lease_key=lease_key, zone_id=zone_id, intent_id=intent_id),
+    release_scheduler_single_writer_lease_fn=_release_scheduler_single_writer_lease,
+    mark_intent_running_fn=lambda **kwargs: policy_mark_intent_running(**kwargs),
+    mark_intent_terminal_fn=lambda **kwargs: policy_mark_intent_terminal(**kwargs),
+    mark_intent_pending_fn=lambda **kwargs: policy_mark_intent_pending(**kwargs),
+    execute_fn=execute,
+    scheduler_tasks_ref=_scheduler_tasks,
+    build_execution_terminal_result_fn=_build_execution_terminal_result,
+    update_scheduler_task_fn=lambda **kwargs: _update_scheduler_task(**kwargs),
+    spawn_background_task_fn=lambda coro, **kwargs: _spawn_background_task(coro, **kwargs),
+    build_start_cycle_response_fn=policy_build_start_cycle_response,
+    scheduler_err_execution_exception=SCHEDULER_ERR_EXECUTION_EXCEPTION,
+    logger=logger,
+)
 
 
 async def _run_scheduler_task_recovery_on_startup() -> None:
@@ -432,12 +361,8 @@ async def health_ready():
     return payload if payload.get("ready") else JSONResponse(status_code=503, content=payload)
 
 
-def get_test_hook_for_zone(zone_id: int, controller: str) -> Optional[Dict[str, Any]]:
-    return policy_get_test_hook_for_zone(zone_id, controller, test_mode=_test_mode, test_hooks=_test_hooks)
-
-
-def get_zone_state_override(zone_id: int) -> Optional[Dict[str, Any]]:
-    return policy_get_zone_state_override(zone_id, test_mode=_test_mode, zone_states_override=_zone_states_override)
+get_test_hook_for_zone = lambda zone_id, controller: policy_get_test_hook_for_zone(zone_id, controller, test_mode=_test_mode, test_hooks=_test_hooks)
+get_zone_state_override = lambda zone_id: policy_get_zone_state_override(zone_id, test_mode=_test_mode, zone_states_override=_zone_states_override)
 
 
 (zone_automation_state, zone_automation_control_mode, zone_automation_set_control_mode, zone_automation_manual_step) = bind_zone_routes(
@@ -455,31 +380,3 @@ def get_zone_state_override(zone_id: int) -> Optional[Dict[str, Any]]:
     get_trace_id_fn=get_trace_id,
     logger=logger,
 )
-
-
-__all__ = [
-    "app",
-    "zone_start_cycle",
-    "zone_automation_state",
-    "zone_automation_control_mode",
-    "zone_automation_set_control_mode",
-    "zone_automation_manual_step",
-    "health_live",
-    "health_ready",
-    "set_command_bus",
-    "set_zone_service",
-    "is_scheduler_single_writer_active",
-    "get_test_hook_for_zone",
-    "get_zone_state_override",
-    "_scheduler_tasks",
-    "_validate_scheduler_zone",
-    "_validate_scheduler_security_baseline",
-    "_create_scheduler_task",
-    "_spawn_background_task",
-    "_execute_scheduler_task",
-    "policy_claim_start_cycle_intent",
-    "policy_mark_intent_running",
-    "policy_mark_intent_terminal",
-    "_AE_START_CYCLE_RATE_LIMIT_ENABLED",
-    "_start_cycle_rate_limiter",
-]

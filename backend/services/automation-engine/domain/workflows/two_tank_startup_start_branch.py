@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
-from executor.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.executor_constants import (
+    ERR_SENSOR_STATE_INCONSISTENT,
+    ERR_TWO_TANK_LEVEL_STALE,
+    ERR_TWO_TANK_LEVEL_UNAVAILABLE,
+    REASON_SENSOR_LEVEL_UNAVAILABLE,
+    REASON_SENSOR_STALE_DETECTED,
+    REASON_SENSOR_STATE_INCONSISTENT,
+    REASON_TANK_LEVEL_CHECKED,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def build_sensor_state_inconsistent_result(

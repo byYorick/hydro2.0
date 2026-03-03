@@ -149,3 +149,15 @@ INGEST_REQUESTS = Counter(
     "Total HTTP ingest requests",
     ["status"],
 )
+
+WS_BROADCAST_TOTAL = Counter(
+    "ws_broadcast_total",
+    "Total WebSocket broadcasts dispatched",
+    ["event_type"],
+)
+
+WS_AUTH_TOTAL = Counter(
+    "ws_auth_total",
+    "Total WebSocket channel auth attempts",
+    ["channel_type", "result"],
+)

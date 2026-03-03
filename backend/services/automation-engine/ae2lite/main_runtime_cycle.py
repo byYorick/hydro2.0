@@ -116,6 +116,76 @@ async def _get_config_with_cache(
     return cfg, next_last_config, next_last_config_ts, used_cached
 
 
+async def _partition_zones_by_single_writer(zones: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[int]]:
+    if not zones:
+        shared._scheduler_writer_active_since.clear()
+        return [], []
+
+    if not shared._AE2_RUNTIME_SINGLE_WRITER_ENFORCE or shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
+        shared._scheduler_writer_active_since.clear()
+        return zones, []
+
+    now_mono = time.monotonic()
+    current_zone_ids: set[int] = set()
+    gated_zone_ids: List[int] = []
+
+    for zone in zones:
+        raw_zone_id = zone.get("id")
+        try:
+            zone_id = int(raw_zone_id)
+        except Exception:
+            continue
+        current_zone_ids.add(zone_id)
+
+        scheduler_writer_active = await shared._is_scheduler_single_writer_active(zone_id=zone_id)
+        if not scheduler_writer_active:
+            shared._scheduler_writer_active_since.pop(zone_id, None)
+            continue
+
+        active_since = shared._scheduler_writer_active_since.get(zone_id)
+        if active_since is None:
+            active_since = now_mono
+            shared._scheduler_writer_active_since[zone_id] = now_mono
+        elapsed = now_mono - active_since
+        if elapsed >= shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC:
+            shared.logger.warning(
+                "Scheduler writer watchdog expired for zone_id=%s after %.0fs (limit %.0fs), "
+                "forcing fallback zone processing",
+                zone_id,
+                elapsed,
+                shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
+            )
+            shared._scheduler_writer_active_since.pop(zone_id, None)
+            continue
+
+        gated_zone_ids.append(zone_id)
+
+    for tracked_zone_id in list(shared._scheduler_writer_active_since.keys()):
+        if tracked_zone_id not in current_zone_ids:
+            shared._scheduler_writer_active_since.pop(tracked_zone_id, None)
+
+    if gated_zone_ids and shared._should_log_scheduler_single_writer_skip(utcnow()):
+        shared.logger.info(
+            "Scheduler single-writer active for zones=%s: continuous loop side-effects are gated "
+            "(watchdog %.0fs, set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)",
+            sorted(gated_zone_ids),
+            shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
+        )
+
+    gated_zone_ids_set = set(gated_zone_ids)
+    zones_for_processing: List[Dict[str, Any]] = []
+    for zone in zones:
+        try:
+            zone_id = int(zone.get("id"))
+        except Exception:
+            zones_for_processing.append(zone)
+            continue
+        if zone_id not in gated_zone_ids_set:
+            zones_for_processing.append(zone)
+
+    return zones_for_processing, gated_zone_ids
+
+
 async def run_runtime_cycle(
     *,
     client: httpx.AsyncClient,
@@ -268,42 +338,11 @@ async def run_runtime_cycle(
                     simulation_clocks = await get_simulation_clocks(zone_ids)
 
                 if zones:
-                    scheduler_writer_active = False
-                    if shared._AE2_RUNTIME_SINGLE_WRITER_ENFORCE and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                        scheduler_writer_active = await shared._is_scheduler_single_writer_active()
-
-                    if scheduler_writer_active and not shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
-                        now_mono = time.monotonic()
-                        if shared._scheduler_writer_active_since is None:
-                            shared._scheduler_writer_active_since = now_mono
-                        elapsed = now_mono - shared._scheduler_writer_active_since
-                        if elapsed >= shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC:
-                            # Watchdog сработал: scheduler-writer не освобождает блокировку слишком долго
-                            shared.logger.warning(
-                                "Scheduler writer watchdog expired after %.0fs (limit %.0fs), "
-                                "forcing fallback zone processing",
-                                elapsed,
-                                shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
-                            )
-                            scheduler_writer_active = False
-                            shared._scheduler_writer_active_since = None
-                        else:
-                            now_utc = utcnow()
-                            if shared._should_log_scheduler_single_writer_skip(now_utc):
-                                shared.logger.info(
-                                    "Scheduler single-writer active: continuous loop side-effects are gated "
-                                    "(%.0fs / %.0fs watchdog, set AE2_FALLBACK_LOOP_WRITER_ENABLED=true to allow fallback writer)",
-                                    elapsed,
-                                    shared._SCHEDULER_WRITER_WATCHDOG_TIMEOUT_SEC,
-                                )
-                    else:
-                        # Scheduler не активен или fallback включён — сбрасываем watchdog
-                        shared._scheduler_writer_active_since = None
-
-                    if not scheduler_writer_active or shared._AE2_FALLBACK_LOOP_WRITER_ENABLED:
+                    zones_for_processing, _ = await _partition_zones_by_single_writer(zones)
+                    if zones_for_processing:
                         if automation_settings.ADAPTIVE_CONCURRENCY:
                             optimal_concurrency = await calculate_optimal_concurrency(
-                                total_zones=len(zones),
+                                total_zones=len(zones_for_processing),
                                 target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
                                 avg_zone_processing_time=shared._avg_processing_time,
                             )
@@ -313,7 +352,7 @@ async def run_runtime_cycle(
                             max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
 
                         results = await process_zones_parallel(
-                            zones,
+                            zones_for_processing,
                             shared._zone_service,
                             max_concurrent=max_concurrent,
                             simulation_clocks=simulation_clocks,
@@ -328,17 +367,17 @@ async def run_runtime_cycle(
                                 results["failed"],
                             )
 
-                        now_mono = time.monotonic()
-                        if now_mono >= next_system_state_log_at:
-                            await log_system_state(
-                                shared._zone_service,
-                                zones,
-                                shared._command_tracker,
-                                db_circuit_breaker,
-                                api_circuit_breaker,
-                                mqtt_circuit_breaker,
-                            )
-                            next_system_state_log_at = now_mono + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
+                    now_mono = time.monotonic()
+                    if now_mono >= next_system_state_log_at:
+                        await log_system_state(
+                            shared._zone_service,
+                            zones,
+                            shared._command_tracker,
+                            db_circuit_breaker,
+                            api_circuit_breaker,
+                            mqtt_circuit_breaker,
+                        )
+                        next_system_state_log_at = now_mono + shared.SYSTEM_STATE_LOG_INTERVAL_SEC
             except KeyboardInterrupt:
                 shared.logger.info("Received interrupt signal, shutting down")
                 shared._shutdown_event.set()
@@ -380,4 +419,4 @@ async def run_runtime_cycle(
     return active_zones
 
 
-__all__ = ["run_runtime_cycle"]
+__all__ = ["run_runtime_cycle", "_partition_zones_by_single_writer"]

@@ -306,3 +306,84 @@ async def test_start_cycle_intent_full_path_runs_scheduler_task_executor(monkeyp
     assert len(terminal_calls) == 1
     assert terminal_calls[0]["intent_id"] == 507
     assert terminal_calls[0]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_start_cycle_single_writer_lease_is_active_during_execution(monkeypatch):
+    spawned_tasks = []
+    execution_started = asyncio.Event()
+    allow_finish = asyncio.Event()
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_intent(*, zone_id, req, now, claimed_stale_after_sec, fetch_fn):
+        return {
+            "decision": "claimed",
+            "intent": {
+                "id": 508,
+                "zone_id": zone_id,
+                "retry_count": 0,
+                "payload": {},
+            },
+        }
+
+    async def fake_create_scheduler_task(_req):
+        return {"task_id": "st-508"}, False
+
+    async def fake_execute_scheduler_task(task_id, _req, _trace_id):
+        execution_started.set()
+        await allow_finish.wait()
+        api._scheduler_tasks[task_id] = {
+            "task_id": task_id,
+            "status": "completed",
+            "error_code": None,
+            "error": None,
+        }
+
+    async def fake_mark_running(*, intent_id, now, execute_fn):
+        return None
+
+    async def fake_mark_terminal(*, intent_id, now, success, error_code, error_message, execute_fn):
+        return None
+
+    def fake_spawn_background_task(coro, **_kwargs):
+        task = asyncio.create_task(coro)
+        spawned_tasks.append(task)
+        return task
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_intent)
+    monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
+    monkeypatch.setattr(api, "_execute_scheduler_task", fake_execute_scheduler_task)
+    monkeypatch.setattr(api, "policy_mark_intent_running", fake_mark_running)
+    monkeypatch.setattr(api, "policy_mark_intent_terminal", fake_mark_terminal)
+    monkeypatch.setattr(api, "_spawn_background_task", fake_spawn_background_task)
+
+    api._scheduler_bootstrap_leases.clear()
+
+    response = await api.zone_start_cycle(
+        zone_id=99,
+        request=SimpleNamespace(headers={"x-trace-id": "trace-int-lease"}),
+        req=StartCycleRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z99:irrigation:2026-02-22T11:00:03Z",
+        ),
+    )
+
+    assert response["status"] == "ok"
+    assert response["data"]["task_id"] == "intent-508"
+
+    await asyncio.wait_for(execution_started.wait(), timeout=1.0)
+    assert await api.is_scheduler_single_writer_active(zone_id=99) is True
+    assert await api.is_scheduler_single_writer_active(zone_id=100) is False
+    assert await api.is_scheduler_single_writer_active() is True
+
+    allow_finish.set()
+    await asyncio.gather(*spawned_tasks)
+    assert await api.is_scheduler_single_writer_active(zone_id=99) is False
+    assert await api.is_scheduler_single_writer_active() is False

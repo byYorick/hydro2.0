@@ -2,6 +2,24 @@
 
 Система автоматизации управления параметрами теплиц с поддержкой параллельной обработки зон, централизованной обработкой ошибок и модульной архитектурой.
 
+## Актуальный AE2-Lite runtime (2026-03-03)
+
+- Canonical runtime API:
+  - `ae2lite/api_runtime.py` (entrypoint FastAPI, <400 lines)
+  - `ae2lite/api_runtime_start_cycle.py` (bind `POST /zones/{id}/start-cycle`)
+  - `ae2lite/api_runtime_zone_routes.py` (state/control-mode/manual-step routes)
+  - `ae2lite/api_runtime_concurrency.py` (background tasks + single-writer lease helpers)
+- Legacy thin facades удалены и не используются в runtime:
+  - `ae2lite/zone_runner.py`
+  - `ae2lite/zone_registry.py`
+  - `ae2lite/runtime.py`
+  - `ae2lite/state_store.py`
+  - `ae2lite/two_tank_workflow.py`
+- Single-writer policy:
+  - lease уникален на зону (`start_cycle:{zone_id}`);
+  - при активном writer-е непрерывный loop gating включается;
+  - fail-open loop writer разрешен только при явном `AE2_FALLBACK_LOOP_WRITER_ENABLED=1`.
+
 ## Актуализация 2026-02-16 (P3/P4/P5)
 
 - Оперативный статус декомпозиции:

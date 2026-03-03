@@ -8,7 +8,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from executor.scheduler_executor_impl import *  # noqa: F401,F403
+from executor.executor_constants import (
+    ERR_TWO_TANK_IRR_STATE_MISMATCH,
+    ERR_TWO_TANK_IRR_STATE_STALE,
+    ERR_TWO_TANK_IRR_STATE_UNAVAILABLE,
+    REASON_IRR_STATE_MISMATCH,
+    REASON_IRR_STATE_STALE,
+    REASON_IRR_STATE_UNAVAILABLE,
+)
 
 _logger = logging.getLogger(__name__)
 

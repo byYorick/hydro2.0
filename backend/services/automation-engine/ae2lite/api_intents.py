@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from ae2lite.api_contracts import SchedulerTaskRequest, StartCycleRequest
 
 TERMINAL_INTENT_STATUSES = {"completed", "failed", "cancelled"}
+ACTIVE_INTENT_STATUSES = {"claimed", "running"}
 _START_CYCLE_TASK_TYPE = "diagnostics"
 _START_CYCLE_WORKFLOW = "cycle_start"
 
@@ -103,6 +104,22 @@ async def claim_start_cycle_intent(
                     status IN ('pending', 'failed')
                     OR (status = 'claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4)
               )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM zone_automation_intents active_intent
+                    WHERE active_intent.zone_id = $1
+                      AND active_intent.idempotency_key <> $2
+                      AND (
+                            active_intent.status = 'running'
+                            OR (active_intent.status = 'claimed' AND (active_intent.claimed_at IS NULL OR active_intent.claimed_at > $4))
+                      )
+              )
+              AND EXISTS (
+                    SELECT 1
+                    FROM zones z
+                    WHERE z.id = $1
+                    FOR UPDATE
+              )
               AND (not_before IS NULL OR not_before <= $3)
               AND (status <> 'failed' OR retry_count < max_retries)
             ORDER BY id DESC
@@ -144,10 +161,31 @@ async def claim_start_cycle_intent(
     if existing_rows:
         existing = dict(existing_rows[0])
         status = str(existing.get("status") or "").strip().lower()
-        if status in {"claimed", "running", "completed"}:
+        if status in ACTIVE_INTENT_STATUSES:
             return {"decision": "deduplicated", "intent": existing}
         if status in TERMINAL_INTENT_STATUSES:
             return {"decision": "terminal", "intent": existing}
+
+    active_zone_rows = await fetch_fn(
+        """
+        SELECT *
+        FROM zone_automation_intents
+        WHERE zone_id = $1
+          AND idempotency_key <> $2
+          AND (
+                status = 'running'
+                OR (status = 'claimed' AND (claimed_at IS NULL OR claimed_at > $3))
+          )
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        zone_id,
+        req.idempotency_key,
+        stale_claimed_before,
+    )
+    if active_zone_rows:
+        return {"decision": "zone_busy", "intent": dict(active_zone_rows[0])}
+
     cross_zone_rows = await fetch_fn(
         """
         SELECT *
@@ -210,9 +248,29 @@ async def mark_intent_terminal(
     )
 
 
+async def mark_intent_pending(
+    *,
+    intent_id: int,
+    now: datetime,
+    execute_fn: Callable[..., Awaitable[Any]],
+) -> None:
+    await execute_fn(
+        """
+        UPDATE zone_automation_intents
+        SET status = 'pending',
+            updated_at = $2
+        WHERE id = $1
+          AND status = 'claimed'
+        """,
+        intent_id,
+        now,
+    )
+
+
 __all__ = [
     "build_scheduler_task_request_from_intent",
     "claim_start_cycle_intent",
+    "mark_intent_pending",
     "mark_intent_running",
     "mark_intent_terminal",
 ]

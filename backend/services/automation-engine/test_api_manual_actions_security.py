@@ -16,15 +16,16 @@ class _DummyWorkflowStateStore:
         return None
 
 
-def _bind_test_routes(*, validate_security_fn):
+def _bind_test_routes(*, validate_security_fn, latest_zone_task=None):
     app = FastAPI()
     store = _DummyWorkflowStateStore()
+    latest_task = latest_zone_task or {"payload": {"config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}}}
 
     async def validate_zone(_zone_id: int):
         return None
 
     async def load_latest_zone_task(_zone_id: int):
-        return {"payload": {"config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}}}
+        return latest_task
 
     async def create_scheduler_task(_req):
         return {"task_id": "st-manual"}, False
@@ -92,3 +93,31 @@ async def test_manual_step_requires_security_baseline():
 
     assert exc.value.status_code == 401
 
+
+@pytest.mark.asyncio
+async def test_manual_step_returns_409_when_zone_has_active_task():
+    async def validate_security(_request):
+        return None
+
+    (_, _, _, manual_step) = _bind_test_routes(
+        validate_security_fn=validate_security,
+        latest_zone_task={
+            "task_id": "st-active",
+            "status": "running",
+            "payload": {"config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}},
+        },
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await manual_step(
+            zone_id=3,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "t1"}),
+            payload={"manual_step": "clean_fill_start", "source": "frontend"},
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail.get("code") == "manual_step_zone_busy"
+    assert detail.get("zone_id") == 3
+    assert detail.get("active_task_id") == "st-active"
+    assert detail.get("active_task_status") == "running"
