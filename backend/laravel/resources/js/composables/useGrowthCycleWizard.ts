@@ -1385,7 +1385,7 @@ export function useGrowthCycleWizard({
     };
 
     try {
-      await api.post(`/api/zones/${zoneId}/automation-logic-profiles`, payload);
+      await api.post(`/api/zones/${zoneId}/automation-logic-profile`, payload);
       return;
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -1394,7 +1394,7 @@ export function useGrowthCycleWizard({
       }
     }
 
-    await api.post(`/api/zones/${zoneId}/automation-logic-profile`, payload);
+    await api.post(`/api/zones/${zoneId}/automation-logic-profiles`, payload);
   }
 
   async function savePumpCalibrations(zoneId: number): Promise<string[]> {

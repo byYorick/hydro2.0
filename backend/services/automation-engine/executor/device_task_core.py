@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Sequence
 
+from common.pump_safety import can_run_pump
 from config.scheduler_task_mapping import SchedulerTaskMapping
 from domain.models.decision_models import DecisionOutcome
-from services.resilience_contract import INFRA_TASK_NO_ONLINE_NODES
+from services.resilience_contract import INFRA_IRRIGATION_PUMP_BLOCKED, INFRA_TASK_NO_ONLINE_NODES
 
 GetZoneNodesFn = Callable[[int, Sequence[str]], Awaitable[Sequence[Dict[str, Any]]]]
 ResolveCommandNameFn = Callable[[Dict[str, Any], SchedulerTaskMapping], str | None]
@@ -36,6 +37,68 @@ def _accepted_terminal_statuses_for_mapping(mapping: SchedulerTaskMapping) -> tu
     if mapping.state_key:
         return ("DONE", "NO_EFFECT")
     return None
+
+
+async def _enforce_pump_safety_gate(
+    *,
+    zone_id: int,
+    task_type: str,
+    cmd: str | None,
+    nodes: Sequence[Dict[str, Any]],
+    send_infra_alert_fn: SendInfraAlertFn,
+) -> str | None:
+    command = str(cmd or "").strip().lower()
+    if command != "run_pump":
+        return None
+
+    blocked: list[Dict[str, Any]] = []
+    for node in nodes:
+        channel = str(node.get("channel") or "").strip().lower()
+        if not channel:
+            continue
+        raw_node_id = node.get("id")
+        node_id: int | None = None
+        if isinstance(raw_node_id, int):
+            node_id = raw_node_id
+        else:
+            try:
+                node_id = int(raw_node_id)
+            except Exception:
+                node_id = None
+        can_run, error_msg = await can_run_pump(zone_id, channel, node_id=node_id)
+        if can_run:
+            continue
+        blocked.append(
+            {
+                "node_id": node_id,
+                "node_uid": node.get("uid"),
+                "channel": channel,
+                "reason": str(error_msg or "pump_safety_blocked"),
+            }
+        )
+
+    if not blocked:
+        return None
+
+    primary = blocked[0]
+    await send_infra_alert_fn(
+        code=INFRA_IRRIGATION_PUMP_BLOCKED,
+        alert_type="Irrigation Pump Blocked",
+        message=f"Задача {task_type} заблокирована safety-политикой насоса",
+        severity="error",
+        zone_id=zone_id,
+        service="automation-engine",
+        component="scheduler_task_executor",
+        channel=primary.get("channel"),
+        cmd="run_pump",
+        error_type="PumpSafetyBlocked",
+        details={
+            "task_type": task_type,
+            "error_code": "two_tank_pump_safety_blocked",
+            "blocked_pumps": blocked,
+        },
+    )
+    return str(primary.get("reason") or "pump_safety_blocked")
 
 
 async def execute_device_task_core(
@@ -118,6 +181,24 @@ async def execute_device_task_core(
         }
 
     params = resolve_command_params_fn(payload, mapping)
+    safety_error = await _enforce_pump_safety_gate(
+        zone_id=zone_id,
+        task_type=mapping.task_type,
+        cmd=cmd,
+        nodes=nodes,
+        send_infra_alert_fn=send_infra_alert_fn,
+    )
+    if safety_error is not None:
+        return {
+            "success": False,
+            "task_type": mapping.task_type,
+            "error": safety_error,
+            "error_code": "two_tank_pump_safety_blocked",
+            "commands_total": 0,
+            "commands_failed": 0,
+            "command_statuses": [],
+        }
+
     accepted_terminal_statuses = _accepted_terminal_statuses_for_mapping(mapping)
     return await publish_batch_fn(
         zone_id=zone_id,

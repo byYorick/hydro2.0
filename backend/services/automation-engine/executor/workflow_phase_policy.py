@@ -207,6 +207,24 @@ def derive_workflow_phase(
                         },
                 )
                 return None
+            if reason_code == "safety_blocked" and workflow in {
+                "irrigation_recovery",
+                "irrigation_recovery_check",
+            }:
+                if logger is not None:
+                    logger.info(
+                        "Diagnostics recovery safety block resets workflow phase to idle",
+                        extra={
+                            "task_type": normalized_task_type,
+                            "mode": mode or None,
+                            "workflow": workflow or None,
+                            "decision": decision or None,
+                            "reason_code": reason_code or None,
+                            "action_required": action_required,
+                            "success": success,
+                        },
+                    )
+                return WORKFLOW_PHASE_IDLE
             if reason_code in WORKFLOW_PHASE_BLOCKING_FAILURE_REASONS:
                 blocked_phase = WORKFLOW_PHASE_BY_DIAGNOSTICS_WORKFLOW.get(workflow)
                 if blocked_phase:

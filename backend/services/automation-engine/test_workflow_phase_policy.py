@@ -94,6 +94,21 @@ def test_derive_workflow_phase_for_diagnostics_safety_blocked_keeps_workflow_pha
     assert phase_blocked == WORKFLOW_PHASE_TANK_RECIRC
 
 
+def test_derive_workflow_phase_for_recovery_safety_blocked_resets_to_idle():
+    phase_blocked = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "irrigation_recovery_check"},
+        result={
+            "success": False,
+            "mode": "two_tank_irrigation_recovery_safety_blocked",
+            "reason_code": "safety_blocked",
+            "action_required": True,
+            "decision": "run",
+        },
+    )
+    assert phase_blocked == WORKFLOW_PHASE_IDLE
+
+
 def test_derive_workflow_phase_for_irrigation_recovery_and_run():
     recovery = derive_workflow_phase(
         task_type="irrigation",

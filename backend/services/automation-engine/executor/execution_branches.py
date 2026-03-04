@@ -33,7 +33,13 @@ async def execute_action_required_branch(
             decision=decision,
         )
 
-    if task_type == "irrigation" and decision.action_required and decision.decision == "run":
+    phase_hint = str(payload.get("workflow_phase") or "").strip().lower()
+    if (
+        task_type == "irrigation"
+        and decision.action_required
+        and decision.decision == "run"
+        and phase_hint in {"ready", "irrig_recirc", "irrigating"}
+    ):
         await update_zone_workflow_phase_fn(
             zone_id=zone_id,
             workflow_phase=workflow_phase_irrigating,
