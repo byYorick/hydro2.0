@@ -259,10 +259,26 @@ async def publish_controller_command_closed_loop(
                 error=f"command_terminal_status_{normalized_status.lower()}",
             )
             return result
-        if cmd_id not in tracker.pending_commands:
-            result["command_effect_confirmed"] = True
-            result["terminal_status"] = "NO_EFFECT"
-            return result
+        # duplicate_no_effect means publish side-effect was skipped by dedupe arbiter.
+        # If there is no terminal status in DB, treat this as NO_EFFECT and clear stale
+        # in-memory pending entry to prevent false TIMEOUT in closed-loop wait.
+        if cmd_id in tracker.pending_commands:
+            try:
+                await tracker.confirm_command_status(
+                    cmd_id,
+                    "NO_EFFECT",
+                    error="dedupe_no_effect_without_db_row",
+                )
+            except Exception:
+                logger.warning(
+                    "Zone %s: failed to mark stale duplicate_no_effect cmd_id=%s as NO_EFFECT",
+                    zone_id,
+                    cmd_id,
+                    exc_info=True,
+                )
+        result["command_effect_confirmed"] = True
+        result["terminal_status"] = "NO_EFFECT"
+        return result
 
     if tracker is None or cmd_id is None:
         await _finish_not_confirmed(

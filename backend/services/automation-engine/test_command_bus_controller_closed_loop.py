@@ -9,6 +9,7 @@ class _Tracker:
         self.pending_commands = {cmd_id: {} for cmd_id in (pending_ids or [])}
         self.wait_calls = 0
         self.confirm_calls = 0
+        self.confirm_statuses = []
 
     async def wait_for_command_done(self, **kwargs):
         _ = kwargs
@@ -20,8 +21,9 @@ class _Tracker:
         return self._status_from_db
 
     async def confirm_command_status(self, cmd_id, status, error=None):
-        _ = cmd_id, status, error
         self.confirm_calls += 1
+        self.confirm_statuses.append((cmd_id, status, error))
+        self.pending_commands.pop(cmd_id, None)
 
 
 class _CommandBus:
@@ -85,3 +87,26 @@ async def test_closed_loop_duplicate_no_effect_propagates_known_terminal_failure
     assert tracker.wait_calls == 0
     assert any(event[1] == "COMMAND_EFFECT_NOT_CONFIRMED" for event in bus.zone_events)
     assert len(bus.failure_alerts) == 1
+
+
+@pytest.mark.asyncio
+async def test_closed_loop_duplicate_no_effect_with_stale_pending_marks_no_effect():
+    tracker = _Tracker(status_from_db=None, pending_ids=["cmd-stale"])
+    bus = _CommandBus(tracker=tracker, dedupe_decision="duplicate_no_effect", cmd_id="cmd-stale")
+
+    result = await publish_controller_command_closed_loop(
+        bus,
+        zone_id=9,
+        command={"node_uid": "nd-test-irrig-1", "channel": "pump_main", "cmd": "set_relay"},
+        context={},
+        timeout_sec=1,
+    )
+
+    assert result["command_submitted"] is True
+    assert result["command_effect_confirmed"] is True
+    assert result["terminal_status"] == "NO_EFFECT"
+    assert tracker.wait_calls == 0
+    assert tracker.confirm_calls == 1
+    assert tracker.confirm_statuses == [("cmd-stale", "NO_EFFECT", "dedupe_no_effect_without_db_row")]
+    assert bus.zone_events == []
+    assert bus.failure_alerts == []
