@@ -570,9 +570,9 @@ main() {
             ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml logs -f "${2:-}"
             ;;
         "clean")
-            log_info "Очистка данных E2E..."
-            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down -v
-            log_info "Данные очищены."
+            log_info "Остановка E2E инфраструктуры без удаления volume..."
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down
+            log_info "Инфраструктура остановлена, данные БД сохранены."
             ;;
         *)
             echo "Использование: $0 {up|down|restart|smoke|test|all|logs|clean}"

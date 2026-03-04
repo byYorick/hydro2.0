@@ -5,6 +5,7 @@ This module is imported lazily from SchedulerTaskExecutor to keep startup import
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -99,6 +100,200 @@ _CHECK_WORKFLOW_TIMEOUT_CFG_KEY: Dict[str, str] = {
 }
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_target_from_range(section: Dict[str, Any]) -> Optional[float]:
+    lower = _as_float(section.get("min"))
+    upper = _as_float(section.get("max"))
+    if lower is None or upper is None:
+        return None
+    return (lower + upper) / 2.0
+
+
+def _payload_has_runtime_targets(payload: Dict[str, Any]) -> bool:
+    config = _as_dict(payload.get("config"))
+    execution = _as_dict(config.get("execution"))
+    ph_payload = _as_dict(payload.get("ph"))
+    ec_payload = _as_dict(payload.get("ec"))
+    targets_payload = _as_dict(payload.get("targets"))
+    candidates = (
+        execution.get("target_ph"),
+        execution.get("target_ec"),
+        ph_payload.get("target"),
+        ec_payload.get("target"),
+        targets_payload.get("target_ph"),
+        targets_payload.get("target_ec"),
+        targets_payload.get("ph_target"),
+        targets_payload.get("ec_target"),
+    )
+    return any(candidate is not None for candidate in candidates)
+
+
+def _payload_missing_profile_runtime_settings(payload: Dict[str, Any]) -> bool:
+    execution = _as_dict(_as_dict(payload.get("config")).get("execution"))
+    required_keys = (
+        "prepare_tolerance",
+        "prepare_target_tolerance",
+        "target_ec_prepare_npk",
+        "nutrient_npk_ratio_pct",
+        "npk_ratio_pct",
+    )
+    return not any(key in execution for key in required_keys)
+
+
+def _extract_profile_execution_overrides(subsystems: Dict[str, Any]) -> Dict[str, Any]:
+    diagnostics = _as_dict(subsystems.get("diagnostics"))
+    diagnostics_execution = _as_dict(diagnostics.get("execution"))
+    return dict(diagnostics_execution) if diagnostics_execution else {}
+
+
+def _extract_profile_targets(subsystems: Dict[str, Any]) -> Dict[str, float]:
+    diagnostics = _as_dict(subsystems.get("diagnostics"))
+    diagnostics_execution = _as_dict(diagnostics.get("execution"))
+    irrigation = _as_dict(subsystems.get("irrigation"))
+    irrigation_execution = _as_dict(irrigation.get("execution"))
+    correction_node = _as_dict(irrigation_execution.get("correction_node"))
+    ph_targets = _as_dict(_as_dict(subsystems.get("ph")).get("targets"))
+    ec_targets = _as_dict(_as_dict(subsystems.get("ec")).get("targets"))
+
+    target_ph = _as_float(diagnostics_execution.get("target_ph"))
+    target_ec = _as_float(diagnostics_execution.get("target_ec"))
+
+    if target_ph is None:
+        target_ph = _as_float(correction_node.get("target_ph"))
+    if target_ec is None:
+        target_ec = _as_float(correction_node.get("target_ec"))
+
+    if target_ph is None:
+        target_ph = _as_float(ph_targets.get("target"))
+    if target_ec is None:
+        target_ec = _as_float(ec_targets.get("target"))
+
+    if target_ph is None:
+        target_ph = _resolve_target_from_range(ph_targets)
+    if target_ec is None:
+        target_ec = _resolve_target_from_range(ec_targets)
+
+    resolved: Dict[str, float] = {}
+    if target_ph is not None:
+        resolved["target_ph"] = target_ph
+    if target_ec is not None:
+        resolved["target_ec"] = target_ec
+    return resolved
+
+
+def _inject_runtime_targets(payload: Dict[str, Any], targets: Dict[str, float]) -> Dict[str, Any]:
+    config = _as_dict(payload.get("config"))
+    execution = _as_dict(config.get("execution"))
+    if execution.get("target_ph") is None and targets.get("target_ph") is not None:
+        execution["target_ph"] = float(targets["target_ph"])
+    if execution.get("target_ec") is None and targets.get("target_ec") is not None:
+        execution["target_ec"] = float(targets["target_ec"])
+    if not execution:
+        return payload
+    updated_config = dict(config)
+    updated_config["execution"] = execution
+    return {**payload, "config": updated_config}
+
+
+def _inject_profile_execution(payload: Dict[str, Any], profile_execution: Dict[str, Any]) -> Dict[str, Any]:
+    if not profile_execution:
+        return payload
+
+    config = _as_dict(payload.get("config"))
+    execution = _as_dict(config.get("execution"))
+    merged_execution = dict(execution)
+    changed = False
+
+    for key, value in profile_execution.items():
+        if merged_execution.get(key) is None:
+            merged_execution[key] = value
+            changed = True
+
+    if not changed:
+        return payload
+
+    updated_config = dict(config)
+    updated_config["execution"] = merged_execution
+    return {**payload, "config": updated_config}
+
+
+async def _resolve_runtime_payload_with_profile_targets(
+    deps: TwoTankDeps,
+    *,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    if _payload_has_runtime_targets(payload) and not _payload_missing_profile_runtime_settings(payload):
+        return payload
+
+    try:
+        rows = await deps.fetch_fn(
+            """
+            SELECT subsystems
+            FROM zone_automation_logic_profiles
+            WHERE zone_id = $1
+              AND is_active = TRUE
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            deps.zone_id,
+        )
+    except Exception:
+        _logger.warning(
+            "Zone %s: failed to load active automation profile for runtime targets",
+            deps.zone_id,
+            exc_info=True,
+        )
+        return payload
+
+    if not rows:
+        return payload
+
+    row = rows[0]
+    record = row if isinstance(row, dict) else dict(row)
+    subsystems = record.get("subsystems")
+    if isinstance(subsystems, str):
+        try:
+            subsystems = json.loads(subsystems)
+        except Exception:
+            subsystems = None
+    if not isinstance(subsystems, dict):
+        return payload
+
+    profile_execution = _extract_profile_execution_overrides(subsystems)
+    payload_with_overrides = _inject_profile_execution(payload, profile_execution)
+    profile_targets = _extract_profile_targets(subsystems)
+    if profile_targets:
+        payload_with_overrides = _inject_runtime_targets(payload_with_overrides, profile_targets)
+
+    if payload_with_overrides == payload:
+        return payload
+
+    _logger.info(
+        (
+            "Zone %s: runtime profile overrides injected "
+            "(target_ph=%s, target_ec=%s, has_prepare_tolerance=%s, has_target_ec_prepare_npk=%s)"
+        ),
+        deps.zone_id,
+        profile_targets.get("target_ph"),
+        profile_targets.get("target_ec"),
+        bool(profile_execution.get("prepare_tolerance")),
+        profile_execution.get("target_ec_prepare_npk") is not None,
+    )
+    return payload_with_overrides
+
+
 async def _maybe_reenqueue_on_irr_state_transient(
     deps: TwoTankDeps,
     *,
@@ -188,6 +383,7 @@ async def execute_two_tank_startup_workflow_core(
     decision: DecisionOutcome,
 ) -> Dict[str, Any]:
     zone_id = deps.zone_id
+    payload = await _resolve_runtime_payload_with_profile_targets(deps, payload=payload)
     runtime_cfg = deps._resolve_two_tank_runtime_config(payload)
     workflow = deps._normalize_two_tank_workflow(payload)
 

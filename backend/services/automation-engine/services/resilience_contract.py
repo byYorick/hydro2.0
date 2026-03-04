@@ -16,6 +16,9 @@ INFRA_CONTROLLER_FAILED = "infra_controller_failed"
 INFRA_CORRECTION_FLAGS_MISSING = "infra_correction_flags_missing"
 INFRA_CORRECTION_FLAGS_STALE = "infra_correction_flags_stale"
 INFRA_CORRECTION_COMMAND_UNCONFIRMED = "infra_correction_command_unconfirmed"
+INFRA_CORRECTION_ACTUATOR_UNAVAILABLE = "infra_correction_actuator_unavailable"
+INFRA_CORRECTION_EC_BATCH_UNAVAILABLE = "infra_correction_ec_batch_unavailable"
+INFRA_CORRECTION_PH_BATCH_UNAVAILABLE = "infra_correction_ph_batch_unavailable"
 INFRA_EC_BATCH_PARTIAL_FAILURE_COMPENSATION_ENQUEUE_FAILED = (
     "infra_ec_batch_partial_failure_compensation_enqueue_failed"
 )

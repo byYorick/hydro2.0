@@ -60,7 +60,13 @@ class ZoneOperationsService
      */
     public function calibratePump(Zone $zone, array $data): string
     {
-        $this->validateZoneOperation($zone, 'calibrate_pump');
+        $skipRun = (bool) ($data['skip_run'] ?? false);
+
+        // skip_run=true используется для сохранения коэффициентов калибровки без физического запуска насоса.
+        // Такой запрос не должен блокироваться offline-статусом зоны.
+        if (! $skipRun) {
+            $this->validateZoneOperation($zone, 'calibrate_pump');
+        }
 
         $jobId = \Illuminate\Support\Str::uuid()->toString();
         \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'calibrate_pump', $data, $jobId);

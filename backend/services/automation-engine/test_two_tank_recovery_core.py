@@ -61,6 +61,11 @@ class _RecoveryExecutorStub:
         raise AssertionError("unexpected call")
 
 
+class _RecoveryNoDegradedStub(_RecoveryExecutorStub):
+    async def _evaluate_ph_ec_targets(self, **_kwargs):
+        return {"targets_reached": False, "source": "recovery"}
+
+
 def _build_deps(executor: _RecoveryExecutorStub, zone_id: int = 3) -> TwoTankDeps:
     return TwoTankDeps(
         zone_id=zone_id,
@@ -119,3 +124,52 @@ async def test_recovery_degraded_marks_action_required_and_emits_event():
     assert event["payload"]["action_required_human"] is True
 
     assert len(executor.phase_updates) == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_attempts_exhausted_continues_irrigation_in_degraded_mode():
+    executor = _RecoveryNoDegradedStub()
+    deps = _build_deps(executor)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    started_at = now - timedelta(minutes=2)
+    # Intentionally far in the future to verify final-attempt timeout clamping.
+    timeout_at = now + timedelta(minutes=30)
+
+    result = await execute_two_tank_recovery_branch(
+        deps,
+        payload={
+            "irrigation_recovery_attempt": 2,
+            "irrigation_recovery_started_at": started_at.isoformat(),
+            "irrigation_recovery_timeout_at": timeout_at.isoformat(),
+        },
+        context={"task_id": "tt-recovery-final"},
+        runtime_cfg={
+            "target_ph": 5.8,
+            "target_ec": 1.6,
+            "recovery_tolerance": {"ph_pct": 5.0, "ec_pct": 10.0},
+            "degraded_tolerance": {"ph_pct": 10.0, "ec_pct": 20.0},
+            "poll_interval_sec": 30,
+            "irrigation_recovery_timeout_sec": 600,
+            "irrigation_recovery_max_attempts": 2,
+            "commands": {"irrigation_recovery_stop": [{"channel": "pump_main", "params": {"state": False}}]},
+        },
+        workflow="irrigation_recovery_check",
+    )
+
+    assert result["success"] is True
+    assert result["mode"] == "two_tank_irrigation_recovery_attempts_exhausted_continue_irrigation"
+    assert result["degraded"] is True
+    assert result["manual_ack_required"] is True
+    assert result["reason_code"] == "irrigation_correction_attempts_exhausted_continue_irrigation"
+    assert result["error_code"] == "irrigation_recovery_attempts_exceeded"
+
+    assert len(executor.events) == 1
+    event = executor.events[0]
+    assert event["event_type"] == "IRRIGATION_RECOVERY_DEGRADED"
+    assert event["payload"]["manual_ack_required"] is True
+    assert event["payload"]["reason_code"] == "irrigation_correction_attempts_exhausted_continue_irrigation"
+
+    assert len(executor.phase_updates) == 1
+    phase_update = executor.phase_updates[0]
+    assert phase_update["workflow_phase"] == "irrigating"
+    assert phase_update["reason_code"] == "irrigation_correction_attempts_exhausted_continue_irrigation"

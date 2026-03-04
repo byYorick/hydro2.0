@@ -44,7 +44,7 @@ class AutomationSettings:
     PH_PID_ADAPTATION_RATE: float = 0.05
 
     # PID настройки EC
-    EC_PID_DEAD_ZONE: float = 0.2
+    EC_PID_DEAD_ZONE: float = float(os.getenv("EC_PID_DEAD_ZONE", "0.05"))
     EC_PID_CLOSE_ZONE: float = 0.5
     EC_PID_FAR_ZONE: float = 1.0
     EC_PID_KP_CLOSE: float = 100.0
@@ -106,11 +106,21 @@ class AutomationSettings:
     AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN: float = float(os.getenv("AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN", "0.005"))
     # S9 equipment anomaly guard: dose -> no_effect xN windows
     AE_EQUIPMENT_ANOMALY_GUARD_ENABLED: bool = os.getenv("AE_EQUIPMENT_ANOMALY_GUARD_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
-    AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC", "180"))
-    AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD", "3"))
+    AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC", "300"))
+    AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD", "5"))
     AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES", "30"))
     AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA", "0.03"))
-    AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", "0.03"))
+    AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", "0.02"))
+    AE_EQUIPMENT_ANOMALY_CRITICAL_OVERRIDE_ENABLED: bool = os.getenv(
+        "AE_EQUIPMENT_ANOMALY_CRITICAL_OVERRIDE_ENABLED",
+        "1",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    AE_EQUIPMENT_ANOMALY_PH_OVERRIDE_DIFF: float = float(
+        os.getenv("AE_EQUIPMENT_ANOMALY_PH_OVERRIDE_DIFF", "0.45")
+    )
+    AE_EQUIPMENT_ANOMALY_EC_OVERRIDE_DIFF: float = float(
+        os.getenv("AE_EQUIPMENT_ANOMALY_EC_OVERRIDE_DIFF", "0.4")
+    )
     # S10 runtime-state snapshot persistence (crash-recovery)
     AE_RUNTIME_STATE_PERSIST_ENABLED: bool = os.getenv("AE_RUNTIME_STATE_PERSIST_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
     AE_RUNTIME_STATE_SNAPSHOT_PATH: str = os.getenv(

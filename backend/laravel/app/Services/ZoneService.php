@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Events\ZoneUpdated;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -462,6 +463,18 @@ class ZoneService
      */
     public function calibratePump(Zone $zone, array $data): array
     {
+        $channelBelongsToZone = NodeChannel::query()
+            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
+            ->where('node_channels.id', (int) ($data['node_channel_id'] ?? 0))
+            ->where('nodes.zone_id', $zone->id)
+            ->exists();
+        if (! $channelBelongsToZone) {
+            $invalidChannelId = (int) ($data['node_channel_id'] ?? 0);
+            throw new \DomainException(
+                "node_channel_id={$invalidChannelId} does not belong to zone {$zone->id}"
+            );
+        }
+
         $baseUrl = config('services.history_logger.url');
         if (! $baseUrl) {
             throw new \DomainException('History Logger URL not configured');

@@ -14,6 +14,7 @@ use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class NodeController extends Controller
@@ -61,8 +62,11 @@ class NodeController extends Controller
         $query = DeviceNode::query()
             ->select('id', 'uid', 'name', 'type', 'zone_id', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'created_at', 'updated_at')
             ->with(['zone:id,name,status', 'channels' => function ($channelQuery) {
-                // Исключаем config из каналов
-                $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
+                // Исключаем полный config из каналов, но безопасно извлекаем actuator_type/pump_component для UI.
+                $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit',
+                    DB::raw("config->>'actuator_type' as actuator_type"),
+                    DB::raw("config->'pump_calibration'->>'component' as pump_component"),
+                    DB::raw("(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role"));
             }]);
 
         // Фильтруем по доступным нодам (кроме админов)

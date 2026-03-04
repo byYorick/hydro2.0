@@ -70,6 +70,11 @@
         :events="events"
         :zone-id="zoneId"
       />
+      <ZoneAlertsTab
+        v-else-if="activeTab === 'alerts'"
+        :alerts="alerts"
+        :zone-id="zoneId"
+      />
       <ZoneDevicesTab
         v-else-if="activeTab === 'devices'"
         :zone="zone"
@@ -128,6 +133,7 @@
 import AppLayout from "@/Layouts/AppLayout.vue";
 import Tabs from "@/Components/Tabs.vue";
 import ZoneAutomationTab from "@/Pages/Zones/Tabs/ZoneAutomationTab.vue";
+import ZoneAlertsTab from "@/Pages/Zones/Tabs/ZoneAlertsTab.vue";
 import ZoneCycleTab from "@/Pages/Zones/Tabs/ZoneCycleTab.vue";
 import ZoneDevicesTab from "@/Pages/Zones/Tabs/ZoneDevicesTab.vue";
 import ZoneEventsTab from "@/Pages/Zones/Tabs/ZoneEventsTab.vue";
@@ -159,6 +165,7 @@ const {
     activeCycle,
     activeGrowCycle,
     devices,
+    alerts,
     events,
     canOperateZone,
     canManageDevices,

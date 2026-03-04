@@ -8,6 +8,7 @@ from executor.workflow_phase_policy import (
     WORKFLOW_PHASE_TANK_FILLING,
     WORKFLOW_PHASE_TANK_RECIRC,
     WORKFLOW_PHASE_VALID_TRANSITIONS,
+    build_workflow_state_payload,
     derive_workflow_phase,
     is_valid_phase_transition,
     resolve_workflow_stage_for_state_sync,
@@ -109,6 +110,21 @@ def test_derive_workflow_phase_for_irrigation_recovery_and_run():
     assert run == WORKFLOW_PHASE_IRRIGATING
 
 
+def test_derive_workflow_phase_for_diagnostics_recovery_attempts_exhausted_maps_to_irrigating():
+    phase = derive_workflow_phase(
+        task_type="diagnostics",
+        payload={"workflow": "irrigation_recovery_check"},
+        result={
+            "success": True,
+            "mode": "two_tank_irrigation_recovery_attempts_exhausted_continue_irrigation",
+            "reason_code": "irrigation_correction_attempts_exhausted_continue_irrigation",
+            "decision": "skip",
+            "action_required": True,
+        },
+    )
+    assert phase == WORKFLOW_PHASE_IRRIGATING
+
+
 def test_resolve_workflow_stage_for_state_sync_from_mode_and_payload():
     stage_from_mode = resolve_workflow_stage_for_state_sync(
         payload={"workflow": "startup"},
@@ -123,6 +139,37 @@ def test_resolve_workflow_stage_for_state_sync_from_mode_and_payload():
         workflow_phase=WORKFLOW_PHASE_TANK_FILLING,
     )
     assert stage_from_payload == "prepare_recirculation_check"
+
+
+def test_build_workflow_state_payload_prefers_next_check_continuation_payload():
+    state_payload = build_workflow_state_payload(
+        payload={"workflow": "irrigation_recovery_check"},
+        result={
+            "mode": "two_tank_irrigation_recovery_in_progress",
+            "reason_code": "irrigation_recovery_started",
+            "next_check": {
+                "details": {
+                    "payload": {
+                        "workflow": "irrigation_recovery_check",
+                        "irrigation_recovery_attempt": 2,
+                        "irrigation_recovery_started_at": "2026-03-04T10:17:04.521465",
+                        "irrigation_recovery_timeout_at": "2026-03-04T10:27:04.521465",
+                    }
+                }
+            },
+        },
+        workflow_phase=WORKFLOW_PHASE_IRRIG_RECIRC,
+        workflow_stage="irrigation_recovery_check",
+    )
+
+    assert state_payload["workflow"] == "irrigation_recovery_check"
+    assert state_payload["workflow_stage"] == "irrigation_recovery_check"
+    assert state_payload["workflow_phase"] == WORKFLOW_PHASE_IRRIG_RECIRC
+    assert state_payload["workflow_mode"] == "two_tank_irrigation_recovery_in_progress"
+    assert state_payload["workflow_reason_code"] == "irrigation_recovery_started"
+    assert state_payload["irrigation_recovery_attempt"] == 2
+    assert state_payload["irrigation_recovery_started_at"] == "2026-03-04T10:17:04.521465"
+    assert state_payload["irrigation_recovery_timeout_at"] == "2026-03-04T10:27:04.521465"
 
 
 def test_is_valid_phase_transition_accepts_all_declared_transitions():

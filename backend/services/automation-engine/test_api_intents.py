@@ -377,7 +377,7 @@ def test_build_scheduler_task_request_from_intent_ignores_legacy_task_payload():
     assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
 
 
-def test_build_scheduler_task_request_from_intent_forces_diagnostics_task_type():
+def test_build_scheduler_task_request_from_intent_uses_payload_task_type_when_supported():
     now = datetime(2026, 2, 22, 12, 0, 0)
     req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:lighting:wakeup-only")
     intent = {
@@ -399,9 +399,76 @@ def test_build_scheduler_task_request_from_intent_forces_diagnostics_task_type()
         default_topology="two_tank_drip_substrate_trays",
     )
 
-    assert scheduler_req.task_type == "diagnostics"
-    assert scheduler_req.payload["workflow"] == "cycle_start"
-    assert scheduler_req.payload["config"]["execution"]["workflow"] == "cycle_start"
+    assert scheduler_req.task_type == "lighting"
+    assert scheduler_req.payload.get("workflow") is None
+    assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
+    assert scheduler_req.payload["config"]["execution"].get("workflow") is None
+
+
+def test_build_scheduler_task_request_from_intent_maps_known_intent_type_to_runtime_task():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z2:ventilation:tick")
+    intent = {
+        "id": 420,
+        "retry_count": 0,
+        "intent_type": "VENTILATION_TICK",
+        "payload": {
+            "source": "laravel_scheduler",
+            "workflow": "cycle_start",
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=2,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "ventilation"
+    assert scheduler_req.payload.get("workflow") is None
+    assert scheduler_req.payload["source"] == "laravel_scheduler"
+    assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
+    assert scheduler_req.payload["config"]["execution"].get("workflow") is None
+
+
+def test_build_scheduler_task_request_from_intent_strips_cycle_start_workflow_for_non_diagnostics():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z2:irrigation:tick")
+    intent = {
+        "id": 421,
+        "retry_count": 0,
+        "intent_type": "IRRIGATION_TICK",
+        "payload": {
+            "source": "laravel_scheduler",
+            "config": {
+                "execution": {
+                    "workflow": "cycle_start",
+                    "duration_sec": 75,
+                }
+            },
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=2,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "irrigation"
+    assert scheduler_req.payload.get("workflow") is None
+    assert scheduler_req.payload["topology"] == "two_tank_drip_substrate_trays"
+    assert scheduler_req.payload["config"]["execution"]["duration_sec"] == 75
+    assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
+    assert scheduler_req.payload["config"]["execution"].get("workflow") is None
 
 
 def test_build_scheduler_task_request_from_intent_preserves_grow_cycle_id_metadata():

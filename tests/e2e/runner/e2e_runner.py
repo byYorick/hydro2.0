@@ -687,7 +687,9 @@ class E2ERunner:
     
     def _run_migrations(self):
         """
-        Выполнить php artisan migrate:fresh --seed если база пуста.
+        Выполнить миграции и сидирование, если база пуста.
+        Важно: без destructive-операций (`migrate:fresh`), чтобы
+        не сносить данные при повторных прогонах/рестартах.
         """
         compose_file = self.compose_file
         compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
@@ -711,27 +713,50 @@ class E2ERunner:
             # Если не удалось подключиться или таблицы нет — пробуем миграции
             pass
 
-        logger.info("Running migrations in laravel container (migrate:fresh --seed)...")
+        logger.info("Running migrations in laravel container (migrate + db:seed)...")
         if self._use_docker_cli():
             container = self._resolve_container_name("laravel")
-            result = subprocess.run(
-                ["docker", "exec", "-T", container, "php", "artisan", "migrate:fresh", "--seed"],
+            migrate_result = subprocess.run(
+                ["docker", "exec", "-T", container, "php", "artisan", "migrate", "--force"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if migrate_result.returncode != 0:
+                logger.error(f"Migrations failed: {migrate_result.stderr}")
+                raise RuntimeError(f"Migrations failed: {migrate_result.stderr}")
+
+            seed_result = subprocess.run(
+                ["docker", "exec", "-T", container, "php", "artisan", "db:seed", "--force"],
                 capture_output=True,
                 text=True,
                 timeout=180,
             )
         else:
-            result = subprocess.run(
-                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate:fresh", "--seed"],
+            migrate_result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate", "--force"],
                 cwd=compose_dir,
                 capture_output=True,
                 text=True,
                 timeout=180,
             )
-        if result.returncode != 0:
-            logger.error(f"Migrations failed: {result.stderr}")
-            raise RuntimeError(f"Migrations failed: {result.stderr}")
-        logger.info("✓ Migrations completed")
+            if migrate_result.returncode != 0:
+                logger.error(f"Migrations failed: {migrate_result.stderr}")
+                raise RuntimeError(f"Migrations failed: {migrate_result.stderr}")
+
+            seed_result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "db:seed", "--force"],
+                cwd=compose_dir,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+
+        if seed_result.returncode != 0:
+            logger.error(f"Seeding failed: {seed_result.stderr}")
+            raise RuntimeError(f"Seeding failed: {seed_result.stderr}")
+
+        logger.info("✓ Migrations and seeders completed")
 
     def _api_items(self, response: Any) -> List[Dict[str, Any]]:
         """

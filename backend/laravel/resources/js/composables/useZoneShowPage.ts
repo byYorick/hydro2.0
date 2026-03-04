@@ -41,6 +41,7 @@ const zoneTabs = [
   { id: 'cycle', label: 'Цикл' },
   { id: 'automation', label: 'Автоматизация' },
   { id: 'events', label: 'События' },
+  { id: 'alerts', label: 'Алерты' },
   { id: 'devices', label: 'Устройства' },
 ]
 

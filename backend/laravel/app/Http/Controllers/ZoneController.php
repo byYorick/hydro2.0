@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
 use App\Services\ZoneDataService;
@@ -355,6 +356,21 @@ class ZoneController extends Controller
             'ec_after_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'temperature_c' => ['nullable', 'numeric', 'min:0', 'max:50'],
         ]);
+
+        $channelBelongsToZone = NodeChannel::query()
+            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
+            ->where('node_channels.id', (int) $data['node_channel_id'])
+            ->where('nodes.zone_id', $zone->id)
+            ->exists();
+        if (! $channelBelongsToZone) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'node_channel_id must belong to the selected zone',
+                'errors' => [
+                    'node_channel_id' => ['node_channel_id must belong to the selected zone'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         if (
             isset($data['ec_before_ms'], $data['ec_after_ms'])

@@ -194,6 +194,36 @@
       "node_related": false
     },
     {
+      "code": "infra_correction_actuator_unavailable",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "Нет насоса для коррекции",
+      "description": "Контроллер коррекции не нашёл подходящий actuator для дозирования.",
+      "recommendation": "Проверьте bindings каналов дозирующих насосов и типы actuator.",
+      "node_related": true
+    },
+    {
+      "code": "infra_correction_ec_batch_unavailable",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "EC batch не сформирован",
+      "description": "Контроллер EC не смог собрать пакет дозирования компонентов.",
+      "recommendation": "Проверьте калибровки насосов и доступность EC-компонентов (npk/calcium/magnesium/micro).",
+      "node_related": true
+    },
+    {
+      "code": "infra_correction_ph_batch_unavailable",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "pH batch не сформирован",
+      "description": "Контроллер pH не смог собрать пакет дозирования кислоты/щелочи.",
+      "recommendation": "Проверьте калибровки pH-насосов и доступность ph_acid_pump/ph_base_pump.",
+      "node_related": true
+    },
+    {
       "code": "infra_command_send_failed",
       "source": "infra",
       "category": "operations",

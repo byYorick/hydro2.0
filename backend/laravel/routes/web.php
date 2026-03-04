@@ -1175,6 +1175,18 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 })
                 ->values();
 
+            $alerts = collect([]);
+            if (class_exists(\App\Models\Alert::class)) {
+                try {
+                    $alerts = \App\Models\Alert::query()
+                        ->where('zone_id', $zoneIdInt)
+                        ->latest('id')
+                        ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+                } catch (\Exception $e) {
+                    $alerts = collect([]);
+                }
+            }
+
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {
                 try {
@@ -1309,6 +1321,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'active_cycle' => $activeCycle,
                 'active_grow_cycle' => $zone->activeGrowCycle,
                 'devices' => $devices,
+                'alerts' => $alerts,
                 'events' => $events,
                 'cycles' => $cycles,
             ]);

@@ -12,6 +12,11 @@ from correction_freshness import validate_freshness_or_skip
 from correction_state_machine import CorrectionStateMachine
 from services.targets_accessor import get_ec_target, get_ph_target
 
+from correction_controller_signals import (
+    emit_correction_actuator_unavailable_signal,
+    emit_ec_batch_unavailable_signal,
+    emit_ph_batch_unavailable_signal,
+)
 from correction_controller_check_steps import (
     handle_pending_effect_evaluation,
     resolve_correction_policy,
@@ -187,37 +192,94 @@ async def check_and_correct_core(
     correction_type = controller._determine_correction_type(correction_type_diff)
     blocked_until = controller._resolve_anomaly_block_until(zone_id)
     if blocked_until is not None:
-        await state_machine.transition("cooldown", "gate_equipment_anomaly_block_active")
         block_remaining_sec = max(0, int(blocked_until - time.monotonic()))
-        controller._log_skip(
-            zone_id=zone_id,
-            reason_code="equipment_anomaly_block_active",
-            correction_type=correction_type,
-            block_remaining_sec=block_remaining_sec,
+        anomaly_override_enabled = bool(
+            getattr(settings, "AE_EQUIPMENT_ANOMALY_CRITICAL_OVERRIDE_ENABLED", True)
         )
-        await create_zone_event(
-            zone_id,
-            f"{controller.event_prefix}_CORRECTION_SKIPPED_ANOMALY",
-            {
-                "metric": target_key,
-                "reason_code": "equipment_anomaly_block_active",
-                "block_remaining_sec": block_remaining_sec,
-                "correction_type": correction_type,
-                "status": "degraded",
-            },
+        override_diff_threshold = (
+            float(getattr(settings, "AE_EQUIPMENT_ANOMALY_PH_OVERRIDE_DIFF", 0.45))
+            if controller.correction_type.value == "ph"
+            else float(getattr(settings, "AE_EQUIPMENT_ANOMALY_EC_OVERRIDE_DIFF", 0.6))
         )
-        return None
+        critical_override = anomaly_override_enabled and abs(correction_type_diff) >= max(
+            0.0,
+            override_diff_threshold,
+        )
+        if critical_override:
+            logger.warning(
+                "Zone %s: anomaly block overridden for critical %s deviation",
+                zone_id,
+                controller.metric_name,
+                extra={
+                    "zone_id": zone_id,
+                    "metric": controller.metric_name,
+                    "correction_type": correction_type,
+                    "diff": correction_type_diff,
+                    "threshold": override_diff_threshold,
+                    "block_remaining_sec": block_remaining_sec,
+                    "reason_code": "equipment_anomaly_block_override_critical_diff",
+                },
+            )
+            await create_zone_event(
+                zone_id,
+                f"{controller.event_prefix}_CORRECTION_ANOMALY_OVERRIDE",
+                {
+                    "metric": target_key,
+                    "reason_code": "equipment_anomaly_block_override_critical_diff",
+                    "correction_type": correction_type,
+                    "diff": correction_type_diff,
+                    "threshold": override_diff_threshold,
+                    "block_remaining_sec": block_remaining_sec,
+                    "status": "warning",
+                },
+            )
+        else:
+            await state_machine.transition("cooldown", "gate_equipment_anomaly_block_active")
+            controller._log_skip(
+                zone_id=zone_id,
+                reason_code="equipment_anomaly_block_active",
+                correction_type=correction_type,
+                block_remaining_sec=block_remaining_sec,
+            )
+            await create_zone_event(
+                zone_id,
+                f"{controller.event_prefix}_CORRECTION_SKIPPED_ANOMALY",
+                {
+                    "metric": target_key,
+                    "reason_code": "equipment_anomaly_block_active",
+                    "block_remaining_sec": block_remaining_sec,
+                    "correction_type": correction_type,
+                    "status": "degraded",
+                },
+            )
+            return None
 
     await state_machine.transition("plan", "gate_passed")
     actuator = controller._select_actuator(correction_type=correction_type, actuators=actuators, nodes=nodes)
     if not actuator:
         await state_machine.transition("cooldown", "plan_actuator_unavailable")
+        available_roles = sorted(list((actuators or {}).keys()))
         controller._log_skip(
             zone_id=zone_id,
             reason_code="actuator_unavailable",
             correction_type=correction_type,
-            available_roles=sorted(list((actuators or {}).keys())),
+            available_roles=available_roles,
         )
+        if controller.correction_type.value == "ph":
+            await emit_ph_batch_unavailable_signal(
+                zone_id=zone_id,
+                correction_type=correction_type,
+                target_ph=target_val,
+                current_ph=current_val,
+                actuators=actuators,
+            )
+        else:
+            await emit_correction_actuator_unavailable_signal(
+                zone_id=zone_id,
+                metric_name=target_key,
+                correction_type=correction_type,
+                available_roles=available_roles,
+            )
         return None
 
     dt_seconds = controller._get_dt_seconds(zone_id)
@@ -291,41 +353,13 @@ async def check_and_correct_core(
             allowed_ec_components=allowed_ec_components,
         )
         if not batch_commands:
-            ec_batch_debug: Dict[str, Any] = {}
-            for role in ("ec_npk_pump", "ec_calcium_pump", "ec_magnesium_pump", "ec_micro_pump"):
-                actuator_info = (actuators or {}).get(role)
-                if not isinstance(actuator_info, dict):
-                    continue
-                ec_batch_debug[role] = {
-                    "node_uid": actuator_info.get("node_uid"),
-                    "channel": actuator_info.get("channel"),
-                    "ml_per_sec": actuator_info.get("ml_per_sec"),
-                    "pump_calibration": actuator_info.get("pump_calibration"),
-                }
-            logger.warning(
-                "Zone %s: Unable to build EC component batch; skipping dosing",
-                zone_id,
-                extra={
-                    "zone_id": zone_id,
-                    "allowed_ec_components": allowed_ec_components,
-                    "target_ec": target_val,
-                    "current_ec": current_val,
-                    "total_ml": amount,
-                    "available_actuator_roles": sorted(list((actuators or {}).keys())),
-                },
-            )
-            await create_zone_event(
-                zone_id,
-                "EC_CORRECTION_SKIPPED",
-                {
-                    "reason": "ec_component_batch_unavailable",
-                    "available_roles": sorted(list((actuators or {}).keys())),
-                    "allowed_ec_components": allowed_ec_components,
-                    "ec_batch_debug": ec_batch_debug,
-                    "target_ec": target_val,
-                    "current_ec": current_val,
-                    "total_ml": amount,
-                },
+            await emit_ec_batch_unavailable_signal(
+                zone_id=zone_id,
+                allowed_ec_components=allowed_ec_components,
+                target_ec=target_val,
+                current_ec=current_val,
+                total_ml=amount,
+                actuators=actuators,
             )
             return None
 

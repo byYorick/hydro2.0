@@ -116,3 +116,95 @@ async def test_get_last_correction_time_unknown_type_returns_none(monkeypatch):
 
     last = await correction_cooldown.get_last_correction_time(99, "orp")
     assert last is None
+
+
+@pytest.mark.asyncio
+async def test_should_apply_correction_bypasses_cooldown_for_critical_diff(monkeypatch):
+    async def _unexpected_is_in_cooldown(*_args, **_kwargs):
+        raise AssertionError("is_in_cooldown must be skipped for critical deviation")
+
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _unexpected_is_in_cooldown)
+
+    allowed, reason = await correction_cooldown.should_apply_correction(
+        zone_id=2,
+        correction_type="ec",
+        current_value=0.4,
+        target_value=1.05,
+        diff=-0.65,
+        cooldown_minutes=10,
+    )
+
+    assert allowed is True
+    assert "cooldown bypass" in reason
+
+
+@pytest.mark.asyncio
+async def test_should_apply_correction_ec_bypasses_cooldown_for_significant_diff(monkeypatch):
+    async def _unexpected_is_in_cooldown(*_args, **_kwargs):
+        raise AssertionError("is_in_cooldown must be skipped for EC critical deviation")
+
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _unexpected_is_in_cooldown)
+
+    allowed, reason = await correction_cooldown.should_apply_correction(
+        zone_id=2,
+        correction_type="ec",
+        current_value=0.6,
+        target_value=1.05,
+        diff=-0.35,
+        cooldown_minutes=10,
+    )
+
+    assert allowed is True
+    assert "cooldown bypass" in reason
+
+
+@pytest.mark.asyncio
+async def test_should_apply_correction_ph_keeps_cooldown_for_non_critical_diff(monkeypatch):
+    now = datetime.utcnow()
+
+    async def _is_in_cooldown(*_args, **_kwargs):
+        return True
+
+    async def _last_correction(*_args, **_kwargs):
+        return now - timedelta(minutes=1)
+
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _is_in_cooldown)
+    monkeypatch.setattr(correction_cooldown, "get_last_correction_time", _last_correction)
+
+    allowed, reason = await correction_cooldown.should_apply_correction(
+        zone_id=2,
+        correction_type="ph",
+        current_value=6.2,
+        target_value=5.75,
+        diff=0.45,
+        cooldown_minutes=10,
+    )
+
+    assert allowed is False
+    assert "cooldown периоде" in reason
+
+
+@pytest.mark.asyncio
+async def test_should_apply_correction_respects_cooldown_for_non_critical_diff(monkeypatch):
+    now = datetime.utcnow()
+
+    async def _is_in_cooldown(*_args, **_kwargs):
+        return True
+
+    async def _last_correction(*_args, **_kwargs):
+        return now - timedelta(minutes=2)
+
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _is_in_cooldown)
+    monkeypatch.setattr(correction_cooldown, "get_last_correction_time", _last_correction)
+
+    allowed, reason = await correction_cooldown.should_apply_correction(
+        zone_id=2,
+        correction_type="ec",
+        current_value=1.01,
+        target_value=1.05,
+        diff=-0.04,
+        cooldown_minutes=10,
+    )
+
+    assert allowed is False
+    assert "cooldown периоде" in reason

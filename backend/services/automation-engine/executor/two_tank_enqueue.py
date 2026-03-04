@@ -9,6 +9,7 @@ from services.resilience_contract import SCHEDULER_SOURCE_TWO_TANK_STARTUP
 
 BuildTwoTankCheckPayloadFn = Callable[..., Dict[str, Any]]
 EnqueueTaskFn = Callable[..., Awaitable[Dict[str, Any]]]
+_PHASE_TIMEOUT_ENQUEUE_EXPIRES_GRACE_SEC = 5
 
 
 async def enqueue_two_tank_check(
@@ -34,12 +35,18 @@ async def enqueue_two_tank_check(
     next_check_at = now_factory() + timedelta(seconds=poll_interval_sec)
     if next_check_at > phase_timeout_at:
         next_check_at = phase_timeout_at
+    # Keep a small expires-at grace window after phase timeout.
+    # Without this, a check scheduled exactly at phase_timeout_at can be marked
+    # as expired before timeout branch execution.
+    expires_at = phase_timeout_at + timedelta(seconds=_PHASE_TIMEOUT_ENQUEUE_EXPIRES_GRACE_SEC)
+    if expires_at <= next_check_at:
+        expires_at = next_check_at + timedelta(seconds=_PHASE_TIMEOUT_ENQUEUE_EXPIRES_GRACE_SEC)
     return await enqueue_task_fn(
         zone_id=zone_id,
         task_type="diagnostics",
         payload=next_payload,
         scheduled_for=next_check_at.isoformat(),
-        expires_at=phase_timeout_at.isoformat(),
+        expires_at=expires_at.isoformat(),
         source=SCHEDULER_SOURCE_TWO_TANK_STARTUP,
     )
 

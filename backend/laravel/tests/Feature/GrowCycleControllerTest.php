@@ -169,6 +169,7 @@ class GrowCycleControllerTest extends TestCase
                     'duration_seconds' => 20,
                     'clean_tank_fill_l' => 300,
                     'nutrient_tank_target_l' => 280,
+                    'irrigation_batch_l' => 2.5,
                 ],
             ]);
 
@@ -185,6 +186,44 @@ class GrowCycleControllerTest extends TestCase
         $this->assertSame(20, data_get($cycle->settings, 'irrigation.duration_seconds'));
         $this->assertSame(300, data_get($cycle->settings, 'irrigation.clean_tank_fill_l'));
         $this->assertSame(280, data_get($cycle->settings, 'irrigation.nutrient_tank_target_l'));
+        $this->assertSame(2.5, data_get($cycle->settings, 'irrigation.irrigation_batch_l'));
+    }
+
+    #[Test]
+    public function it_applies_phase_overrides_to_first_phase_snapshot(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => false,
+                'phase_overrides' => [
+                    'ph_target' => 6.0,
+                    'ph_min' => 5.8,
+                    'ph_max' => 6.2,
+                    'ec_target' => 1.05,
+                    'ec_min' => 0.95,
+                    'ec_max' => 1.15,
+                ],
+            ]);
+
+        $response->assertStatus(201);
+
+        $cycle = GrowCycle::query()
+            ->where('zone_id', $this->zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($cycle);
+
+        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
+        $this->assertNotNull($firstPhase);
+        $this->assertEquals(6.0, (float) $firstPhase->ph_target);
+        $this->assertEquals(5.8, (float) $firstPhase->ph_min);
+        $this->assertEquals(6.2, (float) $firstPhase->ph_max);
+        $this->assertEquals(1.05, (float) $firstPhase->ec_target);
+        $this->assertEquals(0.95, (float) $firstPhase->ec_min);
+        $this->assertEquals(1.15, (float) $firstPhase->ec_max);
     }
 
     #[Test]

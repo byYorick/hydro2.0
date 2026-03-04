@@ -434,6 +434,11 @@ class PythonIngestControllerTest extends TestCase
             'id' => $alert->id,
             'status' => 'RESOLVED',
         ]);
+
+        $alert->refresh();
+        $this->assertSame('python_ingest', $alert->details['resolved_by'] ?? null);
+        $this->assertSame('auto', $alert->details['resolved_via'] ?? null);
+        $this->assertSame('infra', $alert->details['resolved_source'] ?? null);
     }
 
     public function test_alerts_endpoint_accepts_node_source_and_normalizes_severity(): void

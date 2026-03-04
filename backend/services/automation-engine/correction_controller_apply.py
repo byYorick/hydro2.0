@@ -22,6 +22,32 @@ from scheduler_internal_enqueue import enqueue_internal_scheduler_task
 logger = logging.getLogger(__name__)
 
 
+def build_correction_idempotency_key(
+    *,
+    zone_id: int,
+    correction_type_str: str,
+    correction_type: str,
+    current_val: float,
+    target_val: float,
+    diff: float,
+    reason: str,
+    correlation_id: str,
+) -> str:
+    idempotency_material = "|".join(
+        [
+            str(zone_id),
+            str(correction_type_str),
+            str(correction_type),
+            f"{float(current_val):.4f}",
+            f"{float(target_val):.4f}",
+            f"{float(diff):.4f}",
+            str(reason or ""),
+            str(correlation_id or ""),
+        ]
+    )
+    return f"corr-cycle:{zone_id}:{hashlib.sha256(idempotency_material.encode('utf-8')).hexdigest()[:20]}"
+
+
 async def apply_correction_with_events(
     controller: Any,
     command: Dict[str, Any],
@@ -42,18 +68,16 @@ async def apply_correction_with_events(
         command.get("correlation_id")
         or f"corr:correction:{zone_id}:{correction_type_str}:{uuid4().hex[:12]}"
     )
-    idempotency_material = "|".join(
-        [
-            str(zone_id),
-            str(correction_type_str),
-            str(correction_type),
-            f"{float(current_val):.4f}",
-            f"{float(target_val):.4f}",
-            f"{float(diff):.4f}",
-            str(reason or ""),
-        ]
+    correction_idempotency_key = build_correction_idempotency_key(
+        zone_id=zone_id,
+        correction_type_str=correction_type_str,
+        correction_type=correction_type,
+        current_val=float(current_val),
+        target_val=float(target_val),
+        diff=float(diff),
+        reason=str(reason or ""),
+        correlation_id=correlation_id,
     )
-    correction_idempotency_key = f"corr-cycle:{zone_id}:{hashlib.sha256(idempotency_material.encode('utf-8')).hexdigest()[:20]}"
     command["correlation_id"] = correlation_id
     command["idempotency_key"] = correction_idempotency_key
     state_machine = CorrectionStateMachine(

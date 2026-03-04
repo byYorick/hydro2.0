@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 ExtractExecutionConfigFn = Callable[[Dict[str, Any]], Dict[str, Any]]
 NormalizeNodeTypeListFn = Callable[[Any, Sequence[str]], List[str]]
@@ -111,6 +111,7 @@ def resolve_two_tank_runtime_config(
     resolve_int_fn: ResolveIntFn,
     resolve_float_fn: ResolveFloatFn,
     normalize_labels_fn: NormalizeLabelsFn,
+    zone_targets: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     execution = extract_execution_config_fn(payload)
     startup = execution.get("startup") if isinstance(execution.get("startup"), dict) else {}
@@ -197,7 +198,11 @@ def resolve_two_tank_runtime_config(
     recovery_tolerance_cfg = recovery_cfg.get("target_tolerance") if isinstance(recovery_cfg.get("target_tolerance"), dict) else {}
     fallback_prepare_tolerance_cfg = execution.get("prepare_target_tolerance") if isinstance(execution.get("prepare_target_tolerance"), dict) else {}
 
-    targets_payload = payload.get("targets") if isinstance(payload.get("targets"), dict) else {}
+    targets_payload = (
+        zone_targets
+        if isinstance(zone_targets, dict)
+        else (payload.get("targets") if isinstance(payload.get("targets"), dict) else {})
+    )
     ph_payload = targets_payload.get("ph") if isinstance(targets_payload.get("ph"), dict) else {}
     ec_payload = targets_payload.get("ec") if isinstance(targets_payload.get("ec"), dict) else {}
     nutrition_payload = targets_payload.get("nutrition") if isinstance(targets_payload.get("nutrition"), dict) else {}
@@ -207,16 +212,27 @@ def resolve_two_tank_runtime_config(
     target_ph_raw = execution.get("target_ph")
     if target_ph_raw is None:
         target_ph_raw = ph_payload.get("target")
+    if target_ph_raw is None:
+        target_ph_raw = targets_payload.get("target_ph")
+    if target_ph_raw is None:
+        target_ph_raw = targets_payload.get("ph_target")
     target_ec_raw = execution.get("target_ec")
     if target_ec_raw is None:
         target_ec_raw = ec_payload.get("target")
+    if target_ec_raw is None:
+        target_ec_raw = targets_payload.get("target_ec")
+    if target_ec_raw is None:
+        target_ec_raw = targets_payload.get("ec_target")
     target_ph = resolve_float_fn(target_ph_raw, 5.8, 0.1, 14.0)
     target_ec = resolve_float_fn(target_ec_raw, 1.6, 0.0, 20.0)
-    if target_ph_raw is None and target_ec_raw is None:
+    if target_ph_raw is None:
         _logger.warning(
-            "Zone two_tank: both target_ph and target_ec resolved to defaults "
-            "(ph=%.2f ec=%.3f) - targets not configured in payload or execution config",
+            "Zone two_tank: target_ph not found, using default %.2f",
             target_ph,
+        )
+    if target_ec_raw is None:
+        _logger.warning(
+            "Zone two_tank: target_ec not found, using default %.3f",
             target_ec,
         )
     npk_ratio_raw = execution.get("nutrient_npk_ratio_pct")

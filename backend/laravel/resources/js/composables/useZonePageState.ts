@@ -13,6 +13,7 @@ import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, GrowCycle, RecipePhase } from '@/types'
 import type { CommandStatus } from '@/types/Command'
 import type { ZoneEvent } from '@/types/ZoneEvent'
+import type { Alert } from '@/types/Alert'
 
 // ─── Private types ────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ interface PageProps {
   telemetry?: ZoneTelemetry
   targets?: ZoneTargetsType
   devices?: Device[]
+  alerts?: Alert[]
   events?: ZoneEvent[]
   cycles?: Record<string, Cycle>
   current_phase?: RecipePhase | null
@@ -39,7 +41,7 @@ interface PageProps {
 
 const RELOAD_PROPS_DEBOUNCE_MS = 350
 const defaultZoneReloadProps = [
-  'zone', 'targets', 'current_phase', 'active_cycle', 'active_grow_cycle', 'cycles', 'events', 'devices',
+  'zone', 'targets', 'current_phase', 'active_cycle', 'active_grow_cycle', 'cycles', 'alerts', 'events', 'devices',
 ]
 
 // ─── Deps interface ───────────────────────────────────────────────────────────
@@ -142,12 +144,13 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   const {
     targets: targetsProp,
     devices: devicesProp,
+    alerts: alertsProp,
     events: eventsProp,
     cycles: cyclesProp,
     current_phase: currentPhaseProp,
     active_cycle: activeCycleProp,
     active_grow_cycle: activeGrowCycleProp,
-  } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
+  } = usePageProps<PageProps>(['targets', 'devices', 'alerts', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
 
   const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
   const currentPhase = computed((): RecipePhase | null => currentPhaseProp.value ?? null)
@@ -164,6 +167,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
 
   const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value))
   const devices = computed(() => (devicesProp.value || []) as Device[])
+  const alerts = computed(() => (alertsProp.value || []) as Alert[])
   const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
   const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
@@ -378,6 +382,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     activeCycle,
     activeGrowCycle,
     devices,
+    alerts,
     events,
     cycles,
     canOperateZone,

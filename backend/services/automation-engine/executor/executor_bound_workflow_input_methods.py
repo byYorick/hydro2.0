@@ -83,6 +83,10 @@ def bound_normalize_command_plan(
 
 
 def bound_resolve_two_tank_runtime_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    zone_targets = payload.get("zone_targets") if isinstance(payload.get("zone_targets"), dict) else None
+    if zone_targets is None and isinstance(payload.get("targets"), dict):
+        zone_targets = payload.get("targets")
+
     return policy_resolve_two_tank_runtime_config(
         payload,
         refill_check_delay_sec=REFILL_CHECK_DELAY_SEC,
@@ -91,6 +95,7 @@ def bound_resolve_two_tank_runtime_config(self, payload: Dict[str, Any]) -> Dict
         resolve_int_fn=self._resolve_int,
         resolve_float_fn=self._resolve_float,
         normalize_labels_fn=self._normalize_labels,
+        zone_targets=zone_targets,
     )
 
 

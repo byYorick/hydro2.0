@@ -59,7 +59,9 @@ class AlertsTest extends TestCase
             ->patchJson("/api/alerts/{$alert->id}/ack");
 
         $resp->assertOk()
-            ->assertJsonPath('data.status', 'RESOLVED');
+            ->assertJsonPath('data.status', 'RESOLVED')
+            ->assertJsonPath('data.details.resolved_by', 'user_ack_api')
+            ->assertJsonPath('data.details.resolved_via', 'manual');
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
             'status' => 'RESOLVED',

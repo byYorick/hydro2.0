@@ -225,12 +225,10 @@ async def get_latest_ec_value_for_zone(controller: Any, zone_id: int) -> Optiona
 
 def determine_correction_type_for_diff(controller: Any, diff: float) -> str:
     """Определить тип корректировки на основе разницы."""
-    settings = get_settings()
     is_ph = controller.correction_type.value == "ph"
-    threshold = settings.PH_CORRECTION_THRESHOLD if is_ph else settings.EC_CORRECTION_THRESHOLD
     if is_ph:
-        return "add_base" if diff < -threshold else "add_acid"
-    return "add_nutrients" if diff < -threshold else "dilute"
+        return "add_base" if diff < 0 else "add_acid"
+    return "add_nutrients" if diff < 0 else "dilute"
 
 
 def calculate_amount_for_diff(controller: Any, diff: float) -> float:

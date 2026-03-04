@@ -13,11 +13,11 @@ from executor.executor_constants import (
     ERR_TWO_TANK_COMMAND_FAILED,
     ERR_TWO_TANK_ENQUEUE_FAILED,
     REASON_CYCLE_SELF_TASK_ENQUEUE_FAILED,
+    REASON_IRRIGATION_CORRECTION_ATTEMPTS_EXHAUSTED_CONTINUE_IRRIGATION,
     REASON_IRRIGATION_RECOVERY_DEGRADED,
     REASON_IRRIGATION_RECOVERY_FAILED,
     REASON_IRRIGATION_RECOVERY_RECOVERED,
     REASON_IRRIGATION_RECOVERY_STARTED,
-    REASON_MANUAL_ACK_REQUIRED_AFTER_RETRIES,
 )
 from executor.workflow_phase_policy import WORKFLOW_PHASE_IRRIGATING
 from scheduler_internal_enqueue import parse_iso_datetime
@@ -45,10 +45,18 @@ async def execute_two_tank_recovery_branch(
     if workflow == "irrigation_recovery_check":
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         attempt = deps._resolve_int(payload.get("irrigation_recovery_attempt"), 1, 1)
+        max_attempts = max(1, int(runtime_cfg["irrigation_recovery_max_attempts"]))
         phase_started_at = parse_iso_datetime(str(payload.get("irrigation_recovery_started_at") or "")) or now
         phase_timeout_at = parse_iso_datetime(str(payload.get("irrigation_recovery_timeout_at") or ""))
         if phase_timeout_at is None:
             phase_timeout_at = phase_started_at + timedelta(seconds=runtime_cfg["irrigation_recovery_timeout_sec"])
+        # Final attempt should converge quickly to a terminal decision.
+        if attempt >= max_attempts:
+            final_attempt_deadline = phase_started_at + timedelta(
+                seconds=max(30, int(runtime_cfg["poll_interval_sec"]))
+            )
+            if phase_timeout_at > final_attempt_deadline:
+                phase_timeout_at = final_attempt_deadline
 
         recovery_state = await deps._evaluate_ph_ec_targets(
             zone_id=zone_id,
@@ -180,7 +188,7 @@ async def execute_two_tank_recovery_branch(
                     targets_state=degraded_state,
                 )
 
-            if attempt < runtime_cfg["irrigation_recovery_max_attempts"]:
+            if attempt < max_attempts:
                 return await deps._start_two_tank_irrigation_recovery(
                     zone_id=zone_id,
                     payload={**payload, "irrigation_recovery_attempt": attempt + 1},
@@ -189,18 +197,43 @@ async def execute_two_tank_recovery_branch(
                     attempt=attempt + 1,
                 )
 
-            return two_tank_error(
-                mode="two_tank_irrigation_recovery_failed",
+            await deps._emit_task_event(
+                zone_id=zone_id,
+                task_type="diagnostics",
+                context=context,
+                event_type="IRRIGATION_RECOVERY_DEGRADED",
+                payload={
+                    "irrigation_recovery_attempt": attempt,
+                    "targets_state": recovery_state,
+                    "reason_code": REASON_IRRIGATION_CORRECTION_ATTEMPTS_EXHAUSTED_CONTINUE_IRRIGATION,
+                    "reason": "Коррекция pH/EC исчерпала автопопытки, полив продолжается в degraded режиме",
+                    "action_required_human": True,
+                    "manual_ack_required": True,
+                    "error_code": ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
+                },
+            )
+            await deps._update_zone_workflow_phase(
+                zone_id=zone_id,
+                workflow_phase=WORKFLOW_PHASE_IRRIGATING,
+                workflow_stage="irrigation_recovery_check",
+                reason_code=REASON_IRRIGATION_CORRECTION_ATTEMPTS_EXHAUSTED_CONTINUE_IRRIGATION,
+                context=context,
+            )
+            return two_tank_success(
+                mode="two_tank_irrigation_recovery_attempts_exhausted_continue_irrigation",
                 workflow=workflow,
-                reason_code=REASON_MANUAL_ACK_REQUIRED_AFTER_RETRIES,
-                reason="Превышено число автопопыток irrigation recovery, требуется ручное подтверждение",
-                error_code=ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
+                reason_code=REASON_IRRIGATION_CORRECTION_ATTEMPTS_EXHAUSTED_CONTINUE_IRRIGATION,
+                reason="Автопопытки irrigation recovery исчерпаны, полив продолжается в degraded режиме",
+                action_required=True,
+                decision="skip",
                 commands_total=stop_result.get("commands_total", 0),
                 commands_failed=stop_result.get("commands_failed", 0),
                 command_statuses=stop_result.get("command_statuses", []),
                 irrigation_recovery_attempt=attempt,
                 targets_state=recovery_state,
+                degraded=True,
                 manual_ack_required=True,
+                error_code=ERR_IRRIGATION_RECOVERY_ATTEMPTS_EXCEEDED,
             )
 
         try:

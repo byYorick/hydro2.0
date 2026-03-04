@@ -45,10 +45,17 @@ class AlertServiceTest extends TestCase
     {
         $alert = Alert::factory()->create(['status' => 'active']);
 
-        $acknowledged = $this->service->acknowledge($alert);
+        $acknowledged = $this->service->acknowledge($alert, [
+            'resolved_by' => 'unit_test',
+            'resolved_via' => 'manual',
+            'resolved_by_user_id' => 99,
+        ]);
 
         $this->assertEquals('RESOLVED', $acknowledged->status);
         $this->assertNotNull($acknowledged->resolved_at);
+        $this->assertEquals('unit_test', $acknowledged->details['resolved_by'] ?? null);
+        $this->assertEquals('manual', $acknowledged->details['resolved_via'] ?? null);
+        $this->assertEquals(99, $acknowledged->details['resolved_by_user_id'] ?? null);
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
             'status' => 'RESOLVED',
@@ -77,6 +84,9 @@ class AlertServiceTest extends TestCase
 
         $result = $this->service->resolveByCode($zone->id, 'infra_test_resolve', [
             'details' => ['reason' => 'recovered'],
+            'resolved_by' => 'python_ingest',
+            'resolved_via' => 'auto',
+            'resolved_source' => 'infra',
         ]);
 
         $this->assertTrue($result['resolved']);
@@ -86,6 +96,9 @@ class AlertServiceTest extends TestCase
         $this->assertEquals('RESOLVED', $alert->status);
         $this->assertNotNull($alert->resolved_at);
         $this->assertEquals('recovered', $alert->details['reason'] ?? null);
+        $this->assertEquals('python_ingest', $alert->details['resolved_by'] ?? null);
+        $this->assertEquals('auto', $alert->details['resolved_via'] ?? null);
+        $this->assertEquals('infra', $alert->details['resolved_source'] ?? null);
     }
 
     public function test_resolve_by_code_returns_false_when_no_active_alert(): void

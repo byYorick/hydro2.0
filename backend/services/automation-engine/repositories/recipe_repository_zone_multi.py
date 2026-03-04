@@ -6,6 +6,10 @@ import json
 from typing import Any, Dict, List, Optional
 
 from common.db import fetch
+from repositories.capabilities_profile_fallback import (
+    resolve_zone_capabilities_with_profile_fallback,
+)
+from repositories.zone_repository import ZoneRepository
 
 
 async def load_zones_data_batch_optimized(repo: Any, zone_ids: List[int]) -> Dict[int, Dict[str, Any]]:
@@ -22,8 +26,17 @@ async def load_zones_data_batch_optimized(repo: Any, zone_ids: List[int]) -> Dic
             WITH zone_info AS (
                 SELECT
                     z.id as zone_id,
-                    z.capabilities
+                    z.capabilities,
+                    profile.subsystems as automation_subsystems
                 FROM zones z
+                LEFT JOIN LATERAL (
+                    SELECT subsystems
+                    FROM zone_automation_logic_profiles
+                    WHERE zone_id = z.id
+                      AND is_active = TRUE
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                ) profile ON TRUE
                 WHERE z.id = ANY($1::int[])
             ),
             telemetry_data AS (
@@ -172,7 +185,8 @@ async def load_zones_data_batch_optimized(repo: Any, zone_ids: List[int]) -> Dic
                         FROM nodes_data nd
                         WHERE nd.zone_id = zi.zone_id
                     ),
-                    'capabilities', COALESCE(zi.capabilities, '{}'::jsonb)
+                    'capabilities', COALESCE(zi.capabilities, '{}'::jsonb),
+                    'automation_subsystems', COALESCE(zi.automation_subsystems, '{}'::jsonb)
                 ) as zone_data
             FROM zone_info zi
             """,
@@ -204,6 +218,12 @@ async def load_zones_data_batch_optimized(repo: Any, zone_ids: List[int]) -> Dic
 
         zone_data["telemetry"] = telemetry
         zone_data["telemetry_timestamps"] = telemetry_timestamps or zone_data.get("telemetry_timestamps", {})
+        zone_data["capabilities"] = resolve_zone_capabilities_with_profile_fallback(
+            raw_capabilities=zone_data.get("capabilities"),
+            profile_subsystems=zone_data.get("automation_subsystems"),
+            default_capabilities=ZoneRepository.DEFAULT_CAPABILITIES.copy(),
+        )
+        zone_data.pop("automation_subsystems", None)
         correction_flags_raw = zone_data.get("correction_flags")
         if isinstance(correction_flags_raw, str):
             correction_flags_raw = json.loads(correction_flags_raw)

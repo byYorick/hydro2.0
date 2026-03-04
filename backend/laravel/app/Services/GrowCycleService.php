@@ -69,6 +69,9 @@ class GrowCycleService
                     'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),
                     'nutrient_tank_target_l' => (int) ($irrigation['nutrient_tank_target_l'] ?? 280),
                 ];
+                if (array_key_exists('irrigation_batch_l', $irrigation) && $irrigation['irrigation_batch_l'] !== null) {
+                    $settings['irrigation']['irrigation_batch_l'] = (float) $irrigation['irrigation_batch_l'];
+                }
             }
 
             // Сначала создаем цикл без current_phase_id (временно null)

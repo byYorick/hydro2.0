@@ -407,6 +407,8 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.schedulerTaskErrorLabel('task_due_deadline_exceeded')).toContain('due_at')
     expect(vm.schedulerTaskErrorLabel('prepare_npk_ph_target_not_reached')).toContain('NPK + pH')
     expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked')).toContain('safety-политикой')
+    expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked')).not.toContain('offline')
+    expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked', 'Water level too low: 0.0 < 0.15')).toContain('Water level too low: 0.0 < 0.15')
     expect(vm.schedulerTaskErrorLabel('irrigation_recovery_attempts_exceeded')).toContain('Превышено число попыток')
     expect(vm.formatDateTime('2026-02-10T08:00:00')).toBe(vm.formatDateTime('2026-02-10T08:00:00Z'))
     const dedupedTimeline = vm.schedulerTaskTimelineItems({

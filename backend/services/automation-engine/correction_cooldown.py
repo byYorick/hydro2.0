@@ -17,6 +17,15 @@ MIN_TREND_POINTS = 3
 TREND_IMPROVEMENT_THRESHOLD = 0.05  # 0.05 единицы улучшения за последние измерения
 
 
+def _resolve_critical_diff_threshold(correction_type: str) -> float:
+    correction_key = str(correction_type or "").strip().lower()
+    if correction_key == "ec":
+        # Для EC допускаем bypass cooldown почти до целевого диапазона:
+        # иначе контур может "залипнуть" ниже рабочего EC на длительном cooldown.
+        return 0.05
+    return 0.5
+
+
 def _resolve_correction_event_filters(correction_type: str) -> Optional[Tuple[list[str], list[str]]]:
     """Возвращает event types и точные payload-маркеры для pH/EC cooldown."""
     correction_key = str(correction_type or "").strip().lower()
@@ -182,6 +191,12 @@ async def should_apply_correction(
     cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES
 ) -> Tuple[bool, str]:
     """Политика решения по корректировке с учётом cooldown и тренда."""
+    # При критическом отклонении не держим cooldown: иначе автоматика может долго
+    # оставаться вне безопасной/рабочей зоны при заведомо неверных параметрах.
+    critical_diff_threshold = _resolve_critical_diff_threshold(correction_type)
+    if abs(diff) >= critical_diff_threshold:
+        return True, f"Критическое отклонение ({abs(diff):.2f}), cooldown bypass"
+
     # Проверяем cooldown
     if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
         last_correction = await get_last_correction_time(zone_id, correction_type)
@@ -190,10 +205,6 @@ async def should_apply_correction(
             time_since = _now_naive_utc() - last_correction
             return False, f"В cooldown периоде (последняя корректировка {int(time_since.total_seconds()) // 60} минут назад)"
         return False, "В cooldown периоде"
-    
-    # Если отклонение очень большое (> 0.5), корректируем независимо от тренда
-    if abs(diff) > 0.5:
-        return True, f"Критическое отклонение ({abs(diff):.2f}), корректировка необходима"
 
     # Анализируем тренд только для некритичных отклонений.
     metric_type = 'PH' if correction_type == 'ph' else 'EC'

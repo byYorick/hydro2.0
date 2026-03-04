@@ -32,13 +32,33 @@ async def check_water_level(zone_id: int) -> Tuple[bool, Optional[float]]:
     """
     rows = await fetch(
         """
-        SELECT tl.last_value as value
+        SELECT
+          tl.last_value as value
         FROM telemetry_last tl
         JOIN sensors s ON s.id = tl.sensor_id
         WHERE s.zone_id = $1
           AND s.type = 'WATER_LEVEL'
           AND s.is_active = TRUE
-        ORDER BY tl.last_ts DESC NULLS LAST,
+        ORDER BY
+          CASE
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%clean%' THEN 0
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%fresh%' THEN 0
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%чист%' THEN 0
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%solution%' THEN 1
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%mix%' THEN 1
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%раствор%' THEN 1
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%drain%' THEN 2
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%waste%' THEN 2
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%слив%' THEN 2
+            ELSE 1
+          END ASC,
+          CASE
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%min%' THEN 0
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%макс%' THEN 2
+            WHEN LOWER(COALESCE(s.label, '')) LIKE '%max%' THEN 2
+            ELSE 1
+          END ASC,
+          tl.last_ts DESC NULLS LAST,
           tl.updated_at DESC NULLS LAST,
           tl.sensor_id DESC
         LIMIT 1

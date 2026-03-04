@@ -576,6 +576,9 @@ class PythonIngestController extends Controller
                     code: $data['code'],
                     context: [
                         'details' => $details,
+                        'resolved_by' => 'python_ingest',
+                        'resolved_via' => 'auto',
+                        'resolved_source' => $source,
                     ],
                 );
 

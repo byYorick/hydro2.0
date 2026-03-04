@@ -55,6 +55,7 @@ WORKFLOW_PHASE_BLOCKING_FAILURE_REASONS = {
 WORKFLOW_PHASE_IRRIGATING_MODES = {
     "two_tank_irrigation_recovery_completed",
     "two_tank_irrigation_recovery_degraded",
+    "two_tank_irrigation_recovery_attempts_exhausted_continue_irrigation",
 }
 
 WORKFLOW_STAGE_BY_DIAGNOSTICS_MODE = {
@@ -293,7 +294,16 @@ def build_workflow_state_payload(
     workflow_phase: str,
     workflow_stage: str,
 ) -> Dict[str, Any]:
-    state_payload = dict(payload)
+    next_check = result.get("next_check") if isinstance(result.get("next_check"), dict) else None
+    continuation_payload: Dict[str, Any] = {}
+    if next_check:
+        details = next_check.get("details") if isinstance(next_check.get("details"), dict) else None
+        if details and isinstance(details.get("payload"), dict):
+            continuation_payload = dict(details.get("payload"))
+
+    # Prefer continuation payload when next_check is already built.
+    # This keeps attempt/timing markers consistent for workflow-state recovery.
+    state_payload = continuation_payload or dict(payload)
     if workflow_stage:
         state_payload["workflow"] = workflow_stage
         state_payload["workflow_stage"] = workflow_stage
@@ -302,9 +312,31 @@ def build_workflow_state_payload(
     state_payload["workflow_phase"] = workflow_phase
     state_payload["workflow_mode"] = str(result.get("mode") or "")
     state_payload["workflow_reason_code"] = str(result.get("reason_code") or "")
-    next_check = result.get("next_check") if isinstance(result.get("next_check"), dict) else None
     if next_check:
         state_payload["next_check"] = next_check
+
+    carry_from_result = (
+        "refill_attempt",
+        "refill_started_at",
+        "refill_timeout_at",
+        "clean_fill_started_at",
+        "clean_fill_timeout_at",
+        "clean_fill_retry_cycle",
+        "solution_fill_started_at",
+        "solution_fill_timeout_at",
+        "prepare_recirculation_started_at",
+        "prepare_recirculation_timeout_at",
+        "irrigation_recovery_attempt",
+        "irrigation_recovery_started_at",
+        "irrigation_recovery_timeout_at",
+    )
+    for key in carry_from_result:
+        value = result.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        state_payload[key] = value
     return state_payload
 
 

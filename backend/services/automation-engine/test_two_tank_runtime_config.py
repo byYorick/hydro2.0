@@ -141,4 +141,30 @@ def test_resolve_two_tank_runtime_config_warns_when_targets_use_defaults(caplog)
     assert cfg["startup_clean_level_retry_delay_sec"] == 1.0
     assert cfg["sensor_mode_stabilization_time_sec"] == 60
     assert cfg["sensor_mode_telemetry_grace_sec"] == 90
-    assert "both target_ph and target_ec resolved to defaults" in caplog.text
+    assert "target_ph not found, using default" in caplog.text
+    assert "target_ec not found, using default" in caplog.text
+
+
+def test_resolve_two_tank_runtime_config_uses_zone_targets_without_defaults_warning(caplog):
+    payload = {"config": {"execution": {}}}
+    zone_targets = {
+        "ph": {"target": 5.75, "min": 5.6, "max": 6.1},
+        "ec": {"target": 1.05, "min": 0.9, "max": 1.2},
+    }
+
+    with caplog.at_level("WARNING", logger="executor.two_tank_runtime_config"):
+        cfg = resolve_two_tank_runtime_config(
+            payload,
+            refill_check_delay_sec=60,
+            extract_execution_config_fn=lambda p: p.get("config", {}).get("execution", {}),
+            normalize_node_type_list_fn=_normalize_node_types,
+            resolve_int_fn=_resolve_int,
+            resolve_float_fn=_resolve_float,
+            normalize_labels_fn=_normalize_labels,
+            zone_targets=zone_targets,
+        )
+
+    assert cfg["target_ph"] == 5.75
+    assert cfg["target_ec"] == 1.05
+    assert "target_ph not found, using default" not in caplog.text
+    assert "target_ec not found, using default" not in caplog.text

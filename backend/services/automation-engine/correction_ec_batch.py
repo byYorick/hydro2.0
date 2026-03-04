@@ -110,6 +110,53 @@ def build_ec_component_batch(
         )
         return []
 
+    nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
+    components_cfg = get_nutrition_components(targets)
+    legacy_single_component_mode = False
+    missing_nutrition_components = [
+        component for component in required_components if component not in components_cfg
+    ]
+    if missing_nutrition_components:
+        npk_role = role_map["npk"]
+        can_fallback_to_npk = (
+            required_components != ["npk"]
+            and npk_role in (actuators or {})
+        )
+        if can_fallback_to_npk:
+            logger.warning(
+                "EC component batch fallback to npk-only: nutrition config missing for selected components",
+                extra={
+                    "required_components": required_components,
+                    "missing_nutrition_components": missing_nutrition_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
+                    "allowed_ec_components": allowed_ec_components,
+                },
+            )
+            required_components = ["npk"]
+            legacy_single_component_mode = True
+        elif required_components == ["npk"]:
+            # Backward compatibility for legacy recipes where nutrition.components
+            # is absent, but phase policy allows only npk dosing.
+            legacy_single_component_mode = True
+            logger.warning(
+                "EC component batch fallback: legacy npk-only mode without nutrition.components",
+                extra={
+                    "required_components": required_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
+                    "total_ml": total_ml,
+                },
+            )
+        else:
+            logger.warning(
+                "EC component batch skipped: nutrition config missing for required components",
+                extra={
+                    "required_components": required_components,
+                    "missing_nutrition_components": missing_nutrition_components,
+                    "available_nutrition_components": sorted(list(components_cfg.keys())),
+                },
+            )
+            return []
+
     component_actuators: Dict[str, Dict[str, Any]] = {
         component: actuators[role_map[component]]
         for component in required_components
@@ -176,32 +223,6 @@ def build_ec_component_batch(
             "calibration_snapshot": calibration_snapshot,
         },
     )
-
-    nutrition = targets.get("nutrition") if isinstance(targets.get("nutrition"), dict) else {}
-    components_cfg = get_nutrition_components(targets)
-    legacy_single_component_mode = False
-    if any(component not in components_cfg for component in required_components):
-        # Backward compatibility for legacy recipes where nutrition.components
-        # is absent, but phase policy allows only npk dosing.
-        if required_components == ["npk"]:
-            legacy_single_component_mode = True
-            logger.warning(
-                "EC component batch fallback: legacy npk-only mode without nutrition.components",
-                extra={
-                    "required_components": required_components,
-                    "available_nutrition_components": sorted(list(components_cfg.keys())),
-                    "total_ml": total_ml,
-                },
-            )
-        else:
-            logger.warning(
-                "EC component batch skipped: nutrition config missing for required components",
-                extra={
-                    "required_components": required_components,
-                    "available_nutrition_components": sorted(list(components_cfg.keys())),
-                },
-            )
-            return []
 
     components_order = required_components
     component_ml_map: Dict[str, float] = {}

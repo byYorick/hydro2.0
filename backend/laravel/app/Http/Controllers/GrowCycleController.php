@@ -397,6 +397,14 @@ class GrowCycleController extends Controller
             'irrigation.duration_seconds' => ['nullable', 'integer', 'min:1', 'max:3600'],
             'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
+            'irrigation.irrigation_batch_l' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
+            'phase_overrides' => ['nullable', 'array'],
+            'phase_overrides.ph_target' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ph_min' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ph_max' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ec_target' => ['nullable', 'numeric', 'between:0,30'],
+            'phase_overrides.ec_min' => ['nullable', 'numeric', 'between:0,30'],
+            'phase_overrides.ec_max' => ['nullable', 'numeric', 'between:0,30'],
         ]);
 
         $startImmediately = (bool) ($data['start_immediately'] ?? false);
@@ -423,6 +431,8 @@ class GrowCycleController extends Controller
                 $data,
                 $user->id
             );
+            $this->applyPhaseOverrides($cycle, $data);
+            $cycle->refresh()->load('recipeRevision', 'currentPhase', 'plant');
 
             return response()->json([
                 'status' => 'ok',
@@ -444,6 +454,30 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Применить overrides к первой фазе цикла после штатного копирования фаз из рецепта.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function applyPhaseOverrides(GrowCycle $cycle, array $data): void
+    {
+        $rawOverrides = $data['phase_overrides'] ?? null;
+        if (! is_array($rawOverrides)) {
+            return;
+        }
+
+        $overrides = array_filter(
+            $rawOverrides,
+            static fn ($value): bool => $value !== null
+        );
+        if ($overrides === []) {
+            return;
+        }
+
+        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
+        $firstPhase?->update($overrides);
     }
 
     /**

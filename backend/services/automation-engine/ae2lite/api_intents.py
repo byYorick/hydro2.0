@@ -12,6 +12,23 @@ TERMINAL_INTENT_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_INTENT_STATUSES = {"claimed", "running"}
 _START_CYCLE_TASK_TYPE = "diagnostics"
 _START_CYCLE_WORKFLOW = "cycle_start"
+_SUPPORTED_TASK_TYPES = {
+    "diagnostics",
+    "irrigation",
+    "lighting",
+    "ventilation",
+    "solution_change",
+    "mist",
+}
+_INTENT_TYPE_TO_TASK_TYPE = {
+    "diagnostics_tick": "diagnostics",
+    "irrigate_once": "irrigation",
+    "irrigation_tick": "irrigation",
+    "lighting_tick": "lighting",
+    "ventilation_tick": "ventilation",
+    "solution_change_tick": "solution_change",
+    "mist_tick": "mist",
+}
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -25,27 +42,61 @@ def _intent_correlation_id(*, intent_id: int, retry_count: int, idempotency_key:
 
 def _intent_runtime_payload(
     *,
+    task_type: str,
     zone_id: int,
     req: StartCycleRequest,
     intent_payload: Dict[str, Any],
     default_topology: str,
 ) -> Dict[str, Any]:
-    execution = {
-        "topology": str(default_topology),
-        "workflow": _START_CYCLE_WORKFLOW,
-    }
+    normalized_task_type = str(task_type or "").strip().lower() or _START_CYCLE_TASK_TYPE
+    source = str(intent_payload.get("source") or req.source)
     payload: Dict[str, Any] = {
-        "workflow": _START_CYCLE_WORKFLOW,
-        "topology": execution["topology"],
-        "source": str(intent_payload.get("source") or req.source),
-        "config": {"execution": execution},
+        "source": source,
         "trigger": "start_cycle_api",
         "intent_zone_id": zone_id,
     }
+
+    if normalized_task_type == _START_CYCLE_TASK_TYPE:
+        execution = {
+            "topology": str(default_topology),
+            "workflow": _START_CYCLE_WORKFLOW,
+        }
+        payload.update(
+            {
+                "workflow": _START_CYCLE_WORKFLOW,
+                "topology": execution["topology"],
+                "config": {"execution": execution},
+            }
+        )
+    else:
+        execution = {"topology": str(default_topology)}
+        intent_config = _as_dict(intent_payload.get("config"))
+        intent_execution = _as_dict(intent_config.get("execution"))
+        if intent_execution:
+            execution.update(intent_execution)
+        execution.pop("workflow", None)
+        if not str(execution.get("topology") or "").strip():
+            execution["topology"] = str(default_topology)
+        payload["topology"] = str(execution.get("topology"))
+        payload["config"] = {"execution": execution}
+
     grow_cycle_id = intent_payload.get("grow_cycle_id")
     if grow_cycle_id is not None:
         payload["grow_cycle_id"] = grow_cycle_id
     return payload
+
+
+def _resolve_intent_task_type(*, intent_row: Dict[str, Any], intent_payload: Dict[str, Any]) -> str:
+    intent_type = str(intent_row.get("intent_type") or "").strip().lower()
+    mapped = _INTENT_TYPE_TO_TASK_TYPE.get(intent_type)
+    if mapped in _SUPPORTED_TASK_TYPES:
+        return str(mapped)
+
+    payload_task_type = str(intent_payload.get("task_type") or "").strip().lower()
+    if payload_task_type in _SUPPORTED_TASK_TYPES:
+        return payload_task_type
+
+    return _START_CYCLE_TASK_TYPE
 
 
 def build_scheduler_task_request_from_intent(
@@ -58,8 +109,8 @@ def build_scheduler_task_request_from_intent(
     expires_in_sec: int,
     default_topology: str,
 ) -> SchedulerTaskRequest:
-    # intent_type from zone_automation_intents is audit metadata; runtime start-cycle is always diagnostics/cycle_start.
     intent_payload = _as_dict(intent_row.get("payload"))
+    task_type = _resolve_intent_task_type(intent_row=intent_row, intent_payload=intent_payload)
     due_at = now + timedelta(seconds=max(1, int(due_in_sec)))
     expires_at = now + timedelta(seconds=max(2, int(expires_in_sec)))
     retry_count = int(intent_row.get("retry_count") or 0)
@@ -67,8 +118,9 @@ def build_scheduler_task_request_from_intent(
 
     return SchedulerTaskRequest(
         zone_id=zone_id,
-        task_type=_START_CYCLE_TASK_TYPE,
+        task_type=task_type,
         payload=_intent_runtime_payload(
+            task_type=task_type,
             zone_id=zone_id,
             req=req,
             intent_payload=intent_payload,

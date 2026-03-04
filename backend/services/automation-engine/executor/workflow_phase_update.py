@@ -69,6 +69,14 @@ async def update_zone_workflow_phase(
         log_warning=log_warning,
     )
 
+    if current_phase is not None and current_phase == normalized_phase:
+        _logger.debug(
+            "Zone %s: workflow phase already at %s, skipping transition",
+            zone_id,
+            current_phase,
+        )
+        return current_phase
+
     if current_phase is not None and not validate_phase_transition_fn(
         current_phase,
         normalized_phase,

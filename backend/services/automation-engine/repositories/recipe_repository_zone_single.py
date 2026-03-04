@@ -6,6 +6,10 @@ import json
 from typing import Any, Dict, Optional
 
 from common.db import fetch
+from repositories.capabilities_profile_fallback import (
+    resolve_zone_capabilities_with_profile_fallback,
+)
+from repositories.zone_repository import ZoneRepository
 
 
 async def load_zone_data_batch(repo: Any, zone_id: int) -> Dict[str, Any]:
@@ -20,8 +24,17 @@ async def load_zone_data_batch(repo: Any, zone_id: int) -> Dict[str, Any]:
             WITH zone_info AS (
                 SELECT
                     z.id as zone_id,
-                    z.capabilities
+                    z.capabilities,
+                    profile.subsystems as automation_subsystems
                 FROM zones z
+                LEFT JOIN LATERAL (
+                    SELECT subsystems
+                    FROM zone_automation_logic_profiles
+                    WHERE zone_id = z.id
+                      AND is_active = TRUE
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                ) profile ON TRUE
                 WHERE z.id = $1
             ),
             telemetry_data AS (
@@ -200,11 +213,11 @@ async def load_zone_data_batch(repo: Any, zone_id: int) -> Dict[str, Any]:
                 "channel": channel,
             }
 
-    capabilities = zone_info.get("capabilities") or {}
-    if not capabilities:
-        from .zone_repository import ZoneRepository
-
-        capabilities = ZoneRepository.DEFAULT_CAPABILITIES.copy()
+    capabilities = resolve_zone_capabilities_with_profile_fallback(
+        raw_capabilities=zone_info.get("capabilities"),
+        profile_subsystems=zone_info.get("automation_subsystems"),
+        default_capabilities=ZoneRepository.DEFAULT_CAPABILITIES.copy(),
+    )
     await repo._sync_telemetry_samples_health_signal(
         zone_id=zone_id,
         correction_flags_raw=correction_flags_raw,

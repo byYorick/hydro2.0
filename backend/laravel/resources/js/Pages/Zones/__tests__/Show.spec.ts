@@ -205,6 +205,11 @@ const sampleEvents = [
   { id: 2, kind: 'WARNING', message: 'High temperature', occurred_at: '2025-01-27T11:00:00Z' },
 ]
 
+const sampleAlerts = [
+  { id: 1, type: 'PH_OUT_OF_RANGE', status: 'ACTIVE', message: 'pH выше нормы', created_at: '2025-01-27T10:10:00Z' },
+  { id: 2, type: 'EC_OUT_OF_RANGE', status: 'RESOLVED', message: 'EC восстановлен', created_at: '2025-01-27T10:40:00Z', resolved_at: '2025-01-27T10:50:00Z' },
+]
+
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPostMock = vi.hoisted(() => vi.fn())
 const fetchHistoryMock = vi.hoisted(() => vi.fn())
@@ -240,6 +245,7 @@ const usePageMock = vi.hoisted(() => vi.fn(() => ({
     telemetry: sampleTelemetry,
     targets: sampleTargets,
     devices: sampleDevices,
+    alerts: sampleAlerts,
     events: sampleEvents,
     auth: { user: { role: 'operator' } },
   },
@@ -633,6 +639,20 @@ describe('Zones/Show.vue', () => {
     // События отображаются с переведенными типами
     expect(wrapper.text()).toContain('Информация') // INFO переводится как "Информация"
     expect(wrapper.text()).toContain('Предупреждение') // WARNING переводится как "Предупреждение"
+  })
+
+  it('отображает алерты зоны на вкладке "Алерты"', async () => {
+    const wrapper = mount(ZonesShow)
+
+    const alertsTabButton = wrapper.findAll('button').find((button) => button.text().includes('Алерты'))
+    expect(alertsTabButton).toBeTruthy()
+    await alertsTabButton?.trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('pH выше нормы')
+    expect(wrapper.text()).toContain('EC восстановлен')
+    expect(wrapper.text()).toContain('Активно')
+    expect(wrapper.text()).toContain('Решено')
   })
 
   it('отображает блок Cycles', async () => {
