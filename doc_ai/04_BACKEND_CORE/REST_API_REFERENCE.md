@@ -280,6 +280,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
 | POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
 | POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (разрешен только в `semi|manual`) |
+| POST | /zones/{id}/start-relay-autotune | internal | Запуск relay-autotune PID (`pid_type: ph|ec`) для активной зоны |
 
 Инварианты `POST /zones/{id}/start-cycle`:
 - endpoint не несет device-level payload (минимальный wake-up контракт);
@@ -291,6 +292,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   с `active_task_id` и `active_task_status`;
 - при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
   `task_status` и `reason=start_cycle_intent_terminal`.
+
+Контракт `POST /zones/{id}/start-relay-autotune`:
+- тело запроса: `{ "pid_type": "ph" | "ec" }`;
+- endpoint требует активную фазу workflow зоны (не `idle`), иначе `409 relay_autotune_zone_inactive`;
+- при уже запущенном autotune для зоны/типа возвращает `409 relay_autotune_already_running`.
 
 Минимальный request:
 ```json
@@ -398,3 +404,25 @@ Lifecycle intents:
 - при наличии legacy-ключей runtime трактует их как невалидные для контракта wake-up only.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+### 18.4 PID Advanced (Laravel API)
+
+Новые публичные endpoint-ы для панели PID/калибровок (frontend):
+
+| Метод | Путь | Auth | Описание |
+|-------|---------------------------------------------|------|-------------------------------------------|
+| GET | /api/zones/{zone}/pump-calibrations | auth:sanctum (viewer+) | Список дозирующих насосов зоны с активной калибровкой |
+| PUT | /api/zones/{zone}/pump-calibrations/{channelId} | auth:sanctum (operator+) | Сохранить новую калибровку `ml_per_sec` (создаёт новую запись в `pump_calibrations`) |
+| POST | /api/zones/{zone}/relay-autotune | auth:sanctum (operator+) | Запуск relay-autotune через proxy в automation-engine |
+| GET | /api/zones/{zone}/relay-autotune/status | auth:sanctum (viewer+) | Статус relay-autotune через proxy в automation-engine |
+
+Контракт `PUT /api/zones/{zone}/pump-calibrations/{channelId}`:
+- request body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`;
+- деактивирует предыдущую активную калибровку `node_channel_id`;
+- создаёт `zone_event` типа `PUMP_CALIBRATION_SAVED`.
+
+Контракт `POST /api/zones/{zone}/relay-autotune`:
+- request body: `{ "pid_type": "ph" | "ec" }`;
+- требует активный grow cycle зоны;
+- создаёт `zone_event` типа `RELAY_AUTOTUNE_STARTED`;
+- проксирует запрос в automation-engine endpoint `/zones/{id}/start-relay-autotune`.

@@ -1,5 +1,6 @@
 """Helper methods extracted from CorrectionController."""
 
+import logging
 import time
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,8 @@ from correction_ec_batch import (
 )
 from services.pid_config_service import get_config
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
+
+logger = logging.getLogger(__name__)
 
 
 async def get_pid_for_zone(controller: Any, zone_id: int, setpoint: float) -> AdaptivePid:
@@ -55,14 +58,29 @@ async def save_all_pid_states_for_controller(controller: Any) -> None:
 
 
 def get_dt_seconds_for_zone(controller: Any, zone_id: int) -> float:
-    """Рассчитать dt между вызовами PID для зоны."""
+    """Рассчитать dt между вызовами PID для зоны с защитным clamping."""
     now = time.monotonic()
     last_tick = controller._last_pid_tick.get(zone_id)
     controller._last_pid_tick[zone_id] = now
+    settings = get_settings()
+    dt_min = max(0.0, float(getattr(settings, "PID_DT_MIN_SECONDS", 5.0)))
+    dt_max = max(dt_min, float(getattr(settings, "PID_DT_MAX_SECONDS", 300.0)))
 
     if last_tick is None:
-        return float(get_settings().MAIN_LOOP_SLEEP_SECONDS)
-    return max(1.0, now - last_tick)
+        default_dt = float(settings.MAIN_LOOP_SLEEP_SECONDS)
+        return max(dt_min, min(default_dt, dt_max))
+
+    raw_dt = now - last_tick
+    clamped_dt = max(dt_min, min(raw_dt, dt_max))
+    if raw_dt > dt_max:
+        logger.warning(
+            "PID dt clamped: raw_dt=%.1f sec > %.1fs (AE may have been paused), using %.1fs",
+            raw_dt,
+            dt_max,
+            clamped_dt,
+            extra={"zone_id": zone_id, "raw_dt_sec": round(raw_dt, 1)},
+        )
+    return clamped_dt
 
 
 def build_pid_config_for_controller(controller: Any, settings: Any, setpoint: float) -> AdaptivePidConfig:
@@ -81,14 +99,11 @@ def build_pid_config_for_controller(controller: Any, settings: Any, setpoint: fl
             },
             max_output=settings.PH_PID_MAX_OUTPUT,
             min_output=0.0,
-            max_integral=100.0,
+            max_integral=settings.PH_PID_MAX_INTEGRAL,
             anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
             back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
-            derivative_filter_alpha=settings.PID_DERIVATIVE_FILTER_ALPHA,
+            derivative_filter_alpha=settings.PH_PID_DERIVATIVE_FILTER_ALPHA,
             min_interval_ms=settings.PH_PID_MIN_INTERVAL_MS,
-            enable_autotune=settings.PH_PID_ENABLE_AUTOTUNE,
-            autotune_mode=settings.PID_AUTOTUNE_MODE,
-            adaptation_rate=settings.PH_PID_ADAPTATION_RATE,
         )
 
     return AdaptivePidConfig(
@@ -103,14 +118,11 @@ def build_pid_config_for_controller(controller: Any, settings: Any, setpoint: fl
         },
         max_output=settings.EC_PID_MAX_OUTPUT,
         min_output=0.0,
-        max_integral=100.0,
+        max_integral=settings.EC_PID_MAX_INTEGRAL,
         anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
         back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
-        derivative_filter_alpha=settings.PID_DERIVATIVE_FILTER_ALPHA,
+        derivative_filter_alpha=settings.EC_PID_DERIVATIVE_FILTER_ALPHA,
         min_interval_ms=settings.EC_PID_MIN_INTERVAL_MS,
-        enable_autotune=settings.EC_PID_ENABLE_AUTOTUNE,
-        autotune_mode=settings.PID_AUTOTUNE_MODE,
-        adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
     )
 
 

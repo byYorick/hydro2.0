@@ -44,10 +44,12 @@ async def check_zone_deletion(
             if zone_id in ph_controller._pid_by_zone:
                 del ph_controller._pid_by_zone[zone_id]
                 ph_controller._last_pid_tick.pop(zone_id, None)
+                getattr(ph_controller, "_autotune_by_zone", {}).pop(zone_id, None)
                 logger.info("Cleared PH PID instance for deleted zone %s", zone_id)
             if zone_id in ec_controller._pid_by_zone:
                 del ec_controller._pid_by_zone[zone_id]
                 ec_controller._last_pid_tick.pop(zone_id, None)
+                getattr(ec_controller, "_autotune_by_zone", {}).pop(zone_id, None)
                 logger.info("Cleared EC PID instance for deleted zone %s", zone_id)
             invalidate_cache_fn(zone_id)
             logger.info("Cleared PID cache for deleted zone %s", zone_id)
@@ -100,9 +102,11 @@ async def check_pid_config_updates(
                     if pid_type == "ph" and zone_id in ph_controller._pid_by_zone:
                         del ph_controller._pid_by_zone[zone_id]
                         ph_controller._last_pid_tick.pop(zone_id, None)
+                        getattr(ph_controller, "_autotune_by_zone", {}).pop(zone_id, None)
                     elif pid_type == "ec" and zone_id in ec_controller._pid_by_zone:
                         del ec_controller._pid_by_zone[zone_id]
                         ec_controller._last_pid_tick.pop(zone_id, None)
+                        getattr(ec_controller, "_autotune_by_zone", {}).pop(zone_id, None)
     except Exception as e:
         logger.warning("Failed to check PID config updates for zone %s: %s", zone_id, e, exc_info=True)
         await send_infra_exception_alert_fn(

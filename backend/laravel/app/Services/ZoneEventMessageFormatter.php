@@ -47,6 +47,15 @@ class ZoneEventMessageFormatter
             'ZONE_COMMAND' => $this->formatZoneCommand($payload),
             'SCHEDULE_TASK_FAILED' => $this->formatScheduleTaskFailed($payload),
             'SELF_TASK_DISPATCH_RETRY_SCHEDULED' => $this->formatSelfTaskDispatchRetryScheduled($payload),
+            'PH_CORRECTED' => $this->formatPhCorrected($payload),
+            'EC_DOSING' => $this->formatEcDosing($payload),
+            'PID_OUTPUT' => $this->formatPidOutput($payload),
+            'PID_CONFIG_UPDATED' => $this->formatPidConfigUpdated($payload),
+            'CORRECTION_STATE_TRANSITION' => $this->formatCorrectionStateTransition($payload),
+            'CORRECTION_SKIPPED_DEAD_ZONE' => $this->formatCorrectionSkippedDeadZone($payload),
+            'CORRECTION_SKIPPED_COOLDOWN' => $this->formatCorrectionSkippedCooldown($payload),
+            'RELAY_AUTOTUNE_COMPLETE', 'RELAY_AUTOTUNE_COMPLETED' => $this->formatRelayAutotuneComplete($payload),
+            'PUMP_CALIBRATION_SAVED' => $this->formatPumpCalibrationSaved($payload),
             default => $type ?: '',
         };
     }
@@ -462,6 +471,118 @@ class ZoneEventMessageFormatter
         return "Scheduler запланировал повторную отправку для внутренней задачи {$taskType} (".implode(', ', $parts).')';
     }
 
+    private function formatPhCorrected(array $details): string
+    {
+        $current = $this->toFloatOrNull($details['current'] ?? $details['current_ph'] ?? null);
+        $target = $this->toFloatOrNull($details['target'] ?? $details['target_ph'] ?? null);
+        $dose = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+        $correctionType = $this->toStringOrNull($details['correction_type'] ?? null);
+
+        if ($current !== null && $target !== null && $dose !== null) {
+            $suffix = $correctionType !== null ? " ({$correctionType})" : '';
+            return sprintf('pH скорректирован: %.2f -> %.2f, доза %.1f мл%s', $current, $target, $dose, $suffix);
+        }
+
+        return 'pH скорректирован';
+    }
+
+    private function formatEcDosing(array $details): string
+    {
+        $current = $this->toFloatOrNull($details['current'] ?? $details['current_ec'] ?? null);
+        $target = $this->toFloatOrNull($details['target'] ?? $details['target_ec'] ?? null);
+        $dose = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+
+        if ($current !== null && $target !== null && $dose !== null) {
+            return sprintf('EC подача: %.2f -> %.2f, доза %.1f мл', $current, $target, $dose);
+        }
+
+        return 'EC: подача питания';
+    }
+
+    private function formatPidOutput(array $details): string
+    {
+        $output = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+        $error = $this->toFloatOrNull($details['error'] ?? $details['diff'] ?? null);
+        $zoneState = $this->toStringOrNull($details['zone_state'] ?? $details['pid_zone'] ?? null);
+
+        if ($output !== null && $error !== null) {
+            $zonePart = $zoneState !== null ? " ({$zoneState})" : '';
+            return sprintf('PID output: %.3f мл, ошибка %.4f%s', $output, $error, $zonePart);
+        }
+
+        return 'PID: расчёт выхода';
+    }
+
+    private function formatPidConfigUpdated(array $details): string
+    {
+        $pidType = $this->toStringOrNull($details['type'] ?? $details['pid_type'] ?? null);
+        if ($pidType !== null) {
+            return "Конфиг PID обновлён ({$pidType})";
+        }
+
+        return 'Конфиг PID обновлён';
+    }
+
+    private function formatCorrectionStateTransition(array $details): string
+    {
+        $from = $this->toStringOrNull($details['from_state'] ?? null);
+        $to = $this->toStringOrNull($details['to_state'] ?? null);
+        $reason = $this->toStringOrNull($details['reason_code'] ?? null);
+
+        if ($from !== null && $to !== null && $reason !== null) {
+            return "Коррекция: {$from} -> {$to} ({$reason})";
+        }
+        if ($from !== null && $to !== null) {
+            return "Коррекция: {$from} -> {$to}";
+        }
+
+        return 'Коррекция: переход состояния';
+    }
+
+    private function formatCorrectionSkippedDeadZone(array $details): string
+    {
+        $error = $this->toFloatOrNull($details['error'] ?? $details['diff'] ?? null);
+        if ($error !== null) {
+            return sprintf('Коррекция пропущена (мёртвая зона): ошибка %.3f', $error);
+        }
+
+        return 'Коррекция пропущена: мёртвая зона';
+    }
+
+    private function formatCorrectionSkippedCooldown(array $details): string
+    {
+        $reason = $this->toStringOrNull($details['reason'] ?? $details['reason_code'] ?? null);
+        if ($reason !== null) {
+            return "Коррекция пропущена: кулдаун ({$reason})";
+        }
+
+        return 'Коррекция пропущена: кулдаун активен';
+    }
+
+    private function formatRelayAutotuneComplete(array $details): string
+    {
+        $kp = $this->toFloatOrNull($details['kp'] ?? null);
+        $ki = $this->toFloatOrNull($details['ki'] ?? null);
+        $cycles = $details['cycles_detected'] ?? null;
+        if ($kp !== null && $ki !== null && is_numeric($cycles)) {
+            return sprintf('Автотюнинг завершён: Kp=%.3f, Ki=%.4f (%d циклов)', $kp, $ki, (int) $cycles);
+        }
+
+        return 'Relay-автотюнинг завершён';
+    }
+
+    private function formatPumpCalibrationSaved(array $details): string
+    {
+        $role = $this->toStringOrNull($details['role'] ?? null);
+        $mlPerSec = $this->toFloatOrNull($details['ml_per_sec'] ?? null);
+
+        if ($role !== null && $mlPerSec !== null) {
+            return sprintf('Калибровка насоса [%s]: %.2f мл/с', $role, $mlPerSec);
+        }
+
+        return 'Калибровка насоса сохранена';
+    }
+
     private function formatSubsystemsSummary(array $subsystems): ?string
     {
         $parts = [];
@@ -561,6 +682,15 @@ class ZoneEventMessageFormatter
         }
 
         return null;
+    }
+
+    private function toFloatOrNull(mixed $value): ?float
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
     }
 
     private function formatWaterLevelContext(array $details): ?string

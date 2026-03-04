@@ -16,7 +16,7 @@ class _DummyWorkflowStateStore:
         return None
 
 
-def _bind_test_routes(*, validate_security_fn, latest_zone_task=None):
+def _build_test_app(*, validate_security_fn, latest_zone_task=None):
     app = FastAPI()
     store = _DummyWorkflowStateStore()
     latest_task = latest_zone_task or {"payload": {"config": {"execution": {"topology": "two_tank_drip_substrate_trays"}}}}
@@ -43,7 +43,7 @@ def _bind_test_routes(*, validate_security_fn, latest_zone_task=None):
     async def create_zone_event_fn(_zone_id, _event_type, _details):
         return None
 
-    return bind_zone_routes(
+    bind_zone_routes(
         app,
         validate_scheduler_zone_fn=validate_zone,
         validate_scheduler_security_baseline_fn=validate_security_fn,
@@ -57,6 +57,17 @@ def _bind_test_routes(*, validate_security_fn, latest_zone_task=None):
         create_zone_event_fn=create_zone_event_fn,
         get_trace_id_fn=lambda: None,
         logger=SimpleNamespace(info=lambda *_a, **_k: None, warning=lambda *_a, **_k: None),
+    )
+    return app
+
+
+def _bind_test_routes(*, validate_security_fn, latest_zone_task=None):
+    app = _build_test_app(validate_security_fn=validate_security_fn, latest_zone_task=latest_zone_task)
+    return (
+        next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/state"),
+        next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/control-mode" and "GET" in route.methods),
+        next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/control-mode" and "POST" in route.methods),
+        next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/manual-step"),
     )
 
 
@@ -121,3 +132,25 @@ async def test_manual_step_returns_409_when_zone_has_active_task():
     assert detail.get("zone_id") == 3
     assert detail.get("active_task_id") == "st-active"
     assert detail.get("active_task_status") == "running"
+
+
+@pytest.mark.asyncio
+async def test_start_relay_autotune_requires_security_baseline():
+    async def validate_security(_request):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    app = _build_test_app(validate_security_fn=validate_security)
+    start_relay_autotune = next(
+        route.endpoint
+        for route in app.routes
+        if route.path == "/zones/{zone_id}/start-relay-autotune"
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await start_relay_autotune(
+            zone_id=3,
+            request=SimpleNamespace(headers={}),
+            payload={"pid_type": "ph"},
+        )
+
+    assert exc.value.status_code == 401

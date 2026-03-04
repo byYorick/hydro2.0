@@ -197,3 +197,94 @@ def test_build_ec_component_batch_falls_back_to_npk_when_nutrition_components_ab
     assert len(commands) == 1
     assert commands[0]["component"] == "npk"
     assert commands[0]["mode"] == "legacy_single_component"
+
+
+def test_build_ec_component_batch_skips_component_with_invalid_calibration_and_continues():
+    commands = build_ec_component_batch(
+        targets={
+            "nutrition": {
+                "mode": "ratio_ec_pid",
+                "solution_volume_l": 10.0,
+                "components": {
+                    "npk": {"ratio_pct": 40},
+                    "calcium": {"ratio_pct": 20},
+                    "magnesium": {"ratio_pct": 20},
+                    "micro": {"ratio_pct": 20},
+                },
+            }
+        },
+        actuators={
+            "ec_npk_pump": {"role": "ec_npk_pump", "node_uid": "nd-a", "channel": "npk", "ml_per_sec": 2.0},
+            "ec_calcium_pump": {"role": "ec_calcium_pump", "node_uid": "nd-a", "channel": "calcium", "ml_per_sec": 0.0},
+            "ec_magnesium_pump": {"role": "ec_magnesium_pump", "node_uid": "nd-a", "channel": "magnesium", "ml_per_sec": 2.0},
+            "ec_micro_pump": {"role": "ec_micro_pump", "node_uid": "nd-a", "channel": "micro", "ml_per_sec": 2.0},
+        },
+        total_ml=30.0,
+        current_ec=0.5,
+        target_ec=1.7,
+        allowed_ec_components=None,
+        build_correction_command=_build_command,
+    )
+
+    assert len(commands) == 3
+    assert sorted(item["component"] for item in commands) == ["magnesium", "micro", "npk"]
+
+
+def test_build_ec_component_batch_returns_empty_when_all_components_invalid():
+    commands = build_ec_component_batch(
+        targets={
+            "nutrition": {
+                "mode": "ratio_ec_pid",
+                "solution_volume_l": 10.0,
+                "components": {
+                    "npk": {"ratio_pct": 40},
+                    "calcium": {"ratio_pct": 20},
+                    "magnesium": {"ratio_pct": 20},
+                    "micro": {"ratio_pct": 20},
+                },
+            }
+        },
+        actuators={
+            "ec_npk_pump": {"role": "ec_npk_pump", "node_uid": "nd-a", "channel": "npk", "ml_per_sec": 0.0},
+            "ec_calcium_pump": {"role": "ec_calcium_pump", "node_uid": "nd-a", "channel": "calcium", "ml_per_sec": 0.0},
+            "ec_magnesium_pump": {"role": "ec_magnesium_pump", "node_uid": "nd-a", "channel": "magnesium", "ml_per_sec": 0.0},
+            "ec_micro_pump": {"role": "ec_micro_pump", "node_uid": "nd-a", "channel": "micro", "ml_per_sec": 0.0},
+        },
+        total_ml=30.0,
+        current_ec=0.5,
+        target_ec=1.7,
+        allowed_ec_components=None,
+        build_correction_command=_build_command,
+    )
+
+    assert commands == []
+
+
+def test_build_ec_component_batch_returns_empty_when_npk_unavailable_after_skip():
+    commands = build_ec_component_batch(
+        targets={
+            "nutrition": {
+                "mode": "ratio_ec_pid",
+                "solution_volume_l": 10.0,
+                "components": {
+                    "npk": {"ratio_pct": 40},
+                    "calcium": {"ratio_pct": 20},
+                    "magnesium": {"ratio_pct": 20},
+                    "micro": {"ratio_pct": 20},
+                },
+            }
+        },
+        actuators={
+            "ec_npk_pump": {"role": "ec_npk_pump", "node_uid": "nd-a", "channel": "npk", "ml_per_sec": 0.0},
+            "ec_calcium_pump": {"role": "ec_calcium_pump", "node_uid": "nd-a", "channel": "calcium", "ml_per_sec": 2.0},
+            "ec_magnesium_pump": {"role": "ec_magnesium_pump", "node_uid": "nd-a", "channel": "magnesium", "ml_per_sec": 2.0},
+            "ec_micro_pump": {"role": "ec_micro_pump", "node_uid": "nd-a", "channel": "micro", "ml_per_sec": 2.0},
+        },
+        total_ml=30.0,
+        current_ec=0.5,
+        target_ec=1.7,
+        allowed_ec_components=None,
+        build_correction_command=_build_command,
+    )
+
+    assert commands == []

@@ -26,6 +26,7 @@ use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -44,6 +45,7 @@ class LiteAutomationSeeder extends Seeder
         $this->cleanupStaleLiteNodes($zoneNodes);
 
         $this->createInfrastructure($zones, $zoneNodes);
+        $this->seedPumpCalibrations($zoneNodes);
 
         [$plant, $revision] = $this->createRecipe();
         $cycles = $this->createCycles($zones, $revision, $plant->id);
@@ -480,6 +482,86 @@ class LiteAutomationSeeder extends Seeder
                 );
             }
         }
+    }
+
+    /**
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function seedPumpCalibrations(array $zoneNodes): void
+    {
+        if (! Schema::hasTable('pump_calibrations') || ! Schema::hasTable('channel_bindings')) {
+            $this->command->warn('pump_calibrations/channel_bindings tables are missing, skipping pump calibration seed');
+
+            return;
+        }
+
+        $defaults = [
+            'ph_acid_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_down'],
+            'ph_base_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_up'],
+            'ec_npk_pump' => ['ml_per_sec' => 1.0, 'component' => 'npk'],
+            'ec_calcium_pump' => ['ml_per_sec' => 1.0, 'component' => 'calcium'],
+            'ec_magnesium_pump' => ['ml_per_sec' => 1.0, 'component' => 'magnesium'],
+            'ec_micro_pump' => ['ml_per_sec' => 0.8, 'component' => 'micro'],
+        ];
+
+        $now = now();
+
+        foreach ($zoneNodes as $nodesByRole) {
+            foreach ($nodesByRole as $node) {
+                $channels = NodeChannel::query()
+                    ->where('node_id', $node->id)
+                    ->where('type', 'actuator')
+                    ->get(['id']);
+                if ($channels->isEmpty()) {
+                    continue;
+                }
+
+                $rolesByChannelId = ChannelBinding::query()
+                    ->whereIn('node_channel_id', $channels->pluck('id'))
+                    ->pluck('role', 'node_channel_id');
+
+                foreach ($channels as $channel) {
+                    $role = $rolesByChannelId->get($channel->id);
+                    if (! is_string($role) || ! array_key_exists($role, $defaults)) {
+                        continue;
+                    }
+
+                    $defaultConfig = $defaults[$role];
+                    $component = $defaultConfig['component'];
+
+                    $baseQuery = DB::table('pump_calibrations')
+                        ->where('node_channel_id', $channel->id)
+                        ->where('source', 'default_seed')
+                        ->whereNull('valid_to');
+
+                    $payload = [
+                        'component' => $component,
+                        'ml_per_sec' => $defaultConfig['ml_per_sec'],
+                        'is_active' => true,
+                        'valid_from' => $now,
+                        'updated_at' => $now,
+                    ];
+
+                    if ($baseQuery->exists()) {
+                        $baseQuery->update($payload);
+                    } else {
+                        DB::table('pump_calibrations')->insert([
+                            'node_channel_id' => $channel->id,
+                            'component' => $component,
+                            'ml_per_sec' => $defaultConfig['ml_per_sec'],
+                            'source' => 'default_seed',
+                            'is_active' => true,
+                            'valid_from' => $now,
+                            'valid_to' => null,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        $this->command->info('Pump calibrations seeded with defaults');
     }
 
     /**

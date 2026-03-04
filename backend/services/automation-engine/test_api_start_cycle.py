@@ -387,6 +387,8 @@ def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():
     assert "/zones/{zone_id}/state" in route_paths
     assert "/zones/{zone_id}/control-mode" in route_paths
     assert "/zones/{zone_id}/manual-step" in route_paths
+    assert "/zones/{zone_id}/start-relay-autotune" in route_paths
+    assert "/zones/{zone_id}/relay-autotune/status" in route_paths
     assert "/zones/{zone_id}/automation-state" not in route_paths
     assert "/zones/{zone_id}/automation/control-mode" not in route_paths
     assert "/zones/{zone_id}/automation/manual-step" not in route_paths

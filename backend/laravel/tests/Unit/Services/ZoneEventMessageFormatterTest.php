@@ -188,4 +188,15 @@ class ZoneEventMessageFormatterTest extends TestCase
             $message
         );
     }
+
+    public function test_format_relay_autotune_completed_alias_is_supported(): void
+    {
+        $message = $this->formatter->format('RELAY_AUTOTUNE_COMPLETED', [
+            'kp' => 6.7,
+            'ki' => 0.11,
+            'cycles_detected' => 3,
+        ]);
+
+        $this->assertSame('Автотюнинг завершён: Kp=6.700, Ki=0.1100 (3 циклов)', $message);
+    }
 }

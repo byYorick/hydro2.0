@@ -237,6 +237,16 @@
         </div>
       </section>
 
+      <section class="grid gap-4 xl:grid-cols-2">
+        <PidConfigForm
+          :zone-id="Number(zoneId)"
+          @saved="onPidSaved"
+        />
+        <RelayAutotuneTrigger :zone-id="Number(zoneId)" />
+      </section>
+
+      <PumpCalibrationsPanel :zone-id="Number(zoneId)" />
+
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
@@ -593,6 +603,9 @@ import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProcessPanel from '@/Components/AutomationProcessPanel.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import PidConfigForm from '@/Components/PidConfigForm.vue'
+import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
+import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import ZoneAutomationSchedulerTaskDetailsCard from '@/Pages/Zones/Tabs/ZoneAutomationSchedulerTaskDetailsCard.vue'
 import type {
@@ -601,6 +614,7 @@ import type {
   WaterFormState,
 } from '@/composables/zoneAutomationTypes'
 import type { AutomationManualStep, AutomationState, AutomationStateType } from '@/types/Automation'
+import type { PidConfigWithMeta } from '@/types/PidConfig'
 import {
   type ZoneAutomationTabProps,
   useZoneAutomationTab,
@@ -714,6 +728,10 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
 
 function isManualStepAllowed(step: AutomationManualStep): boolean {
   return allowedManualSteps.value.includes(step)
+}
+
+function onPidSaved(_config: PidConfigWithMeta): void {
+  void fetchRecentSchedulerTasks()
 }
 
 async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {

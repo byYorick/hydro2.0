@@ -1,0 +1,434 @@
+# E81: EC correction should work with partial pump calibration
+# DoD:
+# - В окне сценария появляется EC_DOSING
+# - Команды add_nutrients отправляются для npk и calcium
+# - Для magnesium и micro команды не отправляются
+
+name: E81_ec_correction_partial_calibration
+description: |
+  Проверяет partial-failure поведение EC batch:
+  1) npk/calcium калиброваны,
+  2) magnesium/micro имеют нулевую калибровку,
+  3) при дефиците EC контроллер продолжает дозирование доступными компонентами.
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${TEST_NODE_GH_UID}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: ${TEST_NODE_UID}
+    test_ph_node_uid: ${TEST_PH_NODE_UID}
+    test_ec_node_uid: ${TEST_EC_NODE_UID}
+
+  - step: get_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: mark_test_started
+    type: database_query
+    query: |
+      SELECT NOW() AS started_at
+    save: test_window
+    expected_rows: 1
+
+  - step: ensure_nodes_online
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET status = 'online',
+          last_seen_at = COALESCE(last_seen_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND uid IN (:main_uid, :ph_uid, :ec_uid);
+    params:
+      zone_id: ${zone_id}
+      main_uid: ${test_node_uid}
+      ph_uid: ${test_ph_node_uid}
+      ec_uid: ${test_ec_node_uid}
+
+  - step: check_active_cycle
+    type: database_query
+    query: |
+      SELECT id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+        AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: active_cycle
+
+  - step: create_plant_if_needed
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e81-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    condition: ${active_cycle.length == 0}
+
+  - step: create_recipe_if_needed
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e81-${TIMESTAMP_S}
+      description: Test recipe for E81
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+    condition: ${active_cycle.length == 0}
+
+  - step: create_revision_if_needed
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E81
+    save: revision_response
+    condition: ${active_cycle.length == 0}
+
+  - step: add_phase_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase E81
+      duration_hours: 24
+      ph_target: 5.8
+      ph_min: 5.5
+      ph_max: 6.1
+      ec_target: 1.6
+      ec_min: 1.2
+      ec_max: 2.0
+      temp_air_target: 22.0
+      humidity_target: 60.0
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+    condition: ${active_cycle.length == 0}
+
+  - step: publish_revision_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+    condition: ${active_cycle.length == 0}
+
+  - step: create_cycle_if_needed
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+    condition: ${active_cycle.length == 0}
+
+  - step: ensure_cycle_running
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET status = 'RUNNING',
+          updated_at = NOW()
+      WHERE id = (
+        SELECT id
+        FROM grow_cycles
+        WHERE zone_id = :zone_id
+        ORDER BY created_at DESC
+        LIMIT 1
+      );
+    params:
+      zone_id: ${zone_id}
+
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_for_ec_component_bindings
+    type: db.wait
+    query: |
+      SELECT cb.node_channel_id, cb.role
+      FROM channel_bindings cb
+      JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+      WHERE ii.owner_type = 'zone'
+        AND ii.owner_id = :zone_id
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump')
+      ORDER BY cb.role
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 4
+    timeout: 120.0
+
+  - step: update_existing_ec_calibrations
+    type: database_execute
+    query: |
+      UPDATE pump_calibrations pc
+      SET ml_per_sec = CASE cb.role
+          WHEN 'ec_npk_pump' THEN 1.0
+          WHEN 'ec_calcium_pump' THEN 1.0
+          WHEN 'ec_magnesium_pump' THEN 0.0
+          WHEN 'ec_micro_pump' THEN 0.0
+          ELSE pc.ml_per_sec
+        END,
+        is_active = TRUE,
+        source = 'e2e_e81_partial',
+        valid_from = NOW(),
+        updated_at = NOW()
+      FROM channel_bindings cb
+      JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+      WHERE pc.node_channel_id = cb.node_channel_id
+        AND ii.owner_type = 'zone'
+        AND ii.owner_id = :zone_id
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump');
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_missing_ec_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO pump_calibrations (
+        node_channel_id,
+        component,
+        ml_per_sec,
+        is_active,
+        source,
+        valid_from,
+        created_at,
+        updated_at
+      )
+      SELECT
+        cb.node_channel_id,
+        CASE cb.role
+          WHEN 'ec_npk_pump' THEN 'npk'
+          WHEN 'ec_calcium_pump' THEN 'calcium'
+          WHEN 'ec_magnesium_pump' THEN 'magnesium'
+          WHEN 'ec_micro_pump' THEN 'micro'
+        END,
+        CASE cb.role
+          WHEN 'ec_npk_pump' THEN 1.0
+          WHEN 'ec_calcium_pump' THEN 1.0
+          WHEN 'ec_magnesium_pump' THEN 0.0
+          WHEN 'ec_micro_pump' THEN 0.0
+        END,
+        TRUE,
+        'e2e_e81_partial',
+        NOW(),
+        NOW(),
+        NOW()
+      FROM channel_bindings cb
+      JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+      WHERE ii.owner_type = 'zone'
+        AND ii.owner_id = :zone_id
+        AND cb.role IN ('ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pump_calibrations pc
+          WHERE pc.node_channel_id = cb.node_channel_id
+            AND pc.is_active = TRUE
+        );
+    params:
+      zone_id: ${zone_id}
+
+  - step: compute_now_ts
+    type: database_query
+    query: |
+      SELECT EXTRACT(EPOCH FROM NOW())::bigint AS now_ts
+    save: now_ts_row
+    expected_rows: 1
+
+  - step: publish_ec_low_1
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_ec_node_uid}/ec_sensor/telemetry
+    payload:
+      metric_type: EC
+      value: 1.00
+      ts: ${now_ts_row.0.now_ts}
+    qos: 1
+    wait_seconds: 6
+
+  - step: publish_ec_low_2
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_ec_node_uid}/ec_sensor/telemetry
+    payload:
+      metric_type: EC
+      value: 1.02
+      ts: ${now_ts_row.0.now_ts}
+    qos: 1
+    wait_seconds: 12
+
+  - step: wait_for_ec_dosing_event
+    type: db.wait
+    query: |
+      SELECT id
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'EC_DOSING'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    timeout: 180.0
+    save: ec_dosing_event
+    expected_rows: 1
+
+  - step: wait_for_npk_command
+    type: db.wait
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'npk'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    timeout: 180.0
+    save: npk_cmd
+    expected_rows: 1
+
+  - step: wait_for_calcium_command
+    type: db.wait
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'calcium'
+        AND created_at >= :started_at
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    timeout: 180.0
+    save: calcium_cmd
+    expected_rows: 1
+
+assertions:
+  - name: ec_dosing_event_exists
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'EC_DOSING'
+        AND created_at >= :started_at
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: greater_than_or_equal
+        value: 1
+
+  - name: npk_commanded
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'npk'
+        AND created_at >= :started_at
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: greater_than
+        value: 0
+
+  - name: calcium_commanded
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'calcium'
+        AND created_at >= :started_at
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: greater_than
+        value: 0
+
+  - name: magnesium_not_commanded
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'magnesium'
+        AND created_at >= :started_at
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: equals
+        value: 0
+
+  - name: micro_not_commanded
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'run_pump'
+        AND params->>'type' = 'add_nutrients'
+        AND params->>'component' = 'micro'
+        AND created_at >= :started_at
+    params:
+      zone_id: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: noop_cleanup
+    type: sleep
+    seconds: 1

@@ -234,86 +234,12 @@ def build_correction_gating_state(
             "workflow_phase_override": normalized_workflow_phase,
         }
 
-    missing_flags = [name for name in required_flag_names if normalized_flags[name] is None]
-    if missing_flags:
-        return {
-            "can_run": False,
-            "reason_code": "missing_flags",
-            "missing_flags": missing_flags,
-            "stale_flags": [],
-            "stale_flag_reasons": {},
-            "flags": normalized_flags,
-            "flag_age_seconds": flag_age_seconds,
-            "require_timestamps": require_timestamps,
-            "timestamp_diagnostics": timestamp_diagnostics,
-        }
-
-    stale_flags = collect_stale_correction_flags(
-        normalized_flags=normalized_flags,
-        now=now,
-        required_flag_names=required_flag_names,
-        max_age_seconds=flags_max_age_seconds,
-        require_timestamps=require_timestamps,
-        default_require_timestamps=flags_require_timestamps,
-    )
-    if stale_flags:
-        stale_flag_reasons = build_stale_flag_reasons(
-            stale_flags=stale_flags,
-            timestamp_diagnostics=timestamp_diagnostics,
-            require_timestamps=require_timestamps,
-        )
-        return {
-            "can_run": False,
-            "reason_code": "stale_flags",
-            "missing_flags": [],
-            "stale_flags": stale_flags,
-            "stale_flag_reasons": stale_flag_reasons,
-            "flags": normalized_flags,
-            "flag_age_seconds": flag_age_seconds,
-            "require_timestamps": require_timestamps,
-            "timestamp_diagnostics": timestamp_diagnostics,
-        }
-
-    if not normalized_flags["flow_active"]:
-        return {
-            "can_run": False,
-            "reason_code": "flow_inactive",
-            "missing_flags": [],
-            "stale_flags": [],
-            "stale_flag_reasons": {},
-            "flags": normalized_flags,
-            "flag_age_seconds": flag_age_seconds,
-            "require_timestamps": require_timestamps,
-            "timestamp_diagnostics": timestamp_diagnostics,
-        }
-    if not normalized_flags["stable"]:
-        return {
-            "can_run": False,
-            "reason_code": "sensor_unstable",
-            "missing_flags": [],
-            "stale_flags": [],
-            "stale_flag_reasons": {},
-            "flags": normalized_flags,
-            "flag_age_seconds": flag_age_seconds,
-            "require_timestamps": require_timestamps,
-            "timestamp_diagnostics": timestamp_diagnostics,
-        }
-    if not normalized_flags["corrections_allowed"]:
-        return {
-            "can_run": False,
-            "reason_code": "corrections_not_allowed",
-            "missing_flags": [],
-            "stale_flags": [],
-            "stale_flag_reasons": {},
-            "flags": normalized_flags,
-            "flag_age_seconds": flag_age_seconds,
-            "require_timestamps": require_timestamps,
-            "timestamp_diagnostics": timestamp_diagnostics,
-        }
-
+    # Коррекция разрешена ТОЛЬКО в открытых фазах workflow (наполнение раствором,
+    # рециркуляция, полив). В любой другой фазе (idle, tank_clean_fill, startup, и т.д.)
+    # — блокируем, чтобы не дозировать вслепую.
     return {
-        "can_run": True,
-        "reason_code": "gating_passed",
+        "can_run": False,
+        "reason_code": "workflow_phase_not_open",
         "missing_flags": [],
         "stale_flags": [],
         "stale_flag_reasons": {},
@@ -321,6 +247,7 @@ def build_correction_gating_state(
         "flag_age_seconds": flag_age_seconds,
         "require_timestamps": require_timestamps,
         "timestamp_diagnostics": timestamp_diagnostics,
+        "workflow_phase": normalized_workflow_phase,
     }
 
 

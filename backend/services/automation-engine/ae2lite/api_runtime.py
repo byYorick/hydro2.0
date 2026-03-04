@@ -380,4 +380,5 @@ get_zone_state_override = lambda zone_id: policy_get_zone_state_override(zone_id
     create_zone_event_fn=create_zone_event,
     get_trace_id_fn=get_trace_id,
     logger=logger,
+    get_zone_service_fn=lambda: _zone_service,
 )

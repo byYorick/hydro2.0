@@ -637,7 +637,9 @@ zone_id FK → zones
 pid_type VARCHAR (ph/ec)
 integral FLOAT DEFAULT 0
 prev_error FLOAT NULL
+prev_derivative FLOAT DEFAULT 0
 last_output_ms BIGINT DEFAULT 0
+last_dose_at TIMESTAMPTZ NULL
 stats JSONB NULL
 current_zone VARCHAR NULL
 created_at TIMESTAMP

@@ -80,7 +80,7 @@ export function useDashboardPage({ dashboard }: UseDashboardPageOptions): {
   telemetryPeriodLabel: ComputedRef<string>;
   hasZonesForTelemetry: ComputedRef<boolean>;
   isQuickActionLoading: (zoneId: number, action?: QuickAction) => boolean;
-  eventFilter: Ref<"ALL" | "ALERT" | "WARNING" | "INFO" | "SUCCESS">;
+  eventFilter: Ref<"ALL" | "ALERT" | "WARNING" | "INFO" | "ACTION" | "SUCCESS">;
   filteredEvents: Ref<Array<{ id: number; kind: string; message: string; occurred_at?: string; created_at?: string; zone_id?: number }>>;
   telemetryMetrics: Ref<Array<{ key: string; label: string; data: Array<{ ts: number; value?: number | null; avg?: number | null; min?: number | null; max?: number | null }>; currentValue?: number; unit: string; loading: boolean; color: string }>>;
   handleOpenDetail: (zoneId: number, metric: string) => void;

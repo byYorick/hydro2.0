@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
-from common.db import fetch
+from common.db import create_zone_event, execute, fetch
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePidConfig, PidZone, PidZoneCoeffs
 
@@ -165,109 +165,262 @@ def invalidate_cache(zone_id: int, correction_type: Optional[str] = None):
         logger.debug(f"Invalidated PID config cache: zone={zone_id}, type={correction_type or 'all'}")
 
 
+async def save_autotune_result(zone_id: int, correction_type: str, result: Dict[str, Any]) -> None:
+    """
+    Сохранить результат relay-autotune в zone_pid_configs и инвалидировать кеш.
+    Обновляются только zone_coeffs.close/far (kp, ki), остальные поля конфига сохраняются.
+    """
+    pid_type = str(correction_type or "").strip().lower()
+    if pid_type not in {"ph", "ec"}:
+        raise ValueError(f"Unsupported PID type: {correction_type}")
+
+    kp = float(result.get("kp") or 0.0)
+    ki = float(result.get("ki") or 0.0)
+    kd = float(result.get("kd") or 0.0)
+    if kp <= 0:
+        raise ValueError(f"Invalid autotune kp={kp}")
+    if ki < 0:
+        raise ValueError(f"Invalid autotune ki={ki}")
+
+    rows = await fetch(
+        """
+        SELECT config
+        FROM zone_pid_configs
+        WHERE zone_id = $1 AND type = $2
+        LIMIT 1
+        """,
+        zone_id,
+        pid_type,
+    )
+    if rows:
+        raw_config = rows[0].get("config")
+        if isinstance(raw_config, dict):
+            config_json = dict(raw_config)
+        else:
+            config_json = json.loads(raw_config)
+    else:
+        settings = get_settings()
+        default_setpoint = 6.0 if pid_type == "ph" else 2.0
+        config_json = _pid_config_to_json(_build_default_config(settings, default_setpoint, pid_type))
+
+    zone_coeffs = config_json.get("zone_coeffs")
+    if not isinstance(zone_coeffs, dict):
+        zone_coeffs = {}
+    close = zone_coeffs.get("close")
+    if not isinstance(close, dict):
+        close = {}
+    far = zone_coeffs.get("far")
+    if not isinstance(far, dict):
+        far = {}
+
+    close["kp"] = kp
+    close["ki"] = ki
+    close["kd"] = float(close.get("kd", kd) or 0.0)
+    far["kp"] = kp
+    far["ki"] = ki
+    far["kd"] = float(far.get("kd", kd) or 0.0)
+    zone_coeffs["close"] = close
+    zone_coeffs["far"] = far
+    config_json["zone_coeffs"] = zone_coeffs
+
+    config_json["autotune_meta"] = {
+        "source": result.get("source") or "relay_autotune",
+        "kp": kp,
+        "ki": ki,
+        "kd": kd,
+        "ku": float(result.get("ku") or 0.0),
+        "tu_sec": float(result.get("tu_sec") or 0.0),
+        "oscillation_amplitude": float(result.get("oscillation_amplitude") or 0.0),
+        "cycles_detected": int(result.get("cycles_detected") or 0),
+        "duration_sec": float(result.get("duration_sec") or 0.0),
+        "tuned_at": result.get("tuned_at"),
+    }
+    # Backward compatibility: убираем legacy-ключ после миграции на autotune_meta.
+    config_json.pop("autotune", None)
+
+    await execute(
+        """
+        INSERT INTO zone_pid_configs (zone_id, type, config, updated_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (zone_id, type) DO UPDATE
+        SET config = EXCLUDED.config,
+            updated_at = NOW()
+        """,
+        zone_id,
+        pid_type,
+        config_json,
+    )
+
+    invalidate_cache(zone_id, pid_type)
+    await create_zone_event(
+        zone_id,
+        "PID_CONFIG_UPDATED",
+        {
+            "type": pid_type,
+            "source": "relay_autotune",
+            "new_config": {
+                "zone_coeffs": {
+                    "close": {"kp": close["kp"], "ki": close["ki"], "kd": close["kd"]},
+                    "far": {"kp": far["kp"], "ki": far["ki"], "kd": far["kd"]},
+                }
+            },
+            "autotune_meta": config_json.get("autotune_meta"),
+        },
+    )
+    await create_zone_event(
+        zone_id,
+        "RELAY_AUTOTUNE_COMPLETED",
+        {
+            "type": pid_type,
+            "source": "relay_autotune",
+            "kp": kp,
+            "ki": ki,
+            "kd": kd,
+            "ku": float(result.get("ku") or 0.0),
+            "tu_sec": float(result.get("tu_sec") or 0.0),
+            "oscillation_amplitude": float(result.get("oscillation_amplitude") or 0.0),
+            "cycles_detected": int(result.get("cycles_detected") or 0),
+            "duration_sec": float(result.get("duration_sec") or 0.0),
+            "tuned_at": result.get("tuned_at"),
+        },
+    )
+    logger.info(
+        "Saved relay autotune PID config: zone=%s type=%s kp=%.4f ki=%.5f",
+        zone_id,
+        pid_type,
+        kp,
+        ki,
+    )
+
+
 def _json_to_pid_config(config_json: Dict[str, Any], setpoint: float, correction_type: str) -> AdaptivePidConfig:
     """Преобразовать JSON конфиг в AdaptivePidConfig."""
-    zone_coeffs = {}
-    
-    # Коэффициенты для зон
-    if 'zone_coeffs' in config_json:
-        coeffs = config_json['zone_coeffs']
-        if not isinstance(coeffs, dict):
-            logger.warning(f"Invalid zone_coeffs type: {type(coeffs)}, expected dict. Using defaults.")
-            coeffs = {}
-        
-        if 'close' in coeffs and isinstance(coeffs['close'], dict):
-            zone_coeffs[PidZone.CLOSE] = PidZoneCoeffs(
-                kp=float(coeffs['close'].get('kp', 0.0)),
-                ki=float(coeffs['close'].get('ki', 0.0)),
-                kd=float(coeffs['close'].get('kd', 0.0)),
-            )
-        else:
-            logger.warning(f"Missing or invalid 'close' zone_coeffs. Using defaults.")
-            # Используем дефолтные значения для close зоны
-            settings = get_settings()
-            if correction_type == 'ph':
-                zone_coeffs[PidZone.CLOSE] = PidZoneCoeffs(
-                    settings.PH_PID_KP_CLOSE,
-                    settings.PH_PID_KI_CLOSE,
-                    settings.PH_PID_KD_CLOSE,
-                )
-            else:
-                zone_coeffs[PidZone.CLOSE] = PidZoneCoeffs(
-                    settings.EC_PID_KP_CLOSE,
-                    settings.EC_PID_KI_CLOSE,
-                    settings.EC_PID_KD_CLOSE,
-                )
-        
-        if 'far' in coeffs and isinstance(coeffs['far'], dict):
-            zone_coeffs[PidZone.FAR] = PidZoneCoeffs(
-                kp=float(coeffs['far'].get('kp', 0.0)),
-                ki=float(coeffs['far'].get('ki', 0.0)),
-                kd=float(coeffs['far'].get('kd', 0.0)),
-            )
-        else:
-            logger.warning(f"Missing or invalid 'far' zone_coeffs. Using defaults.")
-            # Используем дефолтные значения для far зоны
-            settings = get_settings()
-            if correction_type == 'ph':
-                zone_coeffs[PidZone.FAR] = PidZoneCoeffs(
-                    settings.PH_PID_KP_FAR,
-                    settings.PH_PID_KI_FAR,
-                    settings.PH_PID_KD_FAR,
-                )
-            else:
-                zone_coeffs[PidZone.FAR] = PidZoneCoeffs(
-                    settings.EC_PID_KP_FAR,
-                    settings.EC_PID_KI_FAR,
-                    settings.EC_PID_KD_FAR,
-                )
-    
-    # Если zone_coeffs отсутствует или пустой, используем дефолтные значения
-    if not zone_coeffs or PidZone.CLOSE not in zone_coeffs or PidZone.FAR not in zone_coeffs:
-        settings = get_settings()
-        if correction_type == 'ph':
-            if PidZone.CLOSE not in zone_coeffs:
-                zone_coeffs[PidZone.CLOSE] = PidZoneCoeffs(
-                    settings.PH_PID_KP_CLOSE,
-                    settings.PH_PID_KI_CLOSE,
-                    settings.PH_PID_KD_CLOSE,
-                )
-            if PidZone.FAR not in zone_coeffs:
-                zone_coeffs[PidZone.FAR] = PidZoneCoeffs(
-                    settings.PH_PID_KP_FAR,
-                    settings.PH_PID_KI_FAR,
-                    settings.PH_PID_KD_FAR,
-                )
-        else:  # ec
-            if PidZone.CLOSE not in zone_coeffs:
-                zone_coeffs[PidZone.CLOSE] = PidZoneCoeffs(
-                    settings.EC_PID_KP_CLOSE,
-                    settings.EC_PID_KI_CLOSE,
-                    settings.EC_PID_KD_CLOSE,
-                )
-            if PidZone.FAR not in zone_coeffs:
-                zone_coeffs[PidZone.FAR] = PidZoneCoeffs(
-                    settings.EC_PID_KP_FAR,
-                    settings.EC_PID_KI_FAR,
-                    settings.EC_PID_KD_FAR,
-                )
-    
-    # Dead zone всегда имеет нулевые коэффициенты
-    zone_coeffs[PidZone.DEAD] = PidZoneCoeffs(0.0, 0.0, 0.0)
-    
-    return AdaptivePidConfig(
+    settings = get_settings()
+    # Backward compatibility: старый ключ `autotune` -> новый `autotune_meta`.
+    autotune_meta = config_json.get("autotune_meta")
+    if not isinstance(autotune_meta, dict):
+        legacy_autotune = config_json.get("autotune")
+        if isinstance(legacy_autotune, dict):
+            autotune_meta = legacy_autotune
+            config_json["autotune_meta"] = legacy_autotune
+
+    def _parse_float(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    if correction_type == "ph":
+        default_close_coeffs = PidZoneCoeffs(settings.PH_PID_KP_CLOSE, settings.PH_PID_KI_CLOSE, settings.PH_PID_KD_CLOSE)
+        default_far_coeffs = PidZoneCoeffs(settings.PH_PID_KP_FAR, settings.PH_PID_KI_FAR, settings.PH_PID_KD_FAR)
+        default_dead_zone = settings.PH_PID_DEAD_ZONE
+        default_close_zone = settings.PH_PID_CLOSE_ZONE
+        default_far_zone = settings.PH_PID_FAR_ZONE
+        default_max_output = settings.PH_PID_MAX_OUTPUT
+        default_max_integral = settings.PH_PID_MAX_INTEGRAL
+        default_min_interval_ms = settings.PH_PID_MIN_INTERVAL_MS
+        default_derivative_filter_alpha = settings.PH_PID_DERIVATIVE_FILTER_ALPHA
+    else:
+        default_close_coeffs = PidZoneCoeffs(settings.EC_PID_KP_CLOSE, settings.EC_PID_KI_CLOSE, settings.EC_PID_KD_CLOSE)
+        default_far_coeffs = PidZoneCoeffs(settings.EC_PID_KP_FAR, settings.EC_PID_KI_FAR, settings.EC_PID_KD_FAR)
+        default_dead_zone = settings.EC_PID_DEAD_ZONE
+        default_close_zone = settings.EC_PID_CLOSE_ZONE
+        default_far_zone = settings.EC_PID_FAR_ZONE
+        default_max_output = settings.EC_PID_MAX_OUTPUT
+        default_max_integral = settings.EC_PID_MAX_INTEGRAL
+        default_min_interval_ms = settings.EC_PID_MIN_INTERVAL_MS
+        default_derivative_filter_alpha = settings.EC_PID_DERIVATIVE_FILTER_ALPHA
+
+    coeffs = config_json.get("zone_coeffs")
+    if not isinstance(coeffs, dict):
+        logger.warning("Invalid zone_coeffs type: %s, expected dict. Using defaults.", type(coeffs))
+        coeffs = {}
+
+    close_cfg = coeffs.get("close")
+    if isinstance(close_cfg, dict):
+        close_ki = _parse_float(close_cfg.get("ki"), default_close_coeffs.ki)
+        if close_ki <= 0:
+            close_ki = float(default_close_coeffs.ki)
+        close_coeffs = PidZoneCoeffs(
+            kp=_parse_float(close_cfg.get("kp"), default_close_coeffs.kp),
+            ki=close_ki,
+            kd=_parse_float(close_cfg.get("kd"), default_close_coeffs.kd),
+        )
+    else:
+        logger.warning("Missing or invalid 'close' zone_coeffs. Using defaults.")
+        close_coeffs = default_close_coeffs
+
+    far_cfg = coeffs.get("far")
+    if isinstance(far_cfg, dict):
+        far_ki = _parse_float(far_cfg.get("ki"), default_far_coeffs.ki)
+        if far_ki <= 0:
+            far_ki = float(default_far_coeffs.ki)
+        far_coeffs = PidZoneCoeffs(
+            kp=_parse_float(far_cfg.get("kp"), default_far_coeffs.kp),
+            ki=far_ki,
+            kd=_parse_float(far_cfg.get("kd"), default_far_coeffs.kd),
+        )
+    else:
+        logger.warning("Missing or invalid 'far' zone_coeffs. Using defaults.")
+        far_coeffs = default_far_coeffs
+
+    zone_coeffs = {
+        PidZone.DEAD: PidZoneCoeffs(0.0, 0.0, 0.0),
+        PidZone.CLOSE: close_coeffs,
+        PidZone.FAR: far_coeffs,
+    }
+
+    pid_config = AdaptivePidConfig(
         setpoint=setpoint,  # Используем setpoint из рецепта, а не из конфига
-        dead_zone=float(config_json.get('dead_zone', 0.2)),
-        close_zone=float(config_json.get('close_zone', 0.5)),
-        far_zone=float(config_json.get('far_zone', 1.0)),
+        dead_zone=float(config_json.get('dead_zone', default_dead_zone)),
+        close_zone=float(config_json.get('close_zone', default_close_zone)),
+        far_zone=float(config_json.get('far_zone', default_far_zone)),
         zone_coeffs=zone_coeffs,
-        max_output=float(config_json.get('max_output', 50.0)),
-        min_output=0.0,
-        max_integral=100.0,
-        min_interval_ms=int(config_json.get('min_interval_ms', 60000)),
-        enable_autotune=bool(config_json.get('enable_autotune', False)),
-        adaptation_rate=float(config_json.get('adaptation_rate', 0.05)),
+        max_output=float(config_json.get('max_output', default_max_output)),
+        min_output=float(config_json.get('min_output', 0.0)),
+        max_integral=float(config_json.get('max_integral', default_max_integral)),
+        anti_windup_mode=str(config_json.get('anti_windup_mode', settings.PID_ANTI_WINDUP_MODE)),
+        back_calculation_gain=float(config_json.get('back_calculation_gain', settings.PID_BACK_CALCULATION_GAIN)),
+        derivative_filter_alpha=float(config_json.get('derivative_filter_alpha', default_derivative_filter_alpha)),
+        min_interval_ms=int(config_json.get('min_interval_ms', default_min_interval_ms)),
     )
+    if isinstance(autotune_meta, dict):
+        setattr(pid_config, "autotune_meta", autotune_meta)
+    return pid_config
+
+
+def _pid_config_to_json(config: AdaptivePidConfig) -> Dict[str, Any]:
+    close = config.zone_coeffs.get(PidZone.CLOSE, PidZoneCoeffs(0.0, 0.0, 0.0))
+    far = config.zone_coeffs.get(PidZone.FAR, PidZoneCoeffs(0.0, 0.0, 0.0))
+    result: Dict[str, Any] = {
+        "target": float(config.setpoint),
+        "dead_zone": float(config.dead_zone),
+        "close_zone": float(config.close_zone),
+        "far_zone": float(config.far_zone),
+        "zone_coeffs": {
+            "close": {
+                "kp": float(close.kp),
+                "ki": float(close.ki),
+                "kd": float(close.kd),
+            },
+            "far": {
+                "kp": float(far.kp),
+                "ki": float(far.ki),
+                "kd": float(far.kd),
+            },
+        },
+        "max_output": float(config.max_output),
+        "min_output": float(config.min_output),
+        "max_integral": float(config.max_integral),
+        "anti_windup_mode": str(config.anti_windup_mode),
+        "back_calculation_gain": float(config.back_calculation_gain),
+        "derivative_filter_alpha": float(config.derivative_filter_alpha),
+        "min_interval_ms": int(config.min_interval_ms),
+    }
+    autotune_meta = getattr(config, "autotune_meta", None)
+    if isinstance(autotune_meta, dict):
+        result["autotune_meta"] = autotune_meta
+    return result
 
 
 def _build_default_config(settings, setpoint: float, correction_type: str) -> AdaptivePidConfig:
@@ -293,10 +446,11 @@ def _build_default_config(settings, setpoint: float, correction_type: str) -> Ad
             },
             max_output=settings.PH_PID_MAX_OUTPUT,
             min_output=0.0,
-            max_integral=100.0,
+            max_integral=settings.PH_PID_MAX_INTEGRAL,
+            anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
+            back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
+            derivative_filter_alpha=settings.PH_PID_DERIVATIVE_FILTER_ALPHA,
             min_interval_ms=settings.PH_PID_MIN_INTERVAL_MS,
-            enable_autotune=settings.PH_PID_ENABLE_AUTOTUNE,
-            adaptation_rate=settings.PH_PID_ADAPTATION_RATE,
         )
     else:  # ec
         return AdaptivePidConfig(
@@ -319,9 +473,9 @@ def _build_default_config(settings, setpoint: float, correction_type: str) -> Ad
             },
             max_output=settings.EC_PID_MAX_OUTPUT,
             min_output=0.0,
-            max_integral=100.0,
+            max_integral=settings.EC_PID_MAX_INTEGRAL,
+            anti_windup_mode=settings.PID_ANTI_WINDUP_MODE,
+            back_calculation_gain=settings.PID_BACK_CALCULATION_GAIN,
+            derivative_filter_alpha=settings.EC_PID_DERIVATIVE_FILTER_ALPHA,
             min_interval_ms=settings.EC_PID_MIN_INTERVAL_MS,
-            enable_autotune=settings.EC_PID_ENABLE_AUTOTUNE,
-            adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
         )
-

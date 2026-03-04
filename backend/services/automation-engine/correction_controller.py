@@ -71,6 +71,7 @@ class CorrectionController:
         self._pending_effect_window_by_zone: Dict[int, Dict[str, Any]] = {}
         self._no_effect_streak_by_zone: Dict[int, int] = {}
         self._anomaly_blocked_until_by_zone: Dict[int, float] = {}
+        self._autotune_by_zone: Dict[int, Any] = {}
 
     _log_skip = log_skip_decision
     _is_anomaly_guard_enabled = is_anomaly_guard_enabled
@@ -105,4 +106,3 @@ class CorrectionController:
     _determine_correction_type = determine_correction_type_for_diff
     _calculate_amount = calculate_amount_for_diff
     _get_correction_event_type = get_correction_event_type_for_controller
-

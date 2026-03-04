@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import time
 from typing import Any, Awaitable, Callable, Dict, Optional
 from uuid import uuid4
 
 from fastapi import Body, FastAPI, HTTPException, Request
+from config.settings import get_settings
+from utils.adaptive_pid import RelayAutotuneConfig, RelayAutotuner
 
 from ae2lite.api_automation_state import (
     build_timeline_label as policy_build_timeline_label,
@@ -69,6 +72,7 @@ def bind_zone_routes(
     create_zone_event_fn: Callable[[int, str, Dict[str, Any]], Awaitable[Any]],
     get_trace_id_fn: Callable[[], Optional[str]],
     logger: Any,
+    get_zone_service_fn: Optional[Callable[[], Any]] = None,
 ):
     async def _load_zone_control_mode(zone_id: int) -> str:
         row = await workflow_state_store.get(zone_id)
@@ -84,6 +88,28 @@ def bind_zone_routes(
         payload["control_mode"] = control_mode
         await workflow_state_store.set(zone_id=zone_id, workflow_phase=workflow_phase or "idle", payload=payload, scheduler_task_id=scheduler_task_id)
         return await workflow_state_store.get(zone_id) or {"zone_id": zone_id, "workflow_phase": workflow_phase, "payload_normalized": payload}
+
+    def _resolve_autotune_setpoint(controller: Any, zone_id: int, pid_type: str, payload: Dict[str, Any]) -> float:
+        explicit_setpoint = payload.get("setpoint")
+        if explicit_setpoint is not None:
+            try:
+                return float(explicit_setpoint)
+            except (TypeError, ValueError):
+                pass
+        pid = getattr(controller, "_pid_by_zone", {}).get(zone_id)
+        pid_setpoint = getattr(getattr(pid, "config", None), "setpoint", None)
+        if pid_setpoint is not None:
+            try:
+                return float(pid_setpoint)
+            except (TypeError, ValueError):
+                pass
+        cached_target = getattr(controller, "_last_target_by_zone", {}).get(zone_id)
+        if cached_target is not None:
+            try:
+                return float(cached_target)
+            except (TypeError, ValueError):
+                pass
+        return 6.0 if pid_type == "ph" else 2.0
 
     @app.get("/zones/{zone_id}/state")
     async def zone_automation_state(zone_id: int):
@@ -216,6 +242,142 @@ def bind_zone_routes(
                 task_type="diagnostics",
             )
         return {"status": "ok", "data": {"zone_id": zone_id, "task_id": task.get("task_id"), "manual_step": manual_step, "control_mode": control_mode, "is_duplicate": is_duplicate}}
+
+    @app.post("/zones/{zone_id}/start-relay-autotune")
+    async def zone_start_relay_autotune(
+        zone_id: int,
+        request: Request,
+        payload: Optional[Dict[str, Any]] = Body(default=None),
+    ):
+        await validate_scheduler_zone_fn(zone_id)
+        await validate_scheduler_security_baseline_fn(request)
+        payload = payload if isinstance(payload, dict) else {}
+        pid_type = str(payload.get("pid_type") or "").strip().lower()
+        if pid_type not in {"ph", "ec"}:
+            raise HTTPException(status_code=422, detail={"code": "invalid_pid_type", "available_pid_types": ["ph", "ec"]})
+
+        workflow_state = await workflow_state_store.get(zone_id)
+        workflow_phase = str(workflow_state.get("workflow_phase") or "").strip().lower() if isinstance(workflow_state, dict) else ""
+        if workflow_phase in {"", "idle"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "relay_autotune_zone_inactive",
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase or "unknown",
+                },
+            )
+
+        zone_service = get_zone_service_fn() if callable(get_zone_service_fn) else None
+        if zone_service is None:
+            raise HTTPException(status_code=503, detail={"code": "zone_service_unavailable"})
+
+        controller_name = "ph_controller" if pid_type == "ph" else "ec_controller"
+        controller = getattr(zone_service, controller_name, None)
+        if controller is None:
+            raise HTTPException(status_code=503, detail={"code": "controller_unavailable", "pid_type": pid_type})
+
+        autotune_by_zone = getattr(controller, "_autotune_by_zone", None)
+        if not isinstance(autotune_by_zone, dict):
+            raise HTTPException(status_code=503, detail={"code": "autotune_runtime_unavailable", "pid_type": pid_type})
+
+        existing = autotune_by_zone.get(zone_id)
+        if existing and not existing.is_complete and not existing.is_timed_out:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "relay_autotune_already_running", "zone_id": zone_id, "pid_type": pid_type},
+            )
+
+        settings = get_settings()
+        if pid_type == "ph":
+            relay_config = RelayAutotuneConfig(
+                relay_amplitude_ml=float(settings.PH_RELAY_AUTOTUNE_AMPLITUDE_ML),
+                min_cycles=int(settings.PH_RELAY_AUTOTUNE_MIN_CYCLES),
+                max_duration_sec=float(settings.PH_RELAY_AUTOTUNE_MAX_DURATION_SEC),
+                min_oscillation_amplitude=float(settings.PH_RELAY_AUTOTUNE_MIN_OSCILLATION),
+            )
+        else:
+            relay_config = RelayAutotuneConfig(
+                relay_amplitude_ml=float(settings.EC_RELAY_AUTOTUNE_AMPLITUDE_ML),
+                min_cycles=int(settings.EC_RELAY_AUTOTUNE_MIN_CYCLES),
+                max_duration_sec=float(settings.EC_RELAY_AUTOTUNE_MAX_DURATION_SEC),
+                min_oscillation_amplitude=float(settings.EC_RELAY_AUTOTUNE_MIN_OSCILLATION),
+            )
+        setpoint = _resolve_autotune_setpoint(controller, zone_id, pid_type, payload)
+        autotune_by_zone[zone_id] = RelayAutotuner(
+            config=relay_config,
+            setpoint=setpoint,
+            start_time_sec=time.monotonic(),
+        )
+
+        await create_zone_event_fn(
+            zone_id,
+            "RELAY_AUTOTUNE_STARTED",
+            {
+                "zone_id": zone_id,
+                "pid_type": pid_type,
+                "workflow_phase": workflow_phase,
+                "setpoint": setpoint,
+                "relay_amplitude_ml": relay_config.relay_amplitude_ml,
+                "min_cycles": relay_config.min_cycles,
+                "max_duration_sec": relay_config.max_duration_sec,
+            },
+        )
+        return {"status": "started", "zone_id": zone_id, "pid_type": pid_type}
+
+    @app.get("/zones/{zone_id}/relay-autotune/status")
+    async def zone_relay_autotune_status(zone_id: int, pid_type: Optional[str] = None):
+        await validate_scheduler_zone_fn(zone_id)
+        if pid_type is not None:
+            pid_type = str(pid_type).strip().lower()
+            if pid_type not in {"ph", "ec"}:
+                raise HTTPException(status_code=422, detail={"code": "invalid_pid_type", "available_pid_types": ["ph", "ec"]})
+
+        zone_service = get_zone_service_fn() if callable(get_zone_service_fn) else None
+        result: Dict[str, Dict[str, Any]] = {}
+        for current_pid_type, ctrl_name in (("ph", "ph_controller"), ("ec", "ec_controller")):
+            controller = getattr(zone_service, ctrl_name, None) if zone_service else None
+            autotune_by_zone = getattr(controller, "_autotune_by_zone", {}) if controller else {}
+            autotuner = autotune_by_zone.get(zone_id)
+
+            if autotuner is None:
+                result[current_pid_type] = {"status": "idle"}
+            elif autotuner.is_complete:
+                tune_result = autotuner.result
+                result[current_pid_type] = {
+                    "status": "complete",
+                    "result": {
+                        "source": "relay_autotune",
+                        "ku": float(getattr(tune_result, "ku", 0.0)),
+                        "tu_sec": float(getattr(tune_result, "tu_sec", 0.0)),
+                        "kp": float(getattr(tune_result, "kp", 0.0)),
+                        "ki": float(getattr(tune_result, "ki", 0.0)),
+                        "oscillation_amplitude": float(getattr(tune_result, "oscillation_amplitude", 0.0)),
+                        "cycles_detected": int(getattr(tune_result, "cycles_detected", 0)),
+                        "tuned_at": getattr(tune_result, "tuned_at", None),
+                    } if tune_result else None,
+                }
+            elif autotuner.is_timed_out:
+                result[current_pid_type] = {"status": "timeout"}
+            else:
+                elapsed = max(0.0, time.monotonic() - float(getattr(autotuner, "start_time_sec", 0.0)))
+                result[current_pid_type] = {
+                    "status": "running",
+                    "progress": {
+                        "cycles_detected": int(getattr(autotuner, "_zero_crossings", 0)) // 2,
+                        "min_cycles": int(getattr(autotuner.config, "min_cycles", 0)),
+                        "elapsed_sec": round(elapsed, 1),
+                        "max_duration_sec": float(getattr(autotuner.config, "max_duration_sec", 0.0)),
+                    },
+                }
+
+        if pid_type:
+            payload = dict(result.get(pid_type, {"status": "idle"}))
+            payload["zone_id"] = zone_id
+            payload["pid_type"] = pid_type
+            return payload
+
+        return {"status": "ok", "zone_id": zone_id, "data": result}
 
     return (
         zone_automation_state,

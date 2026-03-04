@@ -20,6 +20,7 @@ declare module '@/utils/formatTime' {
 
 declare module '@/utils/i18n' {
   export function translateStatus(status: string): string;
+  export function classifyEventKind(kind: string): 'ALERT' | 'WARNING' | 'INFO' | 'ACTION';
   export function translateEventKind(kind: string): string;
   export function translateRole(role: string): string;
   export function translateCycleType(cycleType: string): string;

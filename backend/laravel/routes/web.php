@@ -1224,6 +1224,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                             'kind' => $event->type ?? 'INFO',
                             'message' => $message,
                             'occurred_at' => $event->created_at ? $event->created_at->toIso8601String() : null,
+                            'payload' => $details,
                         ];
                     });
                 } catch (\Exception $e) {

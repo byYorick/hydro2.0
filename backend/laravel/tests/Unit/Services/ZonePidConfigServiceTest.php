@@ -60,8 +60,7 @@ class ZonePidConfigServiceTest extends TestCase
             ],
             'max_output' => 50.0,
             'min_interval_ms' => 60000,
-            'enable_autotune' => false,
-            'adaptation_rate' => 0.05,
+            'max_integral' => 20.0,
         ];
 
         $result = $this->service->createOrUpdate($zone->id, 'ph', $configData, $user->id);
@@ -104,11 +103,12 @@ class ZonePidConfigServiceTest extends TestCase
         $config = $this->service->getDefaultConfig('ph');
 
         $this->assertIsArray($config);
-        $this->assertEquals(6.0, $config['target']);
-        $this->assertEquals(0.2, $config['dead_zone']);
+        $this->assertEquals(5.8, $config['target']);
+        $this->assertEquals(0.05, $config['dead_zone']);
         $this->assertArrayHasKey('zone_coeffs', $config);
         $this->assertArrayHasKey('close', $config['zone_coeffs']);
         $this->assertArrayHasKey('far', $config['zone_coeffs']);
+        $this->assertEquals(20.0, $config['max_integral']);
     }
 
     public function test_get_default_config_returns_ec_config(): void
@@ -116,8 +116,9 @@ class ZonePidConfigServiceTest extends TestCase
         $config = $this->service->getDefaultConfig('ec');
 
         $this->assertIsArray($config);
-        $this->assertEquals(2.0, $config['target']);
+        $this->assertEquals(1.6, $config['target']);
         $this->assertArrayHasKey('zone_coeffs', $config);
+        $this->assertEquals(100.0, $config['max_integral']);
     }
 
     public function test_validate_config_throws_exception_for_invalid_zones(): void
@@ -138,10 +139,11 @@ class ZonePidConfigServiceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         $config = [
-            'target' => 15.0, // Вне диапазона для pH
+            'target' => 15.0, // Вне диапазона для pH (4-9)
             'dead_zone' => 0.2,
             'close_zone' => 0.5,
             'far_zone' => 1.0,
+            'max_integral' => 20.0,
         ];
 
         $this->service->validateConfig($config, 'ph');

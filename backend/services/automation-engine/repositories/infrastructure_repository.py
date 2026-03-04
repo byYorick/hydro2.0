@@ -106,6 +106,7 @@ class InfrastructureRepository:
                     "calibration_source": pump_calibration.get("source"),
                     "calibration_valid_from": pump_calibration.get("valid_from"),
                 }
+                self._warn_if_calibration_stale(zone_id=zone_id, actuator=result[role])
             else:
                 key = (zone_id, role)
                 if key not in self._multi_role_logged:
@@ -203,6 +204,7 @@ class InfrastructureRepository:
                     "calibration_source": pump_calibration.get("source"),
                     "calibration_valid_from": pump_calibration.get("valid_from"),
                 }
+                self._warn_if_calibration_stale(zone_id=zone_id, actuator=result[zone_id][role])
             else:
                 key = (zone_id, role)
                 if key not in self._multi_role_logged:
@@ -344,3 +346,27 @@ class InfrastructureRepository:
             return
         staleness_hours = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 3600.0)
         CALIBRATION_STALENESS_HOURS.labels(zone_id=str(zone_id), role=str(role or "unknown")).set(staleness_hours)
+
+    def _warn_if_calibration_stale(self, *, zone_id: int, actuator: Dict[str, Any]) -> None:
+        valid_from = actuator.get("calibration_valid_from")
+        if valid_from is None:
+            calibration = actuator.get("pump_calibration")
+            if isinstance(calibration, dict):
+                valid_from = calibration.get("valid_from")
+        parsed = self._parse_calibration_ts(valid_from)
+        if parsed is None:
+            return
+        age_days = int(max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds()) // 86400)
+        if age_days > 30:
+            logger.warning(
+                "Pump calibration is stale: zone_id=%s, role=%s, age_days=%d",
+                zone_id,
+                actuator.get("role"),
+                age_days,
+                extra={
+                    "zone_id": zone_id,
+                    "role": actuator.get("role"),
+                    "calibration_age_days": age_days,
+                    "valid_from": str(valid_from),
+                },
+            )

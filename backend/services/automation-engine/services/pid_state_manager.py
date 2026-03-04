@@ -6,14 +6,28 @@ import json
 import logging
 import time
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from common.db import execute, fetch
-from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig
+from common.utils.time import utcnow
+from utils.adaptive_pid import AdaptivePid
 
 logger = logging.getLogger(__name__)
 
-# Допуск для сравнения монотонных миллисекунд при восстановлении состояния.
-_MONO_TS_FUTURE_TOLERANCE_MS = 60_000
+
+def _to_utc_datetime(value: Any) -> Optional[datetime]:
+    """Преобразовать значение из БД к timezone-aware UTC datetime."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class PidStateManager:
@@ -43,18 +57,26 @@ class PidStateManager:
                 'time_in_close_ms': pid.stats.time_in_close_ms,
                 'time_in_far_ms': pid.stats.time_in_far_ms
             }
+
+            now_utc = utcnow()
+            now_mono_ms = int(time.monotonic() * 1000)
+            last_dose_at = None
+            if pid.last_output_ms > 0:
+                last_dose_ago_sec = max(0.0, (now_mono_ms - pid.last_output_ms) / 1000.0)
+                last_dose_at = now_utc - timedelta(seconds=last_dose_ago_sec)
             
             await execute(
                 """
                 INSERT INTO pid_state (
                     zone_id, pid_type, integral, prev_error, 
-                    last_output_ms, stats, current_zone, updated_at
+                    last_output_ms, last_dose_at, prev_derivative, stats, current_zone, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, NOW())
                 ON CONFLICT (zone_id, pid_type) DO UPDATE
                 SET integral = EXCLUDED.integral,
                     prev_error = EXCLUDED.prev_error,
-                    last_output_ms = EXCLUDED.last_output_ms,
+                    last_dose_at = EXCLUDED.last_dose_at,
+                    prev_derivative = EXCLUDED.prev_derivative,
                     stats = EXCLUDED.stats,
                     current_zone = EXCLUDED.current_zone,
                     updated_at = NOW()
@@ -63,7 +85,8 @@ class PidStateManager:
                 pid_type,
                 pid.integral,
                 pid.prev_error,
-                pid.last_output_ms,
+                last_dose_at,
+                pid.prev_derivative,
                 json.dumps(stats_dict),
                 pid.current_zone.value
             )
@@ -97,7 +120,7 @@ class PidStateManager:
         try:
             rows = await fetch(
                 """
-                SELECT integral, prev_error, last_output_ms, stats, current_zone
+                SELECT integral, prev_error, last_output_ms, last_dose_at, prev_derivative, stats, current_zone
                 FROM pid_state
                 WHERE zone_id = $1 AND pid_type = $2
                 """,
@@ -113,6 +136,8 @@ class PidStateManager:
                     'integral': float(row['integral']) if row['integral'] is not None else 0.0,
                     'prev_error': float(row['prev_error']) if row['prev_error'] is not None else None,
                     'last_output_ms': int(row['last_output_ms']) if row['last_output_ms'] is not None else 0,
+                    'last_dose_at': _to_utc_datetime(row.get('last_dose_at')),
+                    'prev_derivative': float(row['prev_derivative']) if row['prev_derivative'] is not None else 0.0,
                     'stats': stats,
                     'current_zone': row.get('current_zone')
                 }
@@ -152,26 +177,32 @@ class PidStateManager:
             # Восстанавливаем состояние
             pid.integral = state['integral']
             pid.prev_error = state['prev_error']
-            restored_last_output_ms = int(state.get('last_output_ms') or 0)
+            pid.prev_derivative = float(state.get('prev_derivative') or 0.0)
+            last_dose_at = _to_utc_datetime(state.get('last_dose_at'))
+            now_utc = utcnow()
             now_mono_ms = int(time.monotonic() * 1000)
-            # Legacy состояния могли сохранять wall-clock ms; такие значения
-            # относительно monotonic всегда "в будущем" и блокируют дозирование.
-            if restored_last_output_ms < 0 or restored_last_output_ms > (now_mono_ms + _MONO_TS_FUTURE_TOLERANCE_MS):
-                logger.warning(
-                    "Zone %s: PID %s last_output_ms=%s is incompatible with monotonic clock (now=%s), resetting to 0",
-                    zone_id,
-                    pid_type,
-                    restored_last_output_ms,
-                    now_mono_ms,
-                    extra={
-                        'zone_id': zone_id,
-                        'pid_type': pid_type,
-                        'last_output_ms': restored_last_output_ms,
-                        'now_mono_ms': now_mono_ms,
-                    },
-                )
-                restored_last_output_ms = 0
-            pid.last_output_ms = restored_last_output_ms
+            if last_dose_at is not None:
+                seconds_since_last_dose = max(0.0, (now_utc - last_dose_at).total_seconds())
+                min_interval_sec = max(0.0, pid.config.min_interval_ms / 1000.0)
+                remaining_interval_sec = min_interval_sec - seconds_since_last_dose
+                if remaining_interval_sec > 0:
+                    pid.last_output_ms = now_mono_ms - int(seconds_since_last_dose * 1000)
+                    logger.info(
+                        "Zone %s: PID %s restored, next dose in %.0f sec",
+                        zone_id,
+                        pid_type,
+                        remaining_interval_sec,
+                    )
+                else:
+                    pid.last_output_ms = 0
+            else:
+                pid.last_output_ms = 0
+                if int(state.get('last_output_ms') or 0) > 0:
+                    logger.info(
+                        "Zone %s: PID %s restored without last_dose_at (legacy state), interval reset",
+                        zone_id,
+                        pid_type,
+                    )
             
             # Восстанавливаем статистику
             if state['stats']:
@@ -229,4 +260,3 @@ class PidStateManager:
             import asyncio
             await asyncio.gather(*tasks, return_exceptions=True)
             logger.info(f"Saved PID state for {len(ph_pids)} PH and {len(ec_pids)} EC controllers")
-

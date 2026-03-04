@@ -75,49 +75,47 @@ class ZonePidConfigService
     {
         if ($type === 'ph') {
             return [
-                'target' => 6.0, // Будет переопределено из рецепта
-                'dead_zone' => 0.2,
-                'close_zone' => 0.5,
+                'target' => 5.8,
+                'dead_zone' => 0.05,
+                'close_zone' => 0.3,
                 'far_zone' => 1.0,
                 'zone_coeffs' => [
                     'close' => [
-                        'kp' => 10.0,
-                        'ki' => 0.0,
+                        'kp' => 5.0,
+                        'ki' => 0.05,
                         'kd' => 0.0,
                     ],
                     'far' => [
-                        'kp' => 12.0,
-                        'ki' => 0.0,
+                        'kp' => 8.0,
+                        'ki' => 0.02,
+                        'kd' => 0.0,
+                    ],
+                ],
+                'max_output' => 20.0,
+                'min_interval_ms' => 90000,
+                'max_integral' => 20.0,
+            ];
+        } else { // ec
+            return [
+                'target' => 1.6,
+                'dead_zone' => 0.1,
+                'close_zone' => 0.5,
+                'far_zone' => 1.5,
+                'zone_coeffs' => [
+                    'close' => [
+                        'kp' => 30.0,
+                        'ki' => 0.3,
+                        'kd' => 0.0,
+                    ],
+                    'far' => [
+                        'kp' => 50.0,
+                        'ki' => 0.1,
                         'kd' => 0.0,
                     ],
                 ],
                 'max_output' => 50.0,
-                'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                'adaptation_rate' => 0.05,
-            ];
-        } else { // ec
-            return [
-                'target' => 2.0, // Будет переопределено из рецепта
-                'dead_zone' => 0.2,
-                'close_zone' => 0.5,
-                'far_zone' => 1.0,
-                'zone_coeffs' => [
-                    'close' => [
-                        'kp' => 100.0,
-                        'ki' => 0.0,
-                        'kd' => 0.0,
-                    ],
-                    'far' => [
-                        'kp' => 120.0,
-                        'ki' => 0.0,
-                        'kd' => 0.0,
-                    ],
-                ],
-                'max_output' => 200.0,
-                'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                'adaptation_rate' => 0.05,
+                'min_interval_ms' => 120000,
+                'max_integral' => 100.0,
             ];
         }
     }
@@ -139,8 +137,8 @@ class ZonePidConfigService
 
         // Проверка диапазонов для pH
         if ($type === 'ph') {
-            if ($config['target'] < 0 || $config['target'] > 14) {
-                throw new \InvalidArgumentException('target для pH должен быть в диапазоне 0-14');
+            if ($config['target'] < 4 || $config['target'] > 9) {
+                throw new \InvalidArgumentException('target для pH должен быть в диапазоне 4-9');
             }
         }
 
@@ -149,6 +147,10 @@ class ZonePidConfigService
             if ($config['target'] < 0 || $config['target'] > 10) {
                 throw new \InvalidArgumentException('target для EC должен быть в диапазоне 0-10');
             }
+        }
+
+        if (! isset($config['max_integral']) || ! is_numeric($config['max_integral']) || (float) $config['max_integral'] <= 0) {
+            throw new \InvalidArgumentException('max_integral должен быть положительным числом');
         }
     }
 

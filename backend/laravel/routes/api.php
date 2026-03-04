@@ -39,6 +39,8 @@ use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
+use App\Http\Controllers\ZonePumpCalibrationsController;
+use App\Http\Controllers\ZoneRelayAutotuneController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -255,6 +257,8 @@ Route::middleware([
 
         // PID Config (operator+)
         Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update']);
+        Route::put('zones/{zone}/pump-calibrations/{channelId}', [ZonePumpCalibrationsController::class, 'update']);
+        Route::post('zones/{zone}/relay-autotune', [ZoneRelayAutotuneController::class, 'start']);
 
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
@@ -283,6 +287,8 @@ Route::middleware([
     Route::get('zones/{zone}/pid-configs', [ZonePidConfigController::class, 'index']);
     Route::get('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'show']);
     Route::get('zones/{zone}/pid-logs', [ZonePidLogController::class, 'index']);
+    Route::get('zones/{zone}/pump-calibrations', [ZonePumpCalibrationsController::class, 'index']);
+    Route::get('zones/{zone}/relay-autotune/status', [ZoneRelayAutotuneController::class, 'status']);
 
     // Reports (viewer+)
     Route::get('recipes/{recipe}/analytics', [ReportController::class, 'recipeAnalytics']);

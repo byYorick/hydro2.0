@@ -162,8 +162,12 @@ def reset_zone_pid_state(
 ) -> None:
     had_ph_pid = zone_id in ph_controller._pid_by_zone
     had_ec_pid = zone_id in ec_controller._pid_by_zone
+    had_ph_autotune = zone_id in getattr(ph_controller, "_autotune_by_zone", {})
+    had_ec_autotune = zone_id in getattr(ec_controller, "_autotune_by_zone", {})
     ph_controller._pid_by_zone.pop(zone_id, None)
     ec_controller._pid_by_zone.pop(zone_id, None)
+    getattr(ph_controller, "_autotune_by_zone", {}).pop(zone_id, None)
+    getattr(ec_controller, "_autotune_by_zone", {}).pop(zone_id, None)
     ph_controller._last_pid_tick.pop(zone_id, None)
     ec_controller._last_pid_tick.pop(zone_id, None)
     logger.info(
@@ -173,6 +177,8 @@ def reset_zone_pid_state(
             "zone_id": zone_id,
             "had_ph_pid": had_ph_pid,
             "had_ec_pid": had_ec_pid,
+            "had_ph_autotune": had_ph_autotune,
+            "had_ec_autotune": had_ec_autotune,
         },
     )
 

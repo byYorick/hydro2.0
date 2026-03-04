@@ -42,6 +42,43 @@ export function classifyEventKind(kind) {
     kind.startsWith('SCHEDULE_') ||
     kind.startsWith('SELF_TASK_')
   ) return 'ACTION'
+
+  // Коррекционные ACTION-события
+  if (
+    kind === 'PH_CORRECTED' ||
+    kind === 'EC_DOSING' ||
+    kind === 'PUMP_DOSE_SENT' ||
+    kind === 'RELAY_AUTOTUNE_STARTED' ||
+    kind === 'RELAY_AUTOTUNE_COMPLETE' ||
+    kind === 'RELAY_AUTOTUNE_COMPLETED' ||
+    kind === 'PUMP_CALIBRATION_SAVED' ||
+    kind === 'DOSING'
+  ) return 'ACTION'
+
+  // Пропуски и служебные события коррекции — INFO
+  if (
+    kind === 'PID_OUTPUT' ||
+    kind === 'PID_CONFIG_UPDATED' ||
+    kind === 'CORRECTION_STATE_TRANSITION' ||
+    kind.startsWith('CORRECTION_SKIPPED_') ||
+    kind === 'PH_CORRECTION_SKIPPED' ||
+    kind === 'EC_CORRECTION_SKIPPED' ||
+    kind.endsWith('_CORRECTION_SKIPPED') ||
+    kind.endsWith('_CORRECTION_SKIPPED_STALE_DATA') ||
+    kind.endsWith('_CORRECTION_SKIPPED_BOUNDS') ||
+    kind.endsWith('_CORRECTION_SKIPPED_ANOMALY')
+  ) return 'INFO'
+
+  // Equipment warnings
+  if (
+    kind === 'EQUIPMENT_ANOMALY_BLOCKED' ||
+    kind === 'EQUIPMENT_ANOMALY_RELEASED' ||
+    kind === 'PUMP_CALIBRATION_STALE' ||
+    kind === 'RELAY_AUTOTUNE_TIMEOUT' ||
+    kind.endsWith('_DOSING_BLOCKED_ANOMALY') ||
+    kind.endsWith('_DOSE_NO_EFFECT')
+  ) return 'WARNING'
+
   return 'INFO'
 }
 
@@ -77,6 +114,45 @@ export function translateEventKind(kind) {
     'ZONE_COMMAND': 'Команда зоны',
     'SCHEDULE_TASK_FAILED': 'Ошибка задачи',
     'SELF_TASK_DISPATCH_RETRY_SCHEDULED': 'Повтор задачи',
+
+    // Коррекция pH/EC
+    'PH_CORRECTED': 'pH скорректирован',
+    'EC_DOSING': 'EC: подача питания',
+    'PUMP_DOSE_SENT': 'Доза отправлена насосу',
+    'PID_OUTPUT': 'PID: расчёт выхода',
+    'PID_CONFIG_UPDATED': 'Конфиг PID обновлён',
+    'CORRECTION_STATE_TRANSITION': 'Коррекция: переход состояния',
+
+    // Пропуски коррекции
+    'CORRECTION_SKIPPED_DEAD_ZONE': 'Коррекция: в мёртвой зоне',
+    'CORRECTION_SKIPPED_COOLDOWN': 'Коррекция: в паузе (кулдаун)',
+    'CORRECTION_SKIPPED_MISSING_ACTUATOR': 'Коррекция: нет насоса',
+    'CORRECTION_SKIPPED_NO_CALIBRATION': 'Коррекция: нет калибровки',
+    'CORRECTION_SKIPPED_WATER_LEVEL': 'Коррекция: мало воды',
+    'CORRECTION_SKIPPED_FRESHNESS': 'Коррекция: устаревшие данные',
+    'CORRECTION_SKIPPED_ANOMALY_BLOCK': 'Коррекция: аномалия оборудования',
+    'PH_CORRECTION_SKIPPED': 'Коррекция pH: пропуск',
+    'EC_CORRECTION_SKIPPED': 'Коррекция EC: пропуск',
+    'PH_CORRECTION_SKIPPED_STALE_DATA': 'Коррекция pH: устаревшие данные',
+    'EC_CORRECTION_SKIPPED_STALE_DATA': 'Коррекция EC: устаревшие данные',
+    'PH_CORRECTION_SKIPPED_BOUNDS': 'Коррекция pH: ограничение safety bounds',
+    'EC_CORRECTION_SKIPPED_BOUNDS': 'Коррекция EC: ограничение safety bounds',
+    'PH_CORRECTION_SKIPPED_ANOMALY': 'Коррекция pH: блок аномалии оборудования',
+    'EC_CORRECTION_SKIPPED_ANOMALY': 'Коррекция EC: блок аномалии оборудования',
+
+    // Автотюнинг
+    'RELAY_AUTOTUNE_STARTED': 'Relay-автотюнинг запущен',
+    'RELAY_AUTOTUNE_COMPLETE': 'Relay-автотюнинг завершён',
+    'RELAY_AUTOTUNE_COMPLETED': 'Relay-автотюнинг завершён',
+    'RELAY_AUTOTUNE_TIMEOUT': 'Relay-автотюнинг: таймаут',
+
+    // Калибровки
+    'PUMP_CALIBRATION_SAVED': 'Калибровка насоса сохранена',
+    'PUMP_CALIBRATION_STALE': 'Калибровка насоса устарела',
+
+    // Equipment anomaly
+    'EQUIPMENT_ANOMALY_BLOCKED': 'Оборудование: блокировка (нет эффекта)',
+    'EQUIPMENT_ANOMALY_RELEASED': 'Оборудование: блокировка снята',
   }
   return translations[kind] || kind
 }

@@ -186,6 +186,7 @@ def build_ec_component_batch(
 
     ml_per_sec_by_component: Dict[str, float] = {}
     calibration_snapshot: Dict[str, Dict[str, Any]] = {}
+    skipped_components: List[str] = []
     for component in required_components:
         actuator = component_actuators[component]
         ml_per_sec_raw = actuator.get("ml_per_sec")
@@ -203,7 +204,8 @@ def build_ec_component_batch(
             ml_per_sec = 0.0
         if ml_per_sec <= 0:
             logger.warning(
-                "EC component batch skipped due to invalid pump calibration",
+                "EC component skipped due to invalid pump calibration (ml_per_sec=%s), continuing with others",
+                ml_per_sec_raw,
                 extra={
                     "component": component,
                     "role": actuator.get("role"),
@@ -213,8 +215,44 @@ def build_ec_component_batch(
                     "calibration_snapshot": calibration_snapshot,
                 },
             )
-            return []
+            skipped_components.append(component)
+            continue
         ml_per_sec_by_component[component] = ml_per_sec
+
+    if skipped_components:
+        remaining = [component for component in required_components if component not in skipped_components]
+        if not remaining:
+            logger.warning(
+                "EC component batch skipped: all components have invalid calibration",
+                extra={
+                    "skipped_components": skipped_components,
+                    "calibration_snapshot": calibration_snapshot,
+                },
+            )
+            return []
+        if "npk" not in remaining:
+            logger.warning(
+                "EC component batch skipped: npk not available after skipping invalid calibrations",
+                extra={
+                    "remaining_components": remaining,
+                    "skipped_components": skipped_components,
+                    "calibration_snapshot": calibration_snapshot,
+                },
+            )
+            return []
+
+        required_components = remaining
+        component_actuators = {
+            component: actuators[role_map[component]]
+            for component in required_components
+        }
+        logger.warning(
+            "EC component batch: proceeding with partial components",
+            extra={
+                "required_components": required_components,
+                "skipped_components": skipped_components,
+            },
+        )
 
     logger.debug(
         "EC component calibration snapshot accepted",

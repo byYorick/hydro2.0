@@ -1,5 +1,6 @@
 """Core check_and_correct flow extracted from CorrectionController."""
 
+from datetime import datetime
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,7 @@ from common.db import create_zone_event
 from config.settings import get_settings
 from correction_freshness import validate_freshness_or_skip
 from correction_state_machine import CorrectionStateMachine
+from services import pid_config_service
 from services.targets_accessor import get_ec_target, get_ph_target
 
 from correction_controller_signals import (
@@ -29,6 +31,60 @@ PID_SATURATION_RATIO = Gauge(
     "Share of PID computations that hit output saturation",
     ["zone_id", "metric"],
 )
+
+
+def _reset_pid_integral_on_error_sign_change(
+    *,
+    pid: Any,
+    zone_id: int,
+    pid_type: str,
+    target_value: float,
+    current_value: float,
+) -> bool:
+    """Сбросить интеграл PID при смене знака ошибки (overshoot/undershoot switch)."""
+    prev_error = pid.prev_error
+    current_error = target_value - current_value
+    if (
+        prev_error is not None
+        and prev_error != 0.0
+        and current_error != 0.0
+        and (prev_error > 0) != (current_error > 0)
+    ):
+        pid.integral = 0.0
+        logger.info(
+            "PID integral reset: error sign changed (%.3f -> %.3f), zone_id=%s, pid_type=%s",
+            prev_error,
+            current_error,
+            zone_id,
+            pid_type,
+            extra={
+                "zone_id": zone_id,
+                "pid_type": pid_type,
+                "prev_error": prev_error,
+                "current_error": current_error,
+            },
+        )
+        return True
+    return False
+
+
+async def _save_autotune_result(zone_id: int, pid_type: str, result: Any) -> None:
+    await pid_config_service.save_autotune_result(
+        zone_id,
+        pid_type,
+        {
+            "kp": float(getattr(result, "kp", 0.0)),
+            "ki": float(getattr(result, "ki", 0.0)),
+            "kd": float(getattr(result, "kd", 0.0)),
+            "source": "relay_autotune",
+            "ku": float(getattr(result, "ku", 0.0)),
+            "tu_sec": float(getattr(result, "tu_sec", 0.0)),
+            "oscillation_amplitude": float(getattr(result, "oscillation_amplitude", 0.0)),
+            "cycles_detected": int(getattr(result, "cycles_detected", 0)),
+            "duration_sec": float(getattr(result, "duration_sec", 0.0)),
+            "tuned_at": datetime.utcnow().isoformat(),
+        },
+    )
 
 
 async def check_and_correct_core(
@@ -283,7 +339,68 @@ async def check_and_correct_core(
         return None
 
     dt_seconds = controller._get_dt_seconds(zone_id)
-    amount = pid.compute(current_val, dt_seconds)
+    amount = 0.0
+    pid_mode = "pid"
+    autotune_by_zone = getattr(controller, "_autotune_by_zone", {})
+    autotuner = autotune_by_zone.get(zone_id)
+    if autotuner and not autotuner.is_complete and not autotuner.is_timed_out:
+        relay_output = autotuner.update(current_val, time.monotonic())
+        if relay_output is not None:
+            pid_mode = "relay_autotune"
+            amount = abs(float(relay_output))
+            logger.info(
+                "Relay autotune output used for correction",
+                extra={
+                    "zone_id": zone_id,
+                    "pid_type": controller.correction_type.value,
+                    "current_value": current_val,
+                    "target_value": target_val,
+                    "relay_output": relay_output,
+                    "dosing_amount_ml": amount,
+                },
+            )
+        else:
+            if autotuner.is_complete and autotuner.result:
+                try:
+                    await _save_autotune_result(zone_id, controller.correction_type.value, autotuner.result)
+                    controller._pid_by_zone.pop(zone_id, None)
+                    controller._last_pid_tick.pop(zone_id, None)
+                    logger.info(
+                        "Relay autotune completed and persisted",
+                        extra={
+                            "zone_id": zone_id,
+                            "pid_type": controller.correction_type.value,
+                            "result": {
+                                "kp": getattr(autotuner.result, "kp", None),
+                                "ki": getattr(autotuner.result, "ki", None),
+                                "ku": getattr(autotuner.result, "ku", None),
+                                "tu_sec": getattr(autotuner.result, "tu_sec", None),
+                                "cycles_detected": getattr(autotuner.result, "cycles_detected", None),
+                            },
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to persist relay autotune result",
+                        exc_info=True,
+                        extra={"zone_id": zone_id, "pid_type": controller.correction_type.value},
+                    )
+            elif autotuner.is_timed_out:
+                logger.warning(
+                    "Relay autotune timed out",
+                    extra={"zone_id": zone_id, "pid_type": controller.correction_type.value},
+                )
+            # Не удаляем runtime-state сразу: endpoint статуса должен успеть отдать complete/timeout.
+
+    if pid_mode == "pid":
+        _reset_pid_integral_on_error_sign_change(
+            pid=pid,
+            zone_id=zone_id,
+            pid_type=controller.correction_type.value,
+            target_value=target_val,
+            current_value=current_val,
+        )
+        amount = pid.compute(current_val, dt_seconds)
     compute_count = max(1, int(getattr(pid.stats, "compute_count", 0)))
     saturation_count = int(getattr(pid.stats, "saturation_count", 0))
     saturation_ratio = float(saturation_count) / float(compute_count)
@@ -303,6 +420,7 @@ async def check_and_correct_core(
             "pid_integral": pid.integral,
             "pid_prev_error": pid.prev_error,
             "pid_dt": dt_seconds,
+            "pid_mode": pid_mode,
             "pid_saturation_ratio": saturation_ratio,
             "pid_config": {
                 "dead_zone": pid.config.dead_zone,
@@ -324,7 +442,9 @@ async def check_and_correct_core(
                 "zone_state": pid.get_zone().value,
                 "output": amount,
                 "error": diff,
+                "integral_term": pid.integral,
                 "dt_seconds": dt_seconds,
+                "mode": pid_mode,
                 "current": current_val,
                 "target": target_val,
                 "safety_skip_reason": None,
@@ -374,11 +494,18 @@ async def check_and_correct_core(
             f"current_{target_key}": current_val,
             f"target_{target_key}": target_val,
             f"target_{target_key}_original": target_original_val,
+            "current": current_val,
+            "target": target_val,
             "diff": diff,
+            "error": diff,
             "ml": amount,
+            "output": amount,
             "binding_role": actuator.get("role"),
             "pid_zone": pid.get_zone().value,
+            "zone_state": pid.get_zone().value,
+            "integral_term": pid.integral,
             "pid_dt_seconds": dt_seconds,
+            "pid_mode": pid_mode,
             "safety_bounds_active": safety_active,
             "target_rate_limited": bool(rate_limit_result.get("clamped")),
             "proactive_mode": proactive_mode,

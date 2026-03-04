@@ -154,6 +154,7 @@ AE2-Lite в runtime читает данные напрямую из PostgreSQL:
 - `GET /zones/{id}/state`
 - `POST /zones/{id}/control-mode`
 - `POST /zones/{id}/manual-step`
+- `POST /zones/{id}/start-relay-autotune`
 - `GET /health/live`
 - `GET /health/ready`
 

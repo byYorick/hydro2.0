@@ -159,17 +159,15 @@ async def test_should_apply_correction_ec_bypasses_cooldown_for_significant_diff
 
 
 @pytest.mark.asyncio
-async def test_should_apply_correction_ph_keeps_cooldown_for_non_critical_diff(monkeypatch):
-    now = datetime.utcnow()
+async def test_should_apply_correction_non_critical_skips_db_cooldown_and_uses_trend(monkeypatch):
+    async def _unexpected_is_in_cooldown(*_args, **_kwargs):
+        raise AssertionError("is_in_cooldown must not be used (double cooldown removed)")
 
-    async def _is_in_cooldown(*_args, **_kwargs):
-        return True
+    async def _analyze_trend(*_args, **_kwargs):
+        return False, None
 
-    async def _last_correction(*_args, **_kwargs):
-        return now - timedelta(minutes=1)
-
-    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _is_in_cooldown)
-    monkeypatch.setattr(correction_cooldown, "get_last_correction_time", _last_correction)
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _unexpected_is_in_cooldown)
+    monkeypatch.setattr(correction_cooldown, "analyze_trend", _analyze_trend)
 
     allowed, reason = await correction_cooldown.should_apply_correction(
         zone_id=2,
@@ -180,22 +178,20 @@ async def test_should_apply_correction_ph_keeps_cooldown_for_non_critical_diff(m
         cooldown_minutes=10,
     )
 
-    assert allowed is False
-    assert "cooldown периоде" in reason
+    assert allowed is True
+    assert "недостаточно данных для анализа тренда" in reason
 
 
 @pytest.mark.asyncio
-async def test_should_apply_correction_respects_cooldown_for_non_critical_diff(monkeypatch):
-    now = datetime.utcnow()
+async def test_should_apply_correction_small_diff_stays_blocked_without_db_cooldown(monkeypatch):
+    async def _unexpected_is_in_cooldown(*_args, **_kwargs):
+        raise AssertionError("is_in_cooldown must not be used (double cooldown removed)")
 
-    async def _is_in_cooldown(*_args, **_kwargs):
-        return True
+    async def _analyze_trend(*_args, **_kwargs):
+        return False, None
 
-    async def _last_correction(*_args, **_kwargs):
-        return now - timedelta(minutes=2)
-
-    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _is_in_cooldown)
-    monkeypatch.setattr(correction_cooldown, "get_last_correction_time", _last_correction)
+    monkeypatch.setattr(correction_cooldown, "is_in_cooldown", _unexpected_is_in_cooldown)
+    monkeypatch.setattr(correction_cooldown, "analyze_trend", _analyze_trend)
 
     allowed, reason = await correction_cooldown.should_apply_correction(
         zone_id=2,
@@ -207,4 +203,31 @@ async def test_should_apply_correction_respects_cooldown_for_non_critical_diff(m
     )
 
     assert allowed is False
-    assert "cooldown периоде" in reason
+    assert "допустимого диапазона" in reason
+
+
+@pytest.mark.asyncio
+async def test_should_apply_proactive_correction_uses_min_diff_from_settings(monkeypatch):
+    class _Settings:
+        AE_CORRECTION_MIN_DIFF_PH = 0.15
+        AE_CORRECTION_MIN_DIFF_EC = 0.10
+
+    monkeypatch.setattr(correction_cooldown, "get_settings", lambda: _Settings())
+
+    allowed_small, reason_small = await correction_cooldown.should_apply_proactive_correction(
+        zone_id=2,
+        correction_type="ph",
+        projected_diff=0.14,
+        cooldown_minutes=10,
+    )
+    allowed_big, reason_big = await correction_cooldown.should_apply_proactive_correction(
+        zone_id=2,
+        correction_type="ec",
+        projected_diff=0.12,
+        cooldown_minutes=10,
+    )
+
+    assert allowed_small is False
+    assert "too small" in reason_small
+    assert allowed_big is True
+    assert "allowed" in reason_big
