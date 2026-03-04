@@ -11,6 +11,20 @@ from common.commands import mark_command_send_failed, mark_command_timeout
 from common.db import create_zone_event
 
 
+def _timeout_alert_state_maps(tracker: Any) -> tuple[Dict[int, bool], Dict[int, bool]]:
+    active_map = getattr(tracker, "_timeout_alert_active_by_zone", None)
+    if not isinstance(active_map, dict):
+        active_map = {}
+        setattr(tracker, "_timeout_alert_active_by_zone", active_map)
+
+    probe_map = getattr(tracker, "_timeout_alert_probe_done_by_zone", None)
+    if not isinstance(probe_map, dict):
+        probe_map = {}
+        setattr(tracker, "_timeout_alert_probe_done_by_zone", probe_map)
+
+    return active_map, probe_map
+
+
 async def emit_failure_alert_impl(
     tracker: Any,
     *,
@@ -56,6 +70,10 @@ async def emit_failure_alert_impl(
             "error_message": error,
         },
     )
+    if status_upper == "TIMEOUT":
+        active_map, probe_map = _timeout_alert_state_maps(tracker)
+        active_map[int(zone_id)] = True
+        probe_map[int(zone_id)] = True
 
 
 async def persist_terminal_status_impl(
@@ -146,6 +164,36 @@ async def confirm_command_internal_impl(
         ).inc()
 
     if success:
+        active_map, probe_map = _timeout_alert_state_maps(tracker)
+        zone_key = int(zone_id)
+        timeout_alert_active = bool(active_map.get(zone_key))
+        timeout_probe_done = bool(probe_map.get(zone_key))
+        if timeout_alert_active or not timeout_probe_done:
+            from common.infra_alerts import send_infra_resolved_alert
+
+            command_payload = command_info.get("command")
+            if not isinstance(command_payload, dict):
+                command_payload = {}
+            resolved = await send_infra_resolved_alert(
+                code="infra_command_timeout",
+                alert_type="Command Execution Timeout",
+                message=f"Команда {command_type} восстановлена после timeout",
+                zone_id=zone_id,
+                service="automation-engine",
+                component="command_tracker",
+                node_uid=command_payload.get("node_uid"),
+                channel=command_payload.get("channel"),
+                cmd=command_payload.get("cmd") or command_type,
+                details={
+                    "recovered_cmd_id": cmd_id,
+                    "recovered_status": status,
+                    "recovery_probe": "cold_start" if not timeout_probe_done else "tracked",
+                },
+            )
+            probe_map[zone_key] = True
+            if resolved:
+                active_map[zone_key] = False
+
         tracker._logger.info(
             "Zone %s: Command %s completed successfully (status: %s)",
             zone_id,

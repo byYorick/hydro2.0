@@ -2,56 +2,21 @@
 
 namespace App\Console\Commands;
 
-use App\Console\Commands\Concerns\BuildsAutomationDispatchSchedules;
-use App\Console\Commands\Concerns\ConfiguresAutomationDispatch;
-use App\Console\Commands\Concerns\DispatchesAutomationSchedules;
-use App\Services\AutomationScheduler\ActiveTaskStore;
-use App\Services\AutomationScheduler\ZoneCursorStore;
-use App\Services\EffectiveTargetsService;
-use Carbon\CarbonImmutable;
+use App\Services\AutomationScheduler\SchedulerConstants;
+use App\Services\AutomationScheduler\SchedulerCycleService;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class AutomationDispatchSchedules extends Command
 {
-    use BuildsAutomationDispatchSchedules;
-    use ConfiguresAutomationDispatch;
-    use DispatchesAutomationSchedules;
-
     protected $signature = 'automation:dispatch-schedules {--zone-id=* : Ограничить dispatch указанными zone_id}';
 
     protected $description = 'Laravel scheduler dispatcher: планирование и отправка abstract scheduler задач в automation-engine';
 
-    private const ACTIVE_ZONE_STATUSES = ['online', 'warning', 'RUNNING', 'PAUSED'];
-
-    private const ACTIVE_CYCLE_STATUSES = ['PLANNED', 'RUNNING', 'PAUSED'];
-
-    private const SUPPORTED_TASK_TYPES = [
-        'irrigation',
-        'lighting',
-        'ventilation',
-        'solution_change',
-        'mist',
-        'diagnostics',
-    ];
-
-    private const CATCHUP_POLICIES = ['skip', 'replay_limited', 'replay_all'];
-
-    private const TERMINAL_STATUSES = ['completed', 'done', 'failed', 'rejected', 'expired', 'timeout', 'error', 'cancelled', 'not_found'];
-
-    private const TASK_NAME_PREFIX = 'laravel_scheduler_task';
-
-    private const CYCLE_LOG_TASK_NAME = 'laravel_scheduler_cycle';
-
-    /**
-     * @var array<int, CarbonImmutable>
-     */
-    private array $zoneCursorCache = [];
-
     public function __construct(
-        private readonly EffectiveTargetsService $effectiveTargetsService,
-        private readonly ActiveTaskStore $activeTaskStore,
-        private readonly ZoneCursorStore $zoneCursorStore,
+        private readonly SchedulerCycleService $schedulerCycleService,
     ) {
         parent::__construct();
     }
@@ -64,23 +29,25 @@ class AutomationDispatchSchedules extends Command
             return self::SUCCESS;
         }
 
-        $zoneFilter = collect($this->option('zone-id'))
-            ->map(static fn ($value): int => (int) $value)
-            ->filter(static fn (int $value): bool => $value > 0)
-            ->unique()
-            ->values()
-            ->all();
-
-        $lock = $this->acquireDispatchLock();
-        if (! $lock) {
+        $zoneFilter = $this->resolveZoneFilter();
+        $lockResult = $this->acquireDispatchLock();
+        if ($lockResult['state'] === 'busy') {
             Log::info('Laravel scheduler dispatcher skipped due to active lock');
             $this->line('Dispatch lock already acquired, skip current cycle.');
 
             return self::SUCCESS;
         }
+        if ($lockResult['state'] === 'error') {
+            Log::error('Laravel scheduler dispatcher lock acquisition failed', [
+                'error' => $lockResult['error'],
+            ]);
 
+            return self::FAILURE;
+        }
+
+        $lock = $lockResult['lock'];
         try {
-            $stats = $this->dispatchCycle($zoneFilter);
+            $stats = $this->schedulerCycleService->runCycle($this->schedulerConfig(), $zoneFilter);
             $this->line(sprintf(
                 'Dispatch cycle finished: zones=%d schedules=%d attempted=%d success=%d pending_retry=%d',
                 (int) ($stats['zones_total'] ?? 0),
@@ -91,262 +58,101 @@ class AutomationDispatchSchedules extends Command
             ));
 
             return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('Laravel scheduler dispatcher cycle failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return self::FAILURE;
         } finally {
-            try {
-                $lock->release();
-            } catch (\Throwable $e) {
-                Log::warning('Laravel scheduler dispatcher failed to release lock', [
-                    'error' => $e->getMessage(),
-                ]);
+            $this->releaseDispatchLock($lock);
+        }
+    }
+
+    private function isDispatcherEnabled(): bool
+    {
+        return (bool) config('services.automation_engine.laravel_scheduler_enabled', false);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function resolveZoneFilter(): array
+    {
+        return collect($this->option('zone-id'))
+            ->map(static fn ($value): int => (int) $value)
+            ->filter(static fn (int $value): bool => $value > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{state: 'acquired'|'busy'|'error', lock: Lock|null, error?: string}
+     */
+    private function acquireDispatchLock(): array
+    {
+        $ttlSec = max(10, (int) config('services.automation_engine.scheduler_lock_ttl_sec', 55));
+        $lockKey = (string) config('services.automation_engine.scheduler_lock_key', 'automation:dispatch-schedules');
+
+        try {
+            $lock = Cache::lock($lockKey, $ttlSec);
+            if (! $lock->get()) {
+                return ['state' => 'busy', 'lock' => null];
             }
+
+            return ['state' => 'acquired', 'lock' => $lock];
+        } catch (\Throwable $e) {
+            return ['state' => 'error', 'lock' => null, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function releaseDispatchLock(?Lock $lock): void
+    {
+        if (! $lock) {
+            return;
+        }
+
+        try {
+            $lock->release();
+        } catch (\Throwable $e) {
+            Log::warning('Laravel scheduler dispatcher failed to release lock', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
     /**
-     * @param  array<int, int>  $zoneFilter
      * @return array<string, mixed>
      */
-    private function dispatchCycle(array $zoneFilter): array
+    private function schedulerConfig(): array
     {
-        $cfg = $this->schedulerConfig();
-        $this->cleanupTerminalActiveTasks($cfg);
-        $traceId = $this->newTraceId();
-        if ($cfg['token'] === '') {
-            Log::error('Laravel scheduler dispatcher: missing scheduler api token');
-            $stats = [
-                'dispatch_mode' => 'start_cycle',
-                'zones_total' => 0,
-                'zones_with_targets' => 0,
-                'schedules_total' => 0,
-                'attempted_dispatches' => 0,
-                'successful_dispatches' => 0,
-                'triggerless_schedules' => 0,
-                'zones_pending_time_retry' => 0,
-                'error' => 'missing_scheduler_api_token',
-            ];
-            $this->writeSchedulerLog(self::CYCLE_LOG_TASK_NAME, 'failed', $stats);
+        $dueGraceSec = max(1, (int) config('services.automation_engine.scheduler_due_grace_sec', 15));
+        $expiresAfterSec = max($dueGraceSec + 1, (int) config('services.automation_engine.scheduler_expires_after_sec', 120));
 
-            return $stats;
+        $catchupPolicy = strtolower((string) config('services.automation_engine.scheduler_catchup_policy', 'replay_limited'));
+        if (! in_array($catchupPolicy, SchedulerConstants::CATCHUP_POLICIES, true)) {
+            $catchupPolicy = 'replay_limited';
         }
 
-        $headers = $this->schedulerHeaders($cfg, $traceId);
-        $this->reconcilePendingActiveTasks($cfg, $headers);
-        $zoneIds = $this->loadActiveZoneIds($zoneFilter);
-
-        if ($zoneIds === []) {
-            $stats = [
-                'dispatch_mode' => 'start_cycle',
-                'zones_total' => 0,
-                'zones_with_targets' => 0,
-                'schedules_total' => 0,
-                'attempted_dispatches' => 0,
-                'successful_dispatches' => 0,
-                'triggerless_schedules' => 0,
-                'zones_pending_time_retry' => 0,
-            ];
-            $this->writeSchedulerLog(self::CYCLE_LOG_TASK_NAME, 'completed', $stats);
-
-            return $stats;
-        }
-
-        $effectiveTargetsByZone = $this->loadEffectiveTargetsByZone($zoneIds);
-        $schedules = [];
-        $zonesWithTargets = 0;
-
-        foreach ($zoneIds as $zoneId) {
-            $zonePayload = $effectiveTargetsByZone[$zoneId] ?? null;
-            if (! is_array($zonePayload)) {
-                continue;
-            }
-            $targets = $zonePayload['targets'] ?? null;
-            if (! is_array($targets)) {
-                continue;
-            }
-
-            $zonesWithTargets++;
-            foreach ($this->buildSchedulesForZone($zoneId, $targets) as $schedule) {
-                $schedules[] = $schedule;
-            }
-        }
-
-        $attemptedDispatches = 0;
-        $successfulDispatches = 0;
-        $triggerlessCount = 0;
-        $replayBudget = $cfg['catchup_rate_limit_per_cycle'];
-
-        /** @var array<string, bool> $executedKeys */
-        $executedKeys = [];
-        /** @var array<int, CarbonImmutable> $zoneNow */
-        $zoneNow = [];
-        /** @var array<int, CarbonImmutable> $zoneLast */
-        $zoneLast = [];
-        /** @var array<int, bool> $zonesWithPendingTimeDispatch */
-        $zonesWithPendingTimeDispatch = [];
-        /** @var array<int, bool> $zonesWithSuccessfulTimeDispatch */
-        $zonesWithSuccessfulTimeDispatch = [];
-
-        $realNow = $this->nowUtc();
-
-        foreach ($schedules as $schedule) {
-            $zoneId = (int) ($schedule['zone_id'] ?? 0);
-            $taskType = strtolower((string) ($schedule['type'] ?? ''));
-            if ($zoneId <= 0 || $taskType === '') {
-                continue;
-            }
-
-            $scheduleKey = $this->buildScheduleKey($zoneId, $schedule);
-            if (isset($executedKeys[$scheduleKey])) {
-                continue;
-            }
-
-            if (! isset($zoneNow[$zoneId])) {
-                $zoneNow[$zoneId] = $realNow;
-                $zoneLast[$zoneId] = $this->resolveZoneLastCheck($zoneId, $realNow, $cfg['cursor_persist_enabled']);
-            }
-
-            $now = $zoneNow[$zoneId];
-            $last = $zoneLast[$zoneId];
-
-            $intervalSec = $this->safePositiveInt($schedule['interval_sec'] ?? null);
-            $taskName = $this->scheduleTaskLogName($zoneId, $taskType);
-
-            if ($intervalSec > 0) {
-                if ($this->shouldRunIntervalTask($taskName, $intervalSec, $now)) {
-                    $attemptedDispatches++;
-                    $dispatchResult = $this->dispatchSchedule(
-                        zoneId: $zoneId,
-                        schedule: $schedule,
-                        triggerTime: $now,
-                        scheduleKey: $scheduleKey,
-                        cfg: $cfg,
-                        headers: $headers,
-                    );
-                    if ($dispatchResult['dispatched']) {
-                        $successfulDispatches++;
-                        $executedKeys[$scheduleKey] = true;
-                    }
-                }
-
-                continue;
-            }
-
-            $scheduleTime = $schedule['time'] ?? null;
-            if (is_string($scheduleTime) && $scheduleTime !== '') {
-                $crossings = $this->scheduleCrossings($last, $now, $scheduleTime);
-                $plannedTriggers = $this->applyCatchupPolicy($crossings, $now, $cfg['catchup_policy'], $cfg['catchup_max_windows']);
-                $hadDispatchSuccess = false;
-                $hadRetryableFailure = false;
-                $deferredByReplayBudget = false;
-
-                foreach ($plannedTriggers as $triggerTime) {
-                    $isReplay = $triggerTime->lt($now);
-                    if ($isReplay) {
-                        if ($replayBudget <= 0) {
-                            $deferredByReplayBudget = true;
-                            break;
-                        }
-                        $replayBudget--;
-                    }
-
-                    $dispatchTrigger = $triggerTime;
-                    $dispatchSchedule = $schedule;
-                    if ($isReplay) {
-                        $dispatchPayload = is_array($schedule['payload'] ?? null)
-                            ? $schedule['payload']
-                            : [];
-                        $dispatchPayload['catchup_original_trigger_time'] = $this->toIso($triggerTime);
-                        $dispatchPayload['catchup_policy'] = $cfg['catchup_policy'];
-                        $dispatchSchedule['payload'] = $dispatchPayload;
-
-                        if ($now->diffInSeconds($triggerTime) > $cfg['due_grace_sec']) {
-                            $dispatchTrigger = $now;
-                        }
-                    }
-
-                    $attemptedDispatches++;
-                    $dispatchResult = $this->dispatchSchedule(
-                        zoneId: $zoneId,
-                        schedule: $dispatchSchedule,
-                        triggerTime: $dispatchTrigger,
-                        scheduleKey: $scheduleKey,
-                        cfg: $cfg,
-                        headers: $headers,
-                    );
-                    if ($dispatchResult['dispatched']) {
-                        $successfulDispatches++;
-                        $hadDispatchSuccess = true;
-                        $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
-                        break;
-                    }
-                    if ($dispatchResult['retryable']) {
-                        $hadRetryableFailure = true;
-                    }
-                }
-
-                if ($plannedTriggers !== [] && ! $hadDispatchSuccess && ($hadRetryableFailure || $deferredByReplayBudget)) {
-                    $zonesWithPendingTimeDispatch[$zoneId] = true;
-                }
-                if ($plannedTriggers !== []) {
-                    $executedKeys[$scheduleKey] = true;
-                }
-
-                continue;
-            }
-
-            $startTime = $schedule['start_time'] ?? null;
-            $endTime = $schedule['end_time'] ?? null;
-            if (is_string($startTime) && is_string($endTime) && $startTime !== '' && $endTime !== '') {
-                $desiredNow = $this->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
-                $desiredLast = $this->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
-                if ($desiredNow !== $desiredLast) {
-                    $attemptedDispatches++;
-                    $dispatchResult = $this->dispatchSchedule(
-                        zoneId: $zoneId,
-                        schedule: $schedule,
-                        triggerTime: $now,
-                        scheduleKey: $scheduleKey,
-                        cfg: $cfg,
-                        headers: $headers,
-                    );
-                    if ($dispatchResult['dispatched']) {
-                        $successfulDispatches++;
-                    }
-                }
-                $executedKeys[$scheduleKey] = true;
-
-                continue;
-            }
-
-            $triggerlessCount++;
-        }
-
-        $zonesPendingTimeRetry = 0;
-        foreach ($zoneNow as $zoneId => $now) {
-            $cursorRetryPending = isset($zonesWithPendingTimeDispatch[$zoneId]) && ! isset($zonesWithSuccessfulTimeDispatch[$zoneId]);
-            if ($cursorRetryPending) {
-                $zonesPendingTimeRetry++;
-            }
-
-            $cursorAt = $cursorRetryPending
-                ? ($zoneLast[$zoneId] ?? $now)
-                : $now;
-            $this->zoneCursorCache[$zoneId] = $cursorAt;
-            $this->persistZoneCursor($zoneId, $cursorAt, $cfg['catchup_policy'], $cfg['cursor_persist_enabled']);
-        }
-
-        $stats = [
-            'dispatch_mode' => 'start_cycle',
-            'zones_total' => count($zoneIds),
-            'zones_with_targets' => $zonesWithTargets,
-            'schedules_total' => count($schedules),
-            'attempted_dispatches' => $attemptedDispatches,
-            'successful_dispatches' => $successfulDispatches,
-            'triggerless_schedules' => $triggerlessCount,
-            'zones_pending_time_retry' => $zonesPendingTimeRetry,
+        return [
+            'api_url' => rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/'),
+            'timeout_sec' => max(1.0, (float) config('services.automation_engine.timeout', 2.0)),
+            'scheduler_id' => (string) config('services.automation_engine.scheduler_id', 'laravel-scheduler'),
+            'scheduler_version' => (string) config('services.automation_engine.scheduler_version', '3.0.0'),
+            'protocol_version' => (string) config('services.automation_engine.scheduler_protocol_version', '2.0'),
+            'token' => trim((string) config('services.automation_engine.scheduler_api_token', '')),
+            'due_grace_sec' => $dueGraceSec,
+            'expires_after_sec' => $expiresAfterSec,
+            'catchup_policy' => $catchupPolicy,
+            'catchup_max_windows' => max(1, (int) config('services.automation_engine.scheduler_catchup_max_windows', 3)),
+            'catchup_rate_limit_per_cycle' => max(1, (int) config('services.automation_engine.scheduler_catchup_rate_limit_per_cycle', 20)),
+            'dispatch_interval_sec' => max(10, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60)),
+            'active_task_ttl_sec' => max(30, (int) config('services.automation_engine.scheduler_active_task_ttl_sec', $expiresAfterSec)),
+            'active_task_retention_days' => max(1, (int) config('services.automation_engine.scheduler_active_task_retention_days', 60)),
+            'active_task_cleanup_batch' => max(1, (int) config('services.automation_engine.scheduler_active_task_cleanup_batch', 500)),
+            'active_task_poll_batch' => max(1, (int) config('services.automation_engine.scheduler_active_task_poll_batch', 500)),
+            'cursor_persist_enabled' => (bool) config('services.automation_engine.scheduler_cursor_persist_enabled', true),
         ];
-
-        $this->writeSchedulerLog(self::CYCLE_LOG_TASK_NAME, 'completed', $stats);
-
-        return $stats;
     }
 }

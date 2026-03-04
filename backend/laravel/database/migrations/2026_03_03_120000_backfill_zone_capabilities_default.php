@@ -6,13 +6,13 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     private const DEFAULT_CAPABILITIES = [
-        'ph_control' => true,
-        'ec_control' => true,
-        'climate_control' => true,
-        'light_control' => true,
-        'irrigation_control' => true,
-        'recirculation' => true,
-        'flow_sensor' => true,
+        'ph_control' => false,
+        'ec_control' => false,
+        'climate_control' => false,
+        'light_control' => false,
+        'irrigation_control' => false,
+        'recirculation' => false,
+        'flow_sensor' => false,
     ];
 
     public function up(): void

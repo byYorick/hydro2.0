@@ -117,10 +117,30 @@ async def emit_zone_recovered_signal(
     *,
     zone_id: int,
     previous_error_streak: int,
+    zone_state: Dict[str, Any],
     create_zone_event_safe_fn: CreateZoneEventSafeFn,
     send_infra_resolved_alert_fn: SendInfraResolvedAlertFn,
     logger: Any,
 ) -> None:
+    if int(previous_error_streak) <= 0:
+        if zone_state.get("backoff_skip_alert_active") is False:
+            return
+        resolved = await send_infra_resolved_alert_fn(
+            code=INFRA_ZONE_BACKOFF_SKIP,
+            alert_type="Zone Backoff Skip",
+            message=f"Zone {zone_id} healthy cycle: backoff skip resolved",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="zone_processing",
+            details={
+                "previous_error_streak": 0,
+                "recovery_probe": "cold_start",
+            },
+        )
+        if resolved:
+            zone_state["backoff_skip_alert_active"] = False
+        return
+
     logger.info(
         "Zone %s: Recovered after %s consecutive errors",
         zone_id,
@@ -138,7 +158,6 @@ async def emit_zone_recovered_signal(
     for resolved_code in (
         INFRA_ZONE_DEGRADED_MODE,
         INFRA_ZONE_DATA_UNAVAILABLE,
-        INFRA_ZONE_BACKOFF_SKIP,
         INFRA_ZONE_TARGETS_MISSING,
     ):
         await send_infra_resolved_alert_fn(
@@ -150,6 +169,18 @@ async def emit_zone_recovered_signal(
             component="zone_processing",
             details={"previous_error_streak": previous_error_streak},
         )
+
+    backoff_resolved = await send_infra_resolved_alert_fn(
+        code=INFRA_ZONE_BACKOFF_SKIP,
+        alert_type="Zone Recovered",
+        message=f"Zone {zone_id} recovered after {previous_error_streak} consecutive errors",
+        zone_id=zone_id,
+        service="automation-engine",
+        component="zone_processing",
+        details={"previous_error_streak": previous_error_streak},
+    )
+    if backoff_resolved:
+        zone_state["backoff_skip_alert_active"] = False
 
 
 __all__ = [

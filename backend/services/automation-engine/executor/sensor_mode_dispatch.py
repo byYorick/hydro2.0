@@ -17,13 +17,14 @@ async def dispatch_sensor_mode_command_for_nodes(
     decision: DecisionOutcome,
     activate: bool,
     reason_code: str,
+    stabilization_time_sec: int = 60,
     resolve_online_node_for_channel_fn: ResolveOnlineNodeForChannelFn,
     publish_batch_fn: PublishBatchFn,
 ) -> Dict[str, Any]:
     cmd = "activate_sensor_mode" if activate else "deactivate_sensor_mode"
     params: Dict[str, Any] = {"reason": reason_code}
     if activate:
-        params["stabilization_time_sec"] = 60
+        params["stabilization_time_sec"] = max(0, int(stabilization_time_sec or 0))
 
     nodes: List[Dict[str, Any]] = []
     for node_type in ("ph", "ec"):

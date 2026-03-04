@@ -29,6 +29,17 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->assertExitCode(0);
     }
 
+    public function test_command_returns_failure_when_lock_backend_unavailable(): void
+    {
+        $this->enableSchedulerConfig();
+        Cache::shouldReceive('lock')
+            ->once()
+            ->andThrow(new \RuntimeException('redis unavailable'));
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(1);
+    }
+
     public function test_command_dispatches_and_persists_durable_state(): void
     {
         $this->enableSchedulerConfig();
@@ -81,7 +92,8 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
         $this->assertIsArray($intentPayload);
         $this->assertSame('laravel_scheduler', $intentPayload['source'] ?? null);
-        $this->assertSame('diagnostics', $intentPayload['task_type'] ?? null);
+        $this->assertArrayNotHasKey('task_type', $intentPayload);
+        $this->assertArrayNotHasKey('topology', $intentPayload);
         $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
         $this->assertArrayNotHasKey('task_payload', $intentPayload);
         $this->assertArrayNotHasKey('schedule_payload', $intentPayload);

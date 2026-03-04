@@ -21,6 +21,15 @@ class ZoneFactory extends Factory
             'description' => $this->faker->sentence(),
             'status' => $this->faker->randomElement(['online', 'offline', 'warning', 'critical']),
             'greenhouse_id' => Greenhouse::factory(),
+            'capabilities' => [
+                'ph_control' => false,
+                'ec_control' => false,
+                'climate_control' => false,
+                'light_control' => false,
+                'irrigation_control' => false,
+                'recirculation' => false,
+                'flow_sensor' => false,
+            ],
         ];
     }
 }

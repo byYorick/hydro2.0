@@ -5,22 +5,11 @@ namespace App\Services\AutomationScheduler;
 use App\Models\LaravelSchedulerActiveTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ActiveTaskStore
 {
-    private const TERMINAL_STATUSES = [
-        'completed',
-        'done',
-        'failed',
-        'rejected',
-        'expired',
-        'timeout',
-        'error',
-        'cancelled',
-        'not_found',
-    ];
-
     /**
      * @param  array<string, mixed>  $details
      */
@@ -41,7 +30,7 @@ class ActiveTaskStore
             return null;
         }
 
-        $normalizedStatus = $this->normalizeStatus($status);
+        $normalizedStatus = SchedulerConstants::normalizeTerminalStatus($status);
         $terminalAt = $this->isTerminalStatus($normalizedStatus)
             ? CarbonImmutable::now('UTC')->setMicroseconds(0)
             : null;
@@ -105,7 +94,7 @@ class ActiveTaskStore
         try {
             return LaravelSchedulerActiveTask::query()
                 ->where('schedule_key', $scheduleKey)
-                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
                 ->where(function ($query) use ($now): void {
                     $query->whereNull('expires_at')
                         ->orWhere('expires_at', '>=', $now);
@@ -132,7 +121,7 @@ class ActiveTaskStore
 
         try {
             return LaravelSchedulerActiveTask::query()
-                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
                 ->orderByRaw('last_polled_at IS NULL DESC')
                 ->orderBy('last_polled_at')
                 ->orderBy('accepted_at')
@@ -158,23 +147,40 @@ class ActiveTaskStore
         array $detailsPatch = [],
         ?CarbonImmutable $lastPolledAt = null,
     ): void {
-        $task = $this->findByTaskId($taskId);
-        if (! $task) {
+        $taskId = trim($taskId);
+        if ($taskId === '') {
             return;
         }
 
-        $normalizedStatus = $this->normalizeStatus($status);
-        $details = is_array($task->details) ? $task->details : [];
-        $details = array_merge($details, $detailsPatch);
+        $normalizedStatus = SchedulerConstants::normalizeTerminalStatus($status);
+        $detailsPatchJson = json_encode($detailsPatch, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (! is_string($detailsPatchJson)) {
+            $detailsPatchJson = '{}';
+        }
+        $terminalStatusPlaceholders = implode(', ', array_fill(0, count(SchedulerConstants::TERMINAL_STATUSES), '?'));
 
         try {
-            $task->fill([
-                'status' => $normalizedStatus,
-                'terminal_at' => $terminalAt,
-                'last_polled_at' => $lastPolledAt,
-                'details' => $details,
-            ]);
-            $task->save();
+            DB::update(
+                "
+                UPDATE laravel_scheduler_active_tasks
+                SET status = ?,
+                    terminal_at = ?,
+                    last_polled_at = ?,
+                    details = COALESCE(details, '{}'::jsonb) || ?::jsonb,
+                    updated_at = ?
+                WHERE task_id = ?
+                  AND status NOT IN ($terminalStatusPlaceholders)
+                ",
+                [
+                    $normalizedStatus,
+                    $terminalAt,
+                    $lastPolledAt,
+                    $detailsPatchJson,
+                    $terminalAt,
+                    $taskId,
+                    ...SchedulerConstants::TERMINAL_STATUSES,
+                ],
+            );
         } catch (\Throwable $e) {
             Log::warning('Failed to mark laravel scheduler task as terminal', [
                 'task_id' => $taskId,
@@ -192,7 +198,7 @@ class ActiveTaskStore
         }
 
         $updates = ['last_polled_at' => $polledAt];
-        $normalizedStatus = $this->normalizeStatus($status);
+        $normalizedStatus = SchedulerConstants::normalizeTerminalStatus($status);
         if ($normalizedStatus !== '' && ! $this->isTerminalStatus($normalizedStatus)) {
             $updates['status'] = $normalizedStatus;
         }
@@ -238,21 +244,27 @@ class ActiveTaskStore
         }
     }
 
-    private function normalizeStatus(?string $status): string
+    public function countActiveTasks(CarbonImmutable $now): int
     {
-        $normalized = strtolower(trim((string) $status));
-        if ($normalized === 'done') {
-            return 'completed';
-        }
-        if ($normalized === 'error') {
-            return 'failed';
-        }
+        try {
+            return LaravelSchedulerActiveTask::query()
+                ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
+                ->where(function ($query) use ($now): void {
+                    $query->whereNull('expires_at')
+                        ->orWhere('expires_at', '>=', $now);
+                })
+                ->count();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to count active laravel scheduler tasks', [
+                'error' => $e->getMessage(),
+            ]);
 
-        return $normalized;
+            return 0;
+        }
     }
 
     private function isTerminalStatus(string $status): bool
     {
-        return in_array($status, self::TERMINAL_STATUSES, true);
+        return in_array($status, SchedulerConstants::TERMINAL_STATUSES, true);
     }
 }

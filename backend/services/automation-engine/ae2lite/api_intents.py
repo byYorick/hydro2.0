@@ -58,6 +58,7 @@ def build_scheduler_task_request_from_intent(
     expires_in_sec: int,
     default_topology: str,
 ) -> SchedulerTaskRequest:
+    # intent_type from zone_automation_intents is audit metadata; runtime start-cycle is always diagnostics/cycle_start.
     intent_payload = _as_dict(intent_row.get("payload"))
     due_at = now + timedelta(seconds=max(1, int(due_in_sec)))
     expires_at = now + timedelta(seconds=max(2, int(expires_in_sec)))

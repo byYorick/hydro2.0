@@ -2,8 +2,10 @@
 
 namespace Tests\Unit\Console;
 
-use App\Console\Commands\AutomationDispatchSchedules;
+use App\Services\AutomationScheduler\ActiveTaskPoller;
 use App\Services\AutomationScheduler\ActiveTaskStore;
+use App\Services\AutomationScheduler\LightingScheduleParser;
+use App\Services\AutomationScheduler\SchedulerCycleService;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
@@ -13,7 +15,7 @@ use Tests\TestCase;
 
 class AutomationDispatchSchedulesInternalsTest extends TestCase
 {
-    private AutomationDispatchSchedules $command;
+    private SchedulerCycleService $service;
 
     private ReflectionClass $reflection;
 
@@ -21,12 +23,15 @@ class AutomationDispatchSchedulesInternalsTest extends TestCase
     {
         parent::setUp();
 
-        $this->command = new AutomationDispatchSchedules(
+        $activeTaskStore = new ActiveTaskStore;
+        $this->service = new SchedulerCycleService(
             effectiveTargetsService: Mockery::mock(EffectiveTargetsService::class),
-            activeTaskStore: new ActiveTaskStore,
+            activeTaskStore: $activeTaskStore,
             zoneCursorStore: new ZoneCursorStore,
+            lightingScheduleParser: new LightingScheduleParser,
+            activeTaskPoller: new ActiveTaskPoller($activeTaskStore),
         );
-        $this->reflection = new ReflectionClass($this->command);
+        $this->reflection = new ReflectionClass($this->service);
     }
 
     public function test_compute_task_deadlines_applies_due_and_expiry_offsets(): void
@@ -38,8 +43,8 @@ class AutomationDispatchSchedulesInternalsTest extends TestCase
             [$scheduledFor, 15, 120],
         );
 
-        $this->assertSame('2026-02-20T12:00:15', $dueAt);
-        $this->assertSame('2026-02-20T12:02:00', $expiresAt);
+        $this->assertSame('2026-02-20T12:00:15Z', $dueAt);
+        $this->assertSame('2026-02-20T12:02:00Z', $expiresAt);
     }
 
     public function test_build_scheduler_correlation_id_is_deterministic_and_zone_scoped(): void
@@ -111,6 +116,34 @@ class AutomationDispatchSchedulesInternalsTest extends TestCase
         $this->assertSame('2026-02-20T12:05:00', $result[0]->format('Y-m-d\TH:i:s'));
     }
 
+    public function test_should_run_interval_task_uses_batch_map_without_database_access(): void
+    {
+        $now = CarbonImmutable::parse('2026-02-20 12:05:00', 'UTC');
+        $lastRunByTaskName = [
+            'laravel_scheduler_task_irrigation_zone_1' => CarbonImmutable::parse('2026-02-20 12:04:30', 'UTC'),
+            'laravel_scheduler_task_lighting_zone_1' => CarbonImmutable::parse('2026-02-20 12:03:00', 'UTC'),
+        ];
+
+        $this->assertFalse($this->invokePrivateMethod('shouldRunIntervalTask', [
+            'laravel_scheduler_task_irrigation_zone_1',
+            60,
+            $now,
+            $lastRunByTaskName,
+        ]));
+        $this->assertTrue($this->invokePrivateMethod('shouldRunIntervalTask', [
+            'laravel_scheduler_task_lighting_zone_1',
+            60,
+            $now,
+            $lastRunByTaskName,
+        ]));
+        $this->assertTrue($this->invokePrivateMethod('shouldRunIntervalTask', [
+            'laravel_scheduler_task_mist_zone_1',
+            60,
+            $now,
+            $lastRunByTaskName,
+        ]));
+    }
+
     /**
      * @param  array<int, mixed>  $args
      */
@@ -119,6 +152,6 @@ class AutomationDispatchSchedulesInternalsTest extends TestCase
         $refMethod = $this->reflection->getMethod($method);
         $refMethod->setAccessible(true);
 
-        return $refMethod->invokeArgs($this->command, $args);
+        return $refMethod->invokeArgs($this->service, $args);
     }
 }

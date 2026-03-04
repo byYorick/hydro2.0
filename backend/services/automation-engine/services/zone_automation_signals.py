@@ -175,6 +175,7 @@ async def emit_zone_recovered_signal(self, zone_id: int, previous_error_streak: 
     await policy_emit_zone_recovered_signal(
         zone_id=zone_id,
         previous_error_streak=previous_error_streak,
+        zone_state=self._get_zone_state(zone_id),
         create_zone_event_safe_fn=self._create_zone_event_safe,
         send_infra_resolved_alert_fn=send_infra_resolved_alert,
         logger=logger,

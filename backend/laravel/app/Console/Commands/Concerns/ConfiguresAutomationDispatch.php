@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Concerns;
 
 use App\Models\GrowCycle;
+use App\Services\AutomationScheduler\SchedulerConstants;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
@@ -10,6 +11,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * @deprecated Логика перенесена в App\Console\Commands\AutomationDispatchSchedules и App\Services\AutomationScheduler\SchedulerCycleService.
+ */
 trait ConfiguresAutomationDispatch
 {
     private function isDispatcherEnabled(): bool
@@ -123,7 +127,7 @@ trait ConfiguresAutomationDispatch
     {
         $query = DB::table('zones')
             ->select('id')
-            ->whereIn('status', self::ACTIVE_ZONE_STATUSES)
+            ->whereIn(DB::raw('lower(status)'), SchedulerConstants::ACTIVE_ZONE_STATUSES_LOWER)
             ->orderBy('id');
 
         if ($zoneFilter !== []) {
@@ -150,7 +154,7 @@ trait ConfiguresAutomationDispatch
         $cycles = GrowCycle::query()
             ->select(['id', 'zone_id'])
             ->whereIn('zone_id', $zoneIds)
-            ->whereIn('status', self::ACTIVE_CYCLE_STATUSES)
+            ->whereIn(DB::raw('upper(status)'), self::ACTIVE_CYCLE_STATUSES)
             ->orderByDesc('id')
             ->get();
 

@@ -165,4 +165,58 @@ describe('AutomationProcessPanel', () => {
     expect(wrapper.text()).toContain('Сейчас: Набор бака с раствором')
     expect((wrapper.text().match(/Выполняется/g) ?? []).length).toBe(1)
   })
+
+  it('не подменяет COMMAND_DISPATCHED сообщением о завершении этапа', async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: {
+        zone_id: 5,
+        state: 'TANK_FILLING',
+        state_label: 'Набор бака с раствором',
+        state_details: {
+          started_at: '2026-02-14T18:00:00Z',
+          elapsed_sec: 40,
+          progress_percent: 24,
+        },
+        system_config: {
+          tanks_count: 2,
+          system_type: 'drip',
+          clean_tank_capacity_l: 300,
+          nutrient_tank_capacity_l: 280,
+        },
+        current_levels: {
+          clean_tank_level_percent: 96,
+          nutrient_tank_level_percent: 35,
+          ph: 5.8,
+          ec: 1.5,
+        },
+        active_processes: {
+          pump_in: true,
+          circulation_pump: false,
+          ph_correction: true,
+          ec_correction: true,
+        },
+        timeline: [
+          {
+            event: 'COMMAND_DISPATCHED',
+            label: 'Команда отправлена узлу (clean_fill_completed)',
+            timestamp: '2026-02-14T18:00:40Z',
+            active: true,
+          },
+        ],
+        next_state: 'TANK_RECIRC',
+        estimated_completion_sec: 120,
+      },
+    })
+
+    const wrapper = mount(AutomationProcessPanel, {
+      props: {
+        zoneId: 5,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Набор чистой воды: Команда отправлена узлу')
+    expect(wrapper.text()).not.toContain('Набор чистой воды: Команда отправлена узлу — Бак чистой воды наполнен')
+  })
 })

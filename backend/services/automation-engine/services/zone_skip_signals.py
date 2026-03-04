@@ -87,6 +87,7 @@ async def emit_backoff_skip_signal(
     )
     if event_created or alert_sent:
         zone_state["last_backoff_reported_until"] = next_allowed
+        zone_state["backoff_skip_alert_active"] = True
     else:
         logger.warning(
             "Zone %s: Backoff skip signal not persisted (event+alert failed), will retry",

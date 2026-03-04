@@ -122,15 +122,7 @@ async def publish_command_mqtt(
             if not mqtt_client.is_connected():
                 raise ConnectionError("MQTT client is not connected and reconnection failed")
 
-        s = get_settings()
-        zone_segment = f"zn-{zone_id}"
-        if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
-            zone_segment = zone_uid
-        elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            raise ValueError(
-                f"mqtt_zone_format=uid but zone_uid not provided for zone_id={zone_id}. "
-                f"Cannot publish command — node subscription mismatch guaranteed."
-            )
+        zone_segment = zone_uid or f"zn-{zone_id}"
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
         logger.info(
@@ -188,15 +180,7 @@ async def publish_config_mqtt(
             if not mqtt_client.is_connected():
                 raise ConnectionError("MQTT client is not connected and reconnection failed")
 
-        s = get_settings()
-        zone_segment = f"zn-{zone_id}"
-        if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
-            zone_segment = zone_uid
-        elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            raise ValueError(
-                f"mqtt_zone_format=uid but zone_uid not provided for zone_id={zone_id}. "
-                f"Cannot publish command — node subscription mismatch guaranteed."
-            )
+        zone_segment = zone_uid or f"zn-{zone_id}"
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
         import json as json_lib

@@ -96,6 +96,11 @@ class CommandTracker:
             "COMMAND_TIMEOUT": COMMAND_TIMEOUT,
             "PENDING_COMMANDS": PENDING_COMMANDS,
         }
+        # Tri-state semantics by zone:
+        # - active=True: timeout alert was emitted in this runtime and should be resolved on success.
+        # - probe_done=False/absent: cold-start probe not executed yet.
+        self._timeout_alert_active_by_zone: Dict[int, bool] = {}
+        self._timeout_alert_probe_done_by_zone: Dict[int, bool] = {}
 
     @staticmethod
     def _normalize_utc_datetime(value: Any) -> datetime:

@@ -763,6 +763,35 @@ async def test_publish_command_zone_uid_format(client, auth_headers, mock_mqtt_c
 
 
 @pytest.mark.asyncio
+async def test_publish_command_zone_uid_format_fails_closed_when_zone_uid_unresolved(
+    client, auth_headers, mock_mqtt_client
+):
+    """UID-format публикация должна fail-closed завершаться до MQTT, если zone_uid не найден."""
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_routes.get_settings") as mock_settings, \
+         patch("command_routes._get_zone_uid_from_id", new_callable=AsyncMock) as mock_get_uid:
+
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="uid")
+        mock_get_uid.return_value = None
+
+        payload = {
+            "cmd": "run_pump",
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "node_uid": "nd-irrig-1",
+            "channel": "default",
+        }
+
+        response = client.post("/commands", json=payload, headers=auth_headers)
+
+        assert response.status_code == 409
+        assert "zone_uid could not be resolved" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
+        mock_get_uid.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
 async def test_publish_command_fails_closed_on_db_error_before_publish(
     client, auth_headers, mock_mqtt_client
 ):

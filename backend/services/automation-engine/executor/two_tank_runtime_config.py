@@ -256,6 +256,27 @@ def resolve_two_tank_runtime_config(
             3.0,
         ),
         "level_switch_on_threshold": resolve_float_fn(startup.get("level_switch_on_threshold"), 0.5, 0.0, 1.0),
+        "startup_clean_level_retry_attempts": resolve_int_fn(
+            startup.get("clean_level_retry_attempts"),
+            6,
+            0,
+        ),
+        "startup_clean_level_retry_delay_sec": resolve_float_fn(
+            startup.get("clean_level_retry_delay_sec"),
+            1.0,
+            0.0,
+            30.0,
+        ),
+        "sensor_mode_stabilization_time_sec": resolve_int_fn(
+            startup.get("sensor_mode_stabilization_time_sec"),
+            60,
+            0,
+        ),
+        "sensor_mode_telemetry_grace_sec": resolve_int_fn(
+            startup.get("sensor_mode_telemetry_grace_sec"),
+            90,
+            0,
+        ),
         "clean_max_labels": normalize_labels_fn(startup.get("clean_max_sensor_labels"), ("level_clean_max", "clean_max")),
         "clean_min_labels": normalize_labels_fn(startup.get("clean_min_sensor_labels"), ("level_clean_min", "clean_min")),
         "solution_max_labels": normalize_labels_fn(startup.get("solution_max_sensor_labels"), ("level_solution_max", "solution_max")),

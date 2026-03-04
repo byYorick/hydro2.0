@@ -45,6 +45,8 @@ def get_zone_state(
     state.setdefault("error_streak", 0)
     state.setdefault("next_allowed_run_at", None)
     state.setdefault("last_backoff_reported_until", None)
+    # None means "unknown on cold-start", so resolver can perform one probe.
+    state.setdefault("backoff_skip_alert_active", None)
     state.setdefault("degraded_alert_active", False)
     state.setdefault("last_missing_targets_report_at", None)
     state.setdefault("last_missing_correction_flags_report_at", None)
@@ -60,7 +62,8 @@ def get_zone_state(
     state.setdefault("workflow_phase_updated_at", None)
     state.setdefault("workflow_phase_source", None)
     state.setdefault("workflow_phase_loaded", False)
-    state.setdefault("required_nodes_offline_active", False)
+    # None means "unknown on cold-start", so resolver can perform one probe.
+    state.setdefault("required_nodes_offline_active", None)
     state.setdefault("required_nodes_offline_missing_types", [])
     state.setdefault("required_nodes_offline_required_types", [])
     state.setdefault("required_nodes_offline_since", None)

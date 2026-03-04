@@ -4,6 +4,8 @@ namespace App\Console\Commands\Concerns;
 
 use App\Models\LaravelSchedulerActiveTask;
 use App\Models\SchedulerLog;
+use App\Services\AutomationScheduler\ScheduleItem;
+use App\Services\AutomationScheduler\SchedulerConstants;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -11,6 +13,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @deprecated Логика перенесена в App\Services\AutomationScheduler\SchedulerCycleService и ActiveTaskPoller.
+ */
 trait DispatchesAutomationSchedules
 {
     /**
@@ -59,20 +64,19 @@ trait DispatchesAutomationSchedules
     }
 
     /**
-     * @param  array<string, mixed>  $schedule
      * @param  array<string, mixed>  $cfg
      * @param  array<string, string>  $headers
      * @return array{dispatched: bool, retryable: bool, reason: string}
      */
     private function dispatchSchedule(
         int $zoneId,
-        array $schedule,
+        ScheduleItem $schedule,
         CarbonImmutable $triggerTime,
-        string $scheduleKey,
         array $cfg,
         array $headers,
     ): array {
-        $taskType = strtolower((string) ($schedule['type'] ?? ''));
+        $scheduleKey = $schedule->scheduleKey;
+        $taskType = $schedule->taskType;
         if (! in_array($taskType, self::SUPPORTED_TASK_TYPES, true)) {
             return [
                 'dispatched' => false,
@@ -90,7 +94,7 @@ trait DispatchesAutomationSchedules
         }
 
         $taskName = $this->scheduleTaskLogName($zoneId, $taskType);
-        $payload = is_array($schedule['payload'] ?? null) ? $schedule['payload'] : [];
+        $payload = $schedule->payload;
 
         $scheduledForIso = $this->toIso($triggerTime);
         $correlationAnchor = $scheduledForIso;
@@ -102,7 +106,7 @@ trait DispatchesAutomationSchedules
             }
         }
 
-        $presetCorrelationId = trim((string) ($schedule['correlation_id'] ?? ''));
+        $presetCorrelationId = trim((string) ($payload['correlation_id'] ?? ''));
         $correlationId = $presetCorrelationId !== ''
             ? $presetCorrelationId
             : $this->buildSchedulerCorrelationId(
@@ -216,7 +220,7 @@ trait DispatchesAutomationSchedules
             ];
         }
 
-        $normalizedStatus = $this->normalizeTerminalStatus($taskStatus);
+        $normalizedStatus = SchedulerConstants::normalizeTerminalStatus($taskStatus);
         if ($this->isTerminalStatus($normalizedStatus)) {
             $logStatus = $normalizedStatus === 'completed' ? 'completed' : 'failed';
             $terminalDetails = [
@@ -549,7 +553,7 @@ trait DispatchesAutomationSchedules
             return null;
         }
 
-        return $this->normalizeTerminalStatus($status);
+        return SchedulerConstants::normalizeTerminalStatus($status);
     }
 
     private function activeTaskCacheKey(string $scheduleKey): string
@@ -560,18 +564,6 @@ trait DispatchesAutomationSchedules
     private function scheduleTaskLogName(int $zoneId, string $taskType): string
     {
         return sprintf('%s_%s_zone_%d', self::TASK_NAME_PREFIX, $taskType, $zoneId);
-    }
-
-    private function normalizeTerminalStatus(string $status): string
-    {
-        if ($status === 'done') {
-            return 'completed';
-        }
-        if ($status === 'error') {
-            return 'failed';
-        }
-
-        return $status;
     }
 
     private function normalizeSubmittedTaskStatus(string $submittedStatus, bool $accepted): string
@@ -585,12 +577,12 @@ trait DispatchesAutomationSchedules
             return 'accepted';
         }
 
-        return $this->normalizeTerminalStatus($status);
+        return SchedulerConstants::normalizeTerminalStatus($status);
     }
 
     private function isTerminalStatus(string $status): bool
     {
-        return in_array($status, self::TERMINAL_STATUSES, true);
+        return in_array($status, SchedulerConstants::TERMINAL_STATUSES, true);
     }
 
     private function buildSchedulerCorrelationId(
@@ -623,9 +615,7 @@ trait DispatchesAutomationSchedules
         try {
             $intentPayload = [
                 'source' => 'laravel_scheduler',
-                'task_type' => 'diagnostics',
                 'workflow' => 'cycle_start',
-                'topology' => 'two_tank_drip_substrate_trays',
             ];
             $intentType = $this->mapTaskTypeToIntentType($taskType);
             $now = $this->nowUtc();
@@ -679,6 +669,7 @@ trait DispatchesAutomationSchedules
 
     private function mapTaskTypeToIntentType(string $taskType): string
     {
+        // intent_type is stored for audit/debug; automation-engine executes start-cycle as diagnostics/cycle_start.
         $normalized = strtolower(trim($taskType));
 
         return match ($normalized) {
@@ -704,7 +695,7 @@ trait DispatchesAutomationSchedules
 
     private function toIso(CarbonImmutable $value): string
     {
-        return $value->format('Y-m-d\TH:i:s');
+        return $value->format('Y-m-d\TH:i:s\Z');
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

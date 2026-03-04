@@ -72,6 +72,10 @@ def test_resolve_two_tank_runtime_config_uses_payload_overrides():
                     "clean_fill_timeout_sec": 1500,
                     "level_poll_interval_sec": 45,
                     "required_node_types": ["irrig", "relay"],
+                    "clean_level_retry_attempts": 9,
+                    "clean_level_retry_delay_sec": 0.25,
+                    "sensor_mode_stabilization_time_sec": 75,
+                    "sensor_mode_telemetry_grace_sec": 120,
                 },
                 "target_ph": 6.1,
                 "target_ec": 1.8,
@@ -97,6 +101,10 @@ def test_resolve_two_tank_runtime_config_uses_payload_overrides():
     assert cfg["clean_fill_timeout_sec"] == 1500
     assert cfg["poll_interval_sec"] == 45
     assert cfg["required_node_types"] == ["irrig", "relay"]
+    assert cfg["startup_clean_level_retry_attempts"] == 9
+    assert cfg["startup_clean_level_retry_delay_sec"] == 0.25
+    assert cfg["sensor_mode_stabilization_time_sec"] == 75
+    assert cfg["sensor_mode_telemetry_grace_sec"] == 120
     assert cfg["target_ph"] == 6.1
     assert cfg["target_ec"] == 1.8
     assert cfg["commands"]["clean_fill_start"][0]["channel"] == "valve_clean_fill"
@@ -129,4 +137,8 @@ def test_resolve_two_tank_runtime_config_warns_when_targets_use_defaults(caplog)
 
     assert cfg["target_ph"] == 5.8
     assert cfg["target_ec"] == 1.6
+    assert cfg["startup_clean_level_retry_attempts"] == 6
+    assert cfg["startup_clean_level_retry_delay_sec"] == 1.0
+    assert cfg["sensor_mode_stabilization_time_sec"] == 60
+    assert cfg["sensor_mode_telemetry_grace_sec"] == 90
     assert "both target_ph and target_ec resolved to defaults" in caplog.text

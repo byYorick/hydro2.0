@@ -467,6 +467,7 @@ export function schedulerTaskErrorLabel(errorCode: string | null | undefined, er
     two_tank_command_failed: 'Не удалось отправить команды для 2-баковой схемы',
     two_tank_enqueue_failed: 'Не удалось запланировать self-task для 2-баковой схемы',
     two_tank_channel_not_found: 'Не найден канал для команды 2-баковой схемы',
+    two_tank_pump_safety_blocked: 'Запуск насоса заблокирован safety-политикой (нода offline или нет телеметрии)',
     two_tank_irr_state_unavailable: 'Нет snapshot состояния irr-ноды для критической проверки',
     two_tank_irr_state_stale: 'Snapshot состояния irr-ноды устарел для критической проверки',
     two_tank_irr_state_mismatch: 'Состояние irr-ноды не совпадает с ожидаемым на critical этапе',

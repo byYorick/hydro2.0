@@ -246,9 +246,17 @@ function formatTimelineLabel(event: AutomationTimelineEvent): string {
   const baseLabel = baseFromLabel || AUTOMATION_EVENT_LABELS[eventCode] || eventCode || 'Событие'
   const reasonLabel = reasonFromLabel ? (AUTOMATION_REASON_LABELS[reasonFromLabel] ?? reasonFromLabel) : null
   const stagePrefix = stagePrefixForEvent(eventCode, reasonFromLabel)
+  const suppressReasonForEvent =
+    eventCode === 'COMMAND_DISPATCHED'
+    || eventCode === 'COMMAND_FAILED'
+    || eventCode === 'COMMAND_EFFECT_NOT_CONFIRMED'
 
   let formatted = baseLabel
-  if (reasonLabel && baseLabel.trim().toLowerCase() !== reasonLabel.trim().toLowerCase()) {
+  if (
+    reasonLabel
+    && !suppressReasonForEvent
+    && baseLabel.trim().toLowerCase() !== reasonLabel.trim().toLowerCase()
+  ) {
     formatted = `${formatted} — ${reasonLabel}`
   }
   if (stagePrefix) {

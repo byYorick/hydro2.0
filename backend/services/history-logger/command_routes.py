@@ -202,6 +202,29 @@ async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str
     return resolved_gh_uid
 
 
+async def _resolve_zone_uid_for_command_publish(zone_id: int) -> Optional[str]:
+    """
+    Единая точка резолва zone segment для publish команд.
+    При MQTT_ZONE_FORMAT=uid работаем fail-closed: без zone_uid публиковать нельзя.
+    """
+    s = get_settings()
+    zone_format = getattr(s, "mqtt_zone_format", "id")
+    if zone_format != "uid":
+        return None
+
+    zone_uid = await _get_zone_uid_from_id(zone_id)
+    if zone_uid:
+        return zone_uid
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"zone_uid could not be resolved for zone_id={zone_id} while "
+            "MQTT_ZONE_FORMAT=uid"
+        ),
+    )
+
+
 async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
     """
     Fail-closed проверка: node_uid должен быть закреплен за zone_id.
@@ -660,10 +683,7 @@ async def publish_zone_command(
 
     node_id = await _require_node_assigned_to_zone(req.node_uid, zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(zone_id, req.greenhouse_uid)
 
@@ -834,10 +854,7 @@ async def publish_node_command(
 
     node_id = await _require_node_assigned_to_zone(node_uid, req.zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(req.zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
@@ -1006,10 +1023,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
 
     node_id = await _require_node_assigned_to_zone(req.node_uid, req.zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(req.zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 

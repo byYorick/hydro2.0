@@ -135,6 +135,7 @@ async def bound_dispatch_sensor_mode_command_for_nodes(
     decision: DecisionOutcome,
     activate: bool,
     reason_code: str,
+    stabilization_time_sec: int = 60,
 ) -> Dict[str, Any]:
     return await policy_dispatch_sensor_mode_command_for_nodes(
         zone_id=zone_id,
@@ -142,6 +143,7 @@ async def bound_dispatch_sensor_mode_command_for_nodes(
         decision=decision,
         activate=activate,
         reason_code=reason_code,
+        stabilization_time_sec=stabilization_time_sec,
         resolve_online_node_for_channel_fn=self._resolve_online_node_for_channel,
         publish_batch_fn=self._publish_batch,
     )

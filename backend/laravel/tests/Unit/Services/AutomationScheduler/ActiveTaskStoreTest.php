@@ -139,7 +139,22 @@ class ActiveTaskStoreTest extends TestCase
         $this->assertNotNull($updated);
         $this->assertSame('timeout', $updated->status);
         $this->assertNotNull($updated->terminal_at);
+        $this->assertSame('accepted', $updated->details['step'] ?? null);
         $this->assertSame('unit-test', $updated->details['terminal_source'] ?? null);
+        $firstTerminalAt = $updated->terminal_at;
+
+        $this->store->markTerminal(
+            taskId: 'task-cleanup',
+            status: 'failed',
+            terminalAt: $acceptedAt->addSeconds(40),
+            detailsPatch: ['terminal_source' => 'must-not-overwrite'],
+            lastPolledAt: $acceptedAt->addSeconds(40),
+        );
+        $updatedAfterSecondMark = $this->store->findByTaskId('task-cleanup');
+        $this->assertNotNull($updatedAfterSecondMark);
+        $this->assertSame('timeout', $updatedAfterSecondMark->status);
+        $this->assertEquals($firstTerminalAt, $updatedAfterSecondMark->terminal_at);
+        $this->assertSame('unit-test', $updatedAfterSecondMark->details['terminal_source'] ?? null);
 
         DB::table('laravel_scheduler_active_tasks')
             ->where('task_id', 'task-cleanup')

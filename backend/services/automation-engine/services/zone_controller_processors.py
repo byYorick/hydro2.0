@@ -15,6 +15,48 @@ CheckAndControlIrrigationFn = Callable[..., Awaitable[Optional[Dict[str, Any]]]]
 CheckAndControlRecirculationFn = Callable[..., Awaitable[Optional[Dict[str, Any]]]]
 CanRunPumpFn = Callable[[int, str], Awaitable[tuple[bool, str]]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
+SendInfraResolvedAlertFn = Callable[..., Awaitable[bool]]
+
+
+def _extract_pump_node_id(
+    *,
+    irrigation_cmd: Dict[str, Any],
+    actuators: Dict[str, Dict[str, Any]],
+    pump_channel: str,
+) -> Optional[int]:
+    raw_node_id = irrigation_cmd.get("node_id")
+    try:
+        if raw_node_id is not None:
+            node_id = int(raw_node_id)
+            if node_id > 0:
+                return node_id
+    except (TypeError, ValueError):
+        pass
+
+    cmd_node_uid = str(irrigation_cmd.get("node_uid") or "").strip()
+    if not isinstance(actuators, dict):
+        return None
+
+    for actuator in actuators.values():
+        if not isinstance(actuator, dict):
+            continue
+        actuator_node_uid = str(actuator.get("node_uid") or "").strip()
+        actuator_channel = str(actuator.get("channel") or "").strip()
+        if cmd_node_uid and actuator_node_uid and actuator_node_uid != cmd_node_uid:
+            continue
+        if pump_channel and actuator_channel and actuator_channel != pump_channel:
+            continue
+        raw_actuator_node_id = actuator.get("node_id")
+        try:
+            if raw_actuator_node_id is None:
+                continue
+            node_id = int(raw_actuator_node_id)
+            if node_id > 0:
+                return node_id
+        except (TypeError, ValueError):
+            continue
+
+    return None
 
 
 async def process_light_controller(
@@ -76,6 +118,7 @@ async def process_irrigation_controller(
     check_and_control_irrigation_fn: CheckAndControlIrrigationFn,
     can_run_pump_fn: CanRunPumpFn,
     send_infra_alert_fn: SendInfraAlertFn,
+    send_infra_resolved_alert_fn: Optional[SendInfraResolvedAlertFn],
     publish_controller_action_with_event_integrity_fn: PublishControllerActionFn,
     logger: Any,
 ) -> None:
@@ -128,7 +171,12 @@ async def process_irrigation_controller(
     )
 
     pump_channel = irrigation_cmd.get("channel", "default")
-    can_run, error_msg = await can_run_pump_fn(zone_id, pump_channel)
+    pump_node_id = _extract_pump_node_id(
+        irrigation_cmd=irrigation_cmd,
+        actuators=actuators,
+        pump_channel=str(pump_channel or ""),
+    )
+    can_run, error_msg = await can_run_pump_fn(zone_id, pump_channel, node_id=pump_node_id)
     if not can_run:
         logger.warning(
             "Zone %s: Cannot run irrigation pump %s in workflow_phase=%s: %s",
@@ -157,6 +205,23 @@ async def process_irrigation_controller(
             details={"reason": error_msg},
         )
         return
+
+    if callable(send_infra_resolved_alert_fn):
+        await send_infra_resolved_alert_fn(
+            code=INFRA_IRRIGATION_PUMP_BLOCKED,
+            alert_type="Irrigation Pump Blocked",
+            message=f"Zone {zone_id}: irrigation pump safety gate recovered",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="controller:irrigation",
+            channel=pump_channel,
+            cmd="run_pump",
+            details={
+                "reason_code": "pump_safety_gate_passed",
+                "node_uid": irrigation_cmd.get("node_uid"),
+                "node_id": pump_node_id,
+            },
+        )
 
     logger.info(
         "Zone %s: publishing irrigation command",

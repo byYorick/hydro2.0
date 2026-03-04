@@ -92,7 +92,7 @@ async def evaluate_required_nodes_recovery_gate(
             )
         return False
 
-    if zone_state.get("required_nodes_offline_active"):
+    if zone_state.get("required_nodes_offline_active") is not False:
         await emit_required_nodes_recovered_signal_fn(
             zone_id=zone_id,
             previous_missing_types=zone_state.get("required_nodes_offline_missing_types") or [],

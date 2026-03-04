@@ -160,16 +160,51 @@ async def start_two_tank_solution_fill(
     err_two_tank_enqueue_failed: str,
 ) -> Dict[str, Any]:
     pump_channel = resolve_primary_pump_channel(runtime_cfg["commands"].get("solution_fill_start"))
-    can_run, safety_error = await can_run_pump(zone_id=zone_id, pump_channel=pump_channel)
+    sensor_mode_result = await dispatch_sensor_mode_command_for_nodes_fn(
+        zone_id=zone_id,
+        context=context,
+        decision=DecisionOutcome(
+            action_required=True,
+            decision="run",
+            reason_code=reason_solution_fill_started,
+            reason="Активация sensor mode для pH/EC в solution_fill",
+        ),
+        activate=True,
+        reason_code=reason_solution_fill_started,
+        stabilization_time_sec=int(runtime_cfg.get("sensor_mode_stabilization_time_sec") or 60),
+    )
+    if not sensor_mode_result.get("success"):
+        return {
+            "success": False,
+            "task_type": "diagnostics",
+            "mode": "two_tank_solution_fill_sensor_mode_failed",
+            "workflow": "startup",
+            "commands_total": sensor_mode_result.get("commands_total", 0),
+            "commands_failed": sensor_mode_result.get("commands_failed", 1),
+            "command_statuses": sensor_mode_result.get("command_statuses", []),
+            "action_required": True,
+            "decision": "run",
+            "reason_code": reason_cycle_refill_command_failed,
+            "reason": "Не удалось активировать sensor mode для pH/EC перед solution_fill",
+            "error": str(sensor_mode_result.get("error") or err_two_tank_command_failed),
+            "error_code": str(sensor_mode_result.get("error_code") or err_two_tank_command_failed),
+        }
+
+    can_run, safety_error = await can_run_pump(
+        zone_id=zone_id,
+        pump_channel=pump_channel,
+        telemetry_grace_sec=int(runtime_cfg.get("sensor_mode_telemetry_grace_sec") or 0),
+        grace_node_types=["ph", "ec"],
+    )
     if not can_run:
         return {
             "success": False,
             "task_type": "diagnostics",
             "mode": "two_tank_solution_fill_safety_blocked",
             "workflow": "startup",
-            "commands_total": 0,
-            "commands_failed": 0,
-            "command_statuses": [],
+            "commands_total": sensor_mode_result.get("commands_total", 0),
+            "commands_failed": sensor_mode_result.get("commands_failed", 0),
+            "command_statuses": sensor_mode_result.get("command_statuses", []),
             "action_required": True,
             "decision": "run",
             "reason_code": "safety_blocked",
@@ -183,49 +218,20 @@ async def start_two_tank_solution_fill(
     plan_result = await dispatch_two_tank_command_plan_fn(
         zone_id=zone_id,
         command_plan=runtime_cfg["commands"]["solution_fill_start"],
-        context=context,
         decision=DecisionOutcome(
             action_required=True,
             decision="run",
             reason_code=reason_solution_fill_started,
             reason="Запуск наполнения бака рабочего раствора",
         ),
+        context=context,
     )
+    start_result = merge_command_dispatch_results_fn(plan_result, sensor_mode_result)
     if not plan_result.get("success"):
         return {
             "success": False,
             "task_type": "diagnostics",
             "mode": "two_tank_solution_fill_command_failed",
-            "workflow": "startup",
-            "commands_total": plan_result.get("commands_total", 0),
-            "commands_failed": plan_result.get("commands_failed", 1),
-            "command_statuses": plan_result.get("command_statuses", []),
-            "action_required": True,
-            "decision": "run",
-            "reason_code": reason_cycle_refill_command_failed,
-            "reason": "Не удалось отправить команды наполнения бака раствора",
-            "error": str(plan_result.get("error") or err_two_tank_command_failed),
-            "error_code": str(plan_result.get("error_code") or err_two_tank_command_failed),
-        }
-
-    sensor_mode_result = await dispatch_sensor_mode_command_for_nodes_fn(
-        zone_id=zone_id,
-        context=context,
-        decision=DecisionOutcome(
-            action_required=True,
-            decision="run",
-            reason_code=reason_solution_fill_started,
-            reason="Активация sensor mode для pH/EC в solution_fill",
-        ),
-        activate=True,
-        reason_code=reason_solution_fill_started,
-    )
-    start_result = merge_command_dispatch_results_fn(plan_result, sensor_mode_result)
-    if not start_result.get("success"):
-        return {
-            "success": False,
-            "task_type": "diagnostics",
-            "mode": "two_tank_solution_fill_sensor_mode_failed",
             "workflow": "startup",
             "commands_total": start_result.get("commands_total", 0),
             "commands_failed": start_result.get("commands_failed", 1),
@@ -233,7 +239,7 @@ async def start_two_tank_solution_fill(
             "action_required": True,
             "decision": "run",
             "reason_code": reason_cycle_refill_command_failed,
-            "reason": "Команды solution_fill отправлены, но sensor mode не подтверждён",
+            "reason": "Не удалось отправить команды наполнения бака раствора",
             "error": str(start_result.get("error") or err_two_tank_command_failed),
             "error_code": str(start_result.get("error_code") or err_two_tank_command_failed),
         }

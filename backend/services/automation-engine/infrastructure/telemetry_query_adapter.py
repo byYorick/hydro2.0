@@ -76,7 +76,7 @@ async def read_level_switch(
             LIMIT 1
         ) ts_fallback ON TRUE
         WHERE s.zone_id = $1
-          AND s.type = 'WATER_LEVEL'
+          AND s.type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')
           AND s.is_active = TRUE
           AND LOWER(TRIM(COALESCE(s.label, ''))) = ANY($2::text[])
         ORDER BY
@@ -112,7 +112,7 @@ async def read_level_switch(
                 LIMIT 1
             ) ts_fallback ON TRUE
             WHERE s.zone_id = $1
-              AND s.type = 'WATER_LEVEL'
+              AND s.type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')
               AND s.is_active = TRUE
             ORDER BY
                 COALESCE(tl.last_ts, tl.updated_at, ts_fallback.ts) DESC NULLS LAST,

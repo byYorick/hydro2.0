@@ -15,6 +15,15 @@ def _unexpected_sync(*_args, **_kwargs):
     raise AssertionError("unexpected call")
 
 
+async def _sensor_mode_ok(*_args, **_kwargs):
+    return {
+        "success": True,
+        "commands_total": 2,
+        "commands_failed": 0,
+        "command_statuses": [],
+    }
+
+
 def _runtime_cfg() -> dict:
     return {
         "commands": {
@@ -31,9 +40,24 @@ def _runtime_cfg() -> dict:
 
 @pytest.mark.asyncio
 async def test_solution_fill_start_blocked_by_pump_safety(monkeypatch):
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    calls = []
+
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
+        calls.append("safety")
         return False, "Node offline"
+
+    async def fake_sensor_mode_dispatch(*_args, **_kwargs):
+        calls.append("sensor_mode")
+        return await _sensor_mode_ok()
 
     monkeypatch.setattr(
         "executor.two_tank_phase_starters_startup.can_run_pump",
@@ -46,7 +70,7 @@ async def test_solution_fill_start_blocked_by_pump_safety(monkeypatch):
         context={},
         runtime_cfg=_runtime_cfg(),
         dispatch_two_tank_command_plan_fn=_unexpected_async,
-        dispatch_sensor_mode_command_for_nodes_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=fake_sensor_mode_dispatch,
         merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
@@ -65,14 +89,23 @@ async def test_solution_fill_start_blocked_by_pump_safety(monkeypatch):
     assert result["reason_code"] == "safety_blocked"
     assert result["error_code"] == "two_tank_pump_safety_blocked"
     assert result["mode"] == "two_tank_solution_fill_safety_blocked"
+    assert calls == ["sensor_mode", "safety"]
 
 
 @pytest.mark.asyncio
 async def test_solution_fill_start_enforces_pump_safety_when_feature_flag_disabled(monkeypatch):
     calls = {"count": 0}
 
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
         calls["count"] += 1
         return False, "Node offline"
 
@@ -87,7 +120,7 @@ async def test_solution_fill_start_enforces_pump_safety_when_feature_flag_disabl
         context={},
         runtime_cfg=_runtime_cfg(),
         dispatch_two_tank_command_plan_fn=_unexpected_async,
-        dispatch_sensor_mode_command_for_nodes_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=_sensor_mode_ok,
         merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
@@ -109,8 +142,16 @@ async def test_solution_fill_start_enforces_pump_safety_when_feature_flag_disabl
 
 @pytest.mark.asyncio
 async def test_prepare_recirculation_start_blocked_by_pump_safety(monkeypatch):
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
         return False, "Active critical alert"
 
     monkeypatch.setattr(
@@ -124,7 +165,7 @@ async def test_prepare_recirculation_start_blocked_by_pump_safety(monkeypatch):
         context={},
         runtime_cfg=_runtime_cfg(),
         dispatch_two_tank_command_plan_fn=_unexpected_async,
-        dispatch_sensor_mode_command_for_nodes_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=_sensor_mode_ok,
         merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
@@ -148,8 +189,16 @@ async def test_prepare_recirculation_start_blocked_by_pump_safety(monkeypatch):
 async def test_prepare_recirculation_start_enforces_pump_safety_when_feature_flag_disabled(monkeypatch):
     calls = {"count": 0}
 
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
         calls["count"] += 1
         return False, "Active critical alert"
 
@@ -164,7 +213,7 @@ async def test_prepare_recirculation_start_enforces_pump_safety_when_feature_fla
         context={},
         runtime_cfg=_runtime_cfg(),
         dispatch_two_tank_command_plan_fn=_unexpected_async,
-        dispatch_sensor_mode_command_for_nodes_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=_sensor_mode_ok,
         merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
@@ -185,8 +234,16 @@ async def test_prepare_recirculation_start_enforces_pump_safety_when_feature_fla
 
 @pytest.mark.asyncio
 async def test_irrigation_recovery_start_blocked_by_pump_safety(monkeypatch):
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
         return False, "Too many recent failures"
 
     monkeypatch.setattr(
@@ -201,6 +258,8 @@ async def test_irrigation_recovery_start_blocked_by_pump_safety(monkeypatch):
         runtime_cfg=_runtime_cfg(),
         attempt=1,
         dispatch_two_tank_command_plan_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=_sensor_mode_ok,
+        merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
         compensate_two_tank_start_enqueue_failure_fn=_unexpected_async,
@@ -223,8 +282,16 @@ async def test_irrigation_recovery_start_blocked_by_pump_safety(monkeypatch):
 async def test_irrigation_recovery_start_enforces_pump_safety_when_feature_flag_disabled(monkeypatch):
     calls = {"count": 0}
 
-    async def fake_can_run_pump(*, zone_id, pump_channel, min_water_level=None, node_id=None):
-        _ = (zone_id, pump_channel, min_water_level, node_id)
+    async def fake_can_run_pump(
+        *,
+        zone_id,
+        pump_channel,
+        min_water_level=None,
+        node_id=None,
+        telemetry_grace_sec=0,
+        grace_node_types=None,
+    ):
+        _ = (zone_id, pump_channel, min_water_level, node_id, telemetry_grace_sec, grace_node_types)
         calls["count"] += 1
         return False, "Too many recent failures"
 
@@ -240,6 +307,8 @@ async def test_irrigation_recovery_start_enforces_pump_safety_when_feature_flag_
         runtime_cfg=_runtime_cfg(),
         attempt=1,
         dispatch_two_tank_command_plan_fn=_unexpected_async,
+        dispatch_sensor_mode_command_for_nodes_fn=_sensor_mode_ok,
+        merge_command_dispatch_results_fn=_unexpected_sync,
         update_zone_workflow_phase_fn=_unexpected_async,
         enqueue_two_tank_check_fn=_unexpected_async,
         compensate_two_tank_start_enqueue_failure_fn=_unexpected_async,

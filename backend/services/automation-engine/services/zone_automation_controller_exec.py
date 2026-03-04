@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from common.db import create_zone_event
-from common.infra_alerts import send_infra_alert, send_infra_exception_alert
+from common.infra_alerts import send_infra_alert, send_infra_exception_alert, send_infra_resolved_alert
 from common.simulation_clock import SimulationClock
 from common.simulation_events import record_simulation_event
 from common.utils.time import utcnow
@@ -217,6 +217,7 @@ async def process_irrigation_controller(
         check_and_control_irrigation_fn=check_and_control_irrigation,
         can_run_pump_fn=can_run_pump,
         send_infra_alert_fn=send_infra_alert,
+        send_infra_resolved_alert_fn=send_infra_resolved_alert,
         publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
         logger=logger,
     )
@@ -249,4 +250,3 @@ async def process_recirculation_controller(
         check_and_control_recirculation_fn=check_and_control_recirculation,
         publish_controller_action_with_event_integrity_fn=self._publish_controller_action_with_event_integrity,
     )
-

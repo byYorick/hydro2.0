@@ -635,6 +635,148 @@ async def test_process_telemetry_batch_falls_back_to_uid_lookup_for_unassigned_n
 
 
 @pytest.mark.asyncio
+async def test_process_telemetry_batch_skips_unassigned_alert_while_node_binding_pending():
+    """Telemetry from node with pending_zone_id should not emit node_unassigned anomaly."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._cache_last_update = time.time()
+
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+    tp._node_cache[("nd-pending-1", "gh-1")] = (101, None, 1)
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-pending-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="WATER_LEVEL",
+            value=1.0,
+            channel="level_clean_max",
+            ts=utcnow(),
+        )
+    ]
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock), \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.return_value = []
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
+    assert "infra_telemetry_node_unassigned" not in emitted_codes
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_refreshes_stale_node_cache_before_unassigned_alert():
+    """При stale cache должен быть принудительный refresh node assignment перед node_unassigned."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._zone_greenhouse_cache.clear()
+    tp._sensor_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._cache_last_update = time.time()
+
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+    tp._node_cache[("nd-rebind-1", "gh-1")] = (101, None, None)
+    tp._sensor_cache[(1, 101, "WATER_LEVEL", "level_clean_max")] = 501
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-rebind-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="WATER_LEVEL",
+            value=1.0,
+            channel="level_clean_max",
+            ts=utcnow(),
+        )
+    ]
+
+    async def _fetch_side_effect(query, *args):
+        normalized = " ".join(str(query).split()).lower()
+        if "from nodes where uid = $1 limit 1" in normalized:
+            return [{"id": 101, "zone_id": 1, "pending_zone_id": None}]
+        if "from zones where id = any($1)" in normalized:
+            return [{"id": 1, "greenhouse_id": 1}]
+        return []
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
+    assert "infra_telemetry_node_unassigned" not in emitted_codes
+    assert tp._node_cache[("nd-rebind-1", "gh-1")][1] == 1
+    assert mock_execute.await_count > 0
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_throttles_node_unassigned_alert_across_channels():
+    """Node-unassigned anomaly should be throttled per node/zone, not per channel."""
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._cache_last_update = time.time()
+
+    tp._zone_cache[("zn-1", "gh-1")] = 1
+    tp._node_cache[("nd-unassigned-1", "gh-1")] = (202, None, None)
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-unassigned-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="WATER_LEVEL",
+            value=0.0,
+            channel="level_clean_max",
+            ts=utcnow(),
+        ),
+        TelemetrySampleModel(
+            node_uid="nd-unassigned-1",
+            zone_uid="zn-1",
+            gh_uid="gh-1",
+            metric_type="WATER_LEVEL",
+            value=0.0,
+            channel="level_clean_min",
+            ts=utcnow(),
+        ),
+    ]
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock), \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert:
+        mock_fetch.return_value = []
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    emitted_codes = [call.kwargs.get("code") for call in mock_alert.await_args_list]
+    assert emitted_codes.count("infra_telemetry_node_unassigned") == 1
+
+
+@pytest.mark.asyncio
 async def test_process_telemetry_batch_skips_immediate_node_unassigned_recovery():
     """Recovery alert should wait for grace interval after recent unassigned sample."""
     import telemetry_processing as tp

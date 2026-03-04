@@ -181,6 +181,8 @@ def bound_build_two_tank_deps(self, zone_id: int) -> TwoTankDeps:
         return await policy_start_two_tank_irrigation_recovery(
             **kwargs,
             dispatch_two_tank_command_plan_fn=self._dispatch_two_tank_command_plan,
+            dispatch_sensor_mode_command_for_nodes_fn=self._dispatch_sensor_mode_command_for_nodes,
+            merge_command_dispatch_results_fn=self._merge_command_dispatch_results,
             update_zone_workflow_phase_fn=self._update_zone_workflow_phase,
             enqueue_two_tank_check_fn=self._enqueue_two_tank_check,
             compensate_two_tank_start_enqueue_failure_fn=self._compensate_two_tank_start_enqueue_failure,

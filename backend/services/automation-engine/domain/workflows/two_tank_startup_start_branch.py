@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -40,6 +41,52 @@ def build_sensor_state_inconsistent_result(
     )
 
 
+async def _read_clean_level_with_startup_retries(
+    deps: TwoTankDeps,
+    *,
+    zone_id: int,
+    runtime_cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    clean_level = await deps._read_level_switch(
+        zone_id=zone_id,
+        sensor_labels=runtime_cfg["clean_max_labels"],
+        threshold=runtime_cfg["level_switch_on_threshold"],
+    )
+    if clean_level["has_level"]:
+        return clean_level
+
+    retry_attempts = max(0, int(runtime_cfg.get("startup_clean_level_retry_attempts") or 0))
+    retry_delay_sec = max(0.0, float(runtime_cfg.get("startup_clean_level_retry_delay_sec") or 0.0))
+    if retry_attempts == 0:
+        return clean_level
+
+    for attempt in range(1, retry_attempts + 1):
+        if retry_delay_sec > 0:
+            await asyncio.sleep(retry_delay_sec)
+        clean_level = await deps._read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=runtime_cfg["clean_max_labels"],
+            threshold=runtime_cfg["level_switch_on_threshold"],
+        )
+        if clean_level["has_level"]:
+            logger.info(
+                "Zone %s: two_tank clean level recovered during startup retry (%s/%s), source=%s",
+                zone_id,
+                attempt,
+                retry_attempts,
+                clean_level.get("level_source", "unknown"),
+            )
+            return clean_level
+
+    logger.warning(
+        "Zone %s: two_tank clean level still unavailable after startup retries (%s attempts, delay=%.2fs)",
+        zone_id,
+        retry_attempts,
+        retry_delay_sec,
+    )
+    return clean_level
+
+
 async def handle_two_tank_startup_initial(
     deps: TwoTankDeps,
     *,
@@ -49,10 +96,10 @@ async def handle_two_tank_startup_initial(
     workflow: str,
 ) -> Dict[str, Any]:
     zone_id = deps.zone_id
-    clean_level = await deps._read_level_switch(
+    clean_level = await _read_clean_level_with_startup_retries(
+        deps,
         zone_id=zone_id,
-        sensor_labels=runtime_cfg["clean_max_labels"],
-        threshold=runtime_cfg["level_switch_on_threshold"],
+        runtime_cfg=runtime_cfg,
     )
     await deps._emit_task_event(
         zone_id=zone_id,
@@ -88,6 +135,8 @@ async def handle_two_tank_startup_initial(
             expected_sensor_labels=clean_level.get("expected_labels", runtime_cfg["clean_max_labels"]),
             available_sensor_labels=clean_level.get("available_sensor_labels", []),
             level_source=clean_level.get("level_source", "none"),
+            startup_retry_attempts=max(0, int(runtime_cfg.get("startup_clean_level_retry_attempts") or 0)),
+            startup_retry_delay_sec=max(0.0, float(runtime_cfg.get("startup_clean_level_retry_delay_sec") or 0.0)),
         )
     if deps._telemetry_freshness_enforce() and clean_level["is_stale"]:
         return two_tank_error(

@@ -1,8 +1,11 @@
 # Laravel Scheduler — Plan рефакторинга
 
-**Статус:** PLANNED
+**Статус:** DONE
 **Дата:** 2026-03-03
-**Ветка:** feature/laravel-scheduler-refactor
+**Ветка:** ae3
+
+**Выполнено:** все фазы 0–4, включая Phase 2.2 (ScheduleCycleContext) и Phase 4.3 (in-log Prometheus-метрики).
+**Трейты:** файлы остались, но не используются ни одним классом (orphaned dead code).
 
 ---
 

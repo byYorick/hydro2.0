@@ -3,13 +3,17 @@
 namespace App\Console\Commands\Concerns;
 
 use App\Models\SchedulerLog;
+use App\Services\AutomationScheduler\ScheduleItem;
 use Carbon\CarbonImmutable;
 
+/**
+ * @deprecated Логика перенесена в App\Services\AutomationScheduler\SchedulerCycleService.
+ */
 trait BuildsAutomationDispatchSchedules
 {
     /**
      * @param  array<string, mixed>  $targets
-     * @return array<int, array<string, mixed>>
+     * @return array<int, ScheduleItem>
      */
     private function buildSchedulesForZone(int $zoneId, array $targets): array
     {
@@ -18,60 +22,16 @@ trait BuildsAutomationDispatchSchedules
         $irrigation = is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : [];
         $irrigationSchedule = $targets['irrigation_schedule'] ?? ($irrigation['schedule'] ?? null);
         if ($this->isTaskScheduleEnabled('irrigation', $targets, $irrigation)) {
-            foreach ($this->buildGenericTaskSchedules($zoneId, 'irrigation', $irrigation, $irrigationSchedule, $targets) as $schedule) {
+            foreach ($this->buildGenericTaskSchedules($zoneId, 'irrigation', $irrigation, $irrigationSchedule) as $schedule) {
                 $schedules[] = $schedule;
             }
         }
 
         $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
-        $lightingIntervalSec = $this->safePositiveInt(
-            $lighting['interval_sec'] ?? ($lighting['every_sec'] ?? ($lighting['interval'] ?? null))
-        );
         if ($this->isTaskScheduleEnabled('lighting', $targets, $lighting)) {
-            $photoperiodHours = $lighting['photoperiod_hours'] ?? null;
-            $startTime = is_string($lighting['start_time'] ?? null)
-                ? $this->parseTimeSpec((string) $lighting['start_time'])
-                : null;
-            if ($photoperiodHours !== null && $startTime !== null && is_numeric($photoperiodHours)) {
-                $startDt = CarbonImmutable::createFromFormat('Y-m-d H:i:s', $this->nowUtc()->toDateString().' '.$startTime, 'UTC');
-                $endDt = $startDt->addSeconds((int) round((float) $photoperiodHours * 3600));
-                $scheduleItem = [
-                    'zone_id' => $zoneId,
-                    'type' => 'lighting',
-                    'start_time' => $startTime,
-                    'end_time' => $endDt->format('H:i:s'),
-                    'targets' => $targets,
-                    'config' => $lighting,
-                ];
-                if ($lightingIntervalSec > 0) {
-                    $scheduleItem['interval_sec'] = $lightingIntervalSec;
-                }
-                $schedules[] = $scheduleItem;
-            } else {
-                $lightingSchedule = $targets['lighting_schedule'] ?? null;
-                if (is_string($lightingSchedule) && str_contains($lightingSchedule, '-')) {
-                    [$rawStart, $rawEnd] = array_map('trim', explode('-', $lightingSchedule, 2));
-                    $start = $this->parseTimeSpec($rawStart);
-                    $end = $this->parseTimeSpec($rawEnd);
-                    if ($start !== null && $end !== null) {
-                        $scheduleItem = [
-                            'zone_id' => $zoneId,
-                            'type' => 'lighting',
-                            'start_time' => $start,
-                            'end_time' => $end,
-                            'targets' => $targets,
-                            'config' => $lighting,
-                        ];
-                        if ($lightingIntervalSec > 0) {
-                            $scheduleItem['interval_sec'] = $lightingIntervalSec;
-                        }
-                        $schedules[] = $scheduleItem;
-                    }
-                } else {
-                    foreach ($this->buildGenericTaskSchedules($zoneId, 'lighting', $lighting, $lightingSchedule, $targets) as $schedule) {
-                        $schedules[] = $schedule;
-                    }
-                }
+            $lightingSchedule = $targets['lighting_schedule'] ?? null;
+            foreach ($this->lightingScheduleParser->parse($zoneId, $lighting, $lightingSchedule, $this->nowUtc()) as $schedule) {
+                $schedules[] = $schedule;
             }
         }
 
@@ -87,7 +47,7 @@ trait BuildsAutomationDispatchSchedules
                 continue;
             }
             $source = $scheduleSpec ?? $config;
-            foreach ($this->buildGenericTaskSchedules($zoneId, (string) $taskType, (array) $config, $source, $targets) as $schedule) {
+            foreach ($this->buildGenericTaskSchedules($zoneId, (string) $taskType, (array) $config, $source) as $schedule) {
                 $schedules[] = $schedule;
             }
         }
@@ -97,39 +57,33 @@ trait BuildsAutomationDispatchSchedules
 
     /**
      * @param  array<string, mixed>  $config
-     * @param  array<string, mixed>  $targets
-     * @return array<int, array<string, mixed>>
+     * @return array<int, ScheduleItem>
      */
     private function buildGenericTaskSchedules(
         int $zoneId,
         string $taskType,
         array $config,
         mixed $scheduleSpec,
-        array $targets,
     ): array {
         $schedules = [];
 
         foreach ($this->extractTimeSpecs($scheduleSpec) as $timeSpec) {
-            $schedules[] = [
-                'zone_id' => $zoneId,
-                'type' => $taskType,
-                'time' => $timeSpec,
-                'targets' => $targets,
-                'config' => $config,
-            ];
+            $schedules[] = new ScheduleItem(
+                zoneId: $zoneId,
+                taskType: $taskType,
+                time: $timeSpec,
+            );
         }
 
         $intervalSec = $this->safePositiveInt(
             $config['interval_sec'] ?? ($config['every_sec'] ?? ($config['interval'] ?? null))
         );
         if ($intervalSec > 0) {
-            $schedules[] = [
-                'zone_id' => $zoneId,
-                'type' => $taskType,
-                'interval_sec' => $intervalSec,
-                'targets' => $targets,
-                'config' => $config,
-            ];
+            $schedules[] = new ScheduleItem(
+                zoneId: $zoneId,
+                taskType: $taskType,
+                intervalSec: $intervalSec,
+            );
         }
 
         return $schedules;
@@ -300,49 +254,122 @@ trait BuildsAutomationDispatchSchedules
         return $crossings;
     }
 
-    private function shouldRunIntervalTask(string $taskName, int $intervalSec, CarbonImmutable $now): bool
+    /**
+     * @param  array<string, CarbonImmutable>  $lastRunByTaskName
+     */
+    private function shouldRunIntervalTask(
+        string $taskName,
+        int $intervalSec,
+        CarbonImmutable $now,
+        array $lastRunByTaskName,
+    ): bool
     {
         if ($intervalSec <= 0) {
             return false;
         }
 
-        $lastTerminalLog = SchedulerLog::query()
-            ->where('task_name', $taskName)
-            ->whereIn('status', ['completed', 'failed'])
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->first(['created_at']);
-
-        if (! $lastTerminalLog?->created_at) {
+        $lastCompletedAt = $lastRunByTaskName[$taskName] ?? null;
+        if (! $lastCompletedAt instanceof CarbonImmutable) {
             return true;
         }
-
-        $lastCompletedAt = CarbonImmutable::instance($lastTerminalLog->created_at)->utc();
 
         return $lastCompletedAt->addSeconds($intervalSec)->lte($now);
     }
 
-    private function resolveZoneLastCheck(int $zoneId, CarbonImmutable $now, bool $cursorPersistEnabled): CarbonImmutable
+    /**
+     * @param  array<int, ScheduleItem>  $schedules
+     * @return array<int, string>
+     */
+    private function collectIntervalTaskNames(array $schedules): array
     {
-        if (isset($this->zoneCursorCache[$zoneId])) {
-            return $this->zoneCursorCache[$zoneId];
+        $taskNames = [];
+
+        foreach ($schedules as $schedule) {
+            $intervalSec = $this->safePositiveInt($schedule->intervalSec);
+            if ($intervalSec <= 0) {
+                continue;
+            }
+
+            $zoneId = $schedule->zoneId;
+            $taskType = $schedule->taskType;
+            if ($zoneId <= 0 || $taskType === '') {
+                continue;
+            }
+
+            $taskNames[] = $this->scheduleTaskLogName($zoneId, $taskType);
+        }
+
+        return array_values(array_unique($taskNames));
+    }
+
+    /**
+     * @param  array<int, string>  $taskNames
+     * @return array<string, CarbonImmutable>
+     */
+    private function loadLastRunBatch(array $taskNames): array
+    {
+        if ($taskNames === []) {
+            return [];
+        }
+
+        $rows = SchedulerLog::query()
+            ->selectRaw('task_name, MAX(created_at) AS last_at')
+            ->whereIn('task_name', $taskNames)
+            ->whereIn('status', ['completed', 'failed'])
+            ->groupBy('task_name')
+            ->get();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $taskName = trim((string) ($row->task_name ?? ''));
+            if ($taskName === '') {
+                continue;
+            }
+
+            $lastAt = $row->last_at ?? null;
+            if (! $lastAt) {
+                continue;
+            }
+
+            try {
+                $result[$taskName] = CarbonImmutable::parse((string) $lastAt, 'UTC')->setMicroseconds(0);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, CarbonImmutable>  $zoneCursorCache
+     */
+    private function resolveZoneLastCheck(
+        int $zoneId,
+        CarbonImmutable $now,
+        bool $cursorPersistEnabled,
+        array &$zoneCursorCache,
+    ): CarbonImmutable
+    {
+        if (isset($zoneCursorCache[$zoneId])) {
+            return $zoneCursorCache[$zoneId];
         }
 
         $default = $now->subSeconds(max(30, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60)));
         if (! $cursorPersistEnabled) {
-            $this->zoneCursorCache[$zoneId] = $default;
+            $zoneCursorCache[$zoneId] = $default;
 
             return $default;
         }
 
         $storedCursor = $this->zoneCursorStore->getCursorAt($zoneId);
         if ($storedCursor !== null) {
-            $this->zoneCursorCache[$zoneId] = $storedCursor;
+            $zoneCursorCache[$zoneId] = $storedCursor;
 
             return $storedCursor;
         }
 
-        $this->zoneCursorCache[$zoneId] = $default;
+        $zoneCursorCache[$zoneId] = $default;
 
         return $default;
     }
@@ -369,37 +396,6 @@ trait BuildsAutomationDispatchSchedules
             'cursor_at' => $this->toIso($cursorAt),
             'catchup_policy' => $catchupPolicy,
         ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $schedule
-     */
-    private function buildScheduleKey(int $zoneId, array $schedule): string
-    {
-        $taskType = strtolower((string) ($schedule['type'] ?? ''));
-        $time = $this->formatScheduleKeyValue($schedule['time'] ?? null);
-        $start = $this->formatScheduleKeyValue($schedule['start_time'] ?? null);
-        $end = $this->formatScheduleKeyValue($schedule['end_time'] ?? null);
-        $interval = $this->formatScheduleKeyValue($schedule['interval_sec'] ?? null);
-
-        return sprintf(
-            'zone:%d|type:%s|time=%s|start=%s|end=%s|interval=%s',
-            $zoneId,
-            $taskType,
-            $time,
-            $start,
-            $end,
-            $interval,
-        );
-    }
-
-    private function formatScheduleKeyValue(mixed $value): string
-    {
-        if ($value === null) {
-            return 'None';
-        }
-
-        return trim((string) $value) !== '' ? (string) $value : 'None';
     }
 
     private function isTimeInWindow(string $nowTime, string $startTime, string $endTime): bool

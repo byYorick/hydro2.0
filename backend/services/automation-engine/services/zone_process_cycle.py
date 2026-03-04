@@ -123,8 +123,7 @@ async def process_zone_cycle(
 
             await safe_process_controller_fn("health", update_zone_health_fn(zone_id), zone_id)
             previous_error_streak = reset_zone_error_streak_fn(zone_id)
-            if previous_error_streak > 0:
-                await emit_zone_recovered_signal_fn(zone_id, previous_error_streak)
+            await emit_zone_recovered_signal_fn(zone_id, previous_error_streak)
             return
 
         await safe_process_controller_fn(
@@ -190,8 +189,7 @@ async def process_zone_cycle(
         await safe_process_controller_fn("health", update_zone_health_fn(zone_id), zone_id)
 
         previous_error_streak = reset_zone_error_streak_fn(zone_id)
-        if previous_error_streak > 0:
-            await emit_zone_recovered_signal_fn(zone_id, previous_error_streak)
+        await emit_zone_recovered_signal_fn(zone_id, previous_error_streak)
 
     except Exception as error:
         record_zone_error_fn(zone_id)
