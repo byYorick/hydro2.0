@@ -245,6 +245,11 @@ Legacy endpoint `POST /zones/{id}/automation/manual-resume` удален и не
 Поведение:
 - в `auto` manual-step запрещён (`manual_step_forbidden_in_auto_mode`);
 - в `semi` и `manual` manual-step разрешён;
+- в `semi` manual-step разрешён только в активных workflow-фазах
+  (`tank_filling|tank_recirc|irrigating|irrig_recirc`), иначе `manual_step_zone_inactive`;
+- в `manual` при `workflow_phase=idle` manual-step также разрешён (для прямого ручного управления);
+- `allowed_manual_steps` рассчитывается с учетом текущей `workflow_phase` (phase-aware);
+- шаг вне phase-aware списка возвращает `manual_step_not_allowed_for_phase`;
 - `GET /zones/{zone_id}/state` возвращает `control_mode` и `allowed_manual_steps` для UI.
 
 ---

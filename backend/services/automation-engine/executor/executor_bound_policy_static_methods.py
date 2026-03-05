@@ -10,7 +10,12 @@ from executor.executor_constants import (
     AUTO_LOGIC_NEW_SENSORS_V1,
     TERMINAL_STATUS_ERROR_CODES,
 )
-from executor.workflow_phase_policy import WORKFLOW_PHASE_VALUES, WORKFLOW_STAGES_CANONICAL
+from executor.workflow_phase_policy import (
+    WORKFLOW_PHASE_READY,
+    WORKFLOW_PHASE_TANK_FILLING,
+    WORKFLOW_PHASE_VALUES,
+    WORKFLOW_STAGES_CANONICAL,
+)
 from config.scheduler_task_mapping import SchedulerTaskMapping
 from domain.models.decision_models import DecisionOutcome
 from domain.policies.command_mapping_policy import (
@@ -142,9 +147,13 @@ def bound_validate_phase_transition(
     zone_id: int,
     logger: Optional[Any] = None,
 ) -> bool:
+    normalized_from = policy_normalize_workflow_phase(from_phase, allowed_values=WORKFLOW_PHASE_VALUES)
+    normalized_to = policy_normalize_workflow_phase(to_phase, allowed_values=WORKFLOW_PHASE_VALUES)
+    if normalized_from == WORKFLOW_PHASE_READY and normalized_to == WORKFLOW_PHASE_TANK_FILLING:
+        return True
     return policy_validate_phase_transition(
-        from_phase=from_phase,
-        to_phase=to_phase,
+        from_phase=normalized_from,
+        to_phase=normalized_to,
         zone_id=zone_id,
         logger=logger,
     )

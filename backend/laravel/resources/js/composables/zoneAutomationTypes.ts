@@ -32,6 +32,8 @@ export interface WaterFormState {
   fillWindowEnd: string
   targetPh: number
   targetEc: number
+  phPct: number
+  ecPct: number
   valveSwitching: boolean
   correctionDuringIrrigation: boolean
   enableDrainControl: boolean

@@ -17,6 +17,16 @@ def derive_automation_state(
     state_irrigating: str,
     state_irrig_recirc: str,
 ) -> str:
+    manual_step_state_map = {
+        "clean_fill_start": state_tank_filling,
+        "clean_fill_stop": state_tank_filling,
+        "solution_fill_start": state_tank_filling,
+        "solution_fill_stop": state_tank_filling,
+        "prepare_recirculation_start": state_tank_recirc,
+        "prepare_recirculation_stop": state_tank_recirc,
+        "irrigation_recovery_start": state_irrig_recirc,
+        "irrigation_recovery_stop": state_irrig_recirc,
+    }
     if not task:
         return state_idle
 
@@ -35,6 +45,11 @@ def derive_automation_state(
                 return state_irrig_recirc
             return state_irrigating
         if task_type == "diagnostics":
+            if workflow == "manual_step":
+                manual_step = str(payload.get("manual_step") or "").strip().lower()
+                mapped_state = manual_step_state_map.get(manual_step)
+                if mapped_state:
+                    return mapped_state
             if workflow in {"prepare_recirculation", "prepare_recirculation_check"}:
                 return state_tank_recirc
             if workflow in {"irrigation_recovery", "irrigation_recovery_check"}:

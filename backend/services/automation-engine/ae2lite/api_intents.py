@@ -261,10 +261,12 @@ async def claim_start_cycle_intent(
         SELECT *
         FROM zone_automation_intents
         WHERE idempotency_key = $1
+          AND zone_id <> $2
         ORDER BY id DESC
         LIMIT 1
         """,
         req.idempotency_key,
+        zone_id,
     )
     if cross_zone_rows:
         return {"decision": "conflict_cross_zone", "intent": dict(cross_zone_rows[0])}

@@ -19,8 +19,10 @@ def bind_start_cycle_route(
     start_cycle_rate_limit_max_requests_fn: Callable[[], int],
     claim_start_cycle_intent_fn: Callable[..., Awaitable[Dict[str, Any]]],
     start_cycle_claim_stale_sec_fn: Callable[[], int],
+    start_cycle_orphan_phase_auto_heal_sec_fn: Callable[[], int],
     load_latest_zone_task_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
     load_zone_workflow_state_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
+    set_zone_workflow_state_fn: Callable[..., Awaitable[None]],
     build_scheduler_task_request_from_intent_fn: Callable[..., SchedulerTaskRequest],
     start_cycle_due_sec_fn: Callable[[], int],
     start_cycle_expires_sec_fn: Callable[[], int],
@@ -43,6 +45,72 @@ def bind_start_cycle_route(
     scheduler_err_execution_exception: str,
     logger: Any,
 ) -> Callable[..., Awaitable[Dict[str, Any]]]:
+    def _normalize_utc(raw_dt: Any) -> Optional[datetime]:
+        if not isinstance(raw_dt, datetime):
+            return None
+        try:
+            if getattr(raw_dt, "tzinfo", None) is None:
+                return raw_dt.replace(tzinfo=timezone.utc)
+            return raw_dt.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    def _resolve_workflow_age_secs(workflow_state: Dict[str, Any], now_utc: datetime) -> Optional[float]:
+        started_at = _normalize_utc(workflow_state.get("started_at"))
+        updated_at = _normalize_utc(workflow_state.get("updated_at"))
+        anchor = started_at or updated_at
+        if anchor is None:
+            return None
+        return max(0.0, (now_utc - anchor).total_seconds())
+
+    async def _try_auto_heal_orphan_workflow_phase(
+        *,
+        zone_id: int,
+        now: datetime,
+        workflow_state: Dict[str, Any],
+        latest_task: Optional[Dict[str, Any]],
+    ) -> bool:
+        workflow_phase = str(workflow_state.get("workflow_phase") or "").strip().lower()
+        if workflow_phase in {"", "idle", "ready"}:
+            return False
+
+        latest_status = str((latest_task or {}).get("status") or "").strip().lower()
+        if latest_status in {"accepted", "running"}:
+            return False
+
+        threshold_sec = max(30, int(start_cycle_orphan_phase_auto_heal_sec_fn()))
+        now_utc = now if getattr(now, "tzinfo", None) is not None else now.replace(tzinfo=timezone.utc)
+        age_secs = _resolve_workflow_age_secs(workflow_state, now_utc)
+        if age_secs is None or age_secs < float(threshold_sec):
+            return False
+
+        payload_normalized = workflow_state.get("payload_normalized")
+        payload = dict(payload_normalized) if isinstance(payload_normalized, dict) else {}
+        payload["recovery"] = {
+            "action": "start_cycle_orphan_phase_reset",
+            "previous_phase": workflow_phase,
+            "previous_scheduler_task_id": str(workflow_state.get("scheduler_task_id") or "") or None,
+            "age_secs": int(age_secs),
+            "threshold_sec": threshold_sec,
+            "trigger": "start_cycle",
+        }
+        await set_zone_workflow_state_fn(
+            zone_id=zone_id,
+            workflow_phase="idle",
+            payload=payload,
+            scheduler_task_id=None,
+        )
+        logger.warning(
+            "Auto-healed orphan workflow phase before start-cycle: "
+            "zone_id=%s phase=%s age_secs=%s threshold_sec=%s latest_task_status=%s",
+            zone_id,
+            workflow_phase,
+            int(age_secs),
+            threshold_sec,
+            latest_status or "none",
+        )
+        return True
+
     async def _mark_intent_terminal_zone_busy(zone_id: int, intent_id: int, error_message: str) -> None:
         if intent_id <= 0:
             return
@@ -162,21 +230,6 @@ def bind_start_cycle_route(
         workflow_state = await load_zone_workflow_state_fn(zone_id)
         workflow_phase = str(workflow_state.get("workflow_phase") or "").strip().lower() if isinstance(workflow_state, dict) else ""
         workflow_scheduler_task_id = str(workflow_state.get("scheduler_task_id") or "").strip() or None if isinstance(workflow_state, dict) else None
-        if workflow_phase not in {"", "idle", "ready"}:
-            await _mark_intent_terminal_zone_busy(
-                zone_id=zone_id,
-                intent_id=intent_id,
-                error_message=f"Intent skipped: zone busy (active_workflow_phase={workflow_phase or 'unknown'})",
-            )
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "start_cycle_zone_busy",
-                    "zone_id": zone_id,
-                    "active_workflow_phase": workflow_phase,
-                    "active_workflow_scheduler_task_id": workflow_scheduler_task_id,
-                },
-            )
 
         latest_task = await load_latest_zone_task_fn(zone_id)
         latest_status = str(latest_task.get("status") or "").strip().lower() if isinstance(latest_task, dict) else ""
@@ -193,6 +246,40 @@ def bind_start_cycle_route(
                     "zone_id": zone_id,
                     "active_task_id": str(latest_task.get("task_id") or "").strip() or None,
                     "active_task_status": latest_status,
+                },
+            )
+
+        workflow_healed = False
+        if isinstance(workflow_state, dict) and workflow_phase not in {"", "idle", "ready"}:
+            try:
+                workflow_healed = await _try_auto_heal_orphan_workflow_phase(
+                    zone_id=zone_id,
+                    now=now,
+                    workflow_state=workflow_state,
+                    latest_task=latest_task,
+                )
+            except Exception:
+                logger.error(
+                    "Failed to auto-heal orphan workflow phase: zone_id=%s phase=%s",
+                    zone_id,
+                    workflow_phase or "unknown",
+                    exc_info=True,
+                )
+                workflow_healed = False
+
+        if not workflow_healed and workflow_phase not in {"", "idle", "ready"}:
+            await _mark_intent_terminal_zone_busy(
+                zone_id=zone_id,
+                intent_id=intent_id,
+                error_message=f"Intent skipped: zone busy (active_workflow_phase={workflow_phase or 'unknown'})",
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "start_cycle_zone_busy",
+                    "zone_id": zone_id,
+                    "active_workflow_phase": workflow_phase,
+                    "active_workflow_scheduler_task_id": workflow_scheduler_task_id,
                 },
             )
 

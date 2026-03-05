@@ -259,11 +259,30 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const correctionNode = asRecord(irrigationBehavior?.correction_node) ?? asRecord(irrigationTargets?.correction_node)
   const correctionPh = readNumber(correctionNode?.target_ph)
   const correctionEc = readNumber(correctionNode?.target_ec)
+  const correctionTolerance = asRecord(correctionNode?.target_tolerance)
+  const correctionPhPct = readNumber(
+    correctionTolerance?.ph_pct,
+    correctionNode?.ph_pct,
+    irrigationBehavior?.ph_pct,
+    irrigationTargets?.ph_pct
+  )
+  const correctionEcPct = readNumber(
+    correctionTolerance?.ec_pct,
+    correctionNode?.ec_pct,
+    irrigationBehavior?.ec_pct,
+    irrigationTargets?.ec_pct
+  )
   if (correctionPh !== null) {
     waterForm.targetPh = clamp(correctionPh, 4, 9)
   }
   if (correctionEc !== null) {
     waterForm.targetEc = clamp(correctionEc, 0.1, 10)
+  }
+  if (correctionPhPct !== null) {
+    waterForm.phPct = clamp(correctionPhPct, 1, 50)
+  }
+  if (correctionEcPct !== null) {
+    waterForm.ecPct = clamp(correctionEcPct, 1, 50)
   }
 
   const valveSwitching = readBoolean(irrigationBehavior?.valve_switching_enabled, irrigationTargets?.valve_switching_enabled)

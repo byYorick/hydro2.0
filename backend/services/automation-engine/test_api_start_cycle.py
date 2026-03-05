@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -16,6 +17,9 @@ def _stub_workflow_state_store(monkeypatch):
 
         async def get_with_stale_reset(self, zone_id: int, **_kw):
             return await self.get(zone_id)
+
+        async def set(self, **_kwargs):
+            return None
 
     monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
 
@@ -459,6 +463,90 @@ async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active_and_fa
     assert captured["terminal_calls"][0]["intent_id"] == 902
     assert captured["terminal_calls"][0]["success"] is False
     assert captured["terminal_calls"][0]["error_code"] == "start_cycle_zone_busy"
+
+
+@pytest.mark.asyncio
+async def test_zone_start_cycle_auto_heals_stale_orphan_workflow_phase_and_starts(monkeypatch):
+    captured = {"set_calls": []}
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "claimed",
+            "intent": {"id": 903, "zone_id": 12, "status": "claimed", "retry_count": 0, "payload": {}},
+        }
+
+    async def fake_load_latest_zone_task(_zone_id: int):
+        return {"task_id": "st-completed", "status": "completed"}
+
+    async def fake_create_scheduler_task(req):
+        captured["scheduler_req"] = req
+        return {"task_id": "st-intent-903"}, False
+
+    def fake_spawn_background_task(coro, **kwargs):
+        captured["spawned"] = kwargs
+        coro.close()
+
+    class _WorkflowStateStoreStub:
+        def __init__(self):
+            self._state = {
+                "workflow_phase": "tank_filling",
+                "scheduler_task_id": "st-orphan",
+                "started_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 3, 5, tzinfo=timezone.utc),
+                "payload_normalized": {"control_mode": "auto"},
+            }
+
+        async def get(self, _zone_id: int):
+            return dict(self._state)
+
+        async def get_with_stale_reset(self, zone_id: int, **_kw):
+            return await self.get(zone_id)
+
+        async def set(self, **kwargs):
+            captured["set_calls"].append(dict(kwargs))
+            self._state = {
+                "workflow_phase": kwargs.get("workflow_phase"),
+                "scheduler_task_id": kwargs.get("scheduler_task_id"),
+                "started_at": None,
+                "updated_at": datetime.now(timezone.utc),
+                "payload_normalized": kwargs.get("payload"),
+            }
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+    monkeypatch.setattr(api, "_load_latest_zone_task", fake_load_latest_zone_task)
+    monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
+    monkeypatch.setattr(api, "_spawn_background_task", fake_spawn_background_task)
+    monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
+
+    response = await api.zone_start_cycle(
+        zone_id=12,
+        request=SimpleNamespace(headers={"x-trace-id": "trace-auto-heal"}),
+        req=StartCycleRequest(
+            source="laravel_scheduler",
+            idempotency_key="sch:z12:irrigation:2026-03-05T08:45:00Z",
+        ),
+    )
+
+    assert response["status"] == "ok"
+    assert response["data"]["zone_id"] == 12
+    assert response["data"]["accepted"] is True
+    assert response["data"]["runner_state"] == "active"
+    assert response["data"]["task_id"] == "intent-903"
+    assert len(captured["set_calls"]) == 1
+    reset_call = captured["set_calls"][0]
+    assert reset_call["zone_id"] == 12
+    assert reset_call["workflow_phase"] == "idle"
+    assert reset_call["scheduler_task_id"] is None
+    assert reset_call["payload"]["recovery"]["action"] == "start_cycle_orphan_phase_reset"
+    assert captured["scheduler_req"].zone_id == 12
 
 
 def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():

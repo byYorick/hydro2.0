@@ -360,6 +360,31 @@ class PythonIngestControllerTest extends TestCase
         $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);
     }
 
+    public function test_command_ack_endpoint_prevents_done_to_ack_rollback(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-done-rollback-001',
+            'status' => Command::STATUS_DONE,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-done-rollback-001',
+                'status' => 'ACK',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'status' => 'ok',
+                'message' => 'Command already in final status',
+            ]);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_DONE, $command->status);
+    }
+
     public function test_command_ack_endpoint_requires_auth(): void
     {
         // Убеждаемся, что токен не настроен для этого теста

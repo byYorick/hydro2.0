@@ -8,8 +8,8 @@
       :progress-summary="progressSummary"
       :error-message="errorMessage"
       :warning-message="connectivityWarning"
-      :setup-stages="setupStages"
-      :current-setup-stage-label="currentSetupStageLabel"
+      :workflow-stages="workflowStages"
+      :current-workflow-stage-label="currentWorkflowStageLabel"
     />
 
     <AutomationProcessDiagram
@@ -76,8 +76,8 @@ const {
   isWaterInletActive,
   isTankRefillActive,
   isIrrigationActive,
-  setupStages,
-  currentSetupStageLabel,
+  workflowStages,
+  currentWorkflowStageLabel,
   progressSummary,
   timelineEvents,
   irrNodeState,

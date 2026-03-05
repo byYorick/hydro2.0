@@ -5,6 +5,61 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict
 
+_IRR_STATE_STALE_SECONDS = 120
+_IRR_ACTUATOR_FIELDS = (
+    "valve_clean_fill",
+    "valve_clean_supply",
+    "valve_solution_fill",
+    "valve_solution_supply",
+    "valve_irrigation",
+    "pump_main",
+)
+
+
+def _coerce_utc_datetime(raw_value: Any) -> datetime | None:
+    if isinstance(raw_value, datetime):
+        if raw_value.tzinfo is None:
+            return raw_value
+        return raw_value.astimezone(timezone.utc).replace(tzinfo=None)
+    if not isinstance(raw_value, str):
+        return None
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _sanitize_stale_irr_state_for_idle(
+    *,
+    state: str,
+    idle_state: str,
+    irr_node_state: Dict[str, Any] | None,
+    now_utc: datetime,
+) -> Dict[str, Any] | None:
+    if state != idle_state or not isinstance(irr_node_state, dict):
+        return irr_node_state
+    updated_at = _coerce_utc_datetime(irr_node_state.get("updated_at"))
+    if updated_at is None:
+        return irr_node_state
+    age_seconds = (now_utc - updated_at).total_seconds()
+    if age_seconds <= float(_IRR_STATE_STALE_SECONDS):
+        return irr_node_state
+
+    sanitized = dict(irr_node_state)
+    for field in _IRR_ACTUATOR_FIELDS:
+        sanitized[field] = False
+    sanitized["stale"] = True
+    sanitized["stale_age_sec"] = round(age_seconds, 3)
+    return sanitized
+
 
 def _sync_active_processes_with_irr_state(
     *,
@@ -74,6 +129,12 @@ async def build_zone_automation_state_payload(
     system_config = await load_zone_system_config_fn(zone_id, payload)
     current_levels = await load_zone_current_levels_fn(zone_id)
     irr_node_state = await load_latest_irr_node_state_fn(zone_id)
+    irr_node_state = _sanitize_stale_irr_state_for_idle(
+        state=state,
+        idle_state=automation_state_idle,
+        irr_node_state=irr_node_state,
+        now_utc=now,
+    )
     active_processes = _sync_active_processes_with_irr_state(
         active_processes=derive_active_processes_fn(task, state),
         irr_node_state=irr_node_state,

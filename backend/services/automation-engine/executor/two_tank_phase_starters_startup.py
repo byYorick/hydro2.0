@@ -228,6 +228,13 @@ async def start_two_tank_solution_fill(
     )
     start_result = merge_command_dispatch_results_fn(plan_result, sensor_mode_result)
     if not plan_result.get("success"):
+        stop_result = await compensate_two_tank_start_enqueue_failure_fn(
+            zone_id=zone_id,
+            context=context,
+            workflow="startup",
+            phase="solution_fill_start",
+            stop_command_plan=runtime_cfg["commands"]["solution_fill_stop"],
+        )
         return {
             "success": False,
             "task_type": "diagnostics",
@@ -242,6 +249,8 @@ async def start_two_tank_solution_fill(
             "reason": "Не удалось отправить команды наполнения бака раствора",
             "error": str(start_result.get("error") or err_two_tank_command_failed),
             "error_code": str(start_result.get("error_code") or err_two_tank_command_failed),
+            "stop_result": stop_result,
+            "feature_flag_state": two_tank_safety_guards_enabled_fn(),
         }
 
     await update_zone_workflow_phase_fn(

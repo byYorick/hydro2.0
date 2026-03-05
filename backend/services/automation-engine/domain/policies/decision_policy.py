@@ -257,6 +257,20 @@ def decide_action(
 ) -> DecisionOutcome:
     config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
     execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    workflow_hint = str(
+        payload.get("workflow")
+        or payload.get("diagnostics_workflow")
+        or execution.get("workflow")
+        or ""
+    ).strip().lower()
+    control_mode = str(payload.get("control_mode") or payload.get("_runtime_control_mode") or "").strip().lower()
+    if control_mode == "manual" and workflow_hint != "manual_step":
+        return DecisionOutcome(
+            action_required=False,
+            decision="skip",
+            reason_code="manual_mode_only",
+            reason="Зона в ручном режиме: автоматические задачи отключены",
+        )
 
     already_running = extract_nested_bool(
         payload,

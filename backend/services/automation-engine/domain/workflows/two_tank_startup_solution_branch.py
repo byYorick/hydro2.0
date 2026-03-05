@@ -161,6 +161,8 @@ async def handle_two_tank_solution_fill_check(
             target_ph=float(runtime_cfg["target_ph"]),
             target_ec=float(runtime_cfg["target_ec_prepare"]),
             tolerance=runtime_cfg["prepare_tolerance"],
+            absolute_tolerance=runtime_cfg.get("prepare_absolute_tolerance"),
+            hard_bounds=runtime_cfg.get("prepare_hard_bounds"),
         )
         if not prepare_targets_state["targets_reached"]:
             return await deps._start_two_tank_prepare_recirculation(

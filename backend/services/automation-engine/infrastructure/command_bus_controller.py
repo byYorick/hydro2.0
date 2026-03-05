@@ -1,6 +1,7 @@
 """CommandBus controller-oriented flows."""
 
 import logging
+import time
 from typing import Any, Dict, Optional
 
 from common.commands import new_command_id
@@ -20,6 +21,41 @@ def _is_truthy(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+def _should_emit_dedupe_skipped_event(
+    command_bus: Any,
+    *,
+    zone_id: int,
+    dedupe_decision: str,
+    cmd_id: Optional[str],
+    dedupe_reference_key: str,
+) -> bool:
+    window_sec = int(getattr(command_bus, "dedupe_skipped_event_window_sec", 0) or 0)
+    if window_sec <= 0:
+        return True
+
+    cache = getattr(command_bus, "_dedupe_skipped_event_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(command_bus, "_dedupe_skipped_event_cache", cache)
+
+    key_base = str(cmd_id or dedupe_reference_key or "").strip()
+    if not key_base:
+        return True
+    cache_key = f"{zone_id}:{dedupe_decision}:{key_base}"
+    now_monotonic = time.monotonic()
+    last_emitted = cache.get(cache_key)
+    if isinstance(last_emitted, (int, float)) and now_monotonic - float(last_emitted) < float(window_sec):
+        return False
+
+    expire_before = now_monotonic - float(window_sec) * 2.0
+    stale_keys = [key for key, ts in cache.items() if not isinstance(ts, (int, float)) or float(ts) < expire_before]
+    for stale_key in stale_keys:
+        cache.pop(stale_key, None)
+
+    cache[cache_key] = now_monotonic
+    return True
 
 
 async def publish_controller_command(
@@ -129,19 +165,26 @@ async def publish_controller_command(
         if effective_cmd_id:
             command["cmd_id"] = effective_cmd_id
         cmd_id = effective_cmd_id
-        await command_bus._safe_create_zone_event(
-            zone_id,
-            "COMMAND_DEDUPE_SKIPPED",
-            {
-                "node_uid": node_uid,
-                "channel": channel,
-                "cmd": cmd,
-                "cmd_id": effective_cmd_id,
-                "dedupe_decision": dedupe_decision,
-                "dedupe_reference_key": dedupe_reference_key,
-                "dedupe_ttl_sec": dedupe_ttl_value,
-            },
-        )
+        if _should_emit_dedupe_skipped_event(
+            command_bus,
+            zone_id=zone_id,
+            dedupe_decision=dedupe_decision,
+            cmd_id=effective_cmd_id,
+            dedupe_reference_key=dedupe_reference_key,
+        ):
+            await command_bus._safe_create_zone_event(
+                zone_id,
+                "COMMAND_DEDUPE_SKIPPED",
+                {
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "cmd": cmd,
+                    "cmd_id": effective_cmd_id,
+                    "dedupe_decision": dedupe_decision,
+                    "dedupe_reference_key": dedupe_reference_key,
+                    "dedupe_ttl_sec": dedupe_ttl_value,
+                },
+            )
         success = True
     else:
         cmd_id = None

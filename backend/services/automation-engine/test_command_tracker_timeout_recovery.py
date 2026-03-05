@@ -73,3 +73,33 @@ async def test_command_tracker_resolves_timeout_after_real_timeout_failure(monke
     assert resolved_calls[0]["code"] == "infra_command_timeout"
     assert resolved_calls[0]["details"]["recovery_probe"] == "tracked"
     assert tracker._timeout_alert_active_by_zone[6] is False
+
+
+@pytest.mark.asyncio
+async def test_wait_for_command_done_returns_true_from_terminal_cache_when_db_lags(monkeypatch):
+    tracker = CommandTracker(command_timeout=10, poll_interval=1)
+    tracker.pending_commands["cmd-done-cache"] = _pending_command(cmd_id="cmd-done-cache")
+    await tracker._confirm_command_internal("cmd-done-cache", "DONE")
+
+    async def fake_get_command_status_from_db(_cmd_id: str):
+        return "ACK"
+
+    monkeypatch.setattr(tracker, "_get_command_status_from_db", fake_get_command_status_from_db)
+
+    result = await tracker.wait_for_command_done("cmd-done-cache", timeout_sec=0.2, poll_interval_sec=0.05)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_wait_for_command_done_returns_false_from_terminal_cache_on_timeout(monkeypatch):
+    tracker = CommandTracker(command_timeout=10, poll_interval=1)
+    tracker.pending_commands["cmd-timeout-cache"] = _pending_command(cmd_id="cmd-timeout-cache")
+    await tracker._confirm_command_internal("cmd-timeout-cache", "TIMEOUT", error="timeout")
+
+    async def fake_get_command_status_from_db(_cmd_id: str):
+        return "ACK"
+
+    monkeypatch.setattr(tracker, "_get_command_status_from_db", fake_get_command_status_from_db)
+
+    result = await tracker.wait_for_command_done("cmd-timeout-cache", timeout_sec=0.2, poll_interval_sec=0.05)
+    assert result is False

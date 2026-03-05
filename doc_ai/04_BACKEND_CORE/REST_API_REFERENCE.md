@@ -66,7 +66,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
-| POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (доступен только в `semi|manual`) |
+| POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
@@ -279,8 +279,13 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
 | GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
 | POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
-| POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (разрешен только в `semi|manual`) |
+| POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
 | POST | /zones/{id}/start-relay-autotune | internal | Запуск relay-autotune PID (`pid_type: ph|ec`) для активной зоны |
+
+Инвариант `control_mode=manual`:
+- автоматические runtime-контроллеры зоны (climate/irrigation/recirculation/pH/EC) не публикуют команды;
+- scheduler auto-задачи в этом режиме получают `no_action` с `reason_code=manual_mode_only`;
+- разрешены только явные `POST /zones/{id}/manual-step`.
 
 Инварианты `POST /zones/{id}/start-cycle`:
 - endpoint не несет device-level payload (минимальный wake-up контракт);
@@ -290,6 +295,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - при активном intent этой же зоны (другой `idempotency_key`) endpoint возвращает `409 start_cycle_zone_busy`;
 - при активной scheduler-задаче зоны (`accepted|running`) endpoint возвращает `409 start_cycle_zone_busy`
   с `active_task_id` и `active_task_status`;
+- при блокирующей `workflow_phase` без активной scheduler-задачи endpoint выполняет auto-heal/reset в `idle`,
+  если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
 - при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
   `task_status` и `reason=start_cycle_intent_terminal`.
 
@@ -382,6 +389,9 @@ Lifecycle intents:
   `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
 - если после claim обнаружена активная scheduler-задача зоны, intent переводится обратно в `pending`,
   а endpoint возвращает `409 start_cycle_zone_busy`;
+- если обнаружена orphan/stuck `workflow_phase` без активной scheduler-задачи и возраст фазы выше
+  `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC`, runtime сбрасывает `zone_workflow_state.workflow_phase` в `idle`
+  и продолжает старт цикла;
 - при повторном `idempotency_key` для terminal intent endpoint возвращает
   `accepted=false` + `runner_state=terminal` + `task_status`;
 - stale `claimed` intent может быть re-claimed после таймаута

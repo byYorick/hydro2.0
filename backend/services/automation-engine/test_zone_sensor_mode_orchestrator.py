@@ -26,7 +26,7 @@ class _CommandGateway:
 
 
 @pytest.mark.asyncio
-async def test_set_sensor_mode_uses_dedupe_bypass_flag():
+async def test_set_sensor_mode_keeps_dedupe_enabled_for_sensor_commands():
     gateway = _CommandGateway()
     cache = {}
     logger = logging.getLogger("test_zone_sensor_mode")
@@ -55,7 +55,8 @@ async def test_set_sensor_mode_uses_dedupe_bypass_flag():
         assert call["zone_id"] == 2
         assert call["command"]["channel"] == "system"
         assert call["command"]["cmd"] == "activate_sensor_mode"
-        assert call["command"]["dedupe_bypass"] is True
+        assert call["command"].get("dedupe_bypass") is False
+        assert call["command"]["params"] == {"stabilization_time_sec": 60}
 
 
 def test_resolve_sensor_mode_action_stale_flags_prefers_activate():

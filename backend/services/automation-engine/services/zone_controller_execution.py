@@ -152,6 +152,8 @@ async def publish_controller_action_with_event_integrity(
         if normalized_cmd_id:
             correlation_id = normalized_cmd_id
 
+    dedupe_decision = str(command.get("dedupe_decision") or "").strip().lower()
+
     if not published:
         if event_type:
             await create_zone_event_safe_fn(
@@ -173,6 +175,8 @@ async def publish_controller_action_with_event_integrity(
         return False
 
     if event_type:
+        if dedupe_decision in {"duplicate_blocked", "duplicate_no_effect"}:
+            return True
         await create_zone_event_safe_fn(
             zone_id=zone_id,
             event_type=event_type,

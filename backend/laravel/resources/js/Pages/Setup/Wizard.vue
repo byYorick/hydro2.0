@@ -18,7 +18,7 @@
         </div>
 
         <div class="mt-3 text-xs text-[color:var(--text-dim)]">
-          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/6)
+          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/{{ stepItems.length }})
         </div>
       </section>
 
@@ -119,6 +119,8 @@
             :value="generatedGreenhouseUid"
             type="text"
             class="input-field"
+            placeholder="UID (автогенерация)"
+            title="Уникальный идентификатор теплицы, генерируется автоматически из названия"
             disabled
           />
           <select
@@ -144,13 +146,24 @@
             placeholder="Описание"
             :disabled="!canConfigure"
           ></textarea>
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !greenhouseForm.name.trim() || loading.stepGreenhouse"
-            @click="createGreenhouse"
-          >
-            {{ loading.stepGreenhouse ? 'Создание...' : 'Создать теплицу' }}
-          </Button>
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="!canConfigure || !greenhouseForm.name.trim() || loading.stepGreenhouse"
+              @click="createGreenhouse"
+            >
+              {{ loading.stepGreenhouse ? 'Создание...' : 'Создать теплицу' }}
+            </Button>
+            <Button
+              v-if="availableGreenhouses.length > 0"
+              size="sm"
+              variant="secondary"
+              :disabled="loading.stepGreenhouse"
+              @click="greenhouseMode = 'select'"
+            >
+              Отмена
+            </Button>
+          </div>
         </div>
 
         <div
@@ -204,7 +217,7 @@
         </div>
 
         <div
-          v-if="zoneMode === 'create'"
+          v-else
           class="grid gap-3 md:grid-cols-4"
         >
           <input
@@ -225,15 +238,28 @@
             :value="generatedZoneUid"
             type="text"
             class="input-field"
+            placeholder="UID (автогенерация)"
+            title="Уникальный идентификатор зоны, генерируется автоматически из названия"
             disabled
           />
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !stepGreenhouseDone || !zoneForm.name.trim() || loading.stepZone"
-            @click="createZone"
-          >
-            {{ loading.stepZone ? 'Создание...' : 'Создать зону' }}
-          </Button>
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="!canConfigure || !stepGreenhouseDone || !zoneForm.name.trim() || loading.stepZone"
+              @click="createZone"
+            >
+              {{ loading.stepZone ? 'Создание...' : 'Создать зону' }}
+            </Button>
+            <Button
+              v-if="availableZones.length > 0"
+              size="sm"
+              variant="secondary"
+              :disabled="loading.stepZone"
+              @click="zoneMode = 'select'"
+            >
+              Отмена
+            </Button>
+          </div>
         </div>
 
         <div
@@ -249,7 +275,7 @@
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
             3. Культура и рецепт
           </h3>
-          <Badge :variant="stepPlantDone ? 'success' : 'neutral'">
+          <Badge :variant="stepPlantDone && stepRecipeDone ? 'success' : 'neutral'">
             {{ stepPlantDone && stepRecipeDone ? 'Готово' : 'Не настроено' }}
           </Badge>
         </div>
@@ -438,10 +464,27 @@
           </div>
         </div>
 
+        <div
+          v-if="!stepZoneDone"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+        >
+          Сначала создайте или выберите зону (шаг 2).
+        </div>
+
+        <div
+          v-else-if="!loading.nodes && availableNodes.length === 0"
+          class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]"
+        >
+          Нет доступных узлов. Убедитесь, что устройства зарегистрированы в системе и не привязаны к другим зонам. Нажмите «Обновить» после подключения устройств.
+        </div>
+
         <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
           <span>Привязано: {{ attachedNodesCount }} (минимум 3 обязательных)</span>
           <span v-if="missingRequiredDevices.length > 0" class="text-[color:var(--badge-warning-text)]">
             Не выбрано: {{ missingRequiredDevices.join(', ') }}
+          </span>
+          <span v-else-if="stepDevicesDone" class="text-[color:var(--badge-success-text)]">
+            Все обязательные устройства привязаны
           </span>
           <Button
             size="sm"

@@ -22,7 +22,7 @@ async def dispatch_sensor_mode_command_for_nodes(
     publish_batch_fn: PublishBatchFn,
 ) -> Dict[str, Any]:
     cmd = "activate_sensor_mode" if activate else "deactivate_sensor_mode"
-    params: Dict[str, Any] = {"reason": reason_code}
+    params: Dict[str, Any] = {}
     if activate:
         params["stabilization_time_sec"] = max(0, int(stabilization_time_sec or 0))
 
@@ -55,7 +55,7 @@ async def dispatch_sensor_mode_command_for_nodes(
         context=context,
         decision=decision,
         accepted_terminal_statuses=("DONE", "NO_EFFECT"),
-        dedupe_bypass=True,
+        dedupe_bypass=False,
     )
 
 

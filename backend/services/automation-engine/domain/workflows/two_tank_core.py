@@ -99,6 +99,47 @@ _CHECK_WORKFLOW_TIMEOUT_CFG_KEY: Dict[str, str] = {
     "irrigation_recovery_check": "irrigation_recovery_timeout_sec",
 }
 
+_WORKFLOW_STATE_ACTIVE_PHASES = frozenset({"tank_filling", "tank_recirc", "irrig_recirc"})
+_WORKFLOW_STATE_ALLOWED_BY_PHASE: Dict[str, set[str]] = {
+    "tank_filling": {"clean_fill_check", "solution_fill_check"},
+    "tank_recirc": {"prepare_recirculation_check"},
+    "irrig_recirc": {"irrigation_recovery_check"},
+}
+_WORKFLOW_STATE_FALLBACK_BY_PHASE: Dict[str, str] = {
+    "tank_filling": "solution_fill_check",
+    "tank_recirc": "prepare_recirculation_check",
+    "irrig_recirc": "irrigation_recovery_check",
+}
+_WORKFLOW_STATE_CARRY_KEYS = {
+    "payload_contract_version",
+    "workflow_mode",
+    "workflow_reason_code",
+    "clean_fill_cycle",
+    "clean_fill_started_at",
+    "clean_fill_timeout_at",
+    "solution_fill_started_at",
+    "solution_fill_timeout_at",
+    "prepare_recirculation_started_at",
+    "prepare_recirculation_timeout_at",
+    "irrigation_recovery_attempt",
+    "irrigation_recovery_started_at",
+    "irrigation_recovery_timeout_at",
+}
+_WORKFLOW_RESUME_TIMING_KEYS: Dict[str, tuple[str, str, str]] = {
+    "clean_fill_check": ("clean_fill_started_at", "clean_fill_timeout_at", "clean_fill_timeout_sec"),
+    "solution_fill_check": ("solution_fill_started_at", "solution_fill_timeout_at", "solution_fill_timeout_sec"),
+    "prepare_recirculation_check": (
+        "prepare_recirculation_started_at",
+        "prepare_recirculation_timeout_at",
+        "prepare_recirculation_timeout_sec",
+    ),
+    "irrigation_recovery_check": (
+        "irrigation_recovery_started_at",
+        "irrigation_recovery_timeout_at",
+        "irrigation_recovery_timeout_sec",
+    ),
+}
+
 
 def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -363,6 +404,210 @@ async def _maybe_reenqueue_on_irr_state_transient(
     }
 
 
+def _normalize_workflow_state_payload(raw_payload: Any) -> Dict[str, Any]:
+    if isinstance(raw_payload, dict):
+        return dict(raw_payload)
+    if isinstance(raw_payload, (bytes, bytearray)):
+        try:
+            raw_payload = raw_payload.decode("utf-8")
+        except Exception:
+            return {}
+    if isinstance(raw_payload, str):
+        source = raw_payload.strip()
+        if not source:
+            return {}
+        try:
+            decoded = json.loads(source)
+        except Exception:
+            return {}
+        if isinstance(decoded, dict):
+            return decoded
+    return {}
+
+
+def _coerce_utc_naive_datetime(raw_value: Any) -> Optional[datetime]:
+    if not isinstance(raw_value, datetime):
+        return None
+    if raw_value.tzinfo is None:
+        return raw_value
+    return raw_value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _resolve_startup_workflow_from_state_payload(*, phase: str, state_payload: Dict[str, Any]) -> str:
+    raw_workflow = (
+        state_payload.get("workflow_stage")
+        or state_payload.get("workflow")
+        or state_payload.get("diagnostics_workflow")
+        or ""
+    )
+    payload_workflow = str(raw_workflow or "").strip().lower()
+    has_clean_timestamps = bool(
+        str(state_payload.get("clean_fill_started_at") or "").strip()
+        or str(state_payload.get("clean_fill_timeout_at") or "").strip()
+    )
+    has_solution_timestamps = bool(
+        str(state_payload.get("solution_fill_started_at") or "").strip()
+        or str(state_payload.get("solution_fill_timeout_at") or "").strip()
+    )
+    fallback_workflow = _WORKFLOW_STATE_FALLBACK_BY_PHASE.get(phase, "")
+    if phase == "tank_filling":
+        if has_clean_timestamps and not has_solution_timestamps:
+            fallback_workflow = "clean_fill_check"
+        elif has_solution_timestamps:
+            fallback_workflow = "solution_fill_check"
+
+    mapped_workflow = payload_workflow
+    if payload_workflow in {"startup", "cycle_start", "refill_check"}:
+        mapped_workflow = fallback_workflow
+    elif payload_workflow == "prepare_recirculation":
+        mapped_workflow = "prepare_recirculation_check"
+    elif payload_workflow == "irrigation_recovery":
+        mapped_workflow = "irrigation_recovery_check"
+
+    allowed = _WORKFLOW_STATE_ALLOWED_BY_PHASE.get(phase, set())
+    if mapped_workflow in allowed:
+        return mapped_workflow
+    return fallback_workflow if fallback_workflow in allowed else ""
+
+
+def _merge_resume_payload(
+    *,
+    payload: Dict[str, Any],
+    state_payload: Dict[str, Any],
+    workflow: str,
+    phase: str,
+) -> Dict[str, Any]:
+    merged_payload = dict(payload)
+    for key in _WORKFLOW_STATE_CARRY_KEYS:
+        if key in state_payload:
+            merged_payload[key] = state_payload[key]
+    merged_payload["workflow"] = workflow
+    merged_payload["workflow_stage"] = workflow
+    merged_payload["workflow_phase"] = phase
+    if "payload_contract_version" not in merged_payload:
+        merged_payload["payload_contract_version"] = state_payload.get("payload_contract_version") or "v2"
+    return merged_payload
+
+
+def _ensure_resume_timing_fields(
+    *,
+    payload: Dict[str, Any],
+    workflow: str,
+    runtime_cfg: Dict[str, Any],
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
+    timing_keys = _WORKFLOW_RESUME_TIMING_KEYS.get(workflow)
+    if timing_keys is None:
+        return payload
+
+    from scheduler_internal_enqueue import parse_iso_datetime
+
+    started_key, timeout_key, timeout_cfg_key = timing_keys
+    updated_payload = dict(payload)
+    phase_started_at = parse_iso_datetime(str(updated_payload.get(started_key) or "")) or now
+    phase_timeout_at = parse_iso_datetime(str(updated_payload.get(timeout_key) or ""))
+    if phase_timeout_at is None:
+        timeout_sec = int(runtime_cfg.get(timeout_cfg_key) or 0)
+        if timeout_sec <= 0:
+            return None
+        phase_timeout_at = phase_started_at + timedelta(seconds=timeout_sec)
+    if now >= phase_timeout_at:
+        return None
+
+    updated_payload[started_key] = phase_started_at.isoformat()
+    updated_payload[timeout_key] = phase_timeout_at.isoformat()
+    if workflow == "clean_fill_check":
+        updated_payload["clean_fill_cycle"] = max(1, int(updated_payload.get("clean_fill_cycle") or 1))
+    if workflow == "irrigation_recovery_check":
+        updated_payload["irrigation_recovery_attempt"] = max(
+            1,
+            int(updated_payload.get("irrigation_recovery_attempt") or 1),
+        )
+    return updated_payload
+
+
+async def _maybe_resume_two_tank_startup_workflow(
+    deps: TwoTankDeps,
+    *,
+    payload: Dict[str, Any],
+    runtime_cfg: Dict[str, Any],
+) -> tuple[Dict[str, Any], Optional[str]]:
+    zone_id = deps.zone_id
+    try:
+        rows = await deps.fetch_fn(
+            """
+            SELECT workflow_phase, updated_at, payload
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            zone_id,
+        )
+    except Exception:
+        _logger.warning(
+            "Zone %s: failed to load zone_workflow_state for startup resume",
+            zone_id,
+            exc_info=True,
+        )
+        return payload, None
+
+    if not rows:
+        return payload, None
+
+    row = rows[0]
+    record = row if isinstance(row, dict) else dict(row)
+    phase = str(record.get("workflow_phase") or "").strip().lower()
+    if phase not in _WORKFLOW_STATE_ACTIVE_PHASES:
+        return payload, None
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    updated_at = _coerce_utc_naive_datetime(record.get("updated_at"))
+    if updated_at is not None:
+        active_timeout_candidates = [
+            int(runtime_cfg.get("clean_fill_timeout_sec") or 0),
+            int(runtime_cfg.get("solution_fill_timeout_sec") or 0),
+            int(runtime_cfg.get("prepare_recirculation_timeout_sec") or 0),
+            int(runtime_cfg.get("irrigation_recovery_timeout_sec") or 0),
+            int(runtime_cfg.get("poll_interval_sec") or 0) * 3,
+            300,
+        ]
+        max_resume_age_sec = max(active_timeout_candidates)
+        age_sec = max(0.0, (now - updated_at).total_seconds())
+        if age_sec > float(max_resume_age_sec):
+            return payload, None
+
+    state_payload = _normalize_workflow_state_payload(record.get("payload"))
+    if not state_payload:
+        return payload, None
+
+    resume_workflow = _resolve_startup_workflow_from_state_payload(phase=phase, state_payload=state_payload)
+    if not resume_workflow:
+        return payload, None
+
+    resume_payload = _merge_resume_payload(
+        payload=payload,
+        state_payload=state_payload,
+        workflow=resume_workflow,
+        phase=phase,
+    )
+    resume_payload = _ensure_resume_timing_fields(
+        payload=resume_payload,
+        workflow=resume_workflow,
+        runtime_cfg=runtime_cfg,
+        now=now,
+    )
+    if resume_payload is None:
+        return payload, None
+
+    _logger.info(
+        "Zone %s: startup workflow resumed from workflow_state (phase=%s, workflow=%s)",
+        zone_id,
+        phase,
+        resume_workflow,
+    )
+    return resume_payload, resume_workflow
+
+
 _MANUAL_STEP_TO_PHASE: Dict[str, str] = {
     "clean_fill_start": "tank_filling",
     "clean_fill_stop": "idle",
@@ -386,6 +631,14 @@ async def execute_two_tank_startup_workflow_core(
     payload = await _resolve_runtime_payload_with_profile_targets(deps, payload=payload)
     runtime_cfg = deps._resolve_two_tank_runtime_config(payload)
     workflow = deps._normalize_two_tank_workflow(payload)
+    if workflow == "startup":
+        payload, resumed_workflow = await _maybe_resume_two_tank_startup_workflow(
+            deps,
+            payload=payload,
+            runtime_cfg=runtime_cfg,
+        )
+        if resumed_workflow:
+            workflow = resumed_workflow
 
     if workflow not in TWO_TANK_SUPPORTED_WORKFLOWS:
         return two_tank_error(

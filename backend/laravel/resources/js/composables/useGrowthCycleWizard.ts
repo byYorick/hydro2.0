@@ -5,8 +5,9 @@ import type { useZones } from "@/composables/useZones";
 import { logger } from "@/utils/logger";
 import { TOAST_TIMEOUT } from "@/constants/timeouts";
 import { extractSetupWizardErrorDetails, extractSetupWizardErrorMessage } from "@/composables/setupWizardErrors";
+import { applyAutomationFromRecipe, syncSystemToTankLayout, validateForms } from "@/composables/zoneAutomationFormLogic";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationPayloadBuilders";
-import type { ClimateFormState, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
+import type { ClimateFormState, IrrigationSystem, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
 import type { PumpCalibrationComponent } from "@/types/Calibration";
 import type { DeviceChannel } from "@/types/Device";
 
@@ -55,29 +56,7 @@ const DEFAULT_ML_PER_SEC_BY_ACTUATOR: Record<string, number> = {
   ec_micro_pump: 0.8,
 };
 
-const LOGIC_RECIPE_FIELDS = [
-  "ph_target",
-  "ph_min",
-  "ph_max",
-  "ec_target",
-  "ec_min",
-  "ec_max",
-  "systemType",
-  "intervalMinutes",
-  "durationSeconds",
-  "dayTemp",
-  "nightTemp",
-  "dayHumidity",
-  "nightHumidity",
-  "hoursOn",
-  "scheduleStart",
-] as const;
-
-type LogicRecipeField = typeof LOGIC_RECIPE_FIELDS[number];
-
-type IrrigationSystem = "drip" | "substrate_trays" | "nft";
-
-type WizardStepKey = "zone" | "plant" | "recipe" | "logic" | "calibration" | "confirm";
+type WizardStepKey = "zone" | "plant" | "recipe" | "logic" | "automation" | "calibration" | "confirm";
 
 interface WizardStep {
   key: WizardStepKey;
@@ -100,31 +79,6 @@ interface WizardRecipePhase {
   lighting_start_time?: string | null;
 }
 
-interface WizardLogicForm {
-  ph_target: number;
-  ph_min: number;
-  ph_max: number;
-  ec_target: number;
-  ec_min: number;
-  ec_max: number;
-  systemType: IrrigationSystem;
-  tanksCount: number;
-  intervalMinutes: number;
-  durationSeconds: number;
-  cleanTankFillL: number;
-  nutrientTankTargetL: number;
-  irrigationBatchL: number;
-  climateEnabled: boolean;
-  dayTemp: number;
-  nightTemp: number;
-  dayHumidity: number;
-  nightHumidity: number;
-  lightingEnabled: boolean;
-  hoursOn: number;
-  scheduleStart: string;
-  scheduleEnd: string;
-  _recipeLoaded: boolean;
-}
 
 interface WizardCalibrationEntry {
   node_channel_id: number;
@@ -138,7 +92,6 @@ interface WizardFormState {
   zoneId: number | null;
   startedAt: string;
   expectedHarvestAt: string;
-  logic: WizardLogicForm;
   calibrations: WizardCalibrationEntry[];
   calibrationSkipped: boolean;
 }
@@ -190,31 +143,73 @@ function getNowLocalDatetimeValue(): string {
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
-function createDefaultLogicForm(): WizardLogicForm {
+function createDefaultClimateForm(): ClimateFormState {
   return {
-    ph_target: 5.8,
-    ph_min: 5.6,
-    ph_max: 6,
-    ec_target: 1.2,
-    ec_min: 1,
-    ec_max: 1.4,
-    systemType: "drip",
-    tanksCount: 2,
-    intervalMinutes: 30,
-    durationSeconds: 120,
-    cleanTankFillL: 20,
-    nutrientTankTargetL: 15,
-    irrigationBatchL: 2,
-    climateEnabled: false,
+    enabled: false,
     dayTemp: 23,
     nightTemp: 20,
     dayHumidity: 65,
     nightHumidity: 70,
-    lightingEnabled: false,
+    intervalMinutes: 5,
+    dayStart: "07:00",
+    nightStart: "19:00",
+    ventMinPercent: 15,
+    ventMaxPercent: 85,
+    useExternalTelemetry: true,
+    outsideTempMin: 4,
+    outsideTempMax: 34,
+    outsideHumidityMax: 90,
+    manualOverrideEnabled: true,
+    overrideMinutes: 30,
+  };
+}
+
+function createDefaultWaterForm(): WaterFormState {
+  return {
+    systemType: "drip",
+    tanksCount: 2,
+    cleanTankFillL: 20,
+    nutrientTankTargetL: 15,
+    irrigationBatchL: 2,
+    intervalMinutes: 30,
+    durationSeconds: 120,
+    fillTemperatureC: 20,
+    fillWindowStart: "00:00",
+    fillWindowEnd: "23:59",
+    targetPh: 5.8,
+    targetEc: 1.2,
+    phPct: 5,
+    ecPct: 10,
+    valveSwitching: true,
+    correctionDuringIrrigation: true,
+    enableDrainControl: false,
+    drainTargetPercent: 20,
+    diagnosticsEnabled: true,
+    diagnosticsIntervalMinutes: 15,
+    cycleStartWorkflowEnabled: true,
+    cleanTankFullThreshold: 0.95,
+    refillDurationSeconds: 120,
+    refillTimeoutSeconds: 900,
+    refillRequiredNodeTypes: "irrig",
+    refillPreferredChannel: "",
+    solutionChangeEnabled: false,
+    solutionChangeIntervalMinutes: 720,
+    solutionChangeDurationSeconds: 120,
+    manualIrrigationSeconds: 120,
+  };
+}
+
+function createDefaultLightingForm(): LightingFormState {
+  return {
+    enabled: false,
+    luxDay: 12000,
+    luxNight: 0,
     hoursOn: 16,
+    intervalMinutes: 30,
     scheduleStart: "06:00",
     scheduleEnd: "22:00",
-    _recipeLoaded: false,
+    manualIntensity: 0,
+    manualDurationHours: 1,
   };
 }
 
@@ -223,7 +218,6 @@ function createDefaultForm(zoneId?: number): WizardFormState {
     zoneId: zoneId || null,
     startedAt: getNowLocalDatetimeValue(),
     expectedHarvestAt: "",
-    logic: createDefaultLogicForm(),
     calibrations: [],
     calibrationSkipped: false,
   };
@@ -242,6 +236,62 @@ function toFiniteNumber(value: unknown): number | null {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) {
       return parsed;
+    }
+  }
+
+  return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function extractAutomationSubsystems(payload: unknown): Record<string, unknown> | null {
+  const root = asRecord(payload);
+  if (!root) {
+    return null;
+  }
+
+  const data = asRecord(root.data) || root;
+  const directSubsystems = asRecord(data.subsystems);
+  if (directSubsystems) {
+    return directSubsystems;
+  }
+
+  const profiles = asRecord(data.profiles);
+  if (!profiles) {
+    return null;
+  }
+
+  const activeMode = typeof data.active_mode === "string" ? data.active_mode : null;
+  const preferredModes = [activeMode, "working", "setup"].filter((mode): mode is string => Boolean(mode));
+
+  for (const mode of preferredModes) {
+    const entry = asRecord(profiles[mode]);
+    const subsystems = asRecord(entry?.subsystems);
+    if (subsystems) {
+      return subsystems;
+    }
+  }
+
+  for (const value of Object.values(profiles)) {
+    const entry = asRecord(value);
+    if (entry?.is_active === true) {
+      const subsystems = asRecord(entry.subsystems);
+      if (subsystems) {
+        return subsystems;
+      }
+    }
+  }
+
+  for (const value of Object.values(profiles)) {
+    const subsystems = asRecord(asRecord(value)?.subsystems);
+    if (subsystems) {
+      return subsystems;
     }
   }
 
@@ -323,13 +373,6 @@ function addHoursToTime(start: string, hours: number): string {
   return `${endH}:${endM}`;
 }
 
-function areValuesEqual(a: unknown, b: unknown): boolean {
-  if (typeof a === "number" && typeof b === "number") {
-    return Math.abs(a - b) < 0.000001;
-  }
-
-  return String(a) === String(b);
-}
 
 function normalizeErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
@@ -447,175 +490,6 @@ function defaultMlPerSecFor(actuatorType: string): number {
   return DEFAULT_ML_PER_SEC_BY_ACTUATOR[actuatorType] || 1;
 }
 
-function buildZoneAutomationForms(logic: WizardLogicForm, tanksCount: number): {
-  climateForm: ClimateFormState;
-  waterForm: WaterFormState;
-  lightingForm: LightingFormState;
-} {
-  const safeHoursOn = clamp(logic.hoursOn, 1, 24);
-
-  const climateForm: ClimateFormState = {
-    enabled: logic.climateEnabled,
-    dayTemp: clamp(logic.dayTemp, 10, 35),
-    nightTemp: clamp(logic.nightTemp, 10, 35),
-    dayHumidity: clamp(logic.dayHumidity, 30, 90),
-    nightHumidity: clamp(logic.nightHumidity, 30, 90),
-    intervalMinutes: 5,
-    dayStart: "07:00",
-    nightStart: "19:00",
-    ventMinPercent: 15,
-    ventMaxPercent: 85,
-    useExternalTelemetry: true,
-    outsideTempMin: 4,
-    outsideTempMax: 34,
-    outsideHumidityMax: 90,
-    manualOverrideEnabled: true,
-    overrideMinutes: 30,
-  };
-
-  const waterForm: WaterFormState = {
-    systemType: logic.systemType,
-    tanksCount,
-    cleanTankFillL: clamp(logic.cleanTankFillL, 10, 5000),
-    nutrientTankTargetL: clamp(logic.nutrientTankTargetL, 10, 5000),
-    irrigationBatchL: clamp(logic.irrigationBatchL, 1, 500),
-    intervalMinutes: clamp(Math.round(logic.intervalMinutes), 5, 1440),
-    durationSeconds: clamp(Math.round(logic.durationSeconds), 1, 3600),
-    fillTemperatureC: 20,
-    fillWindowStart: "00:00",
-    fillWindowEnd: "23:59",
-    targetPh: clamp(logic.ph_target, 4, 9),
-    targetEc: clamp(logic.ec_target, 0.1, 10),
-    valveSwitching: true,
-    correctionDuringIrrigation: true,
-    enableDrainControl: false,
-    drainTargetPercent: 20,
-    diagnosticsEnabled: true,
-    diagnosticsIntervalMinutes: 15,
-    cycleStartWorkflowEnabled: true,
-    cleanTankFullThreshold: 0.95,
-    refillDurationSeconds: 120,
-    refillTimeoutSeconds: 900,
-    refillRequiredNodeTypes: "irrig",
-    refillPreferredChannel: "",
-    solutionChangeEnabled: false,
-    solutionChangeIntervalMinutes: 720,
-    solutionChangeDurationSeconds: 120,
-    manualIrrigationSeconds: 120,
-  };
-
-  const lightingForm: LightingFormState = {
-    enabled: logic.lightingEnabled,
-    luxDay: 12000,
-    luxNight: 0,
-    hoursOn: safeHoursOn,
-    intervalMinutes: 30,
-    scheduleStart: isValidHHMM(logic.scheduleStart) ? logic.scheduleStart : "06:00",
-    scheduleEnd: isValidHHMM(logic.scheduleEnd) ? logic.scheduleEnd : addHoursToTime(logic.scheduleStart, safeHoursOn),
-    manualIntensity: 0,
-    manualDurationHours: 1,
-  };
-
-  return {
-    climateForm,
-    waterForm,
-    lightingForm,
-  };
-}
-
-function buildLogicSubsystems(logic: WizardLogicForm, tanksCount: number): Record<string, unknown> {
-  const isTwoTank = tanksCount === 2;
-  const forms = buildZoneAutomationForms(logic, tanksCount);
-  const basePayload = buildGrowthCycleConfigPayload(forms);
-  const subsystems = (basePayload.subsystems || {}) as Record<string, any>;
-  const diagnosticsExecution = (subsystems.diagnostics?.execution || {}) as Record<string, unknown>;
-  const twoTankCommands = isTwoTank ? diagnosticsExecution.two_tank_commands : undefined;
-  const startup = isTwoTank ? diagnosticsExecution.startup : undefined;
-
-  return {
-    ph: {
-      enabled: true,
-      execution: {},
-    },
-    ec: {
-      enabled: true,
-      execution: {},
-    },
-    irrigation: {
-      enabled: true,
-      execution: {
-        interval_minutes: clamp(Math.round(logic.intervalMinutes), 5, 1440),
-        interval_sec: clamp(Math.round(logic.intervalMinutes), 5, 1440) * 60,
-        duration_seconds: clamp(Math.round(logic.durationSeconds), 10, 3600),
-        duration_sec: clamp(Math.round(logic.durationSeconds), 10, 3600),
-        system_type: logic.systemType,
-        tanks_count: tanksCount,
-        ...(isTwoTank
-          ? {
-              clean_tank_fill_l: clamp(Math.round(logic.cleanTankFillL), 10, 5000),
-              nutrient_tank_target_l: clamp(Math.round(logic.nutrientTankTargetL), 10, 5000),
-              irrigation_batch_l: clamp(Math.round(logic.irrigationBatchL), 1, 500),
-            }
-          : {}),
-        valve_switching_enabled: true,
-        correction_during_irrigation: true,
-        correction_node: {
-          target_ph: Number(logic.ph_target.toFixed(2)),
-          target_ec: Number(logic.ec_target.toFixed(2)),
-          sensors_location: "correction_node",
-        },
-        topology: isTwoTank ? "two_tank_drip_substrate_trays" : "three_tank_drip",
-        ...(isTwoTank && twoTankCommands ? { two_tank_commands: twoTankCommands } : {}),
-      },
-    },
-    diagnostics: {
-      enabled: true,
-      execution: {
-        interval_sec: 900,
-        workflow: "startup",
-        target_ph: Number(logic.ph_target.toFixed(2)),
-        target_ec: Number(logic.ec_target.toFixed(2)),
-        topology: isTwoTank ? "two_tank_drip_substrate_trays" : "three_tank_drip",
-        ...(startup ? { startup } : {}),
-        ...(isTwoTank && twoTankCommands ? { two_tank_commands: twoTankCommands } : {}),
-      },
-    },
-    climate: {
-      enabled: logic.climateEnabled,
-      execution: logic.climateEnabled
-        ? {
-            interval_sec: 300,
-            temperature: {
-              day: clamp(logic.dayTemp, 10, 35),
-              night: clamp(logic.nightTemp, 10, 35),
-            },
-            humidity: {
-              day: clamp(logic.dayHumidity, 30, 90),
-              night: clamp(logic.nightHumidity, 30, 90),
-            },
-          }
-        : {},
-    },
-    lighting: {
-      enabled: logic.lightingEnabled,
-      execution: logic.lightingEnabled
-        ? {
-            interval_sec: 1800,
-            photoperiod: {
-              hours_on: clamp(logic.hoursOn, 1, 24),
-              hours_off: clamp(24 - logic.hoursOn, 0, 23),
-            },
-            schedule: [
-              {
-                start: isValidHHMM(logic.scheduleStart) ? logic.scheduleStart : "06:00",
-                end: isValidHHMM(logic.scheduleEnd) ? logic.scheduleEnd : addHoursToTime(logic.scheduleStart, logic.hoursOn),
-              },
-            ],
-          }
-        : {},
-    },
-  };
-}
 
 export function useGrowthCycleWizard({
   props,
@@ -633,6 +507,14 @@ export function useGrowthCycleWizard({
 
   const form = ref<WizardFormState>(createDefaultForm(props.zoneId));
 
+  const climateForm = ref<ClimateFormState>(createDefaultClimateForm());
+  const waterForm = ref<WaterFormState>(createDefaultWaterForm());
+  const lightingForm = ref<LightingFormState>(createDefaultLightingForm());
+  const draftWasLoaded = ref(false);
+  const draftFormsHydrated = ref(false);
+  const isInitializingWizard = ref(false);
+  const automationProfileLoadedZoneId = ref<number | null>(null);
+
   const availableZones = ref<any[]>([]);
   const availablePlants = ref<any[]>([]);
   const availableRecipes = ref<any[]>([]);
@@ -645,8 +527,6 @@ export function useGrowthCycleWizard({
   const isZoneChannelsLoading = ref(false);
   const zoneChannelsLoaded = ref(false);
   const zoneChannelsError = ref<string | null>(null);
-
-  const recipeLogicSeed = ref<Partial<Record<LogicRecipeField, number | string>>>({});
 
   const availableRevisions = computed(() => {
     if (!selectedRecipe.value) {
@@ -668,7 +548,8 @@ export function useGrowthCycleWizard({
     { key: "zone", label: "Зона" },
     { key: "plant", label: "Растение" },
     { key: "recipe", label: "Рецепт" },
-    { key: "logic", label: "Логика" },
+    { key: "logic", label: "Период" },
+    { key: "automation", label: "Автоматика" },
     { key: "calibration", label: "Насосы" },
     { key: "confirm", label: "Запуск" },
   ];
@@ -699,9 +580,7 @@ export function useGrowthCycleWizard({
     return totalHours / 24;
   });
 
-  const tanksCount = computed(() => {
-    return form.value.logic.systemType === "nft" ? 0 : 2;
-  });
+  const tanksCount = computed(() => waterForm.value.tanksCount);
 
   const canProceed = computed(() => {
     switch (currentStep.value) {
@@ -720,15 +599,10 @@ export function useGrowthCycleWizard({
           return false;
         }
 
-        return (
-          form.value.logic.ph_target >= 4
-          && form.value.logic.ph_target <= 9
-          && form.value.logic.ph_min < form.value.logic.ph_max
-          && form.value.logic.ec_target >= 0
-          && form.value.logic.intervalMinutes >= 5
-          && form.value.logic.durationSeconds >= 10
-        );
+        return true;
       case 4:
+        return true;
+      case 5:
         return true;
       default:
         return true;
@@ -775,44 +649,6 @@ export function useGrowthCycleWizard({
       if (startDate < now) {
         return "Дата начала не может быть в прошлом.";
       }
-
-      if (form.value.logic.ph_target < 4 || form.value.logic.ph_target > 9) {
-        return "target pH должен быть в диапазоне 4-9.";
-      }
-
-      if (form.value.logic.ph_min >= form.value.logic.ph_max) {
-        return "Минимум pH должен быть меньше максимума.";
-      }
-
-      if (form.value.logic.ec_target < 0 || form.value.logic.ec_target > 30) {
-        return "target EC должен быть в диапазоне 0-30.";
-      }
-
-      if (form.value.logic.intervalMinutes < 5 || form.value.logic.intervalMinutes > 1440) {
-        return "Интервал полива должен быть в диапазоне 5-1440 минут.";
-      }
-
-      if (form.value.logic.durationSeconds < 10 || form.value.logic.durationSeconds > 3600) {
-        return "Длительность полива должна быть в диапазоне 10-3600 секунд.";
-      }
-
-      if (tanksCount.value === 2 && (form.value.logic.cleanTankFillL <= 0 || form.value.logic.nutrientTankTargetL <= 0)) {
-        return "Объёмы баков должны быть больше нуля.";
-      }
-
-      if (form.value.logic.climateEnabled && (form.value.logic.dayTemp < 10 || form.value.logic.dayTemp > 40)) {
-        return "Дневная температура должна быть в диапазоне 10-40°C.";
-      }
-
-      if (form.value.logic.lightingEnabled) {
-        if (form.value.logic.hoursOn < 1 || form.value.logic.hoursOn > 24) {
-          return "Фотопериод должен быть в диапазоне 1-24 часа.";
-        }
-
-        if (!isValidHHMM(form.value.logic.scheduleStart) || !isValidHHMM(form.value.logic.scheduleEnd)) {
-          return "Укажите корректное расписание света в формате HH:MM.";
-        }
-      }
     }
 
     return "";
@@ -850,67 +686,40 @@ export function useGrowthCycleWizard({
     }
   }
 
-  function rememberRecipeLogicSeed(): void {
-    const seed: Partial<Record<LogicRecipeField, number | string>> = {};
-    LOGIC_RECIPE_FIELDS.forEach((field) => {
-      seed[field] = form.value.logic[field] as number | string;
-    });
-    recipeLogicSeed.value = seed;
-  }
+  function syncFormsFromRecipePhase(phase: WizardRecipePhase): void {
+    const systemType = normalizeSystemType(phase.irrigation_mode, waterForm.value.systemType);
+    waterForm.value.systemType = systemType;
+    waterForm.value.tanksCount = systemType === "nft" ? 0 : 2;
 
-  function isLogicFieldOverridden(field: LogicRecipeField): boolean {
-    if (!form.value.logic._recipeLoaded || !(field in recipeLogicSeed.value)) {
-      return false;
-    }
-
-    return !areValuesEqual(form.value.logic[field], recipeLogicSeed.value[field]);
-  }
-
-  function isLogicFieldFromRecipe(field: LogicRecipeField): boolean {
-    if (!form.value.logic._recipeLoaded || !(field in recipeLogicSeed.value)) {
-      return false;
-    }
-
-    return !isLogicFieldOverridden(field);
-  }
-
-  function fillLogicFromRecipePhase(phase: WizardRecipePhase): void {
-    const phTarget = toFiniteNumber(phase.ph_target) ?? 5.8;
-    const phMin = toFiniteNumber(phase.ph_min) ?? 5.6;
-    const phMax = toFiniteNumber(phase.ph_max) ?? 6;
-    const ecTarget = toFiniteNumber(phase.ec_target) ?? 1.2;
-    const ecMin = toFiniteNumber(phase.ec_min) ?? 1;
-    const ecMax = toFiniteNumber(phase.ec_max) ?? 1.4;
-    const temperatureTarget = toFiniteNumber(phase.temp_air_target) ?? 23;
-    const humidityTarget = toFiniteNumber(phase.humidity_target) ?? 62;
-    const intervalSec = toFiniteNumber(phase.irrigation_interval_sec) ?? 1800;
-    const durationSec = toFiniteNumber(phase.irrigation_duration_sec) ?? 120;
-    const hoursOn = toFiniteNumber(phase.lighting_photoperiod_hours) ?? 16;
+    const phTarget = toFiniteNumber(phase.ph_target);
+    const ecTarget = toFiniteNumber(phase.ec_target);
+    const tempAirTarget = toFiniteNumber(phase.temp_air_target);
+    const humidityTarget = toFiniteNumber(phase.humidity_target);
+    const intervalSec = toFiniteNumber(phase.irrigation_interval_sec);
+    const durationSec = toFiniteNumber(phase.irrigation_duration_sec);
+    const hoursOn = toFiniteNumber(phase.lighting_photoperiod_hours);
     const scheduleStart = isValidHHMM(String(phase.lighting_start_time || ""))
       ? String(phase.lighting_start_time)
       : "06:00";
 
-    form.value.logic.ph_target = Number(phTarget.toFixed(2));
-    form.value.logic.ph_min = Number(phMin.toFixed(2));
-    form.value.logic.ph_max = Number(phMax.toFixed(2));
-    form.value.logic.ec_target = Number(ecTarget.toFixed(2));
-    form.value.logic.ec_min = Number(ecMin.toFixed(2));
-    form.value.logic.ec_max = Number(ecMax.toFixed(2));
-    form.value.logic.systemType = normalizeSystemType(phase.irrigation_mode, form.value.logic.systemType);
-    form.value.logic.intervalMinutes = Math.max(5, Math.round(intervalSec / 60));
-    form.value.logic.durationSeconds = Math.max(10, Math.round(durationSec));
-    form.value.logic.dayTemp = Number(temperatureTarget.toFixed(1));
-    form.value.logic.nightTemp = Number((temperatureTarget - 3).toFixed(1));
-    form.value.logic.dayHumidity = Math.round(humidityTarget);
-    form.value.logic.nightHumidity = Math.round(humidityTarget + 8);
-    form.value.logic.hoursOn = clamp(Math.round(hoursOn), 1, 24);
-    form.value.logic.scheduleStart = scheduleStart;
-    form.value.logic.scheduleEnd = addHoursToTime(scheduleStart, form.value.logic.hoursOn);
-    form.value.logic.climateEnabled = true;
-    form.value.logic.lightingEnabled = true;
-    form.value.logic._recipeLoaded = true;
+    if (phTarget !== null) waterForm.value.targetPh = Number(phTarget.toFixed(2));
+    if (ecTarget !== null) waterForm.value.targetEc = Number(ecTarget.toFixed(2));
+    if (tempAirTarget !== null) climateForm.value.dayTemp = Number(tempAirTarget.toFixed(1));
+    if (humidityTarget !== null) climateForm.value.dayHumidity = Math.round(humidityTarget);
+    if (hoursOn !== null) {
+      lightingForm.value.hoursOn = clamp(Math.round(hoursOn), 1, 24);
+      lightingForm.value.scheduleStart = scheduleStart;
+      lightingForm.value.scheduleEnd = addHoursToTime(scheduleStart, lightingForm.value.hoursOn);
+    }
+    if (intervalSec !== null && intervalSec > 0) {
+      waterForm.value.intervalMinutes = Math.max(5, Math.round(intervalSec / 60));
+    }
+    if (durationSec !== null && durationSec > 0) {
+      waterForm.value.durationSeconds = Math.max(10, Math.round(durationSec));
+    }
 
-    rememberRecipeLogicSeed();
+    climateForm.value.enabled = true;
+    lightingForm.value.enabled = true;
   }
 
   function getCalibrationComponentLabel(component: PumpCalibrationComponent): string {
@@ -949,6 +758,76 @@ export function useGrowthCycleWizard({
     }
   }
 
+  async function loadAutomationProfile(zoneId: number): Promise<void> {
+    loading.value = true;
+    try {
+      const response = await fetch(`/api/zones/${zoneId}/automation-logic-profile`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (response.status === 404) {
+        logger.warn("[GrowthCycleWizard] Automation profile not found", { zoneId });
+        return;
+      }
+
+      if (!response.ok) {
+        logger.warn("[GrowthCycleWizard] Failed to load automation profile", {
+          zoneId,
+          status: response.status,
+        });
+        return;
+      }
+
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        logger.warn("[GrowthCycleWizard] Failed to parse automation profile JSON", { zoneId });
+        return;
+      }
+
+      const subsystems = extractAutomationSubsystems(payload);
+      if (!subsystems) {
+        logger.warn("[GrowthCycleWizard] Automation profile payload has no subsystems", { zoneId });
+        return;
+      }
+
+      applyAutomationFromRecipe(
+        {
+          extensions: {
+            subsystems,
+          },
+        },
+        {
+          climateForm: climateForm.value,
+          waterForm: waterForm.value,
+          lightingForm: lightingForm.value,
+        },
+      );
+
+      const diagnosticsExecution = asRecord(asRecord(subsystems.diagnostics)?.execution);
+      const targetPh = toFiniteNumber(diagnosticsExecution?.target_ph);
+      const targetEc = toFiniteNumber(diagnosticsExecution?.target_ec);
+      if (targetPh !== null) {
+        waterForm.value.targetPh = Number(targetPh.toFixed(2));
+      }
+      if (targetEc !== null) {
+        waterForm.value.targetEc = Number(targetEc.toFixed(2));
+      }
+
+      automationProfileLoadedZoneId.value = zoneId;
+    } catch (err) {
+      logger.warn("[GrowthCycleWizard] Failed to load automation profile", { zoneId, err });
+    } finally {
+      loading.value = false;
+    }
+  }
+
   function onZoneSelected(): void {
     zoneChannelsLoaded.value = false;
     zoneChannels.value = [];
@@ -959,8 +838,6 @@ export function useGrowthCycleWizard({
     if (!selectedRecipeId.value) {
       selectedRecipe.value = null;
       selectedRevisionId.value = null;
-      form.value.logic._recipeLoaded = false;
-      recipeLogicSeed.value = {};
       return;
     }
 
@@ -1082,66 +959,22 @@ export function useGrowthCycleWizard({
           }
         }
 
-        if (form.value.logic.ph_target < 4 || form.value.logic.ph_target > 9) {
-          validationErrors.value.push("target pH должен быть в диапазоне 4-9");
-          return false;
-        }
-
-        if (form.value.logic.ph_min >= form.value.logic.ph_max) {
-          validationErrors.value.push("Минимум pH должен быть меньше максимума");
-          return false;
-        }
-
-        if (form.value.logic.ec_target < 0 || form.value.logic.ec_target > 30) {
-          validationErrors.value.push("target EC должен быть в диапазоне 0-30");
-          return false;
-        }
-
-        if (form.value.logic.intervalMinutes < 5 || form.value.logic.intervalMinutes > 1440) {
-          validationErrors.value.push("Интервал полива должен быть в диапазоне 5-1440 минут");
-          return false;
-        }
-
-        if (form.value.logic.durationSeconds < 10 || form.value.logic.durationSeconds > 3600) {
-          validationErrors.value.push("Длительность полива должна быть в диапазоне 10-3600 секунд");
-          return false;
-        }
-
-        if (tanksCount.value === 2) {
-          if (form.value.logic.cleanTankFillL <= 0 || form.value.logic.nutrientTankTargetL <= 0) {
-            validationErrors.value.push("Объёмы баков должны быть больше 0");
-            return false;
-          }
-
-          if (form.value.logic.irrigationBatchL <= 0) {
-            validationErrors.value.push("Объём партии полива должен быть больше 0");
-            return false;
-          }
-        }
-
-        if (form.value.logic.climateEnabled) {
-          if (form.value.logic.dayTemp < 10 || form.value.logic.dayTemp > 40) {
-            validationErrors.value.push("Дневная температура должна быть в диапазоне 10-40°C");
-            return false;
-          }
-        }
-
-        if (form.value.logic.lightingEnabled) {
-          if (form.value.logic.hoursOn < 1 || form.value.logic.hoursOn > 24) {
-            validationErrors.value.push("Фотопериод должен быть в диапазоне 1-24");
-            return false;
-          }
-
-          if (!isValidHHMM(form.value.logic.scheduleStart) || !isValidHHMM(form.value.logic.scheduleEnd)) {
-            validationErrors.value.push("Укажите корректное время включения/выключения света (HH:MM)");
-            return false;
-          }
-        }
-
         break;
       }
       case 4:
+      {
+        const automationValidationError = validateForms({
+          climateForm: climateForm.value,
+          waterForm: waterForm.value,
+        });
+        if (automationValidationError) {
+          validationErrors.value.push(automationValidationError);
+          return false;
+        }
+        break;
+      }
       case 5:
+      case 6:
       default:
         break;
     }
@@ -1183,7 +1016,9 @@ export function useGrowthCycleWizard({
         recipeRevisionId: selectedRevisionId.value,
         startedAt: form.value.startedAt,
         expectedHarvestAt: form.value.expectedHarvestAt,
-        logic: form.value.logic,
+        climateForm: climateForm.value,
+        waterForm: waterForm.value,
+        lightingForm: lightingForm.value,
         calibrationSkipped: form.value.calibrationSkipped,
         currentStep: currentStep.value,
       };
@@ -1208,10 +1043,13 @@ export function useGrowthCycleWizard({
         recipeRevisionId: number;
         startedAt: string;
         expectedHarvestAt: string;
-        logic: Partial<WizardLogicForm>;
+        climateForm: Partial<ClimateFormState>;
+        waterForm: Partial<WaterFormState>;
+        lightingForm: Partial<LightingFormState>;
         calibrationSkipped: boolean;
         currentStep: number;
       }>;
+      let hasLoadedForms = false;
 
       if (!props.zoneId && draft.zoneId) {
         form.value.zoneId = draft.zoneId;
@@ -1239,11 +1077,24 @@ export function useGrowthCycleWizard({
         form.value.expectedHarvestAt = draft.expectedHarvestAt;
       }
 
-      if (draft.logic) {
-        form.value.logic = {
-          ...form.value.logic,
-          ...draft.logic,
-        };
+      if (draft.climateForm) {
+        climateForm.value = { ...createDefaultClimateForm(), ...draft.climateForm };
+        hasLoadedForms = true;
+      }
+
+      if (draft.waterForm) {
+        waterForm.value = { ...createDefaultWaterForm(), ...draft.waterForm };
+        hasLoadedForms = true;
+      }
+
+      if (draft.lightingForm) {
+        lightingForm.value = { ...createDefaultLightingForm(), ...draft.lightingForm };
+        hasLoadedForms = true;
+      }
+
+      if (hasLoadedForms) {
+        draftWasLoaded.value = true;
+        draftFormsHydrated.value = true;
       }
 
       if (typeof draft.calibrationSkipped === "boolean") {
@@ -1453,20 +1304,16 @@ export function useGrowthCycleWizard({
         planting_at: plantingAt,
         start_immediately: true,
         irrigation: {
-          system_type: form.value.logic.systemType,
-          interval_minutes: form.value.logic.intervalMinutes,
-          duration_seconds: form.value.logic.durationSeconds,
-          clean_tank_fill_l: tanksCount.value === 2 ? form.value.logic.cleanTankFillL : undefined,
-          nutrient_tank_target_l: tanksCount.value === 2 ? form.value.logic.nutrientTankTargetL : undefined,
-          irrigation_batch_l: tanksCount.value === 2 ? form.value.logic.irrigationBatchL : undefined,
+          system_type: waterForm.value.systemType,
+          interval_minutes: waterForm.value.intervalMinutes,
+          duration_seconds: waterForm.value.durationSeconds,
+          clean_tank_fill_l: tanksCount.value === 2 ? waterForm.value.cleanTankFillL : undefined,
+          nutrient_tank_target_l: tanksCount.value === 2 ? waterForm.value.nutrientTankTargetL : undefined,
+          irrigation_batch_l: tanksCount.value === 2 ? waterForm.value.irrigationBatchL : undefined,
         },
         phase_overrides: {
-          ph_target: form.value.logic.ph_target,
-          ph_min: form.value.logic.ph_min,
-          ph_max: form.value.logic.ph_max,
-          ec_target: form.value.logic.ec_target,
-          ec_min: form.value.logic.ec_min,
-          ec_max: form.value.logic.ec_max,
+          ph_target: waterForm.value.targetPh,
+          ec_target: waterForm.value.targetEc,
         },
         settings: {
           expected_harvest_at: form.value.expectedHarvestAt || undefined,
@@ -1480,8 +1327,12 @@ export function useGrowthCycleWizard({
       const createdCycleId = toFiniteNumber(cycleResponse.data?.data?.id);
       cycleId = createdCycleId ? Math.round(createdCycleId) : null;
 
-      const subsystems = buildLogicSubsystems(form.value.logic, tanksCount.value);
-      await saveAutomationProfile(zoneId, subsystems);
+      const configPayload = buildGrowthCycleConfigPayload({
+        climateForm: climateForm.value,
+        waterForm: waterForm.value,
+        lightingForm: lightingForm.value,
+      });
+      await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
     } catch (err: unknown) {
       if (cycleId !== null) {
         error.value = "Цикл создан, но не удалось сохранить профиль автоматики. Настройте его в разделе автоматики зоны.";
@@ -1547,6 +1398,14 @@ export function useGrowthCycleWizard({
     validationErrors.value = [];
     form.value = createDefaultForm(props.zoneId);
 
+    climateForm.value = createDefaultClimateForm();
+    waterForm.value = createDefaultWaterForm();
+    lightingForm.value = createDefaultLightingForm();
+    draftWasLoaded.value = false;
+    draftFormsHydrated.value = false;
+    isInitializingWizard.value = false;
+    automationProfileLoadedZoneId.value = null;
+
     selectedPlantId.value = null;
     selectedRecipeId.value = null;
     selectedRevisionId.value = null;
@@ -1556,18 +1415,24 @@ export function useGrowthCycleWizard({
     isZoneChannelsLoading.value = false;
     zoneChannelsLoaded.value = false;
     zoneChannelsError.value = null;
-
-    recipeLogicSeed.value = {};
   }
 
   async function initializeWizardState(): Promise<void> {
-    if (!props.zoneId) {
-      await loadZones();
-    }
+    isInitializingWizard.value = true;
+    try {
+      if (!props.zoneId) {
+        await loadZones();
+      }
 
-    await loadWizardData();
-    loadDraft();
-    applyInitialData();
+      await loadWizardData();
+      if (props.zoneId) {
+        await loadAutomationProfile(props.zoneId);
+      }
+      loadDraft();
+      applyInitialData();
+    } finally {
+      isInitializingWizard.value = false;
+    }
   }
 
   watch(
@@ -1587,22 +1452,26 @@ export function useGrowthCycleWizard({
     (newZoneId) => {
       if (newZoneId) {
         form.value.zoneId = newZoneId;
+        if (props.show && !draftFormsHydrated.value && automationProfileLoadedZoneId.value !== newZoneId) {
+          void loadAutomationProfile(newZoneId);
+        }
       }
     },
   );
-
-  watch(tanksCount, (value) => {
-    form.value.logic.tanksCount = value;
-  }, { immediate: true });
 
   watch(selectedRecipeId, () => {
     syncSelectedRecipe();
   });
 
   watch(selectedRevision, (revision) => {
+    if (draftWasLoaded.value) {
+      draftWasLoaded.value = false;
+      return;
+    }
+
     const firstPhase = (revision?.phases?.[0] || null) as WizardRecipePhase | null;
     if (firstPhase) {
-      fillLogicFromRecipePhase(firstPhase);
+      syncFormsFromRecipePhase(firstPhase);
     }
   });
 
@@ -1611,25 +1480,59 @@ export function useGrowthCycleWizard({
   });
 
   watch(
-    () => currentStep.value,
-    (step) => {
-      if (steps[step]?.key === "calibration") {
-        void fetchZoneChannels(true);
+    () => waterForm.value.systemType,
+    (systemType) => {
+      syncSystemToTankLayout(waterForm.value, systemType);
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => waterForm.value.tanksCount,
+    (tanksCount) => {
+      const normalizedTanksCount = Math.round(Number(tanksCount)) === 3 ? 3 : 2;
+
+      if (waterForm.value.systemType === "drip") {
+        if (waterForm.value.tanksCount !== 2) {
+          waterForm.value.tanksCount = 2;
+        }
+        waterForm.value.enableDrainControl = false;
+        return;
+      }
+
+      if (waterForm.value.tanksCount !== normalizedTanksCount) {
+        waterForm.value.tanksCount = normalizedTanksCount;
+      }
+      if (normalizedTanksCount === 2) {
+        waterForm.value.enableDrainControl = false;
       }
     },
   );
 
   watch(
-    () => [form.value.logic.scheduleStart, form.value.logic.hoursOn] as const,
-    ([start, hours], [prevStart, prevHours]) => {
-      if (!form.value.logic.lightingEnabled) {
+    () => form.value.zoneId,
+    (zoneId, previousZoneId) => {
+      if (!props.show || props.zoneId || isInitializingWizard.value) {
         return;
       }
 
-      const currentEnd = form.value.logic.scheduleEnd;
-      const previousAutoEnd = addHoursToTime(prevStart || "06:00", Number(prevHours || 0));
-      if (currentEnd === previousAutoEnd) {
-        form.value.logic.scheduleEnd = addHoursToTime(start || "06:00", Number(hours || 0));
+      if (!zoneId || previousZoneId !== null || draftFormsHydrated.value) {
+        return;
+      }
+
+      if (automationProfileLoadedZoneId.value === zoneId) {
+        return;
+      }
+
+      void loadAutomationProfile(zoneId);
+    },
+  );
+
+  watch(
+    () => currentStep.value,
+    (step) => {
+      if (steps[step]?.key === "calibration") {
+        void fetchZoneChannels(true);
       }
     },
   );
@@ -1654,6 +1557,9 @@ export function useGrowthCycleWizard({
     errorDetails,
     validationErrors,
     form,
+    climateForm,
+    waterForm,
+    lightingForm,
     availableZones,
     availablePlants,
     availableRecipes,
@@ -1677,8 +1583,6 @@ export function useGrowthCycleWizard({
     zoneChannelsError,
     hasCalibrationChannels,
     getCalibrationComponentLabel,
-    isLogicFieldOverridden,
-    isLogicFieldFromRecipe,
     formatDateTime,
     formatDate,
     onZoneSelected,

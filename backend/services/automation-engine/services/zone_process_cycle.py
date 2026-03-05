@@ -30,6 +30,7 @@ async def process_zone_cycle(
     process_irrigation_controller_fn: Callable[..., Awaitable[None]],
     process_recirculation_controller_fn: Callable[..., Awaitable[None]],
     process_correction_controllers_fn: Callable[..., Awaitable[None]],
+    load_zone_control_mode_fn: Callable[[int], Awaitable[str]],
     load_latest_zone_task_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
     evaluate_required_nodes_recovery_gate_fn: Callable[[int, Dict[str, Any]], Awaitable[bool]],
     update_zone_health_fn: Callable[[int], Awaitable[None]],
@@ -113,12 +114,34 @@ async def process_zone_cycle(
         sim_now = sim_clock.now() if sim_clock else utcnow_fn()
         time_scale = sim_clock.time_scale if sim_clock else None
         latest_zone_task = await load_latest_zone_task_fn(zone_id)
+        control_mode = str(await load_zone_control_mode_fn(zone_id) or "").strip().lower() or "auto"
         latest_zone_task_status = (
             str(latest_zone_task.get("status") or "").strip().lower()
             if isinstance(latest_zone_task, dict)
             else ""
         )
         active_scheduler_task = latest_zone_task_status in {"accepted", "running"}
+
+        if control_mode == "manual":
+            logger.info(
+                "Zone %s: automation controllers skipped in manual control mode",
+                zone_id,
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "control_mode": control_mode,
+                    "active_task_id": (
+                        str(latest_zone_task.get("task_id") or "").strip()
+                        if isinstance(latest_zone_task, dict)
+                        else None
+                    ),
+                    "active_task_status": latest_zone_task_status or None,
+                },
+            )
+            await safe_process_controller_fn("health", update_zone_health_fn(zone_id), zone_id)
+            previous_error_streak = reset_zone_error_streak_fn(zone_id)
+            await emit_zone_recovered_signal_fn(zone_id, previous_error_streak)
+            return
 
         if is_degraded:
             await emit_degraded_mode_signal_fn(zone_id)

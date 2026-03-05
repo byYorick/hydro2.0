@@ -35,14 +35,14 @@
 
     <section class="mt-3 rounded-xl border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/45 p-3">
       <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Этапы setup режима</h4>
+        <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Этапы workflow</h4>
         <p class="text-xs text-[color:var(--text-muted)]">
-          Сейчас: {{ currentSetupStageLabel }}
+          Сейчас: {{ currentWorkflowStageLabel }}
         </p>
       </div>
       <ul class="mt-3 flex min-w-max items-center gap-0.5 overflow-x-auto pb-1">
         <li
-          v-for="(stage, index) in setupStages"
+          v-for="(stage, index) in workflowStages"
           :key="stage.code"
           class="flex items-center"
         >
@@ -51,7 +51,7 @@
               <span
                 class="pipeline-stage-dot"
                 :class="stageDotClass(stage.status)"
-                :title="setupStageStatusLabel(stage.status)"
+                :title="workflowStageStatusLabel(stage.status)"
               >
                 {{ stageStatusIcon(stage.status) }}
               </span>
@@ -62,12 +62,12 @@
                 class="rounded-full px-2 py-0.5 text-[11px] font-medium"
                 :class="stagePillClass(stage.status)"
               >
-                {{ setupStageStatusLabel(stage.status) }}
+                {{ workflowStageStatusLabel(stage.status) }}
               </span>
             </div>
           </div>
           <span
-            v-if="index < setupStages.length - 1"
+            v-if="index < workflowStages.length - 1"
             class="pipeline-connector"
             :class="connectorClass(stage.status)"
             aria-hidden="true"
@@ -80,9 +80,9 @@
 
 <script setup lang="ts">
 import StatusIndicator from '@/Components/StatusIndicator.vue'
-import type { AutomationStateType, SetupStageStatus, SetupStageView } from '@/types/Automation'
+import type { AutomationStateType, WorkflowStageStatus, WorkflowStageView } from '@/types/Automation'
 
-type PipelineStageVisualStatus = SetupStageStatus | 'manual' | 'canceled' | 'skipped'
+type PipelineStageVisualStatus = WorkflowStageStatus | 'manual' | 'canceled' | 'skipped'
 
 interface Props {
   stateCode: AutomationStateType
@@ -92,13 +92,13 @@ interface Props {
   progressSummary: string
   errorMessage: string | null
   warningMessage: string | null
-  setupStages: SetupStageView[]
-  currentSetupStageLabel: string
+  workflowStages: WorkflowStageView[]
+  currentWorkflowStageLabel: string
 }
 
 defineProps<Props>()
 
-function setupStageStatusLabel(status: PipelineStageVisualStatus): string {
+function workflowStageStatusLabel(status: PipelineStageVisualStatus): string {
   if (status === 'running') return 'Выполняется'
   if (status === 'completed') return 'Выполнено'
   if (status === 'failed') return 'Ошибка'

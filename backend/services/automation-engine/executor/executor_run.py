@@ -57,6 +57,41 @@ def _extract_workflow_hint(payload: Dict[str, Any]) -> str:
     return str(workflow).strip().lower()
 
 
+def _normalize_control_mode(raw_mode: Any) -> str:
+    mode = str(raw_mode or "").strip().lower()
+    return mode if mode in {"auto", "semi", "manual"} else "auto"
+
+
+async def _resolve_runtime_control_mode(
+    *,
+    executor: Any,
+    zone_id: int,
+    payload: Dict[str, Any],
+    logger_obj: Any,
+) -> str:
+    explicit_mode = _normalize_control_mode(payload.get("control_mode"))
+    if explicit_mode != "auto":
+        return explicit_mode
+
+    store = getattr(executor, "workflow_state_store", None)
+    get_fn = getattr(store, "get", None)
+    if not callable(get_fn):
+        return "auto"
+
+    try:
+        row = await get_fn(zone_id)
+    except Exception:
+        logger_obj.warning(
+            "Zone %s: failed to resolve control_mode from workflow state store",
+            zone_id,
+            exc_info=True,
+        )
+        return "auto"
+
+    payload_normalized = row.get("payload_normalized") if isinstance(row, dict) and isinstance(row.get("payload_normalized"), dict) else {}
+    return _normalize_control_mode(payload_normalized.get("control_mode"))
+
+
 async def _maybe_reset_correction_anomaly_state_for_cycle_start(
     *,
     executor: Any,
@@ -185,6 +220,15 @@ async def run_scheduler_executor_execute(
     auto_logic_extended_outcome_v1: bool,
     workflow_phase_irrigating: str,
 ) -> Dict[str, Any]:
+    payload = dict(payload) if isinstance(payload, dict) else {}
+    runtime_control_mode = await _resolve_runtime_control_mode(
+        executor=executor,
+        zone_id=zone_id,
+        payload=payload,
+        logger_obj=logger_obj,
+    )
+    payload["_runtime_control_mode"] = runtime_control_mode
+
     await _maybe_reset_correction_anomaly_state_for_cycle_start(
         executor=executor,
         zone_id=zone_id,

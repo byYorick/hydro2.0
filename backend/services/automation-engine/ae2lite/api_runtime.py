@@ -135,6 +135,7 @@ _AE_SCHEDULER_API_TOKEN = str(os.getenv("SCHEDULER_API_TOKEN") or os.getenv("PY_
 _START_CYCLE_DUE_SEC = max(5, int(os.getenv("AE_START_CYCLE_DUE_SEC", "60")))
 _START_CYCLE_EXPIRES_SEC = max(_START_CYCLE_DUE_SEC + 5, int(os.getenv("AE_START_CYCLE_EXPIRES_SEC", "900")))
 _START_CYCLE_CLAIM_STALE_SEC = max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE_SEC", "180")))
+_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC = max(30, int(os.getenv("AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC", "600")))
 _AE_START_CYCLE_RATE_LIMIT_ENABLED = _env_true("AE_START_CYCLE_RATE_LIMIT_ENABLED", "1")
 _AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS = max(0, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS", "30")))
 _AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC = max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10")))
@@ -306,6 +307,7 @@ _start_cycle_rate_limit_check = lambda zone_id: bool(_start_cycle_rate_limiter.c
 _start_cycle_rate_limit_window_sec = lambda: int(_AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC)
 _start_cycle_rate_limit_max_requests = lambda: int(_AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS)
 _start_cycle_claim_stale_sec = lambda: int(_START_CYCLE_CLAIM_STALE_SEC)
+_start_cycle_orphan_phase_auto_heal_sec = lambda: int(_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC)
 _start_cycle_due_sec = lambda: int(_START_CYCLE_DUE_SEC)
 _start_cycle_expires_sec = lambda: int(_START_CYCLE_EXPIRES_SEC)
 
@@ -320,8 +322,10 @@ zone_start_cycle = bind_start_cycle_route(
     start_cycle_rate_limit_max_requests_fn=_start_cycle_rate_limit_max_requests,
     claim_start_cycle_intent_fn=lambda *, zone_id, req, now, claimed_stale_after_sec: policy_claim_start_cycle_intent(zone_id=zone_id, req=req, now=now, claimed_stale_after_sec=claimed_stale_after_sec, fetch_fn=fetch),
     start_cycle_claim_stale_sec_fn=_start_cycle_claim_stale_sec,
+    start_cycle_orphan_phase_auto_heal_sec_fn=_start_cycle_orphan_phase_auto_heal_sec,
     load_latest_zone_task_fn=lambda zone_id: _load_latest_zone_task(zone_id),
     load_zone_workflow_state_fn=lambda zone_id: _workflow_state_store.get_with_stale_reset(zone_id, stale_threshold_secs=_AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC),
+    set_zone_workflow_state_fn=lambda **kwargs: _workflow_state_store.set(**kwargs),
     build_scheduler_task_request_from_intent_fn=policy_build_scheduler_task_request_from_intent,
     start_cycle_due_sec_fn=_start_cycle_due_sec,
     start_cycle_expires_sec_fn=_start_cycle_expires_sec,

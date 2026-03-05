@@ -230,6 +230,34 @@ async def test_claim_start_cycle_intent_returns_cross_zone_conflict_for_same_ide
 
 
 @pytest.mark.asyncio
+async def test_claim_start_cycle_intent_does_not_treat_same_zone_row_as_cross_zone_conflict():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:same-zone")
+
+    async def fake_fetch(query, *args):
+        q = _norm(query)
+        if "with candidate as" in q:
+            return []
+        if "where zone_id = $1" in q and "idempotency_key = $2" in q:
+            return [{"id": 1201, "zone_id": 5, "status": "pending", "retry_count": 0, "payload": {}}]
+        if "idempotency_key <> $2" in q and "status = 'running'" in q:
+            return []
+        if "where idempotency_key = $1 and zone_id <> $2" in q:
+            return []
+        raise AssertionError(f"unexpected query: {q}")
+
+    claimed = await claim_start_cycle_intent(
+        zone_id=5,
+        req=req,
+        now=now,
+        fetch_fn=fake_fetch,
+    )
+
+    assert claimed["decision"] == "missing"
+    assert claimed["intent"] == {}
+
+
+@pytest.mark.asyncio
 async def test_claim_start_cycle_intent_returns_zone_busy_for_other_active_intent():
     now = datetime(2026, 2, 22, 12, 0, 0)
     req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z5:irrigation:busy")

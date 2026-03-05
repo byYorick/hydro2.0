@@ -55,6 +55,29 @@ AUTOMATION_MANUAL_STEPS = (
     "irrigation_recovery_start",
     "irrigation_recovery_stop",
 )
+AUTOMATION_MANUAL_ACTIVE_PHASES = {"tank_filling", "tank_recirc", "irrigating", "irrig_recirc"}
+AUTOMATION_MANUAL_STEPS_BY_PHASE: Dict[str, tuple[str, ...]] = {
+    "tank_filling": (
+        "clean_fill_start",
+        "clean_fill_stop",
+        "solution_fill_start",
+        "solution_fill_stop",
+    ),
+    "tank_recirc": (
+        "prepare_recirculation_start",
+        "prepare_recirculation_stop",
+    ),
+    "irrigating": (
+        "irrigation_recovery_start",
+        "irrigation_recovery_stop",
+    ),
+    "irrig_recirc": (
+        "irrigation_recovery_start",
+        "irrigation_recovery_stop",
+    ),
+}
+AUTOMATION_ACTIVE_TASK_STATUSES = {"accepted", "running"}
+AUTOMATION_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled", "expired"}
 
 
 def bind_zone_routes(
@@ -79,6 +102,32 @@ def bind_zone_routes(
         payload = row.get("payload_normalized") if isinstance(row, dict) and isinstance(row.get("payload_normalized"), dict) else {}
         mode = str(payload.get("control_mode") or "").strip().lower()
         return mode if mode in AUTOMATION_CONTROL_MODE_VALUES else "auto"
+
+    async def _load_zone_workflow_phase(zone_id: int) -> str:
+        row = await workflow_state_store.get(zone_id)
+        return str(row.get("workflow_phase") or "").strip().lower() if isinstance(row, dict) else "idle"
+
+    def _resolve_effective_workflow_phase(workflow_phase: str, latest_task: Optional[Dict[str, Any]]) -> str:
+        phase = str(workflow_phase or "").strip().lower() or "idle"
+        if phase not in AUTOMATION_MANUAL_ACTIVE_PHASES:
+            return phase
+        if not isinstance(latest_task, dict):
+            return "idle"
+        latest_status = str(latest_task.get("status") or "").strip().lower()
+        if latest_status in AUTOMATION_ACTIVE_TASK_STATUSES:
+            return phase
+        if latest_status in AUTOMATION_TERMINAL_TASK_STATUSES:
+            return "idle"
+        return phase
+
+    def _resolve_allowed_manual_steps(control_mode: str, workflow_phase: str) -> list[str]:
+        if control_mode not in {"manual", "semi"}:
+            return []
+        if control_mode == "manual" and workflow_phase in {"", "idle"}:
+            return list(AUTOMATION_MANUAL_STEPS)
+        if workflow_phase not in AUTOMATION_MANUAL_ACTIVE_PHASES:
+            return []
+        return list(AUTOMATION_MANUAL_STEPS_BY_PHASE.get(workflow_phase) or [])
 
     async def _persist_zone_control_mode(zone_id: int, control_mode: str) -> Dict[str, Any]:
         existing = await workflow_state_store.get(zone_id)
@@ -131,25 +180,33 @@ def bind_zone_routes(
             automation_state_idle=AUTOMATION_STATE_IDLE,
             automation_state_next=AUTOMATION_STATE_NEXT,
         )
+        latest_task = await load_latest_zone_task_fn(zone_id)
         control_mode = await _load_zone_control_mode(zone_id)
+        workflow_phase_raw = await _load_zone_workflow_phase(zone_id)
+        workflow_phase = _resolve_effective_workflow_phase(workflow_phase_raw, latest_task)
         payload["control_mode"] = control_mode
+        payload["workflow_phase"] = workflow_phase
         payload["control_mode_available"] = sorted(AUTOMATION_CONTROL_MODE_VALUES)
-        payload["allowed_manual_steps"] = list(AUTOMATION_MANUAL_STEPS) if control_mode in {"manual", "semi"} else []
+        payload["allowed_manual_steps"] = _resolve_allowed_manual_steps(control_mode, workflow_phase)
         return payload
 
     @app.get("/zones/{zone_id}/control-mode")
     async def zone_automation_control_mode(zone_id: int):
         await validate_scheduler_zone_fn(zone_id)
         row = await workflow_state_store.get(zone_id)
+        latest_task = await load_latest_zone_task_fn(zone_id)
         control_mode = await _load_zone_control_mode(zone_id)
+        workflow_phase_raw = str(row.get("workflow_phase") or "").strip().lower() if isinstance(row, dict) else "idle"
+        workflow_phase = _resolve_effective_workflow_phase(workflow_phase_raw, latest_task)
         updated_at = row.get("updated_at") if isinstance(row, dict) else None
         return {
             "status": "ok",
             "data": {
                 "zone_id": zone_id,
                 "control_mode": control_mode,
+                "workflow_phase": workflow_phase,
                 "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES),
-                "allowed_manual_steps": list(AUTOMATION_MANUAL_STEPS) if control_mode in {"manual", "semi"} else [],
+                "allowed_manual_steps": _resolve_allowed_manual_steps(control_mode, workflow_phase),
                 "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
             },
         }
@@ -169,7 +226,12 @@ def bind_zone_routes(
         source = str(payload.get("source") or "frontend").strip() or "frontend"
         previous_mode = await _load_zone_control_mode(zone_id)
         persisted = await _persist_zone_control_mode(zone_id, requested_mode)
+        latest_task = await load_latest_zone_task_fn(zone_id)
         updated_at = persisted.get("updated_at") if isinstance(persisted, dict) else None
+        workflow_phase = _resolve_effective_workflow_phase(
+            str(persisted.get("workflow_phase") or "").strip().lower() if isinstance(persisted, dict) else "idle",
+            latest_task,
+        )
         await create_zone_event_fn(zone_id, "AUTOMATION_CONTROL_MODE_UPDATED", {"zone_id": zone_id, "control_mode": requested_mode, "previous_control_mode": previous_mode, "source": source, "reason_code": "automation_control_mode_updated"})
         return {
             "status": "ok",
@@ -178,7 +240,7 @@ def bind_zone_routes(
                 "control_mode": requested_mode,
                 "previous_control_mode": previous_mode,
                 "available_modes": sorted(AUTOMATION_CONTROL_MODE_VALUES),
-                "allowed_manual_steps": list(AUTOMATION_MANUAL_STEPS) if requested_mode in {"manual", "semi"} else [],
+                "allowed_manual_steps": _resolve_allowed_manual_steps(requested_mode, workflow_phase),
                 "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
             },
         }
@@ -212,6 +274,33 @@ def bind_zone_routes(
                 },
             )
 
+        workflow_phase_raw = await _load_zone_workflow_phase(zone_id)
+        workflow_phase = _resolve_effective_workflow_phase(workflow_phase_raw, latest_task)
+        if workflow_phase not in AUTOMATION_MANUAL_ACTIVE_PHASES:
+            if not (control_mode == "manual" and workflow_phase in {"", "idle"}):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "manual_step_zone_inactive",
+                        "zone_id": zone_id,
+                        "workflow_phase": workflow_phase or "idle",
+                        "active_workflow_phases": sorted(AUTOMATION_MANUAL_ACTIVE_PHASES),
+                    },
+                )
+
+        allowed_steps = _resolve_allowed_manual_steps(control_mode, workflow_phase)
+        if manual_step not in allowed_steps:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "manual_step_not_allowed_for_phase",
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "manual_step": manual_step,
+                    "allowed_manual_steps": allowed_steps,
+                },
+            )
+
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         latest_payload = latest_task.get("payload") if isinstance(latest_task, dict) and isinstance(latest_task.get("payload"), dict) else {}
         latest_config = latest_payload.get("config") if isinstance(latest_payload.get("config"), dict) else {}
@@ -241,7 +330,17 @@ def bind_zone_routes(
                 task_id=task["task_id"],
                 task_type="diagnostics",
             )
-        return {"status": "ok", "data": {"zone_id": zone_id, "task_id": task.get("task_id"), "manual_step": manual_step, "control_mode": control_mode, "is_duplicate": is_duplicate}}
+        return {
+            "status": "ok",
+            "data": {
+                "zone_id": zone_id,
+                "task_id": task.get("task_id"),
+                "manual_step": manual_step,
+                "control_mode": control_mode,
+                "workflow_phase": workflow_phase,
+                "is_duplicate": is_duplicate,
+            },
+        }
 
     @app.post("/zones/{zone_id}/start-relay-autotune")
     async def zone_start_relay_autotune(

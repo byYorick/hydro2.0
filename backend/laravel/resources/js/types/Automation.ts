@@ -90,13 +90,13 @@ export interface HoveredElement {
 }
 
 /**
- * Типы стадий Setup режима автоматизации
+ * Типы стадий workflow автоматизации (синхронизированы с backend state machine)
  */
-export type SetupStageCode = 'clean_fill' | 'solution_fill' | 'parallel_correction' | 'setup_transition'
-export type SetupStageStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type WorkflowStageCode = 'tank_filling' | 'tank_recirc' | 'ready' | 'irrigating' | 'irrig_recirc'
+export type WorkflowStageStatus = 'pending' | 'running' | 'completed' | 'failed'
 
-export interface SetupStageView {
-  code: SetupStageCode
+export interface WorkflowStageView {
+  code: WorkflowStageCode
   label: string
-  status: SetupStageStatus
+  status: WorkflowStageStatus
 }

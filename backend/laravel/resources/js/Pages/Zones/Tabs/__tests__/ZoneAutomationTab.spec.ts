@@ -17,6 +17,15 @@ vi.mock('@inertiajs/vue3', () => ({
 vi.mock('@/Components/AIPredictionsSection.vue', () => ({
   default: { name: 'AIPredictionsSection', template: '<div />' },
 }))
+vi.mock('@/Components/PidConfigForm.vue', () => ({
+  default: { name: 'PidConfigForm', template: '<div />' },
+}))
+vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
+  default: { name: 'RelayAutotuneTrigger', template: '<div />' },
+}))
+vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
+  default: { name: 'PumpCalibrationsPanel', template: '<div />' },
+}))
 vi.mock('@/Components/Badge.vue', () => ({
   default: {
     name: 'Badge',
@@ -77,6 +86,73 @@ describe('ZoneAutomationTab.vue', () => {
       },
     })
     apiGetMock.mockImplementation((url: string) => {
+      if (url.includes('/automation-logic-profile')) {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              active_mode: 'working',
+              profiles: {
+                working: {
+                  mode: 'working',
+                  is_active: true,
+                  subsystems: {},
+                  updated_at: '2026-02-10T08:00:00Z',
+                },
+              },
+            },
+          },
+        })
+      }
+      if (url.includes('/state')) {
+        const zoneId = Number(url.match(/\/api\/zones\/(\d+)\/state/)?.[1] ?? 42)
+        return Promise.resolve({
+          data: {
+            zone_id: zoneId,
+            state: 'TANK_FILLING',
+            state_label: 'Набор бака с раствором',
+            state_details: {
+              started_at: '2026-02-10T08:00:00Z',
+              elapsed_sec: 45,
+              progress_percent: 30,
+              failed: false,
+            },
+            system_config: {
+              tanks_count: 2,
+              system_type: 'drip',
+              clean_tank_capacity_l: 300,
+              nutrient_tank_capacity_l: 280,
+            },
+            current_levels: {
+              clean_tank_level_percent: 95,
+              nutrient_tank_level_percent: 25,
+              ph: 5.8,
+              ec: 1.6,
+            },
+            active_processes: {
+              pump_in: true,
+              circulation_pump: false,
+              ph_correction: false,
+              ec_correction: false,
+            },
+            timeline: [],
+            next_state: 'TANK_RECIRC',
+            estimated_completion_sec: 120,
+            control_mode: 'auto',
+            allowed_manual_steps: [
+              'clean_fill_start',
+              'clean_fill_stop',
+              'solution_fill_start',
+              'solution_fill_stop',
+            ],
+            state_meta: {
+              source: 'live',
+              is_stale: false,
+              served_at: '2026-02-10T08:00:30Z',
+            },
+          },
+        })
+      }
       if (url.includes('/scheduler-tasks/')) {
         return Promise.resolve({
           data: {
@@ -295,6 +371,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.luxNight).toBe(500)
     expect(vm.lightingForm.scheduleStart).toBe('05:30')
     expect(vm.lightingForm.scheduleEnd).toBe('20:30')
+    expect(wrapper.text()).toContain('Допуск pH ±0.29 (5%)')
   })
   it('пересинхронизируется при обновлении targets', async () => {
     const wrapper = mount(ZoneAutomationTab, {
@@ -819,5 +896,6 @@ describe('ZoneAutomationTab.vue', () => {
     const manualStepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
     expect(manualStepButton).toBeTruthy()
     expect(manualStepButton!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('Старт рециркуляции полива')
   })
 })

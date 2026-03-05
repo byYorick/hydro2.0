@@ -112,6 +112,11 @@ class CommandBus:
         self.command_dedupe_enabled = str(os.getenv("AE_COMMAND_DEDUPE_ENABLED", "1")).strip().lower() in _TRUE_VALUES
         self._dedupe_store: Dict[str, Dict[str, Any]] = {}
         self._dedupe_lock = asyncio.Lock()
+        self.dedupe_skipped_event_window_sec = max(
+            0,
+            int(os.getenv("AE_COMMAND_DEDUPE_SKIPPED_EVENT_WINDOW_SEC", "60") or 60),
+        )
+        self._dedupe_skipped_event_cache: Dict[str, float] = {}
 
         if enforce_node_zone_assignment is None:
             raw_guard = str(os.getenv("AE_ENFORCE_NODE_ZONE_ASSIGNMENT", "1")).strip().lower()

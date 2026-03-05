@@ -195,16 +195,30 @@ def sync_sensor_mode_cache_with_workflow_phase(
     if normalized_phase == previous_phase:
         return
     external_phases = set(workflow_sensor_mode_external_phases)
-    if normalized_phase not in external_phases:
+    was_external = previous_phase in external_phases
+    is_external = normalized_phase in external_phases
+
+    # Keep cache stable for transitions inside external workflow phases
+    # to avoid repetitive activate/deactivate commands on each tick.
+    if was_external and is_external:
         return
+
+    # Reset only when crossing external boundary: enter/leave external phases.
+    if not (was_external or is_external):
+        return
+
     previous_sensor_mode = correction_sensor_mode_state.pop(zone_id, None)
     logger.info(
-        "Zone %s: reset correction sensor-mode cache on workflow transition",
+        "Zone %s: reset correction sensor-mode cache on workflow boundary transition",
         zone_id,
         extra={
             "zone_id": zone_id,
             "previous_workflow_phase": previous_phase,
             "workflow_phase": normalized_phase,
+            "workflow_phase_external_boundary": {
+                "was_external": was_external,
+                "is_external": is_external,
+            },
             "previous_sensor_mode_state": previous_sensor_mode,
             "external_sensor_mode_phases": sorted(external_phases),
         },

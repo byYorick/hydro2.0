@@ -113,7 +113,7 @@ async def set_sensor_mode(
         return
 
     cmd = "activate_sensor_mode" if activate else "deactivate_sensor_mode"
-    params: Dict[str, Any] = {"reason": reason}
+    params: Dict[str, Any] = {}
     if activate:
         params["stabilization_time_sec"] = stabilization_time_sec
 
@@ -124,7 +124,7 @@ async def set_sensor_mode(
             "channel": "system",
             "cmd": cmd,
             "params": params,
-            "dedupe_bypass": True,
+            "dedupe_bypass": False,
         }
         try:
             published = await command_gateway.publish_controller_command(zone_id, command)

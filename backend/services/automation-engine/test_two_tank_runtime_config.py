@@ -168,3 +168,61 @@ def test_resolve_two_tank_runtime_config_uses_zone_targets_without_defaults_warn
     assert cfg["target_ec"] == 1.05
     assert "target_ph not found, using default" not in caplog.text
     assert "target_ec not found, using default" not in caplog.text
+
+
+def test_resolve_two_tank_runtime_config_can_compute_fill_timeouts_from_volume_with_buffer():
+    payload = {
+        "config": {
+            "execution": {
+                "startup": {
+                    "fill_timeout_from_volume": True,
+                    "fill_timeout_buffer_pct": 20,
+                    "clean_fill_volume_l": 10,
+                    "solution_fill_volume_l": 50,
+                    "fill_flow_lpm": 5,
+                }
+            }
+        }
+    }
+
+    cfg = resolve_two_tank_runtime_config(
+        payload,
+        refill_check_delay_sec=60,
+        extract_execution_config_fn=lambda p: p.get("config", {}).get("execution", {}),
+        normalize_node_type_list_fn=_normalize_node_types,
+        resolve_int_fn=_resolve_int,
+        resolve_float_fn=_resolve_float,
+        normalize_labels_fn=_normalize_labels,
+    )
+
+    # 10L / 5Lpm = 120s, +20% = 144s
+    assert cfg["clean_fill_timeout_sec"] == 144
+    # 50L / 5Lpm = 600s, +20% = 720s
+    assert cfg["solution_fill_timeout_sec"] == 720
+
+
+def test_resolve_two_tank_runtime_config_builds_prepare_strict_bounds_from_zone_targets():
+    payload = {"config": {"execution": {}}}
+    zone_targets = {
+        "ph": {"target": 5.75, "min": 5.6, "max": 6.1},
+        "ec": {"target": 1.05, "min": 0.9, "max": 1.2},
+    }
+
+    cfg = resolve_two_tank_runtime_config(
+        payload,
+        refill_check_delay_sec=60,
+        extract_execution_config_fn=lambda p: p.get("config", {}).get("execution", {}),
+        normalize_node_type_list_fn=_normalize_node_types,
+        resolve_int_fn=_resolve_int,
+        resolve_float_fn=_resolve_float,
+        normalize_labels_fn=_normalize_labels,
+        zone_targets=zone_targets,
+    )
+
+    assert cfg["prepare_hard_bounds"] == {
+        "ph_min": 5.6,
+        "ph_max": 6.1,
+        "ec_min": 0.9,
+        "ec_max": 1.2,
+    }
+    assert cfg["prepare_absolute_tolerance"] == {}

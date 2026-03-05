@@ -25,6 +25,14 @@ def _timeout_alert_state_maps(tracker: Any) -> tuple[Dict[int, bool], Dict[int, 
     return active_map, probe_map
 
 
+def _terminal_status_cache(tracker: Any) -> Dict[str, Dict[str, Any]]:
+    cache = getattr(tracker, "_terminal_status_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(tracker, "_terminal_status_cache", cache)
+    return cache
+
+
 async def emit_failure_alert_impl(
     tracker: Any,
     *,
@@ -148,6 +156,13 @@ async def confirm_command_internal_impl(
         command_info["response"] = response
     if error:
         command_info["error"] = error
+
+    terminal_cache = _terminal_status_cache(tracker)
+    terminal_cache[cmd_id] = {
+        "status": str(status or "").strip().upper(),
+        "error": error,
+        "completed_at": command_info["completed_at"],
+    }
 
     latency = (command_info["completed_at"] - command_info["sent_at"]).total_seconds()
     tracker._metrics["COMMAND_LATENCY"].labels(zone_id=str(zone_id), command_type=command_type).observe(latency)
@@ -328,14 +343,27 @@ async def wait_for_command_done_impl(
 
     start_time = time.monotonic()
     while (time.monotonic() - start_time) < timeout_sec:
+        cached_terminal = _terminal_status_cache(tracker).get(cmd_id)
+        cached_status = ""
+        if isinstance(cached_terminal, dict):
+            cached_status = str(cached_terminal.get("status") or "").strip().upper()
+        if cached_status == "DONE":
+            _terminal_status_cache(tracker).pop(cmd_id, None)
+            return True
+        if cached_status in ("NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"):
+            _terminal_status_cache(tracker).pop(cmd_id, None)
+            return False
+
         db_status = await tracker._get_command_status_from_db(cmd_id)
 
         if db_status == "DONE":
+            _terminal_status_cache(tracker).pop(cmd_id, None)
             if cmd_id in tracker.pending_commands:
                 await tracker._confirm_command_internal(cmd_id, db_status)
             return True
 
         if db_status in ("NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT", "SEND_FAILED"):
+            _terminal_status_cache(tracker).pop(cmd_id, None)
             if cmd_id in tracker.pending_commands:
                 await tracker._confirm_command_internal(cmd_id, db_status, error=f"Command {db_status}")
             return False

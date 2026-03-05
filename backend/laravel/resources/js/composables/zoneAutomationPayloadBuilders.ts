@@ -324,6 +324,8 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.fillWindowEnd = '07:00'
   waterForm.targetPh = 5.8
   waterForm.targetEc = 1.6
+  waterForm.phPct = 5
+  waterForm.ecPct = 10
   waterForm.valveSwitching = true
   waterForm.correctionDuringIrrigation = true
   waterForm.enableDrainControl = false

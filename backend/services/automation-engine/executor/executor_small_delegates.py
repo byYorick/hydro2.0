@@ -106,6 +106,7 @@ async def execute_device_task_core(
         resolve_command_params_fn=executor._resolve_command_params,
         publish_batch_fn=executor._publish_batch,
         send_infra_alert_fn=send_infra_alert_fn,
+        send_infra_resolved_alert_fn=getattr(executor, "send_infra_resolved_alert_fn", None),
         err_mapping_not_found=ERR_MAPPING_NOT_FOUND,
         err_no_online_nodes=ERR_NO_ONLINE_NODES,
     )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from infrastructure.workflow_state_store import WorkflowStateStore
@@ -76,3 +78,46 @@ async def test_set_persists_payload_as_json_object(monkeypatch):
 
     assert isinstance(captured["args"][3], dict)
     assert captured["args"][3] == payload
+
+
+@pytest.mark.asyncio
+async def test_get_with_stale_reset_handles_aware_timestamp(monkeypatch):
+    stale_updated_at = datetime(2026, 3, 5, 7, 26, 5, tzinfo=timezone.utc)
+    now_utc = datetime(2026, 3, 5, 7, 56, 36, tzinfo=timezone.utc)
+    state_calls = {"count": 0}
+    set_calls = {}
+
+    async def get_stub(_self, _zone_id):
+        state_calls["count"] += 1
+        if state_calls["count"] == 1:
+            return {
+                "zone_id": 4,
+                "workflow_phase": "tank_filling",
+                "updated_at": stale_updated_at,
+                "payload_normalized": {"control_mode": "auto"},
+            }
+        return {
+            "zone_id": 4,
+            "workflow_phase": "idle",
+            "updated_at": now_utc,
+            "payload_normalized": {
+                "control_mode": "auto",
+                "recovery": {"action": "stale_safety_reset"},
+            },
+        }
+
+    async def set_stub(_self, **kwargs):
+        set_calls.update(kwargs)
+
+    monkeypatch.setattr("infrastructure.workflow_state_store.utcnow", lambda: now_utc)
+    monkeypatch.setattr(WorkflowStateStore, "get", get_stub)
+    monkeypatch.setattr(WorkflowStateStore, "set", set_stub)
+
+    store = WorkflowStateStore()
+    row = await store.get_with_stale_reset(zone_id=4, stale_threshold_secs=1800)
+
+    assert set_calls["zone_id"] == 4
+    assert set_calls["workflow_phase"] == "idle"
+    assert set_calls["payload"]["recovery"]["action"] == "stale_safety_reset"
+    assert row is not None
+    assert row["workflow_phase"] == "idle"

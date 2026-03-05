@@ -61,7 +61,7 @@ class _CounterMetricStub:
         self.value += 1
 
 
-async def _run_process_cycle(*, active_task):
+async def _run_process_cycle(*, active_task, control_mode: str = "auto"):
     calls = {"correction": 0}
 
     async def _noop_async(*_args, **_kwargs):
@@ -98,6 +98,7 @@ async def _run_process_cycle(*, active_task):
         process_irrigation_controller_fn=_noop_async,
         process_recirculation_controller_fn=_noop_async,
         process_correction_controllers_fn=_process_correction,
+        load_zone_control_mode_fn=lambda _zone_id: _as_async_value(control_mode),
         load_latest_zone_task_fn=_load_latest_zone_task,
         evaluate_required_nodes_recovery_gate_fn=lambda _zone_id, _caps: _as_async_value(True),
         update_zone_health_fn=_noop_async,
@@ -159,3 +160,9 @@ async def test_process_zone_cycle_runs_correction_without_active_scheduler_task(
 async def test_process_zone_cycle_runs_correction_for_terminal_scheduler_task_status():
     correction_calls = await _run_process_cycle(active_task={"task_id": "st-3", "status": "completed"})
     assert correction_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_process_zone_cycle_skips_automation_in_manual_control_mode():
+    correction_calls = await _run_process_cycle(active_task=None, control_mode="manual")
+    assert correction_calls == 0

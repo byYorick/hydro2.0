@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from uuid import uuid4
 
 from common.db import create_zone_event, fetch
-from common.infra_alerts import send_infra_alert
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from executor.dispatch_merge import merge_command_dispatch_results as policy_merge_command_dispatch_results
 from executor.two_tank_command_plan_core import (
     dispatch_two_tank_command_plan_core as policy_dispatch_two_tank_command_plan_core,
@@ -284,6 +284,7 @@ class SchedulerTaskExecutor:
         self.fetch_fn = fetch
         self.create_zone_event_fn = create_zone_event
         self.send_infra_alert_fn = send_infra_alert
+        self.send_infra_resolved_alert_fn = send_infra_resolved_alert
         self.enqueue_internal_scheduler_task_fn = enqueue_internal_scheduler_task
 
     async def execute(

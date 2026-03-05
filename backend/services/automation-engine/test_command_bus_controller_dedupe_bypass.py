@@ -16,13 +16,17 @@ class _Audit:
 
 
 class _CommandBus:
-    def __init__(self) -> None:
+    def __init__(self, *, dedupe_decision: str = "new", effective_cmd_id: str | None = None) -> None:
         self.validator = _Validator()
         self.audit = _Audit()
         self.tracker = None
         self.reserve_calls = 0
         self.publish_calls = []
         self.zone_events = []
+        self.dedupe_skipped_event_window_sec = 60
+        self._dedupe_skipped_event_cache = {}
+        self._dedupe_decision = dedupe_decision
+        self._effective_cmd_id = effective_cmd_id
 
     def _resolve_dedupe_ttl_sec(self, _params):
         return 3600
@@ -30,12 +34,12 @@ class _CommandBus:
     async def _reserve_command_dedupe(self, **_kwargs):
         self.reserve_calls += 1
         return {
-            "decision": "new",
+            "decision": self._dedupe_decision,
             "reference_key": "key",
             "scope_key": "scope",
             "dedupe_ttl_sec": 3600,
             "reservation_token": "token",
-            "effective_cmd_id": None,
+            "effective_cmd_id": self._effective_cmd_id,
         }
 
     async def publish_command(self, *_args, **kwargs):
@@ -101,3 +105,33 @@ async def test_publish_controller_command_uses_reserve_when_dedupe_bypass_disabl
     assert command["dedupe_decision"] == "new"
     assert len(bus.publish_calls) == 1
     assert bus.publish_calls[0]["dedupe_state"]["decision"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_suppresses_repeated_dedupe_skipped_events():
+    bus = _CommandBus(dedupe_decision="duplicate_no_effect", effective_cmd_id="cmd-same-1")
+    command = {
+        "node_uid": "nd-irrig-1",
+        "channel": "pump_main",
+        "cmd": "set_relay",
+        "params": {"state": True},
+        "dedupe_bypass": False,
+    }
+
+    first = await publish_controller_command(
+        bus,
+        zone_id=2,
+        command=dict(command),
+        context={"task_id": "st-3"},
+    )
+    second = await publish_controller_command(
+        bus,
+        zone_id=2,
+        command=dict(command),
+        context={"task_id": "st-4"},
+    )
+
+    assert first is True
+    assert second is True
+    dedupe_events = [event for event in bus.zone_events if event[1] == "COMMAND_DEDUPE_SKIPPED"]
+    assert len(dedupe_events) == 1

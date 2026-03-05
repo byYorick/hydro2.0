@@ -236,6 +236,7 @@
 
 <script setup lang="ts">
 import Badge from '@/Components/Badge.vue'
+import type { BadgeVariant } from '@/Components/Badge.vue'
 import type {
   SchedulerTaskDoneMeta,
   SchedulerTaskSlaMeta,
@@ -249,12 +250,12 @@ interface SchedulerTaskDetailsCardProps {
   schedulerTaskDone: SchedulerTaskDoneMeta
   schedulerTaskTimeline: SchedulerTaskTimelineItem[]
   formatDateTime: (value: string | null | undefined) => string
-  schedulerTaskStatusVariant: (status: string | null | undefined) => string
+  schedulerTaskStatusVariant: (status: string | null | undefined) => BadgeVariant
   schedulerTaskStatusLabel: (status: string | null | undefined) => string
   schedulerTaskDecisionLabel: (decision: string | null | undefined) => string
   schedulerTaskReasonLabel: (reasonCode?: string | null, reason?: string | null) => string
   schedulerTaskErrorLabel: (errorCode?: string | null, error?: string | null) => string
-  schedulerTaskProcessStatusVariant: (status?: string | null) => string
+  schedulerTaskProcessStatusVariant: (status?: string | null) => BadgeVariant
   schedulerTaskProcessStatusLabel: (status?: string | null, statusLabel?: string | null) => string
   schedulerTaskEventLabel: (eventType?: string | null) => string
   schedulerTaskTimelineStepLabel: (step: SchedulerTaskTimelineItem) => string

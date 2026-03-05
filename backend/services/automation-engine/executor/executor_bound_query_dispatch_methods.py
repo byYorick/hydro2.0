@@ -86,6 +86,8 @@ async def bound_evaluate_ph_ec_targets(
     target_ph: float,
     target_ec: float,
     tolerance: Dict[str, float],
+    absolute_tolerance: Optional[Dict[str, float]] = None,
+    hard_bounds: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     return await policy_evaluate_ph_ec_targets(
         read_metric=self._read_latest_metric,
@@ -94,6 +96,8 @@ async def bound_evaluate_ph_ec_targets(
         target_ec=target_ec,
         tolerance=tolerance,
         telemetry_freshness_enforce=self._telemetry_freshness_enforce(),
+        absolute_tolerance=absolute_tolerance,
+        hard_bounds=hard_bounds,
     )
 
 

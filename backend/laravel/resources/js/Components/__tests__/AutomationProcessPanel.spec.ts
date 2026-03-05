@@ -97,11 +97,11 @@ describe('AutomationProcessPanel', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Этапы setup режима')
-    expect(wrapper.text()).toContain('Сейчас: Параллельная коррекция pH/EC')
-    expect(wrapper.text()).toContain('Набор бака с чистой водой')
-    expect(wrapper.text()).toContain('Набор бака с раствором')
-    expect(wrapper.text()).toContain('Завершение setup и переход в рабочий режим')
+    expect(wrapper.text()).toContain('Этапы workflow')
+    expect(wrapper.text()).toContain('Сейчас: Рециркуляция раствора')
+    expect(wrapper.text()).toContain('Наполнение баков')
+    expect(wrapper.text()).toContain('Раствор готов')
+    expect(wrapper.text()).toContain('Рециркуляция после полива')
     expect(wrapper.text()).toContain('Параллельная коррекция: Финиш исполнения scheduler-task')
     expect(wrapper.text()).toContain('Целевые pH/EC достигнуты')
   })
@@ -162,7 +162,7 @@ describe('AutomationProcessPanel', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Сейчас: Набор бака с раствором')
+    expect(wrapper.text()).toContain('Сейчас: Наполнение баков')
     expect((wrapper.text().match(/Выполняется/g) ?? []).length).toBe(1)
   })
 
@@ -218,5 +218,57 @@ describe('AutomationProcessPanel', () => {
 
     expect(wrapper.text()).toContain('Набор чистой воды: Команда отправлена узлу')
     expect(wrapper.text()).not.toContain('Набор чистой воды: Команда отправлена узлу — Бак чистой воды наполнен')
+  })
+
+  it('показывает человеко-понятный label для recovery stale событий', async () => {
+    apiGetMock.mockResolvedValueOnce({
+      data: {
+        zone_id: 5,
+        state: 'TANK_RECIRC',
+        state_label: 'Рециркуляция бака',
+        state_details: {
+          started_at: '2026-02-14T18:00:00Z',
+          elapsed_sec: 80,
+          progress_percent: 40,
+        },
+        system_config: {
+          tanks_count: 2,
+          system_type: 'drip',
+          clean_tank_capacity_l: 300,
+          nutrient_tank_capacity_l: 280,
+        },
+        current_levels: {
+          clean_tank_level_percent: 92,
+          nutrient_tank_level_percent: 88,
+          ph: 5.8,
+          ec: 1.6,
+        },
+        active_processes: {
+          pump_in: false,
+          circulation_pump: true,
+          ph_correction: false,
+          ec_correction: false,
+        },
+        timeline: [
+          {
+            event: 'WORKFLOW_RECOVERY_STALE_STOPPED',
+            timestamp: '2026-02-14T18:01:00Z',
+            active: true,
+          },
+        ],
+        next_state: 'READY',
+        estimated_completion_sec: 60,
+      },
+    })
+
+    const wrapper = mount(AutomationProcessPanel, {
+      props: {
+        zoneId: 5,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Залипшая фаза сброшена (авто-восстановление)')
   })
 })

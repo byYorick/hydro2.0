@@ -6,24 +6,6 @@ import { useZoneAutomationState } from '@/composables/useZoneAutomationState'
 import { useZoneAutomationApi } from '@/composables/useZoneAutomationApi'
 import { useZoneAutomationScheduler } from '@/composables/useZoneAutomationScheduler'
 
-// Re-export all public types so existing consumers keep working without import changes
-export type {
-  PredictionTargets,
-  ZoneAutomationTabProps,
-  SchedulerTaskLifecycleItem,
-  SchedulerTaskTimelineItem,
-  SchedulerTaskProcessAction,
-  SchedulerTaskProcessState,
-  SchedulerTaskProcessStep,
-  SchedulerTaskStatus,
-  SchedulerTaskSlaVariant,
-  SchedulerTaskSlaMeta,
-  SchedulerTaskDoneMeta,
-  SchedulerTaskPreset,
-} from '@/composables/zoneAutomationTypes'
-
-export type { AutomationLogicMode } from '@/composables/zoneAutomationUtils'
-
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 
 export function useZoneAutomationTab(props: ZoneAutomationTabProps) {

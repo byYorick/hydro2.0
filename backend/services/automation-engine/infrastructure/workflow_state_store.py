@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from common.db import execute, fetch
@@ -98,8 +98,12 @@ class WorkflowStateStore:
 
         now = utcnow()
         try:
-            naive_updated_at = updated_at.replace(tzinfo=None) if getattr(updated_at, "tzinfo", None) else updated_at
-            age_secs = (now - naive_updated_at).total_seconds()
+            if getattr(updated_at, "tzinfo", None) is None:
+                normalized_updated_at = updated_at.replace(tzinfo=timezone.utc)
+            else:
+                normalized_updated_at = updated_at.astimezone(timezone.utc)
+            normalized_now = now if getattr(now, "tzinfo", None) is not None else now.replace(tzinfo=timezone.utc)
+            age_secs = (normalized_now - normalized_updated_at).total_seconds()
         except Exception:
             return state
 

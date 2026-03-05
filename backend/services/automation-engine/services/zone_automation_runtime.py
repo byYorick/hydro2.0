@@ -162,6 +162,23 @@ def restore_runtime_state(self, raw_state: Optional[Dict[str, Any]]) -> None:
 
 
 async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] = None) -> None:
+    async def _load_zone_control_mode_for_cycle(target_zone_id: int) -> str:
+        rows = await fetch(
+            """
+            SELECT payload
+            FROM zone_workflow_state
+            WHERE zone_id = $1
+            LIMIT 1
+            """,
+            target_zone_id,
+        )
+        if not rows:
+            return "auto"
+        raw_payload = rows[0].get("payload")
+        payload = raw_payload if isinstance(raw_payload, dict) else {}
+        mode = str(payload.get("control_mode") or "").strip().lower()
+        return mode if mode in {"auto", "semi", "manual"} else "auto"
+
     async def _load_latest_zone_task_for_cycle(target_zone_id: int) -> Optional[Dict[str, Any]]:
         rows = await fetch(
             """
@@ -222,6 +239,7 @@ async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] 
         process_irrigation_controller_fn=self._process_irrigation_controller,
         process_recirculation_controller_fn=self._process_recirculation_controller,
         process_correction_controllers_fn=self._process_correction_controllers,
+        load_zone_control_mode_fn=_load_zone_control_mode_for_cycle,
         load_latest_zone_task_fn=_load_latest_zone_task_for_cycle,
         evaluate_required_nodes_recovery_gate_fn=self._evaluate_required_nodes_recovery_gate,
         update_zone_health_fn=self._update_zone_health,

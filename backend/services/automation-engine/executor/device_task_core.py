@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Awaitable, Callable, Dict, Sequence
 
 from common.pump_safety import can_run_pump
@@ -14,6 +15,9 @@ ResolveCommandNameFn = Callable[[Dict[str, Any], SchedulerTaskMapping], str | No
 ResolveCommandParamsFn = Callable[[Dict[str, Any], SchedulerTaskMapping], Dict[str, Any]]
 PublishBatchFn = Callable[..., Awaitable[Dict[str, Any]]]
 SendInfraAlertFn = Callable[..., Awaitable[Any]]
+SendInfraResolvedAlertFn = Callable[..., Awaitable[Any]]
+
+logger = logging.getLogger(__name__)
 
 
 def _filter_nodes_for_command(nodes: Sequence[Dict[str, Any]], cmd: str | None) -> list[Dict[str, Any]]:
@@ -46,6 +50,7 @@ async def _enforce_pump_safety_gate(
     cmd: str | None,
     nodes: Sequence[Dict[str, Any]],
     send_infra_alert_fn: SendInfraAlertFn,
+    send_infra_resolved_alert_fn: SendInfraResolvedAlertFn | None = None,
 ) -> str | None:
     command = str(cmd or "").strip().lower()
     if command != "run_pump":
@@ -78,6 +83,32 @@ async def _enforce_pump_safety_gate(
         )
 
     if not blocked:
+        if callable(send_infra_resolved_alert_fn):
+            primary_channel = next(
+                (str(node.get("channel") or "").strip().lower() for node in nodes if str(node.get("channel") or "").strip()),
+                None,
+            )
+            try:
+                await send_infra_resolved_alert_fn(
+                    code=INFRA_IRRIGATION_PUMP_BLOCKED,
+                    alert_type="Irrigation Pump Blocked",
+                    message=f"Задача {task_type}: safety-политика насоса восстановлена",
+                    zone_id=zone_id,
+                    service="automation-engine",
+                    component="scheduler_task_executor",
+                    channel=primary_channel,
+                    cmd="run_pump",
+                    details={
+                        "task_type": task_type,
+                        "reason_code": "pump_safety_gate_passed",
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "Zone %s: failed to resolve pump safety alert after successful gate check",
+                    zone_id,
+                    exc_info=True,
+                )
         return None
 
     primary = blocked[0]
@@ -113,6 +144,7 @@ async def execute_device_task_core(
     resolve_command_params_fn: ResolveCommandParamsFn,
     publish_batch_fn: PublishBatchFn,
     send_infra_alert_fn: SendInfraAlertFn,
+    send_infra_resolved_alert_fn: SendInfraResolvedAlertFn | None = None,
     err_mapping_not_found: str,
     err_no_online_nodes: str,
 ) -> Dict[str, Any]:
@@ -187,6 +219,7 @@ async def execute_device_task_core(
         cmd=cmd,
         nodes=nodes,
         send_infra_alert_fn=send_infra_alert_fn,
+        send_infra_resolved_alert_fn=send_infra_resolved_alert_fn,
     )
     if safety_error is not None:
         return {

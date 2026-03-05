@@ -58,6 +58,8 @@ async def handle_two_tank_prepare_branches(
         target_ph=float(runtime_cfg["target_ph"]),
         target_ec=float(runtime_cfg["target_ec_prepare"]),
         tolerance=runtime_cfg["prepare_tolerance"],
+        absolute_tolerance=runtime_cfg.get("prepare_absolute_tolerance"),
+        hard_bounds=runtime_cfg.get("prepare_hard_bounds"),
     )
     if prepare_event or targets_state["targets_reached"]:
         stop_result = await deps._dispatch_two_tank_command_plan(
@@ -100,7 +102,7 @@ async def handle_two_tank_prepare_branches(
             mode="two_tank_prepare_recirculation_completed",
             workflow=workflow,
             reason_code=REASON_PREPARE_TARGETS_REACHED,
-            reason="Prepare recirculation достиг целевых EC/pH",
+            reason="Prepare recirculation: EC/pH в пределах целевых границ",
             action_required=False,
             decision="skip",
             commands_total=stop_result.get("commands_total", 0),

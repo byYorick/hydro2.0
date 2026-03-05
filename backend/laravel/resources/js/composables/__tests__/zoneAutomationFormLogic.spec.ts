@@ -41,6 +41,8 @@ function createForms(): ZoneAutomationForms {
       fillWindowEnd: '07:00',
       targetPh: 5.8,
       targetEc: 1.6,
+      phPct: 5,
+      ecPct: 10,
       valveSwitching: true,
       correctionDuringIrrigation: true,
       enableDrainControl: false,

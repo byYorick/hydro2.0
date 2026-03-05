@@ -102,6 +102,59 @@ def normalize_command_plan(
     return normalized
 
 
+def _as_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _pick_first(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _resolve_optional_float(raw: Any, *, minimum: float, maximum: float) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(float(minimum), min(float(maximum), value))
+
+
+def _compact_optional_map(values: Dict[str, Optional[float]]) -> Dict[str, float]:
+    return {key: float(value) for key, value in values.items() if value is not None}
+
+
+def _resolve_volume_based_timeout_sec(
+    *,
+    volume_l_raw: Any,
+    flow_lpm_raw: Any,
+    flow_lps_raw: Any,
+    timeout_buffer_pct: float,
+    resolve_float_fn: ResolveFloatFn,
+    minimum_timeout_sec: int = 30,
+) -> Optional[int]:
+    volume_l = resolve_float_fn(volume_l_raw, -1.0, -1.0, 100000.0)
+    if volume_l <= 0.0:
+        return None
+
+    flow_lpm = resolve_float_fn(flow_lpm_raw, -1.0, -1.0, 100000.0)
+    flow_lps = resolve_float_fn(flow_lps_raw, -1.0, -1.0, 100000.0)
+    if flow_lpm <= 0.0 and flow_lps > 0.0:
+        flow_lpm = flow_lps * 60.0
+    if flow_lpm <= 0.0:
+        return None
+
+    base_sec = (volume_l / flow_lpm) * 60.0
+    if base_sec <= 0.0:
+        return None
+
+    timeout_sec = int(round(base_sec * (1.0 + max(0.0, timeout_buffer_pct) / 100.0)))
+    return max(minimum_timeout_sec, timeout_sec)
+
+
 def resolve_two_tank_runtime_config(
     payload: Dict[str, Any],
     *,
@@ -115,6 +168,13 @@ def resolve_two_tank_runtime_config(
 ) -> Dict[str, Any]:
     execution = extract_execution_config_fn(payload)
     startup = execution.get("startup") if isinstance(execution.get("startup"), dict) else {}
+    targets_payload = (
+        zone_targets
+        if isinstance(zone_targets, dict)
+        else (payload.get("targets") if isinstance(payload.get("targets"), dict) else {})
+    )
+    irrigation_targets = _as_dict(targets_payload.get("irrigation"))
+    irrigation_execution = _as_dict(irrigation_targets.get("execution"))
     required_node_types = normalize_node_type_list_fn(startup.get("required_node_types"), ("irrig",))
 
     commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), dict) else {}
@@ -197,12 +257,15 @@ def resolve_two_tank_runtime_config(
     prepare_tolerance_cfg = execution.get("prepare_tolerance") if isinstance(execution.get("prepare_tolerance"), dict) else {}
     recovery_tolerance_cfg = recovery_cfg.get("target_tolerance") if isinstance(recovery_cfg.get("target_tolerance"), dict) else {}
     fallback_prepare_tolerance_cfg = execution.get("prepare_target_tolerance") if isinstance(execution.get("prepare_target_tolerance"), dict) else {}
+    prepare_hard_bounds_cfg = execution.get("prepare_hard_bounds") if isinstance(execution.get("prepare_hard_bounds"), dict) else {}
+    prepare_abs_tolerance_cfg = execution.get("prepare_absolute_tolerance") if isinstance(execution.get("prepare_absolute_tolerance"), dict) else {}
+    if not prepare_abs_tolerance_cfg:
+        prepare_abs_tolerance_cfg = (
+            execution.get("prepare_target_tolerance_abs")
+            if isinstance(execution.get("prepare_target_tolerance_abs"), dict)
+            else {}
+        )
 
-    targets_payload = (
-        zone_targets
-        if isinstance(zone_targets, dict)
-        else (payload.get("targets") if isinstance(payload.get("targets"), dict) else {})
-    )
     ph_payload = targets_payload.get("ph") if isinstance(targets_payload.get("ph"), dict) else {}
     ec_payload = targets_payload.get("ec") if isinstance(targets_payload.get("ec"), dict) else {}
     nutrition_payload = targets_payload.get("nutrition") if isinstance(targets_payload.get("nutrition"), dict) else {}
@@ -249,15 +312,166 @@ def resolve_two_tank_runtime_config(
     if target_ec_prepare_raw is None:
         target_ec_prepare_raw = target_ec * (nutrient_npk_ratio_pct / 100.0)
     target_ec_prepare = resolve_float_fn(target_ec_prepare_raw, target_ec, 0.0, 20.0)
+    prepare_hard_bounds = _compact_optional_map(
+        {
+            "ph_min": _resolve_optional_float(
+                _pick_first(prepare_hard_bounds_cfg.get("ph_min"), ph_payload.get("min")),
+                minimum=0.1,
+                maximum=14.0,
+            ),
+            "ph_max": _resolve_optional_float(
+                _pick_first(prepare_hard_bounds_cfg.get("ph_max"), ph_payload.get("max")),
+                minimum=0.1,
+                maximum=14.0,
+            ),
+            "ec_min": _resolve_optional_float(
+                _pick_first(prepare_hard_bounds_cfg.get("ec_min"), ec_payload.get("min")),
+                minimum=0.0,
+                maximum=20.0,
+            ),
+            "ec_max": _resolve_optional_float(
+                _pick_first(prepare_hard_bounds_cfg.get("ec_max"), ec_payload.get("max")),
+                minimum=0.0,
+                maximum=20.0,
+            ),
+        }
+    )
+    if prepare_hard_bounds.get("ph_min") is not None and prepare_hard_bounds.get("ph_max") is not None:
+        if prepare_hard_bounds["ph_min"] > prepare_hard_bounds["ph_max"]:
+            prepare_hard_bounds["ph_min"], prepare_hard_bounds["ph_max"] = (
+                prepare_hard_bounds["ph_max"],
+                prepare_hard_bounds["ph_min"],
+            )
+    if prepare_hard_bounds.get("ec_min") is not None and prepare_hard_bounds.get("ec_max") is not None:
+        if prepare_hard_bounds["ec_min"] > prepare_hard_bounds["ec_max"]:
+            prepare_hard_bounds["ec_min"], prepare_hard_bounds["ec_max"] = (
+                prepare_hard_bounds["ec_max"],
+                prepare_hard_bounds["ec_min"],
+            )
+    prepare_absolute_tolerance = _compact_optional_map(
+        {
+            "ph_abs": _resolve_optional_float(
+                _pick_first(
+                    prepare_abs_tolerance_cfg.get("ph_abs"),
+                    prepare_tolerance_cfg.get("ph_abs"),
+                    fallback_prepare_tolerance_cfg.get("ph_abs"),
+                ),
+                minimum=0.0,
+                maximum=14.0,
+            ),
+            "ec_abs": _resolve_optional_float(
+                _pick_first(
+                    prepare_abs_tolerance_cfg.get("ec_abs"),
+                    prepare_tolerance_cfg.get("ec_abs"),
+                    fallback_prepare_tolerance_cfg.get("ec_abs"),
+                ),
+                minimum=0.0,
+                maximum=20.0,
+            ),
+        }
+    )
 
     recovery_max_attempts_raw = recovery_cfg.get("max_attempts")
     if recovery_max_attempts_raw is None:
         recovery_max_attempts_raw = recovery_cfg.get("max_continue_attempts")
 
+    clean_fill_timeout_raw = startup.get("clean_fill_timeout_sec")
+    solution_fill_timeout_raw = startup.get("solution_fill_timeout_sec")
+    clean_fill_timeout_default = resolve_int_fn(clean_fill_timeout_raw, 1200, 30)
+    solution_fill_timeout_default = resolve_int_fn(solution_fill_timeout_raw, 1800, 30)
+    timeout_buffer_pct = resolve_float_fn(
+        _pick_first(
+            startup.get("fill_timeout_buffer_pct"),
+            startup.get("timeout_buffer_pct"),
+            execution.get("fill_timeout_buffer_pct"),
+        ),
+        20.0,
+        0.0,
+        200.0,
+    )
+    timeout_strategy = str(startup.get("fill_timeout_strategy") or "").strip().lower()
+    use_volume_timeouts = bool(startup.get("fill_timeout_from_volume")) or timeout_strategy in {
+        "volume",
+        "volume_based",
+        "flow",
+        "auto",
+    }
+    default_flow_lpm = _pick_first(
+        startup.get("fill_flow_lpm"),
+        startup.get("flow_lpm"),
+        execution.get("fill_flow_lpm"),
+        irrigation_execution.get("fill_flow_lpm"),
+    )
+    default_flow_lps = _pick_first(
+        startup.get("fill_flow_lps"),
+        startup.get("flow_lps"),
+        execution.get("fill_flow_lps"),
+        irrigation_execution.get("fill_flow_lps"),
+    )
+
+    clean_fill_timeout_volume_based = _resolve_volume_based_timeout_sec(
+        volume_l_raw=_pick_first(
+            startup.get("clean_fill_volume_l"),
+            execution.get("clean_fill_volume_l"),
+            irrigation_execution.get("clean_tank_fill_l"),
+        ),
+        flow_lpm_raw=_pick_first(
+            startup.get("clean_fill_flow_lpm"),
+            execution.get("clean_fill_flow_lpm"),
+            irrigation_execution.get("clean_fill_flow_lpm"),
+            default_flow_lpm,
+        ),
+        flow_lps_raw=_pick_first(
+            startup.get("clean_fill_flow_lps"),
+            execution.get("clean_fill_flow_lps"),
+            irrigation_execution.get("clean_fill_flow_lps"),
+            default_flow_lps,
+        ),
+        timeout_buffer_pct=timeout_buffer_pct,
+        resolve_float_fn=resolve_float_fn,
+    )
+    solution_fill_timeout_volume_based = _resolve_volume_based_timeout_sec(
+        volume_l_raw=_pick_first(
+            startup.get("solution_fill_volume_l"),
+            execution.get("solution_fill_volume_l"),
+            irrigation_execution.get("nutrient_tank_target_l"),
+        ),
+        flow_lpm_raw=_pick_first(
+            startup.get("solution_fill_flow_lpm"),
+            execution.get("solution_fill_flow_lpm"),
+            irrigation_execution.get("solution_fill_flow_lpm"),
+            default_flow_lpm,
+        ),
+        flow_lps_raw=_pick_first(
+            startup.get("solution_fill_flow_lps"),
+            execution.get("solution_fill_flow_lps"),
+            irrigation_execution.get("solution_fill_flow_lps"),
+            default_flow_lps,
+        ),
+        timeout_buffer_pct=timeout_buffer_pct,
+        resolve_float_fn=resolve_float_fn,
+    )
+
+    clean_fill_timeout_sec = clean_fill_timeout_default
+    if use_volume_timeouts or clean_fill_timeout_raw is None:
+        if clean_fill_timeout_volume_based is not None:
+            clean_fill_timeout_sec = clean_fill_timeout_volume_based
+    solution_fill_timeout_sec = solution_fill_timeout_default
+    if use_volume_timeouts or solution_fill_timeout_raw is None:
+        if solution_fill_timeout_volume_based is not None:
+            solution_fill_timeout_sec = solution_fill_timeout_volume_based
+    if clean_fill_timeout_sec != clean_fill_timeout_default or solution_fill_timeout_sec != solution_fill_timeout_default:
+        _logger.info(
+            "Zone two_tank: volume-based fill timeout applied (clean_fill_timeout_sec=%s solution_fill_timeout_sec=%s buffer_pct=%.1f)",
+            clean_fill_timeout_sec,
+            solution_fill_timeout_sec,
+            timeout_buffer_pct,
+        )
+
     return {
         "required_node_types": required_node_types,
-        "clean_fill_timeout_sec": resolve_int_fn(startup.get("clean_fill_timeout_sec"), 1200, 30),
-        "solution_fill_timeout_sec": resolve_int_fn(startup.get("solution_fill_timeout_sec"), 1800, 30),
+        "clean_fill_timeout_sec": clean_fill_timeout_sec,
+        "solution_fill_timeout_sec": solution_fill_timeout_sec,
         "poll_interval_sec": resolve_int_fn(startup.get("level_poll_interval_sec"), refill_check_delay_sec, 10),
         "clean_fill_retry_cycles": resolve_int_fn(startup.get("clean_fill_retry_cycles"), 1, 0),
         "prepare_recirculation_timeout_sec": resolve_int_fn(startup.get("prepare_recirculation_timeout_sec"), 1200, 30),
@@ -304,6 +518,8 @@ def resolve_two_tank_runtime_config(
         "target_ec": target_ec,
         "target_ec_prepare": target_ec_prepare,
         "nutrient_npk_ratio_pct": nutrient_npk_ratio_pct,
+        "prepare_hard_bounds": prepare_hard_bounds,
+        "prepare_absolute_tolerance": prepare_absolute_tolerance,
         "prepare_tolerance": {
             "ec_pct": resolve_float_fn(
                 prepare_tolerance_cfg.get("ec_pct", fallback_prepare_tolerance_cfg.get("ec_pct")),

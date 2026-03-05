@@ -480,6 +480,10 @@ vi.mock('@/utils/i18n', () => ({
       PAUSED: 'Приостановлено',
       WARNING: 'Предупреждение',
       ALARM: 'Тревога',
+      ACTIVE: 'Активно',
+      RESOLVED: 'Решено',
+      active: 'Активно',
+      resolved: 'Решено',
     }
     return map[status] || status
   },

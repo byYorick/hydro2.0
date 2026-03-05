@@ -220,313 +220,370 @@
             </label>
           </div>
         </section>
+      </div>
 
-        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <h3 class="text-sm font-semibold">Питательный раствор</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label class="text-sm">
-              <span class="flex items-center gap-2 font-medium mb-2">
-                target pH
-                <span
-                  v-if="isLogicFieldFromRecipe('ph_target')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]"
-                >из рецепта</span>
-                <span
-                  v-else-if="isLogicFieldOverridden('ph_target')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]"
-                >переопределено</span>
-              </span>
-              <input
-                v-model.number="form.logic.ph_target"
-                type="number"
-                min="4"
-                max="9"
-                step="0.1"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">pH min</span>
-              <input
-                v-model.number="form.logic.ph_min"
-                type="number"
-                min="4"
-                max="9"
-                step="0.1"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">pH max</span>
-              <input
-                v-model.number="form.logic.ph_max"
-                type="number"
-                min="4"
-                max="9"
-                step="0.1"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="flex items-center gap-2 font-medium mb-2">
-                target EC
-                <span
-                  v-if="isLogicFieldFromRecipe('ec_target')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]"
-                >из рецепта</span>
-                <span
-                  v-else-if="isLogicFieldOverridden('ec_target')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]"
-                >переопределено</span>
-              </span>
-              <input
-                v-model.number="form.logic.ec_target"
-                type="number"
-                min="0"
-                max="10"
-                step="0.01"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">EC min</span>
-              <input
-                v-model.number="form.logic.ec_min"
-                type="number"
-                min="0"
-                max="10"
-                step="0.01"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">EC max</span>
-              <input
-                v-model.number="form.logic.ec_max"
-                type="number"
-                min="0"
-                max="10"
-                step="0.01"
-                class="input-field w-full"
-              />
-            </label>
-          </div>
+      <div
+        v-if="currentStep === 4"
+        class="space-y-4"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            v-for="item in automationTabs"
+            :key="item.id"
+            type="button"
+            class="btn btn-outline h-9 px-3 text-xs"
+            :class="item.id === automationTab ? 'border-[color:var(--accent-green)] text-[color:var(--text-primary)]' : ''"
+            @click="automationTab = item.id"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <section
+          v-if="automationTab === 1"
+          class="grid grid-cols-1 md:grid-cols-2 gap-3"
+        >
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Автоклимат
+            <select
+              v-model="climateForm.enabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включен</option>
+              <option :value="false">Выключен</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Температура день
+            <input
+              v-model.number="climateForm.dayTemp"
+              type="number"
+              min="10"
+              max="35"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Температура ночь
+            <input
+              v-model.number="climateForm.nightTemp"
+              type="number"
+              min="10"
+              max="35"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Влажность день
+            <input
+              v-model.number="climateForm.dayHumidity"
+              type="number"
+              min="30"
+              max="90"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Влажность ночь
+            <input
+              v-model.number="climateForm.nightHumidity"
+              type="number"
+              min="30"
+              max="90"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал климата (мин)
+            <input
+              v-model.number="climateForm.intervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Min форточек (%)
+            <input
+              v-model.number="climateForm.ventMinPercent"
+              type="number"
+              min="0"
+              max="100"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Max форточек (%)
+            <input
+              v-model.number="climateForm.ventMaxPercent"
+              type="number"
+              min="0"
+              max="100"
+              class="input-field mt-1 w-full"
+            />
+          </label>
         </section>
 
-        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <h3 class="text-sm font-semibold">Система полива</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label class="text-sm">
-              <span class="flex items-center gap-2 font-medium mb-2">
-                Тип системы
-                <span
-                  v-if="isLogicFieldFromRecipe('systemType')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]"
-                >из рецепта</span>
-                <span
-                  v-else-if="isLogicFieldOverridden('systemType')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]"
-                >переопределено</span>
-              </span>
+        <section
+          v-else-if="automationTab === 2"
+          class="space-y-3"
+        >
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Тип системы
               <select
-                v-model="form.logic.systemType"
-                class="input-select w-full"
+                v-model="waterForm.systemType"
+                class="input-select mt-1 w-full"
               >
                 <option value="drip">drip</option>
                 <option value="substrate_trays">substrate_trays</option>
                 <option value="nft">nft</option>
               </select>
             </label>
-
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Количество баков</span>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              target pH
               <input
-                :value="tanksCount"
+                v-model.number="waterForm.targetPh"
                 type="number"
-                class="input-field w-full"
-                readonly
+                min="4"
+                max="9"
+                step="0.1"
+                class="input-field mt-1 w-full"
               />
             </label>
-
-            <label class="text-sm">
-              <span class="flex items-center gap-2 font-medium mb-2">
-                Интервал (мин)
-                <span
-                  v-if="isLogicFieldFromRecipe('intervalMinutes')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]"
-                >из рецепта</span>
-              </span>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              target EC
               <input
-                v-model.number="form.logic.intervalMinutes"
+                v-model.number="waterForm.targetEc"
+                type="number"
+                min="0.1"
+                max="10"
+                step="0.1"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал полива (мин)
+              <input
+                v-model.number="waterForm.intervalMinutes"
                 type="number"
                 min="5"
                 max="1440"
-                class="input-field w-full"
+                class="input-field mt-1 w-full"
               />
             </label>
-
-            <label class="text-sm">
-              <span class="flex items-center gap-2 font-medium mb-2">
-                Длительность (сек)
-                <span
-                  v-if="isLogicFieldFromRecipe('durationSeconds')"
-                  class="px-1.5 py-0.5 rounded text-[10px] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]"
-                >из рецепта</span>
-              </span>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Длительность (сек)
               <input
-                v-model.number="form.logic.durationSeconds"
-                type="number"
-                min="10"
-                max="3600"
-                class="input-field w-full"
-              />
-            </label>
-
-            <template v-if="tanksCount === 2">
-              <label class="text-sm">
-                <span class="font-medium mb-2 block">Объём чистого бака (л)</span>
-                <input
-                  v-model.number="form.logic.cleanTankFillL"
-                  type="number"
-                  min="1"
-                  max="5000"
-                  class="input-field w-full"
-                />
-              </label>
-
-              <label class="text-sm">
-                <span class="font-medium mb-2 block">Объём питательного бака (л)</span>
-                <input
-                  v-model.number="form.logic.nutrientTankTargetL"
-                  type="number"
-                  min="1"
-                  max="5000"
-                  class="input-field w-full"
-                />
-              </label>
-
-              <label class="text-sm">
-                <span class="font-medium mb-2 block">Объём партии полива (л)</span>
-                <input
-                  v-model.number="form.logic.irrigationBatchL"
-                  type="number"
-                  min="0.1"
-                  max="500"
-                  step="0.1"
-                  class="input-field w-full"
-                />
-              </label>
-            </template>
-          </div>
-        </section>
-
-        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Климат</h3>
-            <label class="inline-flex items-center gap-2 text-sm">
-              <input
-                v-model="form.logic.climateEnabled"
-                type="checkbox"
-              />
-              Включен
-            </label>
-          </div>
-          <div
-            v-if="form.logic.climateEnabled"
-            class="grid grid-cols-1 md:grid-cols-2 gap-4"
-          >
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Температура день (°C)</span>
-              <input
-                v-model.number="form.logic.dayTemp"
-                type="number"
-                min="10"
-                max="40"
-                step="0.1"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Температура ночь (°C)</span>
-              <input
-                v-model.number="form.logic.nightTemp"
-                type="number"
-                min="10"
-                max="40"
-                step="0.1"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Влажность день (%)</span>
-              <input
-                v-model.number="form.logic.dayHumidity"
-                type="number"
-                min="20"
-                max="95"
-                class="input-field w-full"
-              />
-            </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Влажность ночь (%)</span>
-              <input
-                v-model.number="form.logic.nightHumidity"
-                type="number"
-                min="20"
-                max="95"
-                class="input-field w-full"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold">Освещение</h3>
-            <label class="inline-flex items-center gap-2 text-sm">
-              <input
-                v-model="form.logic.lightingEnabled"
-                type="checkbox"
-              />
-              Включено
-            </label>
-          </div>
-          <div
-            v-if="form.logic.lightingEnabled"
-            class="grid grid-cols-1 md:grid-cols-3 gap-4"
-          >
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Часов света</span>
-              <input
-                v-model.number="form.logic.hoursOn"
+                v-model.number="waterForm.durationSeconds"
                 type="number"
                 min="1"
-                max="24"
-                class="input-field w-full"
+                max="3600"
+                class="input-field mt-1 w-full"
               />
             </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Старт (HH:MM)</span>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Баков
               <input
-                v-model="form.logic.scheduleStart"
-                type="time"
-                class="input-field w-full"
+                v-model.number="waterForm.tanksCount"
+                type="number"
+                min="2"
+                max="3"
+                class="input-field mt-1 w-full"
+                :disabled="waterForm.systemType === 'drip'"
               />
             </label>
-            <label class="text-sm">
-              <span class="font-medium mb-2 block">Конец (HH:MM)</span>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Диагностика
+              <select
+                v-model="waterForm.diagnosticsEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">Включена</option>
+                <option :value="false">Выключена</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал диагностики (мин)
               <input
-                v-model="form.logic.scheduleEnd"
-                type="time"
-                class="input-field w-full"
+                v-model.number="waterForm.diagnosticsIntervalMinutes"
+                type="number"
+                min="1"
+                max="1440"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Workflow запуска
+              <select
+                v-model="waterForm.cycleStartWorkflowEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">cycle_start</option>
+                <option :value="false">diagnostics</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Порог полного бака (0..1)
+              <input
+                v-model.number="waterForm.cleanTankFullThreshold"
+                type="number"
+                min="0.05"
+                max="1"
+                step="0.01"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill длительность (сек)
+              <input
+                v-model.number="waterForm.refillDurationSeconds"
+                type="number"
+                min="1"
+                max="3600"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill timeout (сек)
+              <input
+                v-model.number="waterForm.refillTimeoutSeconds"
+                type="number"
+                min="30"
+                max="86400"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+              Refill обязательные типы нод (CSV)
+              <input
+                v-model="waterForm.refillRequiredNodeTypes"
+                type="text"
+                class="input-field mt-1 w-full"
+                placeholder="irrig,climate,light"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill канал
+              <input
+                v-model="waterForm.refillPreferredChannel"
+                type="text"
+                class="input-field mt-1 w-full"
+                placeholder="fill_valve"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Смена раствора
+              <select
+                v-model="waterForm.solutionChangeEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">Включена</option>
+                <option :value="false">Выключена</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал смены (мин)
+              <input
+                v-model.number="waterForm.solutionChangeIntervalMinutes"
+                type="number"
+                min="1"
+                max="1440"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Длительность смены (сек)
+              <input
+                v-model.number="waterForm.solutionChangeDurationSeconds"
+                type="number"
+                min="1"
+                max="86400"
+                class="input-field mt-1 w-full"
               />
             </label>
           </div>
+        </section>
+
+        <section
+          v-else
+          class="grid grid-cols-1 md:grid-cols-3 gap-3"
+        >
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Досветка
+            <select
+              v-model="lightingForm.enabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включена</option>
+              <option :value="false">Выключена</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Lux day
+            <input
+              v-model.number="lightingForm.luxDay"
+              type="number"
+              min="0"
+              max="120000"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Lux night
+            <input
+              v-model.number="lightingForm.luxNight"
+              type="number"
+              min="0"
+              max="120000"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Часов света
+            <input
+              v-model.number="lightingForm.hoursOn"
+              type="number"
+              min="0"
+              max="24"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал досветки (мин)
+            <input
+              v-model.number="lightingForm.intervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Начало
+            <input
+              v-model="lightingForm.scheduleStart"
+              type="time"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Конец
+            <input
+              v-model="lightingForm.scheduleEnd"
+              type="time"
+              class="input-field mt-1 w-full"
+            />
+          </label>
         </section>
       </div>
 
       <div
-        v-if="currentStep === 4"
+        v-if="currentStep === 5"
         class="space-y-4"
       >
         <div class="flex items-start justify-between gap-3">
@@ -632,7 +689,7 @@
       </div>
 
       <div
-        v-if="currentStep === 5"
+        v-if="currentStep === 6"
         class="space-y-4"
       >
         <h3 class="text-sm font-semibold mb-1">Предпросмотр запуска</h3>
@@ -666,23 +723,22 @@
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Цели раствора</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Автоматика</div>
             <div class="text-sm font-medium">
-              pH {{ form.logic.ph_target }} ({{ form.logic.ph_min }}–{{ form.logic.ph_max }}),
-              EC {{ form.logic.ec_target }} ({{ form.logic.ec_min }}–{{ form.logic.ec_max }})
+              Автоматика: pH {{ waterForm.targetPh }}, EC {{ waterForm.targetEc }}, система {{ waterForm.systemType }}
             </div>
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
             <div class="text-xs text-[color:var(--text-dim)] mb-1">Полив</div>
             <div class="text-sm font-medium">
-              {{ form.logic.systemType }}, каждые {{ form.logic.intervalMinutes }} мин, {{ form.logic.durationSeconds }} сек
+              {{ waterForm.systemType }}, каждые {{ waterForm.intervalMinutes }} мин, {{ waterForm.durationSeconds }} сек
             </div>
             <div
               v-if="tanksCount === 2"
               class="text-xs text-[color:var(--text-muted)] mt-1"
             >
-              Баки: {{ form.logic.cleanTankFillL }} / {{ form.logic.nutrientTankTargetL }} л, партия {{ form.logic.irrigationBatchL }} л
+              Баки: {{ waterForm.cleanTankFillL }} / {{ waterForm.nutrientTankTargetL }} л, партия {{ waterForm.irrigationBatchL }} л
             </div>
           </div>
 
@@ -801,6 +857,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useZones } from "@/composables/useZones";
@@ -847,6 +904,9 @@ const {
   errorDetails,
   validationErrors,
   form,
+  climateForm,
+  waterForm,
+  lightingForm,
   availableZones,
   availablePlants,
   availableRecipes,
@@ -868,8 +928,6 @@ const {
   zoneChannelsError,
   hasCalibrationChannels,
   getCalibrationComponentLabel,
-  isLogicFieldOverridden,
-  isLogicFieldFromRecipe,
   formatDateTime,
   formatDate,
   onZoneSelected,
@@ -887,4 +945,11 @@ const {
   showToast,
   fetchZones,
 });
+
+const automationTab = ref<1 | 2 | 3>(1);
+const automationTabs = [
+  { id: 1, label: "Климат" },
+  { id: 2, label: "Водный узел" },
+  { id: 3, label: "Досветка" },
+] as const;
 </script>
