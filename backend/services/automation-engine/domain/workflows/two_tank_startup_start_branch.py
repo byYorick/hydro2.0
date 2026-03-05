@@ -27,17 +27,30 @@ def build_sensor_state_inconsistent_result(
     reason: str,
     clean_level_max: bool,
     clean_level_min: bool,
+    tank: str = "clean",
 ) -> Dict[str, Any]:
+    normalized_tank = str(tank or "clean").strip().lower()
+    if normalized_tank not in {"clean", "solution"}:
+        normalized_tank = "clean"
+    sensor_state = {
+        "tank": normalized_tank,
+        "level_max": clean_level_max,
+        "level_min": clean_level_min,
+    }
+    if normalized_tank == "solution":
+        sensor_state["solution_level_max"] = clean_level_max
+        sensor_state["solution_level_min"] = clean_level_min
+    else:
+        sensor_state["clean_level_max"] = clean_level_max
+        sensor_state["clean_level_min"] = clean_level_min
+
     return two_tank_error(
         mode="two_tank_sensor_state_inconsistent",
         workflow=workflow,
         reason_code=REASON_SENSOR_STATE_INCONSISTENT,
         reason=reason,
         error_code=ERR_SENSOR_STATE_INCONSISTENT,
-        sensor_state={
-            "clean_level_max": clean_level_max,
-            "clean_level_min": clean_level_min,
-        },
+        sensor_state=sensor_state,
     )
 
 

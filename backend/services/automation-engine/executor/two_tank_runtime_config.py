@@ -313,7 +313,7 @@ def resolve_two_tank_runtime_config(
             ),
             "ph_pct": resolve_float_fn(
                 prepare_tolerance_cfg.get("ph_pct", fallback_prepare_tolerance_cfg.get("ph_pct")),
-                15.0,
+                5.0,  # DEFAULT pH tolerance 5% → ±0.29 for target 5.75
                 0.1,
                 100.0,
             ),

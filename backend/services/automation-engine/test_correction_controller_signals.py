@@ -10,9 +10,11 @@ from correction_controller_signals import (
     emit_correction_actuator_unavailable_signal,
     emit_ec_batch_unavailable_signal,
     emit_ph_batch_unavailable_signal,
+    resolve_correction_transient_alerts,
 )
 from services.resilience_contract import (
     INFRA_CORRECTION_ACTUATOR_UNAVAILABLE,
+    INFRA_CORRECTION_COMMAND_UNCONFIRMED,
     INFRA_CORRECTION_EC_BATCH_UNAVAILABLE,
     INFRA_CORRECTION_PH_BATCH_UNAVAILABLE,
 )
@@ -95,6 +97,32 @@ async def test_emit_correction_actuator_unavailable_signal_sends_infra_alert() -
     assert calls[0]["code"] == INFRA_CORRECTION_ACTUATOR_UNAVAILABLE
     assert calls[0]["zone_id"] == 10
     assert calls[0]["details"]["reason_code"] == "actuator_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_emit_correction_actuator_unavailable_signal_passes_lifecycle_context() -> None:
+    calls = []
+
+    async def fake_send_infra_alert_fn(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    await emit_correction_actuator_unavailable_signal(
+        zone_id=10,
+        metric_name="ec",
+        correction_type="dilute",
+        available_roles=["recirculation_pump"],
+        cycle_id=44,
+        intent_id="intent-44",
+        correlation_id="corr-44",
+        send_infra_alert_fn=fake_send_infra_alert_fn,
+    )
+
+    assert calls[0]["cycle_id"] == 44
+    assert calls[0]["intent_id"] == "intent-44"
+    assert calls[0]["details"]["cycle_id"] == 44
+    assert calls[0]["details"]["intent_id"] == "intent-44"
+    assert calls[0]["details"]["correlation_id"] == "corr-44"
 
 
 @pytest.mark.asyncio
@@ -185,3 +213,29 @@ async def test_emit_ph_batch_unavailable_signal_persists_event_and_alert() -> No
     assert alert_calls[0]["code"] == INFRA_CORRECTION_PH_BATCH_UNAVAILABLE
     assert alert_calls[0]["zone_id"] == 12
     assert alert_calls[0]["details"]["reason_code"] == "ph_component_batch_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_resolve_correction_transient_alerts_emits_resolved_for_all_correction_codes() -> None:
+    calls = []
+
+    async def fake_send_infra_resolved_alert_fn(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    await resolve_correction_transient_alerts(
+        zone_id=15,
+        metric_name="ec",
+        reason_code="correction_command_confirmed",
+        cycle_id=501,
+        intent_id="intent-501",
+        correlation_id="corr-501",
+        send_infra_resolved_alert_fn=fake_send_infra_resolved_alert_fn,
+    )
+
+    assert len(calls) == 4
+    assert calls[0]["code"] == INFRA_CORRECTION_COMMAND_UNCONFIRMED
+    assert calls[0]["error_type"] == "CommandUnconfirmed"
+    assert all(call["cycle_id"] == 501 for call in calls)
+    assert all(call["intent_id"] == "intent-501" for call in calls)
+    assert all(call["details"]["correlation_id"] == "corr-501" for call in calls)

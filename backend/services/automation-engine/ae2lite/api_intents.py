@@ -88,6 +88,16 @@ def _intent_runtime_payload(
 
 def _resolve_intent_task_type(*, intent_row: Dict[str, Any], intent_payload: Dict[str, Any]) -> str:
     intent_type = str(intent_row.get("intent_type") or "").strip().lower()
+
+    payload_workflow = str(intent_payload.get("workflow") or "").strip().lower()
+    if not payload_workflow:
+        payload_config = _as_dict(intent_payload.get("config"))
+        payload_execution = _as_dict(payload_config.get("execution"))
+        payload_workflow = str(payload_execution.get("workflow") or "").strip().lower()
+
+    if intent_type == "irrigate_once" and payload_workflow == _START_CYCLE_WORKFLOW:
+        return _START_CYCLE_TASK_TYPE
+
     mapped = _INTENT_TYPE_TO_TASK_TYPE.get(intent_type)
     if mapped in _SUPPORTED_TASK_TYPES:
         return str(mapped)
@@ -211,9 +221,12 @@ async def claim_start_cycle_intent(
         zone_id,
         req.idempotency_key,
     )
+    requested_intent: Dict[str, Any] = {}
     if existing_rows:
         existing = dict(existing_rows[0])
         status = str(existing.get("status") or "").strip().lower()
+        if status in {"pending", "failed"}:
+            requested_intent = existing
         if status in ACTIVE_INTENT_STATUSES:
             return {"decision": "deduplicated", "intent": existing}
         if status in TERMINAL_INTENT_STATUSES:
@@ -237,7 +250,11 @@ async def claim_start_cycle_intent(
         stale_claimed_before,
     )
     if active_zone_rows:
-        return {"decision": "zone_busy", "intent": dict(active_zone_rows[0])}
+        return {
+            "decision": "zone_busy",
+            "intent": dict(active_zone_rows[0]),
+            "requested_intent": requested_intent,
+        }
 
     cross_zone_rows = await fetch_fn(
         """

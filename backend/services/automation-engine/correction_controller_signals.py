@@ -6,15 +6,17 @@ from datetime import date, datetime, time
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from common.db import create_zone_event
-from common.infra_alerts import send_infra_alert
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from services.resilience_contract import (
     INFRA_CORRECTION_ACTUATOR_UNAVAILABLE,
+    INFRA_CORRECTION_COMMAND_UNCONFIRMED,
     INFRA_CORRECTION_EC_BATCH_UNAVAILABLE,
     INFRA_CORRECTION_PH_BATCH_UNAVAILABLE,
 )
 
 CreateZoneEventFn = Callable[[int, str, Dict[str, Any]], Awaitable[Any]]
 SendInfraAlertFn = Callable[..., Awaitable[bool]]
+SendInfraResolvedAlertFn = Callable[..., Awaitable[bool]]
 
 _EC_COMPONENT_ROLES = (
     "ec_npk_pump",
@@ -40,6 +42,22 @@ def _json_safe(value: Any) -> Any:
         except Exception:
             pass
     return str(value)
+
+
+def _build_correction_lifecycle_context(
+    *,
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
+    correlation_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    if cycle_id is not None:
+        payload["cycle_id"] = _json_safe(cycle_id)
+    if intent_id is not None:
+        payload["intent_id"] = _json_safe(intent_id)
+    if correlation_id:
+        payload["correlation_id"] = _json_safe(correlation_id)
+    return payload
 
 
 def build_ec_batch_debug_payload(actuators: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
@@ -78,14 +96,23 @@ async def emit_correction_actuator_unavailable_signal(
     metric_name: str,
     correction_type: str,
     available_roles: list[str],
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
+    correlation_id: Optional[str] = None,
     send_infra_alert_fn: SendInfraAlertFn = send_infra_alert,
 ) -> None:
+    lifecycle_context = _build_correction_lifecycle_context(
+        cycle_id=cycle_id,
+        intent_id=intent_id,
+        correlation_id=correlation_id,
+    )
     details = _json_safe(
         {
             "metric": metric_name,
             "correction_type": correction_type,
             "available_roles": available_roles,
             "reason_code": "actuator_unavailable",
+            **lifecycle_context,
         }
     )
     await send_infra_alert_fn(
@@ -100,6 +127,8 @@ async def emit_correction_actuator_unavailable_signal(
         service="automation-engine",
         component="correction_controller",
         error_type="actuator_unavailable",
+        cycle_id=cycle_id,
+        intent_id=intent_id,
         details=details,
     )
 
@@ -112,11 +141,19 @@ async def emit_ec_batch_unavailable_signal(
     current_ec: float,
     total_ml: float,
     actuators: Optional[Dict[str, Dict[str, Any]]],
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
+    correlation_id: Optional[str] = None,
     create_zone_event_fn: CreateZoneEventFn = create_zone_event,
     send_infra_alert_fn: SendInfraAlertFn = send_infra_alert,
 ) -> None:
     available_roles = sorted(list((actuators or {}).keys()))
     ec_batch_debug = build_ec_batch_debug_payload(actuators)
+    lifecycle_context = _build_correction_lifecycle_context(
+        cycle_id=cycle_id,
+        intent_id=intent_id,
+        correlation_id=correlation_id,
+    )
     event_details = _json_safe(
         {
             "reason": "ec_component_batch_unavailable",
@@ -126,6 +163,7 @@ async def emit_ec_batch_unavailable_signal(
             "target_ec": target_ec,
             "current_ec": current_ec,
             "total_ml": total_ml,
+            **lifecycle_context,
         }
     )
 
@@ -145,6 +183,7 @@ async def emit_ec_batch_unavailable_signal(
             "target_ec": target_ec,
             "current_ec": current_ec,
             "total_ml": total_ml,
+            **lifecycle_context,
         }
     )
     await send_infra_alert_fn(
@@ -156,6 +195,8 @@ async def emit_ec_batch_unavailable_signal(
         service="automation-engine",
         component="correction_controller",
         error_type="ec_component_batch_unavailable",
+        cycle_id=cycle_id,
+        intent_id=intent_id,
         details=alert_details,
     )
 
@@ -167,11 +208,19 @@ async def emit_ph_batch_unavailable_signal(
     target_ph: float,
     current_ph: float,
     actuators: Optional[Dict[str, Dict[str, Any]]],
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
+    correlation_id: Optional[str] = None,
     create_zone_event_fn: CreateZoneEventFn = create_zone_event,
     send_infra_alert_fn: SendInfraAlertFn = send_infra_alert,
 ) -> None:
     available_roles = sorted(list((actuators or {}).keys()))
     ph_batch_debug = build_ph_batch_debug_payload(actuators)
+    lifecycle_context = _build_correction_lifecycle_context(
+        cycle_id=cycle_id,
+        intent_id=intent_id,
+        correlation_id=correlation_id,
+    )
     event_details = _json_safe(
         {
             "reason": "ph_component_batch_unavailable",
@@ -180,6 +229,7 @@ async def emit_ph_batch_unavailable_signal(
             "ph_batch_debug": ph_batch_debug,
             "target_ph": target_ph,
             "current_ph": current_ph,
+            **lifecycle_context,
         }
     )
 
@@ -198,6 +248,7 @@ async def emit_ph_batch_unavailable_signal(
             "ph_batch_debug": ph_batch_debug,
             "target_ph": target_ph,
             "current_ph": current_ph,
+            **lifecycle_context,
         }
     )
     await send_infra_alert_fn(
@@ -209,5 +260,71 @@ async def emit_ph_batch_unavailable_signal(
         service="automation-engine",
         component="correction_controller",
         error_type="ph_component_batch_unavailable",
+        cycle_id=cycle_id,
+        intent_id=intent_id,
         details=alert_details,
     )
+
+
+async def resolve_correction_transient_alerts(
+    *,
+    zone_id: int,
+    metric_name: str,
+    reason_code: str,
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
+    correlation_id: Optional[str] = None,
+    send_infra_resolved_alert_fn: SendInfraResolvedAlertFn = send_infra_resolved_alert,
+) -> None:
+    lifecycle_context = _build_correction_lifecycle_context(
+        cycle_id=cycle_id,
+        intent_id=intent_id,
+        correlation_id=correlation_id,
+    )
+    details = _json_safe(
+        {
+            "metric": metric_name,
+            "reason_code": reason_code,
+            **lifecycle_context,
+        }
+    )
+    alerts_to_resolve = (
+        (
+            INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+            "Correction Command Unconfirmed",
+            "CommandUnconfirmed",
+            "command confirmation recovered",
+        ),
+        (
+            INFRA_CORRECTION_ACTUATOR_UNAVAILABLE,
+            "Correction Actuator Unavailable",
+            "actuator_unavailable",
+            "actuator availability recovered",
+        ),
+        (
+            INFRA_CORRECTION_EC_BATCH_UNAVAILABLE,
+            "EC Component Batch Unavailable",
+            "ec_component_batch_unavailable",
+            "EC component batch availability recovered",
+        ),
+        (
+            INFRA_CORRECTION_PH_BATCH_UNAVAILABLE,
+            "PH Component Batch Unavailable",
+            "ph_component_batch_unavailable",
+            "PH component batch availability recovered",
+        ),
+    )
+
+    for code, alert_type, error_type, status_label in alerts_to_resolve:
+        await send_infra_resolved_alert_fn(
+            code=code,
+            alert_type=alert_type,
+            message=f"Zone {zone_id}: {metric_name} correction recovered - {status_label}",
+            zone_id=zone_id,
+            service="automation-engine",
+            component="correction_controller",
+            error_type=error_type,
+            cycle_id=cycle_id,
+            intent_id=intent_id,
+            details=details,
+        )

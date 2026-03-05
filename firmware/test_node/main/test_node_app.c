@@ -41,12 +41,15 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TELEMETRY_INTERVAL_MS 5000
 #define CONFIG_REPORT_INTERVAL_MS 30000
 #define COMMAND_QUEUE_LENGTH 32
+#define STATE_COMMAND_QUEUE_LENGTH 12
 #define COMMAND_WILDCARD_TOPIC "hydro/+/+/+/+/command"
 #define CONFIG_WILDCARD_TOPIC "hydro/+/+/+/config"
 #define TASK_STACK_TELEMETRY 6144
 #define TASK_STACK_TELEMETRY_FALLBACK 5632
 #define TASK_STACK_COMMAND_WORKER 6144
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
+#define TASK_STACK_STATE_COMMAND_WORKER 4096
+#define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
 #define CLEAN_FILL_MIN_DELAY_SEC 10
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
@@ -54,13 +57,22 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define SOLUTION_MAX_LATCH_LEVEL 0.92f
 #define IRR_STATE_MAX_AGE_SEC 30
-#define PH_DRIFT_BIAS_PER_TICK 0.004f
-#define EC_DRIFT_BIAS_PER_TICK -0.006f
-#define PH_REACTION_BASE_DELTA 0.03f
-#define EC_REACTION_BASE_DELTA 0.05f
+#define PH_DRIFT_BIAS_PER_TICK 0.0005f
+#define EC_DRIFT_BIAS_PER_TICK -0.0025f
+#define PH_REACTION_BASE_DELTA 0.10f
+#define EC_REACTION_BASE_DELTA 0.055f
 #define PH_REACTION_NOMINAL_ML 8.0f
 #define EC_REACTION_NOMINAL_ML 12.0f
 #define CORRECTION_SETTLE_TICKS 4
+#define CORRECTION_REACTION_SCALE_MIN 0.5f
+#define CORRECTION_REACTION_SCALE_MAX 5.0f
+#define TRANSIENT_DELAY_BASE_MIN_MS 220
+#define TRANSIENT_DELAY_BASE_MAX_MS 460
+#define TRANSIENT_DELAY_EXTRA_MIN_MS 160
+#define TRANSIENT_DELAY_EXTRA_MAX_MS 360
+#define TRANSIENT_DELAY_SCALE_PERCENT 10
+#define TRANSIENT_DELAY_SCALE_MIN_MS 220
+#define TRANSIENT_DELAY_SCALE_MAX_MS 6500
 #define CONFIG_REPORT_RETRY_DELAY_MS 250
 #define CONFIG_REPORT_NODE_SPACING_MS 120
 #define MIN_VALID_UNIX_TS_SEC 1000000000LL
@@ -248,10 +260,12 @@ static int64_t s_timestamp_offset_sec = 0;
 static bool s_timestamp_offset_valid = false;
 static uint32_t s_telemetry_tick = 0;
 static QueueHandle_t s_command_queue = NULL;
+static QueueHandle_t s_state_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
 static bool s_wildcard_subscriptions_ready = false;
 static bool s_factory_reset_pending = false;
 static volatile bool s_config_report_on_connect_pending = false;
+static bool s_state_command_fastpath_enabled = false;
 
 typedef struct {
     char cmd_id[96];
@@ -739,7 +753,7 @@ static float resolve_correction_reaction_scale(const pending_command_t *job, flo
     }
 
     scale = commanded_ml / nominal_ml;
-    return clamp_float(scale, 0.5f, 4.0f);
+    return clamp_float(scale, CORRECTION_REACTION_SCALE_MIN, CORRECTION_REACTION_SCALE_MAX);
 }
 
 static int random_range_ms(int min_value, int max_value) {
@@ -964,9 +978,11 @@ static bool is_ec_correction_channel(const char *channel) {
 }
 
 static bool is_main_pump_interlock_satisfied(void) {
-    bool has_withdraw_valve = s_virtual_state.valve_clean_supply_on || s_virtual_state.valve_solution_supply_on;
-    bool has_target_valve = s_virtual_state.valve_solution_fill_on || s_virtual_state.valve_irrigation_on;
-    return has_withdraw_valve && has_target_valve;
+    bool clean_fill_path = s_virtual_state.valve_clean_fill_on;
+    bool solution_fill_path = s_virtual_state.valve_clean_supply_on && s_virtual_state.valve_solution_fill_on;
+    bool recirculation_path = s_virtual_state.valve_solution_supply_on && s_virtual_state.valve_solution_fill_on;
+    bool irrigation_path = s_virtual_state.valve_solution_supply_on && s_virtual_state.valve_irrigation_on;
+    return clean_fill_path || solution_fill_path || recirculation_path || irrigation_path;
 }
 
 static void append_main_pump_interlock_error(cJSON *details) {
@@ -978,7 +994,7 @@ static void append_main_pump_interlock_error(cJSON *details) {
     cJSON_AddStringToObject(
         details,
         "error_message",
-        "pump_main requires open supply valve and open solution_fill or irrigation valve"
+        "pump_main requires valid flow path: clean_fill OR (clean_supply+solution_fill) OR (solution_supply+solution_fill) OR (solution_supply+irrigation)"
     );
 }
 
@@ -1971,22 +1987,22 @@ static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t
     }
 
     if (job && kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
-        int base_ms = random_range_ms(320, 640);
+        int base_ms = random_range_ms(TRANSIENT_DELAY_BASE_MIN_MS, TRANSIENT_DELAY_BASE_MAX_MS);
         int duration_ms = job->duration_ms_present ? job->duration_ms : 0;
         if (duration_ms <= 0 && job->amount_present && job->amount_value > 0.0f) {
             duration_ms = (int)(job->amount_value * 120.0f);
         }
         if (duration_ms > 0) {
-            int scaled_ms = (duration_ms * 15) / 100;
-            if (scaled_ms < 300) {
-                scaled_ms = 300;
+            int scaled_ms = (duration_ms * TRANSIENT_DELAY_SCALE_PERCENT) / 100;
+            if (scaled_ms < TRANSIENT_DELAY_SCALE_MIN_MS) {
+                scaled_ms = TRANSIENT_DELAY_SCALE_MIN_MS;
             }
-            if (scaled_ms > 9000) {
-                scaled_ms = 9000;
+            if (scaled_ms > TRANSIENT_DELAY_SCALE_MAX_MS) {
+                scaled_ms = TRANSIENT_DELAY_SCALE_MAX_MS;
             }
             return base_ms + scaled_ms;
         }
-        return base_ms + random_range_ms(220, 520);
+        return base_ms + random_range_ms(TRANSIENT_DELAY_EXTRA_MIN_MS, TRANSIENT_DELAY_EXTRA_MAX_MS);
     }
 
     if (params && cJSON_IsObject(params)) {
@@ -2533,6 +2549,8 @@ static void execute_pending_command(const pending_command_t *job) {
     cJSON *details;
     const char *final_status = "DONE";
     bool trigger_hardware_reboot = false;
+    bool transient_main_pump_initial_state = false;
+    bool transient_restore_main_pump = false;
 
     if (!job) {
         return;
@@ -2563,13 +2581,13 @@ static void execute_pending_command(const pending_command_t *job) {
     }
 
     if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
-        if (strcmp(job->channel, "pump_irrigation") == 0 && s_virtual_state.irrigation_on) {
-            cJSON_AddStringToObject(details, "error", "actuator_busy");
-            publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
-            cJSON_Delete(details);
-            return;
+        if (is_main_pump_channel(job->channel)) {
+            transient_main_pump_initial_state = s_virtual_state.main_pump_on;
+            if (transient_main_pump_initial_state) {
+                cJSON_AddBoolToObject(details, "main_pump_overlap", true);
+            }
         }
-        if (is_main_pump_channel(job->channel) && s_virtual_state.main_pump_on) {
+        if (strcmp(job->channel, "pump_irrigation") == 0 && s_virtual_state.irrigation_on) {
             cJSON_AddStringToObject(details, "error", "actuator_busy");
             publish_command_response(job->node_uid, job->channel, job->cmd_id, "BUSY", details);
             cJSON_Delete(details);
@@ -2600,6 +2618,7 @@ static void execute_pending_command(const pending_command_t *job) {
                 return;
             }
             s_virtual_state.main_pump_on = true;
+            transient_restore_main_pump = transient_main_pump_initial_state;
         } else if (is_fill_channel(job->channel)) {
             s_virtual_state.tank_fill_on = true;
         } else if (is_drain_channel(job->channel)) {
@@ -2658,7 +2677,7 @@ static void execute_pending_command(const pending_command_t *job) {
         if (strcmp(job->channel, "pump_irrigation") == 0) {
             s_virtual_state.irrigation_on = false;
         } else if (is_main_pump_channel(job->channel)) {
-            s_virtual_state.main_pump_on = false;
+            s_virtual_state.main_pump_on = transient_restore_main_pump;
         } else if (is_fill_channel(job->channel)) {
             s_virtual_state.tank_fill_on = false;
         } else if (is_drain_channel(job->channel)) {
@@ -2686,6 +2705,19 @@ static void command_worker_task(void *pv_parameters) {
 
     while (1) {
         if (xQueueReceive(s_command_queue, &job, portMAX_DELAY) == pdTRUE) {
+            execute_pending_command(&job);
+        }
+    }
+}
+
+static void state_command_worker_task(void *pv_parameters) {
+    pending_command_t job;
+    (void)pv_parameters;
+
+    ESP_LOGI(CMD_TAG, "State command worker started");
+
+    while (1) {
+        if (xQueueReceive(s_state_command_queue, &job, portMAX_DELAY) == pdTRUE) {
             execute_pending_command(&job);
         }
     }
@@ -2751,6 +2783,7 @@ static void command_callback(const char *topic, const char *channel, const char 
     const char *validation_error_message = NULL;
     const virtual_node_t *node;
     pending_command_t job;
+    BaseType_t queue_send_status = pdFALSE;
 
     (void)user_ctx;
 
@@ -2887,7 +2920,17 @@ static void command_callback(const char *topic, const char *channel, const char 
     publish_command_response(node_uid, topic_channel, cmd_id, "ACK", NULL);
     ui_logf(node_uid, "cmd ack %s/%s", topic_channel, cmd_name);
 
-    if (!s_command_queue || xQueueSend(s_command_queue, &job, 0) != pdTRUE) {
+    if (job.kind == COMMAND_KIND_STATE_QUERY) {
+        if (s_state_command_fastpath_enabled && s_state_command_queue) {
+            queue_send_status = xQueueSend(s_state_command_queue, &job, 0);
+        } else if (s_command_queue) {
+            queue_send_status = xQueueSendToFront(s_command_queue, &job, 0);
+        }
+    } else if (s_command_queue) {
+        queue_send_status = xQueueSend(s_command_queue, &job, 0);
+    }
+
+    if (queue_send_status != pdTRUE) {
         cJSON *details = cJSON_CreateObject();
         if (details) {
             cJSON_AddStringToObject(details, "error", "command_queue_full");
@@ -3044,7 +3087,7 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 static void apply_passive_drift(void) {
     float drift = ((float)(s_telemetry_tick % 11) - 5.0f) * 0.002f;
     float ph_drift = drift;
-    float ec_drift = drift * 4.0f;
+    float ec_drift = drift * 2.0f;
     bool clean_fill_active = is_clean_fill_active();
     bool solution_fill_active = is_solution_fill_active();
     bool irrigation_active = is_irrigation_active();
@@ -3710,12 +3753,17 @@ static void cleanup_init_runtime_resources(void) {
         vQueueDelete(s_command_queue);
         s_command_queue = NULL;
     }
+    if (s_state_command_queue) {
+        vQueueDelete(s_state_command_queue);
+        s_state_command_queue = NULL;
+    }
     if (s_topic_mutex) {
         vSemaphoreDelete(s_topic_mutex);
         s_topic_mutex = NULL;
     }
 
     s_wildcard_subscriptions_ready = false;
+    s_state_command_fastpath_enabled = false;
     (void)mqtt_manager_deinit();
     wifi_manager_deinit();
 }
@@ -3736,6 +3784,7 @@ esp_err_t test_node_app_init(void) {
 
     s_start_time_seconds = get_timestamp_seconds();
     s_factory_reset_pending = false;
+    s_state_command_fastpath_enabled = false;
     test_node_ui_set_mode("BOOT");
     test_node_ui_set_wifi_status(false, "X");
     test_node_ui_set_mqtt_status(false, "X");
@@ -3848,6 +3897,14 @@ esp_err_t test_node_app_init(void) {
     }
     test_node_ui_show_step("App init: command queue OK");
 
+    s_state_command_queue = xQueueCreate(STATE_COMMAND_QUEUE_LENGTH, sizeof(pending_command_t));
+    if (!s_state_command_queue) {
+        ESP_LOGW(TAG, "Failed to create state command queue, fallback to command queue priority path");
+        test_node_ui_show_step("App init: state queue fallback");
+    } else {
+        test_node_ui_show_step("App init: state queue OK");
+    }
+
     test_node_ui_show_step("App init: mqtt_manager_init");
     err = mqtt_manager_init(&mqtt_config, &mqtt_node_info);
     if (err != ESP_OK) {
@@ -3885,6 +3942,27 @@ esp_err_t test_node_app_init(void) {
         cleanup_init_runtime_resources();
         return err;
     }
+
+    if (s_state_command_queue) {
+        err = start_worker_task(
+            state_command_worker_task,
+            "state_cmd_worker",
+            TASK_STACK_STATE_COMMAND_WORKER,
+            TASK_STACK_STATE_COMMAND_WORKER_FALLBACK,
+            7,
+            false
+        );
+        if (err == ESP_OK) {
+            s_state_command_fastpath_enabled = true;
+            test_node_ui_show_step("App init: state fastpath ON");
+        } else {
+            s_state_command_fastpath_enabled = false;
+            vQueueDelete(s_state_command_queue);
+            s_state_command_queue = NULL;
+            test_node_ui_show_step("App init: state fastpath OFF");
+        }
+    }
+
     err = start_worker_task(
         task_publish_telemetry,
         "telemetry_task",

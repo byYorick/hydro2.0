@@ -4,7 +4,10 @@ import logging
 
 import pytest
 
-from services.resilience_contract import REASON_CORRECTION_STALE_FLAGS
+from services.resilience_contract import (
+    REASON_CORRECTION_GATING_PASSED,
+    REASON_CORRECTION_STALE_FLAGS,
+)
 from services.zone_automation_constants import SENSOR_MODE_POLICY
 from services.zone_sensor_mode_orchestrator import (
     resolve_correction_sensor_nodes,
@@ -59,6 +62,15 @@ def test_resolve_sensor_mode_action_stale_flags_prefers_activate():
     action = resolve_sensor_mode_action(
         REASON_CORRECTION_STALE_FLAGS,
         can_run=False,
+        sensor_mode_policy=SENSOR_MODE_POLICY,
+    )
+    assert action == "activate"
+
+
+def test_resolve_sensor_mode_action_gating_passed_prefers_activate():
+    action = resolve_sensor_mode_action(
+        REASON_CORRECTION_GATING_PASSED,
+        can_run=True,
         sensor_mode_policy=SENSOR_MODE_POLICY,
     )
     assert action == "activate"

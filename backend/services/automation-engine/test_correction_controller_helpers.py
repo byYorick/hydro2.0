@@ -1,7 +1,11 @@
 from types import SimpleNamespace
 
 import correction_controller_helpers as helpers
-from correction_controller_helpers import determine_correction_type_for_diff, get_dt_seconds_for_zone
+from correction_controller_helpers import (
+    determine_correction_type_for_diff,
+    get_dt_seconds_for_zone,
+    select_actuator_for_correction,
+)
 
 
 def _controller(metric: str) -> SimpleNamespace:
@@ -48,3 +52,36 @@ def test_get_dt_seconds_for_zone_clamps_to_min(monkeypatch):
     dt = get_dt_seconds_for_zone(controller, zone_id=7)
 
     assert dt == 5.0
+
+
+def test_select_actuator_for_dilute_prefers_recirculation_pump():
+    controller = _controller("ec")
+    actuators = {
+        "irrigation_pump": {"role": "irrigation_pump", "channel": "pump_main"},
+        "recirculation_pump": {"role": "recirculation_pump", "channel": "pump_recirc"},
+    }
+
+    selected = select_actuator_for_correction(
+        controller=controller,
+        correction_type="dilute",
+        actuators=actuators,
+        nodes={},
+    )
+
+    assert selected == actuators["recirculation_pump"]
+
+
+def test_select_actuator_for_dilute_falls_back_to_irrigation_pump():
+    controller = _controller("ec")
+    actuators = {
+        "irrigation_pump": {"role": "irrigation_pump", "channel": "pump_main"},
+    }
+
+    selected = select_actuator_for_correction(
+        controller=controller,
+        correction_type="dilute",
+        actuators=actuators,
+        nodes={},
+    )
+
+    assert selected == actuators["irrigation_pump"]

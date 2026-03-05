@@ -239,7 +239,7 @@ async def test_claim_start_cycle_intent_returns_zone_busy_for_other_active_inten
         if "with candidate as" in q:
             return []
         if "where zone_id = $1" in q and "idempotency_key = $2" in q:
-            return []
+            return [{"id": 910, "zone_id": 5, "status": "pending", "retry_count": 0, "payload": {}}]
         if "idempotency_key <> $2" in q and "status = 'running'" in q:
             return [{"id": 911, "zone_id": 5, "status": "running", "retry_count": 1, "payload": {}}]
         if "from zone_automation_intents" in q and "idempotency_key" in q and "order by id desc" in q:
@@ -256,6 +256,7 @@ async def test_claim_start_cycle_intent_returns_zone_busy_for_other_active_inten
     assert claimed["decision"] == "zone_busy"
     assert claimed["intent"]["id"] == 911
     assert claimed["intent"]["zone_id"] == 5
+    assert claimed["requested_intent"]["id"] == 910
 
 
 @pytest.mark.asyncio
@@ -469,6 +470,42 @@ def test_build_scheduler_task_request_from_intent_strips_cycle_start_workflow_fo
     assert scheduler_req.payload["config"]["execution"]["duration_sec"] == 75
     assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
     assert scheduler_req.payload["config"]["execution"].get("workflow") is None
+
+
+def test_build_scheduler_task_request_from_irrigate_once_cycle_start_uses_diagnostics():
+    now = datetime(2026, 2, 22, 12, 0, 0)
+    req = StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z2:irrigate-once:start-cycle")
+    intent = {
+        "id": 422,
+        "retry_count": 0,
+        "intent_type": "IRRIGATE_ONCE",
+        "payload": {
+            "source": "laravel_scheduler",
+            "task_type": "irrigation",
+            "workflow": "cycle_start",
+            "config": {
+                "execution": {
+                    "workflow": "cycle_start",
+                    "duration_sec": 75,
+                }
+            },
+        },
+    }
+
+    scheduler_req = build_scheduler_task_request_from_intent(
+        zone_id=2,
+        req=req,
+        intent_row=intent,
+        now=now,
+        due_in_sec=60,
+        expires_in_sec=900,
+        default_topology="two_tank_drip_substrate_trays",
+    )
+
+    assert scheduler_req.task_type == "diagnostics"
+    assert scheduler_req.payload["workflow"] == "cycle_start"
+    assert scheduler_req.payload["config"]["execution"]["workflow"] == "cycle_start"
+    assert scheduler_req.payload["config"]["execution"]["topology"] == "two_tank_drip_substrate_trays"
 
 
 def test_build_scheduler_task_request_from_intent_preserves_grow_cycle_id_metadata():

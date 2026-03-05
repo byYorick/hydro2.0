@@ -118,6 +118,7 @@ async def handle_two_tank_solution_fill_check(
                     reason="Несогласованность датчиков бака раствора: max=1 и min=0",
                     clean_level_max=True,
                     clean_level_min=False,
+                    tank="solution",
                 )
         elif solution_min_level.get("expected_labels"):
             logger.warning(

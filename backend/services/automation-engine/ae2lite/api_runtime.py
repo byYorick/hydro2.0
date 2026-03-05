@@ -321,7 +321,7 @@ zone_start_cycle = bind_start_cycle_route(
     claim_start_cycle_intent_fn=lambda *, zone_id, req, now, claimed_stale_after_sec: policy_claim_start_cycle_intent(zone_id=zone_id, req=req, now=now, claimed_stale_after_sec=claimed_stale_after_sec, fetch_fn=fetch),
     start_cycle_claim_stale_sec_fn=_start_cycle_claim_stale_sec,
     load_latest_zone_task_fn=lambda zone_id: _load_latest_zone_task(zone_id),
-    load_zone_workflow_state_fn=lambda zone_id: _workflow_state_store.get(zone_id),
+    load_zone_workflow_state_fn=lambda zone_id: _workflow_state_store.get_with_stale_reset(zone_id, stale_threshold_secs=_AE_WORKFLOW_STATE_STALE_TIMEOUT_SEC),
     build_scheduler_task_request_from_intent_fn=policy_build_scheduler_task_request_from_intent,
     start_cycle_due_sec_fn=_start_cycle_due_sec,
     start_cycle_expires_sec_fn=_start_cycle_expires_sec,

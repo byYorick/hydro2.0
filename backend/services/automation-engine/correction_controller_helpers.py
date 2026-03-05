@@ -139,6 +139,8 @@ def select_actuator_for_correction(
         role_order = ["ph_base_pump"] if correction_type == "add_base" else ["ph_acid_pump"]
     elif correction_type == "add_nutrients":
         role_order = ["ec_npk_pump", "ec_calcium_pump", "ec_magnesium_pump", "ec_micro_pump"]
+    elif correction_type == "dilute":
+        role_order = ["recirculation_pump", "irrigation_pump", "main_pump", "pump"]
     else:
         return None
 

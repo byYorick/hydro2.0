@@ -103,6 +103,15 @@ async def check_and_correct_core(
     Проверка и корректировка параметра (pH или EC).
     """
     target_key = controller.correction_type.value
+    targets_meta = targets.get("_meta") if isinstance(targets.get("_meta"), dict) else {}
+    cycle_id = targets_meta.get("cycle_id")
+    if cycle_id is None:
+        cycle_id = targets.get("cycle_id")
+    intent_id = targets_meta.get("intent_id")
+    if intent_id is None:
+        intent_id = targets.get("intent_id")
+    correction_correlation_id = targets_meta.get("correlation_id") or targets.get("correlation_id")
+
     state_machine = CorrectionStateMachine(zone_id=zone_id, metric=target_key, state="sense")
     current = telemetry.get(controller.metric_name) or telemetry.get(target_key)
     if controller.correction_type.value == "ph":
@@ -328,6 +337,9 @@ async def check_and_correct_core(
                 target_ph=target_val,
                 current_ph=current_val,
                 actuators=actuators,
+                cycle_id=cycle_id,
+                intent_id=intent_id,
+                correlation_id=correction_correlation_id,
             )
         else:
             await emit_correction_actuator_unavailable_signal(
@@ -335,6 +347,9 @@ async def check_and_correct_core(
                 metric_name=target_key,
                 correction_type=correction_type,
                 available_roles=available_roles,
+                cycle_id=cycle_id,
+                intent_id=intent_id,
+                correlation_id=correction_correlation_id,
             )
         return None
 
@@ -480,6 +495,9 @@ async def check_and_correct_core(
                 current_ec=current_val,
                 total_ml=amount,
                 actuators=actuators,
+                cycle_id=cycle_id,
+                intent_id=intent_id,
+                correlation_id=correction_correlation_id,
             )
             return None
 
@@ -511,11 +529,15 @@ async def check_and_correct_core(
             "proactive_mode": proactive_mode,
         },
         "zone_id": zone_id,
+        "cycle_id": cycle_id,
+        "intent_id": intent_id,
         "correction_type_str": target_key,
         "current_value": current_val,
         "target_value": target_val,
         "reason": reason,
     }
+    if correction_correlation_id:
+        command["correlation_id"] = str(correction_correlation_id)
 
     nutrition_control = controller._extract_nutrition_control(targets)
     if nutrition_control:
@@ -551,6 +573,10 @@ async def check_and_correct_core(
             "horizon_minutes": proactive_payload.get("horizon_minutes"),
             "samples_count": proactive_payload.get("samples_count"),
         }
+    if cycle_id is not None:
+        command["event_details"]["cycle_id"] = cycle_id
+    if intent_id is not None:
+        command["event_details"]["intent_id"] = intent_id
 
     command["state_machine"] = {"state": state_machine.state, "reason_code": "plan_ready"}
 

@@ -52,19 +52,24 @@ def _build_dedupe_key(
     channel: Optional[str],
     cmd: Optional[str],
     error_type: Optional[str],
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
 ) -> str:
-    return "|".join(
-        [
-            code or "infra_unknown_error",
-            str(zone_id or "global"),
-            service or "unknown_service",
-            component or "unknown_component",
-            node_uid or "unknown_node",
-            channel or "unknown_channel",
-            cmd or "unknown_cmd",
-            error_type or "unknown_error_type",
-        ]
-    )
+    key_parts = [
+        code or "infra_unknown_error",
+        str(zone_id or "global"),
+        service or "unknown_service",
+        component or "unknown_component",
+        node_uid or "unknown_node",
+        channel or "unknown_channel",
+        cmd or "unknown_cmd",
+        error_type or "unknown_error_type",
+    ]
+    if cycle_id is not None:
+        key_parts.append(f"cycle:{cycle_id}")
+    if intent_id is not None:
+        key_parts.append(f"intent:{intent_id}")
+    return "|".join(key_parts)
 
 
 async def send_infra_alert(
@@ -82,6 +87,8 @@ async def send_infra_alert(
     channel: Optional[str] = None,
     cmd: Optional[str] = None,
     error_type: Optional[str] = None,
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
     ts_device: Optional[str] = None,
 ) -> bool:
     """
@@ -107,6 +114,8 @@ async def send_infra_alert(
             "error_type": error_type,
             "channel": channel,
             "cmd": cmd,
+            "cycle_id": cycle_id,
+            "intent_id": intent_id,
             "trace_id": trace_id,
             "detected_at": utcnow().isoformat(),
             "dedupe_key": _build_dedupe_key(
@@ -118,6 +127,8 @@ async def send_infra_alert(
                 channel=channel,
                 cmd=cmd,
                 error_type=error_type,
+                cycle_id=cycle_id,
+                intent_id=intent_id,
             ),
         }
     )
@@ -163,6 +174,8 @@ async def send_infra_exception_alert(
     channel: Optional[str] = None,
     cmd: Optional[str] = None,
     error_type: Optional[str] = None,
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
     ts_device: Optional[str] = None,
 ) -> bool:
     """Удобный wrapper для отправки alert по объекту Exception."""
@@ -184,6 +197,8 @@ async def send_infra_exception_alert(
         channel=channel,
         cmd=cmd,
         error_type=resolved_error_type,
+        cycle_id=cycle_id,
+        intent_id=intent_id,
         ts_device=ts_device,
     )
 
@@ -201,6 +216,9 @@ async def send_infra_resolved_alert(
     hardware_id: Optional[str] = None,
     channel: Optional[str] = None,
     cmd: Optional[str] = None,
+    error_type: Optional[str] = None,
+    cycle_id: Optional[Any] = None,
+    intent_id: Optional[Any] = None,
     ts_device: Optional[str] = None,
 ) -> bool:
     """
@@ -221,8 +239,11 @@ async def send_infra_resolved_alert(
             "message": message,
             "service": service,
             "component": component,
+            "error_type": error_type,
             "channel": channel,
             "cmd": cmd,
+            "cycle_id": cycle_id,
+            "intent_id": intent_id,
             "trace_id": trace_id,
             "resolved_at": utcnow().isoformat(),
             "dedupe_key": _build_dedupe_key(
@@ -233,7 +254,9 @@ async def send_infra_resolved_alert(
                 node_uid=node_uid,
                 channel=channel,
                 cmd=cmd,
-                error_type="resolved",
+                error_type=error_type,
+                cycle_id=cycle_id,
+                intent_id=intent_id,
             ),
         }
     )

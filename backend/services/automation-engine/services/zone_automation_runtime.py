@@ -162,6 +162,44 @@ def restore_runtime_state(self, raw_state: Optional[Dict[str, Any]]) -> None:
 
 
 async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] = None) -> None:
+    async def _load_latest_zone_task_for_cycle(target_zone_id: int) -> Optional[Dict[str, Any]]:
+        rows = await fetch(
+            """
+            SELECT task_id, status, accepted_at, terminal_at
+            FROM laravel_scheduler_active_tasks
+            WHERE zone_id = $1
+              AND terminal_at IS NULL
+              AND status IN ('accepted', 'running')
+            ORDER BY accepted_at DESC, id DESC
+            LIMIT 1
+            """,
+            target_zone_id,
+        )
+        if not rows:
+            fallback_rows = await fetch(
+                """
+                SELECT
+                    details->>'task_id' AS task_id,
+                    status,
+                    created_at AS accepted_at,
+                    NULL::timestamp AS terminal_at
+                FROM scheduler_logs
+                WHERE details->>'zone_id' = $1::text
+                  AND task_name LIKE 'ae_scheduler_task_%'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                str(target_zone_id),
+            )
+            if not fallback_rows:
+                return None
+            fallback_task = dict(fallback_rows[0])
+            fallback_status = str(fallback_task.get("status") or "").strip().lower()
+            if fallback_status in {"accepted", "running"}:
+                return fallback_task
+            return None
+        return dict(rows[0])
+
     await policy_process_zone_cycle(
         zone_id=zone_id,
         sim_clock=sim_clock,
@@ -184,6 +222,7 @@ async def process_zone(self, zone_id: int, sim_clock: Optional[SimulationClock] 
         process_irrigation_controller_fn=self._process_irrigation_controller,
         process_recirculation_controller_fn=self._process_recirculation_controller,
         process_correction_controllers_fn=self._process_correction_controllers,
+        load_latest_zone_task_fn=_load_latest_zone_task_for_cycle,
         evaluate_required_nodes_recovery_gate_fn=self._evaluate_required_nodes_recovery_gate,
         update_zone_health_fn=self._update_zone_health,
         emit_missing_targets_signal_fn=self._emit_missing_targets_signal,
@@ -347,4 +386,3 @@ def reset_zone_error_streak(self, zone_id: int) -> int:
         get_zone_state_fn=self._get_zone_state,
         logger=logger,
     )
-

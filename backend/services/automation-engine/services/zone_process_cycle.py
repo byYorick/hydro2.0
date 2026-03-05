@@ -30,6 +30,7 @@ async def process_zone_cycle(
     process_irrigation_controller_fn: Callable[..., Awaitable[None]],
     process_recirculation_controller_fn: Callable[..., Awaitable[None]],
     process_correction_controllers_fn: Callable[..., Awaitable[None]],
+    load_latest_zone_task_fn: Callable[[int], Awaitable[Optional[Dict[str, Any]]]],
     evaluate_required_nodes_recovery_gate_fn: Callable[[int, Dict[str, Any]], Awaitable[bool]],
     update_zone_health_fn: Callable[[int], Awaitable[None]],
     emit_missing_targets_signal_fn: Callable[[int, Optional[Dict[str, Any]]], Awaitable[None]],
@@ -39,7 +40,7 @@ async def process_zone_cycle(
     get_error_streak_fn: Callable[[int], int],
     get_next_allowed_run_at_fn: Callable[[int], Any],
     create_zone_event_fn: Callable[..., Awaitable[Any]],
-    check_water_level_fn: Callable[[int], Awaitable[tuple[bool, Optional[float]]]],
+    check_water_level_fn: Callable[..., Awaitable[tuple[bool, Optional[float]]]],
     ensure_water_level_alert_fn: Callable[[int, float], Awaitable[Any]],
     utcnow_fn: Callable[[], Any],
     check_latency_metric: Any,
@@ -105,7 +106,7 @@ async def process_zone_cycle(
             },
         )
 
-        water_level_ok, water_level = await check_water_level_fn(zone_id)
+        water_level_ok, water_level = await check_water_level_fn(zone_id, workflow_phase=workflow_phase)
         if water_level is not None:
             await ensure_water_level_alert_fn(zone_id, water_level)
 
@@ -169,23 +170,47 @@ async def process_zone_cycle(
             ),
             zone_id,
         )
-        await safe_process_controller_fn(
-            "correction",
-            process_correction_controllers_fn(
+        correction_targets = targets
+        if isinstance(targets, dict):
+            correction_targets = dict(targets)
+            correction_meta_raw = correction_targets.get("_meta")
+            correction_meta = dict(correction_meta_raw) if isinstance(correction_meta_raw, dict) else {}
+            correction_meta.setdefault("cycle_id", grow_cycle.get("id") if isinstance(grow_cycle, dict) else None)
+            if isinstance(grow_cycle, dict) and grow_cycle.get("intent_id") is not None:
+                correction_meta["intent_id"] = grow_cycle.get("intent_id")
+            correction_meta.setdefault("workflow_phase", workflow_phase)
+            correction_targets["_meta"] = correction_meta
+        latest_zone_task = await load_latest_zone_task_fn(zone_id)
+        latest_zone_task_status = str(latest_zone_task.get("status") or "").strip().lower() if isinstance(latest_zone_task, dict) else ""
+        if latest_zone_task_status in {"accepted", "running"}:
+            logger.info(
+                "Zone %s: skip correction controllers while scheduler task is active",
                 zone_id,
-                targets,
-                telemetry,
-                telemetry_timestamps,
-                normalized_correction_flags,
-                nodes,
-                capabilities,
-                workflow_phase,
-                water_level_ok,
-                bindings,
-                actuators,
-            ),
-            zone_id,
-        )
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "active_task_id": str(latest_zone_task.get("task_id") or "").strip() if isinstance(latest_zone_task, dict) else None,
+                    "active_task_status": latest_zone_task_status,
+                },
+            )
+        else:
+            await safe_process_controller_fn(
+                "correction",
+                process_correction_controllers_fn(
+                    zone_id,
+                    correction_targets,
+                    telemetry,
+                    telemetry_timestamps,
+                    normalized_correction_flags,
+                    nodes,
+                    capabilities,
+                    workflow_phase,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                ),
+                zone_id,
+            )
         await safe_process_controller_fn("health", update_zone_health_fn(zone_id), zone_id)
 
         previous_error_streak = reset_zone_error_streak_fn(zone_id)

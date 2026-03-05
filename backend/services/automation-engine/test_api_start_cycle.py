@@ -14,6 +14,9 @@ def _stub_workflow_state_store(monkeypatch):
         async def get(self, _zone_id: int):
             return {"workflow_phase": "idle", "scheduler_task_id": None}
 
+        async def get_with_stale_reset(self, zone_id: int, **_kw):
+            return await self.get(zone_id)
+
     monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
 
 
@@ -268,8 +271,61 @@ async def test_zone_start_cycle_returns_409_when_zone_busy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_reverts_intent(monkeypatch):
-    captured = {"create_called": False, "pending_calls": []}
+async def test_zone_start_cycle_zone_busy_marks_requested_intent_terminal(monkeypatch):
+    captured = {"terminal_calls": []}
+
+    async def fake_validate_zone(_zone_id: int):
+        return None
+
+    async def fake_validate_security(_request):
+        return None
+
+    async def fake_claim_start_cycle_intent(*_args, **_kwargs):
+        return {
+            "decision": "zone_busy",
+            "intent": {"id": 990, "zone_id": 12, "status": "running"},
+            "requested_intent": {"id": 901, "zone_id": 12, "status": "pending"},
+        }
+
+    async def fake_mark_intent_terminal(*, intent_id, now, success, error_code, error_message, execute_fn):
+        captured["terminal_calls"].append(
+            {
+                "intent_id": intent_id,
+                "now": now,
+                "success": success,
+                "error_code": error_code,
+                "error_message": error_message,
+                "execute_fn": execute_fn,
+            }
+        )
+
+    monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
+    monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
+    monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
+    monkeypatch.setattr(api, "policy_mark_intent_terminal", fake_mark_intent_terminal)
+
+    with pytest.raises(HTTPException) as exc:
+        await api.zone_start_cycle(
+            zone_id=12,
+            request=SimpleNamespace(headers={"x-trace-id": "trace-busy-pending"}),
+            req=StartCycleRequest(
+                source="laravel_scheduler",
+                idempotency_key="sch:z12:irrigation:2026-02-22T05:30:30Z",
+            ),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail.get("error") == "start_cycle_zone_busy"
+    assert len(captured["terminal_calls"]) == 1
+    assert captured["terminal_calls"][0]["intent_id"] == 901
+    assert captured["terminal_calls"][0]["success"] is False
+    assert captured["terminal_calls"][0]["error_code"] == "start_cycle_zone_busy"
+
+
+@pytest.mark.asyncio
+async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_fails_intent(monkeypatch):
+    captured = {"create_called": False, "terminal_calls": []}
 
     async def fake_validate_zone(_zone_id: int):
         return None
@@ -286,8 +342,17 @@ async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_revert
     async def fake_load_latest_zone_task(_zone_id: int):
         return {"task_id": "st-running", "status": "running"}
 
-    async def fake_mark_intent_pending(*, intent_id, now, execute_fn):
-        captured["pending_calls"].append({"intent_id": intent_id, "now": now, "execute_fn": execute_fn})
+    async def fake_mark_intent_terminal(*, intent_id, now, success, error_code, error_message, execute_fn):
+        captured["terminal_calls"].append(
+            {
+                "intent_id": intent_id,
+                "now": now,
+                "success": success,
+                "error_code": error_code,
+                "error_message": error_message,
+                "execute_fn": execute_fn,
+            }
+        )
 
     async def fake_create_scheduler_task(_req):
         captured["create_called"] = True
@@ -297,7 +362,7 @@ async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_revert
     monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
     monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
     monkeypatch.setattr(api, "_load_latest_zone_task", fake_load_latest_zone_task)
-    monkeypatch.setattr(api, "policy_mark_intent_pending", fake_mark_intent_pending)
+    monkeypatch.setattr(api, "policy_mark_intent_terminal", fake_mark_intent_terminal)
     monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
 
     with pytest.raises(HTTPException) as exc:
@@ -317,13 +382,15 @@ async def test_zone_start_cycle_returns_409_when_zone_has_active_task_and_revert
     assert detail.get("active_task_id") == "st-running"
     assert detail.get("active_task_status") == "running"
     assert captured["create_called"] is False
-    assert len(captured["pending_calls"]) == 1
-    assert captured["pending_calls"][0]["intent_id"] == 901
+    assert len(captured["terminal_calls"]) == 1
+    assert captured["terminal_calls"][0]["intent_id"] == 901
+    assert captured["terminal_calls"][0]["success"] is False
+    assert captured["terminal_calls"][0]["error_code"] == "start_cycle_zone_busy"
 
 
 @pytest.mark.asyncio
-async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active(monkeypatch):
-    captured = {"create_called": False, "pending_calls": []}
+async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active_and_fails_intent(monkeypatch):
+    captured = {"create_called": False, "terminal_calls": []}
 
     async def fake_validate_zone(_zone_id: int):
         return None
@@ -340,8 +407,17 @@ async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active(monkey
     async def fake_load_latest_zone_task(_zone_id: int):
         return {"task_id": "st-completed", "status": "completed"}
 
-    async def fake_mark_intent_pending(*, intent_id, now, execute_fn):
-        captured["pending_calls"].append({"intent_id": intent_id, "now": now, "execute_fn": execute_fn})
+    async def fake_mark_intent_terminal(*, intent_id, now, success, error_code, error_message, execute_fn):
+        captured["terminal_calls"].append(
+            {
+                "intent_id": intent_id,
+                "now": now,
+                "success": success,
+                "error_code": error_code,
+                "error_message": error_message,
+                "execute_fn": execute_fn,
+            }
+        )
 
     async def fake_create_scheduler_task(_req):
         captured["create_called"] = True
@@ -351,11 +427,14 @@ async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active(monkey
         async def get(self, _zone_id: int):
             return {"workflow_phase": "tank_filling", "scheduler_task_id": "st-existing"}
 
+        async def get_with_stale_reset(self, zone_id: int, **_kw):
+            return await self.get(zone_id)
+
     monkeypatch.setattr(api, "_validate_scheduler_zone", fake_validate_zone)
     monkeypatch.setattr(api, "_validate_scheduler_security_baseline", fake_validate_security)
     monkeypatch.setattr(api, "policy_claim_start_cycle_intent", fake_claim_start_cycle_intent)
     monkeypatch.setattr(api, "_load_latest_zone_task", fake_load_latest_zone_task)
-    monkeypatch.setattr(api, "policy_mark_intent_pending", fake_mark_intent_pending)
+    monkeypatch.setattr(api, "policy_mark_intent_terminal", fake_mark_intent_terminal)
     monkeypatch.setattr(api, "_create_scheduler_task", fake_create_scheduler_task)
     monkeypatch.setattr(api, "_workflow_state_store", _WorkflowStateStoreStub())
 
@@ -376,8 +455,10 @@ async def test_zone_start_cycle_returns_409_when_workflow_phase_is_active(monkey
     assert detail.get("active_workflow_phase") == "tank_filling"
     assert detail.get("active_workflow_scheduler_task_id") == "st-existing"
     assert captured["create_called"] is False
-    assert len(captured["pending_calls"]) == 1
-    assert captured["pending_calls"][0]["intent_id"] == 902
+    assert len(captured["terminal_calls"]) == 1
+    assert captured["terminal_calls"][0]["intent_id"] == 902
+    assert captured["terminal_calls"][0]["success"] is False
+    assert captured["terminal_calls"][0]["error_code"] == "start_cycle_zone_busy"
 
 
 def test_router_exposes_start_cycle_and_not_legacy_scheduler_task_paths():

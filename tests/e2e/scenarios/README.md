@@ -25,6 +25,7 @@
 - `automation_engine/` — автоматизация
 - `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
+- `workflow/` — сценарии пошаговых workflow (clean/solution/recirculation/ready)
 
 Полный список и DoD: `../../../docs/testing/E2E_SCENARIOS.md`.
 
@@ -40,6 +41,7 @@
 - `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml` — полный продовый путь (zone/plant/recipe/bind/start)
 - `automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml` — полный путь + строгие EC/pH коррекции на real node
 - `automation_engine/E74_node_zone_mismatch_guard.yaml` — guard node/zone mismatch
+- `workflow/E94_startup_to_ready_smoke.yaml` — startup -> READY smoke + проверки BUSY/TIMEOUT/alert lifecycle
 
 ## AE2-Lite совместимость
 

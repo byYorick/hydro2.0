@@ -167,6 +167,7 @@ class TestSuite:
                 str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
                 str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
                 str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
+                str(base_path / "workflow" / "E94_startup_to_ready_smoke.yaml"),
             ],
             "scheduler": [
                 str(base_path / "scheduler" / "E80_irrigation_schedule_happy.yaml"),
@@ -195,6 +196,7 @@ class TestSuite:
                 str(base_path / "workflow" / "E87_ec_ph_correction_during_fill.yaml"),
                 str(base_path / "workflow" / "E88_config_report_soft_deactivate_channels.yaml"),
                 str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
+                str(base_path / "workflow" / "E94_startup_to_ready_smoke.yaml"),
             ],
             "full": self._get_all_scenarios()
         }

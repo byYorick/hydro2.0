@@ -7,13 +7,14 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from common.db import create_ai_log, create_zone_event
-from common.infra_alerts import send_infra_alert
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 from config.settings import get_settings
 from correction_command_retry import (
     publish_controller_command_with_retry,
     trigger_ec_partial_batch_compensation,
     wait_command_done,
 )
+from correction_controller_signals import resolve_correction_transient_alerts
 from correction_cooldown import record_correction
 from correction_state_machine import CorrectionStateMachine
 from decision_context import DecisionContext
@@ -58,6 +59,8 @@ async def apply_correction_with_events(
     Применить корректировку: отправить команду, создать события и логи.
     """
     zone_id = command["zone_id"]
+    cycle_id = command.get("cycle_id")
+    intent_id = command.get("intent_id")
     correction_type_str = command["correction_type_str"]
     current_val = command["current_value"]
     target_val = command["target_value"]
@@ -253,6 +256,14 @@ async def apply_correction_with_events(
         },
     )
     await state_machine.transition("verify", "act_commands_confirmed")
+    await resolve_correction_transient_alerts(
+        zone_id=zone_id,
+        metric_name=correction_type_str,
+        reason_code="correction_command_confirmed",
+        cycle_id=cycle_id,
+        intent_id=intent_id,
+        correlation_id=correlation_id,
+    )
 
     correction_event_details = dict(command.get("event_details") or {})
     correction_event_details["correlation_id"] = correlation_id
@@ -359,6 +370,7 @@ async def publish_controller_command_with_retry_method(
         get_settings_fn=get_settings,
         create_zone_event_fn=create_zone_event,
         send_infra_alert_fn=send_infra_alert,
+        send_infra_resolved_alert_fn=send_infra_resolved_alert,
     )
 
 

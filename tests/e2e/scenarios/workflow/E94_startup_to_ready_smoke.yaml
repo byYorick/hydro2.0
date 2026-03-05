@@ -1,0 +1,305 @@
+# E94: Two-Tank startup -> READY smoke (real-hardware oriented)
+# DoD:
+# - start-cycle intent accepted and completed
+# - startup workflow reaches prepare_targets_reached
+# - zone_workflow_state.workflow_phase = ready
+# - no terminal BUSY/TIMEOUT/SEND_FAILED commands during run window
+# - correction infra alerts are not left ACTIVE after READY
+
+name: E94_startup_to_ready_smoke
+description: |
+  Дымовой e2e-сценарий для проверки полной хронологии startup:
+  clean fill -> solution fill -> prepare recirculation -> targets reached -> READY.
+  Сценарий опирается на уже подготовленную test-zone/real-node инфраструктуру.
+
+actions:
+  - step: set_test_context
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    idempotency_key: e94-start-cycle-${TIMESTAMP_MS}
+    scheduler_source: laravel_scheduler
+    scheduler_trace_id: e94-trace-${TIMESTAMP_MS}
+
+  - step: get_zone_row
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+    expected_rows: 1
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zone_row.0.id}
+
+  - step: capture_test_window
+    type: database_query
+    query: |
+      SELECT NOW() AS started_at
+    save: test_window
+    expected_rows: 1
+
+  - step: wait_zone_idle_before_start
+    type: db.wait
+    query: |
+      SELECT 1 AS ready
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM laravel_scheduler_active_tasks
+        WHERE zone_id = :zid
+          AND terminal_at IS NULL
+      )
+    params:
+      zid: ${zone_id}
+    timeout: 90.0
+    expected_rows: 1
+
+  - step: insert_scheduler_like_intent
+    type: database_execute
+    query: |
+      INSERT INTO zone_automation_intents (
+        zone_id,
+        intent_type,
+        payload,
+        idempotency_key,
+        status,
+        not_before,
+        retry_count,
+        max_retries,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :zone_id,
+        'IRRIGATE_ONCE',
+        jsonb_build_object(
+          'source', CAST(:source AS text),
+          'task_type', 'diagnostics',
+          'workflow', 'cycle_start',
+          'topology', 'two_tank_drip_substrate_trays'
+        ),
+        :idempotency_key,
+        'pending',
+        NOW() - INTERVAL '1 second',
+        0,
+        3,
+        NOW(),
+        NOW()
+      )
+    params:
+      zone_id: ${zone_id}
+      idempotency_key: ${idempotency_key}
+      source: ${scheduler_source}
+
+  - step: start_cycle_http
+    type: http_request
+    method: POST
+    url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/zones/${zone_id}/start-cycle
+    headers:
+      Accept: application/json
+      Content-Type: application/json
+      X-Trace-Id: ${scheduler_trace_id}
+      X-Scheduler-Id: laravel-scheduler
+      Authorization: Bearer dev-token-12345
+    body:
+      source: ${scheduler_source}
+      idempotency_key: ${idempotency_key}
+    retries: 2
+    retry_delay_seconds: 1
+    capture_response: start_cycle_response
+
+  - step: wait_intent_completed
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        status,
+        retry_count,
+        error_code,
+        completed_at
+      FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND idempotency_key = :idempotency_key
+        AND status = 'completed'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      idempotency_key: ${idempotency_key}
+    timeout: 300.0
+    expected_rows: 1
+    save: intent_completed
+
+  - step: wait_prepare_targets_reached
+    type: db.wait
+    query: |
+      SELECT id, type, created_at
+      FROM zone_events
+      WHERE zone_id = :zid
+        AND created_at >= :started_at
+        AND (
+          type = 'PREPARE_TARGETS_REACHED'
+          OR COALESCE(payload_json->>'reason_code', '') = 'prepare_targets_reached'
+        )
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    timeout: 300.0
+    expected_rows: 1
+    save: prepare_targets_reached_row
+
+  - step: wait_workflow_ready
+    type: db.wait
+    query: |
+      SELECT zone_id, workflow_phase, updated_at
+      FROM zone_workflow_state
+      WHERE zone_id = :zid
+        AND workflow_phase = 'ready'
+        AND updated_at >= :started_at
+      ORDER BY updated_at DESC
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    timeout: 180.0
+    expected_rows: 1
+    save: workflow_ready_row
+
+assertions:
+  - name: start_cycle_http_200
+    type: custom_assert
+    condition: "int(context.get('start_cycle_response', {}).get('status_code', 0)) == 200"
+
+  - name: start_cycle_response_status_ok
+    type: json_assertion
+    source: start_cycle_response
+    path: json
+    expected:
+      - field: status
+        operator: equals
+        value: ok
+      - field: data.accepted
+        operator: equals
+        value: true
+
+  - name: intent_completed_row_exists
+    type: custom_assert
+    condition: "len(context.get('intent_completed', [])) == 1 and str(context.get('intent_completed', [{}])[0].get('status', '')).lower() == 'completed'"
+
+  - name: workflow_phase_ready_persisted
+    type: database_query
+    query: |
+      SELECT workflow_phase
+      FROM zone_workflow_state
+      WHERE zone_id = :zid
+      LIMIT 1
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: workflow_phase
+        operator: equals
+        value: ready
+
+  - name: startup_chronology_ordered
+    type: database_query
+    query: |
+      WITH marks AS (
+        SELECT
+          MIN(created_at) FILTER (
+            WHERE type = 'CLEAN_FILL_STARTED'
+               OR COALESCE(payload_json->>'reason_code', '') = 'clean_fill_started'
+          ) AS clean_started_at,
+          MIN(created_at) FILTER (
+            WHERE type = 'SOLUTION_FILL_STARTED'
+               OR COALESCE(payload_json->>'reason_code', '') = 'solution_fill_started'
+          ) AS solution_started_at,
+          MIN(created_at) FILTER (
+            WHERE type = 'PREPARE_RECIRCULATION_STARTED'
+               OR COALESCE(payload_json->>'reason_code', '') = 'prepare_recirculation_started'
+          ) AS recirc_started_at,
+          MIN(created_at) FILTER (
+            WHERE type = 'PREPARE_TARGETS_REACHED'
+               OR COALESCE(payload_json->>'reason_code', '') = 'prepare_targets_reached'
+          ) AS targets_reached_at
+        FROM zone_events
+        WHERE zone_id = :zid
+          AND created_at >= :started_at
+      )
+      SELECT
+        CASE
+          WHEN clean_started_at IS NOT NULL
+            AND solution_started_at IS NOT NULL
+            AND recirc_started_at IS NOT NULL
+            AND targets_reached_at IS NOT NULL
+            AND clean_started_at <= solution_started_at
+            AND solution_started_at <= recirc_started_at
+            AND recirc_started_at <= targets_reached_at
+          THEN 1
+          ELSE 0
+        END AS ordered_ok
+      FROM marks
+    params:
+      zid: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: ordered_ok
+        operator: equals
+        value: 1
+
+  - name: no_busy_timeout_send_failed_commands
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS bad_cnt
+      FROM commands
+      WHERE zone_id = :zid
+        AND created_at >= :started_at
+        AND status IN ('BUSY', 'TIMEOUT', 'SEND_FAILED')
+    params:
+      zid: ${zone_id}
+      started_at: ${test_window.0.started_at}
+    expected_rows: 1
+    expected:
+      - field: bad_cnt
+        operator: equals
+        value: 0
+
+  - name: no_active_correction_infra_alerts_after_ready
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS active_cnt
+      FROM alerts
+      WHERE zone_id = :zid
+        AND status = 'ACTIVE'
+        AND code IN (
+          'infra_correction_command_unconfirmed',
+          'infra_correction_actuator_unavailable',
+          'infra_correction_ec_batch_unavailable',
+          'infra_correction_ph_batch_unavailable'
+        )
+    params:
+      zid: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: active_cnt
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: delete_test_intent
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND idempotency_key = :idempotency_key
+    params:
+      zone_id: ${zone_id}
+      idempotency_key: ${idempotency_key}
+    optional: true

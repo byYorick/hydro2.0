@@ -43,22 +43,41 @@ def bind_start_cycle_route(
     scheduler_err_execution_exception: str,
     logger: Any,
 ) -> Callable[..., Awaitable[Dict[str, Any]]]:
-    async def _reset_claimed_intent_to_pending(zone_id: int, intent_id: int) -> None:
+    async def _mark_intent_terminal_zone_busy(zone_id: int, intent_id: int, error_message: str) -> None:
         if intent_id <= 0:
             return
         try:
-            await mark_intent_pending_fn(
+            await mark_intent_terminal_fn(
                 intent_id=intent_id,
                 now=datetime.now(timezone.utc).replace(tzinfo=None),
+                success=False,
+                error_code="start_cycle_zone_busy",
+                error_message=error_message,
                 execute_fn=execute_fn,
             )
         except Exception:
             logger.error(
-                "Failed to reset claimed intent back to pending: zone_id=%s intent_id=%s",
+                "Failed to mark intent terminal on zone_busy: zone_id=%s intent_id=%s",
                 zone_id,
                 intent_id,
                 exc_info=True,
             )
+
+    async def _fail_requested_intent_on_zone_busy(zone_id: int, intent_claim: Dict[str, Any]) -> None:
+        requested_intent = (
+            intent_claim.get("requested_intent")
+            if isinstance(intent_claim, dict) and isinstance(intent_claim.get("requested_intent"), dict)
+            else {}
+        )
+        requested_intent_id = int(requested_intent.get("id") or 0)
+        requested_intent_status = str(requested_intent.get("status") or "").strip().lower()
+        if requested_intent_id <= 0 or requested_intent_status not in {"pending", "claimed", "failed"}:
+            return
+        await _mark_intent_terminal_zone_busy(
+            zone_id=zone_id,
+            intent_id=requested_intent_id,
+            error_message="Intent skipped: zone busy",
+        )
 
     @app.post("/zones/{zone_id}/start-cycle")
     async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)):
@@ -106,6 +125,7 @@ def bind_start_cycle_route(
                 reason="start_cycle_intent_terminal",
             )
         if decision == "zone_busy":
+            await _fail_requested_intent_on_zone_busy(zone_id, intent_claim if isinstance(intent_claim, dict) else {})
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -143,7 +163,11 @@ def bind_start_cycle_route(
         workflow_phase = str(workflow_state.get("workflow_phase") or "").strip().lower() if isinstance(workflow_state, dict) else ""
         workflow_scheduler_task_id = str(workflow_state.get("scheduler_task_id") or "").strip() or None if isinstance(workflow_state, dict) else None
         if workflow_phase not in {"", "idle", "ready"}:
-            await _reset_claimed_intent_to_pending(zone_id, intent_id)
+            await _mark_intent_terminal_zone_busy(
+                zone_id=zone_id,
+                intent_id=intent_id,
+                error_message=f"Intent skipped: zone busy (active_workflow_phase={workflow_phase or 'unknown'})",
+            )
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -157,7 +181,11 @@ def bind_start_cycle_route(
         latest_task = await load_latest_zone_task_fn(zone_id)
         latest_status = str(latest_task.get("status") or "").strip().lower() if isinstance(latest_task, dict) else ""
         if latest_status in {"accepted", "running"}:
-            await _reset_claimed_intent_to_pending(zone_id, intent_id)
+            await _mark_intent_terminal_zone_busy(
+                zone_id=zone_id,
+                intent_id=intent_id,
+                error_message=f"Intent skipped: zone busy (active_task_status={latest_status or 'unknown'})",
+            )
             raise HTTPException(
                 status_code=409,
                 detail={

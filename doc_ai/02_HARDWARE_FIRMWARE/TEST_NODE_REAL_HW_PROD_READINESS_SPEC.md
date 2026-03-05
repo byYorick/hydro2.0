@@ -2,7 +2,7 @@
 # Спецификация test_node для доведения реальных нод до боевого режима
 
 **Версия:** 1.0  
-**Дата обновления:** 2026-03-02  
+**Дата обновления:** 2026-03-04  
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -175,6 +175,13 @@ Pipeline:
 
 Очередь команд (`COMMAND_QUEUE_LENGTH=32`) переполнена -> terminal `BUSY` (`command_queue_full`).
 
+Приоритет обработки `state`:
+
+- `state` обслуживается выделенным fast-path (`STATE_COMMAND_QUEUE_LENGTH` + отдельный worker),
+  чтобы критические проверки 2-бакового workflow быстрее получали свежий `IRR_STATE_SNAPSHOT`.
+- При недоступности fast-path используется fail-safe fallback:
+  постановка `state` в начало общей очереди (`xQueueSendToFront`).
+
 ## 4.4. Поддерживаемые команды
 
 Команды, распознаваемые `resolve_command_kind`:
@@ -253,16 +260,16 @@ Pipeline:
 
 Пассивный drift на тик телеметрии:
 
-- `pH`: `drift + 0.004`
-- `EC`: `drift*4 - 0.006`
+- `pH`: `drift + 0.001`
+- `EC`: `drift*2 - 0.004`
 
 где `drift` — детерминированная псевдо-динамика из telemetry loop.
 
 Реакция коррекции:
 
-- `pump_acid`: `pH -= 0.03 * scale`
-- `pump_base`: `pH += 0.03 * scale`
-- `pump_a..pump_d`: `EC += 0.05 * scale`
+- `pump_acid`: `pH -= 0.08 * scale`
+- `pump_base`: `pH += 0.08 * scale`
+- `pump_a..pump_d`: `EC += 0.04 * scale`
 
 Scale:
 
@@ -281,6 +288,12 @@ Fail-closed правило:
 
 - любые команды дозирования/коррекции на pH/EC-каналах при неактивном sensor mode
   должны завершаться `ERROR` + `error_code=node_not_activated` (без изменения значения сенсора).
+
+Transient-overlap правило для `pump_main`:
+
+- `run_pump/dose` на `pump_main` не должен возвращать `BUSY`, если `pump_main` уже `ON` через `set_relay`;
+- после завершения transient-команды исходное состояние `pump_main` восстанавливается
+  (не допускается ложное выключение уже активного контура).
 
 ## 5.4. Режим reboot/reset
 

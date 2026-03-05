@@ -72,6 +72,56 @@ class WorkflowStateStore:
             "scheduler_task_id": row.get("scheduler_task_id"),
         }
 
+    async def get_with_stale_reset(
+        self,
+        zone_id: int,
+        stale_threshold_secs: int = 1800,
+    ) -> Optional[Dict[str, Any]]:
+        """Get workflow state, auto-resetting to idle if it's stale in a blocking phase.
+
+        Binary level switches and transient hardware failures can leave the zone
+        permanently blocked in a non-idle phase.  If the state has not been updated
+        for longer than *stale_threshold_secs* and the phase is not 'idle' or 'ready',
+        the state is reset to idle so the next start-cycle request can proceed.
+        """
+        state = await self.get(zone_id)
+        if state is None:
+            return state
+
+        workflow_phase = state.get("workflow_phase", "idle")
+        if workflow_phase in {"idle", "ready"}:
+            return state
+
+        updated_at = state.get("updated_at")
+        if updated_at is None:
+            return state
+
+        now = utcnow()
+        try:
+            naive_updated_at = updated_at.replace(tzinfo=None) if getattr(updated_at, "tzinfo", None) else updated_at
+            age_secs = (now - naive_updated_at).total_seconds()
+        except Exception:
+            return state
+
+        if age_secs > stale_threshold_secs:
+            logger.warning(
+                "Stale blocking workflow state auto-reset to idle: "
+                "zone_id=%s phase=%s age_secs=%.0f threshold=%s",
+                zone_id,
+                workflow_phase,
+                age_secs,
+                stale_threshold_secs,
+            )
+            payload = state.get("payload_normalized") if isinstance(state.get("payload_normalized"), dict) else {}
+            await self.set(
+                zone_id=zone_id,
+                workflow_phase="idle",
+                payload={**payload, "recovery": {"action": "stale_safety_reset", "age_secs": int(age_secs)}},
+            )
+            return await self.get(zone_id)
+
+        return state
+
     async def list_active(self) -> List[Dict[str, Any]]:
         rows = await fetch(
             """

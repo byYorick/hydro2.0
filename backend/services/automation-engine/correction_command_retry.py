@@ -165,6 +165,7 @@ async def publish_controller_command_with_retry(
     get_settings_fn: Callable[[], Any],
     create_zone_event_fn: Callable[[int, str, Dict[str, Any]], Awaitable[Any]],
     send_infra_alert_fn: Callable[..., Awaitable[Any]],
+    send_infra_resolved_alert_fn: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> bool:
     publisher = command_gateway or command_bus
     if publisher is None:
@@ -194,6 +195,8 @@ async def publish_controller_command_with_retry(
     last_terminal_error_code: Optional[str] = None
     last_terminal_error_message: Optional[str] = None
     last_effective_timeout_sec = timeout_sec
+    cycle_id = controller_command.get("cycle_id")
+    intent_id = controller_command.get("intent_id")
 
     for attempt in range(1, max_attempts + 1):
         effective_timeout_sec = _resolve_duration_aware_timeout_sec(
@@ -217,6 +220,26 @@ async def publish_controller_command_with_retry(
                 timeout_sec=effective_timeout_sec,
             )
             if wait_result is True:
+                if callable(send_infra_resolved_alert_fn):
+                    await send_infra_resolved_alert_fn(
+                        code=INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+                        alert_type="Correction Command Unconfirmed",
+                        message=f"Zone {zone_id}: correction command confirmation recovered",
+                        zone_id=zone_id,
+                        service="automation-engine",
+                        component="correction_controller",
+                        node_uid=controller_command.get("node_uid"),
+                        channel=controller_command.get("channel"),
+                        cmd=controller_command.get("cmd"),
+                        error_type="CommandUnconfirmed",
+                        cycle_id=cycle_id,
+                        intent_id=intent_id,
+                        details={
+                            "correction_type": correction_type,
+                            "cmd_id": last_cmd_id,
+                            "reason_code": "command_confirmation_recovered",
+                        },
+                    )
                 CORRECTION_ATTEMPTS_TOTAL.labels(result="done", correction_type=correction_type).inc()
                 return True
 
@@ -227,6 +250,27 @@ async def publish_controller_command_with_retry(
 
             if wait_result is None:
                 if (last_terminal_status is None) or (last_terminal_status in _NON_TERMINAL_STATUSES):
+                    if callable(send_infra_resolved_alert_fn):
+                        await send_infra_resolved_alert_fn(
+                            code=INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+                            alert_type="Correction Command Unconfirmed",
+                            message=f"Zone {zone_id}: correction command pending confirmation",
+                            zone_id=zone_id,
+                            service="automation-engine",
+                            component="correction_controller",
+                            node_uid=controller_command.get("node_uid"),
+                            channel=controller_command.get("channel"),
+                            cmd=controller_command.get("cmd"),
+                            error_type="CommandUnconfirmed",
+                            cycle_id=cycle_id,
+                            intent_id=intent_id,
+                            details={
+                                "correction_type": correction_type,
+                                "cmd_id": last_cmd_id,
+                                "reason_code": "command_non_terminal_after_timeout",
+                                "status": last_terminal_status,
+                            },
+                        )
                     CORRECTION_FALSE_TIMEOUT_TOTAL.labels(correction_type=correction_type).inc()
                     CORRECTION_ATTEMPTS_TOTAL.labels(
                         result="pending_after_timeout",
@@ -256,6 +300,26 @@ async def publish_controller_command_with_retry(
                     last_failure_reason = f"terminal_{str(last_terminal_status).lower()}"
                     CORRECTION_ATTEMPTS_TOTAL.labels(result="terminal_fail", correction_type=correction_type).inc()
                 elif last_terminal_status == "DONE":
+                    if callable(send_infra_resolved_alert_fn):
+                        await send_infra_resolved_alert_fn(
+                            code=INFRA_CORRECTION_COMMAND_UNCONFIRMED,
+                            alert_type="Correction Command Unconfirmed",
+                            message=f"Zone {zone_id}: correction command completed after retry",
+                            zone_id=zone_id,
+                            service="automation-engine",
+                            component="correction_controller",
+                            node_uid=controller_command.get("node_uid"),
+                            channel=controller_command.get("channel"),
+                            cmd=controller_command.get("cmd"),
+                            error_type="CommandUnconfirmed",
+                            cycle_id=cycle_id,
+                            intent_id=intent_id,
+                            details={
+                                "correction_type": correction_type,
+                                "cmd_id": last_cmd_id,
+                                "reason_code": "command_done_after_retry",
+                            },
+                        )
                     CORRECTION_ATTEMPTS_TOTAL.labels(result="done_late", correction_type=correction_type).inc()
                     return True
                 else:
@@ -326,6 +390,8 @@ async def publish_controller_command_with_retry(
         channel=controller_command.get("channel"),
         cmd=controller_command.get("cmd"),
         error_type="CommandUnconfirmed",
+        cycle_id=cycle_id,
+        intent_id=intent_id,
         details={
             "correction_type": correction_type,
             "cmd_id": last_cmd_id,

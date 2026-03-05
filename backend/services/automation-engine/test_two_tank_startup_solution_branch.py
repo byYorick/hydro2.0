@@ -166,3 +166,7 @@ async def test_solution_fill_check_fails_when_solution_min_sensor_inconsistent()
     assert result["success"] is False
     assert result["mode"] == "two_tank_sensor_state_inconsistent"
     assert result["reason_code"] == "sensor_state_inconsistent"
+    sensor_state = result.get("sensor_state") or {}
+    assert sensor_state.get("tank") == "solution"
+    assert sensor_state.get("solution_level_max") is True
+    assert sensor_state.get("solution_level_min") is False
