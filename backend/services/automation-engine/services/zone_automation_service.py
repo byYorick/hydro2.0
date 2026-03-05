@@ -212,6 +212,17 @@ class ZoneAutomationService:
     _check_zone_deletion = check_zone_deletion
     _check_pid_config_updates = check_pid_config_updates
 
+    def reset_zone_correction_anomaly_state(self, zone_id: int) -> Dict[str, Any]:
+        """Сбросить anomaly runtime-состояние pH/EC-контроллеров перед новым cycle_start."""
+        ph_result = self.ph_controller.reset_anomaly_guard_state(zone_id=zone_id)
+        ec_result = self.ec_controller.reset_anomaly_guard_state(zone_id=zone_id)
+        return {
+            "zone_id": zone_id,
+            "ph": ph_result,
+            "ec": ec_result,
+            "changed": bool(ph_result.get("changed") or ec_result.get("changed")),
+        }
+
 
 __all__ = [
     "ZoneAutomationService",

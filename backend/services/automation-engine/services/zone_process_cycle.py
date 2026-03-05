@@ -112,6 +112,13 @@ async def process_zone_cycle(
 
         sim_now = sim_clock.now() if sim_clock else utcnow_fn()
         time_scale = sim_clock.time_scale if sim_clock else None
+        latest_zone_task = await load_latest_zone_task_fn(zone_id)
+        latest_zone_task_status = (
+            str(latest_zone_task.get("status") or "").strip().lower()
+            if isinstance(latest_zone_task, dict)
+            else ""
+        )
+        active_scheduler_task = latest_zone_task_status in {"accepted", "running"}
 
         if is_degraded:
             await emit_degraded_mode_signal_fn(zone_id)
@@ -137,39 +144,55 @@ async def process_zone_cycle(
             process_climate_controller_fn(zone_id, targets, telemetry, capabilities, bindings),
             zone_id,
         )
-        await safe_process_controller_fn(
-            "irrigation",
-            process_irrigation_controller_fn(
+        if active_scheduler_task:
+            logger.info(
+                "Zone %s: skip irrigation/recirculation controllers while scheduler task is active",
                 zone_id,
-                targets,
-                telemetry,
-                capabilities,
-                workflow_phase,
-                water_level_ok,
-                bindings,
-                actuators,
-                sim_now,
-                time_scale,
-                sim_clock,
-            ),
-            zone_id,
-        )
-        await safe_process_controller_fn(
-            "recirculation",
-            process_recirculation_controller_fn(
+                extra={
+                    "zone_id": zone_id,
+                    "workflow_phase": workflow_phase,
+                    "active_task_id": (
+                        str(latest_zone_task.get("task_id") or "").strip()
+                        if isinstance(latest_zone_task, dict)
+                        else None
+                    ),
+                    "active_task_status": latest_zone_task_status,
+                },
+            )
+        else:
+            await safe_process_controller_fn(
+                "irrigation",
+                process_irrigation_controller_fn(
+                    zone_id,
+                    targets,
+                    telemetry,
+                    capabilities,
+                    workflow_phase,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                    sim_now,
+                    time_scale,
+                    sim_clock,
+                ),
                 zone_id,
-                targets,
-                telemetry,
-                capabilities,
-                water_level_ok,
-                bindings,
-                actuators,
-                sim_now,
-                time_scale,
-                sim_clock,
-            ),
-            zone_id,
-        )
+            )
+            await safe_process_controller_fn(
+                "recirculation",
+                process_recirculation_controller_fn(
+                    zone_id,
+                    targets,
+                    telemetry,
+                    capabilities,
+                    water_level_ok,
+                    bindings,
+                    actuators,
+                    sim_now,
+                    time_scale,
+                    sim_clock,
+                ),
+                zone_id,
+            )
         correction_targets = targets
         if isinstance(targets, dict):
             correction_targets = dict(targets)
@@ -180,9 +203,7 @@ async def process_zone_cycle(
                 correction_meta["intent_id"] = grow_cycle.get("intent_id")
             correction_meta.setdefault("workflow_phase", workflow_phase)
             correction_targets["_meta"] = correction_meta
-        latest_zone_task = await load_latest_zone_task_fn(zone_id)
-        latest_zone_task_status = str(latest_zone_task.get("status") or "").strip().lower() if isinstance(latest_zone_task, dict) else ""
-        if latest_zone_task_status in {"accepted", "running"}:
+        if active_scheduler_task:
             logger.info(
                 "Zone %s: skip correction controllers while scheduler task is active",
                 zone_id,

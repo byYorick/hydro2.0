@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -40,6 +41,62 @@ ExecuteNoActionBranchFn = Callable[..., Awaitable[Dict[str, Any]]]
 ExecuteActionRequiredBranchFn = Callable[..., Awaitable[Dict[str, Any]]]
 ApplyDecisionDefaultsFn = Callable[..., Dict[str, Any]]
 FinalizeExecutionFn = Callable[..., Awaitable[Dict[str, Any]]]
+
+
+def _extract_workflow_hint(payload: Dict[str, Any]) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    execution = config.get("execution") if isinstance(config.get("execution"), dict) else {}
+    workflow = (
+        payload.get("workflow")
+        or payload.get("diagnostics_workflow")
+        or execution.get("workflow")
+        or ""
+    )
+    return str(workflow).strip().lower()
+
+
+async def _maybe_reset_correction_anomaly_state_for_cycle_start(
+    *,
+    executor: Any,
+    zone_id: int,
+    task_type: str,
+    payload: Dict[str, Any],
+    logger_obj: Any,
+) -> None:
+    normalized_task_type = str(task_type or "").strip().lower()
+    if normalized_task_type != "diagnostics":
+        return
+
+    workflow = _extract_workflow_hint(payload)
+    if workflow not in {"cycle_start", "startup"}:
+        return
+
+    zone_service = getattr(executor, "zone_service", None)
+    reset_fn = getattr(zone_service, "reset_zone_correction_anomaly_state", None)
+    if not callable(reset_fn):
+        return
+
+    try:
+        reset_result = reset_fn(zone_id)
+        if inspect.isawaitable(reset_result):
+            reset_result = await reset_result
+        if isinstance(reset_result, dict) and bool(reset_result.get("changed")):
+            logger_obj.info(
+                "Zone %s: reset correction anomaly state before diagnostics workflow=%s",
+                zone_id,
+                workflow,
+                extra={"zone_id": zone_id, "workflow": workflow, "reset_result": reset_result},
+            )
+    except Exception:
+        logger_obj.warning(
+            "Zone %s: failed to reset correction anomaly state before workflow=%s",
+            zone_id,
+            workflow,
+            exc_info=True,
+            extra={"zone_id": zone_id, "workflow": workflow},
+        )
 
 
 async def run_executor_execute_flow(
@@ -128,6 +185,14 @@ async def run_scheduler_executor_execute(
     auto_logic_extended_outcome_v1: bool,
     workflow_phase_irrigating: str,
 ) -> Dict[str, Any]:
+    await _maybe_reset_correction_anomaly_state_for_cycle_start(
+        executor=executor,
+        zone_id=zone_id,
+        task_type=task_type,
+        payload=payload,
+        logger_obj=logger_obj,
+    )
+
     return await run_executor_execute_flow(
         zone_id=zone_id,
         task_type=task_type,

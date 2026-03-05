@@ -41,6 +41,7 @@ from correction_controller_runtime_state import (
     is_anomaly_guard_enabled,
     log_skip_decision,
     normalize_int_key_map,
+    reset_anomaly_guard_state,
     register_pending_effect_window,
     resolve_anomaly_block_until,
     resolve_anomaly_min_delta,
@@ -77,6 +78,7 @@ class CorrectionController:
     _is_anomaly_guard_enabled = is_anomaly_guard_enabled
     _resolve_anomaly_min_delta = resolve_anomaly_min_delta
     _resolve_anomaly_block_until = resolve_anomaly_block_until
+    reset_anomaly_guard_state = reset_anomaly_guard_state
     _register_pending_effect_window = register_pending_effect_window
     _evaluate_pending_effect_window = evaluate_pending_effect_window
     _normalize_int_key_map = staticmethod(normalize_int_key_map)

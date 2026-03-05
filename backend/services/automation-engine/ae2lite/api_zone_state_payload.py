@@ -6,6 +6,44 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict
 
 
+def _sync_active_processes_with_irr_state(
+    *,
+    active_processes: Dict[str, bool],
+    irr_node_state: Dict[str, Any] | None,
+) -> Dict[str, bool]:
+    result = {
+        "pump_in": bool(active_processes.get("pump_in")),
+        "circulation_pump": bool(active_processes.get("circulation_pump")),
+        "ph_correction": bool(active_processes.get("ph_correction")),
+        "ec_correction": bool(active_processes.get("ec_correction")),
+    }
+    if not isinstance(irr_node_state, dict):
+        return result
+
+    pump_main = irr_node_state.get("pump_main")
+    if pump_main is False:
+        result["pump_in"] = False
+        result["circulation_pump"] = False
+        return result
+    if pump_main is not True:
+        return result
+
+    valve_clean_fill = irr_node_state.get("valve_clean_fill")
+    valve_irrigation = irr_node_state.get("valve_irrigation")
+    valve_solution_fill = irr_node_state.get("valve_solution_fill")
+    valve_solution_supply = irr_node_state.get("valve_solution_supply")
+
+    if isinstance(valve_clean_fill, bool) or isinstance(valve_irrigation, bool):
+        result["pump_in"] = bool(valve_clean_fill) or bool(valve_irrigation)
+
+    if isinstance(valve_solution_fill, bool) and isinstance(valve_solution_supply, bool):
+        is_irrigation_path = bool(valve_irrigation) if isinstance(valve_irrigation, bool) else False
+        result["circulation_pump"] = bool(valve_solution_fill and valve_solution_supply and not is_irrigation_path)
+    else:
+        result["circulation_pump"] = True
+    return result
+
+
 async def build_zone_automation_state_payload(
     zone_id: int,
     *,
@@ -36,7 +74,10 @@ async def build_zone_automation_state_payload(
     system_config = await load_zone_system_config_fn(zone_id, payload)
     current_levels = await load_zone_current_levels_fn(zone_id)
     irr_node_state = await load_latest_irr_node_state_fn(zone_id)
-    active_processes = derive_active_processes_fn(task, state)
+    active_processes = _sync_active_processes_with_irr_state(
+        active_processes=derive_active_processes_fn(task, state),
+        irr_node_state=irr_node_state,
+    )
     timeline = await load_automation_timeline_fn(zone_id)
     estimated_completion_sec = estimate_completion_seconds_fn(task)
 

@@ -55,6 +55,25 @@ def resolve_anomaly_block_until(controller: Any, zone_id: int) -> Optional[float
     return blocked_until
 
 
+def reset_anomaly_guard_state(controller: Any, *, zone_id: int) -> Dict[str, Any]:
+    """Сбросить runtime-состояние anomaly guard для конкретной зоны."""
+    had_streak = zone_id in controller._no_effect_streak_by_zone
+    had_block = zone_id in controller._anomaly_blocked_until_by_zone
+    had_pending_window = zone_id in controller._pending_effect_window_by_zone
+
+    controller._no_effect_streak_by_zone.pop(zone_id, None)
+    controller._anomaly_blocked_until_by_zone.pop(zone_id, None)
+    controller._pending_effect_window_by_zone.pop(zone_id, None)
+
+    return {
+        "zone_id": zone_id,
+        "had_streak": had_streak,
+        "had_block": had_block,
+        "had_pending_window": had_pending_window,
+        "changed": bool(had_streak or had_block or had_pending_window),
+    }
+
+
 def register_pending_effect_window(
     controller: Any,
     *,
@@ -243,4 +262,3 @@ def restore_runtime_state_payload(controller: Any, raw_state: Optional[Dict[str,
             except (TypeError, ValueError):
                 continue
     controller._anomaly_blocked_until_by_zone = anomaly_blocks
-
