@@ -244,18 +244,18 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 1. Enqueue commit → `pg_notify('ae_task_enqueued', '{"zone_id": N, "task_uid": "ae3:..."}')`.
 2. Worker: `LISTEN ae_task_enqueued`.
 3. Fallback polling при деградации notify:
-   - `TASK_POLL_INTERVAL_SEC=2` (idle default)
-   - `TASK_POLL_MAX_INTERVAL_SEC=15` (adaptive backoff max)
+   - `AE_TASK_POLL_INTERVAL_SEC=2` (idle default)
+   - `AE_TASK_POLL_MAX_INTERVAL_SEC=15` (adaptive backoff max)
    - jitter 10%
 
 ### 10.2 Lease timing
 
 | Параметр | Значение | Правило |
 |---|---|---|
-| `ZONE_LEASE_TTL_SEC` | 180 | — |
-| `ZONE_LEASE_HEARTBEAT_SEC` | 15 | обязательно `< TTL/3` |
-| `COMMAND_TERMINAL_TIMEOUT_SEC` | 60 | обязательно `< LEASE_TTL - 2*HEARTBEAT` |
-| `ACTUATOR_LOCK_TTL_SEC` | 90 | обязательно `>= COMMAND_TERMINAL_TIMEOUT_SEC + 20` |
+| `AE_ZONE_LEASE_TTL_SEC` | 180 | — |
+| `AE_ZONE_LEASE_HEARTBEAT_SEC` | 15 | обязательно `< TTL/3` |
+| `AE_COMMAND_TERMINAL_TIMEOUT_SEC` | 60 | обязательно `< LEASE_TTL - 2*HEARTBEAT` |
+| `AE_ACTUATOR_LOCK_TTL_SEC` | 90 | обязательно `>= COMMAND_TERMINAL_TIMEOUT_SEC + 20` |
 
 **Zone lease CAS:**
 ```sql
@@ -327,7 +327,7 @@ DELETE FROM ae_actuator_locks
 WHERE node_uid = :node_uid AND channel = :channel AND task_id = :task_id;
 ```
 
-**Watchdog cleanup** (`ACTUATOR_LOCK_TTL_SEC`): при запуске и периодически `DELETE FROM ae_actuator_locks WHERE lock_until < NOW()`.
+**Watchdog cleanup** (`AE_ACTUATOR_LOCK_TTL_SEC`): при запуске и периодически `DELETE FROM ae_actuator_locks WHERE lock_until < NOW()`.
 
 ### 10.6 Idempotency key format
 
@@ -347,7 +347,7 @@ WHERE node_uid = :node_uid AND channel = :channel AND task_id = :task_id;
 2. Reconnect при потере: exponential backoff `1s → 2s → 4s → max 30s`.
 3. После reconnect: немедленно полный scan `pending|leased` задач перед возвратом в `LISTEN` — компенсация missed notifications за время disconnect.
 4. Метрика: `ae_notify_reconnect_total`, `ae_notify_lag_seconds`.
-5. Если notify lag > `NOTIFY_LAG_ALERT_SEC=10` → alert + переключение в polling-first.
+5. Если notify lag > `AE_NOTIFY_LAG_ALERT_SEC=10` → alert + переключение в polling-first.
 
 ### 10.8 Clock policy
 
@@ -357,9 +357,9 @@ WHERE node_uid = :node_uid AND channel = :channel AND task_id = :task_id;
 | `due_at`, `expires_at` (вычисляются AE) | `DB NOW()` |
 | `created_at`, `updated_at` | `DB NOW()` |
 | Lease/deadline comparisons | `DB NOW()` только |
-| `CLOCK_SKEW_MAX_SEC=5` | Максимально допустимый drift `scheduled_for` vs `DB NOW()` при enqueue |
+| `AE_CLOCK_SKEW_MAX_SEC=5` | Максимально допустимый drift `scheduled_for` vs `DB NOW()` при enqueue |
 
-Если `|scheduled_for - DB NOW()| > CLOCK_SKEW_MAX_SEC` при enqueue → логировать `clock_skew_detected`, продолжать (не reject).
+Если `|scheduled_for - DB NOW()| > AE_CLOCK_SKEW_MAX_SEC` при enqueue → логировать `clock_skew_detected`, продолжать (не reject).
 
 ### 10.9 Atomic finalize
 
@@ -376,9 +376,9 @@ WHERE node_uid = :node_uid AND channel = :channel AND task_id = :task_id;
 
 | Класс | Причина | Backoff | Max retries |
 |---|---|---|---|
-| `transient_io` | `db_timeout`, `history_logger_unavailable` | exp: `base=2s, factor=2, max=60s` | `TASK_MAX_ATTEMPTS=3` |
+| `transient_io` | `db_timeout`, `history_logger_unavailable` | exp: `base=2s, factor=2, max=60s` | `AE_TASK_MAX_ATTEMPTS=3` |
 | `contention` | `zone_lease_conflict`, `actuator_busy`, `workflow_version_conflict` | jitter: `base=1s, factor=2, max=30s, jitter=20%` | 8 |
-| `command_timeout` | terminal timeout | reconcile + retry | `TASK_MAX_ATTEMPTS` |
+| `command_timeout` | terminal timeout | reconcile + retry | `AE_TASK_MAX_ATTEMPTS` |
 | `business_skip` | stale telemetry, flow_inactive | no retry | 0 |
 | `fatal` | unknown_task_type, invalid_payload | no retry | 0 |
 
@@ -407,7 +407,7 @@ WHERE node_uid = :node_uid AND channel = :channel AND task_id = :task_id;
 - `P1_CONTROL = 1` — correction_*, irrigation_*, workflow_step.
 - `P2_MAINTENANCE = 2` — health_check, climate_check, lighting_check.
 
-Anti-starvation: после `ANTISTARVATION_MAX_CONSECUTIVE=10` подряд P1_CONTROL задач — принудительно взять overdue P2_MAINTENANCE задачу, если есть.
+Anti-starvation: после `AE_ANTISTARVATION_MAX_CONSECUTIVE=10` подряд P1_CONTROL задач — принудительно взять overdue P2_MAINTENANCE задачу, если есть.
 
 ### 10.13 `available_at` семантика
 
@@ -512,7 +512,7 @@ zone_id BIGINT NOT NULL
 task_id BIGINT NOT NULL REFERENCES ae_tasks(id)
 lock_owner TEXT NOT NULL
 lock_version BIGINT NOT NULL
-lock_until TIMESTAMPTZ NOT NULL        -- NOW() + ACTUATOR_LOCK_TTL_SEC
+lock_until TIMESTAMPTZ NOT NULL        -- NOW() + AE_ACTUATOR_LOCK_TTL_SEC
 updated_at TIMESTAMPTZ NOT NULL
 ```
 
@@ -614,7 +614,7 @@ Mapping:
 
 ### 14.1 task_type mapping
 
-До `ENABLE_SCHEDULER_DIRECT_ENQUEUE=1` scheduler использует только legacy types.
+До `AE_ENABLE_SCHEDULER_DIRECT_ENQUEUE=1` scheduler использует только legacy types.
 `LegacyTaskTypeMapper` внутри AE конвертирует:
 
 ```
@@ -678,12 +678,12 @@ AE отслеживает время последнего `POST /zones/*/start-c
 last_scheduler_call_at → хранится in-memory + persisted в ae_degraded_state (простая KV таблица)
 ```
 
-Если `NOW() - last_scheduler_call_at > SCHEDULER_STALE_SEC=300` → degraded mode активирован.
+Если `NOW() - last_scheduler_call_at > AE_SCHEDULER_STALE_SEC=300` → degraded mode активирован.
 
 | Параметр | Значение |
 |---|---|
-| `SCHEDULER_STALE_SEC` | 300 |
-| `DEGRADED_TICK_SEC` | 60 |
+| `AE_SCHEDULER_STALE_SEC` | 300 |
+| `AE_DEGRADED_TICK_SEC` | 60 |
 
 ### 16.3 В degraded разрешены только:
 
@@ -702,7 +702,7 @@ last_scheduler_call_at → хранится in-memory + persisted в ae_degraded
 3. Сохраняет обновлённое состояние в рамках того же attempt.
 4. `AdaptivePid` не живёт между tasks в памяти как source of truth.
 5. `min_interval` проверяется по `last_dose_at` + `DB NOW()`.
-6. Stale telemetry > `TELEMETRY_MAX_AGE_SEC=300` → task `skipped`, fail-closed.
+6. Stale telemetry > `AE_TELEMETRY_MAX_AGE_SEC=300` → task `skipped`, fail-closed.
 7. При stale `last_dose_at` (нет в БД) → `last_output_ms=0` + audit log (legacy row).
 
 ---
@@ -733,33 +733,34 @@ last_scheduler_call_at → хранится in-memory + persisted в ae_degraded
 
 ## 20. Feature Flags
 
-Единый канонический префикс: **``**.
+Единый канонический префикс: **`AE_`** (все флаги и env-переменные AE3 начинаются с `AE_`).
 
 | Флаг | Default | Назначение |
 |---|---|---|
-| `ENABLE_RUNTIME` | 0 | Включить AE3 runtime (canary zones) |
-| `ENABLE_OUTBOX` | 0 | Включить outbox publisher |
-| `ENABLE_SCHEDULER_DIRECT_ENQUEUE` | 0 | Разрешить canonical task types от scheduler |
-| `ENABLE_CANARY` | 0 | Route-by-zone canary |
-| `CLOSED_LOOP_REQUIRED` | 1 | В prod — startup fail-fast если closed-loop off |
-| `INTERLOCK_ENFORCE` | 1 | Split-brain защита AE2/AE3 |
-| `ZONE_LEASE_TTL_SEC` | 180 | — |
-| `ZONE_LEASE_HEARTBEAT_SEC` | 15 | — |
-| `COMMAND_TERMINAL_TIMEOUT_SEC` | 60 | — |
-| `ACTUATOR_LOCK_TTL_SEC` | 90 | — |
-| `TASK_POLL_INTERVAL_SEC` | 2 | Fallback polling idle |
-| `TASK_POLL_MAX_INTERVAL_SEC` | 15 | Fallback polling max |
-| `TASK_MAX_ATTEMPTS` | 3 | Transient retry limit |
-| `SCHEDULER_STALE_SEC` | 300 | Порог активации degraded mode |
-| `TELEMETRY_MAX_AGE_SEC` | 300 | Freshness для correction |
-| `CLOCK_SKEW_MAX_SEC` | 5 | Допустимый drift scheduled_for vs DB NOW() |
-| `ANTISTARVATION_MAX_CONSECUTIVE` | 10 | P1 задач перед anti-starvation P2 |
-| `NOTIFY_LAG_ALERT_SEC` | 10 | Порог алерта на notify lag |
-| `OUTBOX_PUBLISH_BATCH` | 100 | Batch size outbox publisher |
+| `AE_ENABLE_RUNTIME` | 0 | Включить AE3 runtime (canary zones) |
+| `AE_ENABLE_OUTBOX` | 0 | Включить outbox publisher |
+| `AE_ENABLE_SCHEDULER_DIRECT_ENQUEUE` | 0 | Разрешить canonical task types от scheduler |
+| `AE_ENABLE_CANARY` | 0 | Route-by-zone canary |
+| `AE_CLOSED_LOOP_REQUIRED` | 1 | В prod — startup fail-fast если closed-loop off |
+| `AE_INTERLOCK_ENFORCE` | 1 | Split-brain защита AE2/AE3 |
+| `AE_ZONE_LEASE_TTL_SEC` | 180 | — |
+| `AE_ZONE_LEASE_HEARTBEAT_SEC` | 15 | — |
+| `AE_COMMAND_TERMINAL_TIMEOUT_SEC` | 60 | — |
+| `AE_ACTUATOR_LOCK_TTL_SEC` | 90 | — |
+| `AE_TASK_POLL_INTERVAL_SEC` | 2 | Fallback polling idle |
+| `AE_TASK_POLL_MAX_INTERVAL_SEC` | 15 | Fallback polling max |
+| `AE_TASK_MAX_ATTEMPTS` | 3 | Transient retry limit |
+| `AE_SCHEDULER_STALE_SEC` | 300 | Порог активации degraded mode |
+| `AE_TELEMETRY_MAX_AGE_SEC` | 300 | Freshness для correction |
+| `AE_CLOCK_SKEW_MAX_SEC` | 5 | Допустимый drift scheduled_for vs DB NOW() |
+| `AE_ANTISTARVATION_MAX_CONSECUTIVE` | 10 | P1 задач перед anti-starvation P2 |
+| `AE_NOTIFY_LAG_ALERT_SEC` | 10 | Порог алерта на notify lag |
+| `AE_OUTBOX_PUBLISH_BATCH` | 100 | Batch size outbox publisher |
+| `AE_DEGRADED_TICK_SEC` | 60 | Интервал тика в degraded mode |
 
 **Совместимость с AE2:**
-- `CLOSED_LOOP_REQUIRED=1` требует `AE_TASK_EXECUTE_CLOSED_LOOP=1`.
-- `INTERLOCK_ENFORCE=1` координируется с `AE2_RUNTIME_SINGLE_WRITER_ENFORCE=1`.
+- `AE_CLOSED_LOOP_REQUIRED=1` требует `AE_TASK_EXECUTE_CLOSED_LOOP=1`.
+- `AE_INTERLOCK_ENFORCE=1` координируется с `AE2_RUNTIME_SINGLE_WRITER_ENFORCE=1`.
 - `AE2_FALLBACK_LOOP_WRITER_ENABLED=0` обязателен при активном AE3 runtime.
 
 ---
@@ -996,9 +997,270 @@ ae_saga_compensation_required_total
 12. Legacy task_type mapping frozen.
 13. Poller bridge mapping frozen.
 14. Control mode admission matrix frozen (особенно `semi` semantics).
-15. Degraded ticker mechanism frozen (`SCHEDULER_STALE_SEC`).
-16. `task_schema_version=1` payload per task_type frozen.
-17. Anti-starvation quota `ANTISTARVATION_MAX_CONSECUTIVE` frozen.
+15. Degraded ticker mechanism frozen (`AE_SCHEDULER_STALE_SEC`, `AE_DEGRADED_TICK_SEC`).
+16. `task_schema_version=1` payload per task_type frozen (см. §29).
+17. Anti-starvation quota `AE_ANTISTARVATION_MAX_CONSECUTIVE` frozen.
 18. SLO + burn-rate gates frozen.
 19. Agent layer ownership frozen.
-20. RFC process frozen.
+20. RFC process frozen (см. §30).
+21. Canary routing policy frozen (см. §31).
+
+---
+
+## 29. task_schema_version=1 — Payload схемы по task_type
+
+`task_schema_version=1` — текущий canonical format. Все поля, помеченные `required`, обязательны. Дополнительные поля допускаются (ignored). При изменении любого поля — bump version до 2 + RFC.
+
+### correction_ph
+
+```json
+{
+  "source": "scheduler|planner|manual",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "target_ph": 6.2,
+  "telemetry_snapshot": {
+    "value": 6.8,
+    "measured_at": "2026-03-06T12:00:00Z"
+  }
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `target_ph`. `telemetry_snapshot` — optional (для audit).
+
+### correction_ec
+
+```json
+{
+  "source": "scheduler|planner|manual",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "target_ec": 2.5,
+  "telemetry_snapshot": {
+    "value": 1.9,
+    "measured_at": "2026-03-06T12:00:00Z"
+  }
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `target_ec`.
+
+### irrigation_start
+
+```json
+{
+  "source": "scheduler|planner|manual",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "duration_ms": 30000,
+  "intent_id": 1234
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `duration_ms` (0 = не ограничен, управляется irrigation_stop). `intent_id` — optional, legacy bridge link.
+
+### irrigation_stop
+
+```json
+{
+  "source": "scheduler|planner|manual|compensation",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "intent_id": 1234
+}
+```
+
+Required: `source`, `zone_id`, `topology`.
+
+### recirculation_start
+
+```json
+{
+  "source": "scheduler|planner|manual",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "duration_ms": 60000,
+  "phase": "irrig_recirc|prepare_recirculation"
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `duration_ms`, `phase`.
+
+### recirculation_stop
+
+```json
+{
+  "source": "scheduler|planner|manual|compensation",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "phase": "irrig_recirc|prepare_recirculation"
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `phase`.
+
+### workflow_step
+
+```json
+{
+  "source": "planner|manual",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "target_phase": "READY|startup|clean_fill|solution_fill|prepare_recirculation|irrig_recirc",
+  "transition_event": "fill_done|solution_ready|recirculation_ready|cycle_complete",
+  "operator_id": "user:42"
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `target_phase`, `transition_event`. `operator_id` — required если `source=manual`.
+
+### diagnostics
+
+```json
+{
+  "source": "scheduler|manual",
+  "zone_id": 447,
+  "workflow": "cycle_start|cycle_stop|health_scan",
+  "intent_id": 1234
+}
+```
+
+Required: `source`, `zone_id`, `workflow`.
+
+### climate_check
+
+```json
+{
+  "source": "scheduler|degraded_ticker",
+  "zone_id": 447,
+  "check_targets": ["temperature", "humidity", "co2"],
+  "alert_policy": "critical_only|all"
+}
+```
+
+Required: `source`, `zone_id`. Defaults: `check_targets=["temperature","humidity","co2"]`, `alert_policy="all"`.
+
+### lighting_check
+
+```json
+{
+  "source": "scheduler|planner",
+  "zone_id": 447,
+  "expected_state": "on|off|auto",
+  "schedule_slot": "morning|day|evening|night"
+}
+```
+
+Required: `source`, `zone_id`. Остальные поля — optional.
+
+### health_check
+
+```json
+{
+  "source": "scheduler|degraded_ticker|safety",
+  "zone_id": 447,
+  "scope": "full|minimal",
+  "trigger": "periodic|alert_recovery"
+}
+```
+
+Required: `source`, `zone_id`. Defaults: `scope="full"`, `trigger="periodic"`.
+
+### recovery_reconcile
+
+```json
+{
+  "source": "safety|recovery",
+  "zone_id": 447,
+  "stale_task_id": "ae3:12345",
+  "reconcile_reason": "lease_timeout|worker_crash|command_timeout"
+}
+```
+
+Required: `source`, `zone_id`, `stale_task_id`, `reconcile_reason`.
+
+### compensation (P0_SAFETY)
+
+```json
+{
+  "source": "compensation",
+  "zone_id": 447,
+  "topology": "two_tank_drip_substrate_trays",
+  "compensate_for_task_type": "irrigation_start|recirculation_start",
+  "compensate_action": "stop_pump|close_valve|emergency_drain",
+  "parent_task_uid": "ae3:12344"
+}
+```
+
+Required: `source`, `zone_id`, `topology`, `compensate_for_task_type`, `compensate_action`, `parent_task_uid`.
+
+---
+
+## 30. RFC Process (изменения freeze-артефактов)
+
+**Freeze-артефакты:** всё, что перечислено в §28 Freeze Checklist — статусы, DDL, контракты, политики, payload схемы, флаги, ownership matrix.
+
+### Правила
+
+1. **Любое изменение freeze-артефакта требует RFC-коммита** с форматом:
+   ```
+   rfc: <краткое описание изменения>
+
+   Context: <почему нужно менять>
+   Impact: <какие слои затронуты — domain/application/infra/bridge/tests>
+   Migration: <что нужно обновить в коде + тестах>
+   Approved-by: <Agent-N или имя автора>
+   ```
+
+2. **RFC-коммит обязан обновлять `ae3full.md`** — единственный нормативный документ. `AE3_B.md`, `AE3_C.md`, `AE3_ARCHITECTURE.md` — только исторические черновики, не редактировать.
+
+3. **Перед merge RFC** обязательно:
+   - Обновить `version_adapters/v{X}_to_v{Y}.py` если изменилась payload схема.
+   - Обновить контрактные тесты в `tests/contract/`.
+   - Получить явный approve от Лида фазы (Agent-1 для domain/DDL, Agent-4 для bridge/ops).
+
+4. **Нельзя менять freeze-артефакт inline в PR** без RFC-тега в commit message — CI блокирует merge при отсутствии тега.
+
+5. **Freeze Checklist §28** должен быть пересмотрен при каждом RFC: изменённый пункт переходит из `frozen` в `pending re-review` до прохождения контрактных тестов.
+
+---
+
+## 31. Canary Routing Policy
+
+`AE_ENABLE_CANARY=1` активирует route-by-zone: часть зон обрабатывается AE3, остальные — AE2-Lite.
+
+### Выбор canary-зон
+
+1. Таблица `zones` получает поле (через Laravel migration): `ae3_canary BOOLEAN NOT NULL DEFAULT false`.
+2. Admin/operator включает зону в canary через: `PATCH /api/zones/{id}/ae3-canary` с `{enabled: true, actor, reason}`.
+3. AE3 worker при claim фильтрует: `JOIN zones ON ae_tasks.zone_id = zones.id WHERE zones.ae3_canary = true`.
+4. AE2 fallback loop исключает canary-зоны при `AE_INTERLOCK_ENFORCE=1`: добавляет `AND ae3_canary = false` в свой запрос.
+5. Изменение `ae3_canary` атомарно логируется в `zone_events` с `type=AE3_CANARY_CHANGED`.
+
+### Rollout Gates
+
+| Gate | Canary зон | Условие перехода на следующий |
+|---|---|---|
+| 0 (seed) | 1 зона (вручную выбранная) | SLO соблюдён > 15 мин, нет rollback triggers |
+| 1 | ~5% зон | Burn-rate OK > 1 ч, 0 rollback triggers |
+| 2 | ~25% зон | Burn-rate OK > 4 ч, 0 rollback triggers |
+| 3 | 100% зон | Burn-rate OK > 24 ч, все runbook-сценарии §26 верифицированы tabletop |
+
+На каждом gate: переход — только ручной (`PATCH /api/ae3/canary/advance`), но разблокируется автоматически при выполнении условий.
+
+### Автоматический Rollback
+
+При превышении порогов §25.4:
+
+1. AE3 устанавливает `ae3_canary=false` для всех зон в одной транзакции.
+2. Логирует `zone_events` с `type=AE3_CANARY_ROLLBACK` + метрики-причины.
+3. Выставляет флаг `AE_ENABLE_CANARY=0` (через persisted config).
+4. Минимальное ожидание перед повторным enable: **30 мин**.
+5. Rollback на Gate 3 (100%) → обязательный postmortem + RCA перед следующим rollout.
+
+### Interlock Invariant при Canary
+
+Одна зона не может одновременно обрабатываться AE2 и AE3. Если interlock violation обнаружен:
+- Оба writer немедленно прекращают работу с данной зоной.
+- Создаётся `zone_events` с `type=SAFETY_VIOLATION, payload={reason: interlock_breach}`.
+- Требуется ручной сброс через `POST /api/zones/{id}/reset-writer-lock`.
