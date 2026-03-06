@@ -6,6 +6,9 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: несовместимые изменения в защищенном pipeline запрещены; миграции AE3 выполняются через compatibility bridge (`start-cycle`, `intent-*`, legacy task_type) до cutover.
 
+Канонический документ по AE3:
+- `ae3lite.md`
+
 ---
 
 ## 📋 Документы раздела
@@ -50,14 +53,14 @@ Breaking-change: несовместимые изменения в защищен
 
 ### Специализированные документы
 
-#### [AE3_B.md](AE3_B.md)
-Целевая архитектура AE3-B (task-driven runtime, distributed single-writer, strict FSM, command outcome gate)
+#### [ae3lite.md](ae3lite.md)
+Канонический план реализации AE3-Lite (DDD/OOP/Clean, polling-first, DB-first runtime, canary/rollback).
 
-#### [AE3_C.md](AE3_C.md)
-План чистой реализации AE3-C с нуля на 4 ИИ-агента (async task runtime, no-overlap по зонам/актуаторам, phased rollout)
+#### [archive/ae3full.md](archive/ae3full.md)
+Архивный план AE3FULL (исторический reference, не канон).
 
-#### [AE3_ARCHITECTURE.md](AE3_ARCHITECTURE.md)
-Детальная архитектура AE3 (контроллеры, runtime и примеры API). Нормативные контракты на pre-coding этапе задаются через раздел compatibility в начале документа и синхронизируются с AE3-C.
+#### [archive/AE3_ARCHITECTURE.md](archive/AE3_ARCHITECTURE.md)
+Архивная детальная архитектура AE3 (исторический reference, не канон).
 
 #### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
 Архитектура real-time обновлений
@@ -88,10 +91,10 @@ Breaking-change: несовместимые изменения в защищен
 `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
 как приоритетные источники.
 
-Для AE3 pre-coding baseline приоритет документов:
-1. `AE3_C.md` (формальные контракты и migration gates)
-2. `AE3_B.md` (целевая модель и phased реализация)
-3. `AE3_ARCHITECTURE.md` (детализация runtime/controller дизайна без нарушения контрактов из 1-2)
+Для AE3 приоритет документов:
+1. `ae3lite.md` (канонический план и контракты)
+2. `archive/ae3full.md` (исторический контекст)
+3. `archive/AE3_ARCHITECTURE.md` (историческая детализация)
 
 ---
 

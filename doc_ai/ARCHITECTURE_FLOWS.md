@@ -1,8 +1,8 @@
 # ARCHITECTURE_FLOWS.md
-# Ключевые архитектурные потоки hydro 2.0 (AE2-Lite)
+# Ключевые архитектурные потоки hydro 2.0 (AE2-Lite + AE3-Lite target)
 
-**Версия:** 3.0  
-**Дата обновления:** 2026-02-21  
+**Версия:** 3.1  
+**Дата обновления:** 2026-03-06  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -93,8 +93,30 @@ API:
 
 - `SYSTEM_ARCH_FULL.md`
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
+- `04_BACKEND_CORE/ae3lite.md`
 - `04_BACKEND_CORE/REST_API_REFERENCE.md`
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 - `10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+
+---
+
+## 8. AE3-Lite target pipeline (shadow/canary)
+
+Базовый command flow (инвариант не меняется):
+
+`Scheduler -> Automation-Engine -> history-logger -> MQTT -> ESP32`
+
+Режимы выполнения:
+- `shadow`: AE3-Lite пишет state только в `ae_*`, без publish side-effects;
+- `canary`: writer ownership по зоне переключается на AE3-Lite для `zones.ae3l_canary=true`.
+
+Canary routing:
+- gate хранится в `ae3l_canary_state` отдельно для каждого `greenhouse_id`;
+- переключение зоны на AE3-Lite допускается только при `no_active_ae2_writer(zone_id)`.
+
+Bridge dual-run:
+- ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;
+- AE3-Lite хранит `ae_tasks.root_intent_id` и зеркалит status в legacy projection;
+- mirror failure -> `AE3L_BRIDGE_SYNC_FAILED` + fail-closed для зоны.

@@ -322,7 +322,7 @@ Response:
     "accepted": true,
     "runner_state": "active",
     "deduplicated": false,
-    "task_id": "tsk_...",
+    "task_id": "intent-505",
     "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
   }
 }

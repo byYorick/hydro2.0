@@ -113,107 +113,7 @@ Content-Type: application/json
 
 ---
 
-### 2.2. POST /zones/{zone_id}/commands
-
-**Описание:** Отправка команды для конкретной зоны. Упрощенный endpoint для zone-level команд.
-
-**URL:** `POST /zones/{zone_id}/commands`
-
-**Path Parameters:**
-- `zone_id` (integer) — ID зоны
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "cmd": "run_pump",
-  "params": {
-    "duration_ms": 5000
-  },
-  "greenhouse_uid": "gh-1",
-  "node_uid": "nd-pump-1",
-  "channel": "pump_in"
-}
-```
-
-**Поля:**
-- `cmd` (string, required) — команда
-- `params` (object, required) — параметры команды
-- `greenhouse_uid` (string, required) — UID теплицы
-- `node_uid` (string, required) — UID ноды
-- `channel` (string, required) — канал ноды
-
-**Response:** Аналогично `/commands`
-
-**Пример:**
-```bash
-curl -X POST http://localhost:9300/zones/1/commands \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cmd": "run_pump",
-    "params": {"duration_ms": 5000},
-    "greenhouse_uid": "gh-1",
-    "node_uid": "nd-pump-1",
-    "channel": "pump_in"
-  }'
-```
-
----
-
-### 2.3. POST /nodes/{node_uid}/commands
-
-**Описание:** Отправка команды для конкретной ноды. Упрощенный endpoint для node-level команд.
-
-**URL:** `POST /nodes/{node_uid}/commands`
-
-**Path Parameters:**
-- `node_uid` (string) — UID ноды
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "cmd": "set_config",
-  "params": {
-    "key": "ph_calibration_offset",
-    "value": 0.15
-  },
-  "greenhouse_uid": "gh-1",
-  "channel": "ph_main"
-}
-```
-
-**Поля:**
-- `cmd` (string, required) — команда
-- `params` (object, required) — параметры команды
-- `greenhouse_uid` (string, required) — UID теплицы
-- `channel` (string, required) — канал ноды
-
-**Response:** Аналогично `/commands`
-
-**Пример:**
-```bash
-curl -X POST http://localhost:9300/nodes/nd-ph-1/commands \
-  -H "Content-Type: application/json" \
-  -d '{
-    "cmd": "set_config",
-    "params": {"key": "calibration_offset", "value": 0.15},
-    "greenhouse_uid": "gh-1",
-    "channel": "ph_main"
-  }'
-```
-
----
-
-### 2.4. GET /health
+### 2.2. GET /health
 
 **Описание:** Health check endpoint для проверки работоспособности сервиса.
 
@@ -253,7 +153,7 @@ curl http://localhost:9300/health
 
 ---
 
-### 2.5. POST /internal/metrics/command-latency
+### 2.3. POST /internal/metrics/command-latency
 
 **Описание:** Internal endpoint для приёма latency-метрик команд от Laravel и обновления Prometheus histogram’ов.
 
@@ -389,19 +289,23 @@ History-logger выполняет следующую валидацию пере
 ```sql
 CREATE TABLE commands (
   id BIGSERIAL PRIMARY KEY,
-  command_id VARCHAR(255) UNIQUE NOT NULL,
-  greenhouse_uid VARCHAR(50) NOT NULL,
-  zone_id INTEGER,
-  node_uid VARCHAR(50) NOT NULL,
+  zone_id BIGINT NULL,
+  node_id BIGINT NULL,
   channel VARCHAR(50) NOT NULL,
-  command_type VARCHAR(50) NOT NULL,
+  cmd VARCHAR(64) NOT NULL,
   params JSONB NOT NULL,
-  context JSONB,
-  mqtt_topic VARCHAR(255) NOT NULL,
-  status VARCHAR(20) NOT NULL, -- published, failed
+  status VARCHAR(20) NOT NULL, -- QUEUED|SENT|ACK|DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED
+  cmd_id VARCHAR(128) UNIQUE NOT NULL,
+  sent_at TIMESTAMPTZ NULL,
+  ack_at TIMESTAMPTZ NULL,
+  failed_at TIMESTAMPTZ NULL,
+  source VARCHAR(64) NULL,
+  error_code VARCHAR(64) NULL,
   error_message TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  published_at TIMESTAMP
+  result_code INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
@@ -535,7 +439,7 @@ command = {
 }
 
 response = httpx.post(
-    "http://history-logger:9300/zones/1/commands",
+    "http://history-logger:9300/commands",
     json=command,
     timeout=5.0
 )
@@ -563,7 +467,7 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 ## 9. Security
 
 **Strict policy (актуально):**
-1. Для `POST /commands`, `POST /zones/{zone_id}/commands`, `POST /nodes/{node_uid}/commands` поле `cmd` обязательно.
+1. Для `POST /commands` поле `cmd` обязательно.
 2. Legacy поле `type` отклоняется с `400`.
 
 **Аутентификация (фактическая модель):**

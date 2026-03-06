@@ -71,6 +71,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Ключевые документы:**
 - `04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — архитектура backend
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python-сервисов
+- `04_BACKEND_CORE/ae3lite.md` — канонический план AE3-Lite (automation-engine)
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` — API-спецификация
 - `04_BACKEND_CORE/REST_API_REFERENCE.md` — REST API справочник
 - `04_BACKEND_CORE/TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md` — технологический стек
