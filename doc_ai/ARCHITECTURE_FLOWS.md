@@ -102,21 +102,21 @@ API:
 
 ---
 
-## 8. AE3-Lite target pipeline (shadow/canary)
+## 8. AE3-Lite target pipeline (clean-room rollout)
 
 Базовый command flow (инвариант не меняется):
 
 `Scheduler -> Automation-Engine -> history-logger -> MQTT -> ESP32`
 
 Режимы выполнения:
-- `shadow`: AE3-Lite пишет state только в `ae_*`, без publish side-effects;
-- `canary`: writer ownership по зоне переключается на AE3-Lite для `zones.ae3l_canary=true`.
+- `ae2`: зона остаётся на legacy runtime;
+- `ae3`: ownership по зоне переключается на AE3-Lite через `zones.automation_runtime='ae3'`.
 
-Canary routing:
-- gate хранится в `ae3l_canary_state` отдельно для каждого `greenhouse_id`;
-- переключение зоны на AE3-Lite допускается только при `no_active_ae2_writer(zone_id)`.
+Routing:
+- cutover выполняется вручную по зоне через поле `zones.automation_runtime`;
+- автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3-Lite не используются.
 
-Bridge dual-run:
+Compatibility path:
 - ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;
-- AE3-Lite хранит `ae_tasks.root_intent_id` и зеркалит status в legacy projection;
-- mirror failure -> `AE3L_BRIDGE_SYNC_FAILED` + fail-closed для зоны.
+- status migration идёт через canonical `GET /internal/tasks/{task_id}`;
+- dual-run shadow, legacy status mirrors и `root_intent_id` bridge в canonical v1 не требуются.

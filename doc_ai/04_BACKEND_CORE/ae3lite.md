@@ -1,8 +1,8 @@
-# AE3-Lite: Clean Reboot
+# AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.1-canonical  
-**Дата:** 2026-03-06  
-**Статус:** CANONICAL CLEAN-ROOM SPEC
+**Версия:** 3.2-canonical
+**Дата:** 2026-03-06
+**Статус:** CANONICAL MINIMAL SPEC
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -10,171 +10,195 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 0. Роль документа
 
-`ae3lite.md` — канонический документ для новой реализации `automation-engine`, которую можно
-писать с нуля ИИ-ассистентами маленькими, проверяемыми PR.
+`ae3lite.md` задаёт минимальный исполнимый контракт для `AE3-Lite`.
 
-Этот документ намеренно заменяет перегруженный план. Цель AE3-Lite — не построить новую
-платформу событий, а сделать простой, надёжный, понятный executor автоматических задач зоны.
+Это не roadmap, не RFC на всю замену AE2 и не план на множество параллельных агентов.
+Цель документа одна: зафиксировать минимальный scope `v1`, который можно безопасно
+реализовать и проверить в production на ограниченном числе зон.
 
-Главная идея:
-1. Сначала простой runtime-core.
-2. Потом controlled migration с AE2.
-3. Потом расширения.
+Если требование не нужно для `cycle_start` runtime v1, его в этом документе быть не должно.
+Этот план рассчитан на выполнение одним ИИ-агентом последовательно, без распараллеливания deliverables.
 
 ---
 
-## 1. Что Такое AE3-Lite
+## 1. Scope v1
 
-AE3-Lite v1:
-1. DB-backed executor задач зоны.
-2. Работает через текущий protected pipeline:
+AE3-Lite v1 это:
+1. DB-backed executor только для `cycle_start`.
+2. Protected command pipeline без изменений:
    `Scheduler -> Automation-Engine -> history-logger -> MQTT -> ESP32`.
-3. Использует direct SQL read-model.
-4. Исполняет задачи последовательно и только по closed-loop contract.
-5. Сохраняет текущий внешний wake-up ingress: `POST /zones/{id}/start-cycle`.
+3. Один внешний ingress:
+   `POST /zones/{id}/start-cycle`.
+4. Один canonical status endpoint:
+   `GET /internal/tasks/{task_id}`.
+5. Ручной rollout по зоне через `zones.automation_runtime='ae3'`.
+6. Recovery после restart для `claimed|running|waiting_command`.
 
-AE3-Lite v1 не является:
-1. Новым scheduler.
-2. Event-platform/outbox-platform.
-3. Generic workflow framework на все случаи.
-4. Автоматическим rollout-controller.
-5. Полной заменой всех runtime API AE2 в первом релизе.
+AE3-Lite v1 не включает:
+1. `lighting_tick`
+2. `ventilation_tick`
+3. `solution_change`
+4. `mist`
+5. `diagnostics`
+6. `recovery` как отдельный business task
+7. native `GET /zones/{id}/state`
+8. native `GET/POST /zones/{id}/control-mode`
+9. native `POST /zones/{id}/manual-step`
+10. relay-autotune runtime
+11. multi-replica runtime
+12. auto-canary router
+13. auto-rollback controller
+14. outbox/domain-events platform
+15. generic workflow framework
 
 ---
 
-## 2. Неподвижные Инварианты
+## 2. Неподвижные инварианты
 
 1. Команды на узлы публикуются только через `history-logger` (`POST /commands`).
 2. Прямой MQTT publish из AE и Laravel запрещён.
-3. Внешний ingress до cutover: только `POST /zones/{id}/start-cycle`.
+3. До полного cutover внешний ingress остаётся только `POST /zones/{id}/start-cycle`.
 4. В production v1 допускается только одна активная реплика AE3-Lite.
-5. Одновременно на одну зону допускается только одна активная задача исполнения.
+5. На одну зону допускается не более одной активной execution task.
 6. Успешный terminal outcome mutating-команды только `DONE`.
-7. `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` всегда означают fail.
+7. `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` считаются fail для v1.
 8. Runtime path не зависит от runtime HTTP-вызовов в Laravel.
-9. Изменения БД выполняются только через Laravel migrations.
-10. Domain/Application код `ae3lite/*` не импортирует `ae2lite/*`.
-11. Compatibility code живёт только в anti-corruption/adapters слое.
-12. Сначала корректность и восстановление, потом масштабирование.
+9. Runtime читает zone state напрямую из PostgreSQL read-model.
+10. Изменения БД выполняются только через Laravel migrations.
+11. `ae3lite/*` не импортирует `ae2lite/*`, кроме явно разрешённого compatibility adapter layer.
+12. Переключение зоны на `ae3` запрещено при активной task или активной lease.
+13. План выполняется одним ИИ-агентом, строго последовательно, без параллельных веток работ.
+14. Любое отклонение от этого документа считается defect, а не “допустимой импровизацией”.
 
 ---
 
-## 3. Архитектурный Стиль
+## 3. Контракт одного ИИ-агента
 
-### 3.1 Подход
+### 3.1 Режим исполнения
 
-AE3-Lite строится в стиле:
-1. OOP
-2. DDD
-3. Clean Architecture
-4. Fail-closed runtime
+AE3-Lite `v1` реализует один ИИ-агент.
 
-### 3.2 Bounded Contexts
+Агент обязан:
+1. выполнять работу строго последовательно
+2. держать активным только один deliverable за раз
+3. сначала доводить schema/invariants, потом runtime, потом rollout/status path
+4. не начинать следующий шаг, пока предыдущий не закрыт тестом или явным documented blocker
+5. не расширять scope без прямого изменения этого документа человеком
+6. тестировать каждый этап сразу после реализации, не откладывая тесты на финал
 
-В v1 допускаются только 3 bounded context:
-1. `CompatibilityFacade`
-   - принимает legacy ingress;
-   - маппит legacy intent в canonical AE3 task.
-2. `ExecutionCore`
-   - создаёт, лочит, исполняет и завершает task;
-   - публикует команды;
-   - ждёт terminal status.
-3. `ZoneReadModel`
-   - читает SQL snapshot зоны;
-   - не содержит бизнес-логики исполнения.
+Агенту запрещено:
+1. вести параллельные реализации нескольких подсистем
+2. добавлять новые task types
+3. добавлять новые API вне `POST /zones/{id}/start-cycle` и `GET /internal/tasks/{task_id}`
+4. вносить “временные” обходные решения вне spec
+5. оправдывать отклонение словами `temporary`, `later`, `for now`, `quick fix`, если это нарушает инвариант
 
-Никаких дополнительных platform-context в v1 не создаётся.
+### 3.2 Жёсткий порядок работ
 
-### 3.3 Dependency Rule
+Разрешён только такой порядок:
+1. schema и DB constraints
+2. lease/claim invariants
+3. `CycleStartPlanner`
+4. command publish gateway
+5. command reconcile
+6. startup recovery
+7. `GET /internal/tasks/{task_id}`
+8. rollout/rollback runbook
 
-Разрешённая зависимость слоёв:
+Переход к следующему пункту запрещён, если предыдущий:
+1. не реализован полностью
+2. не покрыт обязательными тестами своего уровня
+3. оставляет известный дефект в инвариантах
+4. не прошёл фактический запуск stage-level tests
 
-`api -> application -> domain <- infrastructure`
+### 3.3 Протокол отклонения и самонаказание
 
-Правила:
-1. `domain` не знает про SQL, HTTP, FastAPI, asyncpg, Prometheus.
-2. `application` оркестрирует use case, но не содержит SQL.
-3. `infrastructure` реализует repository/gateway interfaces.
-4. `api` только валидирует контракт и вызывает use case.
+Если агент отклоняется от плана, он обязан считать это нарушением spec.
+
+Наказание за отклонение:
+1. немедленный self-stop: агент прекращает дальнейшую реализацию в текущем направлении
+2. deliverable автоматически считается проваленным до исправления отклонения
+3. агент обязан явно зафиксировать `DEVIATION:` с описанием нарушенного пункта spec
+4. агент обязан удалить или откатить собственные незамерженные изменения, которые ввели отклонение
+5. агент обязан вернуться к ближайшему последнему состоянию, совместимому с этим документом
+6. после отклонения агент обязан добавить минимум один тест, который не позволит повторить это нарушение
+7. повторное отклонение того же типа считается грубым нарушением и требует остановки работы до явного решения человека
+
+Под отклонением понимается:
+1. расширение scope сверх `cycle_start`
+2. ослабление DB/runtime инварианта
+3. обход protected command pipeline
+4. добавление runtime path без теста
+5. переход к следующему шагу при незакрытом предыдущем
+6. смешение rollout/API parity с core runtime до закрытия core
+
+### 3.4 Fail-closed правило для самого агента
+
+Если агент не может доказать, что изменение совместимо с этим документом, он обязан:
+1. считать изменение запрещённым
+2. не писать код “на предположении”
+3. зафиксировать blocker, а не додумывать архитектуру
+4. предпочесть сокращение scope, а не расширение абстракций
+5. считать непроверенный этап незавершённым
 
 ---
 
-## 4. Domain Model
+## 4. Минимальная модель исполнения
 
-### 4.1 Aggregate Roots
+### 4.1 Runtime entities
 
 #### `AutomationTask`
 
-Единственный корневой aggregate исполнения.
+Единственный root aggregate исполнения.
 
-Отвечает за:
-1. lifecycle task;
-2. текущий step;
-3. terminal policy;
-4. result/error fields.
-
-#### `ZoneLease`
-
-Отвечает за:
-1. single-writer на зону;
-2. lease timeout;
-3. безопасный claim/reclaim.
-
-#### `ZoneWorkflow`
-
-Отвечает за:
-1. текущую фазу workflow зоны;
-2. CAS version;
-3. разрешённые phase transitions.
-
-### 4.2 Внутренние Entity
+Поля уровня модели:
+1. `id`
+2. `zone_id`
+3. `task_type`
+4. `status`
+5. `payload`
+6. `idempotency_key`
+7. `claimed_by`
+8. `claimed_at`
+9. `error_code`
+10. `error_message`
+11. `completed_at`
 
 #### `PlannedCommand`
 
-Child-entity внутри `AutomationTask`.
-
-Хранит:
+Execution record внутри task:
 1. `step_no`
 2. `node_uid`
 3. `channel`
 4. `payload`
-5. `external_command_id`
+5. `external_id`
 6. `terminal_status`
 
-### 4.3 Value Objects
+#### `ZoneLease`
 
-Минимум:
-1. `TaskId`
-2. `ZoneId`
-3. `TaskType`
-4. `TaskStatus`
-5. `WorkflowPhase`
-6. `CommandTerminalStatus`
-7. `LeaseOwner`
+Модель single-writer на уровне зоны:
+1. `zone_id`
+2. `owner`
+3. `leased_until`
 
-### 4.4 Canonical Task Types
+#### `ZoneWorkflow`
 
-В очередь `ae_tasks` помещаются только business-level tasks:
+Минимальный workflow state зоны:
+1. `workflow_phase`
+2. `version`
+3. `scheduler_task_id`
+4. `started_at`
+5. `updated_at`
+
+### 4.2 Canonical task types
+
+В `v1` разрешён только один business task:
 1. `cycle_start`
-2. `lighting_tick`
-3. `ventilation_tick`
-4. `solution_change`
-5. `mist`
-6. `diagnostics`
-7. `recovery`
 
-Запрещено помещать в очередь как top-level task:
-1. `irrigation_start`
-2. `irrigation_stop`
-3. `recirculation_start`
-4. `recirculation_stop`
-5. `correction_ph`
-6. `correction_ec`
-7. `compensation`
+Любые другие task types считаются out of scope и не должны появляться
+ни в migration, ни в API, ни в runtime wiring `v1`.
 
-Эти действия являются внутренними workflow-шагами `cycle_start`, а не отдельными root-task.
-
-### 4.5 Task Statuses
+### 4.3 Task statuses
 
 Main path:
 `pending -> claimed -> running -> waiting_command -> completed`
@@ -182,9 +206,9 @@ Main path:
 Terminal:
 `failed | cancelled`
 
-В v1 статусы `skipped|expired|conflict` не вводятся. Они усложняют модель без критической пользы.
+Дополнительные статусы в `v1` не вводятся.
 
-### 4.6 Workflow Phases
+### 4.4 Workflow phases
 
 Допустимые фазы:
 1. `idle`
@@ -194,132 +218,62 @@ Terminal:
 5. `irrig_recirc`
 6. `ready`
 
-Только `cycle_start` имеет право мутировать `ZoneWorkflow`.
+Только `cycle_start` имеет право мутировать `zone_workflow_state`.
 
 ---
 
-## 5. Compatibility Facade
+## 5. Runtime flow
 
-### 5.1 Внешний Контракт
+### 4.1 High-level sequence
 
-До полного cutover сохраняется:
-1. `POST /zones/{id}/start-cycle`
-2. `zone_automation_intents`
-3. `idempotency_key`
-
-### 5.2 Legacy -> AE3 Mapping
-
-Mapping выполняется в одном адаптере:
-`application/adapters/legacy_intent_mapper.py`
-
-Правила:
-1. `payload.workflow=cycle_start` -> `cycle_start`
-2. `intent_type=irrigate_once` -> `cycle_start`
-3. `intent_type=irrigation_tick` -> `cycle_start`
-4. `intent_type=lighting_tick` -> `lighting_tick`
-5. `intent_type=ventilation_tick` -> `ventilation_tick`
-6. `intent_type=solution_change_tick` -> `solution_change`
-7. `intent_type=mist_tick` -> `mist`
-8. `intent_type=diagnostics_tick` -> `diagnostics`
-
-Если mapping не определён:
-1. фасад возвращает controlled error;
-2. новая AE3 task не создаётся;
-3. событие пишется в `zone_events`.
-
-### 5.3 Что Не Делаем В v1
-
-В v1 не поддерживаем:
-1. `scheduler_logs` compatibility projection;
-2. dual status mirrors;
-3. bridge audit journal;
-4. alias table `intent-* <-> ae3:*`.
-
-Вместо этого:
-1. внешний `start-cycle` остаётся прежним;
-2. новый Laravel poller переводится на canonical `GET /internal/tasks/{task_id}`;
-3. только после этого AE2 удаляется.
-
----
-
-## 6. Runtime Flow
-
-### 6.1 High-Level Sequence
-
-1. `CompatibilityFacade` валидирует ingress.
-2. Создаётся `AutomationTask(status=pending)`.
-3. Worker выбирает следующую задачу.
-4. Worker получает `ZoneLease`.
-5. Загружается `ZoneSnapshot` через SQL read-model.
-6. Planner строит `CommandPlan`.
-7. Команды сохраняются в `ae_commands`.
-8. Команды отправляются через `history-logger`.
-9. Runtime ждёт terminal status в таблице `commands`.
-10. `DONE` переводит к следующему step.
+1. `POST /zones/{id}/start-cycle` валидирует контракт и создаёт canonical `AutomationTask(status=pending)`.
+2. Worker выбирает следующую `pending` task.
+3. Worker пытается получить `ZoneLease`.
+4. Если lease не получена, task не исполняется.
+5. Загружается `ZoneSnapshot` через direct SQL read-model.
+6. `CycleStartPlanner` строит последовательный `CommandPlan`.
+7. Шаг команды записывается в `ae_commands`.
+8. Команда публикуется через `history-logger`.
+9. Runtime ждёт terminal status в legacy/history-logger таблице `commands`.
+10. Только `DONE` переводит execution к следующему step.
 11. Любой другой terminal завершает task как `failed`.
-12. `ZoneLease` освобождается.
+12. После terminal task lease освобождается.
 
-### 6.2 Execution Policy
+### 4.2 Execution policy
 
-1. Все шаги исполняются строго последовательно.
-2. Параллельные command-steps в v1 запрещены.
+1. Все steps исполняются строго последовательно.
+2. Параллельные command-steps в `v1` запрещены.
 3. Следующий step разрешён только после terminal предыдущего.
-4. `cycle_start` — единственный сложный multi-step workflow в v1.
-5. `lighting_tick`, `ventilation_tick`, `mist`, `solution_change`, `diagnostics` — single-plan tasks.
+4. `v1` не использует отдельные compensation tasks.
+5. Если нужен safety-stop, он выполняется inline и не создаёт новую business task.
 
-### 6.3 DONE-Only Contract
+### 4.3 DONE-only contract
 
 Для всех mutating-команд:
-1. success = только `DONE`;
-2. `NO_EFFECT` не считается успехом;
-3. dedupe не может подменять реальный terminal;
-4. publish failure не может трактоваться как implicit ACK.
-
-### 6.4 Failure Handling
-
-В v1 нет отдельного `compensation task`.
-
-Вместо этого:
-1. fail-finalize выполняется в том же use case;
-2. если нужен safety-stop, он выполняется как inline fail-safe action;
-3. fail-safe action запускается только после того, как предыдущий command-step уже имеет terminal status;
-4. fail-safe action не создаёт новую business-task в очереди.
-
-Это принципиально упрощает safety model.
+1. success = только `DONE`
+2. `NO_EFFECT` не считается success в `v1`
+3. dedupe не заменяет реальный terminal status
+4. publish failure не трактуется как implicit ACK
 
 ---
 
-## 7. Planning В Стиле DDD
+## 6. Read-model и planner
 
-### 7.1 Domain Services
+### 5.1 Единственный planner v1
 
-Допускаются только такие planners:
+В `v1` допускается только:
 1. `CycleStartPlanner`
-2. `LightingTickPlanner`
-3. `VentilationTickPlanner`
-4. `SolutionChangePlanner`
-5. `MistPlanner`
-6. `DiagnosticsPlanner`
-7. `RecoveryPlanner`
 
-Каждый planner:
-1. принимает `AutomationTask` и `ZoneSnapshot`;
-2. возвращает `CommandPlan`;
-3. не содержит SQL и HTTP.
+Planner:
+1. принимает `AutomationTask` и `ZoneSnapshot`
+2. возвращает `CommandPlan`
+3. не содержит SQL и HTTP
 
-### 7.2 CommandPlan
+### 5.2 `ZoneSnapshot`
 
-`CommandPlan` содержит:
-1. `steps: list[PlannedCommandDraft]`
-2. `requires_terminal: bool`
-3. `timeout_sec: int`
-4. `workflow_transition_on_success: WorkflowTransition | None`
+`ZoneSnapshot` это immutable DTO application layer.
 
-### 7.3 Zone Snapshot
-
-`ZoneSnapshot` загружается отдельным reader-service из БД.
-
-Обязательные источники:
+Минимальные источники данных:
 1. `zones`
 2. `grow_cycles`
 3. `grow_cycle_phases`
@@ -333,15 +287,22 @@ Mapping выполняется в одном адаптере:
 11. `pid_state`
 12. `zone_pid_configs`
 
-`ZoneSnapshot` — immutable DTO application layer.
+### 5.3 Требования к read consistency
+
+1. `ZoneSnapshot` должен читаться в одной DB transaction.
+2. Runtime обязан использовать фиксированный порядок резолва runtime config:
+   `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles(active mode)`.
+3. Если snapshot не может быть собран консистентно, task завершается fail-closed.
+4. Hardcoded default targets запрещены.
+5. Stale critical telemetry должна приводить к fail-closed.
 
 ---
 
-## 8. Минимальная Схема Данных
+## 7. Минимальная схема данных
 
-### 8.1 `ae_tasks`
+### 6.1 `ae_tasks`
 
-Минимальные поля:
+Обязательные поля:
 1. `id`
 2. `zone_id`
 3. `task_type`
@@ -358,9 +319,15 @@ Mapping выполняется в одном адаптере:
 14. `updated_at`
 15. `completed_at`
 
-### 8.2 `ae_commands`
+Обязательные ограничения:
+1. `task_type='cycle_start'` для всех записей `v1`
+2. уникальность `idempotency_key` в допустимом scope
+3. не более одной активной task на `zone_id`
+4. terminal task не может вернуться в active status
 
-Минимальные поля:
+### 6.2 `ae_commands`
+
+Обязательные поля:
 1. `id`
 2. `task_id`
 3. `step_no`
@@ -376,62 +343,67 @@ Mapping выполняется в одном адаптере:
 13. `created_at`
 14. `updated_at`
 
-### 8.3 `ae_zone_leases`
+Обязательные ограничения:
+1. уникальность `(task_id, step_no)`
+2. `step_no` монотонно возрастает внутри task
+3. один execution step соответствует не более одной внешней команде
 
-Минимальные поля:
+`ae_commands` хранит локальный execution log AE3-Lite.
+Terminal source of truth для publish/reconcile в `v1` остаётся legacy/history-logger таблица `commands`,
+связанная через `ae_commands.external_id -> commands.id`.
+
+### 6.3 `ae_zone_leases`
+
+Обязательные поля:
 1. `zone_id`
 2. `owner`
 3. `leased_until`
 4. `updated_at`
 
-### 8.4 `zone_workflow_state`
+Обязательные ограничения:
+1. одна активная lease на `zone_id`
+2. reclaim допускается только после истечения lease или явного release
+
+### 6.4 `zone_workflow_state`
 
 Обязательное расширение:
 1. `version BIGINT NOT NULL DEFAULT 0`
 
-В `zone_workflow_state` храним только:
+В таблице храним только:
 1. `workflow_phase`
 2. `version`
 3. `scheduler_task_id`
 4. `started_at`
 5. `updated_at`
 
-Запрещено хранить там:
-1. `control_mode`
-2. `sensor_mode`
-3. случайные recovery blobs
-4. cross-context flags
+CAS update по `version` обязателен для workflow mutation.
 
-### 8.5 `zones`
+### 6.5 `zones`
 
-Для controlled rollout достаточно одного поля:
+Для rollout достаточно одного поля:
 1. `automation_runtime TEXT NOT NULL DEFAULT 'ae2' CHECK (automation_runtime IN ('ae2','ae3'))`
 
-Это заменяет:
-1. canary-router;
-2. `ae3l_canary_state`;
-3. `ae2_writer_heartbeat`;
-4. автоматический gate orchestration.
+Правило:
+1. switch на `ae3` запрещён, если у зоны есть active task или active lease
 
 ---
 
-## 9. API Контракты
+## 8. API-контракты
 
-### 9.1 v1 Обязательные Endpoints
+### 7.1 `POST /zones/{id}/start-cycle`
 
-1. `POST /zones/{id}/start-cycle`
-2. `GET /internal/tasks/{task_id}`
+Обязательный внешний ingress `v1`.
 
-### 9.2 `POST /zones/{id}/start-cycle`
+Требования:
+1. сохраняет текущий внешний контракт
+2. принимает `source`, `idempotency_key`
+3. валидирует security baseline
+4. создаёт canonical `AutomationTask`
+5. при active task или active lease возвращает controlled error
 
-Сохраняет текущий внешний контракт:
-1. принимает `source`, `idempotency_key`;
-2. валидирует security baseline;
-3. через compatibility facade создаёт canonical AE3 task.
+### 7.2 `GET /internal/tasks/{task_id}`
 
-До cutover допустим внешний `task_id="intent-<id>"`, но внутренним source of truth считается `ae_tasks.id`.
-
-### 9.3 `GET /internal/tasks/{task_id}`
+Canonical status endpoint для зон на `ae3`.
 
 Минимальный ответ:
 1. `task_id`
@@ -444,59 +416,81 @@ Mapping выполняется в одном адаптере:
 8. `updated_at`
 9. `completed_at`
 
-В v1 этот endpoint — canonical source для poller/status UI migration.
+### 7.3 Out of scope API
 
-### 9.4 Что Не Входит В v1
-
-Эндпоинты:
+В `v1` не входят:
 1. `/zones/{id}/state`
 2. `/zones/{id}/control-mode`
 3. `/zones/{id}/manual-step`
 4. `/zones/{id}/start-relay-autotune`
 5. `/zones/{id}/relay-autotune/status`
 
-остаются в AE2 до стабилизации AE3 execution core.
+---
+
+## 9. Recovery и failure model
+
+### 9.1 Startup recovery
+
+При старте runtime обязан:
+1. проверить `waiting_command` задачи по legacy/history-logger `commands`
+2. если terminal уже есть, корректно финализировать task
+3. `claimed|running` без подтверждённой активной внешней команды перевести в `failed` с контролируемым `error_code`
+4. освободить lease с истёкшим `leased_until`
+5. не создавать retry storm
+
+### 9.2 Crash windows
+
+Для `v1` обязательно покрыть тестами минимум такие окна:
+1. crash до записи `ae_commands`
+2. crash после записи `ae_commands`, но до publish
+3. crash после publish, но до локального обновления статуса
+4. crash в `waiting_command`
+5. delayed terminal status после restart
+
+### 9.3 Failure policy
+
+1. Runtime работает fail-closed.
+2. Stale critical telemetry приводит к fail.
+3. Неопределённое состояние команды трактуется как incident, а не как success.
+4. Recovery не должен повторно публиковать команду без явного безопасного основания.
 
 ---
 
-## 10. Recovery И Safety
+## 10. Rollout и rollback
 
-### 10.1 Deployment Invariant
+### 10.1 Rollout
 
-Production v1:
-1. одна реплика;
-2. один worker loop;
-3. recovery выполняется тем же процессом.
+Rollout выполняется только вручную:
+1. выбрать pilot zone
+2. убедиться, что active task и active lease отсутствуют
+3. установить `zones.automation_runtime='ae3'`
+4. перезапустить `automation-engine`
+5. выполнить smoke:
+   - `start-cycle`
+   - task status poll
+   - command publish
+   - terminal reconcile
 
-Это сознательное ограничение для уменьшения сложности.
+### 10.2 Rollback
 
-### 10.2 Startup Recovery
+Rollback тоже выполняется вручную:
+1. убедиться, что для зоны нет активной AE3 task или выполнить controlled stop по runbook
+2. установить `zones.automation_runtime='ae2'`
+3. перезапустить `automation-engine`
+4. незавершённые AE3 tasks оставить в БД для расследования
+5. ручной destructive cleanup запрещён
 
-При старте:
-1. `waiting_command` задачи проверяются по `commands`;
-2. если terminal уже есть — задача финализируется;
-3. `running` без активной команды переводятся в `failed` с `error_code=recovery_required`;
-4. `ZoneLease` с истёкшим `leased_until` освобождаются;
-5. recovery не создаёт cascade retry storm.
+### 10.3 Handoff rule
 
-### 10.3 Telemetry Freshness
-
-1. Для critical checks используется freshness guard.
-2. Stale critical telemetry -> fail-closed.
-3. Hardcoded default targets запрещены.
-
-### 10.4 Degraded Mode
-
-В v1 degraded-mode отдельной подсистемой не вводится.
-
-Если scheduler/source недоступен:
-1. новые задачи не принимаются;
-2. уже активные задачи завершаются корректно;
-3. система не создаёт специальные background tasks сама.
+Переключение runtime на зоне запрещено:
+1. при active task
+2. при active lease
+3. при `waiting_command`
+4. при неопределённом command terminal state
 
 ---
 
-## 11. Кодовая Структура
+## 11. Минимальная кодовая структура
 
 ```text
 backend/services/automation-engine/ae3lite/
@@ -519,11 +513,7 @@ backend/services/automation-engine/ae3lite/
 │   │   ├── zone_lease.py
 │   │   └── zone_workflow.py
 │   ├── services/
-│   │   ├── cycle_start_planner.py
-│   │   ├── lighting_tick_planner.py
-│   │   ├── ventilation_tick_planner.py
-│   │   ├── diagnostics_planner.py
-│   │   └── recovery_planner.py
+│   │   └── cycle_start_planner.py
 │   ├── value_objects.py
 │   └── errors.py
 ├── infrastructure/
@@ -536,554 +526,88 @@ backend/services/automation-engine/ae3lite/
 └── main.py
 ```
 
-Правила clean code:
-1. один публичный класс или один use case на файл;
-2. без god-module;
-3. без module-level mutable state;
-4. без неявной магии через dict-ключи между слоями;
-5. DTO и domain objects не смешиваются.
+Правила:
+1. один публичный use case или один публичный класс на файл
+2. без module-level mutable state
+3. DTO и domain objects не смешиваются
+4. compatibility code живёт только в adapter/facade слое
 
 ---
 
-## 12. План Реализации
+## 12. Обязательные тесты v1
 
-### Phase 0: Foundations
+### 12.1 Unit
 
-1. Создать `ae3lite/` skeleton.
-2. Добавить `zones.automation_runtime`.
-3. Создать `ae_tasks`, `ae_commands`, `ae_zone_leases`.
-4. Добавить `zone_workflow_state.version`.
-5. Реализовать `GET /internal/tasks/{task_id}`.
+1. task status transitions
+2. lease rules
+3. workflow CAS update
+4. `CycleStartPlanner` decisions
+5. DONE-only policy
 
-### Phase 1: ExecutionCore v1
+### 12.2 Integration
 
-1. Реализовать `AutomationTask`, `ZoneLease`, `ZoneWorkflow`.
-2. Реализовать `CycleStartPlanner`.
-3. Реализовать sequential worker.
-4. Реализовать history-logger gateway.
-5. Реализовать recovery для `waiting_command`.
-
-### Phase 2: CompatibilityFacade
-
-1. Реализовать `legacy_intent_mapper`.
-2. Подключить `POST /zones/{id}/start-cycle` к AE3 path.
-3. Сохранить текущий ingress contract.
-4. Laravel poller перевести на `GET /internal/tasks/{task_id}`.
-
-### Phase 3: Controlled Rollout
-
-1. Переключение только вручную через `zones.automation_runtime='ae3'`.
-2. Сначала 1 тестовая зона.
-3. Потом несколько production зон с низким риском.
-4. Потом все `cycle_start` зоны.
-
-### Phase 4: Additional Tasks
-
-После стабилизации core:
-1. `lighting_tick`
-2. `ventilation_tick`
-3. `solution_change`
-4. `mist`
-
-### Phase 5: Post-Core Extensions
-
-Только после cutover core:
-1. новый `/zones/{id}/state`
-2. `control-mode`
-3. `manual-step`
-4. `relay-autotune`
-5. multi-replica deployment
-6. advanced recovery
-
----
-
-## 13. Тестовая Стратегия
-
-### 13.1 Unit
-
-1. aggregate transitions
-2. planner decisions
-3. legacy mapping
-4. DONE-only policy
-
-### 13.2 Integration
-
-1. task claim
-2. zone lease
-3. command publish
-4. command terminal reconcile
+1. active task uniqueness
+2. lease claim/reclaim
+3. `history-logger` publish contract
+4. `commands` reconcile
 5. startup recovery
-6. workflow CAS update
+6. runtime switch denied while zone busy
 
-### 13.3 E2E
+### 12.3 E2E
 
-Минимум:
-1. `scheduler -> start-cycle -> task created`
-2. `task -> command -> DONE -> completed`
-3. `task -> TIMEOUT -> failed`
-4. `restart during waiting_command -> recover and finalize`
+1. `start-cycle -> DONE -> completed`
+2. `start-cycle -> TIMEOUT -> failed`
+3. `restart during waiting_command -> recovered`
+4. `runtime switch denied while zone busy`
 
-### 13.4 Что Не Считается Доказательством Корректности
+### 12.4 Правило тестирования по этапам
 
-В v1 не используем как главный proof:
-1. shadow-run без publish;
-2. parity-only comparison без node terminal;
-3. сложные synthetic canary metrics вместо реальных integration tests.
-
----
-
-## 14. Правила Для ИИ-Ассистентов
-
-AE3-Lite должен быть пригоден для безопасной реализации ИИ-ассистентами.
-
-Обязательные правила:
-1. один PR — один use case или один schema package;
-2. сначала domain contract, потом repository, потом runtime wiring;
-3. перед merge обязателен тест затронутого use case;
-4. запрещено смешивать migration, planner logic и API refactor в одном PR;
-5. запрещено тянуть legacy runtime код в новый domain;
-6. если нужен compatibility code, он пишется только в adapter/facade слое;
-7. сложность режется удалением scope, а не добавлением новых abstraction layers.
+1. Каждый этап реализации обязан завершаться запуском своих unit/integration тестов.
+2. Переход к следующему этапу запрещён без зелёного результата stage-level tests.
+3. Отсутствие тестов для этапа означает, что этап не завершён.
+4. Тесты в конце всей работы не заменяют тесты по этапам.
+5. После завершения всей реализации агент обязан покрыть недостающие критические сценарии.
+6. После этого агент обязан прогнать весь обязательный `e2e`-набор и получить зелёный результат.
+7. Если полный `e2e`-набор не пройден, `v1` считается неготовым независимо от статуса unit/integration тестов.
 
 ---
 
-## 15. Что Отложено Осознанно
+## 13. Definition of Done
 
-Не входит в canonical AE3-Lite v1:
-1. `scheduler_logs` projection
-2. outbox/domain-events subsystem
-3. auto-canary router
-4. auto-rollback controller
-5. anti-starvation subsystem
-6. reference-table `ae_task_types`
-7. manual-step runtime
-8. relay-autotune runtime
-9. multi-replica active-active
-10. generic compensation task queue
-
-Каждый пункт может быть добавлен только отдельным RFC после успешного cutover core runtime.
-
----
-
-## 16. Definition of Done
-
-AE3-Lite v1 считается готовым, когда:
-1. `cycle_start` работает через новый `ExecutionCore`;
-2. успешная mutating-команда подтверждается только `DONE`;
-3. `ZoneLease` исключает двойное исполнение зоны;
-4. `waiting_command` корректно восстанавливается после restart;
-5. Laravel poller умеет читать canonical `GET /internal/tasks/{task_id}`;
-6. минимум одна production зона стабильно работает на `automation_runtime='ae3'`;
-7. в `ae3lite/*` нет импортов из `ae2lite/*`;
-8. интеграционные и e2e тесты зелёные;
-9. документация остаётся компактной и однозначной.
-
-Именно это и есть хороший AE3-Lite: простой, предсказуемый, ограниченный по scope и реально реализуемый.
+AE3-Lite `v1` считается готовым, когда выполнены все условия:
+1. Реализован только один production task type: `cycle_start`.
+2. Вход в runtime идёт только через `POST /zones/{id}/start-cycle`.
+3. Для зоны одновременно невозможны два активных execution task на уровне DB constraints и runtime lease.
+4. Все команды публикуются только через `history-logger`, без прямого MQTT publish из AE/Laravel.
+5. Terminal source of truth для command outcome в `v1` явно определён как таблица `commands`.
+6. Успех mutating step подтверждается только terminal `DONE`.
+7. После restart runtime корректно восстанавливает `waiting_command` и не создаёт повторный publish без явного безопасного основания.
+8. Переключение `zones.automation_runtime` на `ae3` запрещено при активной задаче или активной lease.
+9. Реализован canonical status endpoint `GET /internal/tasks/{task_id}`.
+10. Laravel poller читает status только из canonical task API для зон на `ae3`.
+11. Пройдены обязательные integration/e2e сценарии:
+    - `start-cycle -> DONE -> completed`
+    - `start-cycle -> TIMEOUT -> failed`
+    - `restart during waiting_command -> recovered`
+    - `runtime switch denied while zone busy`
+12. Каждый этап реализации был покрыт и проверен своими stage-level tests до перехода к следующему этапу.
+13. После завершения реализации покрыт и пройден полный обязательный `e2e`-набор.
+14. На staging выполнен как минимум один воспроизводимый rollout и один rollback.
+15. Как минимум одна production зона отработала на `automation_runtime='ae3'` без двойного исполнения и без ручного ремонта БД.
+16. В `ae3lite/*` нет импортов из `ae2lite/*`, кроме явно разрешённого compatibility adapter layer.
+17. Реализация была выполнена одним ИИ-агентом без отклонений от порядка работ из раздела 3.
+18. Для каждого зафиксированного отклонения выполнены self-stop, corrective rollback и дополнительный тест.
+19. Всё, что не входит в этот список, считается out of scope для `v1`.
 
 ---
 
-## 17. Production Версия AE3-Lite
-
-Полной production-версией AE3-Lite считается не просто v1 core, а полная замена AE2 в рабочем runtime-path.
-
-В production scope входят:
-1. `cycle_start`
-2. `lighting_tick`
-3. `ventilation_tick`
-4. `solution_change`
-5. `mist`
-6. `diagnostics`
-7. `recovery`
-8. native `GET /internal/tasks/{task_id}`
-9. native `GET /zones/{id}/state`
-10. native `GET/POST /zones/{id}/control-mode`
-11. native `POST /zones/{id}/manual-step`
-12. native `POST /zones/{id}/start-relay-autotune`
-13. native `GET /zones/{id}/relay-autotune/status`
-14. controlled rollout по `zones.automation_runtime`
-15. rollback обратно на AE2 без ручного ремонта БД
-
-Не требуется для первой production-версии:
-1. auto-canary router
-2. auto-rollback controller
-3. outbox/domain-events platform
-4. active-active multi-replica
-5. generic event-driven platform
-
-Production AE3-Lite должен оставаться простым single-runtime решением, а не перерастать в платформу.
-
----
-
-## 18. План На 4 ИИ-Агента
-
-### 18.1 Общие Правила Координации
-
-1. Каждый агент работает в своей области ответственности.
-2. Один и тот же файл не редактируется двумя агентами параллельно.
-3. Переход к следующей волне разрешён только после merge gate.
-4. Любой агент обязан добавлять тесты на свой deliverable.
-5. Если deliverable меняет контракт, агент обязан обновить `doc_ai`.
-
-### 18.2 Agent-A: `domain-db-core`
-
-Зона ответственности:
-1. domain model
-2. migrations
-3. repositories contracts
-4. schema constraints
-5. CAS/lease invariants
-
-Делает:
-1. `ae_tasks`
-2. `ae_commands`
-3. `ae_zone_leases`
-4. `zone_workflow_state.version`
-5. `zones.automation_runtime`
-6. domain entities/value objects/errors
-7. repository interfaces
-8. migration tests `up/down`
-
-Файлы ownership:
-1. `ae3lite/domain/*`
-2. `ae3lite/infrastructure/repositories/*`
-3. Laravel migrations для AE3-Lite
-
-Definition of Done агента:
-1. схема поднимается в Docker
-2. schema rollback работает
-3. domain aggregate tests зелёные
-4. DB constraints реально защищают инварианты
-
-### 18.3 Agent-B: `runtime-commands`
-
-Зона ответственности:
-1. worker loop
-2. command execution
-3. reconcile
-4. startup recovery
-5. history-logger integration
-
-Делает:
-1. `claim_next_task`
-2. `execute_task`
-3. `reconcile_command`
-4. `finalize_task`
-5. `runtime/worker.py`
-6. `runtime/recovery.py`
-7. history-logger gateway
-8. `CycleStartPlanner`
-9. additional planners для `lighting_tick`, `ventilation_tick`, `solution_change`, `mist`, `diagnostics`, `recovery`
-
-Файлы ownership:
-1. `ae3lite/application/use_cases/*`
-2. `ae3lite/runtime/*`
-3. `ae3lite/infrastructure/gateways/*`
-4. `ae3lite/domain/services/*`
-
-Definition of Done агента:
-1. все mutating paths obey `DONE-only`
-2. worker корректно доходит до `completed|failed`
-3. restart в `waiting_command` восстанавливается
-4. integration tests для publish/reconcile зелёные
-
-### 18.4 Agent-C: `compat-api-rollout`
-
-Зона ответственности:
-1. compatibility facade
-2. ingress contracts
-3. internal/public API
-4. Laravel poller migration
-5. runtime API replacement AE2
-
-Делает:
-1. `legacy_intent_mapper`
-2. `POST /zones/{id}/start-cycle`
-3. `GET /internal/tasks/{task_id}`
-4. native `GET /zones/{id}/state`
-5. native `GET/POST /zones/{id}/control-mode`
-6. native `POST /zones/{id}/manual-step`
-7. native relay-autotune endpoints
-8. migration Laravel poller на canonical task API
-9. rollback-safe switch по `zones.automation_runtime`
-
-Файлы ownership:
-1. `ae3lite/api/*`
-2. `ae3lite/application/adapters/*`
-3. Laravel integration points, которые читают task/status API
-
-Definition of Done агента:
-1. старый ingress не сломан
-2. новый internal task API стабилен
-3. AE2-only API зависимости удалены с новых путей
-4. API contract tests зелёные
-
-### 18.5 Agent-D: `qa-e2e-prod`
-
-Зона ответственности:
-1. test harness
-2. docker/integration/e2e
-3. staging/prod rollout
-4. observability minimum
-5. docs sync
-
-Делает:
-1. unit/integration/e2e orchestration
-2. Docker test profiles
-3. staging smoke scripts
-4. production rollout checklist
-5. rollback checklist
-6. docs sync в `INDEX.md`, `ARCHITECTURE_FLOWS.md`, `04_BACKEND_CORE/README.md`, `REST_API_REFERENCE.md`, `API_SPEC_FRONTEND_BACKEND_FULL.md`, `DATA_MODEL_REFERENCE.md`
-7. minimum monitoring:
-   - structured logs
-   - task status counters
-   - command failure counters
-   - worker recovery counters
-
-Файлы ownership:
-1. `tests/*`
-2. CI/test scripts
-3. rollout docs/runbooks
-4. cross-doc sync
-
-Definition of Done агента:
-1. весь test matrix автоматизирован
-2. staging rollout воспроизводим
-3. rollback воспроизводим
-4. документы синхронизированы с кодом
-
-### 18.6 Волны Реализации
-
-#### Wave 1: Foundation
-
-Owner:
-1. Agent-A primary
-2. Agent-D support
-
-Deliverables:
-1. skeleton `ae3lite/`
-2. migrations
-3. domain contracts
-4. repository interfaces
-5. migration tests
-
-Gate G1:
-1. migrations `up/down` зелёные
-2. aggregate unit tests зелёные
-3. ни одного импорта `ae2lite/*` в `ae3lite/*`
-
-#### Wave 2: Core Runtime
-
-Owner:
-1. Agent-B primary
-2. Agent-A support
-
-Deliverables:
-1. worker
-2. `CycleStartPlanner`
-3. history-logger gateway
-4. reconcile/recovery
-5. `cycle_start` end-to-end path
-
-Gate G2:
-1. `start-cycle -> DONE -> completed` зелёный в Docker
-2. `start-cycle -> TIMEOUT -> failed` зелёный
-3. restart during `waiting_command` восстанавливается
-
-#### Wave 3: Compatibility And Status API
-
-Owner:
-1. Agent-C primary
-2. Agent-B support
-3. Agent-D tests
-
-Deliverables:
-1. `legacy_intent_mapper`
-2. compatibility `POST /zones/{id}/start-cycle`
-3. canonical `GET /internal/tasks/{task_id}`
-4. Laravel poller migration
-
-Gate G3:
-1. старый scheduler ingress работает
-2. poller читает canonical task API
-3. одна staging зона проходит полный `cycle_start`
-
-#### Wave 4: Full Production Feature Set
-
-Owner:
-1. Agent-B primary на execution tasks
-2. Agent-C primary на API
-3. Agent-D tests
-
-Deliverables:
-1. `lighting_tick`
-2. `ventilation_tick`
-3. `solution_change`
-4. `mist`
-5. native `/zones/{id}/state`
-6. native `control-mode`
-7. native `manual-step`
-8. native relay-autotune endpoints
-
-Gate G4:
-1. все task types проходят integration tests
-2. все runtime API проходят contract tests
-3. AE2 больше не нужен для активных production сценариев
-
-#### Wave 5: Production Cutover
-
-Owner:
-1. Agent-D primary
-2. Agent-C rollout support
-3. Agent-B hotfix support
-
-Deliverables:
-1. manual rollout runbook
-2. manual rollback runbook
-3. staging soak
-4. production soak
-5. AE2 deactivation plan
-
-Gate G5:
-1. staging soak без инцидентов
-2. pilot production zones стабильны
-3. rollback проверен
-4. docs sync complete
-
-### 18.7 Запрещённые Пересечения
-
-1. Agent-A не пишет runtime API.
-2. Agent-B не меняет Laravel poller и фронтовые контракты.
-3. Agent-C не меняет domain invariants без ревью Agent-A.
-4. Agent-D не меняет core domain behavior без явного handoff.
-
----
-
-## 19. Обязательный Test Matrix Для 4 Агентов
-
-### 19.1 Unit
-
-Owner:
-1. Agent-A
-2. Agent-B
-
-Покрытие:
-1. aggregate transitions
-2. workflow CAS
-3. lease rules
-4. planner decisions
-5. legacy mapping
-
-### 19.2 Integration
-
-Owner:
-1. Agent-B
-2. Agent-C
-
-Покрытие:
-1. DB repositories
-2. `history-logger` publish contract
-3. `commands` reconcile
-4. startup recovery
-5. API + DB path
-6. `zones.automation_runtime` switch
-
-### 19.3 API Contract
-
-Owner:
-1. Agent-C
-2. Agent-D
-
-Покрытие:
-1. `POST /zones/{id}/start-cycle`
-2. `GET /internal/tasks/{task_id}`
-3. `GET /zones/{id}/state`
-4. `GET/POST /zones/{id}/control-mode`
-5. `POST /zones/{id}/manual-step`
-6. `POST /zones/{id}/start-relay-autotune`
-7. `GET /zones/{id}/relay-autotune/status`
-
-### 19.4 E2E
-
-Owner:
-1. Agent-D
-
-Минимальные сценарии:
-1. `start-cycle -> completed`
-2. `start-cycle -> command TIMEOUT -> failed`
-3. `start-cycle -> restart during waiting_command -> recovered`
-4. `lighting_tick -> DONE -> completed`
-5. `ventilation_tick -> DONE -> completed`
-6. `solution_change -> terminal path`
-7. `mist -> terminal path`
-8. `manual-step` в допустимой фазе
-9. `manual-step` в недопустимой фазе
-10. `control-mode` switch
-11. relay-autotune `start -> running -> complete|timeout`
-
-### 19.5 Staging Soak
-
-Owner:
-1. Agent-D
-
-Обязательно:
-1. минимум 24 часа на staging
-2. минимум одна restart-проверка сервиса
-3. минимум одна rollback-проверка на staging
-
-### 19.6 Production Pilot
-
-Owner:
-1. Agent-D
-2. Agent-C
-
-Обязательно:
-1. сначала 1 production зона
-2. затем 3-5 зон
-3. затем все зоны
-4. переход между стадиями только вручную
-
----
-
-## 20. Production Rollout И Rollback
-
-### 20.1 Rollout Preconditions
-
-Перед production rollout должны быть выполнены все условия:
-1. G1-G5 закрыты
-2. test matrix зелёный
-3. документация синхронизирована
-4. Laravel poller не зависит от AE2-only status path
-5. AE3 runtime запускается стабильно в Docker/staging
-
-### 20.2 Rollout Procedure
-
-1. Выбрать pilot zone.
-2. Установить `zones.automation_runtime='ae3'`.
-3. Перезапустить `automation-engine`.
-4. Выполнить smoke:
-   - `start-cycle`
-   - task status poll
-   - command publish
-   - terminal reconcile
-5. Наблюдать пилотную зону.
-6. Повторить для группы зон.
-7. После стабильной группы переключить остальные зоны.
-
-### 20.3 Rollback Procedure
-
-Rollback должен быть максимально тупым и обратимым:
-1. установить `zones.automation_runtime='ae2'` для проблемных зон;
-2. перезапустить `automation-engine`;
-3. новые задачи снова уйдут через AE2 path;
-4. незавершённые AE3 tasks остаются в БД для расследования;
-5. ручной destructive cleanup запрещён.
-
-### 20.4 Production Definition of Done
-
-AE3-Lite считается доведённым до production-version, когда:
-1. все runtime paths из раздела 17 реализованы;
-2. 4 агента закрыли свои deliverables и gate-ы;
-3. pilot и grouped rollout прошли без rollback;
-4. AE2 исключён из active runtime path;
-5. rollback назад на AE2 остаётся доступным до финального freeze-window;
-6. документация и тесты отражают фактический production state.
+## 14. Что дальше, но не в этом документе
+
+После успешного `v1` отдельными RFC могут обсуждаться:
+1. дополнительные task types
+2. runtime API parity с AE2
+3. multi-replica deployment
+4. более сложный rollout controller
+5. отдельные safety/recovery workflows
+
+Эти пункты не должны возвращаться в canonical spec `v1` задним числом.
