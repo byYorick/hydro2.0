@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: несовместимые изменения в защищенном pipeline запрещены; миграции AE3 выполняются через compatibility bridge (`start-cycle`, `intent-*`, legacy task_type) до cutover.
 
 ---
 
@@ -50,6 +50,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### Специализированные документы
 
+#### [AE3_B.md](AE3_B.md)
+Целевая архитектура AE3-B (task-driven runtime, distributed single-writer, strict FSM, command outcome gate)
+
+#### [AE3_C.md](AE3_C.md)
+План чистой реализации AE3-C с нуля на 4 ИИ-агента (async task runtime, no-overlap по зонам/актуаторам, phased rollout)
+
+#### [AE3_ARCHITECTURE.md](AE3_ARCHITECTURE.md)
+Детальная архитектура AE3 (контроллеры, runtime и примеры API). Нормативные контракты на pre-coding этапе задаются через раздел compatibility в начале документа и синхронизируются с AE3-C.
+
 #### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
 Архитектура real-time обновлений
 
@@ -78,6 +87,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 `PYTHON_SERVICES_ARCH.md` и
 `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
 как приоритетные источники.
+
+Для AE3 pre-coding baseline приоритет документов:
+1. `AE3_C.md` (формальные контракты и migration gates)
+2. `AE3_B.md` (целевая модель и phased реализация)
+3. `AE3_ARCHITECTURE.md` (детализация runtime/controller дизайна без нарушения контрактов из 1-2)
 
 ---
 
